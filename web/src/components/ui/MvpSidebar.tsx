@@ -7,6 +7,8 @@ import { useTranslations, useLocale } from "next-intl";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+import { signOut } from "next-auth/react";
+import { LogOut, Users } from "lucide-react";
 
 export default function MvpSidebar() {
     const t = useTranslations("MasterData");
@@ -16,7 +18,8 @@ export default function MvpSidebar() {
 
     const menuItems = [
         { name: t("properties"), href: "/dashboard/properties", icon: LayoutDashboard },
-        { name: "Super Admin", href: "/superadmin/tenants", icon: ShieldCheck },
+        { name: "Tenants", href: "/superadmin/tenants", icon: ShieldCheck },
+        { name: "Users", href: "/superadmin/users", icon: Users },
     ];
 
     return (
@@ -107,6 +110,17 @@ export default function MvpSidebar() {
                         Rel 0.4.2
                     </div>
                 )}
+
+                <button
+                    onClick={() => signOut()}
+                    className={cn(
+                        "flex items-center gap-3 px-3 py-2.5 rounded-xl text-red-500 hover:bg-red-50 transition-all active:scale-95 border border-transparent hover:border-red-100",
+                        isCollapsed ? "justify-center" : "w-full"
+                    )}
+                >
+                    <LogOut size={16} />
+                    {!isCollapsed && <span className="text-xs font-bold uppercase tracking-widest">Logout</span>}
+                </button>
             </div>
         </aside>
     );

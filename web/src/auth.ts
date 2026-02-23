@@ -10,17 +10,34 @@ export const authOptions: NextAuthOptions = {
                 password: { label: "Password", type: "password" },
             },
             async authorize(credentials) {
-                // Here we will proxy login to Spring Boot API and get JWT
-                // Mocking for Phase 3 setup:
-                if (credentials?.email === "admin@rentaxis.com" && credentials?.password === "password") {
-                    return {
-                        id: "1",
-                        name: "Admin User",
-                        email: "admin@rentaxis.com",
-                        tenantId: "mock-tenant-123"
-                    } as any;
+                if (!credentials?.email || !credentials?.password) return null;
+
+                try {
+                    const res = await fetch("http://localhost:8080/api/auth/login", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            email: credentials.email,
+                            password: credentials.password
+                        })
+                    });
+
+                    if (res.ok) {
+                        const user = await res.json();
+                        // user object from backend: {id, email, name, role, tenantId}
+                        return {
+                            id: user.id,
+                            email: user.email,
+                            name: user.name,
+                            role: user.role,
+                            tenantId: user.tenantId
+                        } as any;
+                    }
+                } catch (e) {
+                    console.error("Auth Exception:", e);
                 }
-                return null; // Reject login
+
+                return null;
             },
         }),
     ],
@@ -28,12 +45,16 @@ export const authOptions: NextAuthOptions = {
         async jwt({ token, user }) {
             if (user) {
                 token.tenantId = (user as any).tenantId;
+                token.role = (user as any).role;
+                token.id = user.id;
             }
             return token;
         },
         async session({ session, token }) {
             if (token) {
                 (session.user as any).tenantId = token.tenantId;
+                (session.user as any).role = token.role;
+                (session.user as any).id = token.id;
             }
             return session;
         },
