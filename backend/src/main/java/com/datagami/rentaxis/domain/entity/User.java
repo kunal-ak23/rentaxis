@@ -11,6 +11,7 @@ import java.util.UUID;
 @Table(name = "users")
 @Getter
 @Setter
+@AttributeOverride(name = "tenantId", column = @Column(name = "tenant_id", nullable = true))
 public class User extends BaseTenantEntity {
 
     @Id

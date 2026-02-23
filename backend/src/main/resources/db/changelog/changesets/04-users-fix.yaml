@@ -1,8 +1,10 @@
 databaseChangeLog:
   - changeSet:
-      id: 3
+      id: 4
       author: antigravity
       changes:
+        - dropTable:
+            tableName: users
         - createTable:
             tableName: users
             columns:
