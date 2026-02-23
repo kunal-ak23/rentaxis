@@ -1,7 +1,7 @@
-import NextAuth from "next-auth";
+import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
+export const authOptions: NextAuthOptions = {
     providers: [
         CredentialsProvider({
             name: "Credentials",
@@ -18,7 +18,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                         name: "Admin User",
                         email: "admin@rentaxis.com",
                         tenantId: "mock-tenant-123"
-                    };
+                    } as any;
                 }
                 return null; // Reject login
             },
@@ -44,4 +44,4 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     session: {
         strategy: "jwt",
     },
-});
+};

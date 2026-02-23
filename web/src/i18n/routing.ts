@@ -1,13 +1,9 @@
 import { defineRouting } from 'next-intl/routing';
-import createMiddleware from 'next-intl/middleware';
+import { createNavigation } from 'next-intl/navigation';
 
 export const routing = defineRouting({
     locales: ['en', 'ar'],
     defaultLocale: 'en'
 });
 
-export default createMiddleware(routing);
-
-export const config = {
-    matcher: ['/', '/(ar|en)/:path*']
-};
+export const { Link, redirect, usePathname, useRouter } = createNavigation(routing);

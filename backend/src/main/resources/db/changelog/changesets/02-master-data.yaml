@@ -1,0 +1,122 @@
+databaseChangeLog:
+  - changeSet:
+      id: 02-master-data-properties-units
+      author: rentaxis-system
+      changes:
+        - createTable:
+            tableName: properties
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: tenant_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: name_en
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: name_ar
+                  type: varchar(255)
+              - column:
+                  name: emirate
+                  type: varchar(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: address
+                  type: text
+              - column:
+                  name: makani_number
+                  type: varchar(50)
+              - column:
+                  name: type
+                  type: varchar(50)
+                  defaultValue: RESIDENTIAL
+              - column:
+                  name: created_at
+                  type: timestamp
+                  defaultValueComputed: CURRENT_TIMESTAMP
+              - column:
+                  name: updated_at
+                  type: timestamp
+                  defaultValueComputed: CURRENT_TIMESTAMP
+
+        - createTable:
+            tableName: buildings
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: property_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_buildings_property
+                    references: properties(id)
+              - column:
+                  name: name_en
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: name_ar
+                  type: varchar(255)
+              - column:
+                  name: floors
+                  type: int
+
+        - createTable:
+            tableName: units
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: tenant_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: property_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_units_property
+                    references: properties(id)
+              - column:
+                  name: building_id
+                  type: uuid
+                  constraints:
+                    foreignKeyName: fk_units_building
+                    references: buildings(id)
+              - column:
+                  name: unit_number
+                  type: varchar(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: type
+                  type: varchar(50)
+                  defaultValue: 1BHK
+              - column:
+                  name: size_sqft
+                  type: decimal(12,2)
+              - column:
+                  name: status
+                  type: varchar(50)
+                  defaultValue: VACANT

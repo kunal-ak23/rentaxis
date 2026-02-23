@@ -2,5 +2,33 @@
     "Index": {
         "title": "Welcome to RentAxis",
         "portal": "Landlord Portal"
+    },
+    "MasterData": {
+        "properties": "Properties",
+        "units": "Units",
+        "addProperty": "Add Property",
+        "addUnit": "Add Unit",
+        "nameEn": "Name (English)",
+        "nameAr": "Name (Arabic)",
+        "emirate": "Emirate",
+        "makaniNumber": "Makani Number",
+        "address": "Address",
+        "propertyType": "Property Type",
+        "unitNumber": "Unit Number",
+        "unitType": "Unit Type",
+        "sizeSqft": "Size (SqFt)",
+        "status": "Status",
+        "floors": "Floors",
+        "create": "Create",
+        "cancel": "Cancel"
+    },
+    "Emirates": {
+        "DUBAI": "Dubai",
+        "ABU_DHABI": "Abu Dhabi",
+        "SHARJAH": "Sharjah",
+        "AJMAN": "Ajman",
+        "UMM_AL_QUWAIN": "Umm Al Quwain",
+        "RAS_AL_KHAIMAH": "Ras Al Khaimah",
+        "FUJAIRAH": "Fujairah"
     }
 }

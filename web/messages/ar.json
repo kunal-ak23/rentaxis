@@ -2,5 +2,33 @@
     "Index": {
         "title": "مرحباً بك في رينت أكسس",
         "portal": "بوابة المالك"
+    },
+    "MasterData": {
+        "properties": "العقارات",
+        "units": "الوحدات",
+        "addProperty": "إضافة عقار",
+        "addUnit": "إضافة وحدة",
+        "nameEn": "الاسم (بالإنجليزي)",
+        "nameAr": "الاسم (بالعربي)",
+        "emirate": "الإمارة",
+        "makaniNumber": "رقم مكاني",
+        "address": "العنوان",
+        "propertyType": "نوع العقار",
+        "unitNumber": "رقم الوحدة",
+        "unitType": "نوع الوحدة",
+        "sizeSqft": "المساحة (قدم مربع)",
+        "status": "الحالة",
+        "floors": "الطوابق",
+        "create": "إنشاء",
+        "cancel": "إلغاء"
+    },
+    "Emirates": {
+        "DUBAI": "دبي",
+        "ABU_DHABI": "أبوظبي",
+        "SHARJAH": "الشارقة",
+        "AJMAN": "عجمان",
+        "UMM_AL_QUWAIN": "أم القيوين",
+        "RAS_AL_KHAIMAH": "رأس الخيمة",
+        "FUJAIRAH": "الفجيرة"
     }
 }

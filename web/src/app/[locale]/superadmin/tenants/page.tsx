@@ -2,13 +2,16 @@
 
 import { useState, useEffect } from "react";
 import { useTranslations } from "next-intl";
+import { Plus, X, Building2, Globe, FileText, Settings2, ShieldCheck, Mail, Hash } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 type Tenant = { id: string; name: string; status: string; createdAt: string };
 
 export default function SuperAdminTenantsPage() {
-    const t = useTranslations("Index"); // Replace with specific translation scope later
+    const t = useTranslations("Index");
     const [tenants, setTenants] = useState<Tenant[]>([]);
     const [newTenantName, setNewTenantName] = useState("");
+    const [showForm, setShowForm] = useState(false);
 
     useEffect(() => {
         fetchTenants();
@@ -16,7 +19,7 @@ export default function SuperAdminTenantsPage() {
 
     const fetchTenants = async () => {
         try {
-            const res = await fetch("/api/proxy/admin/tenants"); // Proxy to Spring Boot
+            const res = await fetch("/api/proxy/admin/tenants");
             if (res.ok) {
                 const data = await res.json();
                 setTenants(data);
@@ -38,6 +41,7 @@ export default function SuperAdminTenantsPage() {
             });
             if (res.ok) {
                 setNewTenantName("");
+                setShowForm(false);
                 fetchTenants();
             }
         } catch (e) {
@@ -46,53 +50,131 @@ export default function SuperAdminTenantsPage() {
     };
 
     return (
-        <div className="p-8 max-w-4xl mx-auto">
-            <h1 className="text-3xl font-bold mb-6">Super Admin: Manage Tenants</h1>
-
-            <form onSubmit={createTenant} className="mb-10 p-6 bg-white shadow rounded-lg border">
-                <h2 className="text-xl font-semibold mb-4">Provision New Organization</h2>
-                <div className="flex gap-4">
-                    <input
-                        type="text"
-                        value={newTenantName}
-                        onChange={(e) => setNewTenantName(e.target.value)}
-                        placeholder="Organization Name"
-                        className="flex-1 border p-2 rounded"
-                    />
-                    <button type="submit" className="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700">
-                        Create
-                    </button>
+        <div className="p-8 max-w-7xl mx-auto">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10">
+                <div>
+                    <div className="flex items-center gap-2 mb-1">
+                        <div className="w-5 h-5 bg-purple-50 text-purple-600 rounded flex items-center justify-center border border-purple-100">
+                            <ShieldCheck size={12} />
+                        </div>
+                        <h1 className="text-xl font-black text-foreground tracking-tight">Super Admin: Manage Tenants</h1>
+                    </div>
+                    <p className="text-xs text-gray-400 font-medium">
+                        System-wide infrastructure and data isolation control.
+                    </p>
                 </div>
-            </form>
+                <button
+                    onClick={() => setShowForm(true)}
+                    className="flex items-center gap-2 bg-primary text-primary-foreground px-5 py-2.5 rounded-full text-xs font-bold hover:opacity-90 transition-all shadow-lg shadow-primary/10 active:scale-95 self-start"
+                >
+                    <Plus size={14} />
+                    Provision New Organization
+                </button>
+            </div>
 
-            <div className="bg-white shadow rounded-lg border overflow-hidden">
+            {showForm && (
+                <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
+                    <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl border border-gray-100 relative">
+                        <button
+                            onClick={() => setShowForm(false)}
+                            className="absolute right-6 top-6 p-2 text-gray-400 hover:text-gray-600 transition-colors"
+                        >
+                            <X size={18} />
+                        </button>
+
+                        <h2 className="text-lg font-black mb-1 text-foreground leading-tight">Provision New Organization</h2>
+                        <p className="text-xs text-gray-400 mb-8 font-medium">Register a new client entity onto the platform.</p>
+
+                        <form onSubmit={createTenant} className="space-y-5">
+                            <div>
+                                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5 ml-1">Organization Name</label>
+                                <input
+                                    required
+                                    placeholder="e.g. Al Futtaim Properties"
+                                    className="w-full bg-input border border-border p-3 rounded-xl text-xs placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/10 focus:border-primary/30 transition-all"
+                                    value={newTenantName}
+                                    onChange={(e) => setNewTenantName(e.target.value)}
+                                />
+                            </div>
+                            <div className="flex justify-end gap-3 mt-4">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowForm(false)}
+                                    className="px-6 py-3 rounded-xl text-xs font-bold text-gray-500 hover:bg-gray-50 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="px-8 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-bold hover:opacity-90 shadow-lg shadow-primary/10 active:scale-95 transition-all"
+                                >
+                                    Create Organization
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            <div className="bg-white rounded-[2rem] border border-gray-100 shadow-[0_20px_50px_rgba(0,0,0,0.02)] overflow-hidden">
                 <table className="w-full text-left">
-                    <thead className="bg-gray-50 border-b">
-                        <tr>
-                            <th className="p-4">ID</th>
-                            <th className="p-4">Name</th>
-                            <th className="p-4">Status</th>
+                    <thead>
+                        <tr className="bg-gray-50/50 border-b border-gray-100">
+                            <th className="p-5 text-[10px] font-black uppercase tracking-widest text-gray-400">
+                                <div className="flex items-center gap-2">
+                                    <Hash size={12} />
+                                    ID
+                                </div>
+                            </th>
+                            <th className="p-5 text-[10px] font-black uppercase tracking-widest text-gray-400">
+                                <div className="flex items-center gap-2">
+                                    <Building2 size={12} />
+                                    Organization Name
+                                </div>
+                            </th>
+                            <th className="p-5 text-[10px] font-black uppercase tracking-widest text-gray-400">
+                                <div className="flex items-center gap-2">
+                                    <Settings2 size={12} />
+                                    System Status
+                                </div>
+                            </th>
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody className="divide-y divide-gray-50">
                         {tenants.map(t => (
-                            <tr key={t.id} className="border-b last:border-0 hover:bg-gray-50">
-                                <td className="p-4 font-mono text-xs">{t.id}</td>
-                                <td className="p-4">{t.name}</td>
-                                <td className="p-4">
-                                    <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs">
-                                        {t.status}
+                            <tr key={t.id} className="group hover:bg-gray-50/50 transition-colors">
+                                <td className="p-5">
+                                    <span className="font-mono text-[10px] text-gray-400">
+                                        {t.id}
+                                    </span>
+                                </td>
+                                <td className="p-5">
+                                    <span className="text-sm font-black text-foreground group-hover:text-primary transition-colors">
+                                        {t.name}
+                                    </span>
+                                </td>
+                                <td className="p-5">
+                                    <span className={cn(
+                                        "px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest",
+                                        t.status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-600' : 'bg-green-50 text-green-600'
+                                    )}>
+                                        {t.status || 'ACTIVE'}
                                     </span>
                                 </td>
                             </tr>
                         ))}
-                        {tenants.length === 0 && (
-                            <tr>
-                                <td colSpan={3} className="p-4 text-center text-gray-500">No organizations found.</td>
-                            </tr>
-                        )}
                     </tbody>
                 </table>
+                {tenants.length === 0 && (
+                    <div className="p-24 text-center flex flex-col items-center">
+                        <div className="w-16 h-16 bg-gray-50 rounded-2xl flex items-center justify-center text-gray-200 mb-6 border border-dashed border-gray-200">
+                            <ShieldCheck size={32} />
+                        </div>
+                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em]">
+                            System core is ready. No organizations provisioned yet.
+                        </p>
+                    </div>
+                )}
             </div>
         </div>
     );

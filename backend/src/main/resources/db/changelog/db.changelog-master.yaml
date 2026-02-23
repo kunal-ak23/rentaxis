@@ -1,3 +1,5 @@
 databaseChangeLog:
   - include:
       file: db/changelog/changesets/01-init-landlord-org.yaml
+  - include:
+      file: db/changelog/changesets/02-master-data.yaml
