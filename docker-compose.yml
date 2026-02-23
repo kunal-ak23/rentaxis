@@ -1,0 +1,22 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: rentaxis-backend
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env.backend
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: rentaxis-web
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.web
+    depends_on:
+      - backend

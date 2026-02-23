@@ -1,0 +1,69 @@
+databaseChangeLog:
+  - changeSet:
+      id: 01-init-landlord-org
+      author: rentaxis-system
+      changes:
+        - createTable:
+            tableName: landlord_org
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: name
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: varchar(50)
+                  defaultValue: ACTIVE
+              - column:
+                  name: created_at
+                  type: timestamp
+                  defaultValueComputed: CURRENT_TIMESTAMP
+              - column:
+                  name: updated_at
+                  type: timestamp
+                  defaultValueComputed: CURRENT_TIMESTAMP
+
+        - createTable:
+            tableName: org_settings
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: landlord_org_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_org_settings_landlord_org
+                    references: landlord_org(id)
+              - column:
+                  name: default_currency
+                  type: varchar(10)
+                  defaultValue: AED
+              - column:
+                  name: default_locale
+                  type: varchar(10)
+                  defaultValue: en
+              - column:
+                  name: timezone
+                  type: varchar(50)
+                  defaultValue: Asia/Dubai
+              - column:
+                  name: reminder_days
+                  type: int
+                  defaultValue: 30
+              - column:
+                  name: tenant_id
+                  type: uuid
+                  constraints:
+                    nullable: false

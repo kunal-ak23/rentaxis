@@ -1,11 +1,11 @@
 # Module C: Master Data Model
 
 ## 1. Overview
-The Master Data Model represents the hierarchical real estate structure within a Landlord Organization: `LandlordOrg -> Property -> (Optional Building) -> Unit -> Lease`. This dataset serves as the backbone for linking financial, operational, and maintenance records.
+The Master Data Model represents the hierarchical real estate structure within a Landlord Organization: `LandlordOrg -> Property -> (Optional Building) -> Unit -> Lease`. This dataset serves as the backbone for linking financial, operational, and maintenance records, incorporating UAE-specific address structures.
 
 ## 2. Architecture & Technical Decisions
 - **Flexible Hierarchy:** Buildings are optional. Units can belong directly to a Property or a Building within a Property.
-- **Multi-Currency:** Rent amounts are defined per Unit/Lease, but UI will uniformly display values using `tenant_id` context currency unless overridden at the lease level.
+- **UAE Region Localization:** The address structure will capture Emirate and Makani Number/Plot Number, aligning with typical UAE real estate registry formats.
 - **Tenant Scoping:** All reads and writes to Property, Building, and Unit entities evaluate the current context `tenant_id` before committing or returning models.
 
 ## 3. Data Model
@@ -13,13 +13,16 @@ The Master Data Model represents the hierarchical real estate structure within a
 - `properties`:
   - `id` (UUID, Primary Key)
   - `tenant_id` (UUID, Foreign Key)
-  - `name` (String, e.g., "Sunset Villas")
+  - `name_en` (String, e.g., "Sunset Villas")
+  - `name_ar` (String, Optional Arabic name)
+  - `emirate` (Enum: DUBAI, ABU_DHABI, SHARJAH, AJMAN, UMM_AL_QUWAIN, RAS_AL_KHAIMAH, FUJAIRAH)
   - `address` (Text)
+  - `makani_number` (String, UAE specific geolocation id)
   - `type` (Enum: COMMERCIAL, RESIDENTIAL, MIXED)
 - `buildings`:
   - `id` (UUID)
   - `property_id` (UUID, Foreign Key)
-  - `name` (String, e.g., "Tower A")
+  - `name_en`, `name_ar` (Strings)
   - `floors` (Integer)
 - `units`:
   - `id` (UUID)
@@ -38,14 +41,14 @@ The Master Data Model represents the hierarchical real estate structure within a
 - `POST /api/v1/units/bulk` (Bulk upload units via CSV payload)
 
 ## 5. UI Flows & Interfaces
-- **Properties Dashboard:** Visual card layout or list view of all owned properties showing summary stats (Total Units, Occupancy %).
+- **Properties Dashboard:** Visual card layout displaying properties. The UI will toggle between `name_en` and `name_ar` based on the user's active locale.
 - **Property Detail View:** Tabbed interface separating "Overview", "Buildings", "Units", and "Active Leases".
-- **Unit Management Wizard:** Form to add units individually, alongside a bulk CSV import utility for onboarding large complexes efficiently.
+- **Unit Management Wizard:** Form to add units individually, integrating structured address fields (Emirate, Makani).
 
 ## 6. Security Constraints
-- Users with property-level restrictions (e.g., Property Manager for "Tower A") should structurally only be capable of fetching units strictly related to their assigned `property_ids` via the API.
+- Users with property-level restrictions (e.g., Property Manager for a specific building) should structurally only be capable of fetching units strictly related to their assigned `property_ids` via the API.
 
 ## 7. Execution Plan (MVP Phase)
-- Construct database entities mapped with JPA and Hibernate tenant filters.
+- Construct database entities mapped with JPA and Hibernate tenant filters, including Arabic naming fields and Emirate lookups.
 - Develop CRUD endpoints for Properties and Units.
-- Implement the Next.js visual hierarchy and management views.
+- Implement the Next.js visual hierarchy enforcing bi-directional language support on forms.
