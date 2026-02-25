@@ -20,8 +20,12 @@ export default function SuperAdminUsersPage() {
     const [role, setRole] = useState("TENANT_USER");
     const [tenantId, setTenantId] = useState("");
 
+    type Tenant = { id: string; name: string };
+    const [tenants, setTenants] = useState<Tenant[]>([]);
+
     useEffect(() => {
         fetchUsers();
+        fetchTenants();
     }, []);
 
     const fetchUsers = async () => {
@@ -36,6 +40,18 @@ export default function SuperAdminUsersPage() {
             console.error(e);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const fetchTenants = async () => {
+        try {
+            const res = await fetch("/api/proxy/admin/tenants");
+            if (res.ok) {
+                const data = await res.json();
+                setTenants(data);
+            }
+        } catch (e) {
+            console.error("Failed to fetch tenants:", e);
         }
     };
 
@@ -220,14 +236,17 @@ export default function SuperAdminUsersPage() {
                                     </select>
                                 </div>
                                 <div>
-                                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 ml-1">Tenant ID (Optional)</label>
-                                    <input
-                                        type="text"
+                                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 ml-1">Tenant (Organization)</label>
+                                    <select
                                         value={tenantId}
                                         onChange={(e) => setTenantId(e.target.value)}
                                         className="w-full bg-gray-50 border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all font-medium"
-                                        placeholder="e.g. tenant-uuid"
-                                    />
+                                    >
+                                        <option value="">None (Super Admin Context)</option>
+                                        {tenants.map((t) => (
+                                            <option key={t.id} value={t.id}>{t.name}</option>
+                                        ))}
+                                    </select>
                                 </div>
                             </form>
                         </div>

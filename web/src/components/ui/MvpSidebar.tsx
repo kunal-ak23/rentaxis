@@ -1,14 +1,24 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { LayoutDashboard, ShieldCheck, ChevronRight, Menu } from "lucide-react";
+import { TenantSwitcher } from './TenantSwitcher';
+import {
+    LayoutDashboard,
+    Building2,
+    Users,
+    Settings,
+    ChevronLeft,
+    ChevronRight,
+    LogOut,
+    Menu,
+    ShieldCheck
+} from 'lucide-react';
 import { Link } from "@/i18n/routing";
 import { useTranslations, useLocale } from "next-intl";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { signOut } from "next-auth/react";
-import { LogOut, Users } from "lucide-react";
 
 export default function MvpSidebar() {
     const t = useTranslations("MasterData");
@@ -25,7 +35,7 @@ export default function MvpSidebar() {
     return (
         <aside
             className={cn(
-                "relative bg-white border-r min-h-screen flex flex-col transition-all duration-300 ease-in-out",
+                "relative bg-white border-r min-h-screen flex flex-col transition-all duration-300 ease-in-out z-40",
                 isCollapsed ? "w-16" : "w-64"
             )}
         >
@@ -83,28 +93,6 @@ export default function MvpSidebar() {
             </nav>
 
             <div className="mt-auto px-3 pb-8 space-y-4">
-                {/* Locale Switcher - Compact */}
-                <div className={cn("flex items-center justify-between p-1 bg-gray-50 rounded-lg border border-gray-100", isCollapsed && "flex-col")}>
-                    <Link
-                        href={pathname.replace(`/${locale}`, "/en")}
-                        className={cn(
-                            "flex-1 text-center py-1.5 rounded-md text-[9px] font-black tracking-widest transition-all",
-                            locale === 'en' ? 'bg-white text-primary shadow-sm border border-border/50' : 'text-gray-400 hover:text-gray-600'
-                        )}
-                    >
-                        EN
-                    </Link>
-                    <Link
-                        href={pathname.replace(`/${locale}`, "/ar")}
-                        className={cn(
-                            "flex-1 text-center py-1.5 rounded-md text-[9px] font-black tracking-widest transition-all",
-                            locale === 'ar' ? 'bg-white text-primary shadow-sm border border-border/50' : 'text-gray-400 hover:text-gray-600'
-                        )}
-                    >
-                        AR
-                    </Link>
-                </div>
-
                 {!isCollapsed && (
                     <div className="px-3 text-[8px] text-gray-400 font-bold uppercase tracking-wider text-center">
                         Rel 0.4.2
