@@ -1,5 +1,21 @@
 # Module H: Vendor & Expense Management
 
+> **STATUS: ⬜ NOT STARTED**
+> 
+> | Item | Status |
+> |------|--------|
+> | `vendors` entity (TRN, bank details) | ⬜ Not Started |
+> | `expenses` entity (base/VAT split) | ⬜ Not Started |
+> | `vendor_jobs` link table | ⬜ Not Started |
+> | Vendor CRUD endpoints | ⬜ Not Started |
+> | Expense recording + VAT calculation | ⬜ Not Started |
+> | Threshold-based approval workflow | ⬜ Not Started |
+> | Vendor Management UI | ⬜ Not Started |
+> | Expense Log Form (TRN/VAT) | ⬜ Not Started |
+> | Approvals Dashboard | ⬜ Not Started |
+> 
+> *Last reviewed: 2026-02-26*
+
 ## 1. Overview
 Manage relationships with external service providers (Vendors), log operational and maintenance expenses, and tie costs back to specific units or properties for accurate profitability (NOI) reporting. Ensures compliance with UAE VAT reporting requirements via Tax Registration Numbers (TRN).
 

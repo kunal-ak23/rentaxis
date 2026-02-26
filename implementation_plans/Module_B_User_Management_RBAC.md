@@ -1,5 +1,29 @@
 # Module B: User Management & RBAC
 
+> **STATUS: 🟡 PARTIALLY COMPLETE**
+> 
+> | Item | Status |
+> |------|--------|
+> | `User` entity with `tenant_id`, roles | ✅ Done (`User.java`, `UserRole.java` enum) |
+> | `UserController` + `UserService` | ✅ Done |
+> | Spring Security JWT filter (`ApiSecurityFilter`) | ✅ Done |
+> | `SecurityConfig` (stateless, BCrypt) | ✅ Done |
+> | Auth.js / NextAuth integration | ✅ Done (`api/auth/[...nextauth]/route.ts`) |
+> | `AuthController` (login, token exchange) | ✅ Done |
+> | Login page (frontend) | ✅ Done (`/auth/login/page.tsx`) |
+> | Register page (frontend) | ✅ Done (`/auth/register/page.tsx`) |
+> | `DataInitializer` (seed users) | ✅ Done |
+> | `roles` / `user_roles` join table | ⬜ Not Started (roles stored as enum on User) |
+> | `user_property_assignments` table | ⬜ Not Started |
+> | User Invite API (`POST /api/v1/users/invite`) | ⬜ Not Started |
+> | User Directory UI (datatable) | ⬜ Not Started |
+> | Invite Modal with role/property assignment | ⬜ Not Started |
+> | User Profile Drawer (language override) | ⬜ Not Started |
+> | `@PreAuthorize` method-level security | ⬜ Not Started |
+> | Locale preference per user (`PUT /users/me/locale`) | ⬜ Not Started |
+> 
+> *Last reviewed: 2026-02-26*
+
 ## 1. Overview
 The User Management & RBAC (Role-Based Access Control) module governs identity securely within the limits of a Landlord Organization. It manages various staff profiles and dictates what data and actions they can access. It handles individual user language preferences for seamless operations across multilingual teams in the UAE.
 

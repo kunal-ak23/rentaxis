@@ -1,5 +1,20 @@
 # Module I: Payment Gateway Integration
 
+> **STATUS: ⬜ NOT STARTED**
+> 
+> | Item | Status |
+> |------|--------|
+> | Per-tenant gateway config in `org_settings` | ⬜ Not Started |
+> | `webhook_logs` table | ⬜ Not Started |
+> | Gateway initiation API | ⬜ Not Started |
+> | Webhook receiver + HMAC validation | ⬜ Not Started |
+> | Idempotent payment allocation | ⬜ Not Started |
+> | Tenant Checkout UI | ⬜ Not Started |
+> | Post-payment callback handling | ⬜ Not Started |
+> | Sandbox/Mock payment provider | ⬜ Not Started |
+> 
+> *Last reviewed: 2026-02-26*
+
 ## 1. Overview
 Provide an API interface enabling Tenants to pay automated `rent_schedules` or ad-hoc fees directly using third-party payment gateways heavily utilized in the UAE (e.g., Stripe UAE, Checkout.com, PayTabs, Network International).
 

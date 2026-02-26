@@ -1,5 +1,19 @@
 # Module F: Tenant KYC & Document Vault
 
+> **STATUS: ⬜ NOT STARTED**
+> 
+> | Item | Status |
+> |------|--------|
+> | `kyc_documents` entity | ⬜ Not Started |
+> | `DocumentStorageService` abstraction | ⬜ Not Started |
+> | Upload/download endpoints | ⬜ Not Started |
+> | Approve/Reject workflow | ⬜ Not Started |
+> | Expiry tracking + reminder emails | ⬜ Not Started |
+> | Tenant Portal (upload zone) | ⬜ Not Started |
+> | Landlord Portal (approval queue) | ⬜ Not Started |
+> 
+> *Last reviewed: 2026-02-26*
+
 ## 1. Overview
 Securely manage the collection, review, and expiration tracking of renter Know Your Customer (KYC) documents. In the UAE context, emphasis is placed heavily on Emirates ID and valid Passports/Visas.
 

@@ -1,5 +1,28 @@
 # Module C: Master Data Model
 
+> **STATUS: 🟡 PARTIALLY COMPLETE**
+> 
+> | Item | Status |
+> |------|--------|
+> | `Property` entity with `tenant_id`, enums | ✅ Done (`Property.java`, `PropertyType.java`, `Emirate.java`) |
+> | `Building` entity | ✅ Done (`Building.java`) |
+> | `Unit` entity with status/type enums | ✅ Done (`Unit.java`, `UnitStatus.java`, `UnitType.java`) |
+> | `PropertyController` + `PropertyService` | ✅ Done |
+> | `UnitController` + `UnitService` | ✅ Done |
+> | Property/Unit repositories | ✅ Done (`PropertyRepository`, `UnitRepository`, `BuildingRepository`) |
+> | Properties Dashboard (flip cards UI) | ✅ Done (`/dashboard/properties/page.tsx`) |
+> | Property Stats DTO | ✅ Done (`PropertyStatsDTO.java`) |
+> | `GET /api/v1/properties` | ✅ Done |
+> | `POST /api/v1/properties` | ✅ Done |
+> | Arabic naming fields (`name_en`, `name_ar`) | ⬜ Not Started (single `name` field used) |
+> | Makani Number / Plot Number fields | ⬜ Not Started |
+> | Property Detail View (tabbed: Overview, Buildings, Units, Leases) | ⬜ Not Started |
+> | Bulk CSV unit upload (`POST /api/v1/units/bulk`) | ⬜ Not Started |
+> | Building CRUD endpoints | ⬜ Not Started (entity exists, no controller) |
+> | BiDi form support (RTL/LTR) | ⬜ Not Started |
+> 
+> *Last reviewed: 2026-02-26*
+
 ## 1. Overview
 The Master Data Model represents the hierarchical real estate structure within a Landlord Organization: `LandlordOrg -> Property -> (Optional Building) -> Unit -> Lease`. This dataset serves as the backbone for linking financial, operational, and maintenance records, incorporating UAE-specific address structures.
 

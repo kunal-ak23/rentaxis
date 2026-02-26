@@ -1,5 +1,25 @@
 # Module J: Reporting & Statements
 
+> **STATUS: 🟡 FOUNDATION ONLY**
+> 
+> | Item | Status |
+> |------|--------|
+> | Property-level financial report API | ✅ Done (`GET /reports/property/{id}`) |
+> | Unit-level financial report API | ✅ Done (`GET /reports/unit/{id}`) |
+> | Org-level financial report API | ✅ Done (`GET /reports/organisation`) |
+> | `ReportDTO` | ✅ Done |
+> | Finance Reports page (frontend) | ✅ Done (basic scaffolding at `/dashboard/finance/reports`) |
+> | `vw_rent_roll` view | ⬜ Not Started |
+> | `vw_overdue_aging` view | ⬜ Not Started |
+> | `vw_vat_summary` view | ⬜ Not Started |
+> | `vw_profit_loss` view | ⬜ Not Started |
+> | CSV/XLSX export (Apache POI, bilingual) | ⬜ Not Started |
+> | Tax/FTA Compliance Dashboard | ⬜ Not Started |
+> | Landlord Dashboard metric cards (occupancy %, etc.) | ⬜ Not Started |
+> | Statement Viewer (printable, RTL-aware) | ⬜ Not Started |
+> 
+> *Last reviewed: 2026-02-26*
+
 ## 1. Overview
 Provide actionable financial transparency. Summarize vast amounts of operational data into accessible visual dashboards, rent rolls, overdue aging analysis, and printable landlord statements. Ensure these match UAE tax authority (FTA) expectations for VAT reporting.
 

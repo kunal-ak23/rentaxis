@@ -63,7 +63,7 @@ export default function PropertiesPage() {
 
     const fetchStats = async () => {
         try {
-            const res = await fetch("/api/v1/properties");
+            const res = await fetch("/api/proxy/v1/properties");
             if (res.ok) {
                 const data = await res.json();
                 setStats(data);
@@ -76,7 +76,7 @@ export default function PropertiesPage() {
     const handleProjectSubmit = async (ev: React.FormEvent) => {
         ev.preventDefault();
         try {
-            const res = await fetch("/api/v1/properties", {
+            const res = await fetch("/api/proxy/v1/properties", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(projectFormData)
@@ -103,7 +103,7 @@ export default function PropertiesPage() {
     const handlePropertySubmit = async (ev: React.FormEvent) => {
         ev.preventDefault();
         try {
-            const res = await fetch("/api/v1/units", {
+            const res = await fetch("/api/proxy/v1/units", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({

@@ -1,5 +1,26 @@
 # Module E: Rent Schedules, Collections, Penalties
 
+> **STATUS: 🟡 FOUNDATION ONLY**
+> 
+> | Item | Status |
+> |------|--------|
+> | `FinancialTransaction` entity (debit/credit, VAT) | ✅ Done (general-purpose, not rent-specific) |
+> | `Account` entity (chart of accounts) | ✅ Done |
+> | `FinancialTransactionController` (CRUD + reports) | ✅ Done |
+> | Finance pages (accounts, transactions, reports) | ✅ Done (frontend scaffolding) |
+> | `rent_schedules` table | ⬜ Not Started |
+> | `payments` table (with PDC tracking) | ⬜ Not Started |
+> | `payment_items` allocation table | ⬜ Not Started |
+> | `penalty_rules` (grace period, flat/%) | ⬜ Not Started |
+> | Schedule generation on lease activation | ⬜ Not Started (no leases yet) |
+> | PDC lifecycle (`HELD → DEPOSITED → CLEARED/BOUNCED`) | ⬜ Not Started |
+> | VAT calculation engine (5%) | ⬜ Not Started |
+> | Tenant Portal "My Finances" view | ⬜ Not Started |
+> | PDC Tracker (Landlord Portal) | ⬜ Not Started |
+> | Pessimistic locking for concurrent payments | ⬜ Not Started |
+> 
+> *Last reviewed: 2026-02-26*
+
 ## 1. Overview
 This module automates the financial logistics surrounding active leases. It generates rent schedules, evaluates them for late status, calculates late fees, and allocates payments. In the UAE, it specifically caters to managing physical Post-Dated Cheques (PDCs) transitioning to banked/cleared states.
 

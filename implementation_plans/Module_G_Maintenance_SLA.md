@@ -1,5 +1,20 @@
 # Module G: Maintenance & SLA
 
+> **STATUS: ⬜ NOT STARTED**
+> 
+> | Item | Status |
+> |------|--------|
+> | `maintenance_requests` entity | ⬜ Not Started |
+> | `maintenance_activity` log | ⬜ Not Started |
+> | `maintenance_attachments` | ⬜ Not Started |
+> | Ticket CRUD + assignment APIs | ⬜ Not Started |
+> | Status workflow (Spring events) | ⬜ Not Started |
+> | Tenant Portal (report issue form) | ⬜ Not Started |
+> | Landlord Portal (helpdesk/kanban) | ⬜ Not Started |
+> | Vendor work order PDF/email | ⬜ Not Started |
+> 
+> *Last reviewed: 2026-02-26*
+
 ## 1. Overview
 A specialized helpdesk allowing Tenants and Landlords to raise maintenance tickets, route them to appropriate internal staff or external vendors, and track adherence to Resolution SLAs. Supports cross-language communication.
 
