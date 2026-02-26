@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useTranslations } from "next-intl";
 import { Plus, X, Users, Search, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 type User = { id: string; name: string; email: string; role: string; tenantId: string };
 
@@ -12,6 +13,11 @@ export default function SuperAdminUsersPage() {
     const [users, setUsers] = useState<User[]>([]);
     const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(false);
+    const [editingUserId, setEditingUserId] = useState<string | null>(null);
+
+    // Delete dialog state
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+    const [userToDelete, setUserToDelete] = useState<string | null>(null);
 
     // Form state
     const [email, setEmail] = useState("");
@@ -19,13 +25,19 @@ export default function SuperAdminUsersPage() {
     const [name, setName] = useState("");
     const [role, setRole] = useState("TENANT_USER");
     const [tenantId, setTenantId] = useState("");
+    const [phoneNumber, setPhoneNumber] = useState("");
 
     type Tenant = { id: string; name: string };
     const [tenants, setTenants] = useState<Tenant[]>([]);
 
+    // Properties for Property Manager assignment
+    const [properties, setProperties] = useState<any[]>([]);
+    const [selectedPropertyIds, setSelectedPropertyIds] = useState<string[]>([]);
+
     useEffect(() => {
         fetchUsers();
         fetchTenants();
+        fetchProperties();
     }, []);
 
     const fetchUsers = async () => {
@@ -55,22 +67,99 @@ export default function SuperAdminUsersPage() {
         }
     };
 
-    const createUser = async (e: React.FormEvent) => {
+    const fetchProperties = async () => {
+        try {
+            const res = await fetch("/api/proxy/v1/properties");
+            if (res.ok) {
+                setProperties(await res.json());
+            }
+        } catch (e) {
+            console.error(e);
+        }
+    };
+
+    const resetForm = () => {
+        setEditingUserId(null);
+        setEmail(""); setPassword(""); setName(""); setTenantId(""); setRole("TENANT_USER"); setSelectedPropertyIds([]);
+        setPhoneNumber("");
+    };
+
+    const handleSubmitUser = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            const res = await fetch("/api/proxy/admin/users", {
-                method: "POST",
+            const bodyData: any = { email, name, role, tenantId, phoneNumber };
+            if (password) bodyData.password = password;
+
+            if (role === 'PROPERTY_MANAGER' && selectedPropertyIds.length > 0) {
+                bodyData.propertyIds = selectedPropertyIds;
+            }
+
+            const url = editingUserId
+                ? `/api/proxy/admin/users/${editingUserId}`
+                : "/api/proxy/admin/users";
+            const method = editingUserId ? "PUT" : "POST";
+
+            const res = await fetch(url, {
+                method,
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ email, password, name, role, tenantId }),
+                body: JSON.stringify(bodyData),
             });
             if (res.ok) {
                 setShowForm(false);
-                setEmail(""); setPassword(""); setName(""); setTenantId("");
+                resetForm();
                 fetchUsers();
             }
         } catch (e) {
             console.error(e);
         }
+    };
+
+    const confirmDelete = async () => {
+        if (!userToDelete) return;
+        try {
+            const res = await fetch(`/api/proxy/admin/users/${userToDelete}`, { method: "DELETE" });
+            if (res.ok) {
+                fetchUsers();
+                setDeleteDialogOpen(false);
+                setUserToDelete(null);
+            }
+        } catch (e) {
+            console.error(e);
+            setDeleteDialogOpen(false);
+            setUserToDelete(null);
+        }
+    };
+
+    const handleDeleteClick = (id: string) => {
+        setUserToDelete(id);
+        setDeleteDialogOpen(true);
+    };
+
+    const handleEdit = async (user: User) => {
+        setEditingUserId(user.id);
+        setName(user.name);
+        setEmail(user.email);
+        setRole(user.role);
+        setTenantId(user.tenantId || "");
+        setPhoneNumber((user as any).phoneNumber || "");
+        setPassword("");
+
+        // Fetch existing assignments if it's a Property Manager
+        if (user.role === 'PROPERTY_MANAGER') {
+            try {
+                const res = await fetch(`/api/proxy/admin/users/${user.id}/properties`);
+                if (res.ok) {
+                    const ids = await res.json();
+                    setSelectedPropertyIds(ids);
+                }
+            } catch (e) {
+                console.error("Failed to fetch property assignments:", e);
+            }
+        } else {
+            setSelectedPropertyIds([]);
+        }
+
+        setShowForm(true);
     };
 
     return (
@@ -101,7 +190,7 @@ export default function SuperAdminUsersPage() {
                         />
                     </div>
                     <button
-                        onClick={() => setShowForm(true)}
+                        onClick={() => { resetForm(); setShowForm(true); }}
                         className="bg-primary text-primary-foreground p-2.5 px-4 rounded-xl hover:opacity-90 active:scale-95 transition-all shadow-md shadow-primary/20 flex flex-col items-center justify-center cursor-pointer group shrink-0"
                     >
                         <div className="flex items-center gap-2">
@@ -137,8 +226,10 @@ export default function SuperAdminUsersPage() {
                                         <tr className="border-b border-border/50">
                                             <th className="pb-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Name</th>
                                             <th className="pb-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Email</th>
+                                            <th className="pb-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Phone</th>
                                             <th className="pb-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Role</th>
                                             <th className="pb-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Tenant ID</th>
+                                            <th className="pb-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody className="text-xs font-medium text-foreground">
@@ -146,6 +237,7 @@ export default function SuperAdminUsersPage() {
                                             <tr key={u.id} className="border-b border-border/50 hover:bg-gray-50/50 transition-colors group">
                                                 <td className="py-4 font-bold">{u.name}</td>
                                                 <td className="py-4 text-gray-500">{u.email}</td>
+                                                <td className="py-4 text-gray-500 font-mono text-[10px]">{(u as any).phoneNumber || "-"}</td>
                                                 <td className="py-4">
                                                     <span className={cn(
                                                         "px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide",
@@ -159,6 +251,22 @@ export default function SuperAdminUsersPage() {
                                                 <td className="py-4 text-gray-400 font-mono text-[10px] truncate max-w-[120px]">
                                                     {u.tenantId || "N/A"}
                                                 </td>
+                                                <td className="py-4 text-right">
+                                                    <div className="flex justify-end gap-2">
+                                                        <button
+                                                            onClick={() => handleEdit(u)}
+                                                            className="text-xs px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors font-bold"
+                                                        >
+                                                            Edit
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleDeleteClick(u.id)}
+                                                            className="text-xs px-3 py-1.5 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors font-bold"
+                                                        >
+                                                            Delete
+                                                        </button>
+                                                    </div>
+                                                </td>
                                             </tr>
                                         ))}
                                     </tbody>
@@ -171,13 +279,15 @@ export default function SuperAdminUsersPage() {
 
             {/* Slide-over Form Overlay */}
             {showForm && (
-                <div className="fixed inset-0 z-50 flex justify-end">
+                <div className="fixed inset-0 z-[100] flex justify-end">
                     <div className="absolute inset-0 bg-black/20 backdrop-blur-sm transition-opacity" onClick={() => setShowForm(false)} />
 
                     <div className="relative w-full max-w-md bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
                         <div className="flex items-center justify-between p-6 border-b border-border">
                             <div>
-                                <h2 className="text-lg font-black mb-1 text-foreground leading-tight">Provision New User</h2>
+                                <h2 className="text-lg font-black mb-1 text-foreground leading-tight">
+                                    {editingUserId ? "Edit User" : "Provision New User"}
+                                </h2>
                                 <p className="text-[11px] font-medium text-gray-400 uppercase tracking-widest">System Administration</p>
                             </div>
                             <button
@@ -189,7 +299,7 @@ export default function SuperAdminUsersPage() {
                         </div>
 
                         <div className="p-6 flex-1 overflow-y-auto">
-                            <form id="new-user-form" onSubmit={createUser} className="space-y-4">
+                            <form id="user-form" onSubmit={handleSubmitUser} className="space-y-4">
                                 <div>
                                     <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 ml-1">Full Name</label>
                                     <input
@@ -213,14 +323,26 @@ export default function SuperAdminUsersPage() {
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 ml-1">Password</label>
+                                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 ml-1">Phone Number</label>
+                                    <input
+                                        type="tel"
+                                        value={phoneNumber}
+                                        onChange={(e) => setPhoneNumber(e.target.value)}
+                                        className="w-full bg-gray-50 border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all font-medium"
+                                        placeholder="e.g. +971 50 123 4567"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 ml-1">
+                                        Password {editingUserId && "(Leave blank to keep unchanged)"}
+                                    </label>
                                     <input
                                         type="password"
-                                        required
+                                        required={!editingUserId}
                                         value={password}
                                         onChange={(e) => setPassword(e.target.value)}
                                         className="w-full bg-gray-50 border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all font-medium"
-                                        placeholder="Secure password"
+                                        placeholder={editingUserId ? "Leave blank to keep current" : "Secure password"}
                                     />
                                 </div>
                                 <div>
@@ -236,6 +358,49 @@ export default function SuperAdminUsersPage() {
                                         <option value="TENANT_USER">Tenant User</option>
                                     </select>
                                 </div>
+                                {role === 'PROPERTY_MANAGER' && (
+                                    <div className="space-y-3">
+                                        <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1 ml-1">Assign Properties</label>
+                                        <div className="flex flex-wrap gap-2 p-2 bg-gray-50 border border-border rounded-xl min-h-[44px]">
+                                            {selectedPropertyIds.map(id => {
+                                                const p = properties.find(prop => prop.property.id === id);
+                                                return (
+                                                    <div key={id} className="bg-primary/10 text-primary text-[10px] font-bold px-2 py-1 rounded-lg flex items-center gap-1 border border-primary/20">
+                                                        {p?.property.nameEn || "Property"}
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setSelectedPropertyIds(prev => prev.filter(i => i !== id))}
+                                                            className="hover:text-red-500 transition-colors"
+                                                        >
+                                                            <X size={10} />
+                                                        </button>
+                                                    </div>
+                                                );
+                                            })}
+                                            <select
+                                                value=""
+                                                onChange={(e) => {
+                                                    const val = e.target.value;
+                                                    if (val && !selectedPropertyIds.includes(val)) {
+                                                        setSelectedPropertyIds(prev => [...prev, val]);
+                                                    }
+                                                }}
+                                                className="bg-transparent text-[10px] font-bold focus:outline-none flex-1 min-w-[100px] cursor-pointer"
+                                            >
+                                                <option value="" disabled>Add property...</option>
+                                                {properties.map((p) => (
+                                                    <option
+                                                        key={p.property.id}
+                                                        value={p.property.id}
+                                                        className={selectedPropertyIds.includes(p.property.id) ? "text-gray-300" : ""}
+                                                    >
+                                                        {p.property.nameEn || p.property.nameAr || "Unnamed Property"}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </div>
+                                )}
                                 <div>
                                     <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 ml-1">Tenant (Organization)</label>
                                     <select
@@ -255,16 +420,28 @@ export default function SuperAdminUsersPage() {
                         <div className="p-6 border-t border-border bg-gray-50/50">
                             <button
                                 type="submit"
-                                form="new-user-form"
+                                form="user-form"
                                 className="w-full py-3 bg-primary text-primary-foreground rounded-xl text-xs font-black uppercase tracking-widest hover:opacity-90 active:scale-[0.98] transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-2 group"
                             >
                                 <Users size={14} className="group-hover:scale-110 transition-transform" />
-                                Provision User
+                                {editingUserId ? "Update User" : "Provision User"}
                             </button>
                         </div>
                     </div>
                 </div>
             )}
+
+            {/* Confirm Delete Dialog */}
+            <ConfirmDialog
+                isOpen={deleteDialogOpen}
+                onClose={() => setDeleteDialogOpen(false)}
+                onConfirm={confirmDelete}
+                title="Delete User"
+                description="Are you sure you want to delete this user? This action cannot be undone and will permanently remove the user from the system."
+                confirmText="Delete User"
+                isDestructive={true}
+            />
+
         </div>
     );
 }

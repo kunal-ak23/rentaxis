@@ -16,4 +16,6 @@ public interface UserTenantMembershipRepository
     void deleteByUserIdAndTenantId(UUID userId, UUID tenantId);
 
     boolean existsByUserIdAndTenantId(UUID userId, UUID tenantId);
+
+    void deleteByUserId(UUID userId);
 }

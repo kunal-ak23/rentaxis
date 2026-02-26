@@ -33,7 +33,8 @@ public class UserService {
     }
 
     @Transactional
-    public User createUser(String email, String rawPassword, String name, UserRole role, String tenantId) {
+    public User createUser(String email, String rawPassword, String name, UserRole role, String tenantId,
+            String phoneNumber) {
         if (userRepository.findByEmail(email).isPresent()) {
             throw new IllegalArgumentException("User with this email already exists.");
         }
@@ -43,6 +44,7 @@ public class UserService {
         user.setPasswordHash(passwordEncoder.encode(rawPassword));
         user.setName(name);
         user.setRole(role);
+        user.setPhoneNumber(phoneNumber);
         user.setTenantId(tenantId != null && !tenantId.isBlank() ? UUID.fromString(tenantId) : null);
 
         User saved = userRepository.save(user);
@@ -71,6 +73,45 @@ public class UserService {
 
     public List<User> getUsersByTenantId(UUID tenantId) {
         return userRepository.findByTenantId(tenantId);
+    }
+
+    @Transactional
+    public User updateUser(UUID id, String email, String rawPassword, String name, UserRole role, String tenantId,
+            String phoneNumber) {
+        User user = userRepository.findById(id).orElseThrow(() -> new IllegalArgumentException("User not found"));
+
+        if (!user.getEmail().equals(email) && userRepository.findByEmail(email).isPresent()) {
+            throw new IllegalArgumentException("User with this email already exists.");
+        }
+
+        user.setEmail(email);
+        user.setName(name);
+        user.setRole(role);
+        user.setPhoneNumber(phoneNumber);
+
+        UUID newTenantId = (tenantId != null && !tenantId.isBlank()) ? UUID.fromString(tenantId) : null;
+        user.setTenantId(newTenantId);
+
+        if (rawPassword != null && !rawPassword.isBlank()) {
+            user.setPasswordHash(passwordEncoder.encode(rawPassword));
+        }
+
+        User saved = userRepository.save(user);
+
+        // Auto-create tenant membership if new tenantId is provided
+        if (newTenantId != null && (role == UserRole.TENANT_ADMIN || role == UserRole.PROPERTY_MANAGER
+                || role == UserRole.TENANT_USER)) {
+            addTenantMembership(saved.getId(), newTenantId);
+        }
+
+        return saved;
+    }
+
+    @Transactional
+    public void deleteUser(UUID id) {
+        tenantMembershipRepository.deleteByUserId(id);
+        propertyAssignmentRepository.deleteByUserId(id);
+        userRepository.deleteById(id);
     }
 
     // --- Property Assignment Methods ---
@@ -121,5 +162,13 @@ public class UserService {
                 .stream()
                 .map(UserTenantMembership::getTenantId)
                 .toList();
+    }
+
+    public List<User> getAssignedManagers(UUID propertyId) {
+        List<UUID> userIds = propertyAssignmentRepository.findByPropertyId(propertyId)
+                .stream()
+                .map(UserPropertyAssignment::getUserId)
+                .toList();
+        return userRepository.findAllById(userIds);
     }
 }

@@ -64,7 +64,7 @@ export default function AuthenticatedLayout({
                 <div className="relative z-30">
                     <TopHeader />
                 </div>
-                <main className="flex-1 overflow-y-auto relative z-10 w-full">
+                <main className="flex-1 overflow-y-auto w-full relative">
                     <div className="max-w-7xl mx-auto py-8 px-4 md:px-8">
                         {children}
                     </div>

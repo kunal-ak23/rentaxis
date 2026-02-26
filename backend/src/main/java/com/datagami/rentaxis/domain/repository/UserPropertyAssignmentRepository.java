@@ -15,4 +15,6 @@ public interface UserPropertyAssignmentRepository extends JpaRepository<UserProp
     boolean existsByUserIdAndPropertyId(UUID userId, UUID propertyId);
 
     void deleteByUserIdAndPropertyId(UUID userId, UUID propertyId);
+
+    void deleteByUserId(UUID userId);
 }

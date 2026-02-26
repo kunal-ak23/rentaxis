@@ -24,12 +24,15 @@ public class PropertyService {
     private final PropertyRepository repository;
     private final UnitRepository unitRepository;
     private final UserPropertyAssignmentRepository propertyAssignmentRepository;
+    private final UserService userService;
 
     public PropertyService(PropertyRepository repository, UnitRepository unitRepository,
-            UserPropertyAssignmentRepository propertyAssignmentRepository) {
+            UserPropertyAssignmentRepository propertyAssignmentRepository,
+            UserService userService) {
         this.repository = repository;
         this.unitRepository = unitRepository;
         this.propertyAssignmentRepository = propertyAssignmentRepository;
+        this.userService = userService;
     }
 
     @Transactional
@@ -92,6 +95,11 @@ public class PropertyService {
         dto.setVacancies(units.stream().filter(u -> u.getStatus() == UnitStatus.VACANT).count());
         dto.setRevenueAtCapacity(units.stream().map(Unit::getExpectedRent).reduce(BigDecimal.ZERO, BigDecimal::add));
         dto.setActualRevenue(units.stream().map(Unit::getActualRent).reduce(BigDecimal.ZERO, BigDecimal::add));
+        dto.setAssignedManagers(userService.getAssignedManagers(property.getId()));
         return dto;
+    }
+
+    public List<com.datagami.rentaxis.domain.entity.User> getPropertyManagers(UUID propertyId) {
+        return userService.getAssignedManagers(propertyId);
     }
 }

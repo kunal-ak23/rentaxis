@@ -71,7 +71,8 @@ public class AuthController {
                 request.password(),
                 request.fullName(),
                 UserRole.TENANT_ADMIN,
-                org.getId().toString());
+                org.getId().toString(),
+                null);
 
         return ResponseEntity.ok(new AuthResponse(
                 user.getId().toString(),

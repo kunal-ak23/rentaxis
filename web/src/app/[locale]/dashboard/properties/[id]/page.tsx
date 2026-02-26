@@ -25,11 +25,13 @@ export default function PropertyDetailPage() {
     const [property, setProperty] = useState<any>(null);
     const [buildings, setBuildings] = useState<any[]>([]);
     const [units, setUnits] = useState<any[]>([]);
+    const [managers, setManagers] = useState<any[]>([]);
 
     useEffect(() => {
         fetchProperty();
         fetchBuildings();
         fetchUnits();
+        fetchManagers();
     }, [propertyId]);
 
     const fetchProperty = async () => {
@@ -45,6 +47,11 @@ export default function PropertyDetailPage() {
     const fetchUnits = async () => {
         const res = await fetch(`/api/proxy/v1/units/property/${propertyId}`);
         if (res.ok) setUnits(await res.json());
+    };
+
+    const fetchManagers = async () => {
+        const res = await fetch(`/api/proxy/v1/properties/${propertyId}/managers`);
+        if (res.ok) setManagers(await res.json());
     };
 
     if (!property) return <div className="p-8">Loading...</div>;
@@ -109,10 +116,25 @@ export default function PropertyDetailPage() {
 
             {/* Content areas */}
             {activeTab === "overview" && (
-                <div className="grid grid-cols-3 gap-6">
-                    <div className="bg-gray-50 rounded-2xl p-6 border border-gray-100">
-                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">{t("propertyManager")}</p>
-                        <p className="text-sm font-black text-foreground">{property.propertyManager || "Unassigned"}</p>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="bg-gray-50 rounded-2xl p-6 border border-gray-100 col-span-1 md:col-span-2">
+                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                            <Building2 size={12} className="text-primary/40" />
+                            {t("propertyManager")}
+                        </p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            {managers.length > 0 ? managers.map(m => (
+                                <div key={m.id} className="bg-white p-4 rounded-xl border border-border/50 shadow-sm flex flex-col gap-1">
+                                    <p className="text-sm font-black text-foreground">{m.name}</p>
+                                    <p className="text-[11px] font-bold text-gray-500">{m.email}</p>
+                                    {m.phoneNumber && (
+                                        <p className="text-[11px] font-black text-primary/70 font-mono mt-1">{m.phoneNumber}</p>
+                                    )}
+                                </div>
+                            )) : (
+                                <p className="text-xs font-medium text-gray-400 italic">No managers assigned.</p>
+                            )}
+                        </div>
                     </div>
                 </div>
             )}

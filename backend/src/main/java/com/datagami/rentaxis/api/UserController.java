@@ -22,7 +22,7 @@ public class UserController {
     }
 
     public record CreateUserRequest(String email, String password, String name, UserRole role, String tenantId,
-            List<UUID> propertyIds) {
+            String phoneNumber, List<UUID> propertyIds) {
     }
 
     @GetMapping
@@ -37,7 +37,8 @@ public class UserController {
                 request.password(),
                 request.name(),
                 request.role(),
-                request.tenantId());
+                request.tenantId(),
+                request.phoneNumber());
 
         // If creating a PROPERTY_MANAGER, assign properties
         if (request.role() == UserRole.PROPERTY_MANAGER && request.propertyIds() != null) {
@@ -47,6 +48,44 @@ public class UserController {
         }
 
         return ResponseEntity.ok(user);
+    }
+
+    public record UpdateUserRequest(String email, String password, String name, UserRole role, String tenantId,
+            String phoneNumber, List<UUID> propertyIds) {
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<User> updateUser(@PathVariable UUID id, @RequestBody UpdateUserRequest request) {
+        User user = userService.updateUser(
+                id,
+                request.email(),
+                request.password(),
+                request.name(),
+                request.role(),
+                request.tenantId(),
+                request.phoneNumber());
+
+        if (request.role() == UserRole.PROPERTY_MANAGER && request.propertyIds() != null) {
+            List<UUID> existingIds = userService.getAssignedPropertyIds(id);
+            for (UUID existingId : existingIds) {
+                if (!request.propertyIds().contains(existingId)) {
+                    userService.removePropertyFromUser(id, existingId);
+                }
+            }
+            for (UUID newId : request.propertyIds()) {
+                if (!existingIds.contains(newId)) {
+                    userService.assignPropertyToUser(id, newId);
+                }
+            }
+        }
+
+        return ResponseEntity.ok(user);
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteUser(@PathVariable UUID id) {
+        userService.deleteUser(id);
+        return ResponseEntity.ok().build();
     }
 
     @PostMapping("/{userId}/properties/{propertyId}")
@@ -61,5 +100,10 @@ public class UserController {
     public ResponseEntity<Void> removePropertyAssignment(@PathVariable UUID userId, @PathVariable UUID propertyId) {
         userService.removePropertyFromUser(userId, propertyId);
         return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("/{userId}/properties")
+    public ResponseEntity<List<UUID>> getUserProperties(@PathVariable UUID userId) {
+        return ResponseEntity.ok(userService.getAssignedPropertyIds(userId));
     }
 }

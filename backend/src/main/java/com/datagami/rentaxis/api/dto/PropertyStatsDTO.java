@@ -14,4 +14,5 @@ public class PropertyStatsDTO {
     private BigDecimal revenueAtCapacity;
     private BigDecimal actualRevenue;
     private long vacancies;
+    private java.util.List<com.datagami.rentaxis.domain.entity.User> assignedManagers;
 }

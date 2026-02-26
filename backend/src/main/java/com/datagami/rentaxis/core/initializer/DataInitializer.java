@@ -30,6 +30,7 @@ public class DataInitializer implements CommandLineRunner {
                     "admin123",
                     "System Admin",
                     UserRole.SUPER_ADMIN,
+                    null,
                     null);
             log.info("Default Super Admin created successfully.");
         }

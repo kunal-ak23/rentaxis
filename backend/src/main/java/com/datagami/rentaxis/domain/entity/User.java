@@ -36,6 +36,9 @@ public class User extends BaseTenantEntity {
     @Column(nullable = false)
     private UserStatus status = UserStatus.ACTIVE;
 
+    @Column(name = "phone_number")
+    private String phoneNumber;
+
     // Optional override of tenantId from BaseTenantEntity
     // If a user is SUPER_ADMIN, tenantId might be null
 }

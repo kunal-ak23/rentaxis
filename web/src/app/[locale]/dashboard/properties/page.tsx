@@ -17,8 +17,13 @@ type Property = {
     address: string;
     makaniNumber: string;
     type: string;
-    propertyManager?: string;
     fixedExpenses?: number;
+};
+
+type PropertyManager = {
+    id: string;
+    name: string;
+    phoneNumber?: string;
 };
 
 type PropertyStats = {
@@ -27,6 +32,7 @@ type PropertyStats = {
     revenueAtCapacity: number;
     actualRevenue: number;
     vacancies: number;
+    assignedManagers: PropertyManager[];
 };
 
 export default function PropertiesPage() {
@@ -47,7 +53,6 @@ export default function PropertiesPage() {
         address: "",
         makaniNumber: "",
         type: "RESIDENTIAL",
-        propertyManager: "",
         fixedExpenses: 0
     });
 
@@ -96,7 +101,6 @@ export default function PropertiesPage() {
                     address: "",
                     makaniNumber: "",
                     type: "RESIDENTIAL",
-                    propertyManager: "",
                     fixedExpenses: 0
                 });
             }
@@ -189,7 +193,7 @@ export default function PropertiesPage() {
                         <form onSubmit={handleProjectSubmit} className="grid grid-cols-2 gap-5">
                             <div className="col-span-1">
                                 <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("nameEn")}</label>
-                                <input required placeholder="Project Name (EN)" className="w-full bg-input border border-border p-3 rounded-xl text-xs" value={projectFormData.nameEn} onChange={ev => setProjectFormData({ ...projectFormData, nameEn: ev.target.value })} />
+                                <input placeholder="Project Name (EN)" className="w-full bg-input border border-border p-3 rounded-xl text-xs" value={projectFormData.nameEn} onChange={ev => setProjectFormData({ ...projectFormData, nameEn: ev.target.value })} />
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("nameAr")}</label>
@@ -202,10 +206,6 @@ export default function PropertiesPage() {
                                         <option key={opt} value={opt}>{e(opt)}</option>
                                     ))}
                                 </select>
-                            </div>
-                            <div className="col-span-1">
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("propertyManager")}</label>
-                                <input placeholder="e.g. John Doe" className="w-full bg-input border border-border p-3 rounded-xl text-xs" value={projectFormData.propertyManager} onChange={ev => setProjectFormData({ ...projectFormData, propertyManager: ev.target.value })} />
                             </div>
                             <div className="col-span-2 flex justify-end gap-3 mt-4">
                                 <button type="button" onClick={() => setShowProjectForm(false)} className="px-6 py-3 text-xs font-bold text-gray-500">{t("cancel")}</button>
@@ -302,12 +302,21 @@ export default function PropertiesPage() {
                                         </div>
                                         <span className="text-xs font-black text-foreground">AED {s.actualRevenue.toLocaleString()}</span>
                                     </div>
-                                    <div className="flex justify-between items-center group/item transition-all hover:translate-x-1">
+                                    <div className="flex justify-between items-start group/item transition-all hover:translate-x-1">
                                         <div className="flex items-center gap-2">
                                             <Users size={14} className="text-primary/40" />
                                             <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">{t("propertyManager")}</span>
                                         </div>
-                                        <span className="text-xs font-black text-foreground">{s.property.propertyManager || "Unassigned"}</span>
+                                        <div className="flex flex-col items-end gap-1">
+                                            {s.assignedManagers && s.assignedManagers.length > 0 ? s.assignedManagers.map(m => (
+                                                <div key={m.id} className="text-right">
+                                                    <p className="text-xs font-black text-foreground leading-tight">{m.name}</p>
+                                                    {m.phoneNumber && <p className="text-[9px] font-bold text-gray-400 font-mono">{m.phoneNumber}</p>}
+                                                </div>
+                                            )) : (
+                                                <span className="text-xs font-black text-foreground opacity-30 italic">Unassigned</span>
+                                            )}
+                                        </div>
                                     </div>
                                     <div className="flex justify-between items-center group/item transition-all hover:translate-x-1">
                                         <div className="flex items-center gap-2">
