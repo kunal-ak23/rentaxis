@@ -232,6 +232,7 @@ export default function SuperAdminUsersPage() {
                                     >
                                         <option value="SUPER_ADMIN">Super Admin</option>
                                         <option value="TENANT_ADMIN">Tenant Admin</option>
+                                        <option value="PROPERTY_MANAGER">Property Manager</option>
                                         <option value="TENANT_USER">Tenant User</option>
                                     </select>
                                 </div>

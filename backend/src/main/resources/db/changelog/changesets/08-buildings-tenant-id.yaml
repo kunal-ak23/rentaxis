@@ -1,0 +1,21 @@
+databaseChangeLog:
+  - changeSet:
+      id: 8
+      author: antigravity
+      comment: "Add tenant_id to buildings for tenant isolation"
+      changes:
+        - addColumn:
+            tableName: buildings
+            columns:
+              - column:
+                  name: tenant_id
+                  type: uuid
+
+        # Backfill tenant_id from parent property
+        - sql:
+            sql: "UPDATE buildings SET tenant_id = (SELECT tenant_id FROM properties WHERE properties.id = buildings.property_id) WHERE tenant_id IS NULL;"
+
+        - addNotNullConstraint:
+            tableName: buildings
+            columnName: tenant_id
+            columnDataType: uuid

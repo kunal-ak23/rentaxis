@@ -6,6 +6,7 @@ import Cookies from "js-cookie";
 import { useRouter } from "next/navigation";
 import { Building2, Check, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { hasPermission, type UserRole } from "@/lib/rbac";
 
 type Tenant = { id: string; name: string };
 
@@ -17,10 +18,11 @@ export function TenantSwitcher({ isCollapsed }: { isCollapsed: boolean }) {
     const [activeTenant, setActiveTenant] = useState<Tenant | null>(null);
 
     const userExt = session?.user as any;
-    const isSuperAdmin = userExt?.role === "SUPER_ADMIN";
+    const userRole = userExt?.role as UserRole | undefined;
+    const canSwitch = hasPermission(userRole, 'canSwitchTenants');
 
     useEffect(() => {
-        if (isSuperAdmin) {
+        if (canSwitch) {
             fetchTenants();
         }
 
@@ -29,22 +31,33 @@ export function TenantSwitcher({ isCollapsed }: { isCollapsed: boolean }) {
         if (savedTenantId && tenants.length > 0) {
             const found = tenants.find(t => t.id === savedTenantId);
             if (found) setActiveTenant(found);
-        } else if (!isSuperAdmin && userExt?.tenantId) {
-            // For regular tenant users, they only have one tenant
+        } else if (!canSwitch && userExt?.tenantId) {
+            // For non-switching roles, they only have one tenant
             Cookies.set("active_tenant_id", userExt.tenantId, { path: "/" });
         }
-    }, [isSuperAdmin, tenants.length, userExt?.tenantId]);
+    }, [canSwitch, tenants.length, userExt?.tenantId]);
 
     const fetchTenants = async () => {
         try {
-            const res = await fetch("/api/proxy/admin/tenants");
+            // Use the /me/tenants endpoint which is role-aware
+            const res = await fetch("/api/proxy/auth/me/tenants");
             if (res.ok) {
                 const data = await res.json();
                 setTenants(data);
 
                 // Set initial active tenant if not set
                 const savedTenantId = Cookies.get("active_tenant_id");
-                if (!savedTenantId && data.length > 0) {
+                if (savedTenantId) {
+                    const found = data.find((t: Tenant) => t.id === savedTenantId);
+                    if (found) {
+                        setActiveTenant(found);
+                    } else if (data.length > 0) {
+                        // Saved tenant not in list, select first available
+                        setActiveTenant(data[0]);
+                        Cookies.set("active_tenant_id", data[0].id, { path: "/" });
+                        router.refresh();
+                    }
+                } else if (data.length > 0) {
                     setActiveTenant(data[0]);
                     Cookies.set("active_tenant_id", data[0].id, { path: "/" });
                     router.refresh();
@@ -66,16 +79,18 @@ export function TenantSwitcher({ isCollapsed }: { isCollapsed: boolean }) {
         router.refresh(); // Refresh to apply new context
     };
 
-    if (!isSuperAdmin && !userExt?.tenantId) return null; // Defensive
+    if (!userExt?.tenantId && userRole !== 'SUPER_ADMIN') return null; // Defensive
+
+    const isSuperAdmin = userRole === 'SUPER_ADMIN';
 
     return (
         <div className="relative mb-6 px-3">
             <button
-                onClick={() => isSuperAdmin && setIsOpen(!isOpen)}
+                onClick={() => canSwitch && setIsOpen(!isOpen)}
                 className={cn(
                     "w-full flex items-center justify-between bg-gray-50 border border-border p-2 rounded-xl transition-all hover:bg-gray-100",
                     isCollapsed ? "justify-center" : "",
-                    !isSuperAdmin && "cursor-default hover:bg-gray-50"
+                    !canSwitch && "cursor-default hover:bg-gray-50"
                 )}
             >
                 {isCollapsed ? (
@@ -98,29 +113,32 @@ export function TenantSwitcher({ isCollapsed }: { isCollapsed: boolean }) {
                     </div>
                 )}
 
-                {!isCollapsed && isSuperAdmin && (
+                {!isCollapsed && canSwitch && (
                     <ChevronsUpDown size={14} className="text-gray-400 shrink-0" />
                 )}
             </button>
 
             {/* Dropdown Menu */}
-            {isOpen && isSuperAdmin && !isCollapsed && (
+            {isOpen && canSwitch && !isCollapsed && (
                 <>
                     <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
                     <div className="absolute top-full left-3 right-3 mt-2 bg-white rounded-xl shadow-xl border border-border z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
                         <div className="max-h-[200px] overflow-y-auto p-1">
-                            <button
-                                onClick={() => handleSelect(null)}
-                                className={cn(
-                                    "w-full flex items-center justify-between p-2.5 rounded-lg text-xs font-bold transition-colors",
-                                    !activeTenant ? "bg-primary/5 text-primary" : "text-gray-600 hover:bg-gray-50"
-                                )}
-                            >
-                                Global System View
-                                {!activeTenant && <Check size={14} className="text-primary" />}
-                            </button>
-
-                            <div className="h-px bg-border my-1 mx-2" />
+                            {isSuperAdmin && (
+                                <>
+                                    <button
+                                        onClick={() => handleSelect(null)}
+                                        className={cn(
+                                            "w-full flex items-center justify-between p-2.5 rounded-lg text-xs font-bold transition-colors",
+                                            !activeTenant ? "bg-primary/5 text-primary" : "text-gray-600 hover:bg-gray-50"
+                                        )}
+                                    >
+                                        Global System View
+                                        {!activeTenant && <Check size={14} className="text-primary" />}
+                                    </button>
+                                    <div className="h-px bg-border my-1 mx-2" />
+                                </>
+                            )}
 
                             {tenants.map((t) => (
                                 <button

@@ -11,3 +11,7 @@ databaseChangeLog:
       file: db/changelog/changesets/05-properties-units-metrics.yaml
   - include:
       file: db/changelog/changesets/06-chart-of-accounts.yaml
+  - include:
+      file: db/changelog/changesets/07-rbac-enhancements.yaml
+  - include:
+      file: db/changelog/changesets/08-buildings-tenant-id.yaml

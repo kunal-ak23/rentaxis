@@ -7,20 +7,21 @@ import { usePathname } from "next/navigation";
 import { useLocale } from "next-intl";
 import { cn } from "@/lib/utils";
 import { Moon, Sun } from "lucide-react";
+import { getRoleLabel, type UserRole } from "@/lib/rbac";
 
 export function TopHeader() {
     const { data: session } = useSession();
     const pathname = usePathname();
     const locale = useLocale();
+    const userRole = (session?.user as any)?.role as UserRole | undefined;
 
-    // Replicating the design aesthetic requested by the user
     return (
         <header className="relative w-full h-16 bg-white/40 backdrop-blur-md border-b border-gray-200/50 z-30 flex items-center justify-between px-6">
             <div className="flex items-center relative w-full justify-between">
                 {/* Left Side: Context Switcher */}
                 <div className="flex items-center w-[300px]">
                     {session?.user && (
-                        <div className="w-full pt-6"> {/* Added pt to offset the absolute switch logic if needed, but relative container works better */}
+                        <div className="w-full pt-6">
                             <TenantSwitcher isCollapsed={false} />
                         </div>
                     )}
@@ -62,7 +63,7 @@ export function TopHeader() {
                             <div className="flex flex-col items-end">
                                 <span className="text-sm font-bold text-gray-800">{session.user.name || 'User'}</span>
                                 <span className="text-[10px] font-medium text-gray-400 uppercase tracking-widest">
-                                    {(session.user as any).role?.replace('_', ' ')}
+                                    {userRole ? getRoleLabel(userRole) : ''}
                                 </span>
                             </div>
                             <div className="w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold shadow-sm shadow-primary/20 border border-primary/20">

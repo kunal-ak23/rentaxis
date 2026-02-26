@@ -1,0 +1,99 @@
+databaseChangeLog:
+  - changeSet:
+      id: 7
+      author: antigravity
+      comment: "RBAC enhancements: multi-tenant memberships, property assignments, user status"
+      changes:
+        - addColumn:
+            tableName: users
+            columns:
+              - column:
+                  name: status
+                  type: varchar(20)
+                  defaultValue: ACTIVE
+                  constraints:
+                    nullable: false
+
+        - createTable:
+            tableName: user_tenant_memberships
+            columns:
+              - column:
+                  name: user_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: tenant_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamp
+                  defaultValueComputed: CURRENT_TIMESTAMP
+
+        - addPrimaryKey:
+            tableName: user_tenant_memberships
+            columnNames: user_id, tenant_id
+            constraintName: pk_user_tenant_memberships
+
+        - addForeignKeyConstraint:
+            baseTableName: user_tenant_memberships
+            baseColumnNames: user_id
+            referencedTableName: users
+            referencedColumnNames: id
+            constraintName: fk_utm_user
+            onDelete: CASCADE
+
+        - addForeignKeyConstraint:
+            baseTableName: user_tenant_memberships
+            baseColumnNames: tenant_id
+            referencedTableName: landlord_org
+            referencedColumnNames: id
+            constraintName: fk_utm_tenant
+            onDelete: CASCADE
+
+        - createTable:
+            tableName: user_property_assignments
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: user_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: property_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: assigned_at
+                  type: timestamp
+                  defaultValueComputed: CURRENT_TIMESTAMP
+
+        - addUniqueConstraint:
+            tableName: user_property_assignments
+            columnNames: user_id, property_id
+            constraintName: uq_user_property
+
+        - addForeignKeyConstraint:
+            baseTableName: user_property_assignments
+            baseColumnNames: user_id
+            referencedTableName: users
+            referencedColumnNames: id
+            constraintName: fk_upa_user
+            onDelete: CASCADE
+
+        - addForeignKeyConstraint:
+            baseTableName: user_property_assignments
+            baseColumnNames: property_id
+            referencedTableName: properties
+            referencedColumnNames: id
+            constraintName: fk_upa_property
+            onDelete: CASCADE

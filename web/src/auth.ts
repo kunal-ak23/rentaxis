@@ -24,13 +24,14 @@ export const authOptions: NextAuthOptions = {
 
                     if (res.ok) {
                         const user = await res.json();
-                        // user object from backend: {id, email, name, role, tenantId}
+                        // user object from backend: {id, email, name, role, tenantId, tenantIds}
                         return {
                             id: user.id,
                             email: user.email,
                             name: user.name,
                             role: user.role,
-                            tenantId: user.tenantId
+                            tenantId: user.tenantId,
+                            tenantIds: user.tenantIds || [],
                         } as any;
                     }
                 } catch (e) {
@@ -47,6 +48,7 @@ export const authOptions: NextAuthOptions = {
                 token.tenantId = (user as any).tenantId;
                 token.role = (user as any).role;
                 token.id = user.id;
+                token.tenantIds = (user as any).tenantIds || [];
             }
             return token;
         },
@@ -55,6 +57,7 @@ export const authOptions: NextAuthOptions = {
                 (session.user as any).tenantId = token.tenantId;
                 (session.user as any).role = token.role;
                 (session.user as any).id = token.id;
+                (session.user as any).tenantIds = token.tenantIds || [];
             }
             return session;
         },

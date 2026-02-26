@@ -14,32 +14,50 @@ import {
     ShieldCheck,
     BookOpen,
     Receipt,
-    BarChart3
+    BarChart3,
+    Home
 } from 'lucide-react';
 import { Link } from "@/i18n/routing";
 import { useTranslations, useLocale } from "next-intl";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { signOut } from "next-auth/react";
+import { signOut, useSession } from "next-auth/react";
+import { hasPermission, type UserRole } from "@/lib/rbac";
 
 export default function MvpSidebar() {
     const t = useTranslations("MasterData");
     const locale = useLocale();
     const pathname = usePathname();
     const [isCollapsed, setIsCollapsed] = useState(false);
+    const { data: session } = useSession();
+    const userRole = (session?.user as any)?.role as UserRole | undefined;
 
+    // Build menu items based on role permissions
     const menuItems = [
-        { name: t("properties"), href: "/dashboard/properties", icon: LayoutDashboard },
-        { name: "Tenants", href: "/superadmin/tenants", icon: ShieldCheck },
-        { name: "Users", href: "/superadmin/users", icon: Users },
+        ...(hasPermission(userRole, 'canViewProperties')
+            ? [{ name: t("properties"), href: "/dashboard/properties", icon: LayoutDashboard }]
+            : []),
+        ...(hasPermission(userRole, 'canManageTenants')
+            ? [{ name: "Tenants", href: "/superadmin/tenants", icon: ShieldCheck }]
+            : []),
+        ...(hasPermission(userRole, 'canManageUsers')
+            ? [{ name: "Users", href: "/superadmin/users", icon: Users }]
+            : []),
     ];
 
-    const financeItems = [
+    const financeItems = hasPermission(userRole, 'canAccessFinance') ? [
         { name: t("chartOfAccounts"), href: "/dashboard/finance/accounts", icon: BookOpen },
         { name: t("transactions"), href: "/dashboard/finance/transactions", icon: Receipt },
         { name: t("reports"), href: "/dashboard/finance/reports", icon: BarChart3 },
-    ];
+    ] : [];
+
+    // Tenant user minimal items (placeholder for future My Unit / My Payments pages)
+    const tenantUserItems = userRole === 'TENANT_USER' ? [
+        { name: "My Unit", href: "/dashboard/my-unit", icon: Home },
+    ] : [];
+
+    const allItems = menuItems.length > 0 ? menuItems : tenantUserItems;
 
     return (
         <aside
@@ -70,10 +88,12 @@ export default function MvpSidebar() {
             </div>
 
             <nav className="flex-1 px-3 space-y-1">
-                <div className={cn("px-3 mb-2 text-[9px] font-bold text-gray-400 uppercase tracking-[0.2em]", isCollapsed && "hidden")}>
-                    Overview
-                </div>
-                {menuItems.map((item) => {
+                {allItems.length > 0 && (
+                    <div className={cn("px-3 mb-2 text-[9px] font-bold text-gray-400 uppercase tracking-[0.2em]", isCollapsed && "hidden")}>
+                        Overview
+                    </div>
+                )}
+                {allItems.map((item) => {
                     const isActive = pathname.includes(item.href);
                     const Icon = item.icon;
                     return (
@@ -100,41 +120,45 @@ export default function MvpSidebar() {
                     );
                 })}
 
-                <div className={cn("px-3 mt-6 mb-2 text-[9px] font-bold text-gray-400 uppercase tracking-[0.2em]", isCollapsed && "hidden")}>
-                    Finance
-                </div>
-                {financeItems.map((item) => {
-                    const isActive = pathname.includes(item.href);
-                    const Icon = item.icon;
-                    return (
-                        <Link
-                            key={item.href}
-                            href={item.href}
-                            className={cn(
-                                "group flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 text-xs font-semibold relative",
-                                isActive
-                                    ? "bg-accent text-foreground"
-                                    : "text-gray-400 hover:bg-gray-50 hover:text-foreground",
-                                isCollapsed && "justify-center"
-                            )}
-                        >
-                            <Icon size={16} className={cn("transition-transform", !isActive && "group-hover:scale-105")} />
-                            {!isCollapsed && <span className="flex-1">{item.name}</span>}
-                            {isActive && !isCollapsed && (
-                                <motion.div
-                                    layoutId="sidebar-finance-indicator"
-                                    className="absolute left-[-12px] w-1 h-4 bg-primary rounded-r-full"
-                                />
-                            )}
-                        </Link>
-                    );
-                })}
+                {financeItems.length > 0 && (
+                    <>
+                        <div className={cn("px-3 mt-6 mb-2 text-[9px] font-bold text-gray-400 uppercase tracking-[0.2em]", isCollapsed && "hidden")}>
+                            Finance
+                        </div>
+                        {financeItems.map((item) => {
+                            const isActive = pathname.includes(item.href);
+                            const Icon = item.icon;
+                            return (
+                                <Link
+                                    key={item.href}
+                                    href={item.href}
+                                    className={cn(
+                                        "group flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 text-xs font-semibold relative",
+                                        isActive
+                                            ? "bg-accent text-foreground"
+                                            : "text-gray-400 hover:bg-gray-50 hover:text-foreground",
+                                        isCollapsed && "justify-center"
+                                    )}
+                                >
+                                    <Icon size={16} className={cn("transition-transform", !isActive && "group-hover:scale-105")} />
+                                    {!isCollapsed && <span className="flex-1">{item.name}</span>}
+                                    {isActive && !isCollapsed && (
+                                        <motion.div
+                                            layoutId="sidebar-finance-indicator"
+                                            className="absolute left-[-12px] w-1 h-4 bg-primary rounded-r-full"
+                                        />
+                                    )}
+                                </Link>
+                            );
+                        })}
+                    </>
+                )}
             </nav>
 
             <div className="mt-auto px-3 pb-8 space-y-4">
                 {!isCollapsed && (
                     <div className="px-3 text-[8px] text-gray-400 font-bold uppercase tracking-wider text-center">
-                        Rel 0.4.2
+                        Rel 0.5.0
                     </div>
                 )}
 

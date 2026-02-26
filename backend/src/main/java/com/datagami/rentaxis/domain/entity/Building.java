@@ -10,7 +10,7 @@ import java.util.UUID;
 @Table(name = "buildings")
 @Getter
 @Setter
-public class Building {
+public class Building extends BaseTenantEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)

@@ -13,13 +13,17 @@
 > | Login page (frontend) | ✅ Done (`/auth/login/page.tsx`) |
 > | Register page (frontend) | ✅ Done (`/auth/register/page.tsx`) |
 > | `DataInitializer` (seed users) | ✅ Done |
-> | `roles` / `user_roles` join table | ⬜ Not Started (roles stored as enum on User) |
-> | `user_property_assignments` table | ⬜ Not Started |
+> | `PROPERTY_MANAGER` role + `UserStatus` enum | ✅ Done |
+> | `user_tenant_memberships` table | ✅ Done (`07-rbac-enhancements.yaml`) |
+> | `user_property_assignments` table | ✅ Done (`07-rbac-enhancements.yaml`) |
+> | `@PreAuthorize` method-level security | ✅ Done (all 6 controllers) |
+> | Role-based sidebar filtering | ✅ Done (`MvpSidebar.tsx`) |
+> | Multi-tenant TenantSwitcher | ✅ Done (`TenantSwitcher.tsx`) |
+> | Frontend RBAC utility | ✅ Done (`rbac.ts`) |
 > | User Invite API (`POST /api/v1/users/invite`) | ⬜ Not Started |
 > | User Directory UI (datatable) | ⬜ Not Started |
 > | Invite Modal with role/property assignment | ⬜ Not Started |
 > | User Profile Drawer (language override) | ⬜ Not Started |
-> | `@PreAuthorize` method-level security | ⬜ Not Started |
 > | Locale preference per user (`PUT /users/me/locale`) | ⬜ Not Started |
 > 
 > *Last reviewed: 2026-02-26*

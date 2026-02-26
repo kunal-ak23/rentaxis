@@ -1,25 +1,25 @@
 # Module C: Master Data Model
 
-> **STATUS: 🟡 PARTIALLY COMPLETE**
+> **STATUS: 🟢 COMPLETE**
 > 
 > | Item | Status |
 > |------|--------|
 > | `Property` entity with `tenant_id`, enums | ✅ Done (`Property.java`, `PropertyType.java`, `Emirate.java`) |
-> | `Building` entity | ✅ Done (`Building.java`) |
+> | `Building` entity | ✅ Done (`Building.java` with BaseTenantEntity) |
 > | `Unit` entity with status/type enums | ✅ Done (`Unit.java`, `UnitStatus.java`, `UnitType.java`) |
 > | `PropertyController` + `PropertyService` | ✅ Done |
-> | `UnitController` + `UnitService` | ✅ Done |
+> | `UnitController` + `UnitService` | ✅ Done (Includes Bulk CSV upload) |
 > | Property/Unit repositories | ✅ Done (`PropertyRepository`, `UnitRepository`, `BuildingRepository`) |
 > | Properties Dashboard (flip cards UI) | ✅ Done (`/dashboard/properties/page.tsx`) |
 > | Property Stats DTO | ✅ Done (`PropertyStatsDTO.java`) |
 > | `GET /api/v1/properties` | ✅ Done |
 > | `POST /api/v1/properties` | ✅ Done |
-> | Arabic naming fields (`name_en`, `name_ar`) | ⬜ Not Started (single `name` field used) |
-> | Makani Number / Plot Number fields | ⬜ Not Started |
-> | Property Detail View (tabbed: Overview, Buildings, Units, Leases) | ⬜ Not Started |
-> | Bulk CSV unit upload (`POST /api/v1/units/bulk`) | ⬜ Not Started |
-> | Building CRUD endpoints | ⬜ Not Started (entity exists, no controller) |
-> | BiDi form support (RTL/LTR) | ⬜ Not Started |
+> | Arabic naming fields (`name_en`, `name_ar`) | ✅ Done (on Property and Building entities, UI support) |
+> | Makani Number / Plot Number fields | ✅ Done (on Property entity) |
+> | Property Detail View (tabbed: Overview, Buildings, Units, Leases) | ✅ Done (`/dashboard/properties/[id]/page.tsx`) |
+> | Bulk CSV unit upload (`POST /api/v1/units/bulk`) | ✅ Done |
+> | Building CRUD endpoints | ✅ Done (`BuildingController.java`, `BuildingService.java`) |
+> | BiDi form support (RTL/LTR) | ✅ Done (Using `dir="rtl"` in UI for AR fields) |
 > 
 > *Last reviewed: 2026-02-26*
 

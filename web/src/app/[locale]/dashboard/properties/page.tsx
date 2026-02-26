@@ -6,6 +6,8 @@ import { Plus, MapPin, Building2, Hash, ArrowRight, X, Users, DollarSign, PieCha
 import { Link } from "@/i18n/routing";
 import { cn } from "@/lib/utils";
 import CardFlip from "@/components/ui/card-flip";
+import { useSession } from "next-auth/react";
+import { hasPermission, type UserRole } from "@/lib/rbac";
 
 type Property = {
     id: string;
@@ -34,6 +36,9 @@ export default function PropertiesPage() {
     const [stats, setStats] = useState<PropertyStats[]>([]);
     const [showProjectForm, setShowProjectForm] = useState(false);
     const [showPropertyForm, setShowPropertyForm] = useState(false);
+    const { data: session } = useSession();
+    const userRole = (session?.user as any)?.role as UserRole | undefined;
+    const canCreate = hasPermission(userRole, 'canCreateProperties');
 
     const [projectFormData, setProjectFormData] = useState({
         nameEn: "",
@@ -147,29 +152,31 @@ export default function PropertiesPage() {
                         Manage your real estate projects and their individual properties.
                     </p>
                 </div>
-                <div className="flex gap-3">
-                    <button
-                        onClick={() => setShowProjectForm(true)}
-                        className="flex items-center gap-2 bg-primary text-primary-foreground px-5 py-2.5 rounded-full text-xs font-bold hover:opacity-90 transition-all shadow-lg shadow-primary/10 active:scale-95"
-                    >
-                        <Plus size={14} />
-                        {t("addProject")}
-                    </button>
-                    <button
-                        onClick={() => {
-                            if (stats.length === 0) {
-                                alert("Please add a project first.");
-                                return;
-                            }
-                            setPropertyFormData(prev => ({ ...prev, propertyId: stats[0].property.id }));
-                            setShowPropertyForm(true);
-                        }}
-                        className="flex items-center gap-2 bg-white text-foreground border border-border px-5 py-2.5 rounded-full text-xs font-bold hover:bg-gray-50 transition-all shadow-sm active:scale-95"
-                    >
-                        <Plus size={14} />
-                        {t("addProperty")}
-                    </button>
-                </div>
+                {canCreate && (
+                    <div className="flex gap-3">
+                        <button
+                            onClick={() => setShowProjectForm(true)}
+                            className="flex items-center gap-2 bg-primary text-primary-foreground px-5 py-2.5 rounded-full text-xs font-bold hover:opacity-90 transition-all shadow-lg shadow-primary/10 active:scale-95"
+                        >
+                            <Plus size={14} />
+                            {t("addProject")}
+                        </button>
+                        <button
+                            onClick={() => {
+                                if (stats.length === 0) {
+                                    alert("Please add a project first.");
+                                    return;
+                                }
+                                setPropertyFormData(prev => ({ ...prev, propertyId: stats[0].property.id }));
+                                setShowPropertyForm(true);
+                            }}
+                            className="flex items-center gap-2 bg-white text-foreground border border-border px-5 py-2.5 rounded-full text-xs font-bold hover:bg-gray-50 transition-all shadow-sm active:scale-95"
+                        >
+                            <Plus size={14} />
+                            {t("addProperty")}
+                        </button>
+                    </div>
+                )}
             </div>
 
             {/* Project Form Modal */}
@@ -311,10 +318,10 @@ export default function PropertiesPage() {
                                     </div>
                                 </div>
                                 <Link
-                                    href={`/dashboard/properties/${s.property.id}/units`}
+                                    href={`/dashboard/properties/${s.property.id}`}
                                     className="mt-6 flex items-center justify-center gap-2 bg-white text-xs font-black text-primary py-3 rounded-2xl border border-primary/20 hover:bg-primary hover:text-white transition-all group/link shadow-sm"
                                 >
-                                    Manage Properties
+                                    Manage Property
                                     <ArrowRight size={14} className="group-hover/link:translate-x-1 transition-transform" />
                                 </Link>
                             </div>
@@ -328,10 +335,14 @@ export default function PropertiesPage() {
                     <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center text-gray-200 shadow-sm mb-6">
                         <Building2 size={32} />
                     </div>
-                    <p className="text-sm font-bold text-gray-400 mb-6 uppercase tracking-widest">No Projects Found</p>
-                    <button onClick={() => setShowProjectForm(true)} className="text-xs font-black text-foreground border-b-2 border-primary pb-0.5 hover:text-primary transition-all">
-                        {t("addProject")}
-                    </button>
+                    <p className="text-sm font-bold text-gray-400 mb-6 uppercase tracking-widest">
+                        {canCreate ? 'No Projects Found' : 'No Properties Assigned'}
+                    </p>
+                    {canCreate && (
+                        <button onClick={() => setShowProjectForm(true)} className="text-xs font-black text-foreground border-b-2 border-primary pb-0.5 hover:text-primary transition-all">
+                            {t("addProject")}
+                        </button>
+                    )}
                 </div>
             )}
         </div>

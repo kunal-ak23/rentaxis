@@ -31,4 +31,24 @@ public class UnitService {
     public List<Unit> getAllUnits() {
         return repository.findAll();
     }
+
+    @Transactional
+    public List<Unit> bulkCreateUnits(UUID propertyId, UUID buildingId, List<Unit> units) {
+        for (Unit unit : units) {
+            // These relationships should ideally be resolved correctly
+            // via real Property/Building reference loading, but we set IDs for hibernate
+            // proxy if doing it optimally
+            if (unit.getProperty() == null) {
+                com.datagami.rentaxis.domain.entity.Property p = new com.datagami.rentaxis.domain.entity.Property();
+                p.setId(propertyId);
+                unit.setProperty(p);
+            }
+            if (buildingId != null && unit.getBuilding() == null) {
+                com.datagami.rentaxis.domain.entity.Building b = new com.datagami.rentaxis.domain.entity.Building();
+                b.setId(buildingId);
+                unit.setBuilding(b);
+            }
+        }
+        return repository.saveAll(units);
+    }
 }
