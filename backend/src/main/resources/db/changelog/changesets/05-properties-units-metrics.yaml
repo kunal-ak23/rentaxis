@@ -1,0 +1,29 @@
+databaseChangeLog:
+  - changeSet:
+      id: 05-properties-units-metrics
+      author: rentaxis-system
+      changes:
+        - addColumn:
+            tableName: properties
+            columns:
+              - column:
+                  name: property_manager
+                  type: varchar(255)
+              - column:
+                  name: fixed_expenses
+                  type: decimal(12,2)
+                  defaultValueNumeric: 0
+        - addColumn:
+            tableName: units
+            columns:
+              - column:
+                  name: expected_rent
+                  type: decimal(12,2)
+                  defaultValueNumeric: 0
+              - column:
+                  name: actual_rent
+                  type: decimal(12,2)
+                  defaultValueNumeric: 0
+              - column:
+                  name: current_tenant_name
+                  type: varchar(255)

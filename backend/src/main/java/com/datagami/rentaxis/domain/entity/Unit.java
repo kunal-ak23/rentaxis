@@ -38,4 +38,13 @@ public class Unit extends BaseTenantEntity {
 
     @Enumerated(EnumType.STRING)
     private UnitStatus status = UnitStatus.VACANT;
+
+    @Column(name = "expected_rent")
+    private BigDecimal expectedRent = BigDecimal.ZERO;
+
+    @Column(name = "actual_rent")
+    private BigDecimal actualRent = BigDecimal.ZERO;
+
+    @Column(name = "current_tenant_name")
+    private String currentTenantName;
 }

@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.api;
 
+import com.datagami.rentaxis.api.dto.PropertyStatsDTO;
 import com.datagami.rentaxis.core.service.PropertyService;
 import com.datagami.rentaxis.domain.entity.Property;
 import org.springframework.http.ResponseEntity;
@@ -24,8 +25,8 @@ public class PropertyController {
     }
 
     @GetMapping
-    public ResponseEntity<List<Property>> getAllProperties() {
-        return ResponseEntity.ok(service.getAllProperties());
+    public ResponseEntity<List<PropertyStatsDTO>> getAllProperties() {
+        return ResponseEntity.ok(service.getAllPropertiesWithStats());
     }
 
     @GetMapping("/{id}")

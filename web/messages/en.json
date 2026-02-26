@@ -4,8 +4,10 @@
         "portal": "Landlord Portal"
     },
     "MasterData": {
+        "projects": "Projects",
         "properties": "Properties",
         "units": "Units",
+        "addProject": "Add Project",
         "addProperty": "Add Property",
         "addUnit": "Add Unit",
         "nameEn": "Name (English)",
@@ -20,7 +22,12 @@
         "status": "Status",
         "floors": "Floors",
         "create": "Create",
-        "cancel": "Cancel"
+        "cancel": "Cancel",
+        "revenueAtCapacity": "Revenue at Capacity",
+        "actualRent": "Actual Rent",
+        "vacancies": "Vacancies",
+        "propertyManager": "Property Manager",
+        "fixedExpenses": "Fixed Expenses"
     },
     "Emirates": {
         "DUBAI": "Dubai",

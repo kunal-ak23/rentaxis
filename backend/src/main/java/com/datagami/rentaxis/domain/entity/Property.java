@@ -6,6 +6,7 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.math.BigDecimal;
 import java.util.UUID;
 
 @Entity
@@ -35,4 +36,10 @@ public class Property extends BaseTenantEntity {
 
     @Enumerated(EnumType.STRING)
     private PropertyType type = PropertyType.RESIDENTIAL;
+
+    @Column(name = "property_manager")
+    private String propertyManager;
+
+    @Column(name = "fixed_expenses")
+    private BigDecimal fixedExpenses = BigDecimal.ZERO;
 }

@@ -1,7 +1,9 @@
 package com.datagami.rentaxis.domain.entity;
 
+import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import jakarta.persistence.Column;
 import jakarta.persistence.MappedSuperclass;
+import jakarta.persistence.PrePersist;
 import org.hibernate.annotations.Filter;
 import org.hibernate.annotations.FilterDef;
 import org.hibernate.annotations.ParamDef;
@@ -22,5 +24,12 @@ public abstract class BaseTenantEntity {
 
     public void setTenantId(UUID tenantId) {
         this.tenantId = tenantId;
+    }
+
+    @PrePersist
+    public void onPrePersist() {
+        if (this.tenantId == null) {
+            this.tenantId = TenantContextHolder.getTenantId();
+        }
     }
 }
