@@ -9,3 +9,5 @@ databaseChangeLog:
       file: db/changelog/changesets/04-users-fix.yaml
   - include:
       file: db/changelog/changesets/05-properties-units-metrics.yaml
+  - include:
+      file: db/changelog/changesets/06-chart-of-accounts.yaml

@@ -11,7 +11,10 @@ import {
     ChevronRight,
     LogOut,
     Menu,
-    ShieldCheck
+    ShieldCheck,
+    BookOpen,
+    Receipt,
+    BarChart3
 } from 'lucide-react';
 import { Link } from "@/i18n/routing";
 import { useTranslations, useLocale } from "next-intl";
@@ -30,6 +33,12 @@ export default function MvpSidebar() {
         { name: t("properties"), href: "/dashboard/properties", icon: LayoutDashboard },
         { name: "Tenants", href: "/superadmin/tenants", icon: ShieldCheck },
         { name: "Users", href: "/superadmin/users", icon: Users },
+    ];
+
+    const financeItems = [
+        { name: t("chartOfAccounts"), href: "/dashboard/finance/accounts", icon: BookOpen },
+        { name: t("transactions"), href: "/dashboard/finance/transactions", icon: Receipt },
+        { name: t("reports"), href: "/dashboard/finance/reports", icon: BarChart3 },
     ];
 
     return (
@@ -84,6 +93,36 @@ export default function MvpSidebar() {
                             {isActive && !isCollapsed && (
                                 <motion.div
                                     layoutId="sidebar-indicator"
+                                    className="absolute left-[-12px] w-1 h-4 bg-primary rounded-r-full"
+                                />
+                            )}
+                        </Link>
+                    );
+                })}
+
+                <div className={cn("px-3 mt-6 mb-2 text-[9px] font-bold text-gray-400 uppercase tracking-[0.2em]", isCollapsed && "hidden")}>
+                    Finance
+                </div>
+                {financeItems.map((item) => {
+                    const isActive = pathname.includes(item.href);
+                    const Icon = item.icon;
+                    return (
+                        <Link
+                            key={item.href}
+                            href={item.href}
+                            className={cn(
+                                "group flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 text-xs font-semibold relative",
+                                isActive
+                                    ? "bg-accent text-foreground"
+                                    : "text-gray-400 hover:bg-gray-50 hover:text-foreground",
+                                isCollapsed && "justify-center"
+                            )}
+                        >
+                            <Icon size={16} className={cn("transition-transform", !isActive && "group-hover:scale-105")} />
+                            {!isCollapsed && <span className="flex-1">{item.name}</span>}
+                            {isActive && !isCollapsed && (
+                                <motion.div
+                                    layoutId="sidebar-finance-indicator"
                                     className="absolute left-[-12px] w-1 h-4 bg-primary rounded-r-full"
                                 />
                             )}

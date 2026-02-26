@@ -1,0 +1,194 @@
+databaseChangeLog:
+  - changeSet:
+      id: 06-chart-of-accounts
+      author: rentaxis-system
+      changes:
+        - createTable:
+            tableName: accounts
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: tenant_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: code
+                  type: varchar(20)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: name
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: account_type
+                  type: varchar(20)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: parent_code
+                  type: varchar(20)
+              - column:
+                  name: description
+                  type: text
+              - column:
+                  name: is_system
+                  type: boolean
+                  defaultValueBoolean: false
+              - column:
+                  name: created_at
+                  type: timestamp
+                  defaultValueComputed: CURRENT_TIMESTAMP
+              - column:
+                  name: updated_at
+                  type: timestamp
+                  defaultValueComputed: CURRENT_TIMESTAMP
+
+        - createIndex:
+            indexName: idx_accounts_tenant_id
+            tableName: accounts
+            columns:
+              - column:
+                  name: tenant_id
+        - createIndex:
+            indexName: idx_accounts_code
+            tableName: accounts
+            columns:
+              - column:
+                  name: code
+        - createIndex:
+            indexName: idx_accounts_account_type
+            tableName: accounts
+            columns:
+              - column:
+                  name: account_type
+
+        - addUniqueConstraint:
+            tableName: accounts
+            columnNames: tenant_id, code
+            constraintName: uq_accounts_tenant_code
+
+        - createTable:
+            tableName: financial_transactions
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: tenant_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: date
+                  type: date
+                  constraints:
+                    nullable: false
+              - column:
+                  name: description
+                  type: varchar(500)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: account_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_fin_txn_account
+                    references: accounts(id)
+              - column:
+                  name: account_code
+                  type: varchar(20)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: account_type
+                  type: varchar(20)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: debit
+                  type: decimal(14,2)
+                  defaultValueNumeric: 0
+              - column:
+                  name: credit
+                  type: decimal(14,2)
+                  defaultValueNumeric: 0
+              - column:
+                  name: property_id
+                  type: uuid
+                  constraints:
+                    foreignKeyName: fk_fin_txn_property
+                    references: properties(id)
+              - column:
+                  name: unit_id
+                  type: uuid
+                  constraints:
+                    foreignKeyName: fk_fin_txn_unit
+                    references: units(id)
+              - column:
+                  name: vat_applicable
+                  type: boolean
+                  defaultValueBoolean: false
+              - column:
+                  name: vat_amount
+                  type: decimal(14,2)
+                  defaultValueNumeric: 0
+              - column:
+                  name: notes
+                  type: text
+              - column:
+                  name: created_at
+                  type: timestamp
+                  defaultValueComputed: CURRENT_TIMESTAMP
+              - column:
+                  name: updated_at
+                  type: timestamp
+                  defaultValueComputed: CURRENT_TIMESTAMP
+
+        - createIndex:
+            indexName: idx_fin_txn_tenant_id
+            tableName: financial_transactions
+            columns:
+              - column:
+                  name: tenant_id
+        - createIndex:
+            indexName: idx_fin_txn_property_id
+            tableName: financial_transactions
+            columns:
+              - column:
+                  name: property_id
+        - createIndex:
+            indexName: idx_fin_txn_unit_id
+            tableName: financial_transactions
+            columns:
+              - column:
+                  name: unit_id
+        - createIndex:
+            indexName: idx_fin_txn_account_code
+            tableName: financial_transactions
+            columns:
+              - column:
+                  name: account_code
+        - createIndex:
+            indexName: idx_fin_txn_date
+            tableName: financial_transactions
+            columns:
+              - column:
+                  name: date
+        - createIndex:
+            indexName: idx_fin_txn_account_type
+            tableName: financial_transactions
+            columns:
+              - column:
+                  name: account_type
