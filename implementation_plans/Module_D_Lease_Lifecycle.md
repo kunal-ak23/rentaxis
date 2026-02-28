@@ -1,23 +1,23 @@
 # Module D: Lease Lifecycle
 
-> **STATUS: ⬜ NOT STARTED**
-> 
+> **STATUS: 🟡 IN PROGRESS (MVP Backend + Frontend Complete)**
+>
 > | Item | Status |
 > |------|--------|
-> | `tenants (Renters)` entity | ⬜ Not Started |
-> | `leases` entity + state machine | ⬜ Not Started |
-> | `lease_events` audit trail | ⬜ Not Started |
-> | `lease_documents` table | ⬜ Not Started |
-> | Lease CRUD endpoints | ⬜ Not Started |
-> | Lease activation/termination APIs | ⬜ Not Started |
+> | `tenants (Renters)` entity | ✅ Done |
+> | `leases` entity + state machine | ✅ Done |
+> | `lease_events` audit trail | ✅ Done |
+> | `lease_documents` table | ✅ Done |
+> | Lease CRUD endpoints | ✅ Done |
+> | Lease activation/termination APIs | ✅ Done |
 > | Bilingual PDF contract generation | ⬜ Not Started |
-> | Lease Wizard UI | ⬜ Not Started |
+> | Lease Wizard UI | ✅ Done (MVP draft form) |
 > | Renter Portal (bilingual) | ⬜ Not Started |
 > | Lease Dashboard (board view) | ⬜ Not Started |
-> | Ejari integration fields | ⬜ Not Started |
-> | Daily cron for expiration evaluation | ⬜ Not Started |
-> 
-> *Last reviewed: 2026-02-26*
+> | Ejari integration fields | ✅ Done (capture only) |
+> | Daily cron for expiration evaluation | ✅ Done |
+>
+> *Last reviewed: 2026-02-28*
 
 ## 1. Overview
 The Lease Lifecycle module digitally mirrors the real-world tenancy lifecycle. It handles leasing terms, early renewals/terminations, and closing out leases. Given the UAE context, it supports capturing details relevant to Ejari (Dubai's regulatory system) and generating bilingual Tenancy Contracts matching local standards.
