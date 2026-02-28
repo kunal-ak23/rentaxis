@@ -15,7 +15,9 @@ import {
     BookOpen,
     Receipt,
     BarChart3,
-    Home
+    Home,
+    FileText,
+    Contact
 } from 'lucide-react';
 import { Link } from "@/i18n/routing";
 import { useTranslations, useLocale } from "next-intl";
@@ -36,7 +38,11 @@ export default function MvpSidebar() {
     // Build menu items based on role permissions
     const menuItems = [
         ...(hasPermission(userRole, 'canViewProperties')
-            ? [{ name: t("properties"), href: "/dashboard/properties", icon: LayoutDashboard }]
+            ? [
+                { name: t("properties"), href: "/dashboard/properties", icon: LayoutDashboard },
+                { name: t("renters"), href: "/dashboard/renters", icon: Contact },
+                { name: t("leases"), href: "/dashboard/leases", icon: FileText }
+            ]
             : []),
         ...(hasPermission(userRole, 'canManageTenants')
             ? [{ name: "Tenants", href: "/superadmin/tenants", icon: ShieldCheck }]

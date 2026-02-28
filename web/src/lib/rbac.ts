@@ -11,6 +11,8 @@ export const PERMISSIONS = {
     canCreateProperties: ['SUPER_ADMIN', 'TENANT_ADMIN'] as UserRole[],
     canViewProperties: ['SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER'] as UserRole[],
     canCreateUnits: ['SUPER_ADMIN', 'TENANT_ADMIN'] as UserRole[],
+    canManageLeases: ['SUPER_ADMIN', 'TENANT_ADMIN'] as UserRole[],
+    canManageRenters: ['SUPER_ADMIN', 'TENANT_ADMIN'] as UserRole[],
     canAccessFinance: ['SUPER_ADMIN', 'TENANT_ADMIN'] as UserRole[],
     canResolveIssues: ['SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER'] as UserRole[],
     canCreateIssues: ['SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER', 'TENANT_USER'] as UserRole[],

@@ -1,0 +1,229 @@
+databaseChangeLog:
+  - changeSet:
+      id: 10-lease-lifecycle
+      author: antigravity
+      changes:
+        - createTable:
+            tableName: renters
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: tenant_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+              - column:
+                  name: name_en
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: name_ar
+                  type: VARCHAR(255)
+              - column:
+                  name: email
+                  type: VARCHAR(255)
+              - column:
+                  name: phone
+                  type: VARCHAR(50)
+              - column:
+                  name: primary_language
+                  type: VARCHAR(10)
+
+        - createTable:
+            tableName: leases
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: tenant_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+              - column:
+                  name: unit_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_lease_unit
+                    referencedTableName: units
+                    referencedColumnNames: id
+              - column:
+                  name: renter_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_lease_renter
+                    referencedTableName: renters
+                    referencedColumnNames: id
+              - column:
+                  name: start_date
+                  type: DATE
+                  constraints:
+                    nullable: false
+              - column:
+                  name: end_date
+                  type: DATE
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: VARCHAR(30)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: rent_amount
+                  type: DECIMAL(19, 2)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: deposit_amount
+                  type: DECIMAL(19, 2)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: ejari_number
+                  type: VARCHAR(50)
+              - column:
+                  name: payment_terms
+                  type: INT
+
+        - createTable:
+            tableName: lease_events
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: tenant_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+              - column:
+                  name: lease_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_event_lease
+                    referencedTableName: leases
+                    referencedColumnNames: id
+              - column:
+                  name: previous_state
+                  type: VARCHAR(30)
+              - column:
+                  name: new_state
+                  type: VARCHAR(30)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: notes
+                  type: TEXT
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_by
+                  type: UUID
+
+        - createTable:
+            tableName: lease_documents
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: tenant_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+              - column:
+                  name: lease_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_doc_lease
+                    referencedTableName: leases
+                    referencedColumnNames: id
+              - column:
+                  name: document_url
+                  type: VARCHAR(1024)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: type
+                  type: VARCHAR(30)
+                  constraints:
+                    nullable: false
+
+        # Indexes for tenant isolation and query performance
+        - createIndex:
+            indexName: idx_renters_tenant_id
+            tableName: renters
+            columns:
+              - column:
+                  name: tenant_id
+        - createIndex:
+            indexName: idx_leases_tenant_id
+            tableName: leases
+            columns:
+              - column:
+                  name: tenant_id
+        - createIndex:
+            indexName: idx_leases_unit_id
+            tableName: leases
+            columns:
+              - column:
+                  name: unit_id
+        - createIndex:
+            indexName: idx_leases_renter_id
+            tableName: leases
+            columns:
+              - column:
+                  name: renter_id
+        - createIndex:
+            indexName: idx_leases_status
+            tableName: leases
+            columns:
+              - column:
+                  name: status
+        - createIndex:
+            indexName: idx_lease_events_tenant_id
+            tableName: lease_events
+            columns:
+              - column:
+                  name: tenant_id
+        - createIndex:
+            indexName: idx_lease_events_lease_id
+            tableName: lease_events
+            columns:
+              - column:
+                  name: lease_id
+        - createIndex:
+            indexName: idx_lease_documents_tenant_id
+            tableName: lease_documents
+            columns:
+              - column:
+                  name: tenant_id
+        - createIndex:
+            indexName: idx_lease_documents_lease_id
+            tableName: lease_documents
+            columns:
+              - column:
+                  name: lease_id
