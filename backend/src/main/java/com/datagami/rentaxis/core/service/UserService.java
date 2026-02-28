@@ -52,7 +52,7 @@ public class UserService {
         // Auto-create tenant membership for tenant-scoped roles
         if (tenantId != null && !tenantId.isBlank()
                 && (role == UserRole.TENANT_ADMIN || role == UserRole.PROPERTY_MANAGER
-                        || role == UserRole.TENANT_USER)) {
+                        || role == UserRole.TENANT_USER || role == UserRole.RENTER)) {
             addTenantMembership(saved.getId(), UUID.fromString(tenantId));
         }
 
@@ -100,7 +100,7 @@ public class UserService {
 
         // Auto-create tenant membership if new tenantId is provided
         if (newTenantId != null && (role == UserRole.TENANT_ADMIN || role == UserRole.PROPERTY_MANAGER
-                || role == UserRole.TENANT_USER)) {
+                || role == UserRole.TENANT_USER || role == UserRole.RENTER)) {
             addTenantMembership(saved.getId(), newTenantId);
         }
 

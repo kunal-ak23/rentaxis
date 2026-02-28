@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8"/>
+    <style>
+        @page {
+            size: A4;
+            margin: 2cm;
+        }
+        body {
+            font-family: 'Noto Sans', Arial, sans-serif;
+            font-size: 11pt;
+            line-height: 1.6;
+            color: #1a1a1a;
+        }
+        .header {
+            text-align: center;
+            border-bottom: 2px solid #2563eb;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+        .header h1 {
+            font-size: 18pt;
+            color: #2563eb;
+            margin: 0 0 5px 0;
+        }
+        .header .subtitle {
+            font-size: 14pt;
+            color: #64748b;
+            direction: rtl;
+            font-family: 'Noto Sans Arabic', Arial, sans-serif;
+        }
+        .bilingual-row {
+            display: table;
+            width: 100%;
+            margin-bottom: 15px;
+        }
+        .col-en {
+            display: table-cell;
+            width: 48%;
+            text-align: left;
+            vertical-align: top;
+            padding-right: 2%;
+        }
+        .col-ar {
+            display: table-cell;
+            width: 48%;
+            text-align: right;
+            vertical-align: top;
+            padding-left: 2%;
+            direction: rtl;
+            font-family: 'Noto Sans Arabic', Arial, sans-serif;
+        }
+        .section-title {
+            font-size: 13pt;
+            font-weight: bold;
+            color: #1e40af;
+            border-bottom: 1px solid #e2e8f0;
+            padding-bottom: 5px;
+            margin: 25px 0 15px 0;
+        }
+        .detail-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+        .detail-table td {
+            padding: 8px 12px;
+            border: 1px solid #e2e8f0;
+            font-size: 10pt;
+        }
+        .detail-table td.label {
+            background: #f8fafc;
+            font-weight: bold;
+            width: 35%;
+            color: #475569;
+        }
+        .signature-block {
+            display: table;
+            width: 100%;
+            margin-top: 60px;
+            page-break-inside: avoid;
+        }
+        .sig-col {
+            display: table-cell;
+            width: 45%;
+            vertical-align: top;
+        }
+        .sig-col.right {
+            text-align: right;
+        }
+        .sig-line {
+            border-bottom: 1px solid #1a1a1a;
+            height: 40px;
+            margin-bottom: 5px;
+        }
+        .sig-label {
+            font-size: 9pt;
+            color: #64748b;
+        }
+        .footer {
+            text-align: center;
+            font-size: 8pt;
+            color: #94a3b8;
+            margin-top: 40px;
+            border-top: 1px solid #e2e8f0;
+            padding-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>TENANCY CONTRACT</h1>
+        <div class="subtitle">&#1593;&#1602;&#1583; &#1573;&#1610;&#1580;&#1575;&#1585;</div>
+        <div style="font-size:9pt; color:#94a3b8; margin-top:8px;">Contract No: {{CONTRACT_NUMBER}}</div>
+    </div>
+
+    <div class="bilingual-row">
+        <div class="col-en">
+            <div class="section-title">1. Parties</div>
+        </div>
+        <div class="col-ar">
+            <div class="section-title">&#1633;. &#1575;&#1604;&#1571;&#1591;&#1585;&#1575;&#1601;</div>
+        </div>
+    </div>
+
+    <table class="detail-table">
+        <tr>
+            <td class="label">Landlord / &#1575;&#1604;&#1605;&#1572;&#1580;&#1585;</td>
+            <td>{{LANDLORD_NAME}}</td>
+        </tr>
+        <tr>
+            <td class="label">Tenant / &#1575;&#1604;&#1605;&#1587;&#1578;&#1571;&#1580;&#1585;</td>
+            <td>{{RENTER_NAME_EN}} / {{RENTER_NAME_AR}}</td>
+        </tr>
+        <tr>
+            <td class="label">Email / &#1575;&#1604;&#1576;&#1585;&#1610;&#1583; &#1575;&#1604;&#1573;&#1604;&#1603;&#1578;&#1585;&#1608;&#1606;&#1610;</td>
+            <td>{{RENTER_EMAIL}}</td>
+        </tr>
+        <tr>
+            <td class="label">Phone / &#1575;&#1604;&#1607;&#1575;&#1578;&#1601;</td>
+            <td>{{RENTER_PHONE}}</td>
+        </tr>
+    </table>
+
+    <div class="bilingual-row">
+        <div class="col-en">
+            <div class="section-title">2. Property Details</div>
+        </div>
+        <div class="col-ar">
+            <div class="section-title">&#1634;. &#1578;&#1601;&#1575;&#1589;&#1610;&#1604; &#1575;&#1604;&#1593;&#1602;&#1575;&#1585;</div>
+        </div>
+    </div>
+
+    <table class="detail-table">
+        <tr>
+            <td class="label">Property / &#1575;&#1604;&#1593;&#1602;&#1575;&#1585;</td>
+            <td>{{PROPERTY_NAME}}</td>
+        </tr>
+        <tr>
+            <td class="label">Unit / &#1575;&#1604;&#1608;&#1581;&#1583;&#1577;</td>
+            <td>{{UNIT_NUMBER}}</td>
+        </tr>
+        <tr>
+            <td class="label">Emirate / &#1575;&#1604;&#1573;&#1605;&#1575;&#1585;&#1577;</td>
+            <td>{{EMIRATE}}</td>
+        </tr>
+        <tr>
+            <td class="label">Address / &#1575;&#1604;&#1593;&#1606;&#1608;&#1575;&#1606;</td>
+            <td>{{ADDRESS}}</td>
+        </tr>
+    </table>
+
+    <div class="bilingual-row">
+        <div class="col-en">
+            <div class="section-title">3. Financial Terms</div>
+        </div>
+        <div class="col-ar">
+            <div class="section-title">&#1635;. &#1575;&#1604;&#1588;&#1585;&#1608;&#1591; &#1575;&#1604;&#1605;&#1575;&#1604;&#1610;&#1577;</div>
+        </div>
+    </div>
+
+    <table class="detail-table">
+        <tr>
+            <td class="label">Annual Rent / &#1575;&#1604;&#1573;&#1610;&#1580;&#1575;&#1585; &#1575;&#1604;&#1587;&#1606;&#1608;&#1610;</td>
+            <td>AED {{RENT_AMOUNT}}</td>
+        </tr>
+        <tr>
+            <td class="label">Security Deposit / &#1605;&#1576;&#1604;&#1594; &#1575;&#1604;&#1578;&#1571;&#1605;&#1610;&#1606;</td>
+            <td>AED {{DEPOSIT_AMOUNT}}</td>
+        </tr>
+        <tr>
+            <td class="label">Payment Terms / &#1588;&#1585;&#1608;&#1591; &#1575;&#1604;&#1583;&#1601;&#1593;</td>
+            <td>{{PAYMENT_TERMS}} cheques</td>
+        </tr>
+        <tr>
+            <td class="label">Ejari Number / &#1585;&#1602;&#1605; &#1573;&#1610;&#1580;&#1575;&#1585;&#1610;</td>
+            <td>{{EJARI_NUMBER}}</td>
+        </tr>
+    </table>
+
+    <div class="bilingual-row">
+        <div class="col-en">
+            <div class="section-title">4. Duration</div>
+        </div>
+        <div class="col-ar">
+            <div class="section-title">&#1636;. &#1575;&#1604;&#1605;&#1583;&#1577;</div>
+        </div>
+    </div>
+
+    <table class="detail-table">
+        <tr>
+            <td class="label">Start Date / &#1578;&#1575;&#1585;&#1610;&#1582; &#1575;&#1604;&#1576;&#1583;&#1575;&#1610;&#1577;</td>
+            <td>{{START_DATE}}</td>
+        </tr>
+        <tr>
+            <td class="label">End Date / &#1578;&#1575;&#1585;&#1610;&#1582; &#1575;&#1604;&#1575;&#1606;&#1578;&#1607;&#1575;&#1569;</td>
+            <td>{{END_DATE}}</td>
+        </tr>
+    </table>
+
+    <div class="bilingual-row">
+        <div class="col-en">
+            <div class="section-title">5. General Terms</div>
+        </div>
+        <div class="col-ar">
+            <div class="section-title">&#1637;. &#1575;&#1604;&#1588;&#1585;&#1608;&#1591; &#1575;&#1604;&#1593;&#1575;&#1605;&#1577;</div>
+        </div>
+    </div>
+
+    <div class="bilingual-row">
+        <div class="col-en">
+            <p>This contract is governed by the rental laws of the United Arab Emirates and the respective Emirate regulations. Both parties agree to the terms stated herein.</p>
+            <p>The tenant shall use the premises solely for residential/commercial purposes as designated and shall not sublet without prior written consent from the landlord.</p>
+        </div>
+        <div class="col-ar">
+            <p>&#1610;&#1582;&#1590;&#1593; &#1607;&#1584;&#1575; &#1575;&#1604;&#1593;&#1602;&#1583; &#1604;&#1602;&#1608;&#1575;&#1606;&#1610;&#1606; &#1575;&#1604;&#1573;&#1610;&#1580;&#1575;&#1585; &#1601;&#1610; &#1583;&#1608;&#1604;&#1577; &#1575;&#1604;&#1573;&#1605;&#1575;&#1585;&#1575;&#1578; &#1575;&#1604;&#1593;&#1585;&#1576;&#1610;&#1577; &#1575;&#1604;&#1605;&#1578;&#1581;&#1583;&#1577; &#1608;&#1571;&#1606;&#1592;&#1605;&#1577; &#1575;&#1604;&#1573;&#1605;&#1575;&#1585;&#1577; &#1575;&#1604;&#1605;&#1593;&#1606;&#1610;&#1577;. &#1610;&#1608;&#1575;&#1601;&#1602; &#1575;&#1604;&#1591;&#1585;&#1601;&#1575;&#1606; &#1593;&#1604;&#1609; &#1575;&#1604;&#1588;&#1585;&#1608;&#1591; &#1575;&#1604;&#1605;&#1584;&#1603;&#1608;&#1585;&#1577; &#1607;&#1606;&#1575;.</p>
+            <p>&#1610;&#1604;&#1578;&#1586;&#1605; &#1575;&#1604;&#1605;&#1587;&#1578;&#1571;&#1580;&#1585; &#1576;&#1575;&#1587;&#1578;&#1582;&#1583;&#1575;&#1605; &#1575;&#1604;&#1605;&#1576;&#1575;&#1606;&#1610; &#1604;&#1604;&#1571;&#1594;&#1585;&#1575;&#1590; &#1575;&#1604;&#1587;&#1603;&#1606;&#1610;&#1577;/&#1575;&#1604;&#1578;&#1580;&#1575;&#1585;&#1610;&#1577; &#1575;&#1604;&#1605;&#1581;&#1583;&#1583;&#1577; &#1601;&#1602;&#1591;&#1548; &#1608;&#1604;&#1575; &#1610;&#1580;&#1608;&#1586; &#1604;&#1607; &#1575;&#1604;&#1578;&#1571;&#1580;&#1610;&#1585; &#1605;&#1606; &#1575;&#1604;&#1576;&#1575;&#1591;&#1606; &#1583;&#1608;&#1606; &#1605;&#1608;&#1575;&#1601;&#1602;&#1577; &#1582;&#1591;&#1610;&#1577; &#1605;&#1587;&#1576;&#1602;&#1577; &#1605;&#1606; &#1575;&#1604;&#1605;&#1572;&#1580;&#1585;.</p>
+        </div>
+    </div>
+
+    <div class="signature-block">
+        <div class="sig-col">
+            <p><strong>Landlord / &#1575;&#1604;&#1605;&#1572;&#1580;&#1585;</strong></p>
+            <div class="sig-line"></div>
+            <div class="sig-label">Signature / &#1575;&#1604;&#1578;&#1608;&#1602;&#1610;&#1593;</div>
+            <br/>
+            <div class="sig-line"></div>
+            <div class="sig-label">Date / &#1575;&#1604;&#1578;&#1575;&#1585;&#1610;&#1582;</div>
+        </div>
+        <div class="sig-col right">
+            <p><strong>Tenant / &#1575;&#1604;&#1605;&#1587;&#1578;&#1571;&#1580;&#1585;</strong></p>
+            <div class="sig-line"></div>
+            <div class="sig-label">Signature / &#1575;&#1604;&#1578;&#1608;&#1602;&#1610;&#1593;</div>
+            <br/>
+            <div class="sig-line"></div>
+            <div class="sig-label">Date / &#1575;&#1604;&#1578;&#1575;&#1585;&#1610;&#1582;</div>
+        </div>
+    </div>
+
+    <div class="footer">
+        Generated by RentAxis &mdash; Enterprise Lease Management Platform
+    </div>
+</body>
+</html>

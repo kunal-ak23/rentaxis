@@ -2,15 +2,23 @@ package com.datagami.rentaxis.api;
 
 import com.datagami.rentaxis.api.dto.CreateLeaseDTO;
 import com.datagami.rentaxis.api.dto.LeaseDTO;
+import com.datagami.rentaxis.api.dto.LeaseDocumentDTO;
 import com.datagami.rentaxis.api.dto.LeaseEventDTO;
+import com.datagami.rentaxis.core.service.ContractGenerationService;
 import com.datagami.rentaxis.core.service.LeaseService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.io.File;
 import java.util.List;
 import java.util.UUID;
 
@@ -20,11 +28,26 @@ import java.util.UUID;
 public class LeaseController {
 
     private final LeaseService leaseService;
+    private final ContractGenerationService contractGenerationService;
 
     @GetMapping
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
     public ResponseEntity<List<LeaseDTO>> getAllLeases() {
         return ResponseEntity.ok(leaseService.getAllLeases());
+    }
+
+    @GetMapping("/property/{propertyId}")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
+    public ResponseEntity<List<LeaseDTO>> getLeasesByPropertyId(@PathVariable UUID propertyId) {
+        return ResponseEntity.ok(leaseService.getLeasesByPropertyId(propertyId));
+    }
+
+    @GetMapping("/my-leases")
+    @PreAuthorize("hasRole('RENTER')")
+    public ResponseEntity<List<LeaseDTO>> getMyLeases(HttpServletRequest request) {
+        String userIdStr = request.getHeader("X-User-Id");
+        UUID userId = UUID.fromString(userIdStr);
+        return ResponseEntity.ok(leaseService.getLeasesForRenterUser(userId));
     }
 
     @GetMapping("/{id}")
@@ -57,5 +80,48 @@ public class LeaseController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
     public ResponseEntity<List<LeaseEventDTO>> getLeaseEvents(@PathVariable UUID id) {
         return ResponseEntity.ok(leaseService.getLeaseEvents(id));
+    }
+
+    // --- Contract Generation Endpoints ---
+
+    @PostMapping("/{id}/generate-contract")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
+    public ResponseEntity<LeaseDocumentDTO> generateContract(@PathVariable UUID id) {
+        return ResponseEntity.ok(contractGenerationService.generateContract(id));
+    }
+
+    @GetMapping("/{id}/documents")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'RENTER')")
+    public ResponseEntity<List<LeaseDocumentDTO>> getDocuments(@PathVariable UUID id) {
+        return ResponseEntity.ok(contractGenerationService.getDocuments(id));
+    }
+
+    @GetMapping("/documents/{docId}/download")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'RENTER')")
+    public ResponseEntity<Resource> downloadDocument(@PathVariable UUID docId) {
+        File file = contractGenerationService.getDocumentFile(docId);
+        Resource resource = new FileSystemResource(file);
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_PDF)
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + file.getName() + "\"")
+                .body(resource);
+    }
+
+    // --- Renter Portal Endpoints ---
+
+    @PutMapping("/{id}/accept")
+    @PreAuthorize("hasRole('RENTER')")
+    public ResponseEntity<LeaseDTO> acceptLease(@PathVariable UUID id, HttpServletRequest request) {
+        String userIdStr = request.getHeader("X-User-Id");
+        UUID userId = UUID.fromString(userIdStr);
+        return ResponseEntity.ok(leaseService.acceptLease(id, userId));
+    }
+
+    @PutMapping("/{id}/reject")
+    @PreAuthorize("hasRole('RENTER')")
+    public ResponseEntity<LeaseDTO> rejectLease(@PathVariable UUID id, HttpServletRequest request) {
+        String userIdStr = request.getHeader("X-User-Id");
+        UUID userId = UUID.fromString(userIdStr);
+        return ResponseEntity.ok(leaseService.rejectLease(id, userId));
     }
 }

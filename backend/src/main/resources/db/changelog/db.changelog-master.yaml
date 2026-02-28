@@ -19,4 +19,6 @@ databaseChangeLog:
       file: db/changelog/changesets/09-user-contact-property-cleanup.yaml
   - include:
       file: db/changelog/changesets/10-lease-lifecycle.yaml
+  - include:
+      file: db/changelog/changesets/11-renter-user-link.yaml
 

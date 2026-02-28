@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useTranslations, useLocale } from "next-intl";
-import { Plus, X, FileText, Calendar, DollarSign, Home, CheckCircle, Ban, AlertCircle } from "lucide-react";
+import { Plus, X, FileText, Calendar, DollarSign, Home, CheckCircle, Ban, AlertCircle, LayoutGrid, Columns3, Download, Sparkles } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
@@ -20,6 +20,9 @@ type Lease = {
     depositAmount: number;
     ejariNumber: string;
     paymentTerms: number;
+    propertyId: string;
+    propertyName: string;
+    hasContract: boolean;
 };
 
 type Unit = {
@@ -34,6 +37,13 @@ type Renter = {
     nameAr: string;
 };
 
+const BOARD_COLUMNS = [
+    { key: "draft", label: "Draft", statuses: ["DRAFT"], color: "bg-gray-500" },
+    { key: "pending", label: "Pending Signature", statuses: ["PENDING_SIGNATURE"], color: "bg-yellow-500" },
+    { key: "active", label: "Active", statuses: ["ACTIVE", "NOTICE_GIVEN"], color: "bg-green-500" },
+    { key: "closed", label: "Closed", statuses: ["TERMINATED", "EXPIRED", "CLOSED"], color: "bg-red-500" },
+];
+
 export default function LeasesPage() {
     const t = useTranslations("MasterData");
     const locale = useLocale();
@@ -41,6 +51,7 @@ export default function LeasesPage() {
     const [units, setUnits] = useState<Unit[]>([]);
     const [renters, setRenters] = useState<Renter[]>([]);
     const [showForm, setShowForm] = useState(false);
+    const [viewMode, setViewMode] = useState<'grid' | 'board'>('grid');
 
     const { data: session } = useSession();
     const userRole = (session?.user as any)?.role as UserRole | undefined;
@@ -135,6 +146,29 @@ export default function LeasesPage() {
         }
     };
 
+    const handleGenerateContract = async (id: string) => {
+        try {
+            const res = await fetch(`/api/proxy/v1/leases/${id}/generate-contract`, { method: "POST" });
+            if (res.ok) fetchLeases();
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
+    const handleDownloadContract = async (id: string) => {
+        try {
+            const res = await fetch(`/api/proxy/v1/leases/${id}/documents`);
+            if (res.ok) {
+                const docs = await res.json();
+                if (docs.length > 0) {
+                    window.open(`/api/proxy/v1/leases/documents/${docs[0].id}/download`, '_blank');
+                }
+            }
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
     const getRenterDisplayName = (r: Renter) => {
         if (locale === 'ar' && r.nameAr) return r.nameAr;
         return r.nameEn;
@@ -144,11 +178,112 @@ export default function LeasesPage() {
         switch (status) {
             case 'ACTIVE': return 'bg-green-100 text-green-700 border-green-200';
             case 'DRAFT': return 'bg-gray-100 text-gray-700 border-gray-200';
+            case 'PENDING_SIGNATURE': return 'bg-yellow-100 text-yellow-700 border-yellow-200';
+            case 'NOTICE_GIVEN': return 'bg-orange-100 text-orange-700 border-orange-200';
             case 'TERMINATED': return 'bg-red-100 text-red-700 border-red-200';
             case 'EXPIRED': return 'bg-orange-100 text-orange-700 border-orange-200';
+            case 'CLOSED': return 'bg-gray-100 text-gray-500 border-gray-200';
             default: return 'bg-blue-100 text-blue-700 border-blue-200';
         }
     };
+
+    const renderLeaseCard = (lease: Lease, compact = false) => (
+        <div key={lease.id} className={cn("bg-white rounded-[2rem] p-6 shadow-sm border border-gray-100 hover:shadow-md transition-all flex flex-col justify-between", compact && "rounded-2xl p-4")}>
+            <div>
+                <div className="flex justify-between items-start mb-4">
+                    <div className="flex items-center gap-3">
+                        <div className={cn("w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center text-primary border border-primary/20", compact && "w-8 h-8 rounded-lg")}>
+                            <FileText size={compact ? 14 : 18} />
+                        </div>
+                        <div>
+                            <h3 className={cn("font-black text-foreground tracking-tight", compact ? "text-xs" : "text-sm")}>{t("unit")} {lease.unitIdentifier}</h3>
+                            <p className="text-[10px] font-bold text-gray-400">{lease.renterName}</p>
+                        </div>
+                    </div>
+                    {!compact && (
+                        <span className={cn("inline-flex items-center px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-widest border", getStatusColor(lease.status))}>
+                            {lease.status.replace('_', ' ')}
+                        </span>
+                    )}
+                </div>
+
+                <div className={cn("space-y-3", compact ? "mb-3" : "mb-6")}>
+                    <div className={cn("flex justify-between items-center bg-gray-50 rounded-xl border border-gray-100/50", compact ? "p-2" : "p-3")}>
+                        <div className="flex items-center gap-2">
+                            <DollarSign size={14} className="text-gray-400" />
+                            <span className="text-[10px] font-bold text-gray-400 uppercase">{t("rentSummary")}</span>
+                        </div>
+                        <span className={cn("font-black text-foreground text-right", compact ? "text-[10px]" : "text-xs")}>
+                            AED {lease.rentAmount.toLocaleString()}
+                            {!compact && <><br /><span className="text-[9px] text-gray-400 font-medium">({lease.paymentTerms} {t("cheques")})</span></>}
+                        </span>
+                    </div>
+                    <div className="flex items-center gap-3 px-1">
+                        <Calendar size={14} className="text-gray-400" />
+                        <span className="text-xs font-medium text-gray-600">
+                            {new Date(lease.startDate).toLocaleDateString()} &rarr; {new Date(lease.endDate).toLocaleDateString()}
+                        </span>
+                    </div>
+                    {!compact && lease.ejariNumber && (
+                        <div className="flex items-center gap-3 px-1">
+                            <Home size={14} className="text-gray-400" />
+                            <span className="text-xs font-medium text-gray-600">Ejari: {lease.ejariNumber}</span>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {canManageLeases && (
+                <div className={cn("flex gap-2 border-t border-gray-100 mt-auto", compact ? "pt-3 flex-wrap" : "pt-4")}>
+                    {lease.status === 'DRAFT' && !lease.hasContract && (
+                        <button
+                            onClick={() => handleGenerateContract(lease.id)}
+                            className="flex-1 flex items-center justify-center gap-2 bg-blue-50 text-blue-700 hover:bg-blue-100 py-2.5 rounded-xl text-xs font-bold transition-colors"
+                        >
+                            <Sparkles size={14} />
+                            {t("generateContract")}
+                        </button>
+                    )}
+                    {lease.status === 'DRAFT' && lease.hasContract && (
+                        <button
+                            onClick={() => handleActivate(lease.id)}
+                            className="flex-1 flex items-center justify-center gap-2 bg-green-50 text-green-700 hover:bg-green-100 py-2.5 rounded-xl text-xs font-bold transition-colors"
+                        >
+                            <CheckCircle size={14} />
+                            {t("activate")}
+                        </button>
+                    )}
+                    {lease.status === 'PENDING_SIGNATURE' && (
+                        <>
+                            <button
+                                onClick={() => handleDownloadContract(lease.id)}
+                                className="flex-1 flex items-center justify-center gap-2 bg-blue-50 text-blue-700 hover:bg-blue-100 py-2.5 rounded-xl text-xs font-bold transition-colors"
+                            >
+                                <Download size={14} />
+                                {t("downloadContract")}
+                            </button>
+                            <button
+                                onClick={() => handleActivate(lease.id)}
+                                className="flex-1 flex items-center justify-center gap-2 bg-green-50 text-green-700 hover:bg-green-100 py-2.5 rounded-xl text-xs font-bold transition-colors"
+                            >
+                                <CheckCircle size={14} />
+                                {t("activate")}
+                            </button>
+                        </>
+                    )}
+                    {lease.status === 'ACTIVE' && (
+                        <button
+                            onClick={() => handleTerminate(lease.id)}
+                            className="flex-1 flex items-center justify-center gap-2 bg-red-50 text-red-600 hover:bg-red-100 py-2.5 rounded-xl text-xs font-bold transition-colors"
+                        >
+                            <Ban size={14} />
+                            {t("terminate")}
+                        </button>
+                    )}
+                </div>
+            )}
+        </div>
+    );
 
     return (
         <div className="p-8 max-w-7xl mx-auto">
@@ -161,15 +296,39 @@ export default function LeasesPage() {
                         {t("manageLeases")}
                     </p>
                 </div>
-                {canManageLeases && (
-                    <button
-                        onClick={() => setShowForm(true)}
-                        className="flex items-center gap-2 bg-primary text-primary-foreground px-5 py-2.5 rounded-full text-xs font-bold hover:opacity-90 transition-all shadow-lg shadow-primary/10 active:scale-95"
-                    >
-                        <Plus size={14} />
-                        {t("draftLease")}
-                    </button>
-                )}
+                <div className="flex items-center gap-3">
+                    <div className="flex items-center bg-gray-100 rounded-xl p-1">
+                        <button
+                            onClick={() => setViewMode('grid')}
+                            className={cn(
+                                "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all",
+                                viewMode === 'grid' ? "bg-white text-foreground shadow-sm" : "text-gray-400 hover:text-gray-600"
+                            )}
+                        >
+                            <LayoutGrid size={12} />
+                            {t("gridView")}
+                        </button>
+                        <button
+                            onClick={() => setViewMode('board')}
+                            className={cn(
+                                "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all",
+                                viewMode === 'board' ? "bg-white text-foreground shadow-sm" : "text-gray-400 hover:text-gray-600"
+                            )}
+                        >
+                            <Columns3 size={12} />
+                            {t("boardView")}
+                        </button>
+                    </div>
+                    {canManageLeases && (
+                        <button
+                            onClick={() => setShowForm(true)}
+                            className="flex items-center gap-2 bg-primary text-primary-foreground px-5 py-2.5 rounded-full text-xs font-bold hover:opacity-90 transition-all shadow-lg shadow-primary/10 active:scale-95"
+                        >
+                            <Plus size={14} />
+                            {t("draftLease")}
+                        </button>
+                    )}
+                </div>
             </div>
 
             {showForm && (
@@ -232,76 +391,38 @@ export default function LeasesPage() {
                 </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                {leases.map(lease => (
-                    <div key={lease.id} className="bg-white rounded-[2rem] p-6 shadow-sm border border-gray-100 hover:shadow-md transition-all flex flex-col justify-between">
-                        <div>
-                            <div className="flex justify-between items-start mb-6">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center text-primary border border-primary/20">
-                                        <FileText size={18} />
-                                    </div>
-                                    <div>
-                                        <h3 className="text-sm font-black text-foreground tracking-tight">{t("unit")} {lease.unitIdentifier}</h3>
-                                        <p className="text-[10px] font-bold text-gray-400">{lease.renterName}</p>
-                                    </div>
-                                </div>
-                                <span className={cn("inline-flex items-center px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-widest border", getStatusColor(lease.status))}>
-                                    {lease.status}
-                                </span>
-                            </div>
+            {/* Grid View */}
+            {viewMode === 'grid' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                    {leases.map(lease => renderLeaseCard(lease))}
+                </div>
+            )}
 
-                            <div className="space-y-3 mb-6">
-                                <div className="flex justify-between items-center bg-gray-50 rounded-xl p-3 border border-gray-100/50">
-                                    <div className="flex items-center gap-2">
-                                        <DollarSign size={14} className="text-gray-400" />
-                                        <span className="text-[10px] font-bold text-gray-400 uppercase">{t("rentSummary")}</span>
-                                    </div>
-                                    <span className="text-xs font-black text-foreground text-right">
-                                        AED {lease.rentAmount.toLocaleString()} <br />
-                                        <span className="text-[9px] text-gray-400 font-medium">({lease.paymentTerms} {t("cheques")})</span>
-                                    </span>
+            {/* Board View */}
+            {viewMode === 'board' && (
+                <div className="flex gap-4 overflow-x-auto pb-4">
+                    {BOARD_COLUMNS.map(col => {
+                        const columnLeases = leases.filter(l => col.statuses.includes(l.status));
+                        return (
+                            <div key={col.key} className="flex-shrink-0 w-[300px]">
+                                <div className="flex items-center gap-2 mb-4 px-2">
+                                    <div className={cn("w-2.5 h-2.5 rounded-full", col.color)} />
+                                    <h3 className="text-xs font-black text-foreground uppercase tracking-widest">{col.label}</h3>
+                                    <span className="ml-auto text-[10px] font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{columnLeases.length}</span>
                                 </div>
-                                <div className="flex items-center gap-3 px-1">
-                                    <Calendar size={14} className="text-gray-400" />
-                                    <span className="text-xs font-medium text-gray-600">
-                                        {new Date(lease.startDate).toLocaleDateString()} &rarr; {new Date(lease.endDate).toLocaleDateString()}
-                                    </span>
+                                <div className="space-y-3 min-h-[200px] bg-gray-50/50 rounded-2xl p-3 border border-gray-100/50">
+                                    {columnLeases.map(lease => renderLeaseCard(lease, true))}
+                                    {columnLeases.length === 0 && (
+                                        <div className="text-center py-8 text-[10px] text-gray-300 font-bold uppercase tracking-widest">
+                                            No leases
+                                        </div>
+                                    )}
                                 </div>
-                                {lease.ejariNumber && (
-                                    <div className="flex items-center gap-3 px-1">
-                                        <Home size={14} className="text-gray-400" />
-                                        <span className="text-xs font-medium text-gray-600">Ejari: {lease.ejariNumber}</span>
-                                    </div>
-                                )}
                             </div>
-                        </div>
-
-                        {canManageLeases && (
-                            <div className="flex gap-2 border-t border-gray-100 pt-4 mt-auto">
-                                {lease.status === 'DRAFT' && (
-                                    <button
-                                        onClick={() => handleActivate(lease.id)}
-                                        className="flex-1 flex items-center justify-center gap-2 bg-green-50 text-green-700 hover:bg-green-100 py-2.5 rounded-xl text-xs font-bold transition-colors"
-                                    >
-                                        <CheckCircle size={14} />
-                                        {t("activate")}
-                                    </button>
-                                )}
-                                {lease.status === 'ACTIVE' && (
-                                    <button
-                                        onClick={() => handleTerminate(lease.id)}
-                                        className="flex-1 flex items-center justify-center gap-2 bg-red-50 text-red-600 hover:bg-red-100 py-2.5 rounded-xl text-xs font-bold transition-colors"
-                                    >
-                                        <Ban size={14} />
-                                        {t("terminate")}
-                                    </button>
-                                )}
-                            </div>
-                        )}
-                    </div>
-                ))}
-            </div>
+                        );
+                    })}
+                </div>
+            )}
 
             {leases.length === 0 && !showForm && (
                 <div className="text-center py-24 bg-gray-50 border border-dashed border-gray-200 rounded-[2.5rem] flex flex-col items-center">

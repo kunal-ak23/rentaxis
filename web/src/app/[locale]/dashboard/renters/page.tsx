@@ -30,7 +30,8 @@ export default function RentersPage() {
         nameAr: "",
         email: "",
         phone: "",
-        primaryLanguage: "EN"
+        primaryLanguage: "EN",
+        createPortalAccount: false
     });
 
     useEffect(() => {
@@ -65,7 +66,8 @@ export default function RentersPage() {
                     nameAr: "",
                     email: "",
                     phone: "",
-                    primaryLanguage: "EN"
+                    primaryLanguage: "EN",
+                    createPortalAccount: false
                 });
             }
         } catch (err) {
@@ -123,12 +125,23 @@ export default function RentersPage() {
                                 <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("phone")}</label>
                                 <input placeholder="+971 50 123 4567" className="w-full bg-input border border-border p-3 rounded-xl text-xs" value={formData.phone} onChange={ev => setFormData({ ...formData, phone: ev.target.value })} />
                             </div>
-                            <div className="col-span-2">
+                            <div className="col-span-1">
                                 <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("preferredLanguage")}</label>
                                 <select className="w-full bg-input border border-border p-3 rounded-xl text-xs" value={formData.primaryLanguage} onChange={ev => setFormData({ ...formData, primaryLanguage: ev.target.value })}>
                                     <option value="EN">English</option>
                                     <option value="AR">Arabic</option>
                                 </select>
+                            </div>
+                            <div className="col-span-1 flex items-end">
+                                <label className="flex items-center gap-3 cursor-pointer p-3">
+                                    <input
+                                        type="checkbox"
+                                        checked={formData.createPortalAccount}
+                                        onChange={ev => setFormData({ ...formData, createPortalAccount: ev.target.checked })}
+                                        className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
+                                    />
+                                    <span className="text-xs font-bold text-gray-600">{t("createPortalAccount")}</span>
+                                </label>
                             </div>
                             <div className="col-span-2 flex justify-end gap-3 mt-4">
                                 <button type="button" onClick={() => setShowForm(false)} className="px-6 py-3 text-xs font-bold text-gray-500">{t("cancel")}</button>

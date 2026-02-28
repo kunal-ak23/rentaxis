@@ -7,10 +7,7 @@ import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.*;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.UnitStatus;
-import com.datagami.rentaxis.domain.repository.LeaseEventRepository;
-import com.datagami.rentaxis.domain.repository.LeaseRepository;
-import com.datagami.rentaxis.domain.repository.RenterRepository;
-import com.datagami.rentaxis.domain.repository.UnitRepository;
+import com.datagami.rentaxis.domain.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,11 +25,19 @@ public class LeaseService {
     private final UnitRepository unitRepository;
     private final RenterRepository renterRepository;
     private final LeaseEventRepository leaseEventRepository;
+    private final LeaseDocumentRepository leaseDocumentRepository;
 
     @Transactional(readOnly = true)
     public List<LeaseDTO> getAllLeases() {
         UUID tenantId = TenantContextHolder.getTenantId();
         return leaseRepository.findByTenantId(tenantId).stream()
+                .map(this::mapToDTO)
+                .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public List<LeaseDTO> getLeasesByPropertyId(UUID propertyId) {
+        return leaseRepository.findByUnitPropertyId(propertyId).stream()
                 .map(this::mapToDTO)
                 .collect(Collectors.toList());
     }
@@ -119,6 +124,67 @@ public class LeaseService {
     }
 
     @Transactional(readOnly = true)
+    public List<LeaseDTO> getLeasesForRenterUser(UUID userId) {
+        Renter renter = renterRepository.findByUserId(userId)
+                .orElseThrow(() -> new RuntimeException("No renter profile linked to this user"));
+        return leaseRepository.findByRenterId(renter.getId()).stream()
+                .map(this::mapToDTO)
+                .collect(Collectors.toList());
+    }
+
+    @Transactional
+    public LeaseDTO acceptLease(UUID leaseId, UUID userId) {
+        Lease lease = leaseRepository.findById(leaseId)
+                .orElseThrow(() -> new RuntimeException("Lease not found"));
+
+        if (lease.getStatus() != LeaseStatus.PENDING_SIGNATURE) {
+            throw new RuntimeException("Can only accept leases in PENDING_SIGNATURE status");
+        }
+
+        // Verify the renter owns this lease
+        Renter renter = renterRepository.findByUserId(userId)
+                .orElseThrow(() -> new RuntimeException("No renter profile linked to this user"));
+        if (!lease.getRenter().getId().equals(renter.getId())) {
+            throw new RuntimeException("You are not authorized to accept this lease");
+        }
+
+        LeaseStatus previousStatus = lease.getStatus();
+        lease.setStatus(LeaseStatus.ACTIVE);
+
+        Unit unit = lease.getUnit();
+        unit.setStatus(UnitStatus.OCCUPIED);
+        unitRepository.save(unit);
+
+        Lease savedLease = leaseRepository.save(lease);
+        recordEvent(savedLease, previousStatus, LeaseStatus.ACTIVE, "Lease accepted by renter");
+
+        return mapToDTO(savedLease);
+    }
+
+    @Transactional
+    public LeaseDTO rejectLease(UUID leaseId, UUID userId) {
+        Lease lease = leaseRepository.findById(leaseId)
+                .orElseThrow(() -> new RuntimeException("Lease not found"));
+
+        if (lease.getStatus() != LeaseStatus.PENDING_SIGNATURE) {
+            throw new RuntimeException("Can only reject leases in PENDING_SIGNATURE status");
+        }
+
+        Renter renter = renterRepository.findByUserId(userId)
+                .orElseThrow(() -> new RuntimeException("No renter profile linked to this user"));
+        if (!lease.getRenter().getId().equals(renter.getId())) {
+            throw new RuntimeException("You are not authorized to reject this lease");
+        }
+
+        LeaseStatus previousStatus = lease.getStatus();
+        lease.setStatus(LeaseStatus.DRAFT);
+        Lease savedLease = leaseRepository.save(lease);
+        recordEvent(savedLease, previousStatus, LeaseStatus.DRAFT, "Lease rejected by renter");
+
+        return mapToDTO(savedLease);
+    }
+
+    @Transactional(readOnly = true)
     public List<LeaseEventDTO> getLeaseEvents(UUID leaseId) {
         return leaseEventRepository.findByLeaseIdOrderByCreatedAtDesc(leaseId).stream()
                 .map(this::mapEventToDTO)
@@ -149,6 +215,9 @@ public class LeaseService {
         dto.setDepositAmount(lease.getDepositAmount());
         dto.setEjariNumber(lease.getEjariNumber());
         dto.setPaymentTerms(lease.getPaymentTerms());
+        dto.setPropertyId(lease.getUnit().getProperty().getId());
+        dto.setPropertyName(lease.getUnit().getProperty().getNameEn());
+        dto.setHasContract(!leaseDocumentRepository.findByLeaseId(lease.getId()).isEmpty());
         return dto;
     }
 

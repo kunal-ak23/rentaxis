@@ -31,7 +31,15 @@ export default function LoginPage() {
                 setError("Invalid email or password. Please try again.");
                 setLoading(false);
             } else {
-                router.push("/dashboard/properties");
+                // Fetch session to check role for redirect
+                const { getSession } = await import("next-auth/react");
+                const session = await getSession();
+                const role = (session?.user as any)?.role;
+                if (role === "RENTER") {
+                    router.push("/dashboard/renter-portal");
+                } else {
+                    router.push("/dashboard/properties");
+                }
             }
         } catch (err) {
             setError("Something went wrong. Please try again later.");

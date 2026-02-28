@@ -53,7 +53,7 @@ public class ApiSecurityFilter extends OncePerRequestFilter {
                 if ("SUPER_ADMIN".equals(userRole)) {
                     authorized = true;
                 } else if ("TENANT_ADMIN".equals(userRole) || "PROPERTY_MANAGER".equals(userRole)
-                        || "TENANT_USER".equals(userRole)) {
+                        || "TENANT_USER".equals(userRole) || "RENTER".equals(userRole)) {
                     if (requestedTenantId == null) {
                         requestedTenantId = homeTenantId;
                     }

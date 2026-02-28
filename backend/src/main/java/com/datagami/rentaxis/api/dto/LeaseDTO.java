@@ -21,4 +21,7 @@ public class LeaseDTO {
     private BigDecimal depositAmount;
     private String ejariNumber;
     private Integer paymentTerms;
+    private UUID propertyId;
+    private String propertyName;
+    private boolean hasContract;
 }

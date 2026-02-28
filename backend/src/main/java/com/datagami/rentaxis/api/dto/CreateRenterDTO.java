@@ -18,4 +18,6 @@ public class CreateRenterDTO {
     private String phone;
 
     private Language primaryLanguage = Language.EN;
+
+    private boolean createPortalAccount;
 }

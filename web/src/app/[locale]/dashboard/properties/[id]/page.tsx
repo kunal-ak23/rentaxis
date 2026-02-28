@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useTranslations, useLocale } from "next-intl";
 import { Link } from "@/i18n/routing";
-import { Building2, Home, FileText, ArrowLeft, Plus, MapPin, Upload } from "lucide-react";
+import { Building2, Home, FileText, ArrowLeft, Plus, MapPin, Upload, Calendar, DollarSign } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSession } from "next-auth/react";
 import { hasPermission, type UserRole } from "@/lib/rbac";
@@ -148,9 +148,7 @@ export default function PropertyDetailPage() {
             )}
 
             {activeTab === "leases" && (
-                <div className="text-center py-24 text-gray-400 font-medium text-sm">
-                    Lease management coming soon.
-                </div>
+                <LeasesTab propertyId={propertyId} />
             )}
         </div>
     );
@@ -332,6 +330,83 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
                 </table>
                 {units.length === 0 && (
                     <div className="text-center py-12 text-gray-400 font-medium text-xs">No units found.</div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+// ------ LEASES TAB SUB-COMPONENT ------
+
+function LeasesTab({ propertyId }: { propertyId: string }) {
+    const t = useTranslations("MasterData");
+    const [leases, setLeases] = useState<any[]>([]);
+
+    useEffect(() => {
+        fetchLeases();
+    }, [propertyId]);
+
+    const fetchLeases = async () => {
+        try {
+            const res = await fetch(`/api/proxy/v1/leases/property/${propertyId}`);
+            if (res.ok) setLeases(await res.json());
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
+    const getStatusColor = (status: string) => {
+        switch (status) {
+            case 'ACTIVE': return 'bg-green-100 text-green-700';
+            case 'DRAFT': return 'bg-gray-100 text-gray-700';
+            case 'PENDING_SIGNATURE': return 'bg-yellow-100 text-yellow-700';
+            case 'TERMINATED': return 'bg-red-100 text-red-700';
+            case 'EXPIRED': return 'bg-orange-100 text-orange-700';
+            default: return 'bg-blue-100 text-blue-700';
+        }
+    };
+
+    return (
+        <div>
+            <h2 className="text-lg font-black mb-6">Leases</h2>
+            <div className="bg-white border rounded-2xl overflow-hidden shadow-sm">
+                <table className="w-full text-left text-sm">
+                    <thead className="bg-gray-50 text-gray-400 text-[10px] uppercase font-bold tracking-wider">
+                        <tr>
+                            <th className="px-6 py-4">Unit</th>
+                            <th className="px-6 py-4">Renter</th>
+                            <th className="px-6 py-4">Status</th>
+                            <th className="px-6 py-4">Period</th>
+                            <th className="px-6 py-4 text-right">Rent (AED)</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                        {leases.map((l: any) => (
+                            <tr key={l.id} className="hover:bg-gray-50/50 transition-colors">
+                                <td className="px-6 py-4 font-bold text-foreground flex items-center gap-2">
+                                    <FileText size={14} className="text-gray-400" />
+                                    {t("unit")} {l.unitIdentifier}
+                                </td>
+                                <td className="px-6 py-4 text-gray-600 font-medium">{l.renterName}</td>
+                                <td className="px-6 py-4">
+                                    <span className={cn("px-2 py-1 text-[10px] font-bold uppercase tracking-widest rounded-md", getStatusColor(l.status))}>
+                                        {l.status.replace('_', ' ')}
+                                    </span>
+                                </td>
+                                <td className="px-6 py-4 text-gray-500 text-xs flex items-center gap-1">
+                                    <Calendar size={12} className="text-gray-400" />
+                                    {new Date(l.startDate).toLocaleDateString()} - {new Date(l.endDate).toLocaleDateString()}
+                                </td>
+                                <td className="px-6 py-4 text-right font-black flex items-center justify-end gap-1">
+                                    <DollarSign size={12} className="text-gray-400" />
+                                    {l.rentAmount?.toLocaleString()}
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+                {leases.length === 0 && (
+                    <div className="text-center py-12 text-gray-400 font-medium text-xs">No leases found for this property.</div>
                 )}
             </div>
         </div>

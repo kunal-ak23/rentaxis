@@ -1,0 +1,25 @@
+databaseChangeLog:
+  - changeSet:
+      id: 11-add-user-id-to-renters
+      author: rentaxis
+      changes:
+        - addColumn:
+            tableName: renters
+            columns:
+              - column:
+                  name: user_id
+                  type: uuid
+                  constraints:
+                    nullable: true
+        - addForeignKeyConstraint:
+            baseTableName: renters
+            baseColumnNames: user_id
+            referencedTableName: users
+            referencedColumnNames: id
+            constraintName: fk_renters_user_id
+        - createIndex:
+            tableName: renters
+            indexName: idx_renters_user_id
+            columns:
+              - column:
+                  name: user_id

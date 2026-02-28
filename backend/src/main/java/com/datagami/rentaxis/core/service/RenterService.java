@@ -4,6 +4,8 @@ import com.datagami.rentaxis.api.dto.CreateRenterDTO;
 import com.datagami.rentaxis.api.dto.RenterDTO;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Renter;
+import com.datagami.rentaxis.domain.entity.User;
+import com.datagami.rentaxis.domain.entity.enums.UserRole;
 import com.datagami.rentaxis.domain.repository.RenterRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -18,6 +20,7 @@ import java.util.stream.Collectors;
 public class RenterService {
 
     private final RenterRepository renterRepository;
+    private final UserService userService;
 
     @Transactional(readOnly = true)
     public List<RenterDTO> getAllRenters() {
@@ -46,6 +49,23 @@ public class RenterService {
         }
 
         Renter saved = renterRepository.save(renter);
+
+        // Auto-create portal user account if requested
+        if (dto.isCreatePortalAccount() && dto.getEmail() != null && !dto.getEmail().isBlank()) {
+            UUID tenantId = TenantContextHolder.getTenantId();
+            String defaultPassword = "Renter@" + saved.getId().toString().substring(0, 6);
+            User user = userService.createUser(
+                    dto.getEmail(),
+                    defaultPassword,
+                    dto.getNameEn(),
+                    UserRole.RENTER,
+                    tenantId != null ? tenantId.toString() : null,
+                    dto.getPhone()
+            );
+            saved.setUserId(user.getId());
+            renterRepository.save(saved);
+        }
+
         return mapToDTO(saved);
     }
 

@@ -30,4 +30,7 @@ public class Renter extends BaseTenantEntity {
     @Enumerated(EnumType.STRING)
     @Column(name = "primary_language")
     private Language primaryLanguage = Language.EN;
+
+    @Column(name = "user_id")
+    private UUID userId;
 }

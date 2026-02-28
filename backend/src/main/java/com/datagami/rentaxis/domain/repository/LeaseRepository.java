@@ -23,4 +23,7 @@ public interface LeaseRepository extends JpaRepository<Lease, UUID> {
     List<Lease> findByStatusInAndEndDateBefore(
             @Param("statuses") List<LeaseStatus> statuses,
             @Param("date") LocalDate date);
+
+    @Query("SELECT l FROM Lease l WHERE l.unit.property.id = :propertyId")
+    List<Lease> findByUnitPropertyId(@Param("propertyId") UUID propertyId);
 }

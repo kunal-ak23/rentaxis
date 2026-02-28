@@ -4,5 +4,6 @@ public enum UserRole {
     SUPER_ADMIN,
     TENANT_ADMIN,
     PROPERTY_MANAGER,
-    TENANT_USER
+    TENANT_USER,
+    RENTER
 }

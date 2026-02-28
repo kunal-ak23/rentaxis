@@ -3,7 +3,7 @@
  * Central source of truth for role-based access control in the frontend
  */
 
-export type UserRole = 'SUPER_ADMIN' | 'TENANT_ADMIN' | 'PROPERTY_MANAGER' | 'TENANT_USER';
+export type UserRole = 'SUPER_ADMIN' | 'TENANT_ADMIN' | 'PROPERTY_MANAGER' | 'TENANT_USER' | 'RENTER';
 
 export const PERMISSIONS = {
     canManageTenants: ['SUPER_ADMIN'] as UserRole[],
@@ -18,6 +18,9 @@ export const PERMISSIONS = {
     canCreateIssues: ['SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER', 'TENANT_USER'] as UserRole[],
     canViewOwnPayments: ['TENANT_USER'] as UserRole[],
     canSwitchTenants: ['SUPER_ADMIN', 'TENANT_ADMIN'] as UserRole[],
+    canViewRenterPortal: ['RENTER'] as UserRole[],
+    canAcceptLeases: ['RENTER'] as UserRole[],
+    canDownloadContracts: ['SUPER_ADMIN', 'TENANT_ADMIN', 'RENTER'] as UserRole[],
 } as const;
 
 export type Permission = keyof typeof PERMISSIONS;
@@ -47,6 +50,7 @@ export function getRoleLabel(role: UserRole | string): string {
         TENANT_ADMIN: 'Tenant Admin',
         PROPERTY_MANAGER: 'Property Manager',
         TENANT_USER: 'Tenant',
+        RENTER: 'Renter',
     };
     return labels[role] || role.replace(/_/g, ' ');
 }

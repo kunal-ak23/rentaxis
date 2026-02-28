@@ -63,7 +63,12 @@ export default function MvpSidebar() {
         { name: "My Unit", href: "/dashboard/my-unit", icon: Home },
     ] : [];
 
-    const allItems = menuItems.length > 0 ? menuItems : tenantUserItems;
+    // Renter portal items
+    const renterItems = hasPermission(userRole, 'canViewRenterPortal') ? [
+        { name: "My Leases", href: "/dashboard/renter-portal", icon: FileText },
+    ] : [];
+
+    const allItems = menuItems.length > 0 ? menuItems : renterItems.length > 0 ? renterItems : tenantUserItems;
 
     return (
         <aside
