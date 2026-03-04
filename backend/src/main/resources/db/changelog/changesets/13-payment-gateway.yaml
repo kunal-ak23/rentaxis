@@ -1,0 +1,372 @@
+databaseChangeLog:
+  # Table 1: payment_gateways (global registry, NO tenant_id)
+  - changeSet:
+      id: 13-create-payment-gateways
+      author: rentaxis
+      changes:
+        - createTable:
+            tableName: payment_gateways
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: code
+                  type: VARCHAR(50)
+                  constraints:
+                    nullable: false
+                    unique: true
+              - column:
+                  name: name
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: description
+                  type: TEXT
+              - column:
+                  name: is_active
+                  type: BOOLEAN
+                  defaultValueBoolean: true
+              - column:
+                  name: sdk_js_url
+                  type: VARCHAR(500)
+              - column:
+                  name: supported_currencies
+                  type: VARCHAR(200)
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+
+  # Table 2: tenant_gateway_configs
+  - changeSet:
+      id: 13-create-tenant-gateway-configs
+      author: rentaxis
+      changes:
+        - createTable:
+            tableName: tenant_gateway_configs
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: tenant_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+              - column:
+                  name: gateway_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_tenant_gateway_config_gateway
+                    referencedTableName: payment_gateways
+                    referencedColumnNames: id
+              - column:
+                  name: api_key_encrypted
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: api_secret_encrypted
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: webhook_secret_encrypted
+                  type: TEXT
+              - column:
+                  name: is_active
+                  type: BOOLEAN
+                  defaultValueBoolean: true
+              - column:
+                  name: is_test_mode
+                  type: BOOLEAN
+                  defaultValueBoolean: true
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+
+        - addUniqueConstraint:
+            tableName: tenant_gateway_configs
+            columnNames: tenant_id, gateway_id
+            constraintName: uq_tenant_gateway_configs_tenant_gateway
+
+        - createIndex:
+            indexName: idx_tenant_gateway_configs_tenant_id
+            tableName: tenant_gateway_configs
+            columns:
+              - column:
+                  name: tenant_id
+
+  # Table 3: rent_collection_settings
+  - changeSet:
+      id: 13-create-rent-collection-settings
+      author: rentaxis
+      changes:
+        - createTable:
+            tableName: rent_collection_settings
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: tenant_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+              - column:
+                  name: property_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    unique: true
+                    foreignKeyName: fk_rent_collection_settings_property
+                    referencedTableName: properties
+                    referencedColumnNames: id
+              - column:
+                  name: due_day_of_month
+                  type: INT
+                  defaultValueNumeric: 1
+              - column:
+                  name: grace_period_days
+                  type: INT
+                  defaultValueNumeric: 0
+              - column:
+                  name: penalty_type
+                  type: VARCHAR(20)
+                  defaultValue: NONE
+              - column:
+                  name: penalty_amount
+                  type: DECIMAL(14, 2)
+                  defaultValueNumeric: 0
+              - column:
+                  name: online_payment_enabled
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+
+        - createIndex:
+            indexName: idx_rent_collection_settings_tenant_id
+            tableName: rent_collection_settings
+            columns:
+              - column:
+                  name: tenant_id
+
+  # Table 4: online_payments
+  - changeSet:
+      id: 13-create-online-payments
+      author: rentaxis
+      changes:
+        - createTable:
+            tableName: online_payments
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: tenant_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+              - column:
+                  name: payment_schedule_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_online_payment_schedule
+                    referencedTableName: payment_schedules
+                    referencedColumnNames: id
+              - column:
+                  name: gateway_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_online_payment_gateway
+                    referencedTableName: payment_gateways
+                    referencedColumnNames: id
+              - column:
+                  name: gateway_order_id
+                  type: VARCHAR(200)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: gateway_payment_id
+                  type: VARCHAR(200)
+              - column:
+                  name: gateway_signature
+                  type: VARCHAR(500)
+              - column:
+                  name: amount
+                  type: DECIMAL(14, 2)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: currency
+                  type: VARCHAR(10)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: VARCHAR(30)
+                  defaultValue: CREATED
+                  constraints:
+                    nullable: false
+              - column:
+                  name: penalty_amount
+                  type: DECIMAL(14, 2)
+                  defaultValueNumeric: 0
+              - column:
+                  name: failure_reason
+                  type: TEXT
+              - column:
+                  name: gateway_response_json
+                  type: TEXT
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+
+        - createIndex:
+            indexName: idx_online_payments_tenant_id
+            tableName: online_payments
+            columns:
+              - column:
+                  name: tenant_id
+        - createIndex:
+            indexName: idx_online_payments_payment_schedule_id
+            tableName: online_payments
+            columns:
+              - column:
+                  name: payment_schedule_id
+        - createIndex:
+            indexName: idx_online_payments_gateway_order_id
+            tableName: online_payments
+            columns:
+              - column:
+                  name: gateway_order_id
+        - createIndex:
+            indexName: idx_online_payments_status
+            tableName: online_payments
+            columns:
+              - column:
+                  name: status
+
+  # Table 5: webhook_logs (NO tenant FK)
+  - changeSet:
+      id: 13-create-webhook-logs
+      author: rentaxis
+      changes:
+        - createTable:
+            tableName: webhook_logs
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: gateway_code
+                  type: VARCHAR(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: event_type
+                  type: VARCHAR(100)
+              - column:
+                  name: payload_json
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: signature_header
+                  type: VARCHAR(500)
+              - column:
+                  name: processed
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+              - column:
+                  name: processing_result
+                  type: TEXT
+              - column:
+                  name: tenant_id
+                  type: UUID
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+
+  # Alter payment_schedules: add payment_method column
+  - changeSet:
+      id: 13-add-payment-method-to-payment-schedules
+      author: rentaxis
+      changes:
+        - addColumn:
+            tableName: payment_schedules
+            columns:
+              - column:
+                  name: payment_method
+                  type: VARCHAR(20)
+                  defaultValue: CHEQUE
+
+  # Seed data: Insert Razorpay into payment_gateways
+  - changeSet:
+      id: 13-seed-razorpay-gateway
+      author: rentaxis
+      changes:
+        - insert:
+            tableName: payment_gateways
+            columns:
+              - column:
+                  name: id
+                  valueComputed: gen_random_uuid()
+              - column:
+                  name: code
+                  value: RAZORPAY
+              - column:
+                  name: name
+                  value: Razorpay
+              - column:
+                  name: is_active
+                  valueBoolean: true
+              - column:
+                  name: sdk_js_url
+                  value: https://checkout.razorpay.com/v1/checkout.js
+              - column:
+                  name: supported_currencies
+                  value: INR,AED,USD

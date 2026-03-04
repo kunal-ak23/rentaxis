@@ -6,5 +6,6 @@ public enum PaymentStatus {
     DEPOSITED,
     CLEARED,
     BOUNCED,
-    REPLACED
+    REPLACED,
+    ONLINE_PENDING
 }

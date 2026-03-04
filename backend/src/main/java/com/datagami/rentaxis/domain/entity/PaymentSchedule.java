@@ -63,4 +63,7 @@ public class PaymentSchedule extends BaseTenantEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "replaced_by_id")
     private PaymentSchedule replacedBy;
+
+    @Column(name = "payment_method", length = 20)
+    private String paymentMethod = "CHEQUE";
 }

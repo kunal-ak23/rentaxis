@@ -4,22 +4,24 @@ import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useTranslations, useLocale } from "next-intl";
 import { Link } from "@/i18n/routing";
-import { Building2, Home, FileText, ArrowLeft, Plus, MapPin, Upload, Calendar, DollarSign } from "lucide-react";
+import { Building2, Home, FileText, ArrowLeft, Plus, MapPin, Upload, Calendar, DollarSign, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSession } from "next-auth/react";
-import { hasPermission, type UserRole } from "@/lib/rbac";
+import { hasPermission, canConfigureRentSettings, type UserRole } from "@/lib/rbac";
 
 export default function PropertyDetailPage() {
     const params = useParams();
     const router = useRouter();
     const t = useTranslations("MasterData");
     const e = useTranslations("Emirates");
+    const tOnlinePayments = useTranslations("OnlinePayments");
     const locale = useLocale();
     const propertyId = params.id as string;
 
     const { data: session } = useSession();
     const userRole = (session?.user as any)?.role as UserRole | undefined;
     const canCreate = hasPermission(userRole, 'canCreateProperties');
+    const canManageRentSettings = userRole ? canConfigureRentSettings(userRole) : false;
 
     const [activeTab, setActiveTab] = useState<"overview" | "buildings" | "units" | "leases">("overview");
     const [property, setProperty] = useState<any>(null);
@@ -82,6 +84,15 @@ export default function PropertyDetailPage() {
                             {property.makaniNumber && ` • Makani: ${property.makaniNumber}`}
                         </p>
                     </div>
+                    {canManageRentSettings && (
+                        <Link
+                            href="/dashboard/settings/rent-settings"
+                            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-foreground transition-all"
+                        >
+                            <Settings size={14} />
+                            {tOnlinePayments("rentSettings")}
+                        </Link>
+                    )}
                 </div>
             </div>
 

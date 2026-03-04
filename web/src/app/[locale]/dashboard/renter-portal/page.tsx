@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from "react";
 import { useTranslations } from "next-intl";
-import { FileText, Calendar, DollarSign, Home, CheckCircle, XCircle, Download, Clock, AlertCircle } from "lucide-react";
+import { FileText, Calendar, DollarSign, Home, CheckCircle, XCircle, Download, Clock, AlertCircle, CreditCard } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
+import { Link } from "@/i18n/routing";
 
 type Lease = {
     id: string;
@@ -25,12 +26,15 @@ type Lease = {
 
 export default function RenterPortalPage() {
     const t = useTranslations("MasterData");
+    const tPayments = useTranslations("OnlinePayments");
     const [leases, setLeases] = useState<Lease[]>([]);
     const [loading, setLoading] = useState(true);
+    const [pendingPaymentsCount, setPendingPaymentsCount] = useState(0);
     const { data: session } = useSession();
 
     useEffect(() => {
         fetchMyLeases();
+        fetchPendingPayments();
     }, []);
 
     const fetchMyLeases = async () => {
@@ -41,6 +45,21 @@ export default function RenterPortalPage() {
             console.error(err);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const fetchPendingPayments = async () => {
+        try {
+            const res = await fetch("/api/proxy/v1/online-payments/my-payments");
+            if (res.ok) {
+                const payments = await res.json();
+                const pending = payments.filter(
+                    (p: any) => p.status === "PENDING" || p.status === "ONLINE_PENDING"
+                );
+                setPendingPaymentsCount(pending.length);
+            }
+        } catch (err) {
+            console.error(err);
         }
     };
 
@@ -103,6 +122,32 @@ export default function RenterPortalPage() {
                     {t("renterPortalDesc")}
                 </p>
             </div>
+
+            {/* My Payments Quick Link Card */}
+            <Link href="/dashboard/renter-portal/payments">
+                <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-gray-100 hover:shadow-md transition-all mb-6 cursor-pointer">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-600 border border-blue-100">
+                                <CreditCard size={22} />
+                            </div>
+                            <div>
+                                <h3 className="text-sm font-black text-foreground tracking-tight">
+                                    {tPayments("myPayments")}
+                                </h3>
+                                <p className="text-[10px] font-bold text-gray-400">
+                                    {tPayments("description")}
+                                </p>
+                            </div>
+                        </div>
+                        {pendingPaymentsCount > 0 && (
+                            <span className="inline-flex items-center px-3 py-1.5 rounded-full text-[9px] font-bold uppercase tracking-widest border bg-red-50 text-red-600 border-red-200">
+                                {pendingPaymentsCount} {tPayments("paymentsDue")}
+                            </span>
+                        )}
+                    </div>
+                </div>
+            </Link>
 
             <div className="space-y-6">
                 {leases.map(lease => (

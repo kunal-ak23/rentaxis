@@ -18,7 +18,8 @@ import {
     Home,
     FileText,
     Contact,
-    CreditCard
+    CreditCard,
+    Sliders,
 } from 'lucide-react';
 import { Link } from "@/i18n/routing";
 import { useTranslations, useLocale } from "next-intl";
@@ -26,11 +27,12 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { signOut, useSession } from "next-auth/react";
-import { hasPermission, type UserRole } from "@/lib/rbac";
+import { hasPermission, canConfigureGateway, type UserRole } from "@/lib/rbac";
 
 export default function MvpSidebar() {
     const t = useTranslations("MasterData");
     const tPayments = useTranslations("Payments");
+    const tOnlinePayments = useTranslations("OnlinePayments");
     const tDashboard = useTranslations("Dashboard");
     const locale = useLocale();
     const pathname = usePathname();
@@ -62,6 +64,11 @@ export default function MvpSidebar() {
         { name: tPayments("payments"), href: "/dashboard/finance/payments", icon: CreditCard },
     ] : [];
 
+    const settingsItems = (userRole && canConfigureGateway(userRole)) ? [
+        { name: tOnlinePayments("gatewayConfig"), href: "/dashboard/settings/gateway", icon: CreditCard },
+        { name: tOnlinePayments("rentSettings"), href: "/dashboard/settings/rent-settings", icon: Sliders },
+    ] : [];
+
     // Tenant user minimal items (placeholder for future My Unit / My Payments pages)
     const tenantUserItems = userRole === 'TENANT_USER' ? [
         { name: "My Unit", href: "/dashboard/my-unit", icon: Home },
@@ -70,6 +77,7 @@ export default function MvpSidebar() {
     // Renter portal items
     const renterItems = hasPermission(userRole, 'canViewRenterPortal') ? [
         { name: "My Leases", href: "/dashboard/renter-portal", icon: FileText },
+        { name: tOnlinePayments("myPayments"), href: "/dashboard/renter-portal/payments", icon: CreditCard },
     ] : [];
 
     const allItems = menuItems.length > 0 ? menuItems : renterItems.length > 0 ? renterItems : tenantUserItems;
@@ -181,6 +189,40 @@ export default function MvpSidebar() {
                                     {isActive && !isCollapsed && (
                                         <motion.div
                                             layoutId="sidebar-finance-indicator"
+                                            className="absolute left-[-12px] w-1 h-4 bg-primary rounded-r-full"
+                                        />
+                                    )}
+                                </Link>
+                            );
+                        })}
+                    </>
+                )}
+
+                {settingsItems.length > 0 && (
+                    <>
+                        <div className={cn("px-3 mt-6 mb-2 text-[9px] font-bold text-gray-400 uppercase tracking-[0.2em]", isCollapsed && "hidden")}>
+                            Settings
+                        </div>
+                        {settingsItems.map((item) => {
+                            const isActive = pathname.includes(item.href);
+                            const Icon = item.icon;
+                            return (
+                                <Link
+                                    key={item.href}
+                                    href={item.href}
+                                    className={cn(
+                                        "group flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 text-xs font-semibold relative",
+                                        isActive
+                                            ? "bg-accent text-foreground"
+                                            : "text-gray-400 hover:bg-gray-50 hover:text-foreground",
+                                        isCollapsed && "justify-center"
+                                    )}
+                                >
+                                    <Icon size={16} className={cn("transition-transform", !isActive && "group-hover:scale-105")} />
+                                    {!isCollapsed && <span className="flex-1">{item.name}</span>}
+                                    {isActive && !isCollapsed && (
+                                        <motion.div
+                                            layoutId="sidebar-settings-indicator"
                                             className="absolute left-[-12px] w-1 h-4 bg-primary rounded-r-full"
                                         />
                                     )}

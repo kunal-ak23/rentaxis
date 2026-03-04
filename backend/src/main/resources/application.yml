@@ -22,3 +22,5 @@ server:
 rentaxis:
   contracts:
     storage-path: ./data/contracts
+  encryption:
+    key: ${RENTAXIS_ENCRYPTION_KEY:}

@@ -62,3 +62,15 @@ export function canViewPayments(role: UserRole): boolean {
 export function canManagePayments(role: UserRole): boolean {
     return ['SUPER_ADMIN', 'TENANT_ADMIN'].includes(role);
 }
+
+export function canPayOnline(role: UserRole): boolean {
+    return ['RENTER'].includes(role);
+}
+
+export function canConfigureGateway(role: UserRole): boolean {
+    return ['SUPER_ADMIN', 'TENANT_ADMIN'].includes(role);
+}
+
+export function canConfigureRentSettings(role: UserRole): boolean {
+    return ['SUPER_ADMIN', 'TENANT_ADMIN'].includes(role);
+}
