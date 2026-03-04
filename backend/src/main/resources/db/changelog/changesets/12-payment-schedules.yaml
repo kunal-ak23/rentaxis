@@ -1,0 +1,118 @@
+databaseChangeLog:
+  - changeSet:
+      id: 12-create-payment-schedules
+      author: rentaxis
+      changes:
+        - createTable:
+            tableName: payment_schedules
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: tenant_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+              - column:
+                  name: lease_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_payment_schedule_lease
+                    referencedTableName: leases
+                    referencedColumnNames: id
+              - column:
+                  name: unit_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_payment_schedule_unit
+                    referencedTableName: units
+                    referencedColumnNames: id
+              - column:
+                  name: property_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_payment_schedule_property
+                    referencedTableName: properties
+                    referencedColumnNames: id
+              - column:
+                  name: installment_number
+                  type: INT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: due_date
+                  type: DATE
+                  constraints:
+                    nullable: false
+              - column:
+                  name: amount
+                  type: DECIMAL(14, 2)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: VARCHAR(20)
+                  defaultValue: PENDING
+                  constraints:
+                    nullable: false
+              - column:
+                  name: cheque_number
+                  type: VARCHAR(50)
+              - column:
+                  name: bank_name
+                  type: VARCHAR(100)
+              - column:
+                  name: payer_name
+                  type: VARCHAR(200)
+              - column:
+                  name: status_changed_at
+                  type: TIMESTAMP
+              - column:
+                  name: notes
+                  type: TEXT
+              - column:
+                  name: replaced_by_id
+                  type: UUID
+                  constraints:
+                    foreignKeyName: fk_payment_schedule_replaced_by
+                    referencedTableName: payment_schedules
+                    referencedColumnNames: id
+
+        # Indexes for tenant isolation and query performance
+        - createIndex:
+            indexName: idx_payment_schedules_tenant_id
+            tableName: payment_schedules
+            columns:
+              - column:
+                  name: tenant_id
+        - createIndex:
+            indexName: idx_payment_schedules_lease_id
+            tableName: payment_schedules
+            columns:
+              - column:
+                  name: lease_id
+        - createIndex:
+            indexName: idx_payment_schedules_property_id
+            tableName: payment_schedules
+            columns:
+              - column:
+                  name: property_id
+        - createIndex:
+            indexName: idx_payment_schedules_status
+            tableName: payment_schedules
+            columns:
+              - column:
+                  name: status
+        - createIndex:
+            indexName: idx_payment_schedules_due_date
+            tableName: payment_schedules
+            columns:
+              - column:
+                  name: due_date

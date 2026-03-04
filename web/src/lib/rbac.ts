@@ -54,3 +54,11 @@ export function getRoleLabel(role: UserRole | string): string {
     };
     return labels[role] || role.replace(/_/g, ' ');
 }
+
+export function canViewPayments(role: UserRole): boolean {
+    return ['SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER'].includes(role);
+}
+
+export function canManagePayments(role: UserRole): boolean {
+    return ['SUPER_ADMIN', 'TENANT_ADMIN'].includes(role);
+}

@@ -21,4 +21,6 @@ databaseChangeLog:
       file: db/changelog/changesets/10-lease-lifecycle.yaml
   - include:
       file: db/changelog/changesets/11-renter-user-link.yaml
+  - include:
+      file: db/changelog/changesets/12-payment-schedules.yaml
 

@@ -26,6 +26,7 @@ public class LeaseService {
     private final RenterRepository renterRepository;
     private final LeaseEventRepository leaseEventRepository;
     private final LeaseDocumentRepository leaseDocumentRepository;
+    private final PaymentScheduleService paymentScheduleService;
 
     @Transactional(readOnly = true)
     public List<LeaseDTO> getAllLeases() {
@@ -97,6 +98,8 @@ public class LeaseService {
         Lease savedLease = leaseRepository.save(lease);
         recordEvent(savedLease, previousStatus, LeaseStatus.ACTIVE, "Lease activated");
 
+        paymentScheduleService.generateScheduleForLease(savedLease);
+
         return mapToDTO(savedLease);
     }
 
@@ -157,6 +160,8 @@ public class LeaseService {
 
         Lease savedLease = leaseRepository.save(lease);
         recordEvent(savedLease, previousStatus, LeaseStatus.ACTIVE, "Lease accepted by renter");
+
+        paymentScheduleService.generateScheduleForLease(savedLease);
 
         return mapToDTO(savedLease);
     }
