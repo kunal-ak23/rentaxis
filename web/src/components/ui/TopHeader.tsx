@@ -38,7 +38,8 @@ export function TopHeader() {
                     {/* Locale Switcher */}
                     <div className="flex items-center bg-gray-100 rounded-lg p-1 border border-gray-200 shadow-sm">
                         <Link
-                            href={pathname.replace(`/${locale}`, "/en")}
+                            href={pathname.replace(new RegExp(`^/${locale}`), '') || '/'}
+                            locale="en"
                             className={cn(
                                 "px-3 py-1 rounded-md text-xs font-black tracking-widest transition-all",
                                 locale === 'en' ? 'bg-white text-primary shadow-sm' : 'text-gray-400 hover:text-gray-600'
@@ -47,7 +48,8 @@ export function TopHeader() {
                             EN
                         </Link>
                         <Link
-                            href={pathname.replace(`/${locale}`, "/ar")}
+                            href={pathname.replace(new RegExp(`^/${locale}`), '') || '/'}
+                            locale="ar"
                             className={cn(
                                 "px-3 py-1 rounded-md text-xs font-black tracking-widest transition-all",
                                 locale === 'ar' ? 'bg-white text-primary shadow-sm' : 'text-gray-400 hover:text-gray-600'

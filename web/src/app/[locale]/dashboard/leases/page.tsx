@@ -37,6 +37,17 @@ type Renter = {
     nameAr: string;
 };
 
+type PaymentStats = {
+    leaseId: string;
+    totalPayments: number;
+    clearedPayments: number;
+    pendingPayments: number;
+    overduePayments: number;
+    totalAmount: number;
+    clearedAmount: number;
+    overdueAmount: number;
+};
+
 const BOARD_COLUMNS = [
     { key: "draft", label: "Draft", statuses: ["DRAFT"], color: "bg-gray-500" },
     { key: "pending", label: "Pending Signature", statuses: ["PENDING_SIGNATURE"], color: "bg-yellow-500" },
@@ -52,6 +63,8 @@ export default function LeasesPage() {
     const [renters, setRenters] = useState<Renter[]>([]);
     const [showForm, setShowForm] = useState(false);
     const [viewMode, setViewMode] = useState<'grid' | 'board'>('grid');
+    const [paymentStatsMap, setPaymentStatsMap] = useState<Record<string, PaymentStats>>({});
+    const [paymentStatsLoading, setPaymentStatsLoading] = useState(false);
 
     const { data: session } = useSession();
     const userRole = (session?.user as any)?.role as UserRole | undefined;
@@ -74,12 +87,46 @@ export default function LeasesPage() {
         fetchRenters();
     }, []);
 
+    useEffect(() => {
+        if (leases.length > 0) {
+            fetchPaymentStats(leases);
+        }
+    }, [leases]);
+
     const fetchLeases = async () => {
         try {
             const res = await fetch("/api/proxy/v1/leases");
             if (res.ok) setLeases(await res.json());
         } catch (err) {
             console.error(err);
+        }
+    };
+
+    const fetchPaymentStats = async (allLeases: Lease[]) => {
+        const activeLeaseIds = allLeases
+            .filter(l => l.status === "ACTIVE" || l.status === "NOTICE_GIVEN")
+            .map(l => l.id);
+        if (activeLeaseIds.length === 0) return;
+
+        setPaymentStatsLoading(true);
+        try {
+            const res = await fetch("/api/proxy/v1/payments/stats-by-leases", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(activeLeaseIds),
+            });
+            if (res.ok) {
+                const stats: PaymentStats[] = await res.json();
+                const map: Record<string, PaymentStats> = {};
+                for (const s of stats) {
+                    map[s.leaseId] = s;
+                }
+                setPaymentStatsMap(map);
+            }
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setPaymentStatsLoading(false);
         }
     };
 
@@ -187,6 +234,46 @@ export default function LeasesPage() {
         }
     };
 
+    const renderPaymentProgress = (leaseId: string) => {
+        const stats = paymentStatsMap[leaseId];
+
+        if (paymentStatsLoading && !stats) {
+            return (
+                <div className="mt-3 pt-3 border-t border-gray-100">
+                    <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden animate-pulse" />
+                    <div className="mt-1.5 h-3 w-24 bg-gray-100 rounded animate-pulse" />
+                </div>
+            );
+        }
+
+        if (!stats) return null;
+
+        const progressPercent = stats.totalPayments > 0
+            ? Math.round((stats.clearedPayments / stats.totalPayments) * 100)
+            : 0;
+
+        return (
+            <div className="mt-3 pt-3 border-t border-gray-100">
+                <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                    <div
+                        className="h-full bg-green-500 rounded-full transition-all duration-500"
+                        style={{ width: `${progressPercent}%` }}
+                    />
+                </div>
+                <div className="flex items-center gap-2 mt-1.5">
+                    <span className="text-xs font-medium text-gray-500">
+                        {stats.clearedPayments}/{stats.totalPayments} {t("paymentsProgress")}
+                    </span>
+                    {stats.overduePayments > 0 && (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-red-50 text-red-600 border border-red-100">
+                            {stats.overduePayments} {t("overduePayments")}
+                        </span>
+                    )}
+                </div>
+            </div>
+        );
+    };
+
     const renderLeaseCard = (lease: Lease, compact = false) => (
         <div key={lease.id} className={cn("bg-white rounded-[2rem] p-6 shadow-sm border border-gray-100 hover:shadow-md transition-all flex flex-col justify-between", compact && "rounded-2xl p-4")}>
             <div>
@@ -231,6 +318,8 @@ export default function LeasesPage() {
                         </div>
                     )}
                 </div>
+
+                {!compact && (lease.status === 'ACTIVE' || lease.status === 'NOTICE_GIVEN') && renderPaymentProgress(lease.id)}
             </div>
 
             {canManageLeases && (
@@ -286,7 +375,7 @@ export default function LeasesPage() {
     );
 
     return (
-        <div className="p-8 max-w-7xl mx-auto">
+        <div>
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10">
                 <div>
                     <h1 className="text-xl font-black text-foreground tracking-tight mb-1">
@@ -400,11 +489,11 @@ export default function LeasesPage() {
 
             {/* Board View */}
             {viewMode === 'board' && (
-                <div className="flex gap-4 overflow-x-auto pb-4">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 pb-4">
                     {BOARD_COLUMNS.map(col => {
                         const columnLeases = leases.filter(l => col.statuses.includes(l.status));
                         return (
-                            <div key={col.key} className="flex-shrink-0 w-[300px]">
+                            <div key={col.key} className="min-w-0">
                                 <div className="flex items-center gap-2 mb-4 px-2">
                                     <div className={cn("w-2.5 h-2.5 rounded-full", col.color)} />
                                     <h3 className="text-xs font-black text-foreground uppercase tracking-widest">{col.label}</h3>
