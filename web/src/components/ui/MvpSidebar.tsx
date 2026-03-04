@@ -17,7 +17,8 @@ import {
     BarChart3,
     Home,
     FileText,
-    Contact
+    Contact,
+    CreditCard
 } from 'lucide-react';
 import { Link } from "@/i18n/routing";
 import { useTranslations, useLocale } from "next-intl";
@@ -29,6 +30,8 @@ import { hasPermission, type UserRole } from "@/lib/rbac";
 
 export default function MvpSidebar() {
     const t = useTranslations("MasterData");
+    const tPayments = useTranslations("Payments");
+    const tDashboard = useTranslations("Dashboard");
     const locale = useLocale();
     const pathname = usePathname();
     const [isCollapsed, setIsCollapsed] = useState(false);
@@ -56,6 +59,7 @@ export default function MvpSidebar() {
         { name: t("chartOfAccounts"), href: "/dashboard/finance/accounts", icon: BookOpen },
         { name: t("transactions"), href: "/dashboard/finance/transactions", icon: Receipt },
         { name: t("reports"), href: "/dashboard/finance/reports", icon: BarChart3 },
+        { name: tPayments("payments"), href: "/dashboard/finance/payments", icon: CreditCard },
     ] : [];
 
     // Tenant user minimal items (placeholder for future My Unit / My Payments pages)
@@ -99,6 +103,27 @@ export default function MvpSidebar() {
             </div>
 
             <nav className="flex-1 px-3 space-y-1">
+                {/* Dashboard Home Link */}
+                <Link
+                    href="/dashboard"
+                    className={cn(
+                        "group flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 text-xs font-semibold relative mb-3",
+                        pathname.endsWith("/dashboard") || pathname.endsWith("/dashboard/")
+                            ? "bg-accent text-foreground"
+                            : "text-gray-400 hover:bg-gray-50 hover:text-foreground",
+                        isCollapsed && "justify-center"
+                    )}
+                >
+                    <Home size={16} className={cn("transition-transform", !(pathname.endsWith("/dashboard") || pathname.endsWith("/dashboard/")) && "group-hover:scale-105")} />
+                    {!isCollapsed && <span className="flex-1">{tDashboard("dashboard")}</span>}
+                    {(pathname.endsWith("/dashboard") || pathname.endsWith("/dashboard/")) && !isCollapsed && (
+                        <motion.div
+                            layoutId="sidebar-dashboard-indicator"
+                            className="absolute left-[-12px] w-1 h-4 bg-primary rounded-r-full"
+                        />
+                    )}
+                </Link>
+
                 {allItems.length > 0 && (
                     <div className={cn("px-3 mb-2 text-[9px] font-bold text-gray-400 uppercase tracking-[0.2em]", isCollapsed && "hidden")}>
                         Overview
