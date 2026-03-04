@@ -40,7 +40,7 @@ export default function UnitsPage({ params }: { params: Promise<{ id: string }> 
 
     const fetchUnits = async () => {
         try {
-            const res = await fetch(`/api/v1/units/property/${propertyId}`);
+            const res = await fetch(`/api/proxy/v1/units/property/${propertyId}`);
             if (res.ok) {
                 const data = await res.json();
                 setUnits(data);
@@ -53,7 +53,7 @@ export default function UnitsPage({ params }: { params: Promise<{ id: string }> 
     const handleSubmit = async (ev: React.FormEvent) => {
         ev.preventDefault();
         try {
-            const res = await fetch("/api/v1/units", {
+            const res = await fetch("/api/proxy/v1/units", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(formData)
