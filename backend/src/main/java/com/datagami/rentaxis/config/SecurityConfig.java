@@ -29,7 +29,7 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/v1/auth/**", "/api/auth/**", "/api/webhooks/**").permitAll()
+                        .requestMatchers("/api/v1/auth/**", "/api/auth/**", "/api/webhooks/**", "/actuator/health").permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(apiSecurityFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();

@@ -48,8 +48,10 @@ echo ""
 echo "==> Building Docker images..."
 cd "$PROJECT_ROOT"
 
-docker build -t rentaxis-backend:latest ./backend
-docker build \
+TARGET_PLATFORM="linux/amd64"
+
+docker build --platform "$TARGET_PLATFORM" -t rentaxis-backend:latest ./backend
+docker build --platform "$TARGET_PLATFORM" \
   --build-arg NEXT_PUBLIC_API_URL="${NEXT_PUBLIC_API_URL}" \
   -t rentaxis-web:latest ./web
 
@@ -76,9 +78,8 @@ scp $SSH_OPTS "$BUILD_DIR/web.tar.gz" "$SSH_TARGET:$REMOTE_DIR/"
 # Upload compose file and Caddyfile
 scp $SSH_OPTS "$PROJECT_ROOT/docker-compose.prod.yml" "$SSH_TARGET:$REMOTE_DIR/docker-compose.yml"
 
-# Generate Caddyfile from template with DOMAIN substituted
-envsubst '$DOMAIN' < "$PROJECT_ROOT/infra/caddy/Caddyfile.template" > "$BUILD_DIR/Caddyfile"
-scp $SSH_OPTS "$BUILD_DIR/Caddyfile" "$SSH_TARGET:$REMOTE_DIR/Caddyfile"
+# Caddy reads {$DOMAIN} from its environment (set via docker compose)
+scp $SSH_OPTS "$PROJECT_ROOT/infra/caddy/Caddyfile.template" "$SSH_TARGET:$REMOTE_DIR/Caddyfile"
 
 # Upload env file (renamed to .env for docker compose)
 scp $SSH_OPTS "$ENV_FILE" "$SSH_TARGET:$REMOTE_DIR/.env"

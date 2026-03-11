@@ -3,66 +3,22 @@ databaseChangeLog:
       id: 14-add-missing-indexes
       author: rentaxis
       changes:
-        - createIndex:
-            indexName: idx_properties_tenant_id
-            tableName: properties
-            columns:
-              - column:
-                  name: tenant_id
-        - createIndex:
-            indexName: idx_buildings_tenant_id
-            tableName: buildings
-            columns:
-              - column:
-                  name: tenant_id
-        - createIndex:
-            indexName: idx_units_tenant_id
-            tableName: units
-            columns:
-              - column:
-                  name: tenant_id
-        - createIndex:
-            indexName: idx_units_property_id
-            tableName: units
-            columns:
-              - column:
-                  name: property_id
-        - createIndex:
-            indexName: idx_users_tenant_id
-            tableName: users
-            columns:
-              - column:
-                  name: tenant_id
-        - createIndex:
-            indexName: idx_payment_schedules_lease_due
-            tableName: payment_schedules
-            columns:
-              - column:
-                  name: lease_id
-              - column:
-                  name: due_date
-        - createIndex:
-            indexName: idx_financial_transactions_tenant_date
-            tableName: financial_transactions
-            columns:
-              - column:
-                  name: tenant_id
-              - column:
-                  name: transaction_date
-        - createIndex:
-            indexName: idx_leases_unit_id
-            tableName: leases
-            columns:
-              - column:
-                  name: unit_id
-        - createIndex:
-            indexName: idx_leases_renter_id
-            tableName: leases
-            columns:
-              - column:
-                  name: renter_id
+        - sql:
+            sql: >
+              CREATE INDEX IF NOT EXISTS idx_properties_tenant_id ON properties(tenant_id);
+              CREATE INDEX IF NOT EXISTS idx_buildings_tenant_id ON buildings(tenant_id);
+              CREATE INDEX IF NOT EXISTS idx_units_tenant_id ON units(tenant_id);
+              CREATE INDEX IF NOT EXISTS idx_units_property_id ON units(property_id);
+              CREATE INDEX IF NOT EXISTS idx_users_tenant_id ON users(tenant_id);
+              CREATE INDEX IF NOT EXISTS idx_payment_schedules_lease_due ON payment_schedules(lease_id, due_date);
+              CREATE INDEX IF NOT EXISTS idx_financial_transactions_tenant_date ON financial_transactions(tenant_id, date);
+              CREATE INDEX IF NOT EXISTS idx_leases_unit_id ON leases(unit_id);
+              CREATE INDEX IF NOT EXISTS idx_leases_renter_id ON leases(renter_id);
 
-        # Add version columns for optimistic locking
+  - changeSet:
+      id: 14-add-version-columns
+      author: rentaxis
+      changes:
         - addColumn:
             tableName: leases
             columns:
