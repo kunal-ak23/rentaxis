@@ -1,0 +1,36 @@
+{$DOMAIN} {
+    # Frontend — Next.js
+    handle /api/proxy/* {
+        # API proxy requests go to Next.js (which proxies to backend)
+        reverse_proxy web:3000
+    }
+
+    handle /api/v1/* {
+        # Direct API calls (webhooks, external integrations)
+        reverse_proxy backend:8080
+    }
+
+    handle {
+        reverse_proxy web:3000
+    }
+
+    # Security headers
+    header {
+        X-Frame-Options "SAMEORIGIN"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        X-XSS-Protection "1; mode=block"
+        -Server
+    }
+
+    # Gzip compression
+    encode gzip
+
+    # Access logs
+    log {
+        output file /var/log/caddy/access.log {
+            roll_size 50mb
+            roll_keep 5
+        }
+    }
+}

@@ -1,9 +1,11 @@
-# Environment files
+# Environment files (keep .template files)
 .env
 .env.*
 .env.backend
 .env.web
 .env.postgres
+infra/envs/*.env
+!infra/envs/*.env.template
 
 # IDE
 .idea/
