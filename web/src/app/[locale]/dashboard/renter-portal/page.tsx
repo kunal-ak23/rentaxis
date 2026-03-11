@@ -108,7 +108,7 @@ export default function RenterPortalPage() {
         }
     };
 
-    const userName = (session?.user as any)?.name || "Renter";
+    const userName = session?.user?.name || "Renter";
 
     if (loading) return <div className="p-8">Loading...</div>;
 

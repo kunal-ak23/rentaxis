@@ -7,5 +7,6 @@ public enum PaymentStatus {
     CLEARED,
     BOUNCED,
     REPLACED,
-    ONLINE_PENDING
+    ONLINE_PENDING,
+    CANCELLED
 }

@@ -1,6 +1,5 @@
 package com.datagami.rentaxis.core.service;
 
-import com.datagami.rentaxis.api.dto.VerifyPaymentRequestDTO;
 import com.datagami.rentaxis.core.service.gateway.PaymentGatewayFactory;
 import com.datagami.rentaxis.core.service.gateway.PaymentGatewayProvider;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
@@ -101,13 +100,15 @@ public class WebhookService {
 
             // Process payment.captured event
             if ("payment.captured".equals(eventType)) {
-                VerifyPaymentRequestDTO verifyRequest = new VerifyPaymentRequestDTO();
-                verifyRequest.setGatewayOrderId(orderId);
-                verifyRequest.setGatewayPaymentId(paymentId);
-                // Webhooks don't have the client-side signature, so we use the webhook signature
-                verifyRequest.setGatewaySignature(signature);
+                // Webhook signature already verified above - directly update payment status
+                // Do NOT call verifyPayment() as it expects client-side signature format
+                onlinePayment.setStatus(com.datagami.rentaxis.domain.entity.enums.OnlinePaymentStatus.CAPTURED);
+                onlinePayment.setGatewayPaymentId(paymentId);
+                onlinePayment.setUpdatedAt(Instant.now());
+                onlinePaymentRepository.save(onlinePayment);
 
-                onlinePaymentService.verifyPayment(verifyRequest);
+                // Clear the associated payment schedule
+                onlinePaymentService.clearPaymentFromWebhook(onlinePayment.getPaymentSchedule());
                 webhookLog.setProcessingResult("Payment captured successfully");
             } else {
                 webhookLog.setProcessingResult("Event type not handled: " + eventType);

@@ -102,7 +102,7 @@ export default function DashboardPage() {
 
     if (!summary) {
         return (
-            <div className="p-8 max-w-7xl mx-auto">
+            <div>
                 <div className="text-center py-24 bg-gray-50 border border-dashed border-gray-200 rounded-[2.5rem] flex flex-col items-center">
                     <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center text-gray-200 shadow-sm mb-6">
                         <Activity size={32} />
@@ -118,7 +118,7 @@ export default function DashboardPage() {
     const occupancyPercent = Math.round(summary.occupancyRate);
 
     return (
-        <div className="p-8 max-w-7xl mx-auto">
+        <div>
             {/* Header */}
             <div className="mb-10">
                 <h1 className="text-xl font-black text-foreground tracking-tight mb-1">

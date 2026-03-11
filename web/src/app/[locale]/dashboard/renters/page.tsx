@@ -22,7 +22,7 @@ export default function RentersPage() {
     const [showForm, setShowForm] = useState(false);
     const { data: session } = useSession();
 
-    const userRole = (session?.user as any)?.role as UserRole | undefined;
+    const userRole = session?.user?.role as UserRole | undefined;
     const canManageRenters = hasPermission(userRole, 'canManageRenters');
 
     const [formData, setFormData] = useState({
@@ -81,7 +81,7 @@ export default function RentersPage() {
     };
 
     return (
-        <div className="p-8 max-w-7xl mx-auto">
+        <div>
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10">
                 <div>
                     <h1 className="text-xl font-black text-foreground tracking-tight mb-1">

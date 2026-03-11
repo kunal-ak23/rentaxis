@@ -199,7 +199,7 @@ export default function TransactionsPage() {
     const totalCredit = transactions.reduce((s, t) => s + (t.credit || 0), 0);
 
     return (
-        <div className="p-8 max-w-7xl mx-auto">
+        <div>
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10">
                 <div>
                     <h1 className="text-xl font-black text-foreground tracking-tight mb-1 flex items-center gap-2">
@@ -246,7 +246,7 @@ export default function TransactionsPage() {
                             <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5">{t("accountType")}</label>
                             <select className="w-full bg-input border border-border p-2.5 rounded-xl text-xs" value={filters.accountType} onChange={ev => setFilters({ ...filters, accountType: ev.target.value })}>
                                 <option value="">All Types</option>
-                                {["ASSET", "LIABILITY", "INCOME", "EXPENSE", "EQUITY"].map(t => <option key={t} value={t}>{t}</option>)}
+                                {["ASSET", "LIABILITY", "INCOME", "EXPENSE", "EQUITY"].map(type => <option key={type} value={type}>{type}</option>)}
                             </select>
                         </div>
                         <div>

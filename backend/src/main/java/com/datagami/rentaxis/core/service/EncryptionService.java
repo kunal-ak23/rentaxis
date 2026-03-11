@@ -21,10 +21,11 @@ public class EncryptionService {
 
     public EncryptionService(@Value("${rentaxis.encryption.key:}") String base64Key) {
         if (base64Key == null || base64Key.isEmpty()) {
-            // Generate a default key for development (NOT for production)
-            byte[] defaultKey = new byte[32];
-            new SecureRandom().nextBytes(defaultKey);
+            // Use a stable dev-only key so encrypted data survives restarts
+            // WARNING: This key is NOT secure for production - set RENTAXIS_ENCRYPTION_KEY env var
+            byte[] defaultKey = "RentAxisDevKey__RentAxisDevKey__".getBytes();
             this.secretKey = new SecretKeySpec(defaultKey, "AES");
+            System.err.println("WARNING: Using default encryption key. Set RENTAXIS_ENCRYPTION_KEY for production!");
         } else {
             byte[] keyBytes = Base64.getDecoder().decode(base64Key);
             this.secretKey = new SecretKeySpec(keyBytes, "AES");

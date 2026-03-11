@@ -12,6 +12,11 @@
 
 # testing
 /coverage
+/e2e/.auth/
+/e2e/.test-context.json
+/test-results/
+/playwright-report/
+/blob-report/
 
 # next.js
 /.next/

@@ -48,4 +48,7 @@ public class Lease extends BaseTenantEntity {
 
     @Column(name = "payment_terms")
     private Integer paymentTerms; // e.g., 4 = 4 cheques
+
+    @Version
+    private Long version;
 }

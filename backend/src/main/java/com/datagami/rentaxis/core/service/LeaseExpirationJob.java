@@ -35,6 +35,12 @@ public class LeaseExpirationJob {
         for (Lease lease : expiredLeases) {
             LeaseStatus prev = lease.getStatus();
             lease.setStatus(LeaseStatus.EXPIRED);
+
+            // Set unit back to VACANT
+            if (lease.getUnit() != null) {
+                lease.getUnit().setStatus(com.datagami.rentaxis.domain.entity.enums.UnitStatus.VACANT);
+            }
+
             leaseRepository.save(lease);
 
             LeaseEvent event = new LeaseEvent();

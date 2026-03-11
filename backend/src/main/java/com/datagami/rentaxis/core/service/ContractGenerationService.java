@@ -38,10 +38,14 @@ public class ContractGenerationService {
     @Transactional
     public LeaseDocumentDTO generateContract(UUID leaseId) {
         Lease lease = leaseRepository.findById(leaseId)
-                .orElseThrow(() -> new RuntimeException("Lease not found"));
+                .orElseThrow(() -> new com.datagami.rentaxis.api.exception.NotFoundException("Lease not found"));
+        UUID tenantId = com.datagami.rentaxis.core.tenant.TenantContextHolder.getTenantId();
+        if (tenantId != null && !tenantId.equals(lease.getTenantId())) {
+            throw new com.datagami.rentaxis.api.exception.NotFoundException("Lease not found");
+        }
 
         if (lease.getStatus() != LeaseStatus.DRAFT) {
-            throw new RuntimeException("Contract can only be generated for DRAFT leases");
+            throw new com.datagami.rentaxis.api.exception.BusinessRuleViolationException("Contract can only be generated for DRAFT leases");
         }
 
         // Load template
@@ -126,7 +130,7 @@ public class ContractGenerationService {
     @Transactional(readOnly = true)
     public File getDocumentFile(UUID docId) {
         LeaseDocument doc = leaseDocumentRepository.findById(docId)
-                .orElseThrow(() -> new RuntimeException("Document not found"));
+                .orElseThrow(() -> new com.datagami.rentaxis.api.exception.NotFoundException("Document not found"));
         File file = new File(doc.getDocumentUrl());
         if (!file.exists()) {
             throw new RuntimeException("Document file not found on disk");

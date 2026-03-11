@@ -4,6 +4,8 @@ import com.datagami.rentaxis.api.dto.PaymentScheduleDTO;
 import com.datagami.rentaxis.api.dto.LeasePaymentStatsDTO;
 import com.datagami.rentaxis.api.dto.PaymentSummaryDTO;
 import com.datagami.rentaxis.api.dto.UpdatePaymentStatusDTO;
+import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
+import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.*;
 import com.datagami.rentaxis.domain.entity.enums.PaymentStatus;
@@ -32,6 +34,12 @@ public class PaymentScheduleService {
 
     @Transactional
     public List<PaymentSchedule> generateScheduleForLease(Lease lease) {
+        // Idempotency check: skip if schedules already exist for this lease
+        List<PaymentSchedule> existing = paymentScheduleRepository.findByLeaseId(lease.getId());
+        if (!existing.isEmpty()) {
+            return existing;
+        }
+
         int terms = (lease.getPaymentTerms() == null || lease.getPaymentTerms() == 0)
                 ? 1
                 : lease.getPaymentTerms();
@@ -165,10 +173,10 @@ public class PaymentScheduleService {
     @Transactional
     public PaymentScheduleDTO collectPayment(UUID paymentId, UpdatePaymentStatusDTO dto) {
         PaymentSchedule payment = paymentScheduleRepository.findById(paymentId)
-                .orElseThrow(() -> new RuntimeException("Payment not found"));
+                .orElseThrow(() -> new NotFoundException("Payment not found"));
 
         if (payment.getStatus() != PaymentStatus.PENDING) {
-            throw new RuntimeException("Can only collect payments in PENDING status");
+            throw new BusinessRuleViolationException("Can only collect payments in PENDING status");
         }
 
         payment.setStatus(PaymentStatus.COLLECTED);
@@ -183,10 +191,10 @@ public class PaymentScheduleService {
     @Transactional
     public PaymentScheduleDTO depositPayment(UUID paymentId, UpdatePaymentStatusDTO dto) {
         PaymentSchedule payment = paymentScheduleRepository.findById(paymentId)
-                .orElseThrow(() -> new RuntimeException("Payment not found"));
+                .orElseThrow(() -> new NotFoundException("Payment not found"));
 
         if (payment.getStatus() != PaymentStatus.COLLECTED) {
-            throw new RuntimeException("Can only deposit payments in COLLECTED status");
+            throw new BusinessRuleViolationException("Can only deposit payments in COLLECTED status");
         }
 
         payment.setStatus(PaymentStatus.DEPOSITED);
@@ -201,10 +209,10 @@ public class PaymentScheduleService {
     @Transactional
     public PaymentScheduleDTO clearPayment(UUID paymentId, UpdatePaymentStatusDTO dto) {
         PaymentSchedule payment = paymentScheduleRepository.findById(paymentId)
-                .orElseThrow(() -> new RuntimeException("Payment not found"));
+                .orElseThrow(() -> new NotFoundException("Payment not found"));
 
         if (payment.getStatus() != PaymentStatus.DEPOSITED) {
-            throw new RuntimeException("Can only clear payments in DEPOSITED status");
+            throw new BusinessRuleViolationException("Can only clear payments in DEPOSITED status");
         }
 
         payment.setStatus(PaymentStatus.CLEARED);
@@ -248,10 +256,10 @@ public class PaymentScheduleService {
     @Transactional
     public PaymentScheduleDTO bouncePayment(UUID paymentId, UpdatePaymentStatusDTO dto) {
         PaymentSchedule payment = paymentScheduleRepository.findById(paymentId)
-                .orElseThrow(() -> new RuntimeException("Payment not found"));
+                .orElseThrow(() -> new NotFoundException("Payment not found"));
 
         if (payment.getStatus() != PaymentStatus.DEPOSITED) {
-            throw new RuntimeException("Can only bounce payments in DEPOSITED status");
+            throw new BusinessRuleViolationException("Can only bounce payments in DEPOSITED status");
         }
 
         payment.setStatus(PaymentStatus.BOUNCED);
@@ -266,10 +274,10 @@ public class PaymentScheduleService {
     @Transactional
     public PaymentScheduleDTO replacePayment(UUID paymentId, UpdatePaymentStatusDTO dto) {
         PaymentSchedule oldPayment = paymentScheduleRepository.findById(paymentId)
-                .orElseThrow(() -> new RuntimeException("Payment not found"));
+                .orElseThrow(() -> new NotFoundException("Payment not found"));
 
         if (oldPayment.getStatus() != PaymentStatus.BOUNCED) {
-            throw new RuntimeException("Can only replace payments in BOUNCED status");
+            throw new BusinessRuleViolationException("Can only replace payments in BOUNCED status");
         }
 
         // Create new replacement payment

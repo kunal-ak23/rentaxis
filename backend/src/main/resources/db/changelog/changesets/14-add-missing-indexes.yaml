@@ -1,0 +1,79 @@
+databaseChangeLog:
+  - changeSet:
+      id: 14-add-missing-indexes
+      author: rentaxis
+      changes:
+        - createIndex:
+            indexName: idx_properties_tenant_id
+            tableName: properties
+            columns:
+              - column:
+                  name: tenant_id
+        - createIndex:
+            indexName: idx_buildings_tenant_id
+            tableName: buildings
+            columns:
+              - column:
+                  name: tenant_id
+        - createIndex:
+            indexName: idx_units_tenant_id
+            tableName: units
+            columns:
+              - column:
+                  name: tenant_id
+        - createIndex:
+            indexName: idx_units_property_id
+            tableName: units
+            columns:
+              - column:
+                  name: property_id
+        - createIndex:
+            indexName: idx_users_tenant_id
+            tableName: users
+            columns:
+              - column:
+                  name: tenant_id
+        - createIndex:
+            indexName: idx_payment_schedules_lease_due
+            tableName: payment_schedules
+            columns:
+              - column:
+                  name: lease_id
+              - column:
+                  name: due_date
+        - createIndex:
+            indexName: idx_financial_transactions_tenant_date
+            tableName: financial_transactions
+            columns:
+              - column:
+                  name: tenant_id
+              - column:
+                  name: transaction_date
+        - createIndex:
+            indexName: idx_leases_unit_id
+            tableName: leases
+            columns:
+              - column:
+                  name: unit_id
+        - createIndex:
+            indexName: idx_leases_renter_id
+            tableName: leases
+            columns:
+              - column:
+                  name: renter_id
+
+        # Add version columns for optimistic locking
+        - addColumn:
+            tableName: leases
+            columns:
+              - column:
+                  name: version
+                  type: bigint
+                  defaultValueNumeric: 0
+        - addColumn:
+            tableName: units
+            columns:
+              - column:
+                  name: version
+                  type: bigint
+                  defaultValueNumeric: 0

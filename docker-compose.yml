@@ -5,9 +5,19 @@ services:
       dockerfile: Dockerfile
     container_name: rentaxis-backend
     ports:
-      - "8080:8080"
+      - "8080:8080" # Dev only - use reverse proxy in production
     env_file:
       - .env.backend
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/rentaxis
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - rentaxis-network
 
   web:
     build:
@@ -18,5 +28,14 @@ services:
       - "3000:3000"
     env_file:
       - .env.web
+    environment:
+      - BACKEND_URL=http://backend:8080
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    networks:
+      - rentaxis-network
+
+networks:
+  rentaxis-network:
+    driver: bridge

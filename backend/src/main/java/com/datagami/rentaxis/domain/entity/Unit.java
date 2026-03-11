@@ -47,4 +47,7 @@ public class Unit extends BaseTenantEntity {
 
     @Column(name = "current_tenant_name")
     private String currentTenantName;
+
+    @Version
+    private Long version;
 }

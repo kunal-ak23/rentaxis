@@ -68,7 +68,7 @@ const ALL_STATUSES = ["PENDING", "COLLECTED", "DEPOSITED", "CLEARED", "BOUNCED",
 export default function PaymentsPage() {
     const t = useTranslations("Payments");
     const { data: session } = useSession();
-    const userRole = (session?.user as any)?.role as UserRole | undefined;
+    const userRole = session?.user?.role as UserRole | undefined;
     const canView = userRole ? canViewPayments(userRole) : false;
     const canManage = userRole ? canManagePayments(userRole) : false;
 
@@ -99,8 +99,6 @@ export default function PaymentsPage() {
     }>({ open: false, title: "", message: "", onConfirm: () => {}, variant: "green" });
 
     useEffect(() => {
-        fetchPayments();
-        fetchSummary();
         fetchProperties();
     }, []);
 

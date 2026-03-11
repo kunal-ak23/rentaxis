@@ -19,7 +19,7 @@ export default function PropertyDetailPage() {
     const propertyId = params.id as string;
 
     const { data: session } = useSession();
-    const userRole = (session?.user as any)?.role as UserRole | undefined;
+    const userRole = session?.user?.role as UserRole | undefined;
     const canCreate = hasPermission(userRole, 'canCreateProperties');
     const canManageRentSettings = userRole ? canConfigureRentSettings(userRole) : false;
 

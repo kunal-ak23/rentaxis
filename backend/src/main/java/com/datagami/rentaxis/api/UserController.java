@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.api;
 
+import com.datagami.rentaxis.api.dto.UserResponseDTO;
 import com.datagami.rentaxis.core.service.UserService;
 import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
@@ -26,8 +27,10 @@ public class UserController {
     }
 
     @GetMapping
-    public ResponseEntity<List<User>> getAllUsers() {
-        return ResponseEntity.ok(userService.getAllUsers());
+    public ResponseEntity<List<UserResponseDTO>> getAllUsers() {
+        return ResponseEntity.ok(userService.getAllUsers().stream()
+                .map(UserResponseDTO::from)
+                .toList());
     }
 
     @PostMapping
@@ -47,7 +50,7 @@ public class UserController {
             }
         }
 
-        return ResponseEntity.ok(user);
+        return ResponseEntity.ok(UserResponseDTO.from(user));
     }
 
     public record UpdateUserRequest(String email, String password, String name, UserRole role, String tenantId,
@@ -55,7 +58,7 @@ public class UserController {
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<User> updateUser(@PathVariable UUID id, @RequestBody UpdateUserRequest request) {
+    public ResponseEntity<UserResponseDTO> updateUser(@PathVariable UUID id, @RequestBody UpdateUserRequest request) {
         User user = userService.updateUser(
                 id,
                 request.email(),
@@ -79,7 +82,7 @@ public class UserController {
             }
         }
 
-        return ResponseEntity.ok(user);
+        return ResponseEntity.ok(UserResponseDTO.from(user));
     }
 
     @DeleteMapping("/{id}")

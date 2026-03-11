@@ -3,11 +3,15 @@ package com.datagami.rentaxis.core.service;
 import com.datagami.rentaxis.api.dto.CreateLeaseDTO;
 import com.datagami.rentaxis.api.dto.LeaseDTO;
 import com.datagami.rentaxis.api.dto.LeaseEventDTO;
+import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
+import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.*;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
+import com.datagami.rentaxis.domain.entity.enums.PaymentStatus;
 import com.datagami.rentaxis.domain.entity.enums.UnitStatus;
 import com.datagami.rentaxis.domain.repository.*;
+import com.datagami.rentaxis.domain.repository.PaymentScheduleRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,6 +31,7 @@ public class LeaseService {
     private final LeaseEventRepository leaseEventRepository;
     private final LeaseDocumentRepository leaseDocumentRepository;
     private final PaymentScheduleService paymentScheduleService;
+    private final PaymentScheduleRepository paymentScheduleRepository;
 
     @Transactional(readOnly = true)
     public List<LeaseDTO> getAllLeases() {
@@ -45,22 +50,31 @@ public class LeaseService {
 
     @Transactional(readOnly = true)
     public LeaseDTO getLeaseById(UUID id) {
-        Lease lease = leaseRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Lease not found"));
+        Lease lease = findLeaseWithTenantCheck(id);
         return mapToDTO(lease);
+    }
+
+    private Lease findLeaseWithTenantCheck(UUID id) {
+        Lease lease = leaseRepository.findById(id)
+                .orElseThrow(() -> new NotFoundException("Lease not found"));
+        UUID tenantId = TenantContextHolder.getTenantId();
+        if (tenantId != null && !tenantId.equals(lease.getTenantId())) {
+            throw new NotFoundException("Lease not found");
+        }
+        return lease;
     }
 
     @Transactional
     public LeaseDTO createDraftLease(CreateLeaseDTO dto) {
         Unit unit = unitRepository.findById(dto.getUnitId())
-                .orElseThrow(() -> new RuntimeException("Unit not found"));
+                .orElseThrow(() -> new NotFoundException("Unit not found"));
 
         if (unit.getStatus() != UnitStatus.VACANT) {
-            throw new RuntimeException("Cannot create lease. Unit is not vacant.");
+            throw new BusinessRuleViolationException("Cannot create lease. Unit is not vacant.");
         }
 
         Renter renter = renterRepository.findById(dto.getRenterId())
-                .orElseThrow(() -> new RuntimeException("Renter not found"));
+                .orElseThrow(() -> new NotFoundException("Renter not found"));
 
         Lease lease = new Lease();
         lease.setUnit(unit);
@@ -81,11 +95,10 @@ public class LeaseService {
 
     @Transactional
     public LeaseDTO activateLease(UUID leaseId) {
-        Lease lease = leaseRepository.findById(leaseId)
-                .orElseThrow(() -> new RuntimeException("Lease not found"));
+        Lease lease = findLeaseWithTenantCheck(leaseId);
 
         if (lease.getStatus() != LeaseStatus.DRAFT && lease.getStatus() != LeaseStatus.PENDING_SIGNATURE) {
-            throw new RuntimeException("Can only activate DRAFT or PENDING_SIGNATURE leases");
+            throw new BusinessRuleViolationException("Can only activate DRAFT or PENDING_SIGNATURE leases");
         }
 
         LeaseStatus previousStatus = lease.getStatus();
@@ -105,11 +118,10 @@ public class LeaseService {
 
     @Transactional
     public LeaseDTO terminateLease(UUID leaseId, String notes) {
-        Lease lease = leaseRepository.findById(leaseId)
-                .orElseThrow(() -> new RuntimeException("Lease not found"));
+        Lease lease = findLeaseWithTenantCheck(leaseId);
 
         if (lease.getStatus() == LeaseStatus.TERMINATED || lease.getStatus() == LeaseStatus.CLOSED) {
-            throw new RuntimeException("Lease is already terminated or closed");
+            throw new BusinessRuleViolationException("Lease is already terminated or closed");
         }
 
         LeaseStatus previousStatus = lease.getStatus();
@@ -118,6 +130,15 @@ public class LeaseService {
         Unit unit = lease.getUnit();
         unit.setStatus(UnitStatus.VACANT);
         unitRepository.save(unit);
+
+        // Cancel pending payment schedules
+        List<PaymentSchedule> pendingPayments = paymentScheduleRepository.findByLeaseId(leaseId);
+        for (PaymentSchedule ps : pendingPayments) {
+            if (ps.getStatus() == PaymentStatus.PENDING || ps.getStatus() == PaymentStatus.ONLINE_PENDING) {
+                ps.setStatus(PaymentStatus.CANCELLED);
+                paymentScheduleRepository.save(ps);
+            }
+        }
 
         Lease savedLease = leaseRepository.save(lease);
         recordEvent(savedLease, previousStatus, LeaseStatus.TERMINATED,
@@ -129,7 +150,7 @@ public class LeaseService {
     @Transactional(readOnly = true)
     public List<LeaseDTO> getLeasesForRenterUser(UUID userId) {
         Renter renter = renterRepository.findByUserId(userId)
-                .orElseThrow(() -> new RuntimeException("No renter profile linked to this user"));
+                .orElseThrow(() -> new NotFoundException("No renter profile linked to this user"));
         return leaseRepository.findByRenterId(renter.getId()).stream()
                 .map(this::mapToDTO)
                 .collect(Collectors.toList());
@@ -137,18 +158,17 @@ public class LeaseService {
 
     @Transactional
     public LeaseDTO acceptLease(UUID leaseId, UUID userId) {
-        Lease lease = leaseRepository.findById(leaseId)
-                .orElseThrow(() -> new RuntimeException("Lease not found"));
+        Lease lease = findLeaseWithTenantCheck(leaseId);
 
         if (lease.getStatus() != LeaseStatus.PENDING_SIGNATURE) {
-            throw new RuntimeException("Can only accept leases in PENDING_SIGNATURE status");
+            throw new BusinessRuleViolationException("Can only accept leases in PENDING_SIGNATURE status");
         }
 
         // Verify the renter owns this lease
         Renter renter = renterRepository.findByUserId(userId)
-                .orElseThrow(() -> new RuntimeException("No renter profile linked to this user"));
+                .orElseThrow(() -> new NotFoundException("No renter profile linked to this user"));
         if (!lease.getRenter().getId().equals(renter.getId())) {
-            throw new RuntimeException("You are not authorized to accept this lease");
+            throw new com.datagami.rentaxis.api.exception.AccessDeniedException("You are not authorized to accept this lease");
         }
 
         LeaseStatus previousStatus = lease.getStatus();
@@ -168,17 +188,16 @@ public class LeaseService {
 
     @Transactional
     public LeaseDTO rejectLease(UUID leaseId, UUID userId) {
-        Lease lease = leaseRepository.findById(leaseId)
-                .orElseThrow(() -> new RuntimeException("Lease not found"));
+        Lease lease = findLeaseWithTenantCheck(leaseId);
 
         if (lease.getStatus() != LeaseStatus.PENDING_SIGNATURE) {
-            throw new RuntimeException("Can only reject leases in PENDING_SIGNATURE status");
+            throw new BusinessRuleViolationException("Can only reject leases in PENDING_SIGNATURE status");
         }
 
         Renter renter = renterRepository.findByUserId(userId)
-                .orElseThrow(() -> new RuntimeException("No renter profile linked to this user"));
+                .orElseThrow(() -> new NotFoundException("No renter profile linked to this user"));
         if (!lease.getRenter().getId().equals(renter.getId())) {
-            throw new RuntimeException("You are not authorized to reject this lease");
+            throw new com.datagami.rentaxis.api.exception.AccessDeniedException("You are not authorized to reject this lease");
         }
 
         LeaseStatus previousStatus = lease.getStatus();

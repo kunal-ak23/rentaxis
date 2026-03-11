@@ -13,7 +13,7 @@ export function TopHeader() {
     const { data: session } = useSession();
     const pathname = usePathname();
     const locale = useLocale();
-    const userRole = (session?.user as any)?.role as UserRole | undefined;
+    const userRole = session?.user?.role as UserRole | undefined;
 
     return (
         <header className="relative w-full h-16 bg-white/40 backdrop-blur-md border-b border-gray-200/50 z-30 flex items-center justify-between px-6">

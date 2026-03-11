@@ -25,3 +25,5 @@ databaseChangeLog:
       file: db/changelog/changesets/12-payment-schedules.yaml
   - include:
       file: db/changelog/changesets/13-payment-gateway.yaml
+  - include:
+      file: db/changelog/changesets/14-add-missing-indexes.yaml

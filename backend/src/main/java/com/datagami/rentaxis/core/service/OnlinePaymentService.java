@@ -221,6 +221,10 @@ public class OnlinePaymentService {
         return response;
     }
 
+    public void clearPaymentFromWebhook(PaymentSchedule payment) {
+        clearPaymentOnline(payment);
+    }
+
     private void clearPaymentOnline(PaymentSchedule payment) {
         // Set schedule status to CLEARED, paymentMethod to "ONLINE"
         payment.setStatus(PaymentStatus.CLEARED);

@@ -67,7 +67,7 @@ export default function LeasesPage() {
     const [paymentStatsLoading, setPaymentStatsLoading] = useState(false);
 
     const { data: session } = useSession();
-    const userRole = (session?.user as any)?.role as UserRole | undefined;
+    const userRole = session?.user?.role as UserRole | undefined;
     const canManageLeases = hasPermission(userRole, 'canManageLeases');
 
     const [formData, setFormData] = useState({

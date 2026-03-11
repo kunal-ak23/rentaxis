@@ -47,7 +47,7 @@ const DEFAULT_SETTINGS: Omit<RentSettings, "propertyId"> = {
 export default function RentSettingsPage() {
     const t = useTranslations("OnlinePayments");
     const { data: session } = useSession();
-    const userRole = (session?.user as any)?.role as UserRole | undefined;
+    const userRole = session?.user?.role as UserRole | undefined;
 
     const [properties, setProperties] = useState<Property[]>([]);
     const [selectedPropertyId, setSelectedPropertyId] = useState("");
@@ -151,7 +151,7 @@ export default function RentSettingsPage() {
     // Access check
     if (userRole && !canConfigureRentSettings(userRole)) {
         return (
-            <div className="p-8 max-w-4xl mx-auto">
+            <div className="max-w-4xl">
                 <div className="bg-white rounded-2xl p-12 shadow-sm border border-gray-100 text-center">
                     <ShieldCheck size={48} className="mx-auto text-gray-300 mb-4" />
                     <h2 className="text-lg font-black text-foreground mb-2">Access Denied</h2>
@@ -162,7 +162,7 @@ export default function RentSettingsPage() {
     }
 
     return (
-        <div className="p-8 max-w-4xl mx-auto">
+        <div className="max-w-4xl">
             {/* Page Header */}
             <div className="mb-8">
                 <h1 className="text-2xl font-black text-foreground tracking-tight flex items-center gap-3">

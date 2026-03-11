@@ -13,7 +13,7 @@ export const authOptions: NextAuthOptions = {
                 if (!credentials?.email || !credentials?.password) return null;
 
                 try {
-                    const res = await fetch("http://localhost:8080/api/auth/login", {
+                    const res = await fetch(`${process.env.BACKEND_URL || "http://localhost:8080"}/api/auth/login`, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
@@ -32,7 +32,7 @@ export const authOptions: NextAuthOptions = {
                             role: user.role,
                             tenantId: user.tenantId,
                             tenantIds: user.tenantIds || [],
-                        } as any;
+                        };
                     }
                 } catch (e) {
                     console.error("Auth Exception:", e);
@@ -45,19 +45,19 @@ export const authOptions: NextAuthOptions = {
     callbacks: {
         async jwt({ token, user }) {
             if (user) {
-                token.tenantId = (user as any).tenantId;
-                token.role = (user as any).role;
+                token.tenantId = user.tenantId;
+                token.role = user.role;
                 token.id = user.id;
-                token.tenantIds = (user as any).tenantIds || [];
+                token.tenantIds = user.tenantIds || [];
             }
             return token;
         },
         async session({ session, token }) {
             if (token) {
-                (session.user as any).tenantId = token.tenantId;
-                (session.user as any).role = token.role;
-                (session.user as any).id = token.id;
-                (session.user as any).tenantIds = token.tenantIds || [];
+                session.user.tenantId = token.tenantId as string;
+                session.user.role = token.role as string;
+                session.user.id = token.id as string;
+                session.user.tenantIds = (token.tenantIds as string[]) || [];
             }
             return session;
         },

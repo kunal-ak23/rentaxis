@@ -1,0 +1,18 @@
+# Environment files
+.env
+.env.*
+.env.backend
+.env.web
+.env.postgres
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude
+.claude/

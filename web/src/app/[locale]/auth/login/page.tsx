@@ -34,7 +34,7 @@ export default function LoginPage() {
                 // Fetch session to check role for redirect
                 const { getSession } = await import("next-auth/react");
                 const session = await getSession();
-                const role = (session?.user as any)?.role;
+                const role = session?.user?.role;
                 if (role === "RENTER") {
                     router.push("/dashboard/renter-portal");
                 } else {
@@ -87,7 +87,6 @@ export default function LoginPage() {
                     <div>
                         <div className="flex items-center justify-between mb-2 ml-1">
                             <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest">Password</label>
-                            <Link href="/auth/forgot-password" className="text-[10px] font-black text-primary uppercase tracking-widest hover:opacity-80">Forgot?</Link>
                         </div>
                         <div className="relative group">
                             <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-primary transition-colors" />
@@ -126,16 +125,6 @@ export default function LoginPage() {
                         )}
                     </button>
                 </form>
-
-                <div className="mt-10 text-center">
-                    <p className="text-[11px] text-gray-400 font-bold mb-4 uppercase tracking-widest">Or access with single sign-on</p>
-                    <div className="grid grid-cols-1 gap-3">
-                        <button className="flex items-center justify-center gap-2 p-3.5 border border-border rounded-2xl text-[11px] font-bold hover:bg-gray-50 transition-all active:scale-[0.98]">
-                            <img src="https://authjs.dev/img/providers/google.svg" alt="Google" className="w-4 h-4" />
-                            Sign in with Google
-                        </button>
-                    </div>
-                </div>
 
                 <div className="mt-8 pt-8 border-t border-border/50 text-center">
                     <p className="text-[11px] text-gray-500 font-medium">

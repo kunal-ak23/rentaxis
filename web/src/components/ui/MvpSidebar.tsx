@@ -38,7 +38,7 @@ export default function MvpSidebar() {
     const pathname = usePathname();
     const [isCollapsed, setIsCollapsed] = useState(false);
     const { data: session } = useSession();
-    const userRole = (session?.user as any)?.role as UserRole | undefined;
+    const userRole = session?.user?.role as UserRole | undefined;
 
     // Build menu items based on role permissions
     const menuItems = [

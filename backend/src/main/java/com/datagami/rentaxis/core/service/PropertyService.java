@@ -48,7 +48,13 @@ public class PropertyService {
 
     @Transactional(readOnly = true)
     public Property getPropertyById(UUID id) {
-        return repository.findById(id).orElseThrow(() -> new RuntimeException("Property not found"));
+        Property property = repository.findById(id)
+                .orElseThrow(() -> new com.datagami.rentaxis.api.exception.NotFoundException("Property not found"));
+        UUID tenantId = com.datagami.rentaxis.core.tenant.TenantContextHolder.getTenantId();
+        if (tenantId != null && !tenantId.equals(property.getTenantId())) {
+            throw new com.datagami.rentaxis.api.exception.NotFoundException("Property not found");
+        }
+        return property;
     }
 
     @Transactional(readOnly = true)

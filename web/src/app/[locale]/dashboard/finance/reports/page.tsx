@@ -93,7 +93,7 @@ export default function ReportsPage() {
         amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
     return (
-        <div className="p-8 max-w-7xl mx-auto">
+        <div>
             <div className="mb-10">
                 <h1 className="text-xl font-black text-foreground tracking-tight mb-1 flex items-center gap-2">
                     <BarChart3 size={20} className="text-primary" />

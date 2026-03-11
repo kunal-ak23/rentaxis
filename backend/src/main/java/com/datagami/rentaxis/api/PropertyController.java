@@ -1,8 +1,10 @@
 package com.datagami.rentaxis.api;
 
+import com.datagami.rentaxis.api.dto.CreatePropertyDTO;
 import com.datagami.rentaxis.api.dto.PropertyStatsDTO;
 import com.datagami.rentaxis.core.service.PropertyService;
 import com.datagami.rentaxis.domain.entity.Property;
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -22,7 +24,14 @@ public class PropertyController {
 
     @PostMapping
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
-    public ResponseEntity<Property> createProperty(@RequestBody Property property) {
+    public ResponseEntity<Property> createProperty(@Valid @RequestBody CreatePropertyDTO dto) {
+        Property property = new Property();
+        property.setNameEn(dto.getNameEn());
+        property.setNameAr(dto.getNameAr());
+        property.setType(dto.getType());
+        property.setEmirate(dto.getEmirate());
+        property.setAddress(dto.getAddress());
+        property.setMakaniNumber(dto.getMakaniNumber());
         return ResponseEntity.ok(service.createProperty(property));
     }
 

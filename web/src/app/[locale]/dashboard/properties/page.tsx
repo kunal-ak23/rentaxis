@@ -43,7 +43,7 @@ export default function PropertiesPage() {
     const [showProjectForm, setShowProjectForm] = useState(false);
     const [showPropertyForm, setShowPropertyForm] = useState(false);
     const { data: session } = useSession();
-    const userRole = (session?.user as any)?.role as UserRole | undefined;
+    const userRole = session?.user?.role as UserRole | undefined;
     const canCreate = hasPermission(userRole, 'canCreateProperties');
 
     const [projectFormData, setProjectFormData] = useState({
@@ -146,7 +146,7 @@ export default function PropertiesPage() {
     };
 
     return (
-        <div className="p-8 max-w-7xl mx-auto">
+        <div>
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10">
                 <div>
                     <h1 className="text-xl font-black text-foreground tracking-tight mb-1">

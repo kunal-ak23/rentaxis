@@ -106,7 +106,7 @@ export default function AccountsPage() {
     const typeOrder = ["ASSET", "LIABILITY", "INCOME", "EXPENSE", "EQUITY"];
 
     return (
-        <div className="p-8 max-w-7xl mx-auto">
+        <div>
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10">
                 <div>
                     <h1 className="text-xl font-black text-foreground tracking-tight mb-1 flex items-center gap-2">
@@ -156,7 +156,7 @@ export default function AccountsPage() {
                             <div className="col-span-1">
                                 <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("accountType")}</label>
                                 <select className="w-full bg-input border border-border p-3 rounded-xl text-xs" value={formData.accountType} onChange={ev => setFormData({ ...formData, accountType: ev.target.value })}>
-                                    {typeOrder.map(t => <option key={t} value={t}>{TYPE_CONFIG[t].label}</option>)}
+                                    {typeOrder.map(type => <option key={type} value={type}>{TYPE_CONFIG[type].label}</option>)}
                                 </select>
                             </div>
                             <div className="col-span-1">

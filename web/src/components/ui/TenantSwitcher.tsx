@@ -17,7 +17,7 @@ export function TenantSwitcher({ isCollapsed }: { isCollapsed: boolean }) {
     const [isOpen, setIsOpen] = useState(false);
     const [activeTenant, setActiveTenant] = useState<Tenant | null>(null);
 
-    const userExt = session?.user as any;
+    const userExt = session?.user;
     const userRole = userExt?.role as UserRole | undefined;
     const canSwitch = hasPermission(userRole, 'canSwitchTenants');
 
