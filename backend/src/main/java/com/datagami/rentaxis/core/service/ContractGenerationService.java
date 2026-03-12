@@ -1,13 +1,19 @@
 package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.dto.LeaseDocumentDTO;
+import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
+import com.datagami.rentaxis.api.exception.NotFoundException;
+import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.*;
 import com.datagami.rentaxis.domain.entity.enums.DocumentType;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.repository.LeaseDocumentRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
+import com.azure.storage.blob.BlobClient;
+import com.azure.storage.blob.BlobContainerClient;
+import com.azure.storage.blob.BlobServiceClient;
+import com.azure.storage.blob.BlobServiceClientBuilder;
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource;
@@ -18,14 +24,13 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.time.Instant;
+import java.io.UncheckedIOException;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class ContractGenerationService {
 
@@ -35,17 +40,33 @@ public class ContractGenerationService {
     @Value("${rentaxis.contracts.storage-path:./data/contracts}")
     private String storagePath;
 
+    @Value("${AZURE_STORAGE_CONNECTION_STRING:}")
+    private String azureConnectionString;
+
+    @Value("${AZURE_STORAGE_CONTAINER_PREFIX:tenant-}")
+    private String containerPrefix;
+
+    public ContractGenerationService(LeaseRepository leaseRepository,
+                                     LeaseDocumentRepository leaseDocumentRepository) {
+        this.leaseRepository = leaseRepository;
+        this.leaseDocumentRepository = leaseDocumentRepository;
+    }
+
+    private boolean useAzureStorage() {
+        return azureConnectionString != null && !azureConnectionString.isBlank();
+    }
+
     @Transactional
     public LeaseDocumentDTO generateContract(UUID leaseId) {
         Lease lease = leaseRepository.findById(leaseId)
-                .orElseThrow(() -> new com.datagami.rentaxis.api.exception.NotFoundException("Lease not found"));
-        UUID tenantId = com.datagami.rentaxis.core.tenant.TenantContextHolder.getTenantId();
+                .orElseThrow(() -> new NotFoundException("Lease not found"));
+        UUID tenantId = TenantContextHolder.getTenantId();
         if (tenantId != null && !tenantId.equals(lease.getTenantId())) {
-            throw new com.datagami.rentaxis.api.exception.NotFoundException("Lease not found");
+            throw new NotFoundException("Lease not found");
         }
 
         if (lease.getStatus() != LeaseStatus.DRAFT) {
-            throw new com.datagami.rentaxis.api.exception.BusinessRuleViolationException("Contract can only be generated for DRAFT leases");
+            throw new BusinessRuleViolationException("Contract can only be generated for DRAFT leases");
         }
 
         // Load template
@@ -82,32 +103,22 @@ public class ContractGenerationService {
                 .replace("{{START_DATE}}", lease.getStartDate().toString())
                 .replace("{{END_DATE}}", lease.getEndDate().toString());
 
-        // Create storage directory
-        Path dirPath = Paths.get(storagePath);
-        try {
-            Files.createDirectories(dirPath);
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to create contracts directory", e);
-        }
-
-        // Generate PDF
+        // Generate PDF to byte array
         String fileName = contractNumber + "-" + System.currentTimeMillis() + ".pdf";
-        Path filePath = dirPath.resolve(fileName);
+        byte[] pdfBytes = renderPdf(html);
 
-        try (OutputStream os = new FileOutputStream(filePath.toFile())) {
-            PdfRendererBuilder builder = new PdfRendererBuilder();
-            builder.useFastMode();
-            builder.withHtmlContent(html, null);
-            builder.toStream(os);
-            builder.run();
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to generate PDF contract", e);
+        // Store PDF
+        String documentUrl;
+        if (useAzureStorage()) {
+            documentUrl = uploadToAzure(lease.getTenantId(), fileName, pdfBytes);
+        } else {
+            documentUrl = saveToLocalDisk(fileName, pdfBytes);
         }
 
         // Save document record
         LeaseDocument doc = new LeaseDocument();
         doc.setLease(lease);
-        doc.setDocumentUrl(filePath.toString());
+        doc.setDocumentUrl(documentUrl);
         doc.setType(DocumentType.CONTRACT);
         LeaseDocument savedDoc = leaseDocumentRepository.save(doc);
 
@@ -115,9 +126,69 @@ public class ContractGenerationService {
         lease.setStatus(LeaseStatus.PENDING_SIGNATURE);
         leaseRepository.save(lease);
 
-        log.info("Contract generated for lease {} at {}", leaseId, filePath);
+        log.info("Contract generated for lease {} at {}", leaseId, documentUrl);
 
         return mapToDTO(savedDoc);
+    }
+
+    private byte[] renderPdf(String html) {
+        try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+            PdfRendererBuilder builder = new PdfRendererBuilder();
+            builder.useFastMode();
+
+            // Register fonts for Arabic support
+            try {
+                ClassPathResource arabicFont = new ClassPathResource("fonts/NotoSansArabic.ttf");
+                ClassPathResource latinFont = new ClassPathResource("fonts/NotoSans.ttf");
+                builder.useFont(() -> {
+                    try { return arabicFont.getInputStream(); } catch (IOException ex) { throw new UncheckedIOException(ex); }
+                }, "Noto Sans Arabic");
+                builder.useFont(() -> {
+                    try { return latinFont.getInputStream(); } catch (IOException ex) { throw new UncheckedIOException(ex); }
+                }, "Noto Sans");
+            } catch (Exception e) {
+                log.warn("Could not load custom fonts, Arabic text may not render: {}", e.getMessage());
+            }
+
+            builder.withHtmlContent(html, null);
+            builder.toStream(baos);
+            builder.run();
+            return baos.toByteArray();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to generate PDF contract", e);
+        }
+    }
+
+    private String uploadToAzure(UUID tenantId, String fileName, byte[] pdfBytes) {
+        String containerName = containerPrefix + tenantId.toString();
+        BlobServiceClient blobServiceClient = new BlobServiceClientBuilder()
+                .connectionString(azureConnectionString)
+                .buildClient();
+
+        BlobContainerClient containerClient = blobServiceClient.getBlobContainerClient(containerName);
+        if (!containerClient.exists()) {
+            containerClient.create();
+        }
+
+        String blobPath = "contracts/" + fileName;
+        BlobClient blobClient = containerClient.getBlobClient(blobPath);
+        blobClient.upload(new ByteArrayInputStream(pdfBytes), pdfBytes.length, true);
+
+        String url = blobClient.getBlobUrl();
+        log.info("Uploaded contract to Azure Blob: {}", url);
+        return url;
+    }
+
+    private String saveToLocalDisk(String fileName, byte[] pdfBytes) {
+        Path dirPath = Path.of(storagePath);
+        try {
+            Files.createDirectories(dirPath);
+            Path filePath = dirPath.resolve(fileName);
+            Files.write(filePath, pdfBytes);
+            return filePath.toString();
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to save contract to disk", e);
+        }
     }
 
     @Transactional(readOnly = true)
@@ -128,14 +199,80 @@ public class ContractGenerationService {
     }
 
     @Transactional(readOnly = true)
+    public byte[] getDocumentContent(UUID docId) {
+        LeaseDocument doc = leaseDocumentRepository.findById(docId)
+                .orElseThrow(() -> new NotFoundException("Document not found"));
+
+        String url = doc.getDocumentUrl();
+
+        // Azure Blob URL
+        if (url.startsWith("https://") && url.contains(".blob.core.windows.net")) {
+            return downloadFromAzure(url);
+        }
+
+        // Local file
+        File file = new File(url);
+        if (!file.exists()) {
+            throw new RuntimeException("Document file not found");
+        }
+        try {
+            return Files.readAllBytes(file.toPath());
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to read document file", e);
+        }
+    }
+
+    /**
+     * @deprecated Use getDocumentContent() instead. Kept for backward compatibility.
+     */
+    @Transactional(readOnly = true)
     public File getDocumentFile(UUID docId) {
         LeaseDocument doc = leaseDocumentRepository.findById(docId)
-                .orElseThrow(() -> new com.datagami.rentaxis.api.exception.NotFoundException("Document not found"));
-        File file = new File(doc.getDocumentUrl());
+                .orElseThrow(() -> new NotFoundException("Document not found"));
+
+        String url = doc.getDocumentUrl();
+
+        // For Azure URLs, download to temp file
+        if (url.startsWith("https://")) {
+            byte[] content = downloadFromAzure(url);
+            try {
+                Path tempFile = Files.createTempFile("contract-", ".pdf");
+                Files.write(tempFile, content);
+                return tempFile.toFile();
+            } catch (IOException e) {
+                throw new RuntimeException("Failed to create temp file for document", e);
+            }
+        }
+
+        File file = new File(url);
         if (!file.exists()) {
             throw new RuntimeException("Document file not found on disk");
         }
         return file;
+    }
+
+    private byte[] downloadFromAzure(String blobUrl) {
+        BlobClient blobClient = new BlobServiceClientBuilder()
+                .connectionString(azureConnectionString)
+                .buildClient()
+                .getBlobContainerClient(extractContainerName(blobUrl))
+                .getBlobClient(extractBlobPath(blobUrl));
+
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        blobClient.downloadStream(baos);
+        return baos.toByteArray();
+    }
+
+    private String extractContainerName(String blobUrl) {
+        // URL format: https://<account>.blob.core.windows.net/<container>/<path>
+        String path = blobUrl.split(".blob.core.windows.net/")[1];
+        return path.split("/")[0];
+    }
+
+    private String extractBlobPath(String blobUrl) {
+        String path = blobUrl.split(".blob.core.windows.net/")[1];
+        int firstSlash = path.indexOf('/');
+        return path.substring(firstSlash + 1);
     }
 
     private LeaseDocumentDTO mapToDTO(LeaseDocument doc) {

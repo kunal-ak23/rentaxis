@@ -36,6 +36,7 @@ dependencies {
 	implementation 'io.github.openhtmltopdf:openhtmltopdf-pdfbox:1.1.37'
 	implementation 'io.github.openhtmltopdf:openhtmltopdf-slf4j:1.1.37'
 	implementation 'com.razorpay:razorpay-java:1.4.6'
+	implementation 'com.azure:azure-storage-blob:12.29.0'
 	compileOnly 'org.projectlombok:lombok'
 	runtimeOnly 'org.postgresql:postgresql'
 	annotationProcessor 'org.projectlombok:lombok'
