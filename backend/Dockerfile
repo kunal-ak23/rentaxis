@@ -20,6 +20,9 @@ RUN addgroup --system --gid 1001 spring && \
 
 COPY --from=builder /app/build/libs/*.jar app.jar
 
+# Create data directory for contract PDFs (writable by spring user)
+RUN mkdir -p /app/data && chown spring:spring /app/data
+
 USER spring
 EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "app.jar"]
