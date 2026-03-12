@@ -244,9 +244,40 @@ function BuildingsTab({ buildings, propertyId, canCreate, onUpdate }: any) {
 
 function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
     const t = useTranslations("MasterData");
+    const [showForm, setShowForm] = useState(false);
     const [showBulkUpload, setShowBulkUpload] = useState(false);
     const [file, setFile] = useState<File | null>(null);
     const [uploadBuildingId, setUploadBuildingId] = useState<string>("");
+    const [unitForm, setUnitForm] = useState({
+        unitNumber: "", type: "STUDIO", sizeSqft: "", expectedRent: "", buildingId: ""
+    });
+
+    const unitTypes = ["STUDIO", "BHK1", "BHK2", "BHK3", "PENTHOUSE", "RETAIL", "OFFICE"];
+
+    const handleAddUnit = async (e: any) => {
+        e.preventDefault();
+        const body: any = {
+            unitNumber: unitForm.unitNumber,
+            type: unitForm.type,
+            sizeSqft: unitForm.sizeSqft ? Number(unitForm.sizeSqft) : null,
+            expectedRent: unitForm.expectedRent ? Number(unitForm.expectedRent) : null,
+            status: "VACANT",
+            property: { id: propertyId },
+        };
+        if (unitForm.buildingId) {
+            body.building = { id: unitForm.buildingId };
+        }
+        const res = await fetch("/api/proxy/v1/units", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+        });
+        if (res.ok) {
+            setShowForm(false);
+            setUnitForm({ unitNumber: "", type: "STUDIO", sizeSqft: "", expectedRent: "", buildingId: "" });
+            onUpdate();
+        }
+    };
 
     const handleBulkUpload = async (e: any) => {
         e.preventDefault();
@@ -274,14 +305,56 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
             <div className="flex justify-between items-center mb-6">
                 <h2 className="text-lg font-black">Units</h2>
                 {canCreate && (
-                    <button
-                        onClick={() => setShowBulkUpload(!showBulkUpload)}
-                        className="flex items-center gap-2 bg-gray-100 text-foreground px-4 py-2 rounded-full text-xs font-bold hover:bg-gray-200 transition-all shadow-sm"
-                    >
-                        <Upload size={14} /> Bulk Upload CSV
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => { setShowForm(true); setShowBulkUpload(false); }}
+                            className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-full text-xs font-bold hover:opacity-90 transition-all shadow-sm"
+                        >
+                            <Plus size={14} /> Add Unit
+                        </button>
+                        <button
+                            onClick={() => { setShowBulkUpload(!showBulkUpload); setShowForm(false); }}
+                            className="flex items-center gap-2 bg-gray-100 text-foreground px-4 py-2 rounded-full text-xs font-bold hover:bg-gray-200 transition-all shadow-sm"
+                        >
+                            <Upload size={14} /> Bulk Upload CSV
+                        </button>
+                    </div>
                 )}
             </div>
+
+            {showForm && (
+                <form onSubmit={handleAddUnit} className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm mb-6 grid grid-cols-2 md:grid-cols-5 gap-4">
+                    <div>
+                        <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Unit Number</label>
+                        <input required className="w-full border rounded-lg p-2 text-xs" placeholder="e.g. 101" value={unitForm.unitNumber} onChange={e => setUnitForm({ ...unitForm, unitNumber: e.target.value })} />
+                    </div>
+                    <div>
+                        <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Type</label>
+                        <select className="w-full border rounded-lg p-2 text-xs" value={unitForm.type} onChange={e => setUnitForm({ ...unitForm, type: e.target.value })}>
+                            {unitTypes.map(ut => <option key={ut} value={ut}>{ut.replace("BHK", " BHK ")}</option>)}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Size (Sqft)</label>
+                        <input type="number" className="w-full border rounded-lg p-2 text-xs" placeholder="e.g. 850" value={unitForm.sizeSqft} onChange={e => setUnitForm({ ...unitForm, sizeSqft: e.target.value })} />
+                    </div>
+                    <div>
+                        <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Expected Rent</label>
+                        <input type="number" className="w-full border rounded-lg p-2 text-xs" placeholder="e.g. 5000" value={unitForm.expectedRent} onChange={e => setUnitForm({ ...unitForm, expectedRent: e.target.value })} />
+                    </div>
+                    <div>
+                        <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Building</label>
+                        <select className="w-full border rounded-lg p-2 text-xs" value={unitForm.buildingId} onChange={e => setUnitForm({ ...unitForm, buildingId: e.target.value })}>
+                            <option value="">No Building</option>
+                            {buildings.map((b: any) => <option key={b.id} value={b.id}>{b.nameEn}</option>)}
+                        </select>
+                    </div>
+                    <div className="col-span-2 md:col-span-5 flex justify-end gap-2 mt-2">
+                        <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 text-xs font-bold text-gray-500">Cancel</button>
+                        <button type="submit" className="px-4 py-2 bg-primary text-white rounded-lg text-xs font-bold">Save Unit</button>
+                    </div>
+                </form>
+            )}
 
             {showBulkUpload && (
                 <form onSubmit={handleBulkUpload} className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm mb-6 flex items-end gap-4">
