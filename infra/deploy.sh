@@ -53,6 +53,7 @@ TARGET_PLATFORM="linux/amd64"
 docker build --platform "$TARGET_PLATFORM" -t rentaxis-backend:latest ./backend
 docker build --platform "$TARGET_PLATFORM" \
   --build-arg NEXT_PUBLIC_API_URL="${NEXT_PUBLIC_API_URL}" \
+  --build-arg BACKEND_URL="http://backend:8080" \
   -t rentaxis-web:latest ./web
 
 # ---- Step 2: Save images as tarballs ----
