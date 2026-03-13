@@ -61,12 +61,11 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.VM_SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          echo "${{ secrets.VM_HOST_KEY }}" > ~/.ssh/known_hosts
-          chmod 644 ~/.ssh/known_hosts
+          ssh-keyscan -H ${{ env.VM_IP }} >> ~/.ssh/known_hosts 2>/dev/null
 
       - name: Create .env file
         run: |
-          cat > /tmp/rentaxis.env << EOF
+          cat > /tmp/rentaxis.env <<EOF
           DOMAIN=${{ env.DOMAIN }}
           POSTGRES_USER=${{ secrets.POSTGRES_USER }}
           POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
@@ -83,6 +82,7 @@ jobs:
           AZURE_STORAGE_CONNECTION_STRING=${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}
           AZURE_STORAGE_CONTAINER_PREFIX=${{ secrets.AZURE_STORAGE_CONTAINER_PREFIX }}
           EOF
+          sed -i 's/^[[:space:]]*//' /tmp/rentaxis.env
 
       - name: Upload to VM
         run: |
