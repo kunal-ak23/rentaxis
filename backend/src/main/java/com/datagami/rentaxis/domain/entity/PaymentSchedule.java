@@ -54,6 +54,9 @@ public class PaymentSchedule extends BaseTenantEntity {
     @Column(name = "payer_name", length = 200)
     private String payerName;
 
+    @Column(name = "cheque_date")
+    private LocalDate chequeDate;
+
     @Column(name = "status_changed_at")
     private Instant statusChangedAt;
 

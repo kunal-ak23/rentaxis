@@ -185,6 +185,7 @@ public class PaymentScheduleService {
         payment.setChequeNumber(dto.getChequeNumber());
         payment.setBankName(dto.getBankName());
         payment.setPayerName(dto.getPayerName());
+        payment.setChequeDate(dto.getChequeDate());
         payment.setStatusChangedAt(Instant.now());
 
         return mapToDTO(paymentScheduleRepository.save(payment));
@@ -302,6 +303,7 @@ public class PaymentScheduleService {
         newPayment.setChequeNumber(dto.getChequeNumber());
         newPayment.setBankName(dto.getBankName());
         newPayment.setPayerName(dto.getPayerName());
+        newPayment.setChequeDate(dto.getChequeDate());
 
         PaymentSchedule savedNewPayment = paymentScheduleRepository.save(newPayment);
 
@@ -380,6 +382,7 @@ public class PaymentScheduleService {
         dto.setChequeNumber(ps.getChequeNumber());
         dto.setBankName(ps.getBankName());
         dto.setPayerName(ps.getPayerName());
+        dto.setChequeDate(ps.getChequeDate());
         dto.setStatusChangedAt(ps.getStatusChangedAt());
         dto.setNotes(ps.getNotes());
         dto.setReplacedById(ps.getReplacedBy() != null ? ps.getReplacedBy().getId() : null);

@@ -30,6 +30,7 @@ type Payment = {
     chequeNumber: string | null;
     bankName: string | null;
     payerName: string | null;
+    chequeDate: string | null;
     propertyName: string | null;
     unitIdentifier: string | null;
     renterName: string | null;
@@ -90,6 +91,7 @@ export default function PaymentsPage() {
         chequeNumber: "",
         bankName: "",
         payerName: "",
+        chequeDate: "",
     });
 
     // Confirmation dialog state
@@ -159,7 +161,7 @@ export default function PaymentsPage() {
 
     const handleCollect = (paymentId: string) => {
         setCollectingPaymentId(paymentId);
-        setChequeForm({ chequeNumber: "", bankName: "", payerName: "" });
+        setChequeForm({ chequeNumber: "", bankName: "", payerName: "", chequeDate: "" });
         setShowChequeModal(true);
     };
 
@@ -244,7 +246,7 @@ export default function PaymentsPage() {
 
     const handleReplace = async (paymentId: string) => {
         setCollectingPaymentId(paymentId);
-        setChequeForm({ chequeNumber: "", bankName: "", payerName: "" });
+        setChequeForm({ chequeNumber: "", bankName: "", payerName: "", chequeDate: "" });
         setShowChequeModal(true);
     };
 
@@ -658,6 +660,22 @@ export default function PaymentsPage() {
                                         setChequeForm({
                                             ...chequeForm,
                                             payerName: ev.target.value,
+                                        })
+                                    }
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">
+                                    {t("chequeDate")}
+                                </label>
+                                <input
+                                    type="date"
+                                    className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
+                                    value={chequeForm.chequeDate}
+                                    onChange={(ev) =>
+                                        setChequeForm({
+                                            ...chequeForm,
+                                            chequeDate: ev.target.value,
                                         })
                                     }
                                 />

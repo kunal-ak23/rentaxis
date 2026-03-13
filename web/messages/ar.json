@@ -105,6 +105,7 @@
     "dueDate": "تاريخ الاستحقاق",
     "amount": "المبلغ",
     "chequeNumber": "رقم الشيك",
+    "chequeDate": "تاريخ الشيك",
     "bankName": "اسم البنك",
     "payerName": "اسم الدافع",
     "actions": "الإجراءات",

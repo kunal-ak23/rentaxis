@@ -1,0 +1,22 @@
+databaseChangeLog:
+  - changeSet:
+      id: 17-add-cheque-date-to-payment-schedules
+      author: rentaxis
+      changes:
+        - addColumn:
+            tableName: payment_schedules
+            columns:
+              - column:
+                  name: cheque_date
+                  type: DATE
+
+  - changeSet:
+      id: 17-add-monthly-rent-to-leases
+      author: rentaxis
+      changes:
+        - addColumn:
+            tableName: leases
+            columns:
+              - column:
+                  name: monthly_rent
+                  type: DECIMAL(19, 2)

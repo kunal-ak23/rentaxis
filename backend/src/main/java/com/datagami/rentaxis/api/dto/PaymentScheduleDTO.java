@@ -24,6 +24,7 @@ public class PaymentScheduleDTO {
     private String chequeNumber;
     private String bankName;
     private String payerName;
+    private LocalDate chequeDate;
     private Instant statusChangedAt;
     private String notes;
     private UUID replacedById;

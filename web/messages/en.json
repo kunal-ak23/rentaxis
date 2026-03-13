@@ -105,6 +105,7 @@
     "dueDate": "Due Date",
     "amount": "Amount",
     "chequeNumber": "Cheque Number",
+    "chequeDate": "Cheque Date",
     "bankName": "Bank Name",
     "payerName": "Payer Name",
     "actions": "Actions",

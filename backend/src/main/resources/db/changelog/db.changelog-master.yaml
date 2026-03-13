@@ -31,3 +31,5 @@ databaseChangeLog:
       file: db/changelog/changesets/15-lease-payment-method.yaml
   - include:
       file: db/changelog/changesets/16-account-mappings.yaml
+  - include:
+      file: db/changelog/changesets/17-cheque-date-monthly-rent.yaml
