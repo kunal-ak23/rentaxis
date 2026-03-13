@@ -22,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.*;
+import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -185,7 +186,9 @@ public class ContractGenerationService {
         BlobClient blobClient = containerClient.getBlobClient(blobPath);
         blobClient.upload(new ByteArrayInputStream(pdfBytes), pdfBytes.length, true);
 
-        String url = blobClient.getBlobUrl();
+        // Build URL manually to avoid encoding issues from getBlobUrl()
+        String accountUrl = blobServiceClient.getAccountUrl();
+        String url = accountUrl + "/" + containerName + "/" + blobPath;
         log.info("Uploaded contract to Azure Blob: {}", url);
         return url;
     }
@@ -270,11 +273,15 @@ public class ContractGenerationService {
     }
 
     private byte[] downloadFromAzure(String blobUrl) {
+        String container = extractContainerName(blobUrl);
+        String blobPath = extractBlobPath(blobUrl);
+        log.info("Azure download - container: '{}', blobPath: '{}'", container, blobPath);
+
         BlobClient blobClient = new BlobServiceClientBuilder()
                 .connectionString(azureConnectionString)
                 .buildClient()
-                .getBlobContainerClient(extractContainerName(blobUrl))
-                .getBlobClient(extractBlobPath(blobUrl));
+                .getBlobContainerClient(container)
+                .getBlobClient(blobPath);
 
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         blobClient.downloadStream(baos);
@@ -290,7 +297,7 @@ public class ContractGenerationService {
         }
         String path = blobUrl.substring(idx + marker.length());
         int slash = path.indexOf('/');
-        return slash > 0 ? path.substring(0, slash) : path;
+        return URLDecoder.decode(slash > 0 ? path.substring(0, slash) : path, StandardCharsets.UTF_8);
     }
 
     private String extractBlobPath(String blobUrl) {
@@ -304,7 +311,8 @@ public class ContractGenerationService {
         if (firstSlash < 0) {
             throw new RuntimeException("Invalid Azure Blob URL (missing blob path): " + blobUrl);
         }
-        return path.substring(firstSlash + 1);
+        // Decode URL-encoded path (getBlobUrl() may return %2F for slashes)
+        return URLDecoder.decode(path.substring(firstSlash + 1), StandardCharsets.UTF_8);
     }
 
     private String formatPaymentMethod(PaymentMethod method) {
