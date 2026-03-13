@@ -1,0 +1,142 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  VM_USER: rentaxis
+  VM_IP: "20.74.148.215"
+  REMOTE_DIR: /opt/rentaxis
+  DOMAIN: rentaxis.uaenorth.cloudapp.azure.com
+
+jobs:
+  deploy:
+    name: Build & Deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          load: true
+          tags: rentaxis-backend:latest
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+      - name: Build web image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./web
+          load: true
+          tags: rentaxis-web:latest
+          build-args: |
+            BACKEND_URL=http://backend:8080
+            NEXT_PUBLIC_API_URL=https://rentaxis.uaenorth.cloudapp.azure.com
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
+
+      - name: Save Docker images
+        run: |
+          docker save rentaxis-backend:latest | gzip > /tmp/backend.tar.gz
+          docker save rentaxis-web:latest | gzip > /tmp/web.tar.gz
+          echo "Backend image size: $(du -sh /tmp/backend.tar.gz | cut -f1)"
+          echo "Web image size: $(du -sh /tmp/web.tar.gz | cut -f1)"
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VM_SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo "${{ secrets.VM_HOST_KEY }}" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Create .env file
+        run: |
+          cat > /tmp/rentaxis.env << EOF
+          DOMAIN=${{ env.DOMAIN }}
+          POSTGRES_USER=${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB=${{ secrets.POSTGRES_DB }}
+          SPRING_PROFILES_ACTIVE=prod
+          SPRING_DATASOURCE_URL=${{ secrets.SPRING_DATASOURCE_URL }}
+          SPRING_DATASOURCE_USERNAME=${{ secrets.SPRING_DATASOURCE_USERNAME }}
+          SPRING_DATASOURCE_PASSWORD=${{ secrets.SPRING_DATASOURCE_PASSWORD }}
+          ENCRYPTION_KEY=${{ secrets.ENCRYPTION_KEY }}
+          BACKEND_URL=http://backend:8080
+          NEXT_PUBLIC_API_URL=https://${{ env.DOMAIN }}
+          NEXTAUTH_URL=${{ secrets.NEXTAUTH_URL }}
+          NEXTAUTH_SECRET=${{ secrets.NEXTAUTH_SECRET }}
+          AZURE_STORAGE_CONNECTION_STRING=${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}
+          AZURE_STORAGE_CONTAINER_PREFIX=${{ secrets.AZURE_STORAGE_CONTAINER_PREFIX }}
+          EOF
+
+      - name: Upload to VM
+        run: |
+          SSH_OPTS="-i ~/.ssh/deploy_key -o ConnectTimeout=10"
+          SSH_TARGET="${{ env.VM_USER }}@${{ env.VM_IP }}"
+
+          scp $SSH_OPTS /tmp/backend.tar.gz $SSH_TARGET:${{ env.REMOTE_DIR }}/
+          scp $SSH_OPTS /tmp/web.tar.gz $SSH_TARGET:${{ env.REMOTE_DIR }}/
+          scp $SSH_OPTS docker-compose.prod.yml $SSH_TARGET:${{ env.REMOTE_DIR }}/docker-compose.yml
+          scp $SSH_OPTS infra/caddy/Caddyfile.template $SSH_TARGET:${{ env.REMOTE_DIR }}/Caddyfile
+          scp $SSH_OPTS /tmp/rentaxis.env $SSH_TARGET:${{ env.REMOTE_DIR }}/.env
+
+      - name: Deploy on VM
+        run: |
+          SSH_OPTS="-i ~/.ssh/deploy_key -o ConnectTimeout=10"
+          SSH_TARGET="${{ env.VM_USER }}@${{ env.VM_IP }}"
+
+          ssh $SSH_OPTS $SSH_TARGET bash -s << 'REMOTE_DEPLOY'
+          set -euo pipefail
+          cd /opt/rentaxis
+
+          echo "Loading backend image..."
+          docker load < backend.tar.gz
+
+          echo "Loading web image..."
+          docker load < web.tar.gz
+
+          echo "Cleaning up tarballs..."
+          rm -f backend.tar.gz web.tar.gz
+
+          echo "Pulling latest caddy and postgres images..."
+          docker compose pull caddy postgres
+
+          echo "Starting/updating services..."
+          docker compose up -d --remove-orphans
+
+          echo "Pruning unused images..."
+          docker image prune -f
+          REMOTE_DEPLOY
+
+      - name: Verify deployment
+        run: |
+          echo "Waiting for services to start..."
+          sleep 30
+
+          SSH_OPTS="-i ~/.ssh/deploy_key -o ConnectTimeout=10"
+          SSH_TARGET="${{ env.VM_USER }}@${{ env.VM_IP }}"
+
+          echo "=== Container Status ==="
+          ssh $SSH_OPTS $SSH_TARGET "cd /opt/rentaxis && docker compose ps"
+
+          echo ""
+          echo "=== Health Check ==="
+          curl -sf --max-time 15 "https://${{ env.DOMAIN }}/api/v1/actuator/health" && echo "" || echo "Health check pending (services may still be starting)"
+
+          echo ""
+          echo "Deployment complete: https://${{ env.DOMAIN }}"
