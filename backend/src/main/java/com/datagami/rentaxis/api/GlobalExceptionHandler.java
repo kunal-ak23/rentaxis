@@ -59,9 +59,10 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<Map<String, Object>> handleRuntime(RuntimeException ex) {
         log.error("Unhandled exception", ex);
+        String message = ex.getMessage() != null ? ex.getMessage() : "An internal error occurred";
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
                 "error", true,
-                "message", "An internal error occurred",
+                "message", message,
                 "status", 500
         ));
     }

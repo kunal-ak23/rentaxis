@@ -208,16 +208,23 @@ public class ContractGenerationService {
                 .orElseThrow(() -> new NotFoundException("Document not found"));
 
         String url = doc.getDocumentUrl();
+        log.info("Downloading document {} with URL: {}", docId, url);
 
         // Azure Blob URL
         if (url.startsWith("https://") && url.contains(".blob.core.windows.net")) {
-            return downloadFromAzure(url);
+            try {
+                return downloadFromAzure(url);
+            } catch (Exception e) {
+                log.error("Azure download failed for document {} (URL: {}): {}", docId, url, e.getMessage(), e);
+                throw new RuntimeException("Failed to download document from storage: " + e.getMessage(), e);
+            }
         }
 
         // Local file
         File file = new File(url);
         if (!file.exists()) {
-            throw new RuntimeException("Document file not found");
+            log.error("Local document file not found: {}", url);
+            throw new NotFoundException("Document file not found on disk: " + url);
         }
         try {
             return Files.readAllBytes(file.toPath());
@@ -269,13 +276,27 @@ public class ContractGenerationService {
 
     private String extractContainerName(String blobUrl) {
         // URL format: https://<account>.blob.core.windows.net/<container>/<path>
-        String path = blobUrl.split(".blob.core.windows.net/")[1];
-        return path.split("/")[0];
+        String marker = ".blob.core.windows.net/";
+        int idx = blobUrl.indexOf(marker);
+        if (idx < 0) {
+            throw new RuntimeException("Invalid Azure Blob URL (missing host): " + blobUrl);
+        }
+        String path = blobUrl.substring(idx + marker.length());
+        int slash = path.indexOf('/');
+        return slash > 0 ? path.substring(0, slash) : path;
     }
 
     private String extractBlobPath(String blobUrl) {
-        String path = blobUrl.split(".blob.core.windows.net/")[1];
+        String marker = ".blob.core.windows.net/";
+        int idx = blobUrl.indexOf(marker);
+        if (idx < 0) {
+            throw new RuntimeException("Invalid Azure Blob URL (missing host): " + blobUrl);
+        }
+        String path = blobUrl.substring(idx + marker.length());
         int firstSlash = path.indexOf('/');
+        if (firstSlash < 0) {
+            throw new RuntimeException("Invalid Azure Blob URL (missing blob path): " + blobUrl);
+        }
         return path.substring(firstSlash + 1);
     }
 

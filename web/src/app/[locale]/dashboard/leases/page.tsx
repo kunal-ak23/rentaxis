@@ -263,7 +263,18 @@ export default function LeasesPage() {
             if (res.ok) {
                 const docs = await res.json();
                 if (docs.length > 0) {
-                    window.open(`/api/proxy/v1/leases/documents/${docs[0].id}/download`, '_blank');
+                    const pdfRes = await fetch(`/api/proxy/v1/leases/documents/${docs[0].id}/download`);
+                    if (pdfRes.ok) {
+                        const blob = await pdfRes.blob();
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `contract-${id}.pdf`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                    }
                 }
             }
         } catch (err) {

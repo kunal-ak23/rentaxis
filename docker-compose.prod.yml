@@ -37,6 +37,8 @@ services:
     restart: unless-stopped
     expose:
       - "8080"
+    volumes:
+      - /data/contracts:/app/data
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE}
       - SPRING_DATASOURCE_URL=${SPRING_DATASOURCE_URL}

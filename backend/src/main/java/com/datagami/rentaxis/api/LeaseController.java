@@ -9,8 +9,6 @@ import com.datagami.rentaxis.core.service.LeaseService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.core.io.FileSystemResource;
-import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -18,7 +16,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
-import java.io.File;
 import java.util.List;
 import java.util.UUID;
 
@@ -98,13 +95,12 @@ public class LeaseController {
 
     @GetMapping("/documents/{docId}/download")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'RENTER')")
-    public ResponseEntity<Resource> downloadDocument(@PathVariable UUID docId) {
-        File file = contractGenerationService.getDocumentFile(docId);
-        Resource resource = new FileSystemResource(file);
+    public ResponseEntity<byte[]> downloadDocument(@PathVariable UUID docId) {
+        byte[] content = contractGenerationService.getDocumentContent(docId);
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_PDF)
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + file.getName() + "\"")
-                .body(resource);
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"contract-" + docId + ".pdf\"")
+                .body(content);
     }
 
     // --- Renter Portal Endpoints ---
