@@ -41,41 +41,28 @@ public class PaymentScheduleService {
 
     @Transactional
     public List<PaymentSchedule> generateScheduleForLease(Lease lease) {
-        // Idempotency check: skip if schedules already exist for this lease
         List<PaymentSchedule> existing = paymentScheduleRepository.findByLeaseId(lease.getId());
         if (!existing.isEmpty()) {
             return existing;
         }
 
-        int terms = (lease.getPaymentTerms() == null || lease.getPaymentTerms() == 0)
-                ? 1
-                : lease.getPaymentTerms();
-
-        BigDecimal totalRent = lease.getRentAmount();
-        BigDecimal installmentAmount = totalRent.divide(BigDecimal.valueOf(terms), 2, RoundingMode.HALF_UP);
-
-        // Calculate the remainder so the total exactly matches rentAmount
-        BigDecimal allocatedTotal = installmentAmount.multiply(BigDecimal.valueOf(terms));
-        BigDecimal remainder = totalRent.subtract(allocatedTotal);
+        PaymentPreviewDTO preview = previewSchedule(
+                lease.getUnit().getProperty().getId(),
+                lease.getStartDate(),
+                lease.getEndDate(),
+                lease.getRentAmount());
 
         List<PaymentSchedule> schedules = new ArrayList<>();
-
-        for (int i = 1; i <= terms; i++) {
+        for (PaymentPreviewDTO.PaymentPreviewLine line : preview.getLines()) {
             PaymentSchedule ps = new PaymentSchedule();
             ps.setLease(lease);
             ps.setUnit(lease.getUnit());
             ps.setProperty(lease.getUnit().getProperty());
-            ps.setInstallmentNumber(i);
-            ps.setDueDate(lease.getStartDate().plusMonths(i - 1));
+            ps.setInstallmentNumber(line.getInstallmentNumber());
+            ps.setDueDate(line.getDueDate());
+            ps.setAmount(line.getAmount());
             ps.setStatus(PaymentStatus.PENDING);
-
-            // Add remainder to the last installment
-            if (i == terms) {
-                ps.setAmount(installmentAmount.add(remainder));
-            } else {
-                ps.setAmount(installmentAmount);
-            }
-
+            ps.setPaymentMethod(lease.getPaymentMethod() != null ? lease.getPaymentMethod().name() : "CHEQUE");
             schedules.add(ps);
         }
 
