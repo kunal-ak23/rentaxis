@@ -13,9 +13,11 @@ import java.util.UUID;
 public class AccountService {
 
     private final AccountRepository repository;
+    private final AccountMappingService accountMappingService;
 
-    public AccountService(AccountRepository repository) {
+    public AccountService(AccountRepository repository, AccountMappingService accountMappingService) {
         this.repository = repository;
+        this.accountMappingService = accountMappingService;
     }
 
     @Transactional(readOnly = true)
@@ -121,7 +123,12 @@ public class AccountService {
                 // ═══ EQUITY ═══
                 makeAccount("F-01", "Capital Account", AccountType.EQUITY, null, "Owner's capital account"));
 
-        return repository.saveAll(defaults);
+        List<Account> saved = repository.saveAll(defaults);
+
+        // Seed default account mappings now that accounts exist
+        accountMappingService.seedDefaults();
+
+        return saved;
     }
 
     private Account makeAccount(String code, String name, AccountType type, String parentCode, String description) {

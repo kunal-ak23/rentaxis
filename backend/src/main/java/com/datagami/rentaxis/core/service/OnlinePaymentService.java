@@ -10,6 +10,7 @@ import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.*;
 import com.datagami.rentaxis.domain.entity.enums.OnlinePaymentStatus;
 import com.datagami.rentaxis.domain.entity.enums.PaymentStatus;
+import com.datagami.rentaxis.domain.entity.enums.TransactionNature;
 import com.datagami.rentaxis.domain.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -36,6 +37,7 @@ public class OnlinePaymentService {
     private final PenaltyCalculationService penaltyCalculationService;
     private final AccountRepository accountRepository;
     private final FinancialTransactionService financialTransactionService;
+    private final AccountMappingService accountMappingService;
     private final LeaseRepository leaseRepository;
     private final RenterRepository renterRepository;
 
@@ -233,11 +235,23 @@ public class OnlinePaymentService {
         paymentScheduleRepository.save(payment);
 
         // Auto-create financial transactions (same pattern as PaymentScheduleService.clearPayment())
-        UUID tenantId = TenantContextHolder.getTenantId();
+        // Try to resolve from account mappings first, fall back to hardcoded defaults
+        AccountMapping mapping = accountMappingService.resolveMapping(TransactionNature.RENT_PAYMENT_CLEARED);
 
-        // Debit: Bank/Cash account (A-01-01)
-        Account bankAccount = accountRepository.findByCodeAndTenantId("A-01-01", tenantId)
-                .orElseThrow(() -> new RuntimeException("Bank/Cash account (A-01-01) not found"));
+        Account bankAccount;
+        Account rentalIncomeAccount;
+
+        if (mapping != null) {
+            bankAccount = mapping.getDebitAccount();
+            rentalIncomeAccount = mapping.getCreditAccount();
+        } else {
+            // Fallback to hardcoded defaults
+            UUID tenantId = TenantContextHolder.getTenantId();
+            bankAccount = accountRepository.findByCodeAndTenantId("A-01-01", tenantId)
+                    .orElseThrow(() -> new RuntimeException("Bank/Cash account (A-01-01) not found. Please configure account mappings."));
+            rentalIncomeAccount = accountRepository.findByCodeAndTenantId("C-01-01", tenantId)
+                    .orElseThrow(() -> new RuntimeException("Rental Income account (C-01-01) not found. Please configure account mappings."));
+        }
 
         FinancialTransaction debitTxn = new FinancialTransaction();
         debitTxn.setDate(LocalDate.now());
@@ -248,10 +262,6 @@ public class OnlinePaymentService {
         debitTxn.setProperty(payment.getProperty());
         debitTxn.setUnit(payment.getUnit());
         financialTransactionService.createTransaction(debitTxn);
-
-        // Credit: Rental Income account (C-01-01)
-        Account rentalIncomeAccount = accountRepository.findByCodeAndTenantId("C-01-01", tenantId)
-                .orElseThrow(() -> new RuntimeException("Rental Income account (C-01-01) not found"));
 
         FinancialTransaction creditTxn = new FinancialTransaction();
         creditTxn.setDate(LocalDate.now());

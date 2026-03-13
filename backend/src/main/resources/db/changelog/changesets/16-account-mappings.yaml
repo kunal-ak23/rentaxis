@@ -1,0 +1,58 @@
+databaseChangeLog:
+  - changeSet:
+      id: 16-account-mappings
+      author: rentaxis
+      changes:
+        - createTable:
+            tableName: account_mappings
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: tenant_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: transaction_nature
+                  type: varchar(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: debit_account_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_account_mapping_debit_account
+                    referencedTableName: accounts
+                    referencedColumnNames: id
+              - column:
+                  name: credit_account_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_account_mapping_credit_account
+                    referencedTableName: accounts
+                    referencedColumnNames: id
+              - column:
+                  name: created_at
+                  type: timestamp
+                  defaultValueComputed: CURRENT_TIMESTAMP
+              - column:
+                  name: updated_at
+                  type: timestamp
+                  defaultValueComputed: CURRENT_TIMESTAMP
+        - createIndex:
+            indexName: idx_account_mappings_tenant_id
+            tableName: account_mappings
+            columns:
+              - column:
+                  name: tenant_id
+        - addUniqueConstraint:
+            tableName: account_mappings
+            columnNames: tenant_id, transaction_nature
+            constraintName: uq_account_mappings_tenant_nature
