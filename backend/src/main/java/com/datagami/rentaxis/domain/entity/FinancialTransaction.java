@@ -50,11 +50,28 @@ public class FinancialTransaction extends BaseTenantEntity {
     @JoinColumn(name = "unit_id")
     private Unit unit;
 
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "vendor_id")
+    private Vendor vendor;
+
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "staff_id")
+    private Staff staff;
+
     @Column(name = "vat_applicable")
     private boolean vatApplicable = false;
 
     @Column(name = "vat_amount", precision = 14, scale = 2)
     private BigDecimal vatAmount = BigDecimal.ZERO;
+
+    @Column(name = "vat_rate", precision = 5, scale = 2)
+    private BigDecimal vatRate = BigDecimal.ZERO;
+
+    @Column(name = "gross_amount", precision = 14, scale = 2)
+    private BigDecimal grossAmount = BigDecimal.ZERO;
+
+    @Column(name = "net_amount", precision = 14, scale = 2)
+    private BigDecimal netAmount = BigDecimal.ZERO;
 
     @Column(columnDefinition = "text")
     private String notes;

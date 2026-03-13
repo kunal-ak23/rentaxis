@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.api;
 
+import com.datagami.rentaxis.api.dto.AgingReportDTO;
 import com.datagami.rentaxis.api.dto.PaymentScheduleDTO;
 import com.datagami.rentaxis.api.dto.LeasePaymentStatsDTO;
 import com.datagami.rentaxis.api.dto.PaymentSummaryDTO;
@@ -80,6 +81,13 @@ public class PaymentScheduleController {
             @PathVariable UUID id,
             @RequestBody UpdatePaymentStatusDTO dto) {
         return ResponseEntity.ok(paymentScheduleService.replacePayment(id, dto));
+    }
+
+    @GetMapping("/aging-report")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
+    public ResponseEntity<AgingReportDTO> getAgingReport(
+            @RequestParam(required = false) UUID propertyId) {
+        return ResponseEntity.ok(paymentScheduleService.getAgingReport(propertyId));
     }
 
     @PostMapping("/stats-by-leases")

@@ -1,53 +1,107 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useTranslations } from "next-intl";
+import { useLocale } from "next-intl";
 import {
-    BookOpen, Plus, X, ChevronDown, ChevronRight,
-    Landmark, TrendingDown, TrendingUp, Coins, Scale, Sparkles, Loader2
+    BookOpen, Plus, X, ChevronRight, ChevronDown,
+    Pencil, Trash2, Upload, List, GitBranch,
+    Loader2, FileSpreadsheet, Sparkles
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+type AccountType = "ASSET" | "LIABILITY" | "INCOME" | "EXPENSE" | "EQUITY";
+
+type AccountSubType =
+    | "FIXED_ASSET" | "BANK" | "CASH" | "RECEIVABLE" | "PDC_RECEIVABLE" | "OTHER_ASSET"
+    | "PAYABLE" | "ADVANCE" | "DEPOSIT_HELD" | "PDC_PAYABLE" | "OTHER_LIABILITY"
+    | "RENTAL_INCOME" | "OTHER_INCOME"
+    | "DIRECT_EXPENSE" | "INDIRECT_EXPENSE" | "SALARY_EXPENSE"
+    | "CAPITAL" | "RETAINED_EARNINGS";
 
 type Account = {
     id: string;
     code: string;
     name: string;
-    accountType: "ASSET" | "LIABILITY" | "INCOME" | "EXPENSE" | "EQUITY";
+    nameEn: string | null;
+    nameAr: string | null;
+    accountType: AccountType;
+    accountSubType: AccountSubType | null;
     parentCode: string | null;
     description: string | null;
     system: boolean;
+    group: boolean;
+    active: boolean;
+    hierarchyLevel: number;
+    displayOrder: number;
 };
 
-const TYPE_CONFIG: Record<string, { label: string; icon: React.ElementType; gradient: string; border: string; text: string; badge: string }> = {
-    ASSET: { label: "Assets", icon: Landmark, gradient: "from-emerald-500/10 to-emerald-600/5", border: "border-emerald-200/60", text: "text-emerald-700", badge: "bg-emerald-100 text-emerald-700" },
-    LIABILITY: { label: "Liabilities", icon: TrendingDown, gradient: "from-rose-500/10 to-rose-600/5", border: "border-rose-200/60", text: "text-rose-700", badge: "bg-rose-100 text-rose-700" },
-    INCOME: { label: "Income", icon: TrendingUp, gradient: "from-blue-500/10 to-blue-600/5", border: "border-blue-200/60", text: "text-blue-700", badge: "bg-blue-100 text-blue-700" },
-    EXPENSE: { label: "Expenses", icon: Coins, gradient: "from-amber-500/10 to-amber-600/5", border: "border-amber-200/60", text: "text-amber-700", badge: "bg-amber-100 text-amber-700" },
-    EQUITY: { label: "Equity", icon: Scale, gradient: "from-violet-500/10 to-violet-600/5", border: "border-violet-200/60", text: "text-violet-700", badge: "bg-violet-100 text-violet-700" },
+const TYPE_ORDER: AccountType[] = ["ASSET", "LIABILITY", "INCOME", "EXPENSE", "EQUITY"];
+
+const TYPE_BADGE: Record<AccountType, string> = {
+    ASSET: "bg-emerald-50 text-emerald-700",
+    LIABILITY: "bg-rose-50 text-rose-700",
+    INCOME: "bg-blue-50 text-blue-700",
+    EXPENSE: "bg-amber-50 text-amber-700",
+    EQUITY: "bg-violet-50 text-violet-700",
+};
+
+const SUB_TYPES_BY_TYPE: Record<AccountType, AccountSubType[]> = {
+    ASSET: ["FIXED_ASSET", "BANK", "CASH", "RECEIVABLE", "PDC_RECEIVABLE", "OTHER_ASSET"],
+    LIABILITY: ["PAYABLE", "ADVANCE", "DEPOSIT_HELD", "PDC_PAYABLE", "OTHER_LIABILITY"],
+    INCOME: ["RENTAL_INCOME", "OTHER_INCOME"],
+    EXPENSE: ["DIRECT_EXPENSE", "INDIRECT_EXPENSE", "SALARY_EXPENSE"],
+    EQUITY: ["CAPITAL", "RETAINED_EARNINGS"],
+};
+
+const EMPTY_FORM = {
+    code: "",
+    nameEn: "",
+    nameAr: "",
+    accountType: "ASSET" as AccountType,
+    accountSubType: "" as string,
+    parentCode: "",
+    description: "",
+    group: false,
 };
 
 export default function AccountsPage() {
     const t = useTranslations("Finance");
+    const locale = useLocale();
+    const isAr = locale === "ar";
+
     const [accounts, setAccounts] = useState<Account[]>([]);
-    const [showForm, setShowForm] = useState(false);
-    const [expandedTypes, setExpandedTypes] = useState<Set<string>>(new Set(["ASSET", "LIABILITY", "INCOME", "EXPENSE", "EQUITY"]));
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [seeding, setSeeding] = useState(false);
 
-    const [formData, setFormData] = useState({
-        code: "",
-        name: "",
-        accountType: "ASSET",
-        parentCode: "",
-        description: ""
-    });
+    // View & filters
+    const [viewMode, setViewMode] = useState<"tree" | "flat">("tree");
+    const [filterType, setFilterType] = useState<AccountType | "">("");
+    const [activeOnly, setActiveOnly] = useState(false);
 
-    useEffect(() => {
-        fetchAccounts();
-    }, []);
+    // Modals
+    const [showAddModal, setShowAddModal] = useState(false);
+    const [showEditModal, setShowEditModal] = useState(false);
+    const [showImportModal, setShowImportModal] = useState(false);
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
 
-    const fetchAccounts = async () => {
+    // Forms
+    const [formData, setFormData] = useState(EMPTY_FORM);
+    const [editId, setEditId] = useState<string | null>(null);
+
+    // Tree expand state
+    const [expandedCodes, setExpandedCodes] = useState<Set<string>>(new Set());
+    // Flat view expand state
+    const [expandedTypes, setExpandedTypes] = useState<Set<string>>(new Set(TYPE_ORDER));
+
+    // Import
+    const [importFile, setImportFile] = useState<File | null>(null);
+    const [importing, setImporting] = useState(false);
+    const [dragOver, setDragOver] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const fetchAccounts = useCallback(async () => {
         try {
             const res = await fetch("/api/proxy/v1/finance/accounts");
             if (res.ok) {
@@ -59,41 +113,55 @@ export default function AccountsPage() {
         } finally {
             setLoading(false);
         }
+    }, []);
+
+    useEffect(() => {
+        fetchAccounts();
+    }, [fetchAccounts]);
+
+    const displayName = (a: Account) => {
+        if (isAr) return a.nameAr || a.name;
+        return a.nameEn || a.name;
     };
 
-    const handleSeedDefaults = async () => {
-        setSeeding(true);
-        try {
-            const res = await fetch("/api/proxy/v1/finance/accounts/seed", { method: "POST" });
-            if (res.ok) {
-                fetchAccounts();
+    // ── Filtering ──
+    const filtered = accounts.filter(a => {
+        if (filterType && a.accountType !== filterType) return false;
+        if (activeOnly && !a.active) return false;
+        return true;
+    });
+
+    // ── Tree helpers ──
+    const buildTree = () => {
+        const sorted = [...filtered].sort((a, b) => {
+            const ti = TYPE_ORDER.indexOf(a.accountType) - TYPE_ORDER.indexOf(b.accountType);
+            if (ti !== 0) return ti;
+            if (a.displayOrder !== b.displayOrder) return a.displayOrder - b.displayOrder;
+            return a.code.localeCompare(b.code);
+        });
+
+        const childrenMap: Record<string, Account[]> = {};
+        const roots: Account[] = [];
+
+        for (const acc of sorted) {
+            if (acc.parentCode) {
+                if (!childrenMap[acc.parentCode]) childrenMap[acc.parentCode] = [];
+                childrenMap[acc.parentCode].push(acc);
+            } else {
+                roots.push(acc);
             }
-        } catch (err) {
-            console.error(err);
-        } finally {
-            setSeeding(false);
         }
+
+        return { roots, childrenMap };
     };
 
-    const handleSubmit = async (ev: React.FormEvent) => {
-        ev.preventDefault();
-        setSubmitting(true);
-        try {
-            const res = await fetch("/api/proxy/v1/finance/accounts", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(formData)
-            });
-            if (res.ok) {
-                setShowForm(false);
-                fetchAccounts();
-                setFormData({ code: "", name: "", accountType: "ASSET", parentCode: "", description: "" });
-            }
-        } catch (err) {
-            console.error(err);
-        } finally {
-            setSubmitting(false);
-        }
+    const toggleExpand = (code: string) => {
+        setExpandedCodes(prev => {
+            const next = new Set(prev);
+            if (next.has(code)) next.delete(code);
+            else next.add(code);
+            return next;
+        });
     };
 
     const toggleType = (type: string) => {
@@ -105,16 +173,358 @@ export default function AccountsPage() {
         });
     };
 
-    const groupedAccounts: Record<string, Account[]> = {};
-    for (const a of accounts) {
-        if (!groupedAccounts[a.accountType]) groupedAccounts[a.accountType] = [];
-        groupedAccounts[a.accountType].push(a);
+    const expandAll = () => {
+        const codes = new Set(accounts.filter(a => a.group).map(a => a.code));
+        setExpandedCodes(codes);
+    };
+
+    // ── Flat grouping ──
+    const groupedByType: Record<string, Account[]> = {};
+    for (const a of filtered) {
+        if (!groupedByType[a.accountType]) groupedByType[a.accountType] = [];
+        groupedByType[a.accountType].push(a);
     }
 
-    const typeOrder = ["ASSET", "LIABILITY", "INCOME", "EXPENSE", "EQUITY"];
+    // ── CRUD ──
+    const handleSeedDefaults = async () => {
+        setSeeding(true);
+        try {
+            const res = await fetch("/api/proxy/v1/finance/accounts/seed", { method: "POST" });
+            if (res.ok) {
+                await fetchAccounts();
+                expandAll();
+            }
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setSeeding(false);
+        }
+    };
+
+    const handleCreate = async (ev: React.FormEvent) => {
+        ev.preventDefault();
+        setSubmitting(true);
+        try {
+            const body: Record<string, unknown> = {
+                code: formData.code,
+                nameEn: formData.nameEn,
+                nameAr: formData.nameAr,
+                name: formData.nameEn,
+                accountType: formData.accountType,
+                description: formData.description || null,
+                parentCode: formData.parentCode || null,
+                group: formData.group,
+            };
+            if (formData.accountSubType) body.accountSubType = formData.accountSubType;
+
+            const res = await fetch("/api/proxy/v1/finance/accounts", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(body),
+            });
+            if (res.ok) {
+                setShowAddModal(false);
+                setFormData(EMPTY_FORM);
+                fetchAccounts();
+            }
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    const handleUpdate = async (ev: React.FormEvent) => {
+        ev.preventDefault();
+        if (!editId) return;
+        setSubmitting(true);
+        try {
+            const body: Record<string, unknown> = {
+                code: formData.code,
+                nameEn: formData.nameEn,
+                nameAr: formData.nameAr,
+                name: formData.nameEn,
+                accountType: formData.accountType,
+                description: formData.description || null,
+                parentCode: formData.parentCode || null,
+                group: formData.group,
+            };
+            if (formData.accountSubType) body.accountSubType = formData.accountSubType;
+
+            const res = await fetch(`/api/proxy/v1/finance/accounts/${editId}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(body),
+            });
+            if (res.ok) {
+                setShowEditModal(false);
+                setEditId(null);
+                setFormData(EMPTY_FORM);
+                fetchAccounts();
+            }
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    const handleDelete = async (id: string) => {
+        try {
+            const res = await fetch(`/api/proxy/v1/finance/accounts/${id}`, { method: "DELETE" });
+            if (res.ok) {
+                setShowDeleteConfirm(null);
+                fetchAccounts();
+            }
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
+    const openEdit = (account: Account) => {
+        setFormData({
+            code: account.code,
+            nameEn: account.nameEn || account.name,
+            nameAr: account.nameAr || "",
+            accountType: account.accountType,
+            accountSubType: account.accountSubType || "",
+            parentCode: account.parentCode || "",
+            description: account.description || "",
+            group: account.group,
+        });
+        setEditId(account.id);
+        setShowEditModal(true);
+    };
+
+    const handleImport = async () => {
+        if (!importFile) return;
+        setImporting(true);
+        try {
+            const fd = new FormData();
+            fd.append("file", importFile);
+            const res = await fetch("/api/proxy/v1/finance/accounts/import", {
+                method: "POST",
+                body: fd,
+            });
+            if (res.ok) {
+                setShowImportModal(false);
+                setImportFile(null);
+                fetchAccounts();
+            }
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setImporting(false);
+        }
+    };
+
+    const handleDrop = (ev: React.DragEvent) => {
+        ev.preventDefault();
+        setDragOver(false);
+        const file = ev.dataTransfer.files?.[0];
+        if (file) setImportFile(file);
+    };
+
+    // ── Account form (shared between add/edit) ──
+    const renderAccountForm = (onSubmit: (ev: React.FormEvent) => void, title: string) => (
+        <form onSubmit={onSubmit} className="grid grid-cols-2 gap-5">
+            <div className="col-span-1">
+                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("code")}</label>
+                <input
+                    required
+                    placeholder="e.g. A-01"
+                    className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
+                    value={formData.code}
+                    onChange={ev => setFormData({ ...formData, code: ev.target.value })}
+                />
+            </div>
+            <div className="col-span-1">
+                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("accountType")}</label>
+                <select
+                    className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
+                    value={formData.accountType}
+                    onChange={ev => setFormData({ ...formData, accountType: ev.target.value as AccountType, accountSubType: "" })}
+                >
+                    {TYPE_ORDER.map(type => <option key={type} value={type}>{type}</option>)}
+                </select>
+            </div>
+            <div className="col-span-1">
+                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("nameEn")}</label>
+                <input
+                    required
+                    placeholder="Account name in English"
+                    className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
+                    value={formData.nameEn}
+                    onChange={ev => setFormData({ ...formData, nameEn: ev.target.value })}
+                />
+            </div>
+            <div className="col-span-1">
+                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("nameAr")}</label>
+                <input
+                    placeholder="اسم الحساب بالعربي"
+                    dir="rtl"
+                    className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
+                    value={formData.nameAr}
+                    onChange={ev => setFormData({ ...formData, nameAr: ev.target.value })}
+                />
+            </div>
+            <div className="col-span-1">
+                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("subType")}</label>
+                <select
+                    className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
+                    value={formData.accountSubType}
+                    onChange={ev => setFormData({ ...formData, accountSubType: ev.target.value })}
+                >
+                    <option value="">--</option>
+                    {SUB_TYPES_BY_TYPE[formData.accountType]?.map(st => (
+                        <option key={st} value={st}>{st.replace(/_/g, " ")}</option>
+                    ))}
+                </select>
+            </div>
+            <div className="col-span-1">
+                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("parent")}</label>
+                <select
+                    className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
+                    value={formData.parentCode}
+                    onChange={ev => setFormData({ ...formData, parentCode: ev.target.value })}
+                >
+                    <option value="">-- None --</option>
+                    {accounts
+                        .filter(a => a.accountType === formData.accountType && a.code !== formData.code)
+                        .map(a => (
+                            <option key={a.id} value={a.code}>{a.code} - {displayName(a)}</option>
+                        ))}
+                </select>
+            </div>
+            <div className="col-span-2">
+                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("description")}</label>
+                <textarea
+                    placeholder="Optional description"
+                    className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200 h-20 resize-none"
+                    value={formData.description}
+                    onChange={ev => setFormData({ ...formData, description: ev.target.value })}
+                />
+            </div>
+            <div className="col-span-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                        type="checkbox"
+                        className="rounded border-gray-300"
+                        checked={formData.group}
+                        onChange={ev => setFormData({ ...formData, group: ev.target.checked })}
+                    />
+                    <span className="text-xs font-bold text-gray-500">{t("isGroup")}</span>
+                </label>
+            </div>
+            <div className="col-span-2 flex justify-end gap-3 mt-2">
+                <button
+                    type="button"
+                    onClick={() => {
+                        setShowAddModal(false);
+                        setShowEditModal(false);
+                        setFormData(EMPTY_FORM);
+                        setEditId(null);
+                    }}
+                    className="px-6 py-3 bg-gray-100 text-gray-500 rounded-xl text-xs font-bold cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                >
+                    {t("cancel")}
+                </button>
+                <button
+                    type="submit"
+                    disabled={submitting}
+                    className="px-8 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-bold cursor-pointer transition-all duration-200 hover:opacity-90 focus:ring-2 focus:ring-primary/30 focus:outline-none disabled:opacity-50 flex items-center gap-2"
+                >
+                    {submitting && <Loader2 size={14} className="animate-spin" />}
+                    {title === t("editAccount") ? t("accountUpdated").replace("Account updated", "Save") || "Save" : t("create")}
+                </button>
+            </div>
+        </form>
+    );
+
+    // ── Tree row renderer (recursive) ──
+    const renderTreeRow = (account: Account, childrenMap: Record<string, Account[]>, depth: number) => {
+        const children = childrenMap[account.code] || [];
+        const hasChildren = children.length > 0;
+        const isExpanded = expandedCodes.has(account.code);
+
+        return (
+            <div key={account.id}>
+                <div
+                    className={cn(
+                        "flex items-center justify-between px-5 py-3 hover:bg-gray-50/50 transition-all duration-200 border-b border-gray-50",
+                        !account.active && "opacity-50"
+                    )}
+                    style={{ paddingLeft: `${20 + depth * 24}px` }}
+                >
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                        {/* Expand/collapse or spacer */}
+                        {hasChildren || account.group ? (
+                            <button
+                                onClick={() => toggleExpand(account.code)}
+                                className="p-0.5 text-gray-400 hover:text-gray-600 cursor-pointer transition-all duration-200 focus:outline-none flex-shrink-0"
+                            >
+                                {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                            </button>
+                        ) : (
+                            <span className="w-[18px] flex-shrink-0" />
+                        )}
+
+                        <span className={cn("text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg flex-shrink-0", TYPE_BADGE[account.accountType])}>
+                            {account.code}
+                        </span>
+
+                        <div className="min-w-0">
+                            <p className={cn("text-xs font-bold text-foreground truncate", account.group && "font-black")}>
+                                {displayName(account)}
+                            </p>
+                            {account.description && (
+                                <p className="text-[10px] text-gray-400 mt-0.5 truncate">{account.description}</p>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                        {account.accountSubType && (
+                            <span className="text-[9px] font-bold text-gray-300 uppercase hidden md:inline">
+                                {account.accountSubType.replace(/_/g, " ")}
+                            </span>
+                        )}
+                        {account.group && (
+                            <span className="text-[8px] font-bold text-primary bg-primary/5 px-2 py-0.5 rounded-full uppercase tracking-wider">Group</span>
+                        )}
+                        {account.system && (
+                            <span className="text-[8px] font-bold text-gray-300 bg-gray-50 px-2 py-0.5 rounded-full uppercase tracking-wider">System</span>
+                        )}
+                        {!account.system && (
+                            <div className="flex items-center gap-1 ml-2">
+                                <button
+                                    onClick={() => openEdit(account)}
+                                    className="p-1.5 text-gray-300 hover:text-primary cursor-pointer transition-all duration-200 rounded-lg hover:bg-primary/5 focus:outline-none"
+                                    title={t("editAccount")}
+                                >
+                                    <Pencil size={13} />
+                                </button>
+                                <button
+                                    onClick={() => setShowDeleteConfirm(account.id)}
+                                    className="p-1.5 text-gray-300 hover:text-rose-500 cursor-pointer transition-all duration-200 rounded-lg hover:bg-rose-50 focus:outline-none"
+                                    title={t("deleteAccount")}
+                                >
+                                    <Trash2 size={13} />
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+                {isExpanded && children.map(child => renderTreeRow(child, childrenMap, depth + 1))}
+            </div>
+        );
+    };
+
+    const { roots, childrenMap } = buildTree();
 
     return (
         <div>
+            {/* ── Page Header ── */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10">
                 <div>
                     <h1 className="text-xl font-black text-foreground tracking-tight mb-1 flex items-center gap-2">
@@ -125,7 +535,7 @@ export default function AccountsPage() {
                         {t("chartOfAccountsDesc")}
                     </p>
                 </div>
-                <div className="flex gap-3">
+                <div className="flex gap-3 flex-wrap">
                     {accounts.length === 0 && !loading && (
                         <button
                             onClick={handleSeedDefaults}
@@ -137,8 +547,15 @@ export default function AccountsPage() {
                         </button>
                     )}
                     <button
-                        onClick={() => setShowForm(true)}
+                        onClick={() => setShowImportModal(true)}
                         className="flex items-center gap-2 bg-white text-foreground border border-border px-5 py-2.5 rounded-full text-xs font-bold hover:bg-gray-50 transition-all duration-200 shadow-sm active:scale-95 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                    >
+                        <Upload size={14} />
+                        {t("importAccounts")}
+                    </button>
+                    <button
+                        onClick={() => { setFormData(EMPTY_FORM); setShowAddModal(true); }}
+                        className="flex items-center gap-2 bg-primary text-primary-foreground px-5 py-2.5 rounded-full text-xs font-bold hover:opacity-90 transition-all duration-200 shadow-lg shadow-primary/10 active:scale-95 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                     >
                         <Plus size={14} />
                         {t("addAccount")}
@@ -146,150 +563,355 @@ export default function AccountsPage() {
                 </div>
             </div>
 
-            {/* Add Account Modal */}
-            {showForm && (
+            {/* ── View Toggle + Filters Bar ── */}
+            <div className="mb-6 bg-white border border-border rounded-2xl p-4 shadow-sm flex flex-col md:flex-row md:items-center gap-4">
+                {/* View toggle */}
+                <div className="flex bg-gray-100 rounded-full p-0.5">
+                    <button
+                        onClick={() => setViewMode("tree")}
+                        className={cn(
+                            "flex items-center gap-1.5 px-3.5 py-2 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer",
+                            viewMode === "tree"
+                                ? "bg-white text-foreground shadow-sm"
+                                : "text-gray-400 hover:text-gray-600"
+                        )}
+                    >
+                        <GitBranch size={12} />
+                        {t("treeView")}
+                    </button>
+                    <button
+                        onClick={() => setViewMode("flat")}
+                        className={cn(
+                            "flex items-center gap-1.5 px-3.5 py-2 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer",
+                            viewMode === "flat"
+                                ? "bg-white text-foreground shadow-sm"
+                                : "text-gray-400 hover:text-gray-600"
+                        )}
+                    >
+                        <List size={12} />
+                        {t("flatView")}
+                    </button>
+                </div>
+
+                {/* Account type filter */}
+                <div>
+                    <select
+                        className="bg-input border border-border p-2.5 rounded-xl text-xs cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
+                        value={filterType}
+                        onChange={ev => setFilterType(ev.target.value as AccountType | "")}
+                    >
+                        <option value="">{t("allTypes")}</option>
+                        {TYPE_ORDER.map(type => <option key={type} value={type}>{type}</option>)}
+                    </select>
+                </div>
+
+                {/* Active only toggle */}
+                <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                        type="checkbox"
+                        className="rounded border-gray-300"
+                        checked={activeOnly}
+                        onChange={ev => setActiveOnly(ev.target.checked)}
+                    />
+                    <span className="text-xs font-bold text-gray-500">{t("activeOnly")}</span>
+                </label>
+
+                <div className="ml-auto text-[10px] text-gray-400 font-medium">
+                    {filtered.length} accounts
+                </div>
+            </div>
+
+            {/* ── Add Account Modal ── */}
+            {showAddModal && (
                 <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
-                    <div className="bg-white rounded-3xl p-8 max-w-xl w-full shadow-2xl border border-gray-100 relative">
-                        <button onClick={() => setShowForm(false)} aria-label="Close modal" className="absolute right-6 top-6 p-2 text-gray-400 hover:text-gray-600 cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg"><X size={18} /></button>
+                    <div className="bg-white rounded-3xl p-8 max-w-xl w-full shadow-2xl border border-gray-100 relative max-h-[90vh] overflow-y-auto">
+                        <button
+                            onClick={() => { setShowAddModal(false); setFormData(EMPTY_FORM); }}
+                            aria-label="Close modal"
+                            className="absolute right-6 top-6 p-2 text-gray-400 hover:text-gray-600 cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg"
+                        >
+                            <X size={18} />
+                        </button>
                         <h2 className="text-lg font-black mb-1">{t("addAccount")}</h2>
                         <p className="text-xs text-gray-400 mb-8 font-medium">Create a new account in the chart of accounts.</p>
-                        <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-5">
-                            <div className="col-span-1">
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("accountCode")}</label>
-                                <input required placeholder="e.g. D-01-16" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.code} onChange={ev => setFormData({ ...formData, code: ev.target.value })} />
-                            </div>
-                            <div className="col-span-1">
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("accountName")}</label>
-                                <input required placeholder="e.g. Garden Maintenance" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.name} onChange={ev => setFormData({ ...formData, name: ev.target.value })} />
-                            </div>
-                            <div className="col-span-1">
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("accountType")}</label>
-                                <select className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.accountType} onChange={ev => setFormData({ ...formData, accountType: ev.target.value })}>
-                                    {typeOrder.map(type => <option key={type} value={type}>{TYPE_CONFIG[type].label}</option>)}
-                                </select>
-                            </div>
-                            <div className="col-span-1">
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("parentCode")}</label>
-                                <input placeholder="e.g. D-01 (optional)" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.parentCode} onChange={ev => setFormData({ ...formData, parentCode: ev.target.value })} />
-                            </div>
-                            <div className="col-span-2">
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("description")}</label>
-                                <textarea placeholder="Optional description" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200 h-20 resize-none" value={formData.description} onChange={ev => setFormData({ ...formData, description: ev.target.value })} />
-                            </div>
-                            <div className="col-span-2 flex justify-end gap-3 mt-2">
-                                <button type="button" onClick={() => setShowForm(false)} className="px-6 py-3 text-xs font-bold text-gray-500 cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-xl">{t("cancel")}</button>
-                                <button type="submit" disabled={submitting} className="px-8 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-bold cursor-pointer transition-all duration-200 hover:opacity-90 focus:ring-2 focus:ring-primary/30 focus:outline-none disabled:opacity-50 flex items-center gap-2">
-                                    {submitting && <Loader2 size={14} className="animate-spin" />}
-                                    {t("create")}
-                                </button>
-                            </div>
-                        </form>
+                        {renderAccountForm(handleCreate, t("addAccount"))}
                     </div>
                 </div>
             )}
 
-            {/* Skeleton Loading */}
-            {loading && (
-                <div className="space-y-6">
-                    {[1, 2, 3, 4, 5].map((i) => (
-                        <div key={i} className="rounded-2xl border border-gray-200 overflow-hidden animate-pulse">
-                            <div className="flex items-center justify-between p-5 bg-gray-50">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-xl bg-gray-200" />
-                                    <div>
-                                        <div className="h-4 w-24 bg-gray-200 rounded mb-1" />
-                                        <div className="h-3 w-16 bg-gray-100 rounded" />
-                                    </div>
-                                </div>
-                                <div className="w-4 h-4 bg-gray-200 rounded" />
-                            </div>
-                        </div>
-                    ))}
+            {/* ── Edit Account Modal ── */}
+            {showEditModal && (
+                <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
+                    <div className="bg-white rounded-3xl p-8 max-w-xl w-full shadow-2xl border border-gray-100 relative max-h-[90vh] overflow-y-auto">
+                        <button
+                            onClick={() => { setShowEditModal(false); setEditId(null); setFormData(EMPTY_FORM); }}
+                            aria-label="Close modal"
+                            className="absolute right-6 top-6 p-2 text-gray-400 hover:text-gray-600 cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg"
+                        >
+                            <X size={18} />
+                        </button>
+                        <h2 className="text-lg font-black mb-1">{t("editAccount")}</h2>
+                        <p className="text-xs text-gray-400 mb-8 font-medium">Update the account details.</p>
+                        {renderAccountForm(handleUpdate, t("editAccount"))}
+                    </div>
                 </div>
             )}
 
-            {/* Account Groups */}
-            {!loading && <div className="space-y-6">
-                {typeOrder.map(type => {
-                    const items = groupedAccounts[type] || [];
-                    const config = TYPE_CONFIG[type];
-                    const Icon = config.icon;
-                    const isExpanded = expandedTypes.has(type);
+            {/* ── Import Modal ── */}
+            {showImportModal && (
+                <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
+                    <div className="bg-white rounded-3xl p-8 max-w-xl w-full shadow-2xl border border-gray-100 relative">
+                        <button
+                            onClick={() => { setShowImportModal(false); setImportFile(null); }}
+                            aria-label="Close modal"
+                            className="absolute right-6 top-6 p-2 text-gray-400 hover:text-gray-600 cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg"
+                        >
+                            <X size={18} />
+                        </button>
+                        <h2 className="text-lg font-black mb-1">{t("importAccounts")}</h2>
+                        <p className="text-xs text-gray-400 mb-8 font-medium">{t("importFromFile")}</p>
 
-                    return (
-                        <div key={type} className={cn("rounded-2xl border overflow-hidden transition-all duration-200", config.border)}>
+                        <div
+                            onDrop={handleDrop}
+                            onDragOver={ev => { ev.preventDefault(); setDragOver(true); }}
+                            onDragLeave={() => setDragOver(false)}
+                            onClick={() => fileInputRef.current?.click()}
+                            className={cn(
+                                "border-2 border-dashed rounded-2xl p-12 text-center cursor-pointer transition-all duration-200",
+                                dragOver ? "border-primary bg-primary/5" : "border-gray-200 bg-gray-50 hover:border-gray-300"
+                            )}
+                        >
+                            <input
+                                ref={fileInputRef}
+                                type="file"
+                                accept=".csv,.xlsx"
+                                className="hidden"
+                                onChange={ev => {
+                                    const file = ev.target.files?.[0];
+                                    if (file) setImportFile(file);
+                                }}
+                            />
+                            <Upload size={32} className="mx-auto text-gray-300 mb-4" />
+                            <p className="text-xs font-bold text-gray-500 mb-1">{t("dragDropFile")}</p>
+                            <p className="text-[10px] text-gray-400">{t("supportedFormats")}</p>
+                            {importFile && (
+                                <div className="mt-4 inline-flex items-center gap-2 bg-white border border-border px-3 py-2 rounded-xl">
+                                    <FileSpreadsheet size={14} className="text-primary" />
+                                    <span className="text-xs font-bold text-foreground">{importFile.name}</span>
+                                    <button
+                                        onClick={ev => { ev.stopPropagation(); setImportFile(null); }}
+                                        className="p-0.5 text-gray-400 hover:text-gray-600 cursor-pointer"
+                                    >
+                                        <X size={12} />
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="flex justify-end gap-3 mt-6">
                             <button
-                                onClick={() => toggleType(type)}
-                                className={cn(
-                                    "w-full flex items-center justify-between p-5 bg-gradient-to-r transition-all duration-200 hover:opacity-90 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none",
-                                    config.gradient
-                                )}
+                                type="button"
+                                onClick={() => { setShowImportModal(false); setImportFile(null); }}
+                                className="px-6 py-3 bg-gray-100 text-gray-500 rounded-xl text-xs font-bold cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none"
                             >
-                                <div className="flex items-center gap-3">
-                                    <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center bg-white/80 shadow-sm", config.text)}>
-                                        <Icon size={20} />
-                                    </div>
-                                    <div className="text-left">
-                                        <h3 className="text-sm font-black text-foreground">{config.label}</h3>
-                                        <p className="text-[10px] text-gray-500 font-medium">{items.length} accounts</p>
-                                    </div>
-                                </div>
-                                {isExpanded ? <ChevronDown size={16} className="text-gray-400" /> : <ChevronRight size={16} className="text-gray-400" />}
+                                {t("cancel")}
                             </button>
-                            {isExpanded && items.length > 0 && (
-                                <div className="bg-white divide-y divide-gray-50">
-                                    {items.map(account => (
-                                        <div key={account.id} className="flex items-center justify-between px-6 py-3.5 hover:bg-gray-50/50 transition-all duration-200">
-                                            <div className="flex items-center gap-4">
-                                                <span className={cn("text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg", config.badge)}>
-                                                    {account.code}
-                                                </span>
-                                                <div>
-                                                    <p className="text-xs font-bold text-foreground">{account.name}</p>
-                                                    {account.description && (
-                                                        <p className="text-[10px] text-gray-400 mt-0.5">{account.description}</p>
-                                                    )}
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                {account.parentCode && (
-                                                    <span className="text-[9px] font-bold text-gray-300 uppercase">
-                                                        ↳ {account.parentCode}
-                                                    </span>
-                                                )}
-                                                {account.system && (
-                                                    <span className="text-[8px] font-bold text-gray-300 bg-gray-50 px-2 py-0.5 rounded-full uppercase tracking-wider">System</span>
-                                                )}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                            {isExpanded && items.length === 0 && (
-                                <div className="bg-white px-6 py-8 text-center text-xs text-gray-400">
-                                    No {config.label.toLowerCase()} accounts yet
-                                </div>
-                            )}
+                            <button
+                                onClick={handleImport}
+                                disabled={!importFile || importing}
+                                className="px-8 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-bold cursor-pointer transition-all duration-200 hover:opacity-90 focus:ring-2 focus:ring-primary/30 focus:outline-none disabled:opacity-50 flex items-center gap-2"
+                            >
+                                {importing && <Loader2 size={14} className="animate-spin" />}
+                                {t("importAccounts")}
+                            </button>
                         </div>
-                    );
-                })}
-            </div>}
-
-            {/* Empty State */}
-            {accounts.length === 0 && !loading && (
-                <div className="text-center py-24 bg-gray-50 border border-dashed border-gray-200 rounded-[2.5rem] flex flex-col items-center mt-8">
-                    <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center text-gray-200 shadow-sm mb-6">
-                        <BookOpen size={32} />
                     </div>
-                    <p className="text-sm font-bold text-gray-400 mb-2 uppercase tracking-widest">No Accounts</p>
-                    <p className="text-xs text-gray-400 mb-6">Seed the default chart of accounts to get started.</p>
-                    <button
-                        onClick={handleSeedDefaults}
-                        disabled={seeding}
-                        className="text-xs font-black text-primary border-b-2 border-primary pb-0.5 hover:opacity-70 transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none disabled:opacity-50"
-                    >
-                        {t("seedDefaults")}
-                    </button>
+                </div>
+            )}
+
+            {/* ── Delete Confirm Dialog ── */}
+            {showDeleteConfirm && (
+                <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
+                    <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl border border-gray-100 relative">
+                        <h2 className="text-lg font-black mb-2">{t("deleteAccount")}</h2>
+                        <p className="text-xs text-gray-500 mb-8">{t("confirmDeleteAccount")}</p>
+                        <div className="flex justify-end gap-3">
+                            <button
+                                onClick={() => setShowDeleteConfirm(null)}
+                                className="px-6 py-3 bg-gray-100 text-gray-500 rounded-xl text-xs font-bold cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                            >
+                                {t("cancel")}
+                            </button>
+                            <button
+                                onClick={() => handleDelete(showDeleteConfirm)}
+                                className="px-8 py-3 bg-rose-500 text-white rounded-xl text-xs font-bold cursor-pointer transition-all duration-200 hover:opacity-90 focus:ring-2 focus:ring-rose-300 focus:outline-none flex items-center gap-2"
+                            >
+                                <Trash2 size={14} />
+                                {t("deleteAccount")}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ── Skeleton Loading ── */}
+            {loading && (
+                <div className="bg-white border border-border rounded-2xl overflow-hidden shadow-sm">
+                    <div className="animate-pulse">
+                        <div className="h-12 bg-gray-50 border-b border-gray-100" />
+                        {[1, 2, 3, 4, 5, 6, 7, 8].map(i => (
+                            <div key={i} className="flex gap-4 px-5 py-4 border-b border-gray-50">
+                                <div className="h-3 w-4 bg-gray-100 rounded" />
+                                <div className="h-3 w-16 bg-gray-200 rounded" />
+                                <div className="h-3 w-40 bg-gray-100 rounded" />
+                                <div className="h-3 w-20 bg-gray-100 rounded" />
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* ── Tree View ── */}
+            {!loading && viewMode === "tree" && filtered.length > 0 && (
+                <div className="bg-white border border-border rounded-2xl overflow-hidden shadow-sm">
+                    {/* Table header */}
+                    <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100 bg-gray-50/50">
+                        <div className="flex items-center gap-6">
+                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{t("code")}</span>
+                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{t("accountName")}</span>
+                        </div>
+                        <div className="flex items-center gap-4">
+                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider hidden md:inline">{t("subType")}</span>
+                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{t("actions")}</span>
+                        </div>
+                    </div>
+                    {roots.map(account => renderTreeRow(account, childrenMap, 0))}
+                </div>
+            )}
+
+            {/* ── Flat View (grouped by type) ── */}
+            {!loading && viewMode === "flat" && filtered.length > 0 && (
+                <div className="space-y-4">
+                    {TYPE_ORDER.map(type => {
+                        const items = groupedByType[type] || [];
+                        if (items.length === 0) return null;
+                        const isExpanded = expandedTypes.has(type);
+
+                        return (
+                            <div key={type} className="bg-white border border-border rounded-2xl overflow-hidden shadow-sm">
+                                <button
+                                    onClick={() => toggleType(type)}
+                                    className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-50/50 transition-all duration-200 cursor-pointer focus:outline-none"
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <span className={cn("inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold", TYPE_BADGE[type])}>
+                                            {type}
+                                        </span>
+                                        <span className="text-xs font-bold text-foreground">{type.charAt(0) + type.slice(1).toLowerCase()}</span>
+                                        <span className="text-[10px] text-gray-400 font-medium">{items.length} accounts</span>
+                                    </div>
+                                    {isExpanded ? <ChevronDown size={16} className="text-gray-400" /> : <ChevronRight size={16} className="text-gray-400" />}
+                                </button>
+                                {isExpanded && (
+                                    <div className="border-t border-gray-100">
+                                        <table className="w-full">
+                                            <thead>
+                                                <tr className="border-b border-gray-50">
+                                                    <th className="text-left px-5 py-2.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">{t("code")}</th>
+                                                    <th className="text-left px-5 py-2.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">{t("accountName")}</th>
+                                                    <th className="text-left px-5 py-2.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider hidden md:table-cell">{t("subType")}</th>
+                                                    <th className="text-left px-5 py-2.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider hidden md:table-cell">{t("parent")}</th>
+                                                    <th className="text-right px-5 py-2.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">{t("actions")}</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-gray-50">
+                                                {items
+                                                    .sort((a, b) => a.displayOrder - b.displayOrder || a.code.localeCompare(b.code))
+                                                    .map(account => (
+                                                        <tr key={account.id} className={cn("hover:bg-gray-50/50 transition-all duration-200", !account.active && "opacity-50")}>
+                                                            <td className="px-5 py-3">
+                                                                <span className={cn("text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg", TYPE_BADGE[account.accountType])}>
+                                                                    {account.code}
+                                                                </span>
+                                                            </td>
+                                                            <td className="px-5 py-3">
+                                                                <p className={cn("text-xs font-bold text-foreground", account.group && "font-black")}>
+                                                                    {displayName(account)}
+                                                                </p>
+                                                                {account.description && (
+                                                                    <p className="text-[10px] text-gray-400 mt-0.5">{account.description}</p>
+                                                                )}
+                                                            </td>
+                                                            <td className="px-5 py-3 hidden md:table-cell">
+                                                                <span className="text-[10px] text-gray-400">
+                                                                    {account.accountSubType?.replace(/_/g, " ") || "—"}
+                                                                </span>
+                                                            </td>
+                                                            <td className="px-5 py-3 hidden md:table-cell">
+                                                                {account.parentCode ? (
+                                                                    <span className="text-[10px] font-bold text-gray-300">
+                                                                        {account.parentCode}
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="text-[10px] text-gray-200">—</span>
+                                                                )}
+                                                            </td>
+                                                            <td className="px-5 py-3 text-right">
+                                                                <div className="flex items-center justify-end gap-1">
+                                                                    {account.group && (
+                                                                        <span className="text-[8px] font-bold text-primary bg-primary/5 px-2 py-0.5 rounded-full uppercase tracking-wider mr-1">Group</span>
+                                                                    )}
+                                                                    {account.system ? (
+                                                                        <span className="text-[8px] font-bold text-gray-300 bg-gray-50 px-2 py-0.5 rounded-full uppercase tracking-wider">System</span>
+                                                                    ) : (
+                                                                        <>
+                                                                            <button
+                                                                                onClick={() => openEdit(account)}
+                                                                                className="p-1.5 text-gray-300 hover:text-primary cursor-pointer transition-all duration-200 rounded-lg hover:bg-primary/5 focus:outline-none"
+                                                                                title={t("editAccount")}
+                                                                            >
+                                                                                <Pencil size={13} />
+                                                                            </button>
+                                                                            <button
+                                                                                onClick={() => setShowDeleteConfirm(account.id)}
+                                                                                className="p-1.5 text-gray-300 hover:text-rose-500 cursor-pointer transition-all duration-200 rounded-lg hover:bg-rose-50 focus:outline-none"
+                                                                                title={t("deleteAccount")}
+                                                                            >
+                                                                                <Trash2 size={13} />
+                                                                            </button>
+                                                                        </>
+                                                                    )}
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+
+            {/* ── Empty State ── */}
+            {filtered.length === 0 && !loading && (
+                <div className="text-center py-24 bg-gray-50 border border-dashed border-gray-200 rounded-[2.5rem] flex flex-col items-center">
+                    <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center text-gray-200 shadow-sm mb-6">
+                        <FileSpreadsheet size={32} />
+                    </div>
+                    <p className="text-sm font-bold text-gray-400 mb-2 uppercase tracking-widest">{t("noAccountsFound")}</p>
+                    <p className="text-xs text-gray-400 mb-6">{t("seedAccountsDesc")}</p>
+                    {accounts.length === 0 && (
+                        <button
+                            onClick={handleSeedDefaults}
+                            disabled={seeding}
+                            className="text-xs font-black text-primary border-b-2 border-primary pb-0.5 hover:opacity-70 transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none disabled:opacity-50"
+                        >
+                            {t("seedDefaults")}
+                        </button>
+                    )}
                 </div>
             )}
         </div>

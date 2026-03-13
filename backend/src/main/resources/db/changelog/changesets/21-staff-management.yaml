@@ -1,0 +1,92 @@
+databaseChangeLog:
+  - changeSet:
+      id: 21-create-staff-table
+      author: rentaxis
+      changes:
+        - createTable:
+            tableName: staff
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: tenant_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+              - column:
+                  name: name_en
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: name_ar
+                  type: VARCHAR(255)
+              - column:
+                  name: employee_id
+                  type: VARCHAR(20)
+              - column:
+                  name: designation
+                  type: VARCHAR(100)
+              - column:
+                  name: department
+                  type: VARCHAR(100)
+              - column:
+                  name: monthly_salary
+                  type: DECIMAL(14,2)
+                  defaultValueNumeric: 0
+              - column:
+                  name: join_date
+                  type: DATE
+              - column:
+                  name: phone
+                  type: VARCHAR(20)
+              - column:
+                  name: emirates_id
+                  type: VARCHAR(20)
+              - column:
+                  name: passport_number
+                  type: VARCHAR(20)
+              - column:
+                  name: property_id
+                  type: UUID
+              - column:
+                  name: salary_account_id
+                  type: UUID
+              - column:
+                  name: is_active
+                  type: BOOLEAN
+                  defaultValueBoolean: true
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+        - createIndex:
+            tableName: staff
+            indexName: idx_staff_tenant_id
+            columns:
+              - column:
+                  name: tenant_id
+        - createIndex:
+            tableName: staff
+            indexName: idx_staff_property_id
+            columns:
+              - column:
+                  name: property_id
+
+  - changeSet:
+      id: 21-add-staff-to-transactions
+      author: rentaxis
+      changes:
+        - addColumn:
+            tableName: financial_transactions
+            columns:
+              - column:
+                  name: staff_id
+                  type: UUID

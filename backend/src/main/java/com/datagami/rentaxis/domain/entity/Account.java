@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.domain.entity;
 
+import com.datagami.rentaxis.domain.entity.enums.AccountSubType;
 import com.datagami.rentaxis.domain.entity.enums.AccountType;
 import jakarta.persistence.*;
 import lombok.Getter;
@@ -35,4 +36,26 @@ public class Account extends BaseTenantEntity {
 
     @Column(name = "is_system")
     private boolean isSystem = false;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "account_sub_type", length = 30)
+    private AccountSubType accountSubType;
+
+    @Column(name = "name_en")
+    private String nameEn;
+
+    @Column(name = "name_ar")
+    private String nameAr;
+
+    @Column(name = "hierarchy_level")
+    private int hierarchyLevel = 1;
+
+    @Column(name = "is_group")
+    private boolean isGroup = false;
+
+    @Column(name = "is_active")
+    private boolean isActive = true;
+
+    @Column(name = "display_order")
+    private int displayOrder = 0;
 }

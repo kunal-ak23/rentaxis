@@ -1,8 +1,12 @@
 package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.dto.ReportDTO;
+import com.datagami.rentaxis.api.dto.TrialBalanceDTO;
+import com.datagami.rentaxis.api.dto.VatReturnDTO;
+import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.entity.FinancialTransaction;
 import com.datagami.rentaxis.domain.entity.enums.AccountType;
+import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.FinancialTransactionRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,9 +20,12 @@ import java.util.stream.Collectors;
 public class FinancialTransactionService {
 
     private final FinancialTransactionRepository repository;
+    private final AccountRepository accountRepository;
 
-    public FinancialTransactionService(FinancialTransactionRepository repository) {
+    public FinancialTransactionService(FinancialTransactionRepository repository,
+            AccountRepository accountRepository) {
         this.repository = repository;
+        this.accountRepository = accountRepository;
     }
 
     @Transactional
@@ -27,10 +34,13 @@ public class FinancialTransactionService {
         if (txn.getUnit() != null && txn.getProperty() == null) {
             txn.setProperty(txn.getUnit().getProperty());
         }
-        // Denormalize account fields
-        if (txn.getAccount() != null) {
-            txn.setAccountCode(txn.getAccount().getCode());
-            txn.setAccountType(txn.getAccount().getAccountType());
+        // Fetch full account to denormalize fields
+        if (txn.getAccount() != null && txn.getAccount().getId() != null) {
+            Account fullAccount = accountRepository.findById(txn.getAccount().getId())
+                    .orElseThrow(() -> new RuntimeException("Account not found: " + txn.getAccount().getId()));
+            txn.setAccount(fullAccount);
+            txn.setAccountCode(fullAccount.getCode());
+            txn.setAccountType(fullAccount.getAccountType());
         }
         return repository.save(txn);
     }
@@ -119,6 +129,94 @@ public class FinancialTransactionService {
         report.setReportName("Organisation Consolidated Report");
         report.setDateRange(formatDateRange(startDate, endDate));
         return report;
+    }
+
+    @Transactional(readOnly = true)
+    public TrialBalanceDTO getTrialBalance(LocalDate startDate, LocalDate endDate) {
+        List<FinancialTransaction> transactions;
+        if (startDate != null && endDate != null) {
+            transactions = repository.findByDateBetween(startDate, endDate);
+        } else {
+            transactions = repository.findAll();
+        }
+
+        Map<String, TrialBalanceDTO.TrialBalanceLine> lineMap = new LinkedHashMap<>();
+
+        for (FinancialTransaction t : transactions) {
+            String key = t.getAccountCode();
+            TrialBalanceDTO.TrialBalanceLine line = lineMap.computeIfAbsent(key, k -> {
+                TrialBalanceDTO.TrialBalanceLine l = new TrialBalanceDTO.TrialBalanceLine();
+                l.setAccountCode(t.getAccountCode());
+                l.setAccountName(t.getAccount() != null ? t.getAccount().getName() : "");
+                l.setAccountType(t.getAccountType().name());
+                return l;
+            });
+            line.setDebit(line.getDebit().add(t.getDebit()));
+            line.setCredit(line.getCredit().add(t.getCredit()));
+            line.setBalance(line.getDebit().subtract(line.getCredit()));
+        }
+
+        TrialBalanceDTO dto = new TrialBalanceDTO();
+        dto.setLines(new ArrayList<>(lineMap.values()));
+        dto.setTotalDebit(dto.getLines().stream()
+                .map(TrialBalanceDTO.TrialBalanceLine::getDebit)
+                .reduce(BigDecimal.ZERO, BigDecimal::add));
+        dto.setTotalCredit(dto.getLines().stream()
+                .map(TrialBalanceDTO.TrialBalanceLine::getCredit)
+                .reduce(BigDecimal.ZERO, BigDecimal::add));
+        dto.setDateRange(formatDateRange(startDate, endDate));
+        return dto;
+    }
+
+    @Transactional(readOnly = true)
+    public VatReturnDTO getVatReturn(LocalDate startDate, LocalDate endDate) {
+        List<FinancialTransaction> transactions;
+        if (startDate != null && endDate != null) {
+            transactions = repository.findByDateBetween(startDate, endDate);
+        } else {
+            transactions = repository.findAll();
+        }
+
+        List<FinancialTransaction> vatTransactions = transactions.stream()
+                .filter(FinancialTransaction::isVatApplicable)
+                .toList();
+
+        VatReturnDTO dto = new VatReturnDTO();
+        dto.setPeriod(formatDateRange(startDate, endDate));
+
+        List<VatReturnDTO.VatLine> salesLines = new ArrayList<>();
+        List<VatReturnDTO.VatLine> purchaseLines = new ArrayList<>();
+
+        for (FinancialTransaction t : vatTransactions) {
+            VatReturnDTO.VatLine line = new VatReturnDTO.VatLine();
+            line.setDescription(t.getDescription());
+            line.setVatAmount(t.getVatAmount());
+
+            if (t.getAccountType() == AccountType.INCOME) {
+                line.setTaxableAmount(t.getCredit().subtract(t.getDebit()));
+                salesLines.add(line);
+                dto.setTotalOutputVat(dto.getTotalOutputVat().add(t.getVatAmount()));
+                dto.setTotalTaxableSales(dto.getTotalTaxableSales().add(line.getTaxableAmount()));
+            } else if (t.getAccountType() == AccountType.EXPENSE) {
+                line.setTaxableAmount(t.getDebit().subtract(t.getCredit()));
+                purchaseLines.add(line);
+                dto.setTotalInputVat(dto.getTotalInputVat().add(t.getVatAmount()));
+                dto.setTotalTaxablePurchases(dto.getTotalTaxablePurchases().add(line.getTaxableAmount()));
+            }
+        }
+
+        dto.setSalesLines(salesLines);
+        dto.setPurchaseLines(purchaseLines);
+        dto.setNetVatPayable(dto.getTotalOutputVat().subtract(dto.getTotalInputVat()));
+        return dto;
+    }
+
+    @Transactional(readOnly = true)
+    public List<FinancialTransaction> getVendorLedger(UUID vendorId, LocalDate startDate, LocalDate endDate) {
+        if (startDate != null && endDate != null) {
+            return repository.findByVendorIdAndDateBetween(vendorId, startDate, endDate);
+        }
+        return repository.findByVendorId(vendorId);
     }
 
     private ReportDTO buildReport(List<FinancialTransaction> transactions) {

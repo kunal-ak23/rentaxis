@@ -21,6 +21,8 @@ import {
     CreditCard,
     Sliders,
     GitBranch,
+    Landmark,
+    UserCog,
 } from 'lucide-react';
 import { Link } from "@/i18n/routing";
 import { useTranslations, useLocale } from "next-intl";
@@ -35,6 +37,9 @@ export default function MvpSidebar() {
     const tPayments = useTranslations("Payments");
     const tOnlinePayments = useTranslations("OnlinePayments");
     const tDashboard = useTranslations("Dashboard");
+    const tVendors = useTranslations("Vendors");
+    const tBankAccounts = useTranslations("BankAccounts");
+    const tStaff = useTranslations("Staff");
     const locale = useLocale();
     const pathname = usePathname();
     const [isCollapsed, setIsCollapsed] = useState(false);
@@ -63,6 +68,12 @@ export default function MvpSidebar() {
         { name: t("transactions"), href: "/dashboard/finance/transactions", icon: Receipt },
         { name: t("reports"), href: "/dashboard/finance/reports", icon: BarChart3 },
         { name: tPayments("payments"), href: "/dashboard/finance/payments", icon: CreditCard },
+        { name: tVendors("title"), href: "/dashboard/finance/vendors", icon: Users },
+        { name: tBankAccounts("title"), href: "/dashboard/finance/bank-accounts", icon: Landmark },
+    ] : [];
+
+    const hrItems = hasPermission(userRole, 'canAccessFinance') ? [
+        { name: tStaff("title"), href: "/dashboard/staff", icon: UserCog },
     ] : [];
 
     const settingsItems = (userRole && canConfigureGateway(userRole)) ? [
@@ -192,6 +203,40 @@ export default function MvpSidebar() {
                                     {isActive && !isCollapsed && (
                                         <motion.div
                                             layoutId="sidebar-finance-indicator"
+                                            className="absolute left-[-12px] w-1 h-4 bg-primary rounded-r-full"
+                                        />
+                                    )}
+                                </Link>
+                            );
+                        })}
+                    </>
+                )}
+
+                {hrItems.length > 0 && (
+                    <>
+                        <div className={cn("px-3 mt-6 mb-2 text-[9px] font-bold text-gray-400 uppercase tracking-[0.2em]", isCollapsed && "hidden")}>
+                            HR
+                        </div>
+                        {hrItems.map((item) => {
+                            const isActive = pathname.includes(item.href);
+                            const Icon = item.icon;
+                            return (
+                                <Link
+                                    key={item.href}
+                                    href={item.href}
+                                    className={cn(
+                                        "group flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 text-xs font-semibold relative cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30",
+                                        isActive
+                                            ? "bg-accent text-foreground"
+                                            : "text-gray-400 hover:bg-gray-50 hover:text-foreground",
+                                        isCollapsed && "justify-center"
+                                    )}
+                                >
+                                    <Icon size={16} className={cn("transition-transform", !isActive && "group-hover:scale-105")} />
+                                    {!isCollapsed && <span className="flex-1">{item.name}</span>}
+                                    {isActive && !isCollapsed && (
+                                        <motion.div
+                                            layoutId="sidebar-hr-indicator"
                                             className="absolute left-[-12px] w-1 h-4 bg-primary rounded-r-full"
                                         />
                                     )}

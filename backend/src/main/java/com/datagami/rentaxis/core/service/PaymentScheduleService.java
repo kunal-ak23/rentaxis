@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.core.service;
 
+import com.datagami.rentaxis.api.dto.AgingReportDTO;
 import com.datagami.rentaxis.api.dto.PaymentScheduleDTO;
 import com.datagami.rentaxis.api.dto.LeasePaymentStatsDTO;
 import com.datagami.rentaxis.api.dto.PaymentSummaryDTO;
@@ -364,6 +365,72 @@ public class PaymentScheduleService {
         }
 
         return result;
+    }
+
+    @Transactional(readOnly = true)
+    public AgingReportDTO getAgingReport(UUID propertyId) {
+        List<PaymentSchedule> schedules;
+        if (propertyId != null) {
+            schedules = paymentScheduleRepository.findAll().stream()
+                    .filter(ps -> ps.getLease() != null && ps.getLease().getUnit() != null
+                            && ps.getLease().getUnit().getProperty() != null
+                            && ps.getLease().getUnit().getProperty().getId().equals(propertyId))
+                    .toList();
+        } else {
+            schedules = paymentScheduleRepository.findAll();
+        }
+
+        LocalDate today = LocalDate.now();
+        List<PaymentSchedule> overdue = schedules.stream()
+                .filter(ps -> ps.getStatus() == PaymentStatus.PENDING
+                        && ps.getDueDate().isBefore(today))
+                .toList();
+
+        // Define buckets
+        String[] labels = {"Current", "1-30 Days", "31-60 Days", "61-90 Days", "90+ Days"};
+        List<AgingReportDTO.AgingBucket> buckets = new ArrayList<>();
+        for (String label : labels) {
+            AgingReportDTO.AgingBucket bucket = new AgingReportDTO.AgingBucket();
+            bucket.setLabel(label);
+            bucket.setDetails(new ArrayList<>());
+            buckets.add(bucket);
+        }
+
+        BigDecimal totalOutstanding = BigDecimal.ZERO;
+
+        for (PaymentSchedule ps : overdue) {
+            long days = java.time.temporal.ChronoUnit.DAYS.between(ps.getDueDate(), today);
+            int bucketIdx;
+            if (days <= 0) bucketIdx = 0;
+            else if (days <= 30) bucketIdx = 1;
+            else if (days <= 60) bucketIdx = 2;
+            else if (days <= 90) bucketIdx = 3;
+            else bucketIdx = 4;
+
+            AgingReportDTO.AgingDetail detail = new AgingReportDTO.AgingDetail();
+            if (ps.getLease() != null && ps.getLease().getRenter() != null) {
+                detail.setRenterName(ps.getLease().getRenter().getNameEn());
+            }
+            if (ps.getLease() != null && ps.getLease().getUnit() != null) {
+                detail.setUnitNumber(ps.getLease().getUnit().getUnitNumber());
+                if (ps.getLease().getUnit().getProperty() != null) {
+                    detail.setPropertyName(ps.getLease().getUnit().getProperty().getNameEn());
+                }
+            }
+            detail.setAmount(ps.getAmount());
+            detail.setDaysOverdue((int) days);
+            detail.setDueDate(ps.getDueDate().toString());
+
+            buckets.get(bucketIdx).getDetails().add(detail);
+            buckets.get(bucketIdx).setAmount(buckets.get(bucketIdx).getAmount().add(ps.getAmount()));
+            buckets.get(bucketIdx).setCount(buckets.get(bucketIdx).getCount() + 1);
+            totalOutstanding = totalOutstanding.add(ps.getAmount());
+        }
+
+        AgingReportDTO dto = new AgingReportDTO();
+        dto.setBuckets(buckets);
+        dto.setTotalOutstanding(totalOutstanding);
+        return dto;
     }
 
     private PaymentScheduleDTO mapToDTO(PaymentSchedule ps) {

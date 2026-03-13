@@ -1,6 +1,7 @@
 package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.domain.entity.Account;
+import com.datagami.rentaxis.domain.entity.enums.AccountSubType;
 import com.datagami.rentaxis.domain.entity.enums.AccountType;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
 import org.springframework.stereotype.Service;
@@ -60,68 +61,119 @@ public class AccountService {
 
         List<Account> defaults = List.of(
                 // ═══ ASSETS ═══
-                makeAccount("A-01", "Fixed Assets", AccountType.ASSET, null,
-                        "Office equipment, AC units, other capital items"),
-                makeAccount("A-02", "Current Assets", AccountType.ASSET, null, "Short-term assets"),
-                makeAccount("A-02-01", "Rental Receivable", AccountType.ASSET, "A-02",
-                        "Rent due from tenants, tracked per property"),
-                makeAccount("A-02-02", "Bank Accounts", AccountType.ASSET, "A-02",
-                        "Emirates Islamic Bank accounts per property"),
-                makeAccount("A-02-03", "PDCs Receivable", AccountType.ASSET, "A-02",
-                        "Post-Dated Cheques held from tenants"),
-                makeAccount("A-02-04", "Input VAT", AccountType.ASSET, "A-02",
-                        "VAT on residential and commercial purchases"),
-                makeAccount("A-02-05", "Cash Group", AccountType.ASSET, "A-02",
-                        "Petty cash, cash in hand, security deposits"),
+                makeAccount("A-01", "Fixed Assets", "الأصول الثابتة",
+                        AccountType.ASSET, AccountSubType.FIXED_ASSET,
+                        null, "Office equipment, AC units, other capital items", true, 1),
+                makeAccount("A-02", "Current Assets", "الأصول المتداولة",
+                        AccountType.ASSET, AccountSubType.OTHER_ASSET,
+                        null, "Short-term assets", true, 1),
+                makeAccount("A-02-01", "Rental Receivable", "إيجارات مستحقة",
+                        AccountType.ASSET, AccountSubType.RECEIVABLE,
+                        "A-02", "Rent due from tenants, tracked per property", false, 2),
+                makeAccount("A-02-02", "Bank Accounts", "الحسابات البنكية",
+                        AccountType.ASSET, AccountSubType.BANK,
+                        "A-02", "Emirates Islamic Bank accounts per property", true, 2),
+                makeAccount("A-02-03", "PDCs Receivable", "شيكات مؤجلة مستحقة",
+                        AccountType.ASSET, AccountSubType.PDC_RECEIVABLE,
+                        "A-02", "Post-Dated Cheques held from tenants", false, 2),
+                makeAccount("A-02-04", "Input VAT", "ضريبة القيمة المضافة المدخلة",
+                        AccountType.ASSET, AccountSubType.OTHER_ASSET,
+                        "A-02", "VAT on residential and commercial purchases", false, 2),
+                makeAccount("A-02-05", "Cash Group", "النقد",
+                        AccountType.ASSET, AccountSubType.CASH,
+                        "A-02", "Petty cash, cash in hand, security deposits", true, 2),
 
                 // ═══ LIABILITIES ═══
-                makeAccount("B-01", "Current Liabilities", AccountType.LIABILITY, null, "Short-term liabilities"),
-                makeAccount("B-01-01", "Advance Rent", AccountType.LIABILITY, "B-01", "Tenant advance rent balances"),
-                makeAccount("B-01-02", "Security Deposits", AccountType.LIABILITY, "B-01",
-                        "Refundable security deposits held from tenants"),
-                makeAccount("B-01-03", "Output VAT", AccountType.LIABILITY, "B-01", "VAT collected on sales/rentals"),
-                makeAccount("B-01-04", "Vendors / Creditors", AccountType.LIABILITY, "B-01",
-                        "Supplier and contractor payables"),
-                makeAccount("B-02", "PDC Payables", AccountType.LIABILITY, null,
-                        "Post-dated cheques issued to suppliers/owners"),
+                makeAccount("B-01", "Current Liabilities", "الالتزامات المتداولة",
+                        AccountType.LIABILITY, AccountSubType.OTHER_LIABILITY,
+                        null, "Short-term liabilities", true, 1),
+                makeAccount("B-01-01", "Advance Rent", "إيجار مقدم",
+                        AccountType.LIABILITY, AccountSubType.ADVANCE,
+                        "B-01", "Tenant advance rent balances", false, 2),
+                makeAccount("B-01-02", "Security Deposits", "مبالغ التأمين",
+                        AccountType.LIABILITY, AccountSubType.DEPOSIT_HELD,
+                        "B-01", "Refundable security deposits held from tenants", false, 2),
+                makeAccount("B-01-03", "Output VAT", "ضريبة القيمة المضافة المخرجة",
+                        AccountType.LIABILITY, AccountSubType.OTHER_LIABILITY,
+                        "B-01", "VAT collected on sales/rentals", false, 2),
+                makeAccount("B-01-04", "Vendors / Creditors", "الموردون / الدائنون",
+                        AccountType.LIABILITY, AccountSubType.PAYABLE,
+                        "B-01", "Supplier and contractor payables", true, 2),
+                makeAccount("B-02", "PDC Payables", "شيكات مؤجلة مستحقة الدفع",
+                        AccountType.LIABILITY, AccountSubType.PDC_PAYABLE,
+                        null, "Post-dated cheques issued to suppliers/owners", false, 1),
 
                 // ═══ INCOME ═══
-                makeAccount("C-01", "Direct Income", AccountType.INCOME, null, "Primary income sources"),
-                makeAccount("C-01-01", "Rental Income", AccountType.INCOME, "C-01",
-                        "Monthly rental income + admin charges per property"),
-                makeAccount("C-01-02", "Other Income", AccountType.INCOME, "C-01",
-                        "Cooling charges, telecom tower rent, car washing, maintenance charge income"),
-                makeAccount("C-02", "Indirect Income", AccountType.INCOME, null,
-                        "Non-refundable bookings, store/washing income"),
+                makeAccount("C-01", "Direct Income", "الدخل المباشر",
+                        AccountType.INCOME, AccountSubType.RENTAL_INCOME,
+                        null, "Primary income sources", true, 1),
+                makeAccount("C-01-01", "Rental Income", "دخل الإيجار",
+                        AccountType.INCOME, AccountSubType.RENTAL_INCOME,
+                        "C-01", "Monthly rental income + admin charges per property", false, 2),
+                makeAccount("C-01-02", "Other Income", "دخل آخر",
+                        AccountType.INCOME, AccountSubType.OTHER_INCOME,
+                        "C-01", "Cooling charges, telecom tower rent, car washing, maintenance charge income", false, 2),
+                makeAccount("C-02", "Indirect Income", "الدخل غير المباشر",
+                        AccountType.INCOME, AccountSubType.OTHER_INCOME,
+                        null, "Non-refundable bookings, store/washing income", true, 1),
 
                 // ═══ EXPENSES ═══
-                makeAccount("D-01", "Direct Expense", AccountType.EXPENSE, null,
-                        "Water & electricity, property-level operating costs"),
-                makeAccount("D-01-01", "Security Charges", AccountType.EXPENSE, "D-01", "Property security charges"),
-                makeAccount("D-01-02", "Waste Collection", AccountType.EXPENSE, "D-01",
-                        "Waste collection per property"),
-                makeAccount("D-01-03", "Repair & Maintenance", AccountType.EXPENSE, "D-01",
-                        "Building repair and maintenance"),
-                makeAccount("D-01-04", "Building Cleaning", AccountType.EXPENSE, "D-01", "Building cleaning services"),
-                makeAccount("D-01-05", "Pest Control AMC", AccountType.EXPENSE, "D-01",
-                        "Pest control annual maintenance contract"),
-                makeAccount("D-01-06", "Pool Maintenance", AccountType.EXPENSE, "D-01", "Swimming pool maintenance"),
-                makeAccount("D-01-07", "Lift/Elevator AMC", AccountType.EXPENSE, "D-01", "Lift and elevator AMC"),
-                makeAccount("D-01-08", "Fire Safety AMC", AccountType.EXPENSE, "D-01",
-                        "Fire alarm & fire fighting AMC"),
-                makeAccount("D-01-09", "Water Tank Cleaning", AccountType.EXPENSE, "D-01", "Water tank cleaning AMC"),
-                makeAccount("D-01-10", "DEWA", AccountType.EXPENSE, "D-01", "Water & electricity (DEWA)"),
-                makeAccount("D-01-11", "Insurance", AccountType.EXPENSE, "D-01", "Building insurance"),
-                makeAccount("D-01-12", "Community Fees", AccountType.EXPENSE, "D-01", "Community fees"),
-                makeAccount("D-01-13", "Building Valuation", AccountType.EXPENSE, "D-01", "Building valuation"),
-                makeAccount("D-01-14", "Property Staff Salaries", AccountType.EXPENSE, "D-01",
-                        "Staff salaries per property"),
-                makeAccount("D-01-15", "Interest on Loans", AccountType.EXPENSE, "D-01", "Interest on property loans"),
-                makeAccount("D-02", "Indirect Expense", AccountType.EXPENSE, null,
-                        "Staff salaries, bank charges, general office expenses"),
+                makeAccount("D-01", "Direct Expense", "المصاريف المباشرة",
+                        AccountType.EXPENSE, AccountSubType.DIRECT_EXPENSE,
+                        null, "Water & electricity, property-level operating costs", true, 1),
+                makeAccount("D-01-01", "Security Charges", "رسوم الأمن",
+                        AccountType.EXPENSE, AccountSubType.DIRECT_EXPENSE,
+                        "D-01", "Property security charges", false, 2),
+                makeAccount("D-01-02", "Waste Collection", "جمع النفايات",
+                        AccountType.EXPENSE, AccountSubType.DIRECT_EXPENSE,
+                        "D-01", "Waste collection per property", false, 2),
+                makeAccount("D-01-03", "Repair & Maintenance", "الصيانة والإصلاح",
+                        AccountType.EXPENSE, AccountSubType.DIRECT_EXPENSE,
+                        "D-01", "Building repair and maintenance", false, 2),
+                makeAccount("D-01-04", "Building Cleaning", "تنظيف المبنى",
+                        AccountType.EXPENSE, AccountSubType.DIRECT_EXPENSE,
+                        "D-01", "Building cleaning services", false, 2),
+                makeAccount("D-01-05", "Pest Control AMC", "مكافحة الحشرات",
+                        AccountType.EXPENSE, AccountSubType.DIRECT_EXPENSE,
+                        "D-01", "Pest control annual maintenance contract", false, 2),
+                makeAccount("D-01-06", "Pool Maintenance", "صيانة المسبح",
+                        AccountType.EXPENSE, AccountSubType.DIRECT_EXPENSE,
+                        "D-01", "Swimming pool maintenance", false, 2),
+                makeAccount("D-01-07", "Lift/Elevator AMC", "صيانة المصاعد",
+                        AccountType.EXPENSE, AccountSubType.DIRECT_EXPENSE,
+                        "D-01", "Lift and elevator AMC", false, 2),
+                makeAccount("D-01-08", "Fire Safety AMC", "السلامة من الحريق",
+                        AccountType.EXPENSE, AccountSubType.DIRECT_EXPENSE,
+                        "D-01", "Fire alarm & fire fighting AMC", false, 2),
+                makeAccount("D-01-09", "Water Tank Cleaning", "تنظيف خزانات المياه",
+                        AccountType.EXPENSE, AccountSubType.DIRECT_EXPENSE,
+                        "D-01", "Water tank cleaning AMC", false, 2),
+                makeAccount("D-01-10", "DEWA", "ديوا",
+                        AccountType.EXPENSE, AccountSubType.DIRECT_EXPENSE,
+                        "D-01", "Water & electricity (DEWA)", false, 2),
+                makeAccount("D-01-11", "Insurance", "التأمين",
+                        AccountType.EXPENSE, AccountSubType.DIRECT_EXPENSE,
+                        "D-01", "Building insurance", false, 2),
+                makeAccount("D-01-12", "Community Fees", "رسوم المجتمع",
+                        AccountType.EXPENSE, AccountSubType.DIRECT_EXPENSE,
+                        "D-01", "Community fees", false, 2),
+                makeAccount("D-01-13", "Building Valuation", "تقييم المبنى",
+                        AccountType.EXPENSE, AccountSubType.DIRECT_EXPENSE,
+                        "D-01", "Building valuation", false, 2),
+                makeAccount("D-01-14", "Property Staff Salaries", "رواتب موظفي العقار",
+                        AccountType.EXPENSE, AccountSubType.SALARY_EXPENSE,
+                        "D-01", "Staff salaries per property", false, 2),
+                makeAccount("D-01-15", "Interest on Loans", "فوائد القروض",
+                        AccountType.EXPENSE, AccountSubType.DIRECT_EXPENSE,
+                        "D-01", "Interest on property loans", false, 2),
+                makeAccount("D-02", "Indirect Expense", "المصاريف غير المباشرة",
+                        AccountType.EXPENSE, AccountSubType.INDIRECT_EXPENSE,
+                        null, "Staff salaries, bank charges, general office expenses", true, 1),
 
                 // ═══ EQUITY ═══
-                makeAccount("F-01", "Capital Account", AccountType.EQUITY, null, "Owner's capital account"));
+                makeAccount("F-01", "Capital Account", "حساب رأس المال",
+                        AccountType.EQUITY, AccountSubType.CAPITAL,
+                        null, "Owner's capital account", false, 1));
 
         List<Account> saved = repository.saveAll(defaults);
 
@@ -131,14 +183,52 @@ public class AccountService {
         return saved;
     }
 
-    private Account makeAccount(String code, String name, AccountType type, String parentCode, String description) {
+    @Transactional
+    public Account updateAccount(UUID id, Account updates) {
+        Account existing = repository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Account not found"));
+        if (existing.isSystem()) {
+            throw new RuntimeException("System accounts cannot be modified");
+        }
+        existing.setName(updates.getName());
+        existing.setNameEn(updates.getNameEn());
+        existing.setNameAr(updates.getNameAr());
+        existing.setDescription(updates.getDescription());
+        existing.setAccountSubType(updates.getAccountSubType());
+        existing.setActive(updates.isActive());
+        existing.setDisplayOrder(updates.getDisplayOrder());
+        return repository.save(existing);
+    }
+
+    @Transactional
+    public void deleteAccount(UUID id) {
+        Account account = repository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Account not found"));
+        if (account.isSystem()) {
+            throw new RuntimeException("System accounts cannot be deleted");
+        }
+        if (repository.existsByParentCode(account.getCode())) {
+            throw new RuntimeException("Cannot delete account with child accounts");
+        }
+        repository.delete(account);
+    }
+
+    private Account makeAccount(String code, String nameEn, String nameAr,
+            AccountType type, AccountSubType subType,
+            String parentCode, String description,
+            boolean isGroup, int hierarchyLevel) {
         Account a = new Account();
         a.setCode(code);
-        a.setName(name);
+        a.setName(nameEn);
+        a.setNameEn(nameEn);
+        a.setNameAr(nameAr);
         a.setAccountType(type);
+        a.setAccountSubType(subType);
         a.setParentCode(parentCode);
         a.setDescription(description);
         a.setSystem(true);
+        a.setGroup(isGroup);
+        a.setHierarchyLevel(hierarchyLevel);
         return a;
     }
 }

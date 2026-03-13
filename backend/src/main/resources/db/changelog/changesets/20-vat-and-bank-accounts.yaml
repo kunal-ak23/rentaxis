@@ -1,0 +1,92 @@
+databaseChangeLog:
+  - changeSet:
+      id: 20-add-vat-fields-to-transactions
+      author: rentaxis
+      changes:
+        - addColumn:
+            tableName: financial_transactions
+            columns:
+              - column:
+                  name: vat_rate
+                  type: DECIMAL(5,2)
+                  defaultValueNumeric: 0
+              - column:
+                  name: gross_amount
+                  type: DECIMAL(14,2)
+                  defaultValueNumeric: 0
+              - column:
+                  name: net_amount
+                  type: DECIMAL(14,2)
+                  defaultValueNumeric: 0
+
+  - changeSet:
+      id: 20-create-bank-accounts-table
+      author: rentaxis
+      changes:
+        - createTable:
+            tableName: bank_accounts
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: tenant_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+              - column:
+                  name: bank_name
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: account_number
+                  type: VARCHAR(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: iban
+                  type: VARCHAR(34)
+              - column:
+                  name: branch_name
+                  type: VARCHAR(255)
+              - column:
+                  name: currency
+                  type: VARCHAR(10)
+                  defaultValue: AED
+              - column:
+                  name: property_id
+                  type: UUID
+              - column:
+                  name: coa_account_id
+                  type: UUID
+              - column:
+                  name: is_default
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+              - column:
+                  name: is_active
+                  type: BOOLEAN
+                  defaultValueBoolean: true
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+        - createIndex:
+            tableName: bank_accounts
+            indexName: idx_bank_accounts_tenant_id
+            columns:
+              - column:
+                  name: tenant_id
+        - createIndex:
+            tableName: bank_accounts
+            indexName: idx_bank_accounts_property_id
+            columns:
+              - column:
+                  name: property_id

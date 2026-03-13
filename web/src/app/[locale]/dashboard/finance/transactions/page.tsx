@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useTranslations } from "next-intl";
 import {
-    Receipt, Plus, X, Filter, Calendar, Building2, Home, ChevronDown, Loader2, LayoutList, BookOpen
+    Receipt, Plus, X, Filter, Calendar, Building2, Home, ChevronDown, Loader2, LayoutList, BookOpen, ChevronLeft, ChevronRight
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -64,6 +64,8 @@ export default function TransactionsPage() {
     const [showFilters, setShowFilters] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [viewMode, setViewMode] = useState<"simple" | "accounting">("simple");
+    const [currentPage, setCurrentPage] = useState(1);
+    const pageSize = 25;
 
     const [filters, setFilters] = useState({
         propertyId: "",
@@ -82,6 +84,9 @@ export default function TransactionsPage() {
         unitId: "",
         vatApplicable: false,
         vatAmount: 0,
+        vatRate: 5,
+        grossAmount: 0,
+        netAmount: 0,
         notes: ""
     });
 
@@ -155,6 +160,9 @@ export default function TransactionsPage() {
                 credit: formData.credit,
                 vatApplicable: formData.vatApplicable,
                 vatAmount: formData.vatAmount,
+                vatRate: formData.vatApplicable ? formData.vatRate : 0,
+                netAmount: formData.vatApplicable ? formData.netAmount : 0,
+                grossAmount: formData.vatApplicable ? formData.grossAmount : 0,
                 notes: formData.notes
             };
             if (formData.propertyId) body.property = { id: formData.propertyId };
@@ -178,6 +186,9 @@ export default function TransactionsPage() {
                     unitId: "",
                     vatApplicable: false,
                     vatAmount: 0,
+                    vatRate: 5,
+                    grossAmount: 0,
+                    netAmount: 0,
                     notes: ""
                 });
                 setUnits([]);
@@ -192,12 +203,14 @@ export default function TransactionsPage() {
     const applyFilters = () => {
         fetchTransactions(filters);
         setShowFilters(false);
+        setCurrentPage(1);
     };
 
     const clearFilters = () => {
         const empty = { propertyId: "", accountType: "", startDate: "", endDate: "" };
         setFilters(empty);
         fetchTransactions(empty);
+        setCurrentPage(1);
     };
 
     const totalDebit = transactions.reduce((s, t) => s + (t.debit || 0), 0);
@@ -234,6 +247,16 @@ export default function TransactionsPage() {
     const simpleTotalIn = simpleLedger.reduce((s, r) => s + r.moneyIn, 0);
     const simpleTotalOut = simpleLedger.reduce((s, r) => s + r.moneyOut, 0);
 
+    // Pagination
+    const accountingTotal = transactions.length;
+    const simpleTotal = simpleLedger.length;
+    const activeTotal = viewMode === "simple" ? simpleTotal : accountingTotal;
+    const totalPages = Math.max(1, Math.ceil(activeTotal / pageSize));
+    const safePage = Math.min(currentPage, totalPages);
+
+    const paginatedTransactions = transactions.slice((safePage - 1) * pageSize, safePage * pageSize);
+    const paginatedSimple = simpleLedger.slice((safePage - 1) * pageSize, safePage * pageSize);
+
     return (
         <div>
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10">
@@ -250,7 +273,7 @@ export default function TransactionsPage() {
                     {/* View Mode Toggle */}
                     <div className="flex bg-gray-100 rounded-full p-0.5">
                         <button
-                            onClick={() => setViewMode("simple")}
+                            onClick={() => { setViewMode("simple"); setCurrentPage(1); }}
                             className={cn(
                                 "flex items-center gap-1.5 px-3.5 py-2 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer",
                                 viewMode === "simple"
@@ -262,7 +285,7 @@ export default function TransactionsPage() {
                             Simple
                         </button>
                         <button
-                            onClick={() => setViewMode("accounting")}
+                            onClick={() => { setViewMode("accounting"); setCurrentPage(1); }}
                             className={cn(
                                 "flex items-center gap-1.5 px-3.5 py-2 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer",
                                 viewMode === "accounting"
@@ -353,11 +376,21 @@ export default function TransactionsPage() {
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("debit")}</label>
-                                <input type="number" step="0.01" placeholder="0.00" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.debit || ""} onChange={ev => setFormData({ ...formData, debit: Number(ev.target.value) })} />
+                                <input type="number" step="0.01" placeholder="0.00" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.debit || ""} onChange={ev => {
+                                    const debit = Number(ev.target.value);
+                                    const amount = debit || formData.credit;
+                                    const vatAmt = formData.vatApplicable ? Math.round(amount * formData.vatRate) / 100 : 0;
+                                    setFormData({ ...formData, debit, netAmount: amount, vatAmount: vatAmt, grossAmount: amount + vatAmt });
+                                }} />
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("credit")}</label>
-                                <input type="number" step="0.01" placeholder="0.00" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.credit || ""} onChange={ev => setFormData({ ...formData, credit: Number(ev.target.value) })} />
+                                <input type="number" step="0.01" placeholder="0.00" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.credit || ""} onChange={ev => {
+                                    const credit = Number(ev.target.value);
+                                    const amount = formData.debit || credit;
+                                    const vatAmt = formData.vatApplicable ? Math.round(amount * formData.vatRate) / 100 : 0;
+                                    setFormData({ ...formData, credit, netAmount: amount, vatAmount: vatAmt, grossAmount: amount + vatAmt });
+                                }} />
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("property")} (Project)</label>
@@ -387,14 +420,42 @@ export default function TransactionsPage() {
                             </div>
                             <div className="col-span-1 flex items-center gap-3 pt-5">
                                 <label className="flex items-center gap-2 cursor-pointer">
-                                    <input type="checkbox" className="rounded border-gray-300" checked={formData.vatApplicable} onChange={ev => setFormData({ ...formData, vatApplicable: ev.target.checked })} />
+                                    <input type="checkbox" className="rounded border-gray-300" checked={formData.vatApplicable} onChange={ev => {
+                                        const checked = ev.target.checked;
+                                        const amount = formData.debit || formData.credit;
+                                        const vatAmt = checked ? Math.round(amount * formData.vatRate) / 100 : 0;
+                                        setFormData({ ...formData, vatApplicable: checked, netAmount: amount, vatAmount: vatAmt, grossAmount: checked ? amount + vatAmt : 0 });
+                                    }} />
                                     <span className="text-xs font-bold text-gray-500">{t("vatApplicable")}</span>
                                 </label>
                             </div>
                             <div className="col-span-1">
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("vatAmount")}</label>
-                                <input type="number" step="0.01" placeholder="0.00" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.vatAmount || ""} onChange={ev => setFormData({ ...formData, vatAmount: Number(ev.target.value) })} disabled={!formData.vatApplicable} />
+                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">VAT Rate (%)</label>
+                                <input type="number" step="0.01" placeholder="5" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.vatRate} onChange={ev => {
+                                    const vatRate = Number(ev.target.value);
+                                    const amount = formData.debit || formData.credit;
+                                    const vatAmt = formData.vatApplicable ? Math.round(amount * vatRate) / 100 : 0;
+                                    setFormData({ ...formData, vatRate, vatAmount: vatAmt, grossAmount: amount + vatAmt });
+                                }} disabled={!formData.vatApplicable} />
                             </div>
+                            {formData.vatApplicable && (formData.debit > 0 || formData.credit > 0) && (
+                                <div className="col-span-2 bg-blue-50 border border-blue-100 rounded-xl p-4">
+                                    <div className="grid grid-cols-3 gap-4 text-center">
+                                        <div>
+                                            <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">Net Amount</p>
+                                            <p className="text-sm font-black text-foreground">{formData.netAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                                        </div>
+                                        <div>
+                                            <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">{t("vatAmount")} ({formData.vatRate}%)</p>
+                                            <p className="text-sm font-black text-blue-600">{formData.vatAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                                        </div>
+                                        <div>
+                                            <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">Gross Amount</p>
+                                            <p className="text-sm font-black text-emerald-600">{formData.grossAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                             <div className="col-span-2">
                                 <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("notes")}</label>
                                 <textarea placeholder="Optional notes" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200 h-16 resize-none" value={formData.notes} onChange={ev => setFormData({ ...formData, notes: ev.target.value })} />
@@ -446,7 +507,7 @@ export default function TransactionsPage() {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-50">
-                                {simpleLedger.map(row => (
+                                {paginatedSimple.map(row => (
                                     <tr key={row.id} className="hover:bg-gray-50/50 transition-all duration-200">
                                         <td className="px-5 py-3 text-xs text-foreground font-medium">{row.date}</td>
                                         <td className="px-5 py-3">
@@ -527,7 +588,7 @@ export default function TransactionsPage() {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-50">
-                                {transactions.map(txn => (
+                                {paginatedTransactions.map(txn => (
                                     <tr key={txn.id} className="hover:bg-gray-50/50 transition-all duration-200">
                                         <td className="px-5 py-3 text-xs text-foreground font-medium">{txn.date}</td>
                                         <td className="px-5 py-3">
@@ -574,6 +635,34 @@ export default function TransactionsPage() {
                                 </tr>
                             </tfoot>
                         </table>
+                    </div>
+                </div>
+            )}
+
+            {/* Pagination */}
+            {!loading && activeTotal > pageSize && (
+                <div className="flex items-center justify-between mt-6 px-1">
+                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                        {(safePage - 1) * pageSize + 1}–{Math.min(safePage * pageSize, activeTotal)} of {activeTotal}
+                    </p>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                            disabled={safePage <= 1}
+                            className="p-2 rounded-lg border border-border text-gray-400 hover:text-foreground hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+                        >
+                            <ChevronLeft size={14} />
+                        </button>
+                        <span className="text-xs font-bold text-foreground px-3">
+                            {safePage} / {totalPages}
+                        </span>
+                        <button
+                            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                            disabled={safePage >= totalPages}
+                            className="p-2 rounded-lg border border-border text-gray-400 hover:text-foreground hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+                        >
+                            <ChevronRight size={14} />
+                        </button>
                     </div>
                 </div>
             )}

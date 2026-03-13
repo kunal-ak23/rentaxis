@@ -1,6 +1,8 @@
 package com.datagami.rentaxis.api;
 
 import com.datagami.rentaxis.api.dto.ReportDTO;
+import com.datagami.rentaxis.api.dto.TrialBalanceDTO;
+import com.datagami.rentaxis.api.dto.VatReturnDTO;
 import com.datagami.rentaxis.core.service.FinancialTransactionService;
 import com.datagami.rentaxis.domain.entity.FinancialTransaction;
 import com.datagami.rentaxis.domain.entity.enums.AccountType;
@@ -58,6 +60,28 @@ public class FinancialTransactionController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
         return ResponseEntity.ok(service.getUnitReport(unitId, startDate, endDate));
+    }
+
+    @GetMapping("/reports/trial-balance")
+    public ResponseEntity<TrialBalanceDTO> getTrialBalance(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+        return ResponseEntity.ok(service.getTrialBalance(startDate, endDate));
+    }
+
+    @GetMapping("/reports/vat-return")
+    public ResponseEntity<VatReturnDTO> getVatReturn(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+        return ResponseEntity.ok(service.getVatReturn(startDate, endDate));
+    }
+
+    @GetMapping("/ledger/vendor/{vendorId}")
+    public ResponseEntity<List<FinancialTransaction>> getVendorLedger(
+            @PathVariable UUID vendorId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+        return ResponseEntity.ok(service.getVendorLedger(vendorId, startDate, endDate));
     }
 
     @GetMapping("/reports/organisation")

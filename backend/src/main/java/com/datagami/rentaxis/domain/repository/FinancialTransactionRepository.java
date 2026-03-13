@@ -29,4 +29,10 @@ public interface FinancialTransactionRepository extends JpaRepository<FinancialT
      * of its units.
      */
     List<FinancialTransaction> findByPropertyIdOrUnitPropertyId(UUID propertyId, UUID unitPropertyId);
+
+    List<FinancialTransaction> findByVendorId(UUID vendorId);
+
+    List<FinancialTransaction> findByVendorIdAndDateBetween(UUID vendorId, LocalDate start, LocalDate end);
+
+    List<FinancialTransaction> findByStaffId(UUID staffId);
 }

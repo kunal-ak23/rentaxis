@@ -33,3 +33,11 @@ databaseChangeLog:
       file: db/changelog/changesets/16-account-mappings.yaml
   - include:
       file: db/changelog/changesets/17-cheque-date-monthly-rent.yaml
+  - include:
+      file: db/changelog/changesets/18-account-enhancements.yaml
+  - include:
+      file: db/changelog/changesets/19-vendor-management.yaml
+  - include:
+      file: db/changelog/changesets/20-vat-and-bank-accounts.yaml
+  - include:
+      file: db/changelog/changesets/21-staff-management.yaml

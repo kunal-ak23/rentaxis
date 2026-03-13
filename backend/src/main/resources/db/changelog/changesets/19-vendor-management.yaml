@@ -1,0 +1,88 @@
+databaseChangeLog:
+  - changeSet:
+      id: 19-create-vendors-table
+      author: rentaxis
+      changes:
+        - createTable:
+            tableName: vendors
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: tenant_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+              - column:
+                  name: name_en
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: name_ar
+                  type: VARCHAR(255)
+              - column:
+                  name: trade_license_number
+                  type: VARCHAR(50)
+              - column:
+                  name: trn
+                  type: VARCHAR(20)
+              - column:
+                  name: email
+                  type: VARCHAR(100)
+              - column:
+                  name: phone
+                  type: VARCHAR(20)
+              - column:
+                  name: contact_person
+                  type: VARCHAR(255)
+              - column:
+                  name: address
+                  type: TEXT
+              - column:
+                  name: bank_name
+                  type: VARCHAR(255)
+              - column:
+                  name: bank_account_number
+                  type: VARCHAR(50)
+              - column:
+                  name: iban
+                  type: VARCHAR(34)
+              - column:
+                  name: is_active
+                  type: BOOLEAN
+                  defaultValueBoolean: true
+              - column:
+                  name: notes
+                  type: TEXT
+              - column:
+                  name: payable_account_id
+                  type: UUID
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+        - createIndex:
+            tableName: vendors
+            indexName: idx_vendors_tenant_id
+            columns:
+              - column:
+                  name: tenant_id
+
+  - changeSet:
+      id: 19-add-vendor-to-transactions
+      author: rentaxis
+      changes:
+        - addColumn:
+            tableName: financial_transactions
+            columns:
+              - column:
+                  name: vendor_id
+                  type: UUID

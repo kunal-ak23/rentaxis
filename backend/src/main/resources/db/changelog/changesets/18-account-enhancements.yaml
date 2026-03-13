@@ -1,0 +1,40 @@
+databaseChangeLog:
+  - changeSet:
+      id: 18-add-account-sub-type
+      author: rentaxis
+      changes:
+        - addColumn:
+            tableName: accounts
+            columns:
+              - column:
+                  name: account_sub_type
+                  type: VARCHAR(30)
+              - column:
+                  name: name_en
+                  type: VARCHAR(255)
+              - column:
+                  name: name_ar
+                  type: VARCHAR(255)
+              - column:
+                  name: hierarchy_level
+                  type: INT
+                  defaultValueNumeric: 1
+              - column:
+                  name: is_group
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+              - column:
+                  name: is_active
+                  type: BOOLEAN
+                  defaultValueBoolean: true
+              - column:
+                  name: display_order
+                  type: INT
+                  defaultValueNumeric: 0
+
+  - changeSet:
+      id: 18-backfill-name-en
+      author: rentaxis
+      changes:
+        - sql:
+            sql: UPDATE accounts SET name_en = name WHERE name_en IS NULL
