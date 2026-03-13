@@ -66,8 +66,15 @@ public class ContractGenerationService {
             throw new NotFoundException("Lease not found");
         }
 
-        if (lease.getStatus() != LeaseStatus.DRAFT) {
-            throw new BusinessRuleViolationException("Contract can only be generated for DRAFT leases");
+        if (lease.getStatus() != LeaseStatus.DRAFT && lease.getStatus() != LeaseStatus.PENDING_SIGNATURE) {
+            throw new BusinessRuleViolationException("Contract can only be generated for DRAFT or PENDING_SIGNATURE leases");
+        }
+
+        // Remove old documents if regenerating
+        if (lease.getStatus() == LeaseStatus.PENDING_SIGNATURE) {
+            List<LeaseDocument> oldDocs = leaseDocumentRepository.findByLeaseId(leaseId);
+            leaseDocumentRepository.deleteAll(oldDocs);
+            log.info("Removed {} old documents for lease {} before regeneration", oldDocs.size(), leaseId);
         }
 
         // Load template
