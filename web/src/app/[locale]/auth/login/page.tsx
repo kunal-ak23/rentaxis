@@ -14,11 +14,13 @@ export default function LoginPage() {
     const [password, setPassword] = useState("");
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
+    const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
         setError("");
+        setFieldErrors({});
 
         try {
             const res = await signIn("credentials", {
@@ -29,6 +31,7 @@ export default function LoginPage() {
 
             if (res?.error) {
                 setError("Invalid email or password. Please try again.");
+                setFieldErrors({ email: "Check your email", password: "Check your password" });
                 setLoading(false);
             } else {
                 // Fetch session to check role for redirect
@@ -70,35 +73,43 @@ export default function LoginPage() {
 
                 <form onSubmit={handleLogin} className="space-y-5">
                     <div>
-                        <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 ml-1">Email Address</label>
+                        <label htmlFor="login-email" className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 ml-1">Email Address</label>
                         <div className="relative group">
                             <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-primary transition-colors" />
                             <input
+                                id="login-email"
                                 required
                                 type="email"
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
                                 placeholder="name@company.com"
-                                className="w-full bg-gray-50 border border-border p-3.5 pl-11 rounded-2xl text-xs placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/10 focus:border-primary/30 transition-all font-medium"
+                                className="w-full bg-gray-50 border border-border p-3.5 pl-11 rounded-2xl text-xs placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/30 transition-all font-medium"
                             />
                         </div>
+                        {fieldErrors.email && (
+                            <p className="text-[10px] font-bold text-red-500 mt-1 ml-1">{fieldErrors.email}</p>
+                        )}
                     </div>
 
                     <div>
                         <div className="flex items-center justify-between mb-2 ml-1">
-                            <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest">Password</label>
+                            <label htmlFor="login-password" className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest">Password</label>
                         </div>
                         <div className="relative group">
                             <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-primary transition-colors" />
                             <input
+                                id="login-password"
                                 required
                                 type="password"
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
                                 placeholder="••••••••"
-                                className="w-full bg-gray-50 border border-border p-3.5 pl-11 rounded-2xl text-xs placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/10 focus:border-primary/30 transition-all font-medium"
+                                className="w-full bg-gray-50 border border-border p-3.5 pl-11 rounded-2xl text-xs placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/30 transition-all font-medium"
                             />
                         </div>
+                        {fieldErrors.password && (
+                            <p className="text-[10px] font-bold text-red-500 mt-1 ml-1">{fieldErrors.password}</p>
+                        )}
                     </div>
 
                     {error && (
@@ -113,7 +124,7 @@ export default function LoginPage() {
 
                     <button
                         disabled={loading}
-                        className="w-full bg-primary text-primary-foreground py-4 rounded-2xl text-xs font-black uppercase tracking-[0.1em] shadow-xl shadow-primary/20 hover:opacity-90 active:scale-[0.98] transition-all flex items-center justify-center gap-2 group disabled:opacity-70"
+                        className="w-full bg-primary text-primary-foreground py-4 rounded-2xl text-xs font-black uppercase tracking-[0.1em] shadow-xl shadow-primary/20 hover:opacity-90 active:scale-[0.98] transition-all flex items-center justify-center gap-2 group disabled:opacity-70 cursor-pointer disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-primary/30"
                     >
                         {loading ? (
                             <Loader2 className="w-4 h-4 animate-spin text-primary-foreground" />

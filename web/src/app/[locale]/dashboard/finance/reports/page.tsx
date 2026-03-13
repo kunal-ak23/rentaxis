@@ -45,6 +45,7 @@ export default function ReportsPage() {
     const [properties, setProperties] = useState<PropertyStats[]>([]);
     const [report, setReport] = useState<ReportData | null>(null);
     const [loading, setLoading] = useState(false);
+    const [validationError, setValidationError] = useState("");
 
     useEffect(() => {
         fetchProperties();
@@ -60,6 +61,7 @@ export default function ReportsPage() {
     };
 
     const generateReport = async () => {
+        setValidationError("");
         setLoading(true);
         try {
             const params = new URLSearchParams();
@@ -71,7 +73,7 @@ export default function ReportsPage() {
                 url = `/api/proxy/v1/finance/reports/organisation?${params.toString()}`;
             } else {
                 if (!selectedPropertyId) {
-                    alert("Please select a property.");
+                    setValidationError("Please select a property before generating a report.");
                     setLoading(false);
                     return;
                 }
@@ -109,16 +111,16 @@ export default function ReportsPage() {
                         <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5">{t("reportType")}</label>
                         <div className="flex gap-2">
                             <button
-                                onClick={() => setReportMode("ORGANISATION")}
-                                className={cn("flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all border",
+                                onClick={() => { setReportMode("ORGANISATION"); setValidationError(""); }}
+                                className={cn("flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 border cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none",
                                     reportMode === "ORGANISATION" ? "bg-primary text-white border-primary shadow-sm" : "bg-white text-gray-500 border-border hover:bg-gray-50"
                                 )}
                             >
                                 <Globe size={12} /> Org
                             </button>
                             <button
-                                onClick={() => setReportMode("PROPERTY")}
-                                className={cn("flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all border",
+                                onClick={() => { setReportMode("PROPERTY"); setValidationError(""); }}
+                                className={cn("flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 border cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none",
                                     reportMode === "PROPERTY" ? "bg-primary text-white border-primary shadow-sm" : "bg-white text-gray-500 border-border hover:bg-gray-50"
                                 )}
                             >
@@ -131,29 +133,35 @@ export default function ReportsPage() {
                         <div>
                             <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5">{t("selectProperty")}</label>
                             <select
-                                className="w-full bg-input border border-border p-2.5 rounded-xl text-xs"
+                                className={cn(
+                                    "w-full bg-input border p-2.5 rounded-xl text-xs cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200",
+                                    validationError && !selectedPropertyId ? "border-red-300" : "border-border"
+                                )}
                                 value={selectedPropertyId}
-                                onChange={ev => setSelectedPropertyId(ev.target.value)}
+                                onChange={ev => { setSelectedPropertyId(ev.target.value); setValidationError(""); }}
                             >
                                 <option value="">Select...</option>
                                 {properties.map(s => <option key={s.property.id} value={s.property.id}>{s.property.nameEn}</option>)}
                             </select>
+                            {validationError && !selectedPropertyId && (
+                                <p className="text-[10px] text-red-500 font-medium mt-1">{validationError}</p>
+                            )}
                         </div>
                     )}
 
                     <div>
                         <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5">{t("startDate")}</label>
-                        <input type="date" className="w-full bg-input border border-border p-2.5 rounded-xl text-xs" value={startDate} onChange={ev => setStartDate(ev.target.value)} />
+                        <input type="date" className="w-full bg-input border border-border p-2.5 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={startDate} onChange={ev => setStartDate(ev.target.value)} />
                     </div>
                     <div>
                         <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5">{t("endDate")}</label>
-                        <input type="date" className="w-full bg-input border border-border p-2.5 rounded-xl text-xs" value={endDate} onChange={ev => setEndDate(ev.target.value)} />
+                        <input type="date" className="w-full bg-input border border-border p-2.5 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={endDate} onChange={ev => setEndDate(ev.target.value)} />
                     </div>
                     <div>
                         <button
                             onClick={generateReport}
                             disabled={loading}
-                            className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-primary to-blue-500 text-white px-5 py-2.5 rounded-xl text-xs font-bold hover:opacity-90 transition-all shadow-lg shadow-primary/20 active:scale-95 disabled:opacity-50"
+                            className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-primary to-blue-500 text-white px-5 py-2.5 rounded-xl text-xs font-bold hover:opacity-90 transition-all duration-200 shadow-lg shadow-primary/20 active:scale-95 disabled:opacity-50 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                         >
                             {loading ? "Generating..." : t("generateReport")}
                         </button>
@@ -161,8 +169,19 @@ export default function ReportsPage() {
                 </div>
             </div>
 
+            {/* Loading Skeleton */}
+            {loading && (
+                <div className="space-y-6 animate-pulse">
+                    <div className="bg-gray-200 rounded-2xl h-48" />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="bg-gray-200 rounded-2xl h-64" />
+                        <div className="bg-gray-200 rounded-2xl h-64" />
+                    </div>
+                </div>
+            )}
+
             {/* Report Display */}
-            {report && (
+            {report && !loading && (
                 <div className="space-y-6">
                     {/* Header */}
                     <div className="bg-gradient-to-r from-gray-900 to-gray-800 rounded-2xl p-6 text-white">

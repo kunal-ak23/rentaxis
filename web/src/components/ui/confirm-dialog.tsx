@@ -1,6 +1,7 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
+import { Loader2 } from "lucide-react";
 
 interface ConfirmDialogProps {
     isOpen: boolean;
@@ -11,6 +12,7 @@ interface ConfirmDialogProps {
     confirmText?: string;
     cancelText?: string;
     isDestructive?: boolean;
+    isLoading?: boolean;
 }
 
 export function ConfirmDialog({
@@ -22,6 +24,7 @@ export function ConfirmDialog({
     confirmText = "Confirm",
     cancelText = "Cancel",
     isDestructive = false,
+    isLoading = false,
 }: ConfirmDialogProps) {
     return (
         <AnimatePresence>
@@ -33,7 +36,7 @@ export function ConfirmDialog({
                         exit={{ opacity: 0 }}
                         transition={{ duration: 0.15 }}
                         className="absolute inset-0 bg-black/20 backdrop-blur-sm"
-                        onClick={onClose}
+                        onClick={isLoading ? undefined : onClose}
                     />
                     <motion.div
                         initial={{ opacity: 0, scale: 0.95, y: 10 }}
@@ -51,19 +54,20 @@ export function ConfirmDialog({
                         <div className="px-6 py-4 bg-gray-50/80 border-t border-border flex justify-end gap-3">
                             <button
                                 onClick={onClose}
-                                className="px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-gray-600 hover:text-gray-900 transition-colors bg-white border border-border rounded-xl shadow-sm hover:bg-gray-50 active:scale-95"
+                                disabled={isLoading}
+                                className="px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-gray-600 hover:text-gray-900 transition-colors duration-200 bg-white border border-border rounded-xl shadow-sm hover:bg-gray-50 active:scale-95 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 {cancelText}
                             </button>
                             <button
-                                onClick={() => {
-                                    onConfirm();
-                                }}
-                                className={`px-4 py-2.5 text-xs font-bold uppercase tracking-wider rounded-xl transition-all shadow-md active:scale-95 ${isDestructive
+                                onClick={onConfirm}
+                                disabled={isLoading}
+                                className={`px-4 py-2.5 text-xs font-bold uppercase tracking-wider rounded-xl transition-all duration-200 shadow-md active:scale-95 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 ${isDestructive
                                     ? "bg-red-500 text-white hover:bg-red-600 shadow-red-500/20"
                                     : "bg-primary text-primary-foreground hover:opacity-90 shadow-primary/20"
                                     }`}
                             >
+                                {isLoading && <Loader2 size={14} className="animate-spin" />}
                                 {confirmText}
                             </button>
                         </div>

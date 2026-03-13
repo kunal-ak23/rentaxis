@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useTranslations } from "next-intl";
 import {
     BookOpen, Plus, X, ChevronDown, ChevronRight,
-    Landmark, TrendingDown, TrendingUp, Coins, Scale, Sparkles
+    Landmark, TrendingDown, TrendingUp, Coins, Scale, Sparkles, Loader2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -32,6 +32,8 @@ export default function AccountsPage() {
     const [showForm, setShowForm] = useState(false);
     const [expandedTypes, setExpandedTypes] = useState<Set<string>>(new Set(["ASSET", "LIABILITY", "INCOME", "EXPENSE", "EQUITY"]));
     const [loading, setLoading] = useState(true);
+    const [submitting, setSubmitting] = useState(false);
+    const [seeding, setSeeding] = useState(false);
 
     const [formData, setFormData] = useState({
         code: "",
@@ -60,6 +62,7 @@ export default function AccountsPage() {
     };
 
     const handleSeedDefaults = async () => {
+        setSeeding(true);
         try {
             const res = await fetch("/api/proxy/v1/finance/accounts/seed", { method: "POST" });
             if (res.ok) {
@@ -67,11 +70,14 @@ export default function AccountsPage() {
             }
         } catch (err) {
             console.error(err);
+        } finally {
+            setSeeding(false);
         }
     };
 
     const handleSubmit = async (ev: React.FormEvent) => {
         ev.preventDefault();
+        setSubmitting(true);
         try {
             const res = await fetch("/api/proxy/v1/finance/accounts", {
                 method: "POST",
@@ -85,6 +91,8 @@ export default function AccountsPage() {
             }
         } catch (err) {
             console.error(err);
+        } finally {
+            setSubmitting(false);
         }
     };
 
@@ -118,18 +126,19 @@ export default function AccountsPage() {
                     </p>
                 </div>
                 <div className="flex gap-3">
-                    {accounts.length === 0 && (
+                    {accounts.length === 0 && !loading && (
                         <button
                             onClick={handleSeedDefaults}
-                            className="flex items-center gap-2 bg-gradient-to-r from-primary to-blue-500 text-white px-5 py-2.5 rounded-full text-xs font-bold hover:opacity-90 transition-all shadow-lg shadow-primary/20 active:scale-95"
+                            disabled={seeding}
+                            className="flex items-center gap-2 bg-gradient-to-r from-primary to-blue-500 text-white px-5 py-2.5 rounded-full text-xs font-bold hover:opacity-90 transition-all duration-200 shadow-lg shadow-primary/20 active:scale-95 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none disabled:opacity-50"
                         >
-                            <Sparkles size={14} />
+                            {seeding ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
                             {t("seedDefaults")}
                         </button>
                     )}
                     <button
                         onClick={() => setShowForm(true)}
-                        className="flex items-center gap-2 bg-white text-foreground border border-border px-5 py-2.5 rounded-full text-xs font-bold hover:bg-gray-50 transition-all shadow-sm active:scale-95"
+                        className="flex items-center gap-2 bg-white text-foreground border border-border px-5 py-2.5 rounded-full text-xs font-bold hover:bg-gray-50 transition-all duration-200 shadow-sm active:scale-95 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                     >
                         <Plus size={14} />
                         {t("addAccount")}
@@ -141,43 +150,66 @@ export default function AccountsPage() {
             {showForm && (
                 <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
                     <div className="bg-white rounded-3xl p-8 max-w-xl w-full shadow-2xl border border-gray-100 relative">
-                        <button onClick={() => setShowForm(false)} className="absolute right-6 top-6 p-2 text-gray-400 hover:text-gray-600"><X size={18} /></button>
+                        <button onClick={() => setShowForm(false)} aria-label="Close modal" className="absolute right-6 top-6 p-2 text-gray-400 hover:text-gray-600 cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg"><X size={18} /></button>
                         <h2 className="text-lg font-black mb-1">{t("addAccount")}</h2>
                         <p className="text-xs text-gray-400 mb-8 font-medium">Create a new account in the chart of accounts.</p>
                         <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-5">
                             <div className="col-span-1">
                                 <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("accountCode")}</label>
-                                <input required placeholder="e.g. D-01-16" className="w-full bg-input border border-border p-3 rounded-xl text-xs" value={formData.code} onChange={ev => setFormData({ ...formData, code: ev.target.value })} />
+                                <input required placeholder="e.g. D-01-16" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.code} onChange={ev => setFormData({ ...formData, code: ev.target.value })} />
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("accountName")}</label>
-                                <input required placeholder="e.g. Garden Maintenance" className="w-full bg-input border border-border p-3 rounded-xl text-xs" value={formData.name} onChange={ev => setFormData({ ...formData, name: ev.target.value })} />
+                                <input required placeholder="e.g. Garden Maintenance" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.name} onChange={ev => setFormData({ ...formData, name: ev.target.value })} />
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("accountType")}</label>
-                                <select className="w-full bg-input border border-border p-3 rounded-xl text-xs" value={formData.accountType} onChange={ev => setFormData({ ...formData, accountType: ev.target.value })}>
+                                <select className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.accountType} onChange={ev => setFormData({ ...formData, accountType: ev.target.value })}>
                                     {typeOrder.map(type => <option key={type} value={type}>{TYPE_CONFIG[type].label}</option>)}
                                 </select>
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("parentCode")}</label>
-                                <input placeholder="e.g. D-01 (optional)" className="w-full bg-input border border-border p-3 rounded-xl text-xs" value={formData.parentCode} onChange={ev => setFormData({ ...formData, parentCode: ev.target.value })} />
+                                <input placeholder="e.g. D-01 (optional)" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.parentCode} onChange={ev => setFormData({ ...formData, parentCode: ev.target.value })} />
                             </div>
                             <div className="col-span-2">
                                 <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("description")}</label>
-                                <textarea placeholder="Optional description" className="w-full bg-input border border-border p-3 rounded-xl text-xs h-20 resize-none" value={formData.description} onChange={ev => setFormData({ ...formData, description: ev.target.value })} />
+                                <textarea placeholder="Optional description" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200 h-20 resize-none" value={formData.description} onChange={ev => setFormData({ ...formData, description: ev.target.value })} />
                             </div>
                             <div className="col-span-2 flex justify-end gap-3 mt-2">
-                                <button type="button" onClick={() => setShowForm(false)} className="px-6 py-3 text-xs font-bold text-gray-500">{t("cancel")}</button>
-                                <button type="submit" className="px-8 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-bold">{t("create")}</button>
+                                <button type="button" onClick={() => setShowForm(false)} className="px-6 py-3 text-xs font-bold text-gray-500 cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-xl">{t("cancel")}</button>
+                                <button type="submit" disabled={submitting} className="px-8 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-bold cursor-pointer transition-all duration-200 hover:opacity-90 focus:ring-2 focus:ring-primary/30 focus:outline-none disabled:opacity-50 flex items-center gap-2">
+                                    {submitting && <Loader2 size={14} className="animate-spin" />}
+                                    {t("create")}
+                                </button>
                             </div>
                         </form>
                     </div>
                 </div>
             )}
 
+            {/* Skeleton Loading */}
+            {loading && (
+                <div className="space-y-6">
+                    {[1, 2, 3, 4, 5].map((i) => (
+                        <div key={i} className="rounded-2xl border border-gray-200 overflow-hidden animate-pulse">
+                            <div className="flex items-center justify-between p-5 bg-gray-50">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-xl bg-gray-200" />
+                                    <div>
+                                        <div className="h-4 w-24 bg-gray-200 rounded mb-1" />
+                                        <div className="h-3 w-16 bg-gray-100 rounded" />
+                                    </div>
+                                </div>
+                                <div className="w-4 h-4 bg-gray-200 rounded" />
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+
             {/* Account Groups */}
-            <div className="space-y-6">
+            {!loading && <div className="space-y-6">
                 {typeOrder.map(type => {
                     const items = groupedAccounts[type] || [];
                     const config = TYPE_CONFIG[type];
@@ -185,11 +217,11 @@ export default function AccountsPage() {
                     const isExpanded = expandedTypes.has(type);
 
                     return (
-                        <div key={type} className={cn("rounded-2xl border overflow-hidden transition-all", config.border)}>
+                        <div key={type} className={cn("rounded-2xl border overflow-hidden transition-all duration-200", config.border)}>
                             <button
                                 onClick={() => toggleType(type)}
                                 className={cn(
-                                    "w-full flex items-center justify-between p-5 bg-gradient-to-r transition-all hover:opacity-90",
+                                    "w-full flex items-center justify-between p-5 bg-gradient-to-r transition-all duration-200 hover:opacity-90 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none",
                                     config.gradient
                                 )}
                             >
@@ -207,7 +239,7 @@ export default function AccountsPage() {
                             {isExpanded && items.length > 0 && (
                                 <div className="bg-white divide-y divide-gray-50">
                                     {items.map(account => (
-                                        <div key={account.id} className="flex items-center justify-between px-6 py-3.5 hover:bg-gray-50/50 transition-colors">
+                                        <div key={account.id} className="flex items-center justify-between px-6 py-3.5 hover:bg-gray-50/50 transition-all duration-200">
                                             <div className="flex items-center gap-4">
                                                 <span className={cn("text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg", config.badge)}>
                                                     {account.code}
@@ -241,7 +273,7 @@ export default function AccountsPage() {
                         </div>
                     );
                 })}
-            </div>
+            </div>}
 
             {/* Empty State */}
             {accounts.length === 0 && !loading && (
@@ -253,7 +285,8 @@ export default function AccountsPage() {
                     <p className="text-xs text-gray-400 mb-6">Seed the default chart of accounts to get started.</p>
                     <button
                         onClick={handleSeedDefaults}
-                        className="text-xs font-black text-primary border-b-2 border-primary pb-0.5 hover:opacity-70 transition-all"
+                        disabled={seeding}
+                        className="text-xs font-black text-primary border-b-2 border-primary pb-0.5 hover:opacity-70 transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none disabled:opacity-50"
                     >
                         {t("seedDefaults")}
                     </button>

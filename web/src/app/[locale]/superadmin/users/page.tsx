@@ -13,10 +13,12 @@ export default function SuperAdminUsersPage() {
     const [users, setUsers] = useState<User[]>([]);
     const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(false);
+    const [submitting, setSubmitting] = useState(false);
     const [editingUserId, setEditingUserId] = useState<string | null>(null);
 
     // Delete dialog state
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+    const [deleting, setDeleting] = useState(false);
     const [userToDelete, setUserToDelete] = useState<string | null>(null);
 
     // Form state
@@ -86,6 +88,7 @@ export default function SuperAdminUsersPage() {
 
     const handleSubmitUser = async (e: React.FormEvent) => {
         e.preventDefault();
+        setSubmitting(true);
         try {
             const bodyData: any = { email, name, role, tenantId, phoneNumber };
             if (password) bodyData.password = password;
@@ -111,11 +114,14 @@ export default function SuperAdminUsersPage() {
             }
         } catch (e) {
             console.error(e);
+        } finally {
+            setSubmitting(false);
         }
     };
 
     const confirmDelete = async () => {
         if (!userToDelete) return;
+        setDeleting(true);
         try {
             const res = await fetch(`/api/proxy/admin/users/${userToDelete}`, { method: "DELETE" });
             if (res.ok) {
@@ -127,6 +133,8 @@ export default function SuperAdminUsersPage() {
             console.error(e);
             setDeleteDialogOpen(false);
             setUserToDelete(null);
+        } finally {
+            setDeleting(false);
         }
     };
 
@@ -186,12 +194,12 @@ export default function SuperAdminUsersPage() {
                         <input
                             type="text"
                             placeholder="Search users..."
-                            className="w-full bg-white border border-border p-2.5 pl-9 rounded-xl text-xs placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/10 focus:border-primary/30 transition-all font-medium shadow-sm shadow-black/[0.02]"
+                            className="w-full bg-white border border-border p-2.5 pl-9 rounded-xl text-xs placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/30 transition-all duration-200 font-medium shadow-sm shadow-black/[0.02]"
                         />
                     </div>
                     <button
                         onClick={() => { resetForm(); setShowForm(true); }}
-                        className="bg-primary text-primary-foreground p-2.5 px-4 rounded-xl hover:opacity-90 active:scale-95 transition-all shadow-md shadow-primary/20 flex flex-col items-center justify-center cursor-pointer group shrink-0"
+                        className="bg-primary text-primary-foreground p-2.5 px-4 rounded-xl hover:opacity-90 active:scale-95 transition-all duration-200 shadow-md shadow-primary/20 flex flex-col items-center justify-center cursor-pointer group shrink-0 focus:ring-2 focus:ring-primary/30 focus:outline-none"
                     >
                         <div className="flex items-center gap-2">
                             <Plus size={14} className="group-hover:rotate-90 transition-transform duration-300" />
@@ -203,8 +211,16 @@ export default function SuperAdminUsersPage() {
 
             {/* Content Area */}
             {loading ? (
-                <div className="h-64 flex items-center justify-center bg-white rounded-2xl border border-border shadow-sm">
-                    <Loader2 className="w-8 h-8 animate-spin text-primary opacity-50" />
+                <div className="bg-white rounded-2xl border border-border shadow-sm p-8 space-y-5">
+                    {[...Array(5)].map((_, i) => (
+                        <div key={i} className="flex gap-6 animate-pulse">
+                            <div className="h-4 bg-gray-100 rounded-lg w-1/5" />
+                            <div className="h-4 bg-gray-100 rounded-lg w-1/4" />
+                            <div className="h-4 bg-gray-100 rounded-lg w-1/6" />
+                            <div className="h-4 bg-gray-100 rounded-lg w-1/6" />
+                            <div className="h-4 bg-gray-100 rounded-lg w-1/6" />
+                        </div>
+                    ))}
                 </div>
             ) : (
                 <div className="bg-white rounded-[2rem] border border-border overflow-hidden shadow-sm">
@@ -234,7 +250,7 @@ export default function SuperAdminUsersPage() {
                                     </thead>
                                     <tbody className="text-xs font-medium text-foreground">
                                         {users.map((u) => (
-                                            <tr key={u.id} className="border-b border-border/50 hover:bg-gray-50/50 transition-colors group">
+                                            <tr key={u.id} className="border-b border-border/50 hover:bg-gray-50/50 transition-all duration-200 group">
                                                 <td className="py-4 font-bold">{u.name}</td>
                                                 <td className="py-4 text-gray-500">{u.email}</td>
                                                 <td className="py-4 text-gray-500 font-mono text-[10px]">{(u as any).phoneNumber || "-"}</td>
@@ -255,13 +271,13 @@ export default function SuperAdminUsersPage() {
                                                     <div className="flex justify-end gap-2">
                                                         <button
                                                             onClick={() => handleEdit(u)}
-                                                            className="text-xs px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors font-bold"
+                                                            className="text-xs px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-all duration-200 font-bold cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                                                         >
                                                             Edit
                                                         </button>
                                                         <button
                                                             onClick={() => handleDeleteClick(u.id)}
-                                                            className="text-xs px-3 py-1.5 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors font-bold"
+                                                            className="text-xs px-3 py-1.5 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-all duration-200 font-bold cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                                                         >
                                                             Delete
                                                         </button>
@@ -292,7 +308,8 @@ export default function SuperAdminUsersPage() {
                             </div>
                             <button
                                 onClick={() => setShowForm(false)}
-                                className="w-8 h-8 bg-gray-50 rounded-full flex items-center justify-center text-gray-500 hover:bg-gray-100 transition-colors"
+                                aria-label="Close"
+                                className="w-8 h-8 bg-gray-50 rounded-full flex items-center justify-center text-gray-500 hover:bg-gray-100 transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                             >
                                 <X size={16} />
                             </button>
@@ -307,7 +324,7 @@ export default function SuperAdminUsersPage() {
                                         required
                                         value={name}
                                         onChange={(e) => setName(e.target.value)}
-                                        className="w-full bg-gray-50 border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all font-medium"
+                                        className="w-full bg-gray-50 border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none focus:border-primary transition-all duration-200 font-medium"
                                         placeholder="e.g. Acme Corp Admin"
                                     />
                                 </div>
@@ -318,7 +335,7 @@ export default function SuperAdminUsersPage() {
                                         required
                                         value={email}
                                         onChange={(e) => setEmail(e.target.value)}
-                                        className="w-full bg-gray-50 border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all font-medium"
+                                        className="w-full bg-gray-50 border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none focus:border-primary transition-all duration-200 font-medium"
                                         placeholder="e.g. admin@acmecorp.com"
                                     />
                                 </div>
@@ -328,7 +345,7 @@ export default function SuperAdminUsersPage() {
                                         type="tel"
                                         value={phoneNumber}
                                         onChange={(e) => setPhoneNumber(e.target.value)}
-                                        className="w-full bg-gray-50 border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all font-medium"
+                                        className="w-full bg-gray-50 border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none focus:border-primary transition-all duration-200 font-medium"
                                         placeholder="e.g. +971 50 123 4567"
                                     />
                                 </div>
@@ -341,7 +358,7 @@ export default function SuperAdminUsersPage() {
                                         required={!editingUserId}
                                         value={password}
                                         onChange={(e) => setPassword(e.target.value)}
-                                        className="w-full bg-gray-50 border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all font-medium"
+                                        className="w-full bg-gray-50 border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none focus:border-primary transition-all duration-200 font-medium"
                                         placeholder={editingUserId ? "Leave blank to keep current" : "Secure password"}
                                     />
                                 </div>
@@ -350,7 +367,7 @@ export default function SuperAdminUsersPage() {
                                     <select
                                         value={role}
                                         onChange={(e) => setRole(e.target.value)}
-                                        className="w-full bg-gray-50 border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all font-medium"
+                                        className="w-full bg-gray-50 border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none focus:border-primary transition-all duration-200 font-medium"
                                     >
                                         <option value="SUPER_ADMIN">Super Admin</option>
                                         <option value="TENANT_ADMIN">Tenant Admin</option>
@@ -406,7 +423,7 @@ export default function SuperAdminUsersPage() {
                                     <select
                                         value={tenantId}
                                         onChange={(e) => setTenantId(e.target.value)}
-                                        className="w-full bg-gray-50 border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all font-medium"
+                                        className="w-full bg-gray-50 border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none focus:border-primary transition-all duration-200 font-medium"
                                     >
                                         <option value="">None (Super Admin Context)</option>
                                         {tenants.map((t) => (
@@ -421,9 +438,10 @@ export default function SuperAdminUsersPage() {
                             <button
                                 type="submit"
                                 form="user-form"
-                                className="w-full py-3 bg-primary text-primary-foreground rounded-xl text-xs font-black uppercase tracking-widest hover:opacity-90 active:scale-[0.98] transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-2 group"
+                                disabled={submitting}
+                                className="w-full py-3 bg-primary text-primary-foreground rounded-xl text-xs font-black uppercase tracking-widest hover:opacity-90 active:scale-[0.98] transition-all duration-200 shadow-lg shadow-primary/20 flex items-center justify-center gap-2 group cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                                <Users size={14} className="group-hover:scale-110 transition-transform" />
+                                {submitting ? <Loader2 size={14} className="animate-spin" /> : <Users size={14} className="group-hover:scale-110 transition-transform" />}
                                 {editingUserId ? "Update User" : "Provision User"}
                             </button>
                         </div>
@@ -440,6 +458,7 @@ export default function SuperAdminUsersPage() {
                 description="Are you sure you want to delete this user? This action cannot be undone and will permanently remove the user from the system."
                 confirmText="Delete User"
                 isDestructive={true}
+                isLoading={deleting}
             />
 
         </div>

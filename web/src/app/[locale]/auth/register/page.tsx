@@ -17,11 +17,24 @@ export default function RegisterPage() {
     });
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
+    const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
     const handleRegister = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
         setError("");
+        setFieldErrors({});
+
+        // Basic client-side validation
+        const errors: Record<string, string> = {};
+        if (formData.password.length < 6) {
+            errors.password = "Password must be at least 6 characters";
+        }
+        if (Object.keys(errors).length > 0) {
+            setFieldErrors(errors);
+            setLoading(false);
+            return;
+        }
 
         // For Phase 3, we'll just simulate registration for now
         // or call an actual /api/auth/register if it exists in Spring Boot
@@ -59,63 +72,79 @@ export default function RegisterPage() {
                 <form onSubmit={handleRegister} className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 ml-1">Full Name</label>
+                            <label htmlFor="register-fullname" className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 ml-1">Full Name</label>
                             <div className="relative group">
                                 <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-primary transition-colors" />
                                 <input
+                                    id="register-fullname"
                                     required
                                     type="text"
                                     value={formData.fullName}
                                     onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
                                     placeholder="John Doe"
-                                    className="w-full bg-gray-50 border border-border p-3.5 pl-11 rounded-2xl text-xs placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/10 focus:border-primary/30 transition-all font-medium"
+                                    className="w-full bg-gray-50 border border-border p-3.5 pl-11 rounded-2xl text-xs placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/30 transition-all font-medium"
                                 />
                             </div>
+                            {fieldErrors.fullName && (
+                                <p className="text-[10px] font-bold text-red-500 mt-1 ml-1">{fieldErrors.fullName}</p>
+                            )}
                         </div>
                         <div>
-                            <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 ml-1">Company Name</label>
+                            <label htmlFor="register-company" className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 ml-1">Company Name</label>
                             <div className="relative group">
                                 <Building className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-primary transition-colors" />
                                 <input
+                                    id="register-company"
                                     required
                                     type="text"
                                     value={formData.companyName}
                                     onChange={(e) => setFormData({ ...formData, companyName: e.target.value })}
                                     placeholder="Al Futtaim"
-                                    className="w-full bg-gray-50 border border-border p-3.5 pl-11 rounded-2xl text-xs placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/10 focus:border-primary/30 transition-all font-medium"
+                                    className="w-full bg-gray-50 border border-border p-3.5 pl-11 rounded-2xl text-xs placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/30 transition-all font-medium"
                                 />
                             </div>
+                            {fieldErrors.companyName && (
+                                <p className="text-[10px] font-bold text-red-500 mt-1 ml-1">{fieldErrors.companyName}</p>
+                            )}
                         </div>
                     </div>
 
                     <div>
-                        <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 ml-1">Email Address</label>
+                        <label htmlFor="register-email" className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 ml-1">Email Address</label>
                         <div className="relative group">
                             <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-primary transition-colors" />
                             <input
+                                id="register-email"
                                 required
                                 type="email"
                                 value={formData.email}
                                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                                 placeholder="name@company.com"
-                                className="w-full bg-gray-50 border border-border p-3.5 pl-11 rounded-2xl text-xs placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/10 focus:border-primary/30 transition-all font-medium"
+                                className="w-full bg-gray-50 border border-border p-3.5 pl-11 rounded-2xl text-xs placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/30 transition-all font-medium"
                             />
                         </div>
+                        {fieldErrors.email && (
+                            <p className="text-[10px] font-bold text-red-500 mt-1 ml-1">{fieldErrors.email}</p>
+                        )}
                     </div>
 
                     <div>
-                        <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 ml-1">Password</label>
+                        <label htmlFor="register-password" className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 ml-1">Password</label>
                         <div className="relative group">
                             <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-primary transition-colors" />
                             <input
+                                id="register-password"
                                 required
                                 type="password"
                                 value={formData.password}
                                 onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                                 placeholder="Create a strong password"
-                                className="w-full bg-gray-50 border border-border p-3.5 pl-11 rounded-2xl text-xs placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/10 focus:border-primary/30 transition-all font-medium"
+                                className="w-full bg-gray-50 border border-border p-3.5 pl-11 rounded-2xl text-xs placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/30 transition-all font-medium"
                             />
                         </div>
+                        {fieldErrors.password && (
+                            <p className="text-[10px] font-bold text-red-500 mt-1 ml-1">{fieldErrors.password}</p>
+                        )}
                     </div>
 
                     {error && (
@@ -125,15 +154,15 @@ export default function RegisterPage() {
                     )}
 
                     <div className="flex items-start gap-3 py-2 px-1">
-                        <input type="checkbox" required className="mt-1 accent-primary" />
-                        <p className="text-[10px] text-gray-500 font-medium leading-relaxed">
+                        <input id="register-terms" type="checkbox" required className="mt-1 accent-primary cursor-pointer focus:ring-2 focus:ring-primary/30" />
+                        <label htmlFor="register-terms" className="text-[10px] text-gray-500 font-medium leading-relaxed cursor-pointer">
                             I agree to the <Link href="/terms" className="text-primary font-bold">Terms of Service</Link> and <Link href="/privacy" className="text-primary font-bold">Privacy Policy</Link>.
-                        </p>
+                        </label>
                     </div>
 
                     <button
                         disabled={loading}
-                        className="w-full bg-primary text-primary-foreground py-4 rounded-2xl text-xs font-black uppercase tracking-[0.1em] shadow-xl shadow-primary/20 hover:opacity-90 active:scale-[0.98] transition-all flex items-center justify-center gap-2 group disabled:opacity-70 mt-2"
+                        className="w-full bg-primary text-primary-foreground py-4 rounded-2xl text-xs font-black uppercase tracking-[0.1em] shadow-xl shadow-primary/20 hover:opacity-90 active:scale-[0.98] transition-all flex items-center justify-center gap-2 group disabled:opacity-70 mt-2 cursor-pointer disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-primary/30"
                     >
                         {loading ? (
                             <Loader2 className="w-4 h-4 animate-spin text-primary-foreground" />

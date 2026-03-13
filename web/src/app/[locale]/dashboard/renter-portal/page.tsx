@@ -110,7 +110,47 @@ export default function RenterPortalPage() {
 
     const userName = session?.user?.name || "Renter";
 
-    if (loading) return <div className="p-8">Loading...</div>;
+    if (loading) {
+        return (
+            <div className="p-8 max-w-5xl mx-auto">
+                <div className="mb-10">
+                    <div className="h-6 w-48 bg-gray-200 rounded animate-pulse mb-2" />
+                    <div className="h-4 w-64 bg-gray-100 rounded animate-pulse" />
+                </div>
+                <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-gray-100 animate-pulse mb-6">
+                    <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 bg-gray-200 rounded-2xl" />
+                        <div>
+                            <div className="h-4 w-32 bg-gray-200 rounded mb-2" />
+                            <div className="h-3 w-48 bg-gray-100 rounded" />
+                        </div>
+                    </div>
+                </div>
+                {[1, 2].map(i => (
+                    <div key={i} className="bg-white rounded-[2rem] p-6 shadow-sm border border-gray-100 animate-pulse mb-6">
+                        <div className="flex justify-between items-start mb-6">
+                            <div className="flex items-center gap-4">
+                                <div className="w-12 h-12 bg-gray-200 rounded-2xl" />
+                                <div>
+                                    <div className="h-4 w-32 bg-gray-200 rounded mb-2" />
+                                    <div className="h-3 w-24 bg-gray-100 rounded" />
+                                </div>
+                            </div>
+                            <div className="h-6 w-20 bg-gray-200 rounded-full" />
+                        </div>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            {[1, 2, 3, 4].map(j => (
+                                <div key={j} className="bg-gray-50 rounded-xl p-3 border border-gray-100/50">
+                                    <div className="h-3 w-12 bg-gray-200 rounded mb-2" />
+                                    <div className="h-4 w-20 bg-gray-200 rounded" />
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                ))}
+            </div>
+        );
+    }
 
     return (
         <div className="p-8 max-w-5xl mx-auto">
@@ -125,7 +165,7 @@ export default function RenterPortalPage() {
 
             {/* My Payments Quick Link Card */}
             <Link href="/dashboard/renter-portal/payments">
-                <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-gray-100 hover:shadow-md transition-all mb-6 cursor-pointer">
+                <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-gray-100 hover:shadow-md transition-all duration-200 mb-6 cursor-pointer">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-4">
                             <div className="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-600 border border-blue-100">
@@ -151,7 +191,7 @@ export default function RenterPortalPage() {
 
             <div className="space-y-6">
                 {leases.map(lease => (
-                    <div key={lease.id} className="bg-white rounded-[2rem] p-6 shadow-sm border border-gray-100 hover:shadow-md transition-all">
+                    <div key={lease.id} className="bg-white rounded-[2rem] p-6 shadow-sm border border-gray-100 hover:shadow-md transition-all duration-200">
                         <div className="flex justify-between items-start mb-6">
                             <div className="flex items-center gap-4">
                                 <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center text-primary border border-primary/20">
@@ -213,21 +253,21 @@ export default function RenterPortalPage() {
                                 <>
                                     <button
                                         onClick={() => handleDownloadContract(lease.id)}
-                                        className="flex items-center gap-2 bg-blue-50 text-blue-700 hover:bg-blue-100 px-4 py-2.5 rounded-xl text-xs font-bold transition-colors"
+                                        className="flex items-center gap-2 bg-blue-50 text-blue-700 hover:bg-blue-100 px-4 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-300"
                                     >
                                         <Download size={14} />
                                         {t("downloadContract")}
                                     </button>
                                     <button
                                         onClick={() => handleAccept(lease.id)}
-                                        className="flex items-center gap-2 bg-green-50 text-green-700 hover:bg-green-100 px-4 py-2.5 rounded-xl text-xs font-bold transition-colors"
+                                        className="flex items-center gap-2 bg-green-50 text-green-700 hover:bg-green-100 px-4 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-green-300"
                                     >
                                         <CheckCircle size={14} />
                                         {t("acceptLease")}
                                     </button>
                                     <button
                                         onClick={() => handleReject(lease.id)}
-                                        className="flex items-center gap-2 bg-red-50 text-red-600 hover:bg-red-100 px-4 py-2.5 rounded-xl text-xs font-bold transition-colors"
+                                        className="flex items-center gap-2 bg-red-50 text-red-600 hover:bg-red-100 px-4 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-300"
                                     >
                                         <XCircle size={14} />
                                         {t("rejectLease")}

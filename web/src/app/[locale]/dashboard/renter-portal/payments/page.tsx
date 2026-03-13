@@ -186,8 +186,37 @@ export default function RenterPaymentsPage() {
 
     if (loading) {
         return (
-            <div className="p-8 flex items-center justify-center min-h-[400px]">
-                <Loader2 className="animate-spin text-primary" size={32} />
+            <div className="p-8 max-w-5xl mx-auto">
+                <div className="mb-10">
+                    <div className="h-6 w-40 bg-gray-200 rounded animate-pulse mb-2" />
+                    <div className="h-4 w-56 bg-gray-100 rounded animate-pulse" />
+                </div>
+                <div className="space-y-4">
+                    {[1, 2].map(i => (
+                        <div key={i} className="bg-white rounded-[2rem] p-6 shadow-sm border border-gray-100 animate-pulse">
+                            <div className="flex justify-between items-start mb-4">
+                                <div className="flex items-center gap-4">
+                                    <div className="w-12 h-12 bg-gray-200 rounded-2xl" />
+                                    <div>
+                                        <div className="h-4 w-28 bg-gray-200 rounded mb-2" />
+                                        <div className="h-3 w-40 bg-gray-100 rounded" />
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                                {[1, 2, 3].map(j => (
+                                    <div key={j} className="bg-gray-50 rounded-xl p-3 border border-gray-100/50">
+                                        <div className="h-3 w-12 bg-gray-200 rounded mb-2" />
+                                        <div className="h-4 w-20 bg-gray-200 rounded" />
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="border-t border-gray-100 pt-4">
+                                <div className="h-9 w-28 bg-gray-200 rounded-xl" />
+                            </div>
+                        </div>
+                    ))}
+                </div>
             </div>
         );
     }
@@ -211,7 +240,8 @@ export default function RenterPaymentsPage() {
                     <p className="text-sm font-semibold text-red-700">{errorMessage}</p>
                     <button
                         onClick={() => setErrorMessage(null)}
-                        className="ml-auto text-red-400 hover:text-red-600"
+                        className="ml-auto text-red-400 hover:text-red-600 cursor-pointer transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-red-300 rounded-full p-1"
+                        aria-label="Dismiss error"
                     >
                         <XCircle size={16} />
                     </button>
@@ -239,7 +269,7 @@ export default function RenterPaymentsPage() {
                         return (
                             <div
                                 key={payment.id}
-                                className="bg-white rounded-[2rem] p-6 shadow-sm border border-gray-100 hover:shadow-md transition-all"
+                                className="bg-white rounded-[2rem] p-6 shadow-sm border border-gray-100 hover:shadow-md transition-all duration-200"
                             >
                                 <div className="flex justify-between items-start mb-4">
                                     <div className="flex items-center gap-4">
@@ -347,10 +377,10 @@ export default function RenterPaymentsPage() {
                                                 isProcessing || !gatewayConfig?.isActive
                                             }
                                             className={cn(
-                                                "flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-bold transition-colors",
+                                                "flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-300",
                                                 isProcessing || !gatewayConfig?.isActive
                                                     ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                                                    : "bg-blue-600 text-white hover:bg-blue-700 active:scale-95"
+                                                    : "bg-blue-600 text-white hover:bg-blue-700 active:scale-95 cursor-pointer"
                                             )}
                                         >
                                             {isProcessing ? (
@@ -432,7 +462,7 @@ export default function RenterPaymentsPage() {
                         </p>
                         <button
                             onClick={() => setSuccessModal(false)}
-                            className="bg-primary text-primary-foreground px-6 py-2.5 rounded-xl text-xs font-bold hover:opacity-90 transition-opacity"
+                            className="bg-primary text-primary-foreground px-6 py-2.5 rounded-xl text-xs font-bold hover:opacity-90 transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30"
                         >
                             OK
                         </button>

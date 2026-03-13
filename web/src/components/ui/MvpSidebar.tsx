@@ -20,6 +20,7 @@ import {
     Contact,
     CreditCard,
     Sliders,
+    GitBranch,
 } from 'lucide-react';
 import { Link } from "@/i18n/routing";
 import { useTranslations, useLocale } from "next-intl";
@@ -65,6 +66,7 @@ export default function MvpSidebar() {
     ] : [];
 
     const settingsItems = (userRole && canConfigureGateway(userRole)) ? [
+        { name: "Account Mappings", href: "/dashboard/settings/account-mappings", icon: GitBranch },
         { name: tOnlinePayments("gatewayConfig"), href: "/dashboard/settings/gateway", icon: CreditCard },
         { name: tOnlinePayments("rentSettings"), href: "/dashboard/settings/rent-settings", icon: Sliders },
     ] : [];
@@ -92,13 +94,14 @@ export default function MvpSidebar() {
             {/* Collapse Toggle - Subtle */}
             <button
                 onClick={() => setIsCollapsed(!isCollapsed)}
-                className="absolute -right-3 top-12 bg-white border border-gray-200 rounded-full p-1 shadow-sm hover:bg-gray-50 z-50 transition-transform active:scale-90"
+                aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+                className="absolute -right-3 top-12 bg-white border border-gray-200 rounded-full p-1 shadow-sm hover:bg-gray-50 z-50 transition-all duration-200 active:scale-90 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30"
             >
                 {isCollapsed ? <ChevronRight size={10} /> : <div className="p-0.5"><Menu size={10} /></div>}
             </button>
 
             <div className={cn("mb-10 px-6 mt-10 flex items-center", isCollapsed && "px-0 justify-center")}>
-                <Link href="/" className="flex items-center gap-2.5">
+                <Link href="/" className="flex items-center gap-2.5 focus:outline-none focus:ring-2 focus:ring-primary/30 rounded-lg">
                     <div className="w-7 h-7 bg-primary rounded-lg flex items-center justify-center text-primary-foreground font-black text-[10px] shrink-0 shadow-sm shadow-primary/20">
                         R
                     </div>
@@ -115,7 +118,7 @@ export default function MvpSidebar() {
                 <Link
                     href="/dashboard"
                     className={cn(
-                        "group flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 text-xs font-semibold relative mb-3",
+                        "group flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 text-xs font-semibold relative mb-3 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30",
                         pathname.endsWith("/dashboard") || pathname.endsWith("/dashboard/")
                             ? "bg-accent text-foreground"
                             : "text-gray-400 hover:bg-gray-50 hover:text-foreground",
@@ -145,7 +148,7 @@ export default function MvpSidebar() {
                             key={item.href}
                             href={item.href}
                             className={cn(
-                                "group flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 text-xs font-semibold relative",
+                                "group flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 text-xs font-semibold relative cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30",
                                 isActive
                                     ? "bg-accent text-foreground"
                                     : "text-gray-400 hover:bg-gray-50 hover:text-foreground",
@@ -177,7 +180,7 @@ export default function MvpSidebar() {
                                     key={item.href}
                                     href={item.href}
                                     className={cn(
-                                        "group flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 text-xs font-semibold relative",
+                                        "group flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 text-xs font-semibold relative cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30",
                                         isActive
                                             ? "bg-accent text-foreground"
                                             : "text-gray-400 hover:bg-gray-50 hover:text-foreground",
@@ -211,7 +214,7 @@ export default function MvpSidebar() {
                                     key={item.href}
                                     href={item.href}
                                     className={cn(
-                                        "group flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 text-xs font-semibold relative",
+                                        "group flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 text-xs font-semibold relative cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30",
                                         isActive
                                             ? "bg-accent text-foreground"
                                             : "text-gray-400 hover:bg-gray-50 hover:text-foreground",
@@ -242,8 +245,9 @@ export default function MvpSidebar() {
 
                 <button
                     onClick={() => signOut()}
+                    aria-label="Log out"
                     className={cn(
-                        "flex items-center gap-3 px-3 py-2.5 rounded-xl text-red-500 hover:bg-red-50 transition-all active:scale-95 border border-transparent hover:border-red-100",
+                        "flex items-center gap-3 px-3 py-2.5 rounded-xl text-red-500 hover:bg-red-50 transition-all duration-200 active:scale-95 border border-transparent hover:border-red-100 cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-300",
                         isCollapsed ? "justify-center" : "w-full"
                     )}
                 >

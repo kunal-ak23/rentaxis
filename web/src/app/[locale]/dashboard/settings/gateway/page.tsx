@@ -56,6 +56,7 @@ export default function GatewayConfigPage() {
     const [showApiSecret, setShowApiSecret] = useState(false);
     const [showWebhookSecret, setShowWebhookSecret] = useState(false);
 
+    const [initialLoading, setInitialLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [testing, setTesting] = useState(false);
     const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
@@ -63,8 +64,9 @@ export default function GatewayConfigPage() {
     const [error, setError] = useState("");
 
     useEffect(() => {
-        fetchGateways();
-        fetchExistingConfig();
+        Promise.all([fetchGateways(), fetchExistingConfig()]).finally(() =>
+            setInitialLoading(false)
+        );
     }, []);
 
     const fetchGateways = async () => {
@@ -158,6 +160,29 @@ export default function GatewayConfigPage() {
 
     const selectedGateway = gateways.find(g => g.id === selectedGatewayId);
 
+    if (initialLoading) {
+        return (
+            <div className="max-w-4xl">
+                <div className="mb-8">
+                    <div className="h-8 w-64 bg-gray-200 rounded-lg animate-pulse mb-2" />
+                    <div className="h-4 w-96 bg-gray-100 rounded-lg animate-pulse" />
+                </div>
+                <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 mb-6">
+                    <div className="h-4 w-40 bg-gray-200 rounded animate-pulse mb-4" />
+                    <div className="h-12 w-full bg-gray-100 rounded-xl animate-pulse" />
+                </div>
+                <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 mb-6">
+                    <div className="h-4 w-32 bg-gray-200 rounded animate-pulse mb-6" />
+                    <div className="space-y-5">
+                        <div className="h-12 w-full bg-gray-100 rounded-xl animate-pulse" />
+                        <div className="h-12 w-full bg-gray-100 rounded-xl animate-pulse" />
+                        <div className="h-12 w-full bg-gray-100 rounded-xl animate-pulse" />
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="max-w-4xl">
             {/* Page Header */}
@@ -199,7 +224,7 @@ export default function GatewayConfigPage() {
                         setSelectedGatewayId(e.target.value);
                         setTestResult(null);
                     }}
-                    className="w-full border border-gray-200 rounded-xl p-3 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                    className="w-full border border-gray-200 rounded-xl p-3 text-sm font-medium cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all duration-200"
                 >
                     <option value="">-- Select a gateway --</option>
                     {gateways.map(gw => (
@@ -238,7 +263,7 @@ export default function GatewayConfigPage() {
                                 value={apiKey}
                                 onChange={e => setApiKey(e.target.value)}
                                 placeholder="pk_test_..."
-                                className="w-full border border-gray-200 rounded-xl p-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                                className="w-full border border-gray-200 rounded-xl p-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all duration-200"
                             />
                         </div>
 
@@ -253,12 +278,13 @@ export default function GatewayConfigPage() {
                                     value={apiSecret}
                                     onChange={e => setApiSecret(e.target.value)}
                                     placeholder="sk_test_..."
-                                    className="w-full border border-gray-200 rounded-xl p-3 pr-12 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                                    className="w-full border border-gray-200 rounded-xl p-3 pr-12 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all duration-200"
                                 />
                                 <button
                                     type="button"
                                     onClick={() => setShowApiSecret(!showApiSecret)}
-                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                                    aria-label={showApiSecret ? "Hide API secret" : "Show API secret"}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30 rounded-md p-0.5"
                                 >
                                     {showApiSecret ? <EyeOff size={16} /> : <Eye size={16} />}
                                 </button>
@@ -276,12 +302,13 @@ export default function GatewayConfigPage() {
                                     value={webhookSecret}
                                     onChange={e => setWebhookSecret(e.target.value)}
                                     placeholder="whsec_..."
-                                    className="w-full border border-gray-200 rounded-xl p-3 pr-12 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                                    className="w-full border border-gray-200 rounded-xl p-3 pr-12 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all duration-200"
                                 />
                                 <button
                                     type="button"
                                     onClick={() => setShowWebhookSecret(!showWebhookSecret)}
-                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                                    aria-label={showWebhookSecret ? "Hide webhook secret" : "Show webhook secret"}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30 rounded-md p-0.5"
                                 >
                                     {showWebhookSecret ? <EyeOff size={16} /> : <Eye size={16} />}
                                 </button>
@@ -305,9 +332,10 @@ export default function GatewayConfigPage() {
                                 type="button"
                                 role="switch"
                                 aria-checked={isTestMode}
+                                aria-label="Toggle test mode"
                                 onClick={() => setIsTestMode(!isTestMode)}
                                 className={cn(
-                                    "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200",
+                                    "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none",
                                     isTestMode ? "bg-primary" : "bg-gray-300"
                                 )}
                             >
@@ -353,7 +381,7 @@ export default function GatewayConfigPage() {
                         <button
                             onClick={handleTestConnection}
                             disabled={testing}
-                            className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold border border-gray-200 hover:bg-gray-50 transition-all disabled:opacity-50"
+                            className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold border border-gray-200 hover:bg-gray-50 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30"
                         >
                             {testing ? <Loader2 size={14} className="animate-spin" /> : <Wifi size={14} />}
                             {t("testConnection")}
@@ -362,7 +390,7 @@ export default function GatewayConfigPage() {
                         <button
                             onClick={handleSave}
                             disabled={saving}
-                            className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold bg-primary text-primary-foreground hover:opacity-90 transition-all shadow-sm disabled:opacity-50"
+                            className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold bg-primary text-primary-foreground hover:opacity-90 transition-all duration-200 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30"
                         >
                             {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
                             {t("saveConfig")}

@@ -87,10 +87,12 @@ export function TenantSwitcher({ isCollapsed }: { isCollapsed: boolean }) {
         <div className="relative mb-6 px-3">
             <button
                 onClick={() => canSwitch && setIsOpen(!isOpen)}
+                aria-label="Switch organization"
                 className={cn(
-                    "w-full flex items-center justify-between bg-gray-50 border border-border p-2 rounded-xl transition-all hover:bg-gray-100",
+                    "w-full flex items-center justify-between bg-gray-50 border border-border p-2 rounded-xl transition-all duration-200 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-primary/30",
                     isCollapsed ? "justify-center" : "",
-                    !canSwitch && "cursor-default hover:bg-gray-50"
+                    !canSwitch && "cursor-default hover:bg-gray-50",
+                    canSwitch && "cursor-pointer"
                 )}
             >
                 {isCollapsed ? (
@@ -129,7 +131,7 @@ export function TenantSwitcher({ isCollapsed }: { isCollapsed: boolean }) {
                                     <button
                                         onClick={() => handleSelect(null)}
                                         className={cn(
-                                            "w-full flex items-center justify-between p-2.5 rounded-lg text-xs font-bold transition-colors",
+                                            "w-full flex items-center justify-between p-2.5 rounded-lg text-xs font-bold transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30",
                                             !activeTenant ? "bg-primary/5 text-primary" : "text-gray-600 hover:bg-gray-50"
                                         )}
                                     >
@@ -145,7 +147,7 @@ export function TenantSwitcher({ isCollapsed }: { isCollapsed: boolean }) {
                                     key={t.id}
                                     onClick={() => handleSelect(t)}
                                     className={cn(
-                                        "w-full flex items-center justify-between p-2.5 rounded-lg text-xs font-bold transition-colors",
+                                        "w-full flex items-center justify-between p-2.5 rounded-lg text-xs font-bold transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30",
                                         activeTenant?.id === t.id ? "bg-primary/5 text-primary" : "text-gray-600 hover:bg-gray-50"
                                     )}
                                 >

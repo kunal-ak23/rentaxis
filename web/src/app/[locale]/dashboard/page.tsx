@@ -18,7 +18,6 @@ import {
     ArrowRight,
     Activity,
     TrendingUp,
-    Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Link } from "@/i18n/routing";
@@ -94,8 +93,34 @@ export default function DashboardPage() {
 
     if (loading) {
         return (
-            <div className="p-8 max-w-7xl mx-auto flex items-center justify-center min-h-[60vh]">
-                <Loader2 size={24} className="animate-spin text-primary" />
+            <div className="p-8 max-w-7xl mx-auto">
+                <div className="mb-10">
+                    <div className="h-6 w-48 bg-gray-200 rounded-lg animate-pulse mb-2" />
+                    <div className="h-4 w-64 bg-gray-100 rounded-lg animate-pulse" />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
+                    {[...Array(4)].map((_, i) => (
+                        <div key={i} className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
+                            <div className="flex items-start justify-between mb-4">
+                                <div className="w-10 h-10 bg-gray-100 rounded-xl animate-pulse" />
+                                <div className="h-3 w-16 bg-gray-100 rounded animate-pulse" />
+                            </div>
+                            <div className="h-7 w-20 bg-gray-200 rounded-lg animate-pulse mb-2" />
+                            <div className="h-3 w-32 bg-gray-100 rounded animate-pulse" />
+                        </div>
+                    ))}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+                    {[...Array(3)].map((_, i) => (
+                        <div key={i} className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
+                            <div className="flex items-center gap-3 mb-3">
+                                <div className="w-8 h-8 bg-gray-100 rounded-lg animate-pulse" />
+                                <div className="h-3 w-20 bg-gray-100 rounded animate-pulse" />
+                            </div>
+                            <div className="h-5 w-28 bg-gray-200 rounded-lg animate-pulse" />
+                        </div>
+                    ))}
+                </div>
             </div>
         );
     }
@@ -132,7 +157,7 @@ export default function DashboardPage() {
             {/* KPI Cards Row */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
                 {/* Properties Card */}
-                <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+                <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm hover:shadow-md transition-all duration-200">
                     <div className="flex items-start justify-between mb-4">
                         <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center text-primary border border-primary/20">
                             <Building2 size={20} />
@@ -150,7 +175,7 @@ export default function DashboardPage() {
                 </div>
 
                 {/* Occupancy Card */}
-                <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+                <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm hover:shadow-md transition-all duration-200">
                     <div className="flex items-start justify-between mb-4">
                         <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center text-blue-500 border border-blue-100">
                             <PieChart size={20} />
@@ -176,7 +201,7 @@ export default function DashboardPage() {
                 </div>
 
                 {/* Revenue Card */}
-                <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+                <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm hover:shadow-md transition-all duration-200">
                     <div className="flex items-start justify-between mb-4">
                         <div className="w-10 h-10 bg-green-50 rounded-xl flex items-center justify-center text-green-600 border border-green-100">
                             <DollarSign size={20} />
@@ -195,7 +220,7 @@ export default function DashboardPage() {
 
                 {/* Overdue Card */}
                 <div className={cn(
-                    "bg-white rounded-2xl p-5 border shadow-sm hover:shadow-md transition-shadow",
+                    "bg-white rounded-2xl p-5 border shadow-sm hover:shadow-md transition-all duration-200",
                     summary.overdueAmount > 0
                         ? "border-red-200 bg-red-50/30"
                         : "border-gray-100"
@@ -229,7 +254,7 @@ export default function DashboardPage() {
                 </h2>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     {/* Collected */}
-                    <div className="bg-white rounded-2xl p-5 border border-green-100 shadow-sm">
+                    <div className="bg-white rounded-2xl p-5 border border-green-100 shadow-sm hover:shadow-md transition-all duration-200">
                         <div className="flex items-center gap-3 mb-3">
                             <div className="w-8 h-8 bg-green-50 rounded-lg flex items-center justify-center">
                                 <CheckCircle size={16} className="text-green-500" />
@@ -242,7 +267,7 @@ export default function DashboardPage() {
                     </div>
 
                     {/* Pending */}
-                    <div className="bg-white rounded-2xl p-5 border border-amber-100 shadow-sm">
+                    <div className="bg-white rounded-2xl p-5 border border-amber-100 shadow-sm hover:shadow-md transition-all duration-200">
                         <div className="flex items-center gap-3 mb-3">
                             <div className="w-8 h-8 bg-amber-50 rounded-lg flex items-center justify-center">
                                 <Clock size={16} className="text-amber-500" />
@@ -255,7 +280,7 @@ export default function DashboardPage() {
                     </div>
 
                     {/* Overdue */}
-                    <div className="bg-white rounded-2xl p-5 border border-red-100 shadow-sm">
+                    <div className="bg-white rounded-2xl p-5 border border-red-100 shadow-sm hover:shadow-md transition-all duration-200">
                         <div className="flex items-center gap-3 mb-3">
                             <div className="w-8 h-8 bg-red-50 rounded-lg flex items-center justify-center">
                                 <AlertCircle size={16} className="text-red-500" />
@@ -272,7 +297,7 @@ export default function DashboardPage() {
             {/* Alerts and Recent Activity Side by Side */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
                 {/* Alerts Section */}
-                <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
+                <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm hover:shadow-md transition-all duration-200">
                     <h2 className="text-xs font-bold text-gray-400 uppercase tracking-[0.15em] mb-5">
                         {t("alerts")}
                     </h2>
@@ -312,7 +337,7 @@ export default function DashboardPage() {
                 </div>
 
                 {/* Recent Activity Section */}
-                <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
+                <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm hover:shadow-md transition-all duration-200">
                     <h2 className="text-xs font-bold text-gray-400 uppercase tracking-[0.15em] mb-5">
                         {t("recentActivity")}
                     </h2>
@@ -327,7 +352,7 @@ export default function DashboardPage() {
                                 return (
                                     <div
                                         key={index}
-                                        className="flex items-start gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100 hover:bg-gray-100/50 transition-colors"
+                                        className="flex items-start gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100 hover:bg-gray-100/50 transition-all duration-200"
                                     >
                                         <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center shrink-0 shadow-sm border border-gray-100">
                                             <Icon size={14} className={activityConfig.color} />
@@ -361,7 +386,7 @@ export default function DashboardPage() {
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                     <Link
                         href="/dashboard/properties"
-                        className="group bg-white rounded-2xl p-5 border border-gray-100 shadow-sm hover:shadow-md hover:border-primary/20 transition-all"
+                        className="group cursor-pointer bg-white rounded-2xl p-5 border border-gray-100 shadow-sm hover:shadow-md hover:border-primary/20 transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none"
                     >
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
@@ -376,7 +401,7 @@ export default function DashboardPage() {
 
                     <Link
                         href="/dashboard/leases"
-                        className="group bg-white rounded-2xl p-5 border border-gray-100 shadow-sm hover:shadow-md hover:border-primary/20 transition-all"
+                        className="group cursor-pointer bg-white rounded-2xl p-5 border border-gray-100 shadow-sm hover:shadow-md hover:border-primary/20 transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none"
                     >
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
@@ -391,7 +416,7 @@ export default function DashboardPage() {
 
                     <Link
                         href="/dashboard/finance/payments"
-                        className="group bg-white rounded-2xl p-5 border border-gray-100 shadow-sm hover:shadow-md hover:border-primary/20 transition-all"
+                        className="group cursor-pointer bg-white rounded-2xl p-5 border border-gray-100 shadow-sm hover:shadow-md hover:border-primary/20 transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none"
                     >
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
@@ -406,7 +431,7 @@ export default function DashboardPage() {
 
                     <Link
                         href="/dashboard/finance/reports"
-                        className="group bg-white rounded-2xl p-5 border border-gray-100 shadow-sm hover:shadow-md hover:border-primary/20 transition-all"
+                        className="group cursor-pointer bg-white rounded-2xl p-5 border border-gray-100 shadow-sm hover:shadow-md hover:border-primary/20 transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none"
                     >
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">

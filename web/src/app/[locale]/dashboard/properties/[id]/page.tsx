@@ -56,7 +56,25 @@ export default function PropertyDetailPage() {
         if (res.ok) setManagers(await res.json());
     };
 
-    if (!property) return <div className="p-8">Loading...</div>;
+    if (!property) return (
+        <div className="p-8 max-w-7xl mx-auto space-y-6">
+            <div className="h-4 w-32 bg-gray-200 rounded animate-pulse" />
+            <div className="bg-white rounded-3xl p-8 shadow-sm border border-gray-100">
+                <div className="h-6 w-64 bg-gray-200 rounded animate-pulse mb-3" />
+                <div className="h-4 w-48 bg-gray-100 rounded animate-pulse" />
+            </div>
+            <div className="flex gap-6 border-b border-gray-100 pb-4">
+                {[1, 2, 3, 4].map(i => (
+                    <div key={i} className="h-4 w-20 bg-gray-200 rounded animate-pulse" />
+                ))}
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+                {[1, 2, 3].map(i => (
+                    <div key={i} className="h-24 bg-gray-100 rounded-2xl animate-pulse" />
+                ))}
+            </div>
+        </div>
+    );
 
     const displayName = locale === "ar" && property.nameAr ? property.nameAr : property.nameEn;
 
@@ -64,7 +82,7 @@ export default function PropertyDetailPage() {
         <div className="p-8 max-w-7xl mx-auto">
             <button
                 onClick={() => router.back()}
-                className="flex items-center gap-2 text-xs font-bold text-gray-400 hover:text-foreground mb-6 transition-colors"
+                className="flex items-center gap-2 text-xs font-bold text-gray-400 hover:text-foreground mb-6 transition-colors cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none rounded"
             >
                 <ArrowLeft size={14} /> Back to Projects
             </button>
@@ -87,7 +105,7 @@ export default function PropertyDetailPage() {
                     {canManageRentSettings && (
                         <Link
                             href="/dashboard/settings/rent-settings"
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-foreground transition-all"
+                            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-foreground transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                         >
                             <Settings size={14} />
                             {tOnlinePayments("rentSettings")}
@@ -111,7 +129,7 @@ export default function PropertyDetailPage() {
                             key={tab.id}
                             onClick={() => setActiveTab(tab.id as any)}
                             className={cn(
-                                "flex items-center gap-2 pb-4 text-sm font-bold transition-all relative",
+                                "flex items-center gap-2 pb-4 text-sm font-bold transition-all duration-200 relative cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none rounded",
                                 isActive ? "text-primary" : "text-gray-400 hover:text-gray-600"
                             )}
                         >
@@ -169,19 +187,25 @@ export default function PropertyDetailPage() {
 
 function BuildingsTab({ buildings, propertyId, canCreate, onUpdate }: any) {
     const [showForm, setShowForm] = useState(false);
+    const [submitting, setSubmitting] = useState(false);
     const [formData, setFormData] = useState({ nameEn: "", nameAr: "", floors: 1 });
 
     const handleSubmit = async (e: any) => {
         e.preventDefault();
-        const res = await fetch("/api/proxy/v1/buildings", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ ...formData, property: { id: propertyId } })
-        });
-        if (res.ok) {
-            setShowForm(false);
-            setFormData({ nameEn: "", nameAr: "", floors: 1 });
-            onUpdate();
+        setSubmitting(true);
+        try {
+            const res = await fetch("/api/proxy/v1/buildings", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ ...formData, property: { id: propertyId } })
+            });
+            if (res.ok) {
+                setShowForm(false);
+                setFormData({ nameEn: "", nameAr: "", floors: 1 });
+                onUpdate();
+            }
+        } finally {
+            setSubmitting(false);
         }
     };
 
@@ -192,7 +216,7 @@ function BuildingsTab({ buildings, propertyId, canCreate, onUpdate }: any) {
                 {canCreate && (
                     <button
                         onClick={() => setShowForm(true)}
-                        className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-full text-xs font-bold hover:opacity-90 transition-all shadow-sm"
+                        className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-full text-xs font-bold hover:opacity-90 transition-all duration-200 shadow-sm cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                     >
                         <Plus size={14} /> Add Building
                     </button>
@@ -203,26 +227,26 @@ function BuildingsTab({ buildings, propertyId, canCreate, onUpdate }: any) {
                 <form onSubmit={handleSubmit} className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm mb-6 grid grid-cols-3 gap-4">
                     <div>
                         <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Name (EN)</label>
-                        <input required className="w-full border rounded-lg p-2 text-xs" value={formData.nameEn} onChange={e => setFormData({ ...formData, nameEn: e.target.value })} />
+                        <input required className="w-full border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.nameEn} onChange={e => setFormData({ ...formData, nameEn: e.target.value })} />
                     </div>
                     <div>
                         <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1 text-right">Name (AR)</label>
-                        <input className="w-full border rounded-lg p-2 text-xs text-right" value={formData.nameAr} onChange={e => setFormData({ ...formData, nameAr: e.target.value })} dir="rtl" />
+                        <input className="w-full border rounded-lg p-2 text-xs text-right focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.nameAr} onChange={e => setFormData({ ...formData, nameAr: e.target.value })} dir="rtl" />
                     </div>
                     <div>
                         <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Floors</label>
-                        <input type="number" required className="w-full border rounded-lg p-2 text-xs" value={formData.floors} onChange={e => setFormData({ ...formData, floors: Number(e.target.value) })} />
+                        <input type="number" required className="w-full border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.floors} onChange={e => setFormData({ ...formData, floors: Number(e.target.value) })} />
                     </div>
                     <div className="col-span-3 flex justify-end gap-2 mt-2">
-                        <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 text-xs font-bold text-gray-500">Cancel</button>
-                        <button type="submit" className="px-4 py-2 bg-primary text-white rounded-lg text-xs font-bold">Save</button>
+                        <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 text-xs font-bold text-gray-500 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg transition-all duration-200">Cancel</button>
+                        <button type="submit" disabled={submitting} className="px-4 py-2 bg-primary text-white rounded-lg text-xs font-bold cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed">{submitting ? "Saving..." : "Save"}</button>
                     </div>
                 </form>
             )}
 
             <div className="grid grid-cols-3 gap-4">
                 {buildings.map((b: any) => (
-                    <div key={b.id} className="bg-gray-50 p-4 rounded-2xl border border-gray-100 flex justify-between items-center">
+                    <div key={b.id} className="bg-gray-50 p-4 rounded-2xl border border-gray-100 flex justify-between items-center transition-all duration-200 hover:shadow-sm">
                         <div>
                             <p className="font-bold text-sm text-foreground">{b.nameEn}</p>
                             {b.nameAr && <p className="text-xs text-gray-400 font-medium" dir="rtl">{b.nameAr}</p>}
@@ -246,6 +270,7 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
     const t = useTranslations("MasterData");
     const [showForm, setShowForm] = useState(false);
     const [showBulkUpload, setShowBulkUpload] = useState(false);
+    const [submitting, setSubmitting] = useState(false);
     const [file, setFile] = useState<File | null>(null);
     const [uploadBuildingId, setUploadBuildingId] = useState<string>("");
     const [unitForm, setUnitForm] = useState({
@@ -256,47 +281,56 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
 
     const handleAddUnit = async (e: any) => {
         e.preventDefault();
-        const body: any = {
-            unitNumber: unitForm.unitNumber,
-            type: unitForm.type,
-            sizeSqft: unitForm.sizeSqft ? Number(unitForm.sizeSqft) : null,
-            expectedRent: unitForm.expectedRent ? Number(unitForm.expectedRent) : null,
-            status: "VACANT",
-            property: { id: propertyId },
-        };
-        if (unitForm.buildingId) {
-            body.building = { id: unitForm.buildingId };
-        }
-        const res = await fetch("/api/proxy/v1/units", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(body),
-        });
-        if (res.ok) {
-            setShowForm(false);
-            setUnitForm({ unitNumber: "", type: "STUDIO", sizeSqft: "", expectedRent: "", buildingId: "" });
-            onUpdate();
+        setSubmitting(true);
+        try {
+            const body: any = {
+                unitNumber: unitForm.unitNumber,
+                type: unitForm.type,
+                sizeSqft: unitForm.sizeSqft ? Number(unitForm.sizeSqft) : null,
+                expectedRent: unitForm.expectedRent ? Number(unitForm.expectedRent) : null,
+                status: "VACANT",
+                property: { id: propertyId },
+            };
+            if (unitForm.buildingId) {
+                body.building = { id: unitForm.buildingId };
+            }
+            const res = await fetch("/api/proxy/v1/units", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(body),
+            });
+            if (res.ok) {
+                setShowForm(false);
+                setUnitForm({ unitNumber: "", type: "STUDIO", sizeSqft: "", expectedRent: "", buildingId: "" });
+                onUpdate();
+            }
+        } finally {
+            setSubmitting(false);
         }
     };
 
     const handleBulkUpload = async (e: any) => {
         e.preventDefault();
         if (!file) return;
+        setSubmitting(true);
+        try {
+            const formData = new FormData();
+            formData.append("file", file);
+            formData.append("propertyId", propertyId);
+            if (uploadBuildingId) formData.append("buildingId", uploadBuildingId);
 
-        const formData = new FormData();
-        formData.append("file", file);
-        formData.append("propertyId", propertyId);
-        if (uploadBuildingId) formData.append("buildingId", uploadBuildingId);
+            const res = await fetch("/api/proxy/v1/units/bulk", {
+                method: "POST",
+                body: formData,
+            });
 
-        const res = await fetch("/api/proxy/v1/units/bulk", {
-            method: "POST",
-            body: formData,
-        });
-
-        if (res.ok) {
-            setShowBulkUpload(false);
-            setFile(null);
-            onUpdate();
+            if (res.ok) {
+                setShowBulkUpload(false);
+                setFile(null);
+                onUpdate();
+            }
+        } finally {
+            setSubmitting(false);
         }
     };
 
@@ -308,13 +342,13 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
                     <div className="flex items-center gap-2">
                         <button
                             onClick={() => { setShowForm(true); setShowBulkUpload(false); }}
-                            className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-full text-xs font-bold hover:opacity-90 transition-all shadow-sm"
+                            className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-full text-xs font-bold hover:opacity-90 transition-all duration-200 shadow-sm cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                         >
                             <Plus size={14} /> Add Unit
                         </button>
                         <button
                             onClick={() => { setShowBulkUpload(!showBulkUpload); setShowForm(false); }}
-                            className="flex items-center gap-2 bg-gray-100 text-foreground px-4 py-2 rounded-full text-xs font-bold hover:bg-gray-200 transition-all shadow-sm"
+                            className="flex items-center gap-2 bg-gray-100 text-foreground px-4 py-2 rounded-full text-xs font-bold hover:bg-gray-200 transition-all duration-200 shadow-sm cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                         >
                             <Upload size={14} /> Bulk Upload CSV
                         </button>
@@ -326,32 +360,32 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
                 <form onSubmit={handleAddUnit} className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm mb-6 grid grid-cols-2 md:grid-cols-5 gap-4">
                     <div>
                         <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Unit Number</label>
-                        <input required className="w-full border rounded-lg p-2 text-xs" placeholder="e.g. 101" value={unitForm.unitNumber} onChange={e => setUnitForm({ ...unitForm, unitNumber: e.target.value })} />
+                        <input required className="w-full border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" placeholder="e.g. 101" value={unitForm.unitNumber} onChange={e => setUnitForm({ ...unitForm, unitNumber: e.target.value })} />
                     </div>
                     <div>
                         <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Type</label>
-                        <select className="w-full border rounded-lg p-2 text-xs" value={unitForm.type} onChange={e => setUnitForm({ ...unitForm, type: e.target.value })}>
+                        <select className="w-full border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={unitForm.type} onChange={e => setUnitForm({ ...unitForm, type: e.target.value })}>
                             {unitTypes.map(ut => <option key={ut} value={ut}>{ut.replace("BHK", " BHK ")}</option>)}
                         </select>
                     </div>
                     <div>
                         <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Size (Sqft)</label>
-                        <input type="number" className="w-full border rounded-lg p-2 text-xs" placeholder="e.g. 850" value={unitForm.sizeSqft} onChange={e => setUnitForm({ ...unitForm, sizeSqft: e.target.value })} />
+                        <input type="number" className="w-full border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" placeholder="e.g. 850" value={unitForm.sizeSqft} onChange={e => setUnitForm({ ...unitForm, sizeSqft: e.target.value })} />
                     </div>
                     <div>
                         <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Expected Rent</label>
-                        <input type="number" className="w-full border rounded-lg p-2 text-xs" placeholder="e.g. 5000" value={unitForm.expectedRent} onChange={e => setUnitForm({ ...unitForm, expectedRent: e.target.value })} />
+                        <input type="number" className="w-full border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" placeholder="e.g. 5000" value={unitForm.expectedRent} onChange={e => setUnitForm({ ...unitForm, expectedRent: e.target.value })} />
                     </div>
                     <div>
                         <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Building</label>
-                        <select className="w-full border rounded-lg p-2 text-xs" value={unitForm.buildingId} onChange={e => setUnitForm({ ...unitForm, buildingId: e.target.value })}>
+                        <select className="w-full border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={unitForm.buildingId} onChange={e => setUnitForm({ ...unitForm, buildingId: e.target.value })}>
                             <option value="">No Building</option>
                             {buildings.map((b: any) => <option key={b.id} value={b.id}>{b.nameEn}</option>)}
                         </select>
                     </div>
                     <div className="col-span-2 md:col-span-5 flex justify-end gap-2 mt-2">
-                        <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 text-xs font-bold text-gray-500">Cancel</button>
-                        <button type="submit" className="px-4 py-2 bg-primary text-white rounded-lg text-xs font-bold">Save Unit</button>
+                        <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 text-xs font-bold text-gray-500 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg transition-all duration-200">Cancel</button>
+                        <button type="submit" disabled={submitting} className="px-4 py-2 bg-primary text-white rounded-lg text-xs font-bold cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed">{submitting ? "Saving..." : "Save Unit"}</button>
                     </div>
                 </form>
             )}
@@ -365,12 +399,12 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
                     </div>
                     <div className="flex-1">
                         <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Assign to Building (Optional)</label>
-                        <select className="w-full border rounded-lg p-2 text-xs" value={uploadBuildingId} onChange={e => setUploadBuildingId(e.target.value)}>
+                        <select className="w-full border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={uploadBuildingId} onChange={e => setUploadBuildingId(e.target.value)}>
                             <option value="">No Building (Direct to Property)</option>
                             {buildings.map((b: any) => <option key={b.id} value={b.id}>{b.nameEn}</option>)}
                         </select>
                     </div>
-                    <button type="submit" className="px-6 py-2 bg-primary text-white rounded-lg text-xs font-bold mb-[2px]">Upload</button>
+                    <button type="submit" disabled={submitting} className="px-6 py-2 bg-primary text-white rounded-lg text-xs font-bold mb-[2px] cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed">{submitting ? "Uploading..." : "Upload"}</button>
                 </form>
             )}
 
@@ -388,7 +422,7 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                         {units.map((u: any) => (
-                            <tr key={u.id} className="hover:bg-gray-50/50 transition-colors">
+                            <tr key={u.id} className="hover:bg-gray-50/50 transition-all duration-200">
                                 <td className="px-6 py-4 font-bold text-foreground">{u.unitNumber}</td>
                                 <td className="px-6 py-4 text-gray-500 font-medium">
                                     {buildings.find((b: any) => b.id === u.building?.id)?.nameEn || "N/A"}
@@ -466,7 +500,7 @@ function LeasesTab({ propertyId }: { propertyId: string }) {
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                         {leases.map((l: any) => (
-                            <tr key={l.id} className="hover:bg-gray-50/50 transition-colors">
+                            <tr key={l.id} className="hover:bg-gray-50/50 transition-all duration-200">
                                 <td className="px-6 py-4 font-bold text-foreground flex items-center gap-2">
                                     <FileText size={14} className="text-gray-400" />
                                     {t("unit")} {l.unitIdentifier}

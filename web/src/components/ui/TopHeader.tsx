@@ -31,7 +31,10 @@ export function TopHeader() {
                 <div className="flex items-center space-x-4">
 
                     {/* Theme Toggle Placeholder */}
-                    <button className="p-2 text-gray-500 hover:text-primary hover:bg-primary/5 rounded-full transition-colors hidden md:flex">
+                    <button
+                        aria-label="Toggle theme"
+                        className="p-2 text-gray-500 hover:text-primary hover:bg-primary/5 rounded-full transition-all duration-200 hidden md:flex cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    >
                         <Moon size={18} />
                     </button>
 
@@ -41,7 +44,7 @@ export function TopHeader() {
                             href={pathname.replace(new RegExp(`^/${locale}`), '') || '/'}
                             locale="en"
                             className={cn(
-                                "px-3 py-1 rounded-md text-xs font-black tracking-widest transition-all",
+                                "px-3 py-1 rounded-md text-xs font-black tracking-widest transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30",
                                 locale === 'en' ? 'bg-white text-primary shadow-sm' : 'text-gray-400 hover:text-gray-600'
                             )}
                         >
@@ -51,7 +54,7 @@ export function TopHeader() {
                             href={pathname.replace(new RegExp(`^/${locale}`), '') || '/'}
                             locale="ar"
                             className={cn(
-                                "px-3 py-1 rounded-md text-xs font-black tracking-widest transition-all",
+                                "px-3 py-1 rounded-md text-xs font-black tracking-widest transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30",
                                 locale === 'ar' ? 'bg-white text-primary shadow-sm' : 'text-gray-400 hover:text-gray-600'
                             )}
                         >

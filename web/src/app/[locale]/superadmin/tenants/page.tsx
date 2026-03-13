@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useTranslations } from "next-intl";
-import { Plus, X, Building2, Globe, FileText, Settings2, ShieldCheck, Mail, Hash } from "lucide-react";
+import { Plus, X, Building2, Globe, FileText, Settings2, ShieldCheck, Mail, Hash, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type Tenant = { id: string; name: string; status: string; createdAt: string };
@@ -10,6 +10,8 @@ type Tenant = { id: string; name: string; status: string; createdAt: string };
 export default function SuperAdminTenantsPage() {
     const t = useTranslations("Index");
     const [tenants, setTenants] = useState<Tenant[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [submitting, setSubmitting] = useState(false);
     const [newTenantName, setNewTenantName] = useState("");
     const [showForm, setShowForm] = useState(false);
 
@@ -18,6 +20,7 @@ export default function SuperAdminTenantsPage() {
     }, []);
 
     const fetchTenants = async () => {
+        setLoading(true);
         try {
             const res = await fetch("/api/proxy/admin/tenants");
             if (res.ok) {
@@ -26,13 +29,15 @@ export default function SuperAdminTenantsPage() {
             }
         } catch (e) {
             console.error(e);
+        } finally {
+            setLoading(false);
         }
     };
 
     const createTenant = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!newTenantName) return;
-
+        setSubmitting(true);
         try {
             const res = await fetch("/api/proxy/admin/tenants", {
                 method: "POST",
@@ -46,6 +51,8 @@ export default function SuperAdminTenantsPage() {
             }
         } catch (e) {
             console.error(e);
+        } finally {
+            setSubmitting(false);
         }
     };
 
@@ -65,7 +72,7 @@ export default function SuperAdminTenantsPage() {
                 </div>
                 <button
                     onClick={() => setShowForm(true)}
-                    className="flex items-center gap-2 bg-primary text-primary-foreground px-5 py-2.5 rounded-full text-xs font-bold hover:opacity-90 transition-all shadow-lg shadow-primary/10 active:scale-95 self-start"
+                    className="flex items-center gap-2 bg-primary text-primary-foreground px-5 py-2.5 rounded-full text-xs font-bold hover:opacity-90 transition-all duration-200 shadow-lg shadow-primary/10 active:scale-95 self-start cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                 >
                     <Plus size={14} />
                     Provision New Organization
@@ -77,7 +84,8 @@ export default function SuperAdminTenantsPage() {
                     <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl border border-gray-100 relative">
                         <button
                             onClick={() => setShowForm(false)}
-                            className="absolute right-6 top-6 p-2 text-gray-400 hover:text-gray-600 transition-colors"
+                            aria-label="Close"
+                            className="absolute right-6 top-6 p-2 text-gray-400 hover:text-gray-600 transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-full"
                         >
                             <X size={18} />
                         </button>
@@ -91,7 +99,7 @@ export default function SuperAdminTenantsPage() {
                                 <input
                                     required
                                     placeholder="e.g. Al Futtaim Properties"
-                                    className="w-full bg-input border border-border p-3 rounded-xl text-xs placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/10 focus:border-primary/30 transition-all"
+                                    className="w-full bg-input border border-border p-3 rounded-xl text-xs placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/30 transition-all duration-200"
                                     value={newTenantName}
                                     onChange={(e) => setNewTenantName(e.target.value)}
                                 />
@@ -100,14 +108,16 @@ export default function SuperAdminTenantsPage() {
                                 <button
                                     type="button"
                                     onClick={() => setShowForm(false)}
-                                    className="px-6 py-3 rounded-xl text-xs font-bold text-gray-500 hover:bg-gray-50 transition-colors"
+                                    className="px-6 py-3 rounded-xl text-xs font-bold text-gray-500 hover:bg-gray-50 transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                                 >
                                     Cancel
                                 </button>
                                 <button
                                     type="submit"
-                                    className="px-8 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-bold hover:opacity-90 shadow-lg shadow-primary/10 active:scale-95 transition-all"
+                                    disabled={submitting}
+                                    className="px-8 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-bold hover:opacity-90 shadow-lg shadow-primary/10 active:scale-95 transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                                 >
+                                    {submitting && <Loader2 size={14} className="animate-spin" />}
                                     Create Organization
                                 </button>
                             </div>
@@ -116,6 +126,17 @@ export default function SuperAdminTenantsPage() {
                 </div>
             )}
 
+            {loading ? (
+                <div className="bg-white rounded-[2rem] border border-gray-100 shadow-[0_20px_50px_rgba(0,0,0,0.02)] overflow-hidden p-6 space-y-4">
+                    {[...Array(4)].map((_, i) => (
+                        <div key={i} className="flex gap-6 animate-pulse">
+                            <div className="h-4 bg-gray-100 rounded-lg w-1/4" />
+                            <div className="h-4 bg-gray-100 rounded-lg w-1/3" />
+                            <div className="h-4 bg-gray-100 rounded-lg w-1/6" />
+                        </div>
+                    ))}
+                </div>
+            ) : (
             <div className="bg-white rounded-[2rem] border border-gray-100 shadow-[0_20px_50px_rgba(0,0,0,0.02)] overflow-hidden">
                 <table className="w-full text-left">
                     <thead>
@@ -142,7 +163,7 @@ export default function SuperAdminTenantsPage() {
                     </thead>
                     <tbody className="divide-y divide-gray-50">
                         {tenants.map(t => (
-                            <tr key={t.id} className="group hover:bg-gray-50/50 transition-colors">
+                            <tr key={t.id} className="group hover:bg-gray-50/50 transition-all duration-200">
                                 <td className="p-5">
                                     <span className="font-mono text-[10px] text-gray-400">
                                         {t.id}
@@ -176,6 +197,7 @@ export default function SuperAdminTenantsPage() {
                     </div>
                 )}
             </div>
+            )}
         </div>
     );
 }

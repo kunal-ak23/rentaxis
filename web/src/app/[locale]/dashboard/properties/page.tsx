@@ -40,6 +40,7 @@ export default function PropertiesPage() {
     const e = useTranslations("Emirates");
     const locale = useLocale();
     const [stats, setStats] = useState<PropertyStats[]>([]);
+    const [loading, setLoading] = useState(true);
     const [showProjectForm, setShowProjectForm] = useState(false);
     const [showPropertyForm, setShowPropertyForm] = useState(false);
     const { data: session } = useSession();
@@ -80,6 +81,8 @@ export default function PropertiesPage() {
             }
         } catch (err) {
             console.error(err);
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -145,6 +148,45 @@ export default function PropertiesPage() {
         }
     };
 
+    if (loading) {
+        return (
+            <div>
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10">
+                    <div>
+                        <div className="h-6 w-40 bg-gray-200 rounded-lg animate-pulse mb-2" />
+                        <div className="h-4 w-72 bg-gray-100 rounded-lg animate-pulse" />
+                    </div>
+                    <div className="flex gap-3">
+                        <div className="h-10 w-32 bg-gray-200 rounded-full animate-pulse" />
+                        <div className="h-10 w-32 bg-gray-100 rounded-full animate-pulse" />
+                    </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                    {[...Array(6)].map((_, i) => (
+                        <div key={i} className="bg-white rounded-[2rem] p-6 border border-gray-100 shadow-sm">
+                            <div className="flex justify-between items-start mb-6">
+                                <div className="w-12 h-12 bg-gray-100 rounded-2xl animate-pulse" />
+                                <div className="h-5 w-20 bg-gray-100 rounded-lg animate-pulse" />
+                            </div>
+                            <div className="h-5 w-36 bg-gray-200 rounded-lg animate-pulse mb-2" />
+                            <div className="h-3 w-28 bg-gray-100 rounded animate-pulse mb-4" />
+                            <div className="grid grid-cols-2 gap-4 mt-4">
+                                <div className="bg-gray-50 rounded-2xl p-3 border border-gray-100/50">
+                                    <div className="h-2 w-16 bg-gray-100 rounded animate-pulse mb-2" />
+                                    <div className="h-4 w-8 bg-gray-200 rounded animate-pulse" />
+                                </div>
+                                <div className="bg-gray-50 rounded-2xl p-3 border border-gray-100/50">
+                                    <div className="h-2 w-16 bg-gray-100 rounded animate-pulse mb-2" />
+                                    <div className="h-4 w-8 bg-gray-200 rounded animate-pulse" />
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div>
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10">
@@ -160,7 +202,7 @@ export default function PropertiesPage() {
                     <div className="flex gap-3">
                         <button
                             onClick={() => setShowProjectForm(true)}
-                            className="flex items-center gap-2 bg-primary text-primary-foreground px-5 py-2.5 rounded-full text-xs font-bold hover:opacity-90 transition-all shadow-lg shadow-primary/10 active:scale-95"
+                            className="cursor-pointer flex items-center gap-2 bg-primary text-primary-foreground px-5 py-2.5 rounded-full text-xs font-bold hover:opacity-90 transition-all duration-200 shadow-lg shadow-primary/10 active:scale-95 focus:ring-2 focus:ring-primary/30 focus:outline-none"
                         >
                             <Plus size={14} />
                             {t("addProject")}
@@ -174,7 +216,7 @@ export default function PropertiesPage() {
                                 setPropertyFormData(prev => ({ ...prev, propertyId: stats[0].property.id }));
                                 setShowPropertyForm(true);
                             }}
-                            className="flex items-center gap-2 bg-white text-foreground border border-border px-5 py-2.5 rounded-full text-xs font-bold hover:bg-gray-50 transition-all shadow-sm active:scale-95"
+                            className="cursor-pointer flex items-center gap-2 bg-white text-foreground border border-border px-5 py-2.5 rounded-full text-xs font-bold hover:bg-gray-50 transition-all duration-200 shadow-sm active:scale-95 focus:ring-2 focus:ring-primary/30 focus:outline-none"
                         >
                             <Plus size={14} />
                             {t("addProperty")}
@@ -187,29 +229,29 @@ export default function PropertiesPage() {
             {showProjectForm && (
                 <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
                     <div className="bg-white rounded-3xl p-8 max-w-xl w-full shadow-2xl border border-gray-100 relative">
-                        <button onClick={() => setShowProjectForm(false)} className="absolute right-6 top-6 p-2 text-gray-400 hover:text-gray-600"><X size={18} /></button>
+                        <button onClick={() => setShowProjectForm(false)} aria-label="Close" className="cursor-pointer absolute right-6 top-6 p-2 text-gray-400 hover:text-gray-600 transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg"><X size={18} /></button>
                         <h2 className="text-lg font-black mb-1">{t("addProject")}</h2>
                         <p className="text-xs text-gray-400 mb-8 font-medium">Create a new Project (Portfolio Group).</p>
                         <form onSubmit={handleProjectSubmit} className="grid grid-cols-2 gap-5">
                             <div className="col-span-1">
                                 <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("nameEn")}</label>
-                                <input placeholder="Project Name (EN)" className="w-full bg-input border border-border p-3 rounded-xl text-xs" value={projectFormData.nameEn} onChange={ev => setProjectFormData({ ...projectFormData, nameEn: ev.target.value })} />
+                                <input placeholder="Project Name (EN)" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={projectFormData.nameEn} onChange={ev => setProjectFormData({ ...projectFormData, nameEn: ev.target.value })} />
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("nameAr")}</label>
-                                <input placeholder="اسم المشروع (AR)" className="w-full bg-input border border-border p-3 rounded-xl text-xs text-right" value={projectFormData.nameAr} onChange={ev => setProjectFormData({ ...projectFormData, nameAr: ev.target.value })} />
+                                <input placeholder="اسم المشروع (AR)" className="w-full bg-input border border-border p-3 rounded-xl text-xs text-right focus:ring-2 focus:ring-primary/30 focus:outline-none" value={projectFormData.nameAr} onChange={ev => setProjectFormData({ ...projectFormData, nameAr: ev.target.value })} />
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("emirate")}</label>
-                                <select className="w-full bg-input border border-border p-3 rounded-xl text-xs" value={projectFormData.emirate} onChange={ev => setProjectFormData({ ...projectFormData, emirate: ev.target.value })}>
+                                <select className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={projectFormData.emirate} onChange={ev => setProjectFormData({ ...projectFormData, emirate: ev.target.value })}>
                                     {["DUBAI", "ABU_DHABI", "SHARJAH", "AJMAN", "UMM_AL_QUWAIN", "RAS_AL_KHAIMAH", "FUJAIRAH"].map(opt => (
                                         <option key={opt} value={opt}>{e(opt)}</option>
                                     ))}
                                 </select>
                             </div>
                             <div className="col-span-2 flex justify-end gap-3 mt-4">
-                                <button type="button" onClick={() => setShowProjectForm(false)} className="px-6 py-3 text-xs font-bold text-gray-500">{t("cancel")}</button>
-                                <button type="submit" className="px-8 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-bold">{t("create")}</button>
+                                <button type="button" onClick={() => setShowProjectForm(false)} className="cursor-pointer px-6 py-3 text-xs font-bold text-gray-500 transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg">{t("cancel")}</button>
+                                <button type="submit" className="cursor-pointer px-8 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-bold transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none">{t("create")}</button>
                             </div>
                         </form>
                     </div>
@@ -220,13 +262,13 @@ export default function PropertiesPage() {
             {showPropertyForm && (
                 <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
                     <div className="bg-white rounded-3xl p-8 max-w-xl w-full shadow-2xl border border-gray-100 relative">
-                        <button onClick={() => setShowPropertyForm(false)} className="absolute right-6 top-6 p-2 text-gray-400 hover:text-gray-600"><X size={18} /></button>
+                        <button onClick={() => setShowPropertyForm(false)} aria-label="Close" className="cursor-pointer absolute right-6 top-6 p-2 text-gray-400 hover:text-gray-600 transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg"><X size={18} /></button>
                         <h2 className="text-lg font-black mb-1">{t("addProperty")}</h2>
                         <p className="text-xs text-gray-400 mb-8 font-medium">Add a new Property (Unit) to a Project.</p>
                         <form onSubmit={handlePropertySubmit} className="grid grid-cols-2 gap-5">
                             <div className="col-span-2">
                                 <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">Select Project</label>
-                                <select className="w-full bg-input border border-border p-3 rounded-xl text-xs" value={propertyFormData.propertyId} onChange={ev => setPropertyFormData({ ...propertyFormData, propertyId: ev.target.value })}>
+                                <select className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={propertyFormData.propertyId} onChange={ev => setPropertyFormData({ ...propertyFormData, propertyId: ev.target.value })}>
                                     {stats.map(s => (
                                         <option key={s.property.id} value={s.property.id}>{locale === 'ar' ? s.property.nameAr : s.property.nameEn}</option>
                                     ))}
@@ -234,15 +276,15 @@ export default function PropertiesPage() {
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("unitNumber")}</label>
-                                <input required placeholder="e.g. 101" className="w-full bg-input border border-border p-3 rounded-xl text-xs" value={propertyFormData.unitNumber} onChange={ev => setPropertyFormData({ ...propertyFormData, unitNumber: ev.target.value })} />
+                                <input required placeholder="e.g. 101" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={propertyFormData.unitNumber} onChange={ev => setPropertyFormData({ ...propertyFormData, unitNumber: ev.target.value })} />
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("expectedRent")}</label>
-                                <input type="number" placeholder="50000" className="w-full bg-input border border-border p-3 rounded-xl text-xs" value={propertyFormData.expectedRent} onChange={ev => setPropertyFormData({ ...propertyFormData, expectedRent: Number(ev.target.value) })} />
+                                <input type="number" placeholder="50000" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={propertyFormData.expectedRent} onChange={ev => setPropertyFormData({ ...propertyFormData, expectedRent: Number(ev.target.value) })} />
                             </div>
                             <div className="col-span-2 flex justify-end gap-3 mt-4">
-                                <button type="button" onClick={() => setShowPropertyForm(false)} className="px-6 py-3 text-xs font-bold text-gray-500">{t("cancel")}</button>
-                                <button type="submit" className="px-8 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-bold">{t("create")}</button>
+                                <button type="button" onClick={() => setShowPropertyForm(false)} className="cursor-pointer px-6 py-3 text-xs font-bold text-gray-500 transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg">{t("cancel")}</button>
+                                <button type="submit" className="cursor-pointer px-8 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-bold transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none">{t("create")}</button>
                             </div>
                         </form>
                     </div>
@@ -328,7 +370,7 @@ export default function PropertiesPage() {
                                 </div>
                                 <Link
                                     href={`/dashboard/properties/${s.property.id}`}
-                                    className="mt-6 flex items-center justify-center gap-2 bg-white text-xs font-black text-primary py-3 rounded-2xl border border-primary/20 hover:bg-primary hover:text-white transition-all group/link shadow-sm"
+                                    className="mt-6 flex items-center justify-center gap-2 bg-white text-xs font-black text-primary py-3 rounded-2xl border border-primary/20 hover:bg-primary hover:text-white transition-all group/link shadow-sm focus:ring-2 focus:ring-primary/30 focus:outline-none"
                                 >
                                     Manage Property
                                     <ArrowRight size={14} className="group-hover/link:translate-x-1 transition-transform" />
@@ -348,7 +390,7 @@ export default function PropertiesPage() {
                         {canCreate ? 'No Projects Found' : 'No Properties Assigned'}
                     </p>
                     {canCreate && (
-                        <button onClick={() => setShowProjectForm(true)} className="text-xs font-black text-foreground border-b-2 border-primary pb-0.5 hover:text-primary transition-all">
+                        <button onClick={() => setShowProjectForm(true)} className="cursor-pointer text-xs font-black text-foreground border-b-2 border-primary pb-0.5 hover:text-primary transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none">
                             {t("addProject")}
                         </button>
                     )}

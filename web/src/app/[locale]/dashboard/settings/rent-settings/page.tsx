@@ -52,13 +52,14 @@ export default function RentSettingsPage() {
     const [properties, setProperties] = useState<Property[]>([]);
     const [selectedPropertyId, setSelectedPropertyId] = useState("");
     const [settings, setSettings] = useState<RentSettings | null>(null);
+    const [initialLoading, setInitialLoading] = useState(true);
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
     const [saveSuccess, setSaveSuccess] = useState(false);
     const [error, setError] = useState("");
 
     useEffect(() => {
-        fetchProperties();
+        fetchProperties().finally(() => setInitialLoading(false));
     }, []);
 
     useEffect(() => {
@@ -161,6 +162,32 @@ export default function RentSettingsPage() {
         );
     }
 
+    if (initialLoading) {
+        return (
+            <div className="max-w-4xl">
+                <div className="mb-8">
+                    <div className="h-8 w-64 bg-gray-200 rounded-lg animate-pulse mb-2" />
+                    <div className="h-4 w-96 bg-gray-100 rounded-lg animate-pulse" />
+                </div>
+                <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 mb-6">
+                    <div className="h-4 w-40 bg-gray-200 rounded animate-pulse mb-4" />
+                    <div className="h-12 w-full bg-gray-100 rounded-xl animate-pulse" />
+                </div>
+                <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                    <div className="h-4 w-32 bg-gray-200 rounded animate-pulse mb-6" />
+                    <div className="space-y-6">
+                        <div className="h-12 w-32 bg-gray-100 rounded-xl animate-pulse" />
+                        <div className="h-12 w-32 bg-gray-100 rounded-xl animate-pulse" />
+                        <div className="space-y-2">
+                            <div className="h-12 w-full bg-gray-100 rounded-xl animate-pulse" />
+                            <div className="h-12 w-full bg-gray-100 rounded-xl animate-pulse" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="max-w-4xl">
             {/* Page Header */}
@@ -199,7 +226,7 @@ export default function RentSettingsPage() {
                 <select
                     value={selectedPropertyId}
                     onChange={e => setSelectedPropertyId(e.target.value)}
-                    className="w-full border border-gray-200 rounded-xl p-3 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                    className="w-full border border-gray-200 rounded-xl p-3 text-sm font-medium cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all duration-200"
                 >
                     <option value="">-- Select a property --</option>
                     {properties.map(p => (
@@ -239,7 +266,7 @@ export default function RentSettingsPage() {
                                 max={28}
                                 value={settings.dueDayOfMonth}
                                 onChange={e => updateField("dueDayOfMonth", Math.min(28, Math.max(1, Number(e.target.value))))}
-                                className="w-32 border border-gray-200 rounded-xl p-3 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                                className="w-32 border border-gray-200 rounded-xl p-3 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all duration-200"
                             />
                             <p className="text-[10px] text-gray-400 mt-1">Day of month when rent is due (1-28)</p>
                         </div>
@@ -256,7 +283,7 @@ export default function RentSettingsPage() {
                                 max={30}
                                 value={settings.gracePeriodDays}
                                 onChange={e => updateField("gracePeriodDays", Math.min(30, Math.max(0, Number(e.target.value))))}
-                                className="w-32 border border-gray-200 rounded-xl p-3 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                                className="w-32 border border-gray-200 rounded-xl p-3 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all duration-200"
                             />
                             <p className="text-[10px] text-gray-400 mt-1">Days after due date before penalty applies (0-30)</p>
                         </div>
@@ -276,7 +303,7 @@ export default function RentSettingsPage() {
                                     <label
                                         key={option.value}
                                         className={cn(
-                                            "flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all",
+                                            "flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all duration-200",
                                             settings.penaltyType === option.value
                                                 ? "border-primary/30 bg-primary/5"
                                                 : "border-gray-100 hover:border-gray-200"
@@ -288,7 +315,7 @@ export default function RentSettingsPage() {
                                             value={option.value}
                                             checked={settings.penaltyType === option.value}
                                             onChange={e => updateField("penaltyType", e.target.value as RentSettings["penaltyType"])}
-                                            className="accent-primary"
+                                            className="accent-primary focus:ring-2 focus:ring-primary/30"
                                         />
                                         <span className="text-sm font-semibold text-foreground">{option.label}</span>
                                     </label>
@@ -302,8 +329,8 @@ export default function RentSettingsPage() {
                                 <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">
                                     {t("penaltyAmount")}
                                     {settings.penaltyType === "FIXED_PER_DAY"
-                                        ? " — Amount per day (AED)"
-                                        : " — Percentage per day (%)"}
+                                        ? " \u2014 Amount per day (AED)"
+                                        : " \u2014 Percentage per day (%)"}
                                 </label>
                                 <input
                                     type="number"
@@ -311,7 +338,7 @@ export default function RentSettingsPage() {
                                     step={settings.penaltyType === "PERCENTAGE" ? 0.1 : 1}
                                     value={settings.penaltyAmount}
                                     onChange={e => updateField("penaltyAmount", Number(e.target.value))}
-                                    className="w-40 border border-gray-200 rounded-xl p-3 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                                    className="w-40 border border-gray-200 rounded-xl p-3 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all duration-200"
                                 />
                             </div>
                         )}
@@ -333,9 +360,10 @@ export default function RentSettingsPage() {
                                 type="button"
                                 role="switch"
                                 aria-checked={settings.onlinePaymentEnabled}
+                                aria-label="Toggle online payment"
                                 onClick={() => updateField("onlinePaymentEnabled", !settings.onlinePaymentEnabled)}
                                 className={cn(
-                                    "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200",
+                                    "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none",
                                     settings.onlinePaymentEnabled ? "bg-primary" : "bg-gray-300"
                                 )}
                             >
@@ -354,7 +382,7 @@ export default function RentSettingsPage() {
                         <button
                             onClick={handleSave}
                             disabled={saving}
-                            className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-bold bg-primary text-primary-foreground hover:opacity-90 transition-all shadow-sm disabled:opacity-50"
+                            className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-bold bg-primary text-primary-foreground hover:opacity-90 transition-all duration-200 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                         >
                             {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
                             {t("saveConfig")}
