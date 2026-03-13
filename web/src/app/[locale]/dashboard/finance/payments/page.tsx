@@ -14,9 +14,11 @@ import {
     RefreshCw,
     Building2,
     X,
+    Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { canViewPayments, canManagePayments } from "@/lib/rbac";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import type { UserRole } from "@/lib/rbac";
 
 type Payment = {
@@ -83,20 +85,21 @@ export default function PaymentsPage() {
     // Cheque collection modal state
     const [showChequeModal, setShowChequeModal] = useState(false);
     const [collectingPaymentId, setCollectingPaymentId] = useState<string | null>(null);
+    const [submittingCheque, setSubmittingCheque] = useState(false);
     const [chequeForm, setChequeForm] = useState({
         chequeNumber: "",
         bankName: "",
         payerName: "",
     });
 
-    // Confirmation dialog state (replaces window.confirm)
+    // Confirmation dialog state
     const [confirmDialog, setConfirmDialog] = useState<{
         open: boolean;
         title: string;
         message: string;
         onConfirm: () => void;
-        variant: "green" | "red";
-    }>({ open: false, title: "", message: "", onConfirm: () => {}, variant: "green" });
+        isDestructive: boolean;
+    }>({ open: false, title: "", message: "", onConfirm: () => {}, isDestructive: false });
 
     useEffect(() => {
         fetchProperties();
@@ -163,6 +166,7 @@ export default function PaymentsPage() {
     const submitCollect = async (ev: React.FormEvent) => {
         ev.preventDefault();
         if (!collectingPaymentId) return;
+        setSubmittingCheque(true);
         try {
             const res = await fetch(`/api/proxy/v1/payments/${collectingPaymentId}/collect`, {
                 method: "PUT",
@@ -176,6 +180,8 @@ export default function PaymentsPage() {
             }
         } catch (err) {
             console.error(err);
+        } finally {
+            setSubmittingCheque(false);
         }
     };
 
@@ -197,7 +203,7 @@ export default function PaymentsPage() {
             open: true,
             title: t("clear"),
             message: t("confirmClear"),
-            variant: "green",
+            isDestructive: false,
             onConfirm: async () => {
                 setConfirmDialog((prev) => ({ ...prev, open: false }));
                 try {
@@ -219,7 +225,7 @@ export default function PaymentsPage() {
             open: true,
             title: t("bounce"),
             message: t("confirmBounce"),
-            variant: "red",
+            isDestructive: true,
             onConfirm: async () => {
                 setConfirmDialog((prev) => ({ ...prev, open: false }));
                 try {
@@ -245,6 +251,7 @@ export default function PaymentsPage() {
     const submitReplace = async (ev: React.FormEvent) => {
         ev.preventDefault();
         if (!collectingPaymentId) return;
+        setSubmittingCheque(true);
         try {
             const res = await fetch(`/api/proxy/v1/payments/${collectingPaymentId}/replace`, {
                 method: "POST",
@@ -258,6 +265,8 @@ export default function PaymentsPage() {
             }
         } catch (err) {
             console.error(err);
+        } finally {
+            setSubmittingCheque(false);
         }
     };
 
@@ -300,6 +309,21 @@ export default function PaymentsPage() {
                 </div>
             </div>
 
+            {/* Summary Cards Skeleton */}
+            {loading && !summary && (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                    {[1, 2, 3, 4].map((i) => (
+                        <div key={i} className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm animate-pulse">
+                            <div className="flex items-center gap-3 mb-3">
+                                <div className="w-9 h-9 rounded-xl bg-gray-100" />
+                                <div className="h-3 w-16 bg-gray-100 rounded" />
+                            </div>
+                            <div className="h-5 w-24 bg-gray-100 rounded" />
+                        </div>
+                    ))}
+                </div>
+            )}
+
             {/* Summary Cards */}
             {summary && (
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
@@ -341,7 +365,7 @@ export default function PaymentsPage() {
             <div className="flex flex-col sm:flex-row gap-3 mb-6">
                 <div className="relative">
                     <select
-                        className="appearance-none bg-white border border-border px-4 py-2.5 rounded-xl text-xs font-bold pr-8 cursor-pointer"
+                        className="appearance-none bg-white border border-border px-4 py-2.5 rounded-xl text-xs font-bold pr-8 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
                         value={selectedProperty}
                         onChange={(ev) => setSelectedProperty(ev.target.value)}
                     >
@@ -355,7 +379,7 @@ export default function PaymentsPage() {
                 </div>
                 <div className="relative">
                     <select
-                        className="appearance-none bg-white border border-border px-4 py-2.5 rounded-xl text-xs font-bold pr-8 cursor-pointer"
+                        className="appearance-none bg-white border border-border px-4 py-2.5 rounded-xl text-xs font-bold pr-8 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
                         value={selectedStatus}
                         onChange={(ev) => setSelectedStatus(ev.target.value)}
                     >
@@ -369,8 +393,27 @@ export default function PaymentsPage() {
                 </div>
             </div>
 
+            {/* Table Skeleton */}
+            {loading && (
+                <div className="bg-white border border-border rounded-2xl overflow-hidden shadow-sm">
+                    <div className="animate-pulse">
+                        <div className="h-12 bg-gray-50 border-b border-gray-100" />
+                        {[1, 2, 3, 4, 5].map((i) => (
+                            <div key={i} className="flex gap-4 px-5 py-4 border-b border-gray-50">
+                                <div className="h-3 w-8 bg-gray-100 rounded" />
+                                <div className="h-3 w-24 bg-gray-100 rounded" />
+                                <div className="h-3 w-20 bg-gray-100 rounded" />
+                                <div className="h-3 w-32 bg-gray-100 rounded" />
+                                <div className="h-3 w-24 bg-gray-100 rounded" />
+                                <div className="h-3 w-16 bg-gray-100 rounded" />
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             {/* Payments Table */}
-            <div className="bg-white border border-border rounded-2xl overflow-hidden shadow-sm">
+            {!loading && payments.length > 0 && <div className="bg-white border border-border rounded-2xl overflow-hidden shadow-sm">
                 <div className="overflow-x-auto">
                     <table className="w-full">
                         <thead>
@@ -407,7 +450,7 @@ export default function PaymentsPage() {
                             {payments.map((payment) => (
                                 <tr
                                     key={payment.id}
-                                    className="hover:bg-gray-50/50 transition-colors"
+                                    className="hover:bg-gray-50/50 transition-all duration-200"
                                 >
                                     <td className="px-5 py-3 text-xs font-bold text-foreground">
                                         {payment.installmentNumber}
@@ -468,7 +511,7 @@ export default function PaymentsPage() {
                                                 {payment.status === "PENDING" && (
                                                     <button
                                                         onClick={() => handleCollect(payment.id)}
-                                                        className="px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-[10px] font-bold transition-colors"
+                                                        className="px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-[10px] font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                                                     >
                                                         {t("collect")}
                                                     </button>
@@ -476,7 +519,7 @@ export default function PaymentsPage() {
                                                 {payment.status === "COLLECTED" && (
                                                     <button
                                                         onClick={() => handleDeposit(payment.id)}
-                                                        className="px-3 py-1.5 bg-amber-50 text-amber-700 hover:bg-amber-100 rounded-lg text-[10px] font-bold transition-colors"
+                                                        className="px-3 py-1.5 bg-amber-50 text-amber-700 hover:bg-amber-100 rounded-lg text-[10px] font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                                                     >
                                                         {t("deposit")}
                                                     </button>
@@ -487,7 +530,7 @@ export default function PaymentsPage() {
                                                             onClick={() =>
                                                                 handleClear(payment.id)
                                                             }
-                                                            className="px-3 py-1.5 bg-green-50 text-green-700 hover:bg-green-100 rounded-lg text-[10px] font-bold transition-colors"
+                                                            className="px-3 py-1.5 bg-green-50 text-green-700 hover:bg-green-100 rounded-lg text-[10px] font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                                                         >
                                                             {t("clear")}
                                                         </button>
@@ -495,7 +538,7 @@ export default function PaymentsPage() {
                                                             onClick={() =>
                                                                 handleBounce(payment.id)
                                                             }
-                                                            className="px-3 py-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg text-[10px] font-bold transition-colors"
+                                                            className="px-3 py-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg text-[10px] font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                                                         >
                                                             {t("bounce")}
                                                         </button>
@@ -504,7 +547,7 @@ export default function PaymentsPage() {
                                                 {payment.status === "BOUNCED" && (
                                                     <button
                                                         onClick={() => handleReplace(payment.id)}
-                                                        className="px-3 py-1.5 bg-purple-50 text-purple-700 hover:bg-purple-100 rounded-lg text-[10px] font-bold transition-colors"
+                                                        className="px-3 py-1.5 bg-purple-50 text-purple-700 hover:bg-purple-100 rounded-lg text-[10px] font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                                                     >
                                                         {t("replace")}
                                                     </button>
@@ -517,7 +560,7 @@ export default function PaymentsPage() {
                         </tbody>
                     </table>
                 </div>
-            </div>
+            </div>}
 
             {/* Empty State */}
             {payments.length === 0 && !loading && (
@@ -533,33 +576,16 @@ export default function PaymentsPage() {
             )}
 
             {/* Confirmation Dialog */}
-            {confirmDialog.open && (
-                <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
-                    <div className="bg-white rounded-3xl p-8 max-w-sm w-full shadow-2xl border border-gray-100">
-                        <h2 className="text-lg font-black mb-2">{confirmDialog.title}</h2>
-                        <p className="text-sm text-gray-500 mb-8">{confirmDialog.message}</p>
-                        <div className="flex justify-end gap-3">
-                            <button
-                                onClick={() => setConfirmDialog((prev) => ({ ...prev, open: false }))}
-                                className="px-6 py-3 text-xs font-bold text-gray-500"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                onClick={confirmDialog.onConfirm}
-                                className={cn(
-                                    "px-8 py-3 rounded-xl text-xs font-bold text-white",
-                                    confirmDialog.variant === "green"
-                                        ? "bg-green-600 hover:bg-green-700"
-                                        : "bg-red-600 hover:bg-red-700"
-                                )}
-                            >
-                                {confirmDialog.title}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            <ConfirmDialog
+                isOpen={confirmDialog.open}
+                onClose={() => setConfirmDialog((prev) => ({ ...prev, open: false }))}
+                onConfirm={confirmDialog.onConfirm}
+                title={confirmDialog.title}
+                description={confirmDialog.message}
+                confirmText={confirmDialog.title}
+                cancelText="Cancel"
+                isDestructive={confirmDialog.isDestructive}
+            />
 
             {/* Cheque Details Modal */}
             {showChequeModal && (
@@ -570,7 +596,8 @@ export default function PaymentsPage() {
                                 setShowChequeModal(false);
                                 setCollectingPaymentId(null);
                             }}
-                            className="absolute right-6 top-6 p-2 text-gray-400 hover:text-gray-600"
+                            aria-label="Close modal"
+                            className="absolute right-6 top-6 p-2 text-gray-400 hover:text-gray-600 cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg"
                         >
                             <X size={18} />
                         </button>
@@ -591,7 +618,7 @@ export default function PaymentsPage() {
                                 <input
                                     required
                                     placeholder="CHQ-000001"
-                                    className="w-full bg-input border border-border p-3 rounded-xl text-xs"
+                                    className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
                                     value={chequeForm.chequeNumber}
                                     onChange={(ev) =>
                                         setChequeForm({
@@ -608,7 +635,7 @@ export default function PaymentsPage() {
                                 <input
                                     required
                                     placeholder="Emirates NBD"
-                                    className="w-full bg-input border border-border p-3 rounded-xl text-xs"
+                                    className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
                                     value={chequeForm.bankName}
                                     onChange={(ev) =>
                                         setChequeForm({
@@ -625,7 +652,7 @@ export default function PaymentsPage() {
                                 <input
                                     required
                                     placeholder="John Doe"
-                                    className="w-full bg-input border border-border p-3 rounded-xl text-xs"
+                                    className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
                                     value={chequeForm.payerName}
                                     onChange={(ev) =>
                                         setChequeForm({
@@ -642,19 +669,21 @@ export default function PaymentsPage() {
                                         setShowChequeModal(false);
                                         setCollectingPaymentId(null);
                                     }}
-                                    className="px-6 py-3 text-xs font-bold text-gray-500"
+                                    className="px-6 py-3 text-xs font-bold text-gray-500 cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-xl"
                                 >
                                     Cancel
                                 </button>
                                 <button
                                     type="submit"
+                                    disabled={submittingCheque}
                                     className={cn(
-                                        "px-8 py-3 rounded-xl text-xs font-bold text-white",
+                                        "px-8 py-3 rounded-xl text-xs font-bold text-white cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none disabled:opacity-50 flex items-center gap-2",
                                         isReplaceAction
                                             ? "bg-purple-600 hover:bg-purple-700"
                                             : "bg-primary hover:opacity-90"
                                     )}
                                 >
+                                    {submittingCheque && <Loader2 size={14} className="animate-spin" />}
                                     {isReplaceAction ? t("replace") : t("collect")}
                                 </button>
                             </div>

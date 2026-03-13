@@ -34,4 +34,10 @@ public class CreateLeaseDTO {
 
     @Min(1)
     private Integer paymentTerms;
+
+    private String paymentMethod; // CHEQUE or ONLINE
+
+    private String depositPaymentMethod; // CHEQUE or ONLINE
+
+    private String paymentReferenceNumber;
 }

@@ -1,6 +1,7 @@
 package com.datagami.rentaxis.api.dto;
 
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
+import com.datagami.rentaxis.domain.entity.enums.PaymentMethod;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -12,8 +13,8 @@ public class LeaseDTO {
     private UUID id;
     private UUID unitId;
     private UUID renterId;
-    private String unitIdentifier; // Added for convenience
-    private String renterName; // Added for convenience
+    private String unitIdentifier;
+    private String renterName;
     private LocalDate startDate;
     private LocalDate endDate;
     private LeaseStatus status;
@@ -21,6 +22,9 @@ public class LeaseDTO {
     private BigDecimal depositAmount;
     private String ejariNumber;
     private Integer paymentTerms;
+    private PaymentMethod paymentMethod;
+    private PaymentMethod depositPaymentMethod;
+    private String paymentReferenceNumber;
     private UUID propertyId;
     private String propertyName;
     private boolean hasContract;

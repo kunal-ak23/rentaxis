@@ -8,7 +8,7 @@
             margin: 2cm;
         }
         body {
-            font-family: 'Noto Sans', Arial, sans-serif;
+            font-family: 'Noto Sans', 'Noto Sans Arabic', Arial, sans-serif;
             font-size: 11pt;
             line-height: 1.6;
             color: #1a1a1a;
@@ -190,8 +190,16 @@
             <td>AED {{DEPOSIT_AMOUNT}}</td>
         </tr>
         <tr>
-            <td class="label">Payment Terms / &#1588;&#1585;&#1608;&#1591; &#1575;&#1604;&#1583;&#1601;&#1593;</td>
-            <td>{{PAYMENT_TERMS}} cheques</td>
+            <td class="label">Rent Payment Method / &#1591;&#1585;&#1610;&#1602;&#1577; &#1583;&#1601;&#1593; &#1575;&#1604;&#1573;&#1610;&#1580;&#1575;&#1585;</td>
+            <td>{{PAYMENT_METHOD}} ({{PAYMENT_TERMS}} installments)</td>
+        </tr>
+        <tr>
+            <td class="label">Deposit Payment Method / &#1591;&#1585;&#1610;&#1602;&#1577; &#1583;&#1601;&#1593; &#1575;&#1604;&#1578;&#1571;&#1605;&#1610;&#1606;</td>
+            <td>{{DEPOSIT_PAYMENT_METHOD}}</td>
+        </tr>
+        <tr>
+            <td class="label">Payment Reference / &#1585;&#1602;&#1605; &#1575;&#1604;&#1605;&#1585;&#1580;&#1593;</td>
+            <td>{{PAYMENT_REFERENCE}}</td>
         </tr>
         <tr>
             <td class="label">Ejari Number / &#1585;&#1602;&#1605; &#1573;&#1610;&#1580;&#1575;&#1585;&#1610;</td>

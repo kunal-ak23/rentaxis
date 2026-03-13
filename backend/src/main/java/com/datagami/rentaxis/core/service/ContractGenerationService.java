@@ -7,6 +7,7 @@ import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.*;
 import com.datagami.rentaxis.domain.entity.enums.DocumentType;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
+import com.datagami.rentaxis.domain.entity.enums.PaymentMethod;
 import com.datagami.rentaxis.domain.repository.LeaseDocumentRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.azure.storage.blob.BlobClient;
@@ -99,6 +100,9 @@ public class ContractGenerationService {
                 .replace("{{RENT_AMOUNT}}", lease.getRentAmount().toPlainString())
                 .replace("{{DEPOSIT_AMOUNT}}", lease.getDepositAmount().toPlainString())
                 .replace("{{PAYMENT_TERMS}}", String.valueOf(lease.getPaymentTerms() != null ? lease.getPaymentTerms() : 1))
+                .replace("{{PAYMENT_METHOD}}", formatPaymentMethod(lease.getPaymentMethod()))
+                .replace("{{DEPOSIT_PAYMENT_METHOD}}", formatPaymentMethod(lease.getDepositPaymentMethod()))
+                .replace("{{PAYMENT_REFERENCE}}", lease.getPaymentReferenceNumber() != null ? lease.getPaymentReferenceNumber() : "N/A")
                 .replace("{{EJARI_NUMBER}}", lease.getEjariNumber() != null ? lease.getEjariNumber() : "N/A")
                 .replace("{{START_DATE}}", lease.getStartDate().toString())
                 .replace("{{END_DATE}}", lease.getEndDate().toString());
@@ -273,6 +277,14 @@ public class ContractGenerationService {
         String path = blobUrl.split(".blob.core.windows.net/")[1];
         int firstSlash = path.indexOf('/');
         return path.substring(firstSlash + 1);
+    }
+
+    private String formatPaymentMethod(PaymentMethod method) {
+        if (method == null) return "Cheque";
+        return switch (method) {
+            case CHEQUE -> "Cheque";
+            case ONLINE -> "Online Payment";
+        };
     }
 
     private LeaseDocumentDTO mapToDTO(LeaseDocument doc) {

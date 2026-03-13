@@ -8,6 +8,7 @@ import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.*;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
+import com.datagami.rentaxis.domain.entity.enums.PaymentMethod;
 import com.datagami.rentaxis.domain.entity.enums.PaymentStatus;
 import com.datagami.rentaxis.domain.entity.enums.UnitStatus;
 import com.datagami.rentaxis.domain.repository.*;
@@ -85,6 +86,13 @@ public class LeaseService {
         lease.setDepositAmount(dto.getDepositAmount());
         lease.setEjariNumber(dto.getEjariNumber());
         lease.setPaymentTerms(dto.getPaymentTerms());
+        if (dto.getPaymentMethod() != null) {
+            lease.setPaymentMethod(PaymentMethod.valueOf(dto.getPaymentMethod()));
+        }
+        if (dto.getDepositPaymentMethod() != null) {
+            lease.setDepositPaymentMethod(PaymentMethod.valueOf(dto.getDepositPaymentMethod()));
+        }
+        lease.setPaymentReferenceNumber(dto.getPaymentReferenceNumber());
         lease.setStatus(LeaseStatus.DRAFT);
 
         Lease savedLease = leaseRepository.save(lease);
@@ -239,6 +247,9 @@ public class LeaseService {
         dto.setDepositAmount(lease.getDepositAmount());
         dto.setEjariNumber(lease.getEjariNumber());
         dto.setPaymentTerms(lease.getPaymentTerms());
+        dto.setPaymentMethod(lease.getPaymentMethod());
+        dto.setDepositPaymentMethod(lease.getDepositPaymentMethod());
+        dto.setPaymentReferenceNumber(lease.getPaymentReferenceNumber());
         dto.setPropertyId(lease.getUnit().getProperty().getId());
         dto.setPropertyName(lease.getUnit().getProperty().getNameEn());
         dto.setHasContract(!leaseDocumentRepository.findByLeaseId(lease.getId()).isEmpty());

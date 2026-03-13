@@ -2,10 +2,11 @@
 
 import { useState, useEffect } from "react";
 import { useTranslations, useLocale } from "next-intl";
-import { Plus, X, FileText, Calendar, DollarSign, Home, CheckCircle, Ban, AlertCircle, LayoutGrid, Columns3, Download, Sparkles } from "lucide-react";
+import { Plus, X, FileText, Calendar, DollarSign, Home, CheckCircle, Ban, AlertCircle, LayoutGrid, Columns3, Download, Sparkles, Loader2 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 type Lease = {
     id: string;
@@ -20,6 +21,9 @@ type Lease = {
     depositAmount: number;
     ejariNumber: string;
     paymentTerms: number;
+    paymentMethod: string;
+    depositPaymentMethod: string;
+    paymentReferenceNumber: string;
     propertyId: string;
     propertyName: string;
     hasContract: boolean;
@@ -65,6 +69,19 @@ export default function LeasesPage() {
     const [viewMode, setViewMode] = useState<'grid' | 'board'>('grid');
     const [paymentStatsMap, setPaymentStatsMap] = useState<Record<string, PaymentStats>>({});
     const [paymentStatsLoading, setPaymentStatsLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
+    const [submitting, setSubmitting] = useState(false);
+    const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+    // ConfirmDialog state
+    const [confirmOpen, setConfirmOpen] = useState(false);
+    const [confirmConfig, setConfirmConfig] = useState<{
+        title: string;
+        description: string;
+        confirmText: string;
+        isDestructive: boolean;
+        onConfirm: () => void;
+    }>({ title: "", description: "", confirmText: "", isDestructive: false, onConfirm: () => {} });
 
     const { data: session } = useSession();
     const userRole = session?.user?.role as UserRole | undefined;
@@ -78,7 +95,10 @@ export default function LeasesPage() {
         rentAmount: 0,
         depositAmount: 0,
         ejariNumber: "",
-        paymentTerms: 1
+        paymentTerms: 1,
+        paymentMethod: "CHEQUE",
+        depositPaymentMethod: "CHEQUE",
+        paymentReferenceNumber: ""
     });
 
     useEffect(() => {
@@ -94,11 +114,14 @@ export default function LeasesPage() {
     }, [leases]);
 
     const fetchLeases = async () => {
+        setLoading(true);
         try {
             const res = await fetch("/api/proxy/v1/leases");
             if (res.ok) setLeases(await res.json());
         } catch (err) {
             console.error(err);
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -153,6 +176,7 @@ export default function LeasesPage() {
 
     const handleSubmit = async (ev: React.FormEvent) => {
         ev.preventDefault();
+        setSubmitting(true);
         try {
             const res = await fetch("/api/proxy/v1/leases", {
                 method: "POST",
@@ -165,44 +189,75 @@ export default function LeasesPage() {
                 fetchUnits();
                 setFormData({
                     unitId: "", renterId: "", startDate: "", endDate: "",
-                    rentAmount: 0, depositAmount: 0, ejariNumber: "", paymentTerms: 1
+                    rentAmount: 0, depositAmount: 0, ejariNumber: "", paymentTerms: 1,
+                    paymentMethod: "CHEQUE", depositPaymentMethod: "CHEQUE", paymentReferenceNumber: ""
                 });
             }
         } catch (err) {
             console.error(err);
+        } finally {
+            setSubmitting(false);
         }
     };
 
-    const handleActivate = async (id: string) => {
-        if (!confirm(t("confirmActivate"))) return;
-        try {
-            const res = await fetch(`/api/proxy/v1/leases/${id}/activate`, { method: "PUT" });
-            if (res.ok) fetchLeases();
-        } catch (err) {
-            console.error(err);
-        }
+    const handleActivate = (id: string) => {
+        setConfirmConfig({
+            title: t("activateLease"),
+            description: t("confirmActivate"),
+            confirmText: t("activate"),
+            isDestructive: false,
+            onConfirm: async () => {
+                setActionLoading('activate');
+                try {
+                    const res = await fetch(`/api/proxy/v1/leases/${id}/activate`, { method: "PUT" });
+                    if (res.ok) fetchLeases();
+                } catch (err) {
+                    console.error(err);
+                } finally {
+                    setActionLoading(null);
+                    setConfirmOpen(false);
+                }
+            }
+        });
+        setConfirmOpen(true);
     };
 
-    const handleTerminate = async (id: string) => {
-        if (!confirm(t("confirmTerminate"))) return;
-        try {
-            const res = await fetch(`/api/proxy/v1/leases/${id}/terminate?notes=Early Termination UI`, { method: "POST" });
-            if (res.ok) fetchLeases();
-        } catch (err) {
-            console.error(err);
-        }
+    const handleTerminate = (id: string) => {
+        setConfirmConfig({
+            title: t("terminateLease"),
+            description: t("confirmTerminate"),
+            confirmText: t("terminate"),
+            isDestructive: true,
+            onConfirm: async () => {
+                setActionLoading('terminate');
+                try {
+                    const res = await fetch(`/api/proxy/v1/leases/${id}/terminate?notes=Early Termination UI`, { method: "POST" });
+                    if (res.ok) fetchLeases();
+                } catch (err) {
+                    console.error(err);
+                } finally {
+                    setActionLoading(null);
+                    setConfirmOpen(false);
+                }
+            }
+        });
+        setConfirmOpen(true);
     };
 
     const handleGenerateContract = async (id: string) => {
+        setActionLoading(`generate-${id}`);
         try {
             const res = await fetch(`/api/proxy/v1/leases/${id}/generate-contract`, { method: "POST" });
             if (res.ok) fetchLeases();
         } catch (err) {
             console.error(err);
+        } finally {
+            setActionLoading(null);
         }
     };
 
     const handleDownloadContract = async (id: string) => {
+        setActionLoading(`download-${id}`);
         try {
             const res = await fetch(`/api/proxy/v1/leases/${id}/documents`);
             if (res.ok) {
@@ -213,6 +268,8 @@ export default function LeasesPage() {
             }
         } catch (err) {
             console.error(err);
+        } finally {
+            setActionLoading(null);
         }
     };
 
@@ -274,8 +331,28 @@ export default function LeasesPage() {
         );
     };
 
+    const renderSkeletonCard = (compact = false) => (
+        <div className={cn("bg-white rounded-[2rem] p-6 shadow-sm border border-gray-100 animate-pulse", compact && "rounded-2xl p-4")}>
+            <div className="flex items-center gap-3 mb-4">
+                <div className={cn("bg-gray-200 rounded-xl", compact ? "w-8 h-8" : "w-10 h-10")} />
+                <div className="flex-1">
+                    <div className="h-3.5 bg-gray-200 rounded w-24 mb-1.5" />
+                    <div className="h-2.5 bg-gray-100 rounded w-16" />
+                </div>
+                {!compact && <div className="h-5 bg-gray-100 rounded-full w-20" />}
+            </div>
+            <div className="space-y-3 mb-4">
+                <div className={cn("bg-gray-50 rounded-xl border border-gray-100/50", compact ? "h-10" : "h-14")} />
+                <div className="h-4 bg-gray-100 rounded w-48 mx-1" />
+            </div>
+            <div className="border-t border-gray-100 pt-4">
+                <div className="h-9 bg-gray-100 rounded-xl" />
+            </div>
+        </div>
+    );
+
     const renderLeaseCard = (lease: Lease, compact = false) => (
-        <div key={lease.id} className={cn("bg-white rounded-[2rem] p-6 shadow-sm border border-gray-100 hover:shadow-md transition-all flex flex-col justify-between", compact && "rounded-2xl p-4")}>
+        <div key={lease.id} className={cn("bg-white rounded-[2rem] p-6 shadow-sm border border-gray-100 hover:shadow-md transition-all duration-200 flex flex-col justify-between", compact && "rounded-2xl p-4")}>
             <div>
                 <div className="flex justify-between items-start mb-4">
                     <div className="flex items-center gap-3">
@@ -327,16 +404,17 @@ export default function LeasesPage() {
                     {lease.status === 'DRAFT' && !lease.hasContract && (
                         <button
                             onClick={() => handleGenerateContract(lease.id)}
-                            className="flex-1 flex items-center justify-center gap-2 bg-blue-50 text-blue-700 hover:bg-blue-100 py-2.5 rounded-xl text-xs font-bold transition-colors"
+                            disabled={actionLoading === `generate-${lease.id}`}
+                            className="flex-1 flex items-center justify-center gap-2 bg-blue-50 text-blue-700 hover:bg-blue-100 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none disabled:opacity-50"
                         >
-                            <Sparkles size={14} />
+                            {actionLoading === `generate-${lease.id}` ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
                             {t("generateContract")}
                         </button>
                     )}
                     {lease.status === 'DRAFT' && lease.hasContract && (
                         <button
                             onClick={() => handleActivate(lease.id)}
-                            className="flex-1 flex items-center justify-center gap-2 bg-green-50 text-green-700 hover:bg-green-100 py-2.5 rounded-xl text-xs font-bold transition-colors"
+                            className="flex-1 flex items-center justify-center gap-2 bg-green-50 text-green-700 hover:bg-green-100 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                         >
                             <CheckCircle size={14} />
                             {t("activate")}
@@ -346,14 +424,15 @@ export default function LeasesPage() {
                         <>
                             <button
                                 onClick={() => handleDownloadContract(lease.id)}
-                                className="flex-1 flex items-center justify-center gap-2 bg-blue-50 text-blue-700 hover:bg-blue-100 py-2.5 rounded-xl text-xs font-bold transition-colors"
+                                disabled={actionLoading === `download-${lease.id}`}
+                                className="flex-1 flex items-center justify-center gap-2 bg-blue-50 text-blue-700 hover:bg-blue-100 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none disabled:opacity-50"
                             >
-                                <Download size={14} />
+                                {actionLoading === `download-${lease.id}` ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
                                 {t("downloadContract")}
                             </button>
                             <button
                                 onClick={() => handleActivate(lease.id)}
-                                className="flex-1 flex items-center justify-center gap-2 bg-green-50 text-green-700 hover:bg-green-100 py-2.5 rounded-xl text-xs font-bold transition-colors"
+                                className="flex-1 flex items-center justify-center gap-2 bg-green-50 text-green-700 hover:bg-green-100 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                             >
                                 <CheckCircle size={14} />
                                 {t("activate")}
@@ -363,7 +442,7 @@ export default function LeasesPage() {
                     {lease.status === 'ACTIVE' && (
                         <button
                             onClick={() => handleTerminate(lease.id)}
-                            className="flex-1 flex items-center justify-center gap-2 bg-red-50 text-red-600 hover:bg-red-100 py-2.5 rounded-xl text-xs font-bold transition-colors"
+                            className="flex-1 flex items-center justify-center gap-2 bg-red-50 text-red-600 hover:bg-red-100 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                         >
                             <Ban size={14} />
                             {t("terminate")}
@@ -390,7 +469,7 @@ export default function LeasesPage() {
                         <button
                             onClick={() => setViewMode('grid')}
                             className={cn(
-                                "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all",
+                                "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none",
                                 viewMode === 'grid' ? "bg-white text-foreground shadow-sm" : "text-gray-400 hover:text-gray-600"
                             )}
                         >
@@ -400,7 +479,7 @@ export default function LeasesPage() {
                         <button
                             onClick={() => setViewMode('board')}
                             className={cn(
-                                "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all",
+                                "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none",
                                 viewMode === 'board' ? "bg-white text-foreground shadow-sm" : "text-gray-400 hover:text-gray-600"
                             )}
                         >
@@ -411,7 +490,7 @@ export default function LeasesPage() {
                     {canManageLeases && (
                         <button
                             onClick={() => setShowForm(true)}
-                            className="flex items-center gap-2 bg-primary text-primary-foreground px-5 py-2.5 rounded-full text-xs font-bold hover:opacity-90 transition-all shadow-lg shadow-primary/10 active:scale-95"
+                            className="flex items-center gap-2 bg-primary text-primary-foreground px-5 py-2.5 rounded-full text-xs font-bold hover:opacity-90 transition-all duration-200 shadow-lg shadow-primary/10 active:scale-95 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                         >
                             <Plus size={14} />
                             {t("draftLease")}
@@ -423,72 +502,102 @@ export default function LeasesPage() {
             {showForm && (
                 <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-[100] overflow-y-auto">
                     <div className="bg-white rounded-3xl p-8 max-w-2xl w-full shadow-2xl border border-gray-100 relative my-8">
-                        <button onClick={() => setShowForm(false)} className="absolute right-6 top-6 p-2 text-gray-400 hover:text-gray-600"><X size={18} /></button>
+                        <button onClick={() => setShowForm(false)} aria-label="Close form" className="absolute right-6 top-6 p-2 text-gray-400 hover:text-gray-600 cursor-pointer transition-colors duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg"><X size={18} /></button>
                         <h2 className="text-lg font-black mb-1">{t("draftNewLease")}</h2>
                         <p className="text-xs text-gray-400 mb-8 font-medium">{t("draftNewLeaseDesc")}</p>
                         <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-5">
                             <div className="col-span-1">
                                 <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("selectUnit")}</label>
-                                <select required className="w-full bg-input border border-border p-3 rounded-xl text-xs" value={formData.unitId} onChange={ev => setFormData({ ...formData, unitId: ev.target.value })}>
+                                <select required className="w-full bg-input border border-border p-3 rounded-xl text-xs cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.unitId} onChange={ev => setFormData({ ...formData, unitId: ev.target.value })}>
                                     <option value="">{t("chooseVacantUnit")}</option>
                                     {units.map(u => <option key={u.id} value={u.id}>{t("unit")} {u.unitNumber}</option>)}
                                 </select>
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("selectRenter")}</label>
-                                <select required className="w-full bg-input border border-border p-3 rounded-xl text-xs" value={formData.renterId} onChange={ev => setFormData({ ...formData, renterId: ev.target.value })}>
+                                <select required className="w-full bg-input border border-border p-3 rounded-xl text-xs cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.renterId} onChange={ev => setFormData({ ...formData, renterId: ev.target.value })}>
                                     <option value="">{t("chooseRenter")}</option>
                                     {renters.map(r => <option key={r.id} value={r.id}>{getRenterDisplayName(r)}</option>)}
                                 </select>
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("startDate")}</label>
-                                <input required type="date" className="w-full bg-input border border-border p-3 rounded-xl text-xs" value={formData.startDate} onChange={ev => setFormData({ ...formData, startDate: ev.target.value })} />
+                                <input required type="date" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.startDate} onChange={ev => setFormData({ ...formData, startDate: ev.target.value })} />
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("endDate")}</label>
-                                <input required type="date" className="w-full bg-input border border-border p-3 rounded-xl text-xs" value={formData.endDate} onChange={ev => setFormData({ ...formData, endDate: ev.target.value })} />
+                                <input required type="date" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.endDate} onChange={ev => setFormData({ ...formData, endDate: ev.target.value })} />
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("rentAmount")}</label>
-                                <input required type="number" min="0" placeholder="50000" className="w-full bg-input border border-border p-3 rounded-xl text-xs" value={formData.rentAmount || ''} onChange={ev => setFormData({ ...formData, rentAmount: Number(ev.target.value) })} />
+                                <input required type="number" min="0" placeholder="50000" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.rentAmount || ''} onChange={ev => setFormData({ ...formData, rentAmount: Number(ev.target.value) })} />
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("securityDeposit")}</label>
-                                <input required type="number" min="0" placeholder="2500" className="w-full bg-input border border-border p-3 rounded-xl text-xs" value={formData.depositAmount || ''} onChange={ev => setFormData({ ...formData, depositAmount: Number(ev.target.value) })} />
+                                <input required type="number" min="0" placeholder="2500" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.depositAmount || ''} onChange={ev => setFormData({ ...formData, depositAmount: Number(ev.target.value) })} />
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("ejariNumber")}</label>
-                                <input placeholder="EJAR-12345" className="w-full bg-input border border-border p-3 rounded-xl text-xs" value={formData.ejariNumber} onChange={ev => setFormData({ ...formData, ejariNumber: ev.target.value })} />
+                                <input placeholder="EJAR-12345" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.ejariNumber} onChange={ev => setFormData({ ...formData, ejariNumber: ev.target.value })} />
+                            </div>
+                            <div className="col-span-1">
+                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("paymentMethod")}</label>
+                                <select className="w-full bg-input border border-border p-3 rounded-xl text-xs cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.paymentMethod} onChange={ev => setFormData({ ...formData, paymentMethod: ev.target.value })}>
+                                    <option value="CHEQUE">Cheque</option>
+                                    <option value="ONLINE">Online Payment</option>
+                                </select>
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("paymentTerms")}</label>
-                                <select className="w-full bg-input border border-border p-3 rounded-xl text-xs" value={formData.paymentTerms} onChange={ev => setFormData({ ...formData, paymentTerms: Number(ev.target.value) })}>
-                                    <option value={1}>1 Cheque</option>
-                                    <option value={2}>2 Cheques</option>
-                                    <option value={4}>4 Cheques</option>
-                                    <option value={6}>6 Cheques</option>
-                                    <option value={12}>12 Cheques</option>
+                                <select className="w-full bg-input border border-border p-3 rounded-xl text-xs cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.paymentTerms} onChange={ev => setFormData({ ...formData, paymentTerms: Number(ev.target.value) })}>
+                                    <option value={1}>1 {formData.paymentMethod === 'CHEQUE' ? 'Cheque' : 'Payment'}</option>
+                                    <option value={2}>2 {formData.paymentMethod === 'CHEQUE' ? 'Cheques' : 'Payments'}</option>
+                                    <option value={4}>4 {formData.paymentMethod === 'CHEQUE' ? 'Cheques' : 'Payments'}</option>
+                                    <option value={6}>6 {formData.paymentMethod === 'CHEQUE' ? 'Cheques' : 'Payments'}</option>
+                                    <option value={12}>12 {formData.paymentMethod === 'CHEQUE' ? 'Cheques' : 'Payments'}</option>
                                 </select>
                             </div>
+                            <div className="col-span-1">
+                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("depositPaymentMethod")}</label>
+                                <select className="w-full bg-input border border-border p-3 rounded-xl text-xs cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.depositPaymentMethod} onChange={ev => setFormData({ ...formData, depositPaymentMethod: ev.target.value })}>
+                                    <option value="CHEQUE">Cheque</option>
+                                    <option value="ONLINE">Online Payment</option>
+                                </select>
+                            </div>
+                            <div className="col-span-1">
+                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("paymentReference")}</label>
+                                <input placeholder="REF-12345" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.paymentReferenceNumber} onChange={ev => setFormData({ ...formData, paymentReferenceNumber: ev.target.value })} />
+                            </div>
                             <div className="col-span-2 flex justify-end gap-3 mt-4">
-                                <button type="button" onClick={() => setShowForm(false)} className="px-6 py-3 text-xs font-bold text-gray-500">{t("cancel")}</button>
-                                <button type="submit" className="px-8 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-bold">{t("draftLease")}</button>
+                                <button type="button" onClick={() => setShowForm(false)} className="px-6 py-3 text-xs font-bold text-gray-500 cursor-pointer hover:text-gray-700 transition-colors duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-xl">{t("cancel")}</button>
+                                <button type="submit" disabled={submitting} className="px-8 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-bold cursor-pointer hover:opacity-90 transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none disabled:opacity-50 flex items-center gap-2">
+                                    {submitting && <Loader2 size={14} className="animate-spin" />}
+                                    {t("draftLease")}
+                                </button>
                             </div>
                         </form>
                     </div>
                 </div>
             )}
 
+            {/* Skeleton Loading */}
+            {loading && (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                    {[1, 2, 3, 4, 5, 6].map(i => (
+                        <div key={i}>{renderSkeletonCard()}</div>
+                    ))}
+                </div>
+            )}
+
             {/* Grid View */}
-            {viewMode === 'grid' && (
+            {!loading && viewMode === 'grid' && (
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                     {leases.map(lease => renderLeaseCard(lease))}
                 </div>
             )}
 
             {/* Board View */}
-            {viewMode === 'board' && (
+            {!loading && viewMode === 'board' && (
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 pb-4">
                     {BOARD_COLUMNS.map(col => {
                         const columnLeases = leases.filter(l => col.statuses.includes(l.status));
@@ -513,7 +622,7 @@ export default function LeasesPage() {
                 </div>
             )}
 
-            {leases.length === 0 && !showForm && (
+            {!loading && leases.length === 0 && !showForm && (
                 <div className="text-center py-24 bg-gray-50 border border-dashed border-gray-200 rounded-[2.5rem] flex flex-col items-center">
                     <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center text-gray-200 shadow-sm mb-6">
                         <AlertCircle size={32} />
@@ -522,12 +631,24 @@ export default function LeasesPage() {
                         {t("noLeasesFound")}
                     </p>
                     {canManageLeases && (
-                        <button onClick={() => setShowForm(true)} className="text-xs font-black text-foreground border-b-2 border-primary pb-0.5 hover:text-primary transition-all">
+                        <button onClick={() => setShowForm(true)} className="text-xs font-black text-foreground border-b-2 border-primary pb-0.5 hover:text-primary transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none">
                             {t("draftALease")}
                         </button>
                     )}
                 </div>
             )}
+
+            {/* Confirmation Dialog */}
+            <ConfirmDialog
+                isOpen={confirmOpen}
+                onClose={() => setConfirmOpen(false)}
+                onConfirm={confirmConfig.onConfirm}
+                title={confirmConfig.title}
+                description={confirmConfig.description}
+                confirmText={confirmConfig.confirmText}
+                cancelText={t("cancel")}
+                isDestructive={confirmConfig.isDestructive}
+            />
         </div>
     );
 }
