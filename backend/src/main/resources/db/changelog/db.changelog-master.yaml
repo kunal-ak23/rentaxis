@@ -27,3 +27,7 @@ databaseChangeLog:
       file: db/changelog/changesets/13-payment-gateway.yaml
   - include:
       file: db/changelog/changesets/14-add-missing-indexes.yaml
+  - include:
+      file: db/changelog/changesets/15-lease-payment-method.yaml
+  - include:
+      file: db/changelog/changesets/16-account-mappings.yaml

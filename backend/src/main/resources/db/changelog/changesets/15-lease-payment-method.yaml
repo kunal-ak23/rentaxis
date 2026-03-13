@@ -1,0 +1,19 @@
+databaseChangeLog:
+  - changeSet:
+      id: 15-add-payment-method-fields
+      author: rentaxis
+      changes:
+        - addColumn:
+            tableName: leases
+            columns:
+              - column:
+                  name: payment_method
+                  type: VARCHAR(20)
+                  defaultValue: CHEQUE
+              - column:
+                  name: deposit_payment_method
+                  type: VARCHAR(20)
+                  defaultValue: CHEQUE
+              - column:
+                  name: payment_reference_number
+                  type: VARCHAR(100)
