@@ -11,8 +11,11 @@ import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.*;
 import com.datagami.rentaxis.domain.entity.enums.PaymentStatus;
 import com.datagami.rentaxis.domain.entity.enums.TransactionNature;
+import com.datagami.rentaxis.api.dto.PaymentPreviewDTO;
+import com.datagami.rentaxis.domain.entity.RentCollectionSettings;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.PaymentScheduleRepository;
+import com.datagami.rentaxis.domain.repository.RentCollectionSettingsRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,6 +37,7 @@ public class PaymentScheduleService {
     private final AccountRepository accountRepository;
     private final FinancialTransactionService financialTransactionService;
     private final AccountMappingService accountMappingService;
+    private final RentCollectionSettingsRepository rentCollectionSettingsRepository;
 
     @Transactional
     public List<PaymentSchedule> generateScheduleForLease(Lease lease) {
@@ -430,6 +434,103 @@ public class PaymentScheduleService {
         AgingReportDTO dto = new AgingReportDTO();
         dto.setBuckets(buckets);
         dto.setTotalOutstanding(totalOutstanding);
+        return dto;
+    }
+
+    @Transactional(readOnly = true)
+    public PaymentPreviewDTO previewSchedule(UUID propertyId, LocalDate startDate, LocalDate endDate, BigDecimal rentAmount) {
+        // Look up property's due day (default to 1 if not configured)
+        var settings = rentCollectionSettingsRepository.findByPropertyId(propertyId).orElse(null);
+        int dueDay = (settings != null && settings.getDueDayOfMonth() != null && settings.getDueDayOfMonth() >= 1 && settings.getDueDayOfMonth() <= 28)
+                ? settings.getDueDayOfMonth() : 1;
+        boolean onlineEnabled = settings != null && Boolean.TRUE.equals(settings.getOnlinePaymentEnabled());
+
+        long totalDays = java.time.temporal.ChronoUnit.DAYS.between(startDate, endDate);
+        if (totalDays <= 0) throw new RuntimeException("End date must be after start date");
+
+        BigDecimal dailyRate = rentAmount.divide(BigDecimal.valueOf(totalDays), 10, RoundingMode.HALF_UP);
+
+        List<PaymentPreviewDTO.PaymentPreviewLine> lines = new ArrayList<>();
+
+        // Calculate first due date on the configured day of month after lease start
+        LocalDate firstDueDate;
+        if (startDate.getDayOfMonth() == dueDay) {
+            firstDueDate = startDate;
+        } else if (startDate.getDayOfMonth() < dueDay) {
+            firstDueDate = startDate.withDayOfMonth(dueDay);
+        } else {
+            firstDueDate = startDate.plusMonths(1).withDayOfMonth(dueDay);
+        }
+
+        int installment = 1;
+
+        // Pro-rata first payment if lease doesn't start on due day
+        if (!startDate.equals(firstDueDate) && firstDueDate.isBefore(endDate)) {
+            long days = java.time.temporal.ChronoUnit.DAYS.between(startDate, firstDueDate);
+            BigDecimal proRataAmount = dailyRate.multiply(BigDecimal.valueOf(days)).setScale(2, RoundingMode.HALF_UP);
+
+            PaymentPreviewDTO.PaymentPreviewLine line = new PaymentPreviewDTO.PaymentPreviewLine();
+            line.setInstallmentNumber(installment++);
+            line.setDueDate(startDate);
+            line.setPeriodStart(startDate);
+            line.setPeriodEnd(firstDueDate.minusDays(1));
+            line.setAmount(proRataAmount);
+            line.setProRata(true);
+            lines.add(line);
+        }
+
+        // Generate monthly payments
+        LocalDate currentDue = firstDueDate.isBefore(endDate) ? firstDueDate : startDate;
+        while (currentDue.isBefore(endDate)) {
+            LocalDate nextDue = currentDue.plusMonths(1);
+            // Keep the due day consistent
+            try {
+                nextDue = nextDue.withDayOfMonth(dueDay);
+            } catch (Exception e) {
+                nextDue = nextDue.withDayOfMonth(nextDue.lengthOfMonth());
+            }
+
+            LocalDate periodEnd;
+            boolean isLast = false;
+            if (!nextDue.isAfter(endDate)) {
+                periodEnd = nextDue.minusDays(1);
+            } else {
+                periodEnd = endDate;
+                isLast = true;
+            }
+
+            long days = java.time.temporal.ChronoUnit.DAYS.between(currentDue, periodEnd) + 1;
+            BigDecimal amount = dailyRate.multiply(BigDecimal.valueOf(days)).setScale(2, RoundingMode.HALF_UP);
+
+            PaymentPreviewDTO.PaymentPreviewLine line = new PaymentPreviewDTO.PaymentPreviewLine();
+            line.setInstallmentNumber(installment++);
+            line.setDueDate(currentDue);
+            line.setPeriodStart(currentDue);
+            line.setPeriodEnd(periodEnd);
+            line.setAmount(amount);
+            line.setProRata(isLast && days < 25);
+            lines.add(line);
+
+            if (isLast) break;
+            currentDue = nextDue;
+        }
+
+        // Adjust last payment so total exactly equals rentAmount
+        BigDecimal calculatedTotal = lines.stream()
+                .map(PaymentPreviewDTO.PaymentPreviewLine::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal diff = rentAmount.subtract(calculatedTotal);
+        if (diff.compareTo(BigDecimal.ZERO) != 0 && !lines.isEmpty()) {
+            PaymentPreviewDTO.PaymentPreviewLine last = lines.get(lines.size() - 1);
+            last.setAmount(last.getAmount().add(diff));
+        }
+
+        PaymentPreviewDTO dto = new PaymentPreviewDTO();
+        dto.setLines(lines);
+        dto.setTotalAmount(rentAmount);
+        dto.setTotalPayments(lines.size());
+        dto.setDueDayOfMonth(dueDay);
+        dto.setDefaultPaymentMethod(onlineEnabled ? "ONLINE" : "CHEQUE");
         return dto;
     }
 
