@@ -1,0 +1,9 @@
+databaseChangeLog:
+  - changeSet:
+      id: 22-cleanup-stale-changelog-entries
+      author: rentaxis
+      changes:
+        - sql:
+            sql: >
+              DELETE FROM databasechangelog
+              WHERE id IN ('22-fix-leases-table-owner', '22-add-monthly-rent-to-leases')

@@ -2,27 +2,10 @@ databaseChangeLog:
   - changeSet:
       id: 22-fix-leases-table-owner
       author: rentaxis
+      preConditions:
+        - onFail: MARK_RAN
+        - tableExists:
+            tableName: leases
       changes:
         - sql:
-            sql: >
-              DO $$
-              BEGIN
-                IF EXISTS (
-                  SELECT 1 FROM pg_tables
-                  WHERE tablename = 'leases'
-                  AND tableowner != current_user
-                ) THEN
-                  EXECUTE 'ALTER TABLE leases OWNER TO ' || current_user;
-                END IF;
-              END $$;
-
-  - changeSet:
-      id: 22-add-monthly-rent-to-leases
-      author: rentaxis
-      changes:
-        - addColumn:
-            tableName: leases
-            columns:
-              - column:
-                  name: monthly_rent
-                  type: DECIMAL(14,2)
+            sql: ALTER TABLE leases ADD COLUMN IF NOT EXISTS monthly_rent DECIMAL(14,2)
