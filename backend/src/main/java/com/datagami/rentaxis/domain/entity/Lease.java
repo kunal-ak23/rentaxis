@@ -41,6 +41,9 @@ public class Lease extends BaseTenantEntity {
     @Column(name = "rent_amount", nullable = false)
     private BigDecimal rentAmount = BigDecimal.ZERO;
 
+    @Column(name = "monthly_rent", precision = 14, scale = 2)
+    private BigDecimal monthlyRent;
+
     @Column(name = "deposit_amount", nullable = false)
     private BigDecimal depositAmount = BigDecimal.ZERO;
 

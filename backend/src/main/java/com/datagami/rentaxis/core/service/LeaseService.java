@@ -83,6 +83,7 @@ public class LeaseService {
         lease.setStartDate(dto.getStartDate());
         lease.setEndDate(dto.getEndDate());
         lease.setRentAmount(dto.getRentAmount());
+        lease.setMonthlyRent(dto.getMonthlyRent());
         lease.setDepositAmount(dto.getDepositAmount());
         lease.setEjariNumber(dto.getEjariNumber());
         lease.setPaymentTerms(dto.getPaymentTerms());
@@ -129,6 +130,7 @@ public class LeaseService {
         lease.setStartDate(dto.getStartDate());
         lease.setEndDate(dto.getEndDate());
         lease.setRentAmount(dto.getRentAmount());
+        lease.setMonthlyRent(dto.getMonthlyRent());
         lease.setDepositAmount(dto.getDepositAmount());
         lease.setEjariNumber(dto.getEjariNumber());
         lease.setPaymentTerms(dto.getPaymentTerms());

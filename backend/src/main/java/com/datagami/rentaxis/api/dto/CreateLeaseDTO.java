@@ -26,6 +26,9 @@ public class CreateLeaseDTO {
     @Min(0)
     private BigDecimal rentAmount;
 
+    @Min(0)
+    private BigDecimal monthlyRent;
+
     @NotNull
     @Min(0)
     private BigDecimal depositAmount;

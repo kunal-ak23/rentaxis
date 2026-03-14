@@ -46,12 +46,15 @@ public class PaymentScheduleService {
             return existing;
         }
 
-        // Derive monthly rent from total lease rent / months
-        long months = java.time.temporal.ChronoUnit.MONTHS.between(lease.getStartDate(), lease.getEndDate());
-        LocalDate afterMonths = lease.getStartDate().plusMonths(months);
-        if (afterMonths.isBefore(lease.getEndDate())) months++;
-        if (months < 1) months = 1;
-        BigDecimal monthlyRent = lease.getRentAmount().divide(BigDecimal.valueOf(months), 2, RoundingMode.HALF_UP);
+        // Use stored monthly rent; fall back to total / months for legacy leases
+        BigDecimal monthlyRent;
+        if (lease.getMonthlyRent() != null && lease.getMonthlyRent().compareTo(BigDecimal.ZERO) > 0) {
+            monthlyRent = lease.getMonthlyRent();
+        } else {
+            long months = java.time.temporal.ChronoUnit.MONTHS.between(lease.getStartDate(), lease.getEndDate());
+            if (months < 1) months = 1;
+            monthlyRent = lease.getRentAmount().divide(BigDecimal.valueOf(months), 2, RoundingMode.HALF_UP);
+        }
 
         PaymentPreviewDTO preview = previewSchedule(
                 lease.getUnit().getProperty().getId(),
@@ -440,6 +443,7 @@ public class PaymentScheduleService {
         boolean onlineEnabled = settings != null && Boolean.TRUE.equals(settings.getOnlinePaymentEnabled());
 
         if (!endDate.isAfter(startDate)) throw new RuntimeException("End date must be after start date");
+        if (monthlyRent == null || monthlyRent.compareTo(BigDecimal.ZERO) <= 0) throw new RuntimeException("Monthly rent must be greater than zero");
 
         boolean startsOnDueDay = startDate.getDayOfMonth() == dueDay;
         List<PaymentPreviewDTO.PaymentPreviewLine> lines = new ArrayList<>();
@@ -476,10 +480,10 @@ public class PaymentScheduleService {
             }
 
             // Pro-rata first payment (lease start → day before first due date)
-            if (firstDueDate.isBefore(endDate)) {
+            long proRataDays = java.time.temporal.ChronoUnit.DAYS.between(startDate, firstDueDate);
+            if (proRataDays > 0 && firstDueDate.isBefore(endDate)) {
                 long totalDaysInMonth = java.time.temporal.ChronoUnit.DAYS.between(
                         firstDueDate.minusMonths(1), firstDueDate);
-                long proRataDays = java.time.temporal.ChronoUnit.DAYS.between(startDate, firstDueDate);
                 BigDecimal proRataAmount = monthlyRent.multiply(BigDecimal.valueOf(proRataDays))
                         .divide(BigDecimal.valueOf(totalDaysInMonth), 2, RoundingMode.HALF_UP);
 

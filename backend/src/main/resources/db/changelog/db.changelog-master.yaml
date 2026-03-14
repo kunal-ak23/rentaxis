@@ -41,3 +41,5 @@ databaseChangeLog:
       file: db/changelog/changesets/20-vat-and-bank-accounts.yaml
   - include:
       file: db/changelog/changesets/21-staff-management.yaml
+  - include:
+      file: db/changelog/changesets/22-lease-monthly-rent.yaml

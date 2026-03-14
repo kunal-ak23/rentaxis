@@ -225,11 +225,17 @@ export default function LeasesPage() {
     };
 
     const handleEditDraft = (lease: Lease) => {
-        // Calculate monthly rent from total (total / months)
-        const start = new Date(lease.startDate);
-        const end = new Date(lease.endDate);
-        const months = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
-        const monthlyRent = months > 0 ? Math.round(lease.rentAmount / months * 100) / 100 : lease.rentAmount;
+        setPaymentPreview(null);
+        // Use stored monthly rent if available, otherwise derive from total
+        let monthlyRent = lease.rentAmount;
+        if ((lease as Record<string, unknown>).monthlyRent) {
+            monthlyRent = (lease as Record<string, unknown>).monthlyRent as number;
+        } else {
+            const start = new Date(lease.startDate);
+            const end = new Date(lease.endDate);
+            const months = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+            if (months > 0) monthlyRent = Math.round(lease.rentAmount / months * 100) / 100;
+        }
 
         setEditingLeaseId(lease.id);
         setFormData({
@@ -252,9 +258,10 @@ export default function LeasesPage() {
         ev.preventDefault();
         setSubmitting(true);
         try {
-            // Send total rent (from preview) to backend, not monthly rent
+            // Send both total rent (from preview) and monthly rent to backend
             const submitData = {
                 ...formData,
+                monthlyRent: formData.rentAmount,
                 rentAmount: paymentPreview ? paymentPreview.totalAmount : formData.rentAmount,
             };
             const url = editingLeaseId
@@ -745,7 +752,7 @@ export default function LeasesPage() {
                             )}
                             <div className="col-span-2 flex justify-end gap-3 mt-4">
                                 <button type="button" onClick={() => setShowForm(false)} className="px-6 py-3 text-xs font-bold text-gray-500 cursor-pointer hover:text-gray-700 transition-colors duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-xl">{t("cancel")}</button>
-                                <button type="submit" disabled={submitting} className="px-8 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-bold cursor-pointer hover:opacity-90 transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none disabled:opacity-50 flex items-center gap-2">
+                                <button type="submit" disabled={submitting || !paymentPreview} className="px-8 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-bold cursor-pointer hover:opacity-90 transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none disabled:opacity-50 flex items-center gap-2">
                                     {submitting && <Loader2 size={14} className="animate-spin" />}
                                     {editingLeaseId ? t("saveChanges") : t("draftLease")}
                                 </button>
