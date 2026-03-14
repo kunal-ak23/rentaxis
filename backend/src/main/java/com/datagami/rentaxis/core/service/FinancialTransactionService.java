@@ -5,9 +5,13 @@ import com.datagami.rentaxis.api.dto.TrialBalanceDTO;
 import com.datagami.rentaxis.api.dto.VatReturnDTO;
 import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.entity.FinancialTransaction;
+import com.datagami.rentaxis.domain.entity.Property;
+import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.enums.AccountType;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.FinancialTransactionRepository;
+import com.datagami.rentaxis.domain.repository.PropertyRepository;
+import com.datagami.rentaxis.domain.repository.UnitRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,20 +25,35 @@ public class FinancialTransactionService {
 
     private final FinancialTransactionRepository repository;
     private final AccountRepository accountRepository;
+    private final UnitRepository unitRepository;
+    private final PropertyRepository propertyRepository;
 
     public FinancialTransactionService(FinancialTransactionRepository repository,
-            AccountRepository accountRepository) {
+            AccountRepository accountRepository,
+            UnitRepository unitRepository,
+            PropertyRepository propertyRepository) {
         this.repository = repository;
         this.accountRepository = accountRepository;
+        this.unitRepository = unitRepository;
+        this.propertyRepository = propertyRepository;
     }
 
     @Transactional
     public FinancialTransaction createTransaction(FinancialTransaction txn) {
-        // Auto-resolve property from unit if unit is set
-        if (txn.getUnit() != null && txn.getProperty() == null) {
-            txn.setProperty(txn.getUnit().getProperty());
+        // Fetch full entities to avoid detached entity version errors
+        if (txn.getUnit() != null && txn.getUnit().getId() != null) {
+            Unit fullUnit = unitRepository.findById(txn.getUnit().getId())
+                    .orElseThrow(() -> new RuntimeException("Unit not found: " + txn.getUnit().getId()));
+            txn.setUnit(fullUnit);
+            if (txn.getProperty() == null) {
+                txn.setProperty(fullUnit.getProperty());
+            }
         }
-        // Fetch full account to denormalize fields
+        if (txn.getProperty() != null && txn.getProperty().getId() != null && txn.getUnit() == null) {
+            Property fullProperty = propertyRepository.findById(txn.getProperty().getId())
+                    .orElseThrow(() -> new RuntimeException("Property not found: " + txn.getProperty().getId()));
+            txn.setProperty(fullProperty);
+        }
         if (txn.getAccount() != null && txn.getAccount().getId() != null) {
             Account fullAccount = accountRepository.findById(txn.getAccount().getId())
                     .orElseThrow(() -> new RuntimeException("Account not found: " + txn.getAccount().getId()));
