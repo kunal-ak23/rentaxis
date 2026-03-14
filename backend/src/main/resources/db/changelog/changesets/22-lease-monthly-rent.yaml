@@ -1,5 +1,22 @@
 databaseChangeLog:
   - changeSet:
+      id: 22-fix-leases-table-owner
+      author: rentaxis
+      changes:
+        - sql:
+            sql: >
+              DO $$
+              BEGIN
+                IF EXISTS (
+                  SELECT 1 FROM pg_tables
+                  WHERE tablename = 'leases'
+                  AND tableowner != current_user
+                ) THEN
+                  EXECUTE 'ALTER TABLE leases OWNER TO ' || current_user;
+                END IF;
+              END $$;
+
+  - changeSet:
       id: 22-add-monthly-rent-to-leases
       author: rentaxis
       changes:
