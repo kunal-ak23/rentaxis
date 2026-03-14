@@ -102,6 +102,51 @@ public class LeaseService {
     }
 
     @Transactional
+    public LeaseDTO updateDraftLease(UUID leaseId, CreateLeaseDTO dto) {
+        Lease lease = findLeaseWithTenantCheck(leaseId);
+
+        if (lease.getStatus() != LeaseStatus.DRAFT) {
+            throw new BusinessRuleViolationException("Only DRAFT leases can be edited");
+        }
+
+        // If unit changed, validate the new unit is vacant
+        if (!lease.getUnit().getId().equals(dto.getUnitId())) {
+            Unit newUnit = unitRepository.findById(dto.getUnitId())
+                    .orElseThrow(() -> new NotFoundException("Unit not found"));
+            if (newUnit.getStatus() != UnitStatus.VACANT) {
+                throw new BusinessRuleViolationException("Cannot assign lease. Unit is not vacant.");
+            }
+            lease.setUnit(newUnit);
+        }
+
+        // If renter changed
+        if (!lease.getRenter().getId().equals(dto.getRenterId())) {
+            Renter renter = renterRepository.findById(dto.getRenterId())
+                    .orElseThrow(() -> new NotFoundException("Renter not found"));
+            lease.setRenter(renter);
+        }
+
+        lease.setStartDate(dto.getStartDate());
+        lease.setEndDate(dto.getEndDate());
+        lease.setRentAmount(dto.getRentAmount());
+        lease.setDepositAmount(dto.getDepositAmount());
+        lease.setEjariNumber(dto.getEjariNumber());
+        lease.setPaymentTerms(dto.getPaymentTerms());
+        if (dto.getPaymentMethod() != null) {
+            lease.setPaymentMethod(PaymentMethod.valueOf(dto.getPaymentMethod()));
+        }
+        if (dto.getDepositPaymentMethod() != null) {
+            lease.setDepositPaymentMethod(PaymentMethod.valueOf(dto.getDepositPaymentMethod()));
+        }
+        lease.setPaymentReferenceNumber(dto.getPaymentReferenceNumber());
+
+        Lease savedLease = leaseRepository.save(lease);
+        recordEvent(savedLease, LeaseStatus.DRAFT, LeaseStatus.DRAFT, "Lease updated");
+
+        return mapToDTO(savedLease);
+    }
+
+    @Transactional
     public LeaseDTO activateLease(UUID leaseId) {
         Lease lease = findLeaseWithTenantCheck(leaseId);
 

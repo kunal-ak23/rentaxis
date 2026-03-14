@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useTranslations, useLocale } from "next-intl";
-import { Plus, X, FileText, Calendar, DollarSign, Home, CheckCircle, Ban, AlertCircle, LayoutGrid, Columns3, Download, Sparkles, Loader2, RefreshCw } from "lucide-react";
+import { Plus, X, FileText, Calendar, DollarSign, Home, CheckCircle, Ban, AlertCircle, LayoutGrid, Columns3, Download, Sparkles, Loader2, RefreshCw, Pencil } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
@@ -81,6 +81,7 @@ export default function LeasesPage() {
         defaultPaymentMethod: string;
     } | null>(null);
     const [previewLoading, setPreviewLoading] = useState(false);
+    const [editingLeaseId, setEditingLeaseId] = useState<string | null>(null);
 
     // ConfirmDialog state
     const [confirmOpen, setConfirmOpen] = useState(false);
@@ -223,6 +224,30 @@ export default function LeasesPage() {
         }
     };
 
+    const handleEditDraft = (lease: Lease) => {
+        // Calculate monthly rent from total (total / months)
+        const start = new Date(lease.startDate);
+        const end = new Date(lease.endDate);
+        const months = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+        const monthlyRent = months > 0 ? Math.round(lease.rentAmount / months * 100) / 100 : lease.rentAmount;
+
+        setEditingLeaseId(lease.id);
+        setFormData({
+            unitId: lease.unitId,
+            renterId: lease.renterId,
+            startDate: lease.startDate,
+            endDate: lease.endDate,
+            rentAmount: monthlyRent,
+            depositAmount: lease.depositAmount,
+            ejariNumber: lease.ejariNumber || "",
+            paymentTerms: lease.paymentTerms || 1,
+            paymentMethod: lease.paymentMethod || "CHEQUE",
+            depositPaymentMethod: lease.depositPaymentMethod || "CHEQUE",
+            paymentReferenceNumber: lease.paymentReferenceNumber || ""
+        });
+        setShowForm(true);
+    };
+
     const handleSubmit = async (ev: React.FormEvent) => {
         ev.preventDefault();
         setSubmitting(true);
@@ -232,13 +257,18 @@ export default function LeasesPage() {
                 ...formData,
                 rentAmount: paymentPreview ? paymentPreview.totalAmount : formData.rentAmount,
             };
-            const res = await fetch("/api/proxy/v1/leases", {
-                method: "POST",
+            const url = editingLeaseId
+                ? `/api/proxy/v1/leases/${editingLeaseId}`
+                : "/api/proxy/v1/leases";
+            const method = editingLeaseId ? "PUT" : "POST";
+            const res = await fetch(url, {
+                method,
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(submitData)
             });
             if (res.ok) {
                 setShowForm(false);
+                setEditingLeaseId(null);
                 fetchLeases();
                 fetchUnits();
                 setFormData({
@@ -466,6 +496,15 @@ export default function LeasesPage() {
 
             {canManageLeases && (
                 <div className={cn("flex gap-2 border-t border-gray-100 mt-auto", compact ? "pt-3 flex-wrap" : "pt-4")}>
+                    {lease.status === 'DRAFT' && (
+                        <button
+                            onClick={() => handleEditDraft(lease)}
+                            className="flex items-center justify-center gap-2 bg-gray-50 text-gray-700 hover:bg-gray-100 py-2.5 px-3 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                        >
+                            <Pencil size={14} />
+                            {t("edit")}
+                        </button>
+                    )}
                     {lease.status === 'DRAFT' && !lease.hasContract && (
                         <button
                             onClick={() => handleGenerateContract(lease.id)}
@@ -575,9 +614,9 @@ export default function LeasesPage() {
             {showForm && (
                 <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-[100] overflow-y-auto">
                     <div className="bg-white rounded-3xl p-8 max-w-2xl w-full shadow-2xl border border-gray-100 relative my-8">
-                        <button onClick={() => setShowForm(false)} aria-label="Close form" className="absolute right-6 top-6 p-2 text-gray-400 hover:text-gray-600 cursor-pointer transition-colors duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg"><X size={18} /></button>
-                        <h2 className="text-lg font-black mb-1">{t("draftNewLease")}</h2>
-                        <p className="text-xs text-gray-400 mb-8 font-medium">{t("draftNewLeaseDesc")}</p>
+                        <button onClick={() => { setShowForm(false); setEditingLeaseId(null); }} aria-label="Close form" className="absolute right-6 top-6 p-2 text-gray-400 hover:text-gray-600 cursor-pointer transition-colors duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg"><X size={18} /></button>
+                        <h2 className="text-lg font-black mb-1">{editingLeaseId ? t("editLease") : t("draftNewLease")}</h2>
+                        <p className="text-xs text-gray-400 mb-8 font-medium">{editingLeaseId ? t("editLeaseDesc") : t("draftNewLeaseDesc")}</p>
                         <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-5">
                             <div className="col-span-1">
                                 <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("selectUnit")}</label>
@@ -708,7 +747,7 @@ export default function LeasesPage() {
                                 <button type="button" onClick={() => setShowForm(false)} className="px-6 py-3 text-xs font-bold text-gray-500 cursor-pointer hover:text-gray-700 transition-colors duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-xl">{t("cancel")}</button>
                                 <button type="submit" disabled={submitting} className="px-8 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-bold cursor-pointer hover:opacity-90 transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none disabled:opacity-50 flex items-center gap-2">
                                     {submitting && <Loader2 size={14} className="animate-spin" />}
-                                    {t("draftLease")}
+                                    {editingLeaseId ? t("saveChanges") : t("draftLease")}
                                 </button>
                             </div>
                         </form>
