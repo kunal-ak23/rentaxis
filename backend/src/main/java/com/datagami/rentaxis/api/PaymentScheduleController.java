@@ -106,8 +106,8 @@ public class PaymentScheduleController {
             @RequestParam UUID propertyId,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
-            @RequestParam BigDecimal rentAmount) {
-        return ResponseEntity.ok(paymentScheduleService.previewSchedule(propertyId, startDate, endDate, rentAmount));
+            @RequestParam BigDecimal monthlyRent) {
+        return ResponseEntity.ok(paymentScheduleService.previewSchedule(propertyId, startDate, endDate, monthlyRent));
     }
 
 }

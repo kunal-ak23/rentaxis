@@ -139,7 +139,7 @@ export default function LeasesPage() {
                 propertyId,
                 startDate: formData.startDate,
                 endDate: formData.endDate,
-                rentAmount: String(formData.rentAmount),
+                monthlyRent: String(formData.rentAmount),
             });
 
             setPreviewLoading(true);
@@ -227,10 +227,15 @@ export default function LeasesPage() {
         ev.preventDefault();
         setSubmitting(true);
         try {
+            // Send total rent (from preview) to backend, not monthly rent
+            const submitData = {
+                ...formData,
+                rentAmount: paymentPreview ? paymentPreview.totalAmount : formData.rentAmount,
+            };
             const res = await fetch("/api/proxy/v1/leases", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(formData)
+                body: JSON.stringify(submitData)
             });
             if (res.ok) {
                 setShowForm(false);
@@ -597,8 +602,8 @@ export default function LeasesPage() {
                                 <input required type="date" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.endDate} onChange={ev => setFormData({ ...formData, endDate: ev.target.value })} />
                             </div>
                             <div className="col-span-1">
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("rentAmount")}</label>
-                                <input required type="number" min="0" placeholder="50000" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.rentAmount || ''} onChange={ev => setFormData({ ...formData, rentAmount: Number(ev.target.value) })} />
+                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">Monthly Rent (AED)</label>
+                                <input required type="number" min="0" placeholder="5000" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.rentAmount || ''} onChange={ev => setFormData({ ...formData, rentAmount: Number(ev.target.value) })} />
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("securityDeposit")}</label>
@@ -683,18 +688,13 @@ export default function LeasesPage() {
                                             <tfoot>
                                                 <tr className="bg-gray-50 border-t-2 border-gray-200">
                                                     <td colSpan={3} className="px-4 py-2 text-xs font-black uppercase">Total</td>
-                                                    <td className={`px-4 py-2 text-right text-xs font-black ${Math.abs(paymentPreview.totalAmount - formData.rentAmount) > 0.01 ? 'text-red-500' : 'text-emerald-600'}`}>
+                                                    <td className="px-4 py-2 text-right text-xs font-black text-emerald-600">
                                                         {paymentPreview.totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                                     </td>
                                                     <td className="px-4 py-2 text-center text-[10px] text-gray-400">{paymentPreview.totalPayments} payments</td>
                                                 </tr>
                                             </tfoot>
                                         </table>
-                                        {Math.abs(paymentPreview.totalAmount - formData.rentAmount) > 0.01 && (
-                                            <div className="px-4 py-2 bg-red-50 text-red-600 text-[10px] font-bold">
-                                                Total ({paymentPreview.totalAmount.toFixed(2)}) does not match rent amount ({formData.rentAmount.toFixed(2)}). Adjust amounts to match.
-                                            </div>
-                                        )}
                                     </div>
                                 </div>
                             )}
