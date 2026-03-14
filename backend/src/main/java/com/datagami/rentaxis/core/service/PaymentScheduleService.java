@@ -11,8 +11,11 @@ import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.*;
 import com.datagami.rentaxis.domain.entity.enums.PaymentStatus;
 import com.datagami.rentaxis.domain.entity.enums.TransactionNature;
+import com.datagami.rentaxis.api.dto.PaymentPreviewDTO;
+import com.datagami.rentaxis.domain.entity.RentCollectionSettings;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.PaymentScheduleRepository;
+import com.datagami.rentaxis.domain.repository.RentCollectionSettingsRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,44 +37,42 @@ public class PaymentScheduleService {
     private final AccountRepository accountRepository;
     private final FinancialTransactionService financialTransactionService;
     private final AccountMappingService accountMappingService;
+    private final RentCollectionSettingsRepository rentCollectionSettingsRepository;
 
     @Transactional
     public List<PaymentSchedule> generateScheduleForLease(Lease lease) {
-        // Idempotency check: skip if schedules already exist for this lease
         List<PaymentSchedule> existing = paymentScheduleRepository.findByLeaseId(lease.getId());
         if (!existing.isEmpty()) {
             return existing;
         }
 
-        int terms = (lease.getPaymentTerms() == null || lease.getPaymentTerms() == 0)
-                ? 1
-                : lease.getPaymentTerms();
+        // Use stored monthly rent; fall back to total / months for legacy leases
+        BigDecimal monthlyRent;
+        if (lease.getMonthlyRent() != null && lease.getMonthlyRent().compareTo(BigDecimal.ZERO) > 0) {
+            monthlyRent = lease.getMonthlyRent();
+        } else {
+            long months = java.time.temporal.ChronoUnit.MONTHS.between(lease.getStartDate(), lease.getEndDate());
+            if (months < 1) months = 1;
+            monthlyRent = lease.getRentAmount().divide(BigDecimal.valueOf(months), 2, RoundingMode.HALF_UP);
+        }
 
-        BigDecimal totalRent = lease.getRentAmount();
-        BigDecimal installmentAmount = totalRent.divide(BigDecimal.valueOf(terms), 2, RoundingMode.HALF_UP);
-
-        // Calculate the remainder so the total exactly matches rentAmount
-        BigDecimal allocatedTotal = installmentAmount.multiply(BigDecimal.valueOf(terms));
-        BigDecimal remainder = totalRent.subtract(allocatedTotal);
+        PaymentPreviewDTO preview = previewSchedule(
+                lease.getUnit().getProperty().getId(),
+                lease.getStartDate(),
+                lease.getEndDate(),
+                monthlyRent);
 
         List<PaymentSchedule> schedules = new ArrayList<>();
-
-        for (int i = 1; i <= terms; i++) {
+        for (PaymentPreviewDTO.PaymentPreviewLine line : preview.getLines()) {
             PaymentSchedule ps = new PaymentSchedule();
             ps.setLease(lease);
             ps.setUnit(lease.getUnit());
             ps.setProperty(lease.getUnit().getProperty());
-            ps.setInstallmentNumber(i);
-            ps.setDueDate(lease.getStartDate().plusMonths(i - 1));
+            ps.setInstallmentNumber(line.getInstallmentNumber());
+            ps.setDueDate(line.getDueDate());
+            ps.setAmount(line.getAmount());
             ps.setStatus(PaymentStatus.PENDING);
-
-            // Add remainder to the last installment
-            if (i == terms) {
-                ps.setAmount(installmentAmount.add(remainder));
-            } else {
-                ps.setAmount(installmentAmount);
-            }
-
+            ps.setPaymentMethod(lease.getPaymentMethod() != null ? lease.getPaymentMethod().name() : "CHEQUE");
             schedules.add(ps);
         }
 
@@ -430,6 +431,125 @@ public class PaymentScheduleService {
         AgingReportDTO dto = new AgingReportDTO();
         dto.setBuckets(buckets);
         dto.setTotalOutstanding(totalOutstanding);
+        return dto;
+    }
+
+    @Transactional(readOnly = true)
+    public PaymentPreviewDTO previewSchedule(UUID propertyId, LocalDate startDate, LocalDate endDate, BigDecimal monthlyRent) {
+        // Look up property settings
+        var settings = rentCollectionSettingsRepository.findByPropertyId(propertyId).orElse(null);
+        int dueDay = (settings != null && settings.getDueDayOfMonth() != null && settings.getDueDayOfMonth() >= 1 && settings.getDueDayOfMonth() <= 28)
+                ? settings.getDueDayOfMonth() : 1;
+        boolean onlineEnabled = settings != null && Boolean.TRUE.equals(settings.getOnlinePaymentEnabled());
+
+        if (!endDate.isAfter(startDate)) throw new RuntimeException("End date must be after start date");
+        if (monthlyRent == null || monthlyRent.compareTo(BigDecimal.ZERO) <= 0) throw new RuntimeException("Monthly rent must be greater than zero");
+
+        boolean startsOnDueDay = startDate.getDayOfMonth() == dueDay;
+        List<PaymentPreviewDTO.PaymentPreviewLine> lines = new ArrayList<>();
+        int installment = 1;
+
+        if (startsOnDueDay) {
+            // Simple case: lease starts on due day — equal monthly payments
+            long months = java.time.temporal.ChronoUnit.MONTHS.between(startDate, endDate);
+            LocalDate afterMonths = startDate.plusMonths(months);
+            if (afterMonths.isBefore(endDate)) months++;
+            if (months < 1) months = 1;
+
+            for (int i = 0; i < (int) months; i++) {
+                LocalDate due = startDate.plusMonths(i);
+                LocalDate pEnd = (i == (int) months - 1) ? endDate : startDate.plusMonths(i + 1).minusDays(1);
+
+                PaymentPreviewDTO.PaymentPreviewLine line = new PaymentPreviewDTO.PaymentPreviewLine();
+                line.setInstallmentNumber(installment++);
+                line.setDueDate(due);
+                line.setPeriodStart(due);
+                line.setPeriodEnd(pEnd);
+                line.setAmount(monthlyRent);
+                line.setProRata(false);
+                lines.add(line);
+            }
+        } else {
+            // Lease starts mid-month: pro-rata first, then full months on due day, pro-rata last
+            // First due date on the configured day
+            LocalDate firstDueDate;
+            if (startDate.getDayOfMonth() < dueDay) {
+                firstDueDate = startDate.withDayOfMonth(dueDay);
+            } else {
+                firstDueDate = startDate.plusMonths(1).withDayOfMonth(dueDay);
+            }
+
+            // Pro-rata first payment (lease start → day before first due date)
+            long proRataDays = java.time.temporal.ChronoUnit.DAYS.between(startDate, firstDueDate);
+            if (proRataDays > 0 && firstDueDate.isBefore(endDate)) {
+                long totalDaysInMonth = java.time.temporal.ChronoUnit.DAYS.between(
+                        firstDueDate.minusMonths(1), firstDueDate);
+                BigDecimal proRataAmount = monthlyRent.multiply(BigDecimal.valueOf(proRataDays))
+                        .divide(BigDecimal.valueOf(totalDaysInMonth), 2, RoundingMode.HALF_UP);
+
+                PaymentPreviewDTO.PaymentPreviewLine first = new PaymentPreviewDTO.PaymentPreviewLine();
+                first.setInstallmentNumber(installment++);
+                first.setDueDate(startDate);
+                first.setPeriodStart(startDate);
+                first.setPeriodEnd(firstDueDate.minusDays(1));
+                first.setAmount(proRataAmount);
+                first.setProRata(true);
+                lines.add(first);
+            }
+
+            // Full monthly payments on due day
+            LocalDate currentDue = firstDueDate;
+            while (currentDue.isBefore(endDate)) {
+                LocalDate nextDue = currentDue.plusMonths(1);
+                try { nextDue = nextDue.withDayOfMonth(dueDay); }
+                catch (Exception e) { nextDue = nextDue.withDayOfMonth(nextDue.lengthOfMonth()); }
+
+                boolean isLast = !nextDue.isBefore(endDate);
+                LocalDate pEnd = isLast ? endDate : nextDue.minusDays(1);
+
+                if (isLast) {
+                    // Pro-rata last payment
+                    long totalDaysInMonth = java.time.temporal.ChronoUnit.DAYS.between(currentDue, currentDue.plusMonths(1));
+                    long actualDays = java.time.temporal.ChronoUnit.DAYS.between(currentDue, endDate);
+                    // If it's close to a full month, just use full amount
+                    BigDecimal amount = (actualDays >= totalDaysInMonth - 2)
+                            ? monthlyRent
+                            : monthlyRent.multiply(BigDecimal.valueOf(actualDays))
+                                .divide(BigDecimal.valueOf(totalDaysInMonth), 2, RoundingMode.HALF_UP);
+
+                    PaymentPreviewDTO.PaymentPreviewLine line = new PaymentPreviewDTO.PaymentPreviewLine();
+                    line.setInstallmentNumber(installment++);
+                    line.setDueDate(currentDue);
+                    line.setPeriodStart(currentDue);
+                    line.setPeriodEnd(pEnd);
+                    line.setAmount(amount);
+                    line.setProRata(actualDays < totalDaysInMonth - 2);
+                    lines.add(line);
+                } else {
+                    PaymentPreviewDTO.PaymentPreviewLine line = new PaymentPreviewDTO.PaymentPreviewLine();
+                    line.setInstallmentNumber(installment++);
+                    line.setDueDate(currentDue);
+                    line.setPeriodStart(currentDue);
+                    line.setPeriodEnd(pEnd);
+                    line.setAmount(monthlyRent);
+                    line.setProRata(false);
+                    lines.add(line);
+                }
+                if (isLast) break;
+                currentDue = nextDue;
+            }
+        }
+
+        BigDecimal totalRent = lines.stream()
+                .map(PaymentPreviewDTO.PaymentPreviewLine::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        PaymentPreviewDTO dto = new PaymentPreviewDTO();
+        dto.setLines(lines);
+        dto.setTotalAmount(totalRent);
+        dto.setTotalPayments(lines.size());
+        dto.setDueDayOfMonth(dueDay);
+        dto.setDefaultPaymentMethod(onlineEnabled ? "ONLINE" : "CHEQUE");
         return dto;
     }
 

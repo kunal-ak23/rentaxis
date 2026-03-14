@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useTranslations, useLocale } from "next-intl";
-import { Plus, X, FileText, Calendar, DollarSign, Home, CheckCircle, Ban, AlertCircle, LayoutGrid, Columns3, Download, Sparkles, Loader2, RefreshCw } from "lucide-react";
+import { Plus, X, FileText, Calendar, DollarSign, Home, CheckCircle, Ban, AlertCircle, LayoutGrid, Columns3, Download, Sparkles, Loader2, RefreshCw, Pencil } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
@@ -33,6 +33,7 @@ type Unit = {
     id: string;
     unitNumber: string;
     status: string;
+    property?: { id: string };
 };
 
 type Renter = {
@@ -72,6 +73,15 @@ export default function LeasesPage() {
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [actionLoading, setActionLoading] = useState<string | null>(null);
+    const [paymentPreview, setPaymentPreview] = useState<{
+        lines: { installmentNumber: number; dueDate: string; periodStart: string; periodEnd: string; amount: number; proRata: boolean }[];
+        totalAmount: number;
+        totalPayments: number;
+        dueDayOfMonth: number;
+        defaultPaymentMethod: string;
+    } | null>(null);
+    const [previewLoading, setPreviewLoading] = useState(false);
+    const [editingLeaseId, setEditingLeaseId] = useState<string | null>(null);
 
     // ConfirmDialog state
     const [confirmOpen, setConfirmOpen] = useState(false);
@@ -112,6 +122,46 @@ export default function LeasesPage() {
             fetchPaymentStats(leases);
         }
     }, [leases]);
+
+    useEffect(() => {
+        if (!formData.startDate || !formData.endDate || !formData.rentAmount || !formData.unitId) {
+            setPaymentPreview(null);
+            return;
+        }
+        const selectedUnit = units.find(u => u.id === formData.unitId);
+        const propertyId = selectedUnit?.property?.id;
+        if (!propertyId) {
+            setPaymentPreview(null);
+            return;
+        }
+
+        const timer = setTimeout(() => {
+            const params = new URLSearchParams({
+                propertyId,
+                startDate: formData.startDate,
+                endDate: formData.endDate,
+                monthlyRent: String(formData.rentAmount),
+            });
+
+            setPreviewLoading(true);
+            fetch(`/api/proxy/v1/payments/preview?${params}`)
+                .then(res => res.ok ? res.json() : null)
+                .then(data => {
+                    setPaymentPreview(data);
+                    if (data) {
+                        setFormData(prev => ({
+                            ...prev,
+                            paymentMethod: data.defaultPaymentMethod || 'CHEQUE',
+                            paymentTerms: data.totalPayments || prev.paymentTerms,
+                        }));
+                    }
+                })
+                .catch(() => setPaymentPreview(null))
+                .finally(() => setPreviewLoading(false));
+        }, 500);
+
+        return () => clearTimeout(timer);
+    }, [formData.startDate, formData.endDate, formData.rentAmount, formData.unitId, units]);
 
     const fetchLeases = async () => {
         setLoading(true);
@@ -174,17 +224,58 @@ export default function LeasesPage() {
         }
     };
 
+    const handleEditDraft = (lease: Lease) => {
+        setPaymentPreview(null);
+        // Use stored monthly rent if available, otherwise derive from total
+        let monthlyRent = lease.rentAmount;
+        if ((lease as Record<string, unknown>).monthlyRent) {
+            monthlyRent = (lease as Record<string, unknown>).monthlyRent as number;
+        } else {
+            const start = new Date(lease.startDate);
+            const end = new Date(lease.endDate);
+            const months = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+            if (months > 0) monthlyRent = Math.round(lease.rentAmount / months * 100) / 100;
+        }
+
+        setEditingLeaseId(lease.id);
+        setFormData({
+            unitId: lease.unitId,
+            renterId: lease.renterId,
+            startDate: lease.startDate,
+            endDate: lease.endDate,
+            rentAmount: monthlyRent,
+            depositAmount: lease.depositAmount,
+            ejariNumber: lease.ejariNumber || "",
+            paymentTerms: lease.paymentTerms || 1,
+            paymentMethod: lease.paymentMethod || "CHEQUE",
+            depositPaymentMethod: lease.depositPaymentMethod || "CHEQUE",
+            paymentReferenceNumber: lease.paymentReferenceNumber || ""
+        });
+        setShowForm(true);
+    };
+
     const handleSubmit = async (ev: React.FormEvent) => {
         ev.preventDefault();
         setSubmitting(true);
         try {
-            const res = await fetch("/api/proxy/v1/leases", {
-                method: "POST",
+            // Send both total rent (from preview) and monthly rent to backend
+            const submitData = {
+                ...formData,
+                monthlyRent: formData.rentAmount,
+                rentAmount: paymentPreview ? paymentPreview.totalAmount : formData.rentAmount,
+            };
+            const url = editingLeaseId
+                ? `/api/proxy/v1/leases/${editingLeaseId}`
+                : "/api/proxy/v1/leases";
+            const method = editingLeaseId ? "PUT" : "POST";
+            const res = await fetch(url, {
+                method,
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(formData)
+                body: JSON.stringify(submitData)
             });
             if (res.ok) {
                 setShowForm(false);
+                setEditingLeaseId(null);
                 fetchLeases();
                 fetchUnits();
                 setFormData({
@@ -412,6 +503,15 @@ export default function LeasesPage() {
 
             {canManageLeases && (
                 <div className={cn("flex gap-2 border-t border-gray-100 mt-auto", compact ? "pt-3 flex-wrap" : "pt-4")}>
+                    {lease.status === 'DRAFT' && (
+                        <button
+                            onClick={() => handleEditDraft(lease)}
+                            className="flex items-center justify-center gap-2 bg-gray-50 text-gray-700 hover:bg-gray-100 py-2.5 px-3 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                        >
+                            <Pencil size={14} />
+                            {t("edit")}
+                        </button>
+                    )}
                     {lease.status === 'DRAFT' && !lease.hasContract && (
                         <button
                             onClick={() => handleGenerateContract(lease.id)}
@@ -521,9 +621,9 @@ export default function LeasesPage() {
             {showForm && (
                 <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-[100] overflow-y-auto">
                     <div className="bg-white rounded-3xl p-8 max-w-2xl w-full shadow-2xl border border-gray-100 relative my-8">
-                        <button onClick={() => setShowForm(false)} aria-label="Close form" className="absolute right-6 top-6 p-2 text-gray-400 hover:text-gray-600 cursor-pointer transition-colors duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg"><X size={18} /></button>
-                        <h2 className="text-lg font-black mb-1">{t("draftNewLease")}</h2>
-                        <p className="text-xs text-gray-400 mb-8 font-medium">{t("draftNewLeaseDesc")}</p>
+                        <button onClick={() => { setShowForm(false); setEditingLeaseId(null); }} aria-label="Close form" className="absolute right-6 top-6 p-2 text-gray-400 hover:text-gray-600 cursor-pointer transition-colors duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg"><X size={18} /></button>
+                        <h2 className="text-lg font-black mb-1">{editingLeaseId ? t("editLease") : t("draftNewLease")}</h2>
+                        <p className="text-xs text-gray-400 mb-8 font-medium">{editingLeaseId ? t("editLeaseDesc") : t("draftNewLeaseDesc")}</p>
                         <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-5">
                             <div className="col-span-1">
                                 <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("selectUnit")}</label>
@@ -548,8 +648,8 @@ export default function LeasesPage() {
                                 <input required type="date" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.endDate} onChange={ev => setFormData({ ...formData, endDate: ev.target.value })} />
                             </div>
                             <div className="col-span-1">
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("rentAmount")}</label>
-                                <input required type="number" min="0" placeholder="50000" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.rentAmount || ''} onChange={ev => setFormData({ ...formData, rentAmount: Number(ev.target.value) })} />
+                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">Monthly Rent (AED)</label>
+                                <input required type="number" min="0" placeholder="5000" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.rentAmount || ''} onChange={ev => setFormData({ ...formData, rentAmount: Number(ev.target.value) })} />
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("securityDeposit")}</label>
@@ -568,13 +668,9 @@ export default function LeasesPage() {
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("paymentTerms")}</label>
-                                <select className="w-full bg-input border border-border p-3 rounded-xl text-xs cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.paymentTerms} onChange={ev => setFormData({ ...formData, paymentTerms: Number(ev.target.value) })}>
-                                    <option value={1}>1 {formData.paymentMethod === 'CHEQUE' ? 'Cheque' : 'Payment'}</option>
-                                    <option value={2}>2 {formData.paymentMethod === 'CHEQUE' ? 'Cheques' : 'Payments'}</option>
-                                    <option value={4}>4 {formData.paymentMethod === 'CHEQUE' ? 'Cheques' : 'Payments'}</option>
-                                    <option value={6}>6 {formData.paymentMethod === 'CHEQUE' ? 'Cheques' : 'Payments'}</option>
-                                    <option value={12}>12 {formData.paymentMethod === 'CHEQUE' ? 'Cheques' : 'Payments'}</option>
-                                </select>
+                                <div className="w-full bg-gray-50 border border-border p-3 rounded-xl text-xs text-gray-600 font-medium">
+                                    {paymentPreview ? `${paymentPreview.totalPayments} ${formData.paymentMethod === 'CHEQUE' ? 'Cheques' : 'Payments'}` : 'Select dates & rent amount'}
+                                </div>
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("depositPaymentMethod")}</label>
@@ -587,11 +683,78 @@ export default function LeasesPage() {
                                 <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("paymentReference")}</label>
                                 <input placeholder="REF-12345" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.paymentReferenceNumber} onChange={ev => setFormData({ ...formData, paymentReferenceNumber: ev.target.value })} />
                             </div>
+                            {/* Payment Schedule Preview */}
+                            {paymentPreview && paymentPreview.lines.length > 0 && (
+                                <div className="col-span-2 mt-2">
+                                    <label className="block text-[10px] font-bold text-gray-400 uppercase mb-2 ml-1">
+                                        Payment Schedule Preview
+                                    </label>
+                                    <div className="border border-border rounded-xl overflow-hidden max-h-72 overflow-y-auto">
+                                        <table className="w-full">
+                                            <thead className="sticky top-0">
+                                                <tr className="bg-gray-50 border-b border-gray-100">
+                                                    <th className="text-left px-4 py-2 text-[10px] font-bold text-gray-400 uppercase">#</th>
+                                                    <th className="text-left px-4 py-2 text-[10px] font-bold text-gray-400 uppercase">Due Date</th>
+                                                    <th className="text-left px-4 py-2 text-[10px] font-bold text-gray-400 uppercase">Period</th>
+                                                    <th className="text-right px-4 py-2 text-[10px] font-bold text-gray-400 uppercase">Amount (AED)</th>
+                                                    <th className="text-center px-4 py-2 text-[10px] font-bold text-gray-400 uppercase">Type</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-gray-50">
+                                                {paymentPreview.lines.map((line, i) => (
+                                                    <tr key={i} className="hover:bg-gray-50/50">
+                                                        <td className="px-4 py-2 text-xs text-gray-500">{line.installmentNumber}</td>
+                                                        <td className="px-4 py-2 text-xs font-medium">{line.dueDate}</td>
+                                                        <td className="px-4 py-2 text-[10px] text-gray-400">{line.periodStart} &rarr; {line.periodEnd}</td>
+                                                        <td className="px-4 py-2 text-right">
+                                                            <input
+                                                                type="number"
+                                                                step="0.01"
+                                                                className="w-28 text-right bg-input border border-border p-1.5 rounded-lg text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                                                                value={line.amount}
+                                                                onChange={(ev) => {
+                                                                    const updated = { ...paymentPreview };
+                                                                    updated.lines = [...updated.lines];
+                                                                    updated.lines[i] = { ...updated.lines[i], amount: Number(ev.target.value) };
+                                                                    updated.totalAmount = updated.lines.reduce((s, l) => s + l.amount, 0);
+                                                                    setPaymentPreview(updated);
+                                                                }}
+                                                            />
+                                                        </td>
+                                                        <td className="px-4 py-2 text-center">
+                                                            {line.proRata ? (
+                                                                <span className="text-[9px] bg-amber-50 text-amber-600 px-2 py-0.5 rounded-full font-bold">Pro-rata</span>
+                                                            ) : (
+                                                                <span className="text-[9px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full font-bold">Full</span>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                            <tfoot>
+                                                <tr className="bg-gray-50 border-t-2 border-gray-200">
+                                                    <td colSpan={3} className="px-4 py-2 text-xs font-black uppercase">Total</td>
+                                                    <td className="px-4 py-2 text-right text-xs font-black text-emerald-600">
+                                                        {paymentPreview.totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                    </td>
+                                                    <td className="px-4 py-2 text-center text-[10px] text-gray-400">{paymentPreview.totalPayments} payments</td>
+                                                </tr>
+                                            </tfoot>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
+                            {previewLoading && (
+                                <div className="col-span-2 flex items-center gap-2 text-xs text-gray-400">
+                                    <Loader2 size={14} className="animate-spin" />
+                                    Calculating payment schedule...
+                                </div>
+                            )}
                             <div className="col-span-2 flex justify-end gap-3 mt-4">
                                 <button type="button" onClick={() => setShowForm(false)} className="px-6 py-3 text-xs font-bold text-gray-500 cursor-pointer hover:text-gray-700 transition-colors duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-xl">{t("cancel")}</button>
-                                <button type="submit" disabled={submitting} className="px-8 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-bold cursor-pointer hover:opacity-90 transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none disabled:opacity-50 flex items-center gap-2">
+                                <button type="submit" disabled={submitting || !paymentPreview} className="px-8 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-bold cursor-pointer hover:opacity-90 transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none disabled:opacity-50 flex items-center gap-2">
                                     {submitting && <Loader2 size={14} className="animate-spin" />}
-                                    {t("draftLease")}
+                                    {editingLeaseId ? t("saveChanges") : t("draftLease")}
                                 </button>
                             </div>
                         </form>

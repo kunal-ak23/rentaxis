@@ -1,0 +1,11 @@
+databaseChangeLog:
+  - changeSet:
+      id: 22-add-monthly-rent-to-leases
+      author: rentaxis
+      changes:
+        - addColumn:
+            tableName: leases
+            columns:
+              - column:
+                  name: monthly_rent
+                  type: DECIMAL(14,2)

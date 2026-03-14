@@ -1,6 +1,7 @@
 package com.datagami.rentaxis.api;
 
 import com.datagami.rentaxis.api.dto.AgingReportDTO;
+import com.datagami.rentaxis.api.dto.PaymentPreviewDTO;
 import com.datagami.rentaxis.api.dto.PaymentScheduleDTO;
 import com.datagami.rentaxis.api.dto.LeasePaymentStatsDTO;
 import com.datagami.rentaxis.api.dto.PaymentSummaryDTO;
@@ -8,10 +9,13 @@ import com.datagami.rentaxis.api.dto.UpdatePaymentStatusDTO;
 import com.datagami.rentaxis.core.service.PaymentScheduleService;
 import com.datagami.rentaxis.domain.entity.enums.PaymentStatus;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -94,6 +98,16 @@ public class PaymentScheduleController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
     public List<LeasePaymentStatsDTO> getStatsByLeases(@RequestBody List<UUID> leaseIds) {
         return paymentScheduleService.getPaymentStatsByLeaseIds(leaseIds);
+    }
+
+    @GetMapping("/preview")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
+    public ResponseEntity<PaymentPreviewDTO> previewSchedule(
+            @RequestParam UUID propertyId,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
+            @RequestParam BigDecimal monthlyRent) {
+        return ResponseEntity.ok(paymentScheduleService.previewSchedule(propertyId, startDate, endDate, monthlyRent));
     }
 
 }

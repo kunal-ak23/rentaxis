@@ -59,6 +59,12 @@ public class LeaseController {
         return ResponseEntity.status(HttpStatus.CREATED).body(leaseService.createDraftLease(dto));
     }
 
+    @PutMapping("/{id}")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
+    public ResponseEntity<LeaseDTO> updateDraftLease(@PathVariable UUID id, @Valid @RequestBody CreateLeaseDTO dto) {
+        return ResponseEntity.ok(leaseService.updateDraftLease(id, dto));
+    }
+
     @PutMapping("/{id}/activate")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
     public ResponseEntity<LeaseDTO> activateLease(@PathVariable UUID id) {
