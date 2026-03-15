@@ -43,3 +43,17 @@ databaseChangeLog:
       file: db/changelog/changesets/21-staff-management.yaml
   - include:
       file: db/changelog/changesets/22-cleanup-failed-migrations.yaml
+  - include:
+      file: db/changelog/changesets/23-normalize-emails-lowercase.yaml
+  - include:
+      file: db/changelog/changesets/24-landlord-org-receipt-fields.yaml
+  - include:
+      file: db/changelog/changesets/25-landlord-org-logo.yaml
+  - include:
+      file: db/changelog/changesets/26-lease-attachments.yaml
+  - include:
+      file: db/changelog/changesets/27-maintenance-tickets.yaml
+  - include:
+      file: db/changelog/changesets/28-ticket-history.yaml
+  - include:
+      file: db/changelog/changesets/29-ticket-enhancements.yaml

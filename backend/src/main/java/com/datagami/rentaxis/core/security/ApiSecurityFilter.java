@@ -26,7 +26,8 @@ public class ApiSecurityFilter extends OncePerRequestFilter {
 
         // Skip auth routes to prevent interception overhead
         if (path.startsWith("/api/v1/auth/") || path.startsWith("/api/auth/")
-                || path.startsWith("/actuator/") || path.startsWith("/api/webhooks/")) {
+                || path.startsWith("/actuator/") || path.startsWith("/api/webhooks/")
+                || path.startsWith("/api/v1/assets/serve/")) {
             filterChain.doFilter(request, response);
             return;
         }
