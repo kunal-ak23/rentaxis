@@ -297,6 +297,7 @@ public class LeaseService {
         dto.setPaymentMethod(lease.getPaymentMethod());
         dto.setDepositPaymentMethod(lease.getDepositPaymentMethod());
         dto.setPaymentReferenceNumber(lease.getPaymentReferenceNumber());
+        dto.setMonthlyRent(lease.getMonthlyRent());
         dto.setPropertyId(lease.getUnit().getProperty().getId());
         dto.setPropertyName(lease.getUnit().getProperty().getNameEn());
         dto.setHasContract(!leaseDocumentRepository.findByLeaseId(lease.getId()).isEmpty());

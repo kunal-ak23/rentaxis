@@ -1,0 +1,59 @@
+databaseChangeLog:
+  - changeSet:
+      id: 26-lease-attachments
+      author: system
+      comment: "Supporting document attachments for leases"
+      changes:
+        - createTable:
+            tableName: lease_attachments
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: tenant_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: lease_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_lease_attachment_lease
+                    references: leases(id)
+              - column:
+                  name: name
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: file_url
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: file_type
+                  type: varchar(100)
+              - column:
+                  name: file_size
+                  type: bigint
+              - column:
+                  name: uploaded_at
+                  type: timestamp
+                  defaultValueComputed: now()
+        - createIndex:
+            tableName: lease_attachments
+            indexName: idx_lease_attachments_lease_id
+            columns:
+              - column:
+                    name: lease_id
+        - createIndex:
+            tableName: lease_attachments
+            indexName: idx_lease_attachments_tenant_id
+            columns:
+              - column:
+                    name: tenant_id

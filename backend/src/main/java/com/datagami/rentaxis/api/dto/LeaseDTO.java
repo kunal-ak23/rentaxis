@@ -25,6 +25,7 @@ public class LeaseDTO {
     private PaymentMethod paymentMethod;
     private PaymentMethod depositPaymentMethod;
     private String paymentReferenceNumber;
+    private BigDecimal monthlyRent;
     private UUID propertyId;
     private String propertyName;
     private boolean hasContract;

@@ -7,9 +7,12 @@ import com.datagami.rentaxis.api.dto.LeasePaymentStatsDTO;
 import com.datagami.rentaxis.api.dto.PaymentSummaryDTO;
 import com.datagami.rentaxis.api.dto.UpdatePaymentStatusDTO;
 import com.datagami.rentaxis.core.service.PaymentScheduleService;
+import com.datagami.rentaxis.core.service.RentReceiptService;
 import com.datagami.rentaxis.domain.entity.enums.PaymentStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -25,6 +28,7 @@ import java.util.UUID;
 public class PaymentScheduleController {
 
     private final PaymentScheduleService paymentScheduleService;
+    private final RentReceiptService rentReceiptService;
 
     @GetMapping
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
@@ -98,6 +102,16 @@ public class PaymentScheduleController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
     public List<LeasePaymentStatsDTO> getStatsByLeases(@RequestBody List<UUID> leaseIds) {
         return paymentScheduleService.getPaymentStatsByLeaseIds(leaseIds);
+    }
+
+    @GetMapping("/{id}/receipt")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER', 'RENTER')")
+    public ResponseEntity<byte[]> downloadReceipt(@PathVariable UUID id) {
+        byte[] pdf = rentReceiptService.generateReceipt(id);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=receipt-" + id.toString().substring(0, 8) + ".pdf")
+                .contentType(MediaType.APPLICATION_PDF)
+                .body(pdf);
     }
 
     @GetMapping("/preview")
