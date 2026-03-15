@@ -1,0 +1,16 @@
+databaseChangeLog:
+  - changeSet:
+      id: 24-landlord-org-receipt-fields
+      author: system
+      comment: "Add address and TRN to landlord_org for rent receipts"
+      changes:
+        - addColumn:
+            tableName: landlord_org
+            columns:
+              - column:
+                  name: address
+                  type: text
+              - column:
+                  name: trn
+                  type: varchar(50)
+                  remarks: "Tax Registration Number"

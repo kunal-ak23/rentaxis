@@ -34,4 +34,34 @@ public class LandlordOrgController {
     public ResponseEntity<List<LandlordOrg>> getTenants() {
         return ResponseEntity.ok(service.listAllTenants());
     }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<LandlordOrg> updateTenant(
+            @PathVariable java.util.UUID id,
+            @RequestBody Map<String, String> payload) {
+        java.util.Optional<LandlordOrg> orgOpt = service.findById(id);
+        if (orgOpt.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        LandlordOrg org = orgOpt.get();
+        if (payload.containsKey("name") && !payload.get("name").isBlank()) {
+            org.setName(payload.get("name"));
+        }
+        if (payload.containsKey("address")) {
+            org.setAddress(payload.get("address"));
+        }
+        if (payload.containsKey("trn")) {
+            org.setTrn(payload.get("trn"));
+        }
+        if (payload.containsKey("status")) {
+            org.setStatus(payload.get("status"));
+        }
+        if (payload.containsKey("logoUrl")) {
+            org.setLogoUrl(payload.get("logoUrl"));
+        }
+        if (payload.containsKey("ticketOtpRequired")) {
+            org.setTicketOtpRequired(Boolean.parseBoolean(payload.get("ticketOtpRequired")));
+        }
+        return ResponseEntity.ok(service.save(org));
+    }
 }

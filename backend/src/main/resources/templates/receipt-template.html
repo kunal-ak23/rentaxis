@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<style>
+    @page { size: A4; margin: 30px 40px; }
+    body { font-family: 'Noto Sans', Arial, sans-serif; font-size: 11px; color: #1a1a2e; line-height: 1.5; margin: 0; padding: 0; }
+    .receipt { max-width: 700px; margin: 0 auto; }
+    .header-table { width: 100%; border-bottom: 2px solid #0F766E; padding-bottom: 15px; margin-bottom: 20px; }
+    .org-name { font-size: 18px; font-weight: 700; color: #0F1B2D; margin-bottom: 3px; }
+    .org-details { font-size: 9px; color: #666; line-height: 1.6; }
+    .receipt-title { font-size: 14px; font-weight: 700; color: #0F766E; text-align: right; margin-bottom: 5px; }
+    .receipt-number { font-size: 10px; color: #666; text-align: right; }
+    .section { margin-bottom: 18px; }
+    .section-title { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: #0F766E; margin-bottom: 8px; border-bottom: 1px solid #E2E0DC; padding-bottom: 4px; }
+    .info-table { width: 100%; border-collapse: collapse; }
+    .info-table td { padding: 4px 0; vertical-align: top; }
+    .label { font-size: 9px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: 0.5px; width: 140px; }
+    .value { font-size: 11px; font-weight: 500; color: #1a1a2e; }
+    .amount-box { background: #F5F4F0; border: 1px solid #E2E0DC; border-radius: 6px; padding: 15px; margin: 15px 0; text-align: center; }
+    .amount-label { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: #888; margin-bottom: 5px; }
+    .amount-value { font-size: 22px; font-weight: 700; color: #0F766E; }
+    .amount-currency { font-size: 11px; color: #888; }
+    .status-badge { display: inline; background: #059669; color: white; padding: 3px 10px; border-radius: 4px; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+    .footer { margin-top: 30px; padding-top: 15px; border-top: 1px solid #E2E0DC; font-size: 8px; color: #999; text-align: center; line-height: 1.8; }
+    .two-col-table { width: 100%; border-collapse: collapse; }
+    .two-col-table td { width: 50%; vertical-align: top; padding-right: 15px; }
+    .two-col-table td:last-child { padding-right: 0; padding-left: 15px; }
+</style>
+</head>
+<body>
+<div class="receipt">
+    <!-- Header -->
+    <table class="header-table" cellpadding="0" cellspacing="0">
+        <tr>
+            <td style="vertical-align: top;">
+                {{ORG_LOGO}}
+                <div class="org-name">{{ORG_NAME}}</div>
+                <div class="org-details">
+                    {{ORG_ADDRESS}}<br/>
+                    {{ORG_TRN}}
+                </div>
+            </td>
+            <td style="vertical-align: top; text-align: right;">
+                <div class="receipt-title">RENT RECEIPT</div>
+                <div class="receipt-number">{{RECEIPT_NUMBER}}</div>
+                <div class="receipt-number">Date: {{RECEIPT_DATE}}</div>
+            </td>
+        </tr>
+    </table>
+
+    <!-- Amount -->
+    <div class="amount-box">
+        <div class="amount-label">Amount Received</div>
+        <div class="amount-value"><span class="amount-currency">AED </span>{{AMOUNT}}</div>
+    </div>
+
+    <!-- Property & Renter Info -->
+    <table class="two-col-table" cellpadding="0" cellspacing="0">
+        <tr>
+            <td>
+                <div class="section">
+                    <div class="section-title">Property Details</div>
+                    <table class="info-table">
+                        <tr><td class="label">Property</td><td class="value">{{PROPERTY_NAME}}</td></tr>
+                        <tr><td class="label">Unit</td><td class="value">{{UNIT_NUMBER}}</td></tr>
+                        <tr><td class="label">Location</td><td class="value">{{PROPERTY_ADDRESS}}</td></tr>
+                    </table>
+                </div>
+            </td>
+            <td>
+                <div class="section">
+                    <div class="section-title">Tenant Details</div>
+                    <table class="info-table">
+                        <tr><td class="label">Name</td><td class="value">{{RENTER_NAME}}</td></tr>
+                        <tr><td class="label">Email</td><td class="value">{{RENTER_EMAIL}}</td></tr>
+                        <tr><td class="label">Phone</td><td class="value">{{RENTER_PHONE}}</td></tr>
+                    </table>
+                </div>
+            </td>
+        </tr>
+    </table>
+
+    <!-- Payment Details -->
+    <div class="section">
+        <div class="section-title">Payment Details</div>
+        <table class="info-table">
+            <tr><td class="label">Installment</td><td class="value">#{{INSTALLMENT_NUMBER}}</td></tr>
+            <tr><td class="label">Due Date</td><td class="value">{{DUE_DATE}}</td></tr>
+            <tr><td class="label">Payment Method</td><td class="value">{{PAYMENT_METHOD}}</td></tr>
+            <tr><td class="label">Cheque Number</td><td class="value">{{CHEQUE_NUMBER}}</td></tr>
+            <tr><td class="label">Bank</td><td class="value">{{BANK_NAME}}</td></tr>
+            <tr><td class="label">Online Payment ID</td><td class="value">{{ONLINE_PAYMENT_ID}}</td></tr>
+            <tr><td class="label">Status</td><td class="value"><span class="status-badge">CLEARED</span></td></tr>
+        </table>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+        This is a system-generated rent receipt from RentAxis Property Management System.<br/>
+        Generated on {{GENERATED_AT}}
+    </div>
+</div>
+</body>
+</html>

@@ -35,4 +35,9 @@ public class LandlordOrgService {
     public Optional<LandlordOrg> findById(UUID id) {
         return repository.findById(id);
     }
+
+    @Transactional
+    public LandlordOrg save(LandlordOrg org) {
+        return repository.save(org);
+    }
 }

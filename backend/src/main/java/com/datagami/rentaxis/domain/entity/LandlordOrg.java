@@ -24,6 +24,18 @@ public class LandlordOrg {
     @Column(name = "updated_at", insertable = false, updatable = false)
     private LocalDateTime updatedAt;
 
+    @Column(name = "address")
+    private String address;
+
+    @Column(name = "trn", length = 50)
+    private String trn;
+
+    @Column(name = "logo_url", columnDefinition = "text")
+    private String logoUrl;
+
+    @Column(name = "ticket_otp_required")
+    private Boolean ticketOtpRequired = true;
+
     // Getters and Setters
     public UUID getId() {
         return id;
@@ -56,4 +68,31 @@ public class LandlordOrg {
     public LocalDateTime getUpdatedAt() {
         return updatedAt;
     }
+
+    public String getAddress() {
+        return address;
+    }
+
+    public void setAddress(String address) {
+        this.address = address;
+    }
+
+    public String getTrn() {
+        return trn;
+    }
+
+    public void setTrn(String trn) {
+        this.trn = trn;
+    }
+
+    public String getLogoUrl() {
+        return logoUrl;
+    }
+
+    public void setLogoUrl(String logoUrl) {
+        this.logoUrl = logoUrl;
+    }
+
+    public Boolean getTicketOtpRequired() { return ticketOtpRequired; }
+    public void setTicketOtpRequired(Boolean v) { this.ticketOtpRequired = v; }
 }

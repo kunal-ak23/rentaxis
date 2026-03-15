@@ -1,0 +1,13 @@
+databaseChangeLog:
+  - changeSet:
+      id: 25-landlord-org-logo
+      author: system
+      comment: "Add logo_url to landlord_org for branding on receipts"
+      changes:
+        - addColumn:
+            tableName: landlord_org
+            columns:
+              - column:
+                  name: logo_url
+                  type: text
+                  remarks: "Logo URL or base64 data URI"
