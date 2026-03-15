@@ -63,3 +63,5 @@ databaseChangeLog:
       file: db/changelog/changesets/31-notifications-nullable-tenant.yaml
   - include:
       file: db/changelog/changesets/32-fix-table-permissions.yaml
+  - include:
+      file: db/changelog/changesets/33-performance-indexes.yaml

@@ -50,6 +50,15 @@ services:
       - AZURE_COMMUNICATION_CONNECTION_STRING=${AZURE_COMMUNICATION_CONNECTION_STRING:-}
       - AZURE_EMAIL_SENDER=${AZURE_EMAIL_SENDER:-}
       - RENTAXIS_ENCRYPTION_KEY=${ENCRYPTION_KEY:-}
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8080/actuator/health"]
       interval: 20s
@@ -76,6 +85,14 @@ services:
       - NEXTAUTH_URL=${NEXTAUTH_URL}
       - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
       - BACKEND_URL=http://backend:8080
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://0.0.0.0:3000/api/health"]
       interval: 15s
@@ -99,6 +116,14 @@ services:
       - POSTGRES_DB=${POSTGRES_DB}
     volumes:
       - /data/postgres:/var/lib/postgresql/data
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s

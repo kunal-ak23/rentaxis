@@ -13,6 +13,7 @@ import com.datagami.rentaxis.domain.entity.enums.PaymentStatus;
 import com.datagami.rentaxis.domain.entity.enums.TransactionNature;
 import com.datagami.rentaxis.domain.repository.*;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,6 +24,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class OnlinePaymentService {
@@ -40,6 +42,7 @@ public class OnlinePaymentService {
     private final AccountMappingService accountMappingService;
     private final LeaseRepository leaseRepository;
     private final RenterRepository renterRepository;
+    private final NotificationService notificationService;
 
     @Transactional(readOnly = true)
     public List<RenterPaymentScheduleDTO> getMyPayments(UUID userId) {
@@ -203,6 +206,20 @@ public class OnlinePaymentService {
             response.setSuccess(true);
             response.setMessage("Payment verified and recorded successfully");
             response.setPaymentId(onlinePayment.getGatewayPaymentId());
+
+            // Notify renter: payment success
+            try {
+                PaymentSchedule schedule = onlinePayment.getPaymentSchedule();
+                UUID renterUserId = schedule.getLease().getRenter().getUserId();
+                if (renterUserId != null) {
+                    notificationService.notify(schedule.getTenantId(), renterUserId,
+                            "PAYMENT_CLEARED", "Online Payment Successful",
+                            "Installment #" + schedule.getInstallmentNumber() + " of " + schedule.getAmount() + " paid online successfully. Receipt available.",
+                            "PAYMENT", schedule.getId());
+                }
+            } catch (Exception e) {
+                log.warn("Failed to send online payment success notification: {}", e.getMessage());
+            }
         } else {
             // Update OnlinePayment to FAILED
             onlinePayment.setStatus(OnlinePaymentStatus.FAILED);
@@ -218,6 +235,19 @@ public class OnlinePaymentService {
 
             response.setSuccess(false);
             response.setMessage("Payment verification failed");
+
+            // Notify renter: payment failed
+            try {
+                UUID renterUserId = schedule.getLease().getRenter().getUserId();
+                if (renterUserId != null) {
+                    notificationService.notify(schedule.getTenantId(), renterUserId,
+                            "PAYMENT_FAILED", "Online Payment Failed",
+                            "Installment #" + schedule.getInstallmentNumber() + " payment could not be verified. Please try again.",
+                            "PAYMENT", schedule.getId());
+                }
+            } catch (Exception e) {
+                log.warn("Failed to send online payment failed notification: {}", e.getMessage());
+            }
         }
 
         return response;

@@ -100,7 +100,7 @@ export default function NotificationsPage() {
     const markAllRead = async () => {
         setMarkingAll(true);
         try {
-            await fetch("/api/proxy/v1/notifications/mark-all-read", { method: "PUT" });
+            await fetch("/api/proxy/v1/notifications/read-all", { method: "PUT" });
             setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
         } catch { /* ignore */ } finally {
             setMarkingAll(false);

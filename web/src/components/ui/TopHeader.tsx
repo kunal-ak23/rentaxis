@@ -90,7 +90,7 @@ export function TopHeader() {
 
     const markAllRead = async () => {
         try {
-            await fetch("/api/proxy/v1/notifications/mark-all-read", { method: "PUT" });
+            await fetch("/api/proxy/v1/notifications/read-all", { method: "PUT" });
             setUnreadCount(0);
             setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
         } catch { /* ignore */ }

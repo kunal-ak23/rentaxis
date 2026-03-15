@@ -17,6 +17,7 @@ import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.PaymentScheduleRepository;
 import com.datagami.rentaxis.domain.repository.RentCollectionSettingsRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,6 +30,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class PaymentScheduleService {
@@ -190,8 +192,22 @@ public class PaymentScheduleService {
         payment.setPayerName(dto.getPayerName());
         payment.setChequeDate(dto.getChequeDate());
         payment.setStatusChangedAt(Instant.now());
+        PaymentSchedule saved = paymentScheduleRepository.save(payment);
 
-        return mapToDTO(paymentScheduleRepository.save(payment));
+        // Notify renter: cheque collected
+        try {
+            UUID renterUserId = payment.getLease().getRenter().getUserId();
+            if (renterUserId != null) {
+                notificationService.notify(TenantContextHolder.getTenantId(), renterUserId,
+                        "PAYMENT_COLLECTED", "Cheque Collected",
+                        "Installment #" + payment.getInstallmentNumber() + " cheque has been collected and is being processed.",
+                        "PAYMENT", payment.getId());
+            }
+        } catch (Exception e) {
+            log.warn("Failed to send cheque collected notification for payment {}: {}", payment.getId(), e.getMessage());
+        }
+
+        return mapToDTO(saved);
     }
 
     @Transactional
@@ -275,7 +291,7 @@ public class PaymentScheduleService {
                         "PAYMENT", payment.getId());
             }
         } catch (Exception e) {
-            // Don't fail the payment clearing if notification fails
+            log.warn("Failed to send payment cleared notification for payment {}: {}", payment.getId(), e.getMessage());
         }
 
         return mapToDTO(payment);
@@ -295,8 +311,22 @@ public class PaymentScheduleService {
             payment.setNotes(dto.getNotes());
         }
         payment.setStatusChangedAt(Instant.now());
+        PaymentSchedule saved = paymentScheduleRepository.save(payment);
 
-        return mapToDTO(paymentScheduleRepository.save(payment));
+        // Notify renter: cheque bounced
+        try {
+            UUID renterUserId = payment.getLease().getRenter().getUserId();
+            if (renterUserId != null) {
+                notificationService.notify(TenantContextHolder.getTenantId(), renterUserId,
+                        "PAYMENT_BOUNCED", "Cheque Bounced",
+                        "Installment #" + payment.getInstallmentNumber() + " cheque of " + payment.getAmount() + " has bounced. Please arrange a replacement.",
+                        "PAYMENT", payment.getId());
+            }
+        } catch (Exception e) {
+            log.warn("Failed to send cheque bounced notification for payment {}: {}", payment.getId(), e.getMessage());
+        }
+
+        return mapToDTO(saved);
     }
 
     @Transactional
@@ -387,11 +417,7 @@ public class PaymentScheduleService {
     public AgingReportDTO getAgingReport(UUID propertyId) {
         List<PaymentSchedule> schedules;
         if (propertyId != null) {
-            schedules = paymentScheduleRepository.findAll().stream()
-                    .filter(ps -> ps.getLease() != null && ps.getLease().getUnit() != null
-                            && ps.getLease().getUnit().getProperty() != null
-                            && ps.getLease().getUnit().getProperty().getId().equals(propertyId))
-                    .toList();
+            schedules = paymentScheduleRepository.findByPropertyId(propertyId);
         } else {
             schedules = paymentScheduleRepository.findAll();
         }

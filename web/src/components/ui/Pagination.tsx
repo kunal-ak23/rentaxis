@@ -75,7 +75,7 @@ export function Pagination({
                     ) : (
                         <button
                             key={page}
-                            onClick={() => onPageChange(page)}
+                            onClick={() => onPageChange(page as number)}
                             className={cn(
                                 "min-w-[28px] h-7 rounded-md text-xs font-medium transition-colors cursor-pointer",
                                 page === currentPage

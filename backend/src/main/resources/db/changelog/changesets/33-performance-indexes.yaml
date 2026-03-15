@@ -1,0 +1,59 @@
+databaseChangeLog:
+  - changeSet:
+      id: 33-performance-indexes
+      author: system
+      comment: "Add missing indexes for FK columns and common query patterns"
+      changes:
+        # Missing FK indexes on maintenance_tickets
+        - createIndex:
+            tableName: maintenance_tickets
+            indexName: idx_tickets_unit_id
+            columns:
+              - column:
+                  name: unit_id
+        - createIndex:
+            tableName: maintenance_tickets
+            indexName: idx_tickets_lease_id
+            columns:
+              - column:
+                  name: lease_id
+
+        # Composite index for payment schedule aging queries
+        - createIndex:
+            tableName: payment_schedules
+            indexName: idx_ps_status_due_date
+            columns:
+              - column:
+                  name: status
+              - column:
+                  name: due_date
+
+        # Composite index for financial transaction reports
+        - createIndex:
+            tableName: financial_transactions
+            indexName: idx_ft_account_date
+            columns:
+              - column:
+                  name: account_id
+              - column:
+                  name: date
+
+        # Composite index for lease status queries
+        - createIndex:
+            tableName: leases
+            indexName: idx_leases_unit_status
+            columns:
+              - column:
+                  name: unit_id
+              - column:
+                  name: status
+
+        # Composite index for notifications user lookup
+        - createIndex:
+            tableName: notifications
+            indexName: idx_notifications_user_read
+            columns:
+              - column:
+                  name: user_id
+              - column:
+                  name: is_read

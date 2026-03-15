@@ -108,7 +108,12 @@ public class AssetController {
     public ResponseEntity<byte[]> serveAsset(jakarta.servlet.http.HttpServletRequest request) {
         String path = request.getRequestURI().replace("/api/v1/assets/serve/", "");
         try {
-            Path filePath = Path.of(localStoragePath).resolve(path);
+            Path baseDir = Path.of(localStoragePath).toAbsolutePath().normalize();
+            Path filePath = baseDir.resolve(path).normalize();
+            if (!filePath.startsWith(baseDir)) {
+                log.warn("Path traversal attempt blocked: {}", path);
+                return ResponseEntity.status(403).build();
+            }
             if (!filePath.toFile().exists()) {
                 return ResponseEntity.notFound().build();
             }

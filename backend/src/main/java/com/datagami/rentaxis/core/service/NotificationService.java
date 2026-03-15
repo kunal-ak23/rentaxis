@@ -34,6 +34,9 @@ public class NotificationService {
     @Value("${AZURE_EMAIL_SENDER:}")
     private String emailSender;
 
+    @Value("${NEXT_PUBLIC_API_URL:https://rentaxis.uaenorth.cloudapp.azure.com}")
+    private String portalBaseUrl;
+
     public NotificationService(NotificationRepository notificationRepository,
                                 DeviceTokenRepository deviceTokenRepository,
                                 UserRepository userRepository) {
@@ -121,7 +124,7 @@ public class NotificationService {
 
             // Action button based on type
             String actionButton = "";
-            String portalUrl = "https://rentaxis.uaenorth.cloudapp.azure.com";
+            String portalUrl = portalBaseUrl;
             if (referenceType != null && referenceId != null) {
                 String link = switch (referenceType) {
                     case "TICKET" -> portalUrl + "/en/dashboard/tickets/" + referenceId;
@@ -133,8 +136,8 @@ public class NotificationService {
                     case "TICKET_ASSIGNED" -> "View Ticket";
                     case "TICKET_REPLY" -> "View Conversation";
                     case "TICKET_RESOLVED" -> "View Ticket & Share OTP";
-                    case "PAYMENT_CLEARED" -> "View Payment";
-                    case "PAYMENT_DUE", "PAYMENT_OVERDUE" -> "Make Payment";
+                    case "PAYMENT_CLEARED", "PAYMENT_COLLECTED" -> "View Payment";
+                    case "PAYMENT_DUE", "PAYMENT_OVERDUE", "PAYMENT_FAILED", "PAYMENT_BOUNCED" -> "Make Payment";
                     case "LEASE_EXPIRING" -> "View Lease";
                     default -> "Open RentAxis";
                 };
@@ -150,6 +153,9 @@ public class NotificationService {
                 case "TICKET_REPLY" -> "<p style=\"margin:0;color:#475569;font-size:12px;\">Someone replied to a ticket you're involved in. Check the conversation for updates.</p>";
                 case "TICKET_RESOLVED" -> "<p style=\"margin:0;color:#475569;font-size:12px;\">Your ticket has been resolved. If you're satisfied, please share the OTP with your property manager to close it.</p>";
                 case "PAYMENT_CLEARED" -> "<p style=\"margin:0;color:#475569;font-size:12px;\">Your payment has been cleared and a receipt is now available for download.</p>";
+                case "PAYMENT_COLLECTED" -> "<p style=\"margin:0;color:#475569;font-size:12px;\">Your cheque has been collected and is being processed. You will be notified once it clears.</p>";
+                case "PAYMENT_FAILED" -> "<p style=\"margin:0;color:#DC2626;font-size:12px;font-weight:600;\">Your online payment could not be verified. Please try again or contact support.</p>";
+                case "PAYMENT_BOUNCED" -> "<p style=\"margin:0;color:#DC2626;font-size:12px;font-weight:600;\">Your cheque has bounced. Please arrange a replacement cheque immediately to avoid penalties.</p>";
                 case "PAYMENT_DUE" -> "<p style=\"margin:0;color:#D97706;font-size:12px;font-weight:600;\">Your rent payment is due soon. Please ensure timely payment to avoid late fees.</p>";
                 case "PAYMENT_OVERDUE" -> "<p style=\"margin:0;color:#DC2626;font-size:12px;font-weight:600;\">Your rent payment is overdue. Please make the payment immediately.</p>";
                 case "LEASE_EXPIRING" -> "<p style=\"margin:0;color:#D97706;font-size:12px;\">A lease in your portfolio is expiring soon. Review and take action if renewal is needed.</p>";
