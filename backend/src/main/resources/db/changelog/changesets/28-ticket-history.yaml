@@ -1,0 +1,74 @@
+databaseChangeLog:
+  - changeSet:
+      id: 28-ticket-history
+      author: system
+      comment: "Audit trail for ticket status changes and assignments"
+      changes:
+        - createTable:
+            tableName: ticket_history
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: tenant_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: ticket_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_ticket_history_ticket
+                    references: maintenance_tickets(id)
+              - column:
+                  name: action
+                  type: varchar(50)
+                  constraints:
+                    nullable: false
+                  remarks: "CREATED, STATUS_CHANGED, ASSIGNED, REASSIGNED, ETA_SET, RATED"
+              - column:
+                  name: from_status
+                  type: varchar(30)
+              - column:
+                  name: to_status
+                  type: varchar(30)
+              - column:
+                  name: assigned_from
+                  type: uuid
+                  remarks: "Previous assignee user ID"
+              - column:
+                  name: assigned_to
+                  type: uuid
+                  remarks: "New assignee user ID"
+              - column:
+                  name: performed_by
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: performed_by_name
+                  type: varchar(255)
+              - column:
+                  name: notes
+                  type: text
+              - column:
+                  name: created_at
+                  type: timestamp
+                  defaultValueComputed: now()
+        - createIndex:
+            tableName: ticket_history
+            indexName: idx_ticket_history_ticket_id
+            columns:
+              - column:
+                  name: ticket_id
+        - createIndex:
+            tableName: ticket_history
+            indexName: idx_ticket_history_tenant_id
+            columns:
+              - column:
+                  name: tenant_id

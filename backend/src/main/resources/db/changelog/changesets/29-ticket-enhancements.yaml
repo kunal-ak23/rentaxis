@@ -1,0 +1,21 @@
+databaseChangeLog:
+  - changeSet:
+      id: 29-ticket-enhancements
+      author: system
+      comment: "Add on_behalf_of to tickets and OTP setting to landlord_org"
+      changes:
+        - addColumn:
+            tableName: maintenance_tickets
+            columns:
+              - column:
+                  name: on_behalf_of
+                  type: varchar(255)
+                  remarks: "Name of person ticket was raised on behalf of (e.g. renter who called)"
+        - addColumn:
+            tableName: landlord_org
+            columns:
+              - column:
+                  name: ticket_otp_required
+                  type: boolean
+                  defaultValueBoolean: true
+                  remarks: "Whether OTP is required to close renter-raised tickets"

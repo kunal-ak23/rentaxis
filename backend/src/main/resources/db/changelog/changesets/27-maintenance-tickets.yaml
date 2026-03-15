@@ -1,0 +1,212 @@
+databaseChangeLog:
+  - changeSet:
+      id: 27-maintenance-tickets
+      author: system
+      comment: "Maintenance ticket system with replies and attachments"
+      changes:
+        - createTable:
+            tableName: maintenance_tickets
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: tenant_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: property_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_ticket_property
+                    references: properties(id)
+              - column:
+                  name: unit_id
+                  type: uuid
+                  constraints:
+                    foreignKeyName: fk_ticket_unit
+                    references: units(id)
+              - column:
+                  name: lease_id
+                  type: uuid
+                  constraints:
+                    foreignKeyName: fk_ticket_lease
+                    references: leases(id)
+              - column:
+                  name: reported_by
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: assigned_to
+                  type: uuid
+              - column:
+                  name: title
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: description
+                  type: text
+              - column:
+                  name: category
+                  type: varchar(50)
+              - column:
+                  name: priority
+                  type: varchar(20)
+              - column:
+                  name: status
+                  type: varchar(30)
+                  defaultValue: OPEN
+              - column:
+                  name: estimated_resolution_hours
+                  type: int
+              - column:
+                  name: resolved_at
+                  type: timestamp
+              - column:
+                  name: closed_at
+                  type: timestamp
+              - column:
+                  name: closure_otp
+                  type: varchar(6)
+              - column:
+                  name: satisfaction_rating
+                  type: int
+              - column:
+                  name: satisfaction_comment
+                  type: text
+              - column:
+                  name: created_at
+                  type: timestamp
+                  defaultValueComputed: now()
+              - column:
+                  name: updated_at
+                  type: timestamp
+                  defaultValueComputed: now()
+
+        - createIndex:
+            tableName: maintenance_tickets
+            indexName: idx_tickets_tenant_id
+            columns:
+              - column:
+                  name: tenant_id
+        - createIndex:
+            tableName: maintenance_tickets
+            indexName: idx_tickets_property_id
+            columns:
+              - column:
+                  name: property_id
+        - createIndex:
+            tableName: maintenance_tickets
+            indexName: idx_tickets_status
+            columns:
+              - column:
+                  name: status
+        - createIndex:
+            tableName: maintenance_tickets
+            indexName: idx_tickets_reported_by
+            columns:
+              - column:
+                  name: reported_by
+        - createIndex:
+            tableName: maintenance_tickets
+            indexName: idx_tickets_assigned_to
+            columns:
+              - column:
+                  name: assigned_to
+
+        - createTable:
+            tableName: ticket_replies
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: tenant_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: ticket_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_reply_ticket
+                    references: maintenance_tickets(id)
+              - column:
+                  name: user_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: user_name
+                  type: varchar(255)
+              - column:
+                  name: message
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamp
+                  defaultValueComputed: now()
+
+        - createIndex:
+            tableName: ticket_replies
+            indexName: idx_replies_ticket_id
+            columns:
+              - column:
+                  name: ticket_id
+
+        - createTable:
+            tableName: ticket_attachments
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: tenant_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: ticket_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_attachment_ticket
+                    references: maintenance_tickets(id)
+              - column:
+                  name: file_url
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: file_type
+                  type: varchar(100)
+              - column:
+                  name: file_size
+                  type: bigint
+              - column:
+                  name: uploaded_at
+                  type: timestamp
+                  defaultValueComputed: now()
+
+        - createIndex:
+            tableName: ticket_attachments
+            indexName: idx_ticket_attachments_ticket_id
+            columns:
+              - column:
+                  name: ticket_id
