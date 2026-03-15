@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { Link, useRouter } from "@/i18n/routing";
 import { motion } from "framer-motion";
-import { User, Mail, Lock, Building, ArrowRight, ShieldCheck, Loader2 } from "lucide-react";
+import { User, Mail, Lock, Building, ArrowRight, Loader2 } from "lucide-react";
+import Image from "next/image";
 import { useTranslations } from "next-intl";
 
 export default function RegisterPage() {
@@ -49,32 +50,37 @@ export default function RegisterPage() {
     };
 
     return (
-        <div className="min-h-screen bg-[#fafafa] flex items-center justify-center p-4">
+        <div className="min-h-screen bg-sidebar flex items-center justify-center p-4">
             <div className="absolute top-0 left-0 w-full h-full pointer-events-none overflow-hidden">
                 <div className="absolute top-[-10%] right-[-10%] w-[50%] h-[50%] bg-primary/5 rounded-full blur-[120px]" />
-                <div className="absolute bottom-[-10%] left-[-10%] w-[50%] h-[50%] bg-primary/5 rounded-full blur-[120px]" />
+                <div className="absolute bottom-[-10%] left-[-10%] w-[50%] h-[50%] bg-accent/10 rounded-full blur-[120px]" />
             </div>
 
             <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5 }}
-                className="w-full max-w-[480px] bg-white border border-border/50 rounded-[2.5rem] p-8 md:p-12 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.08)] relative z-10"
+                className="w-full max-w-[480px] bg-surface border border-border/50 rounded-xl p-8 md:p-12 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.25)] relative z-10"
             >
                 <div className="text-center mb-10">
-                    <div className="inline-flex items-center justify-center w-12 h-12 bg-primary/5 rounded-2xl mb-6 border border-primary/10">
-                        <User className="text-primary w-6 h-6" />
-                    </div>
-                    <h1 className="text-2xl font-black text-foreground tracking-tight mb-2">Create Account</h1>
-                    <p className="text-[13px] text-gray-500 font-medium">Join the RentAxis Enterprise Network</p>
+                    <Image
+                        src="/logo.png"
+                        alt="RentAxis"
+                        width={180}
+                        height={52}
+                        className="mx-auto mb-4 object-contain"
+                        priority
+                    />
+                    <h1 className="text-2xl font-bold text-foreground tracking-tight mb-2" style={{ fontFamily: 'Cinzel, serif' }}>Create Account</h1>
+                    <p className="text-[13px] text-muted font-medium">Join the RentAxis Network</p>
                 </div>
 
                 <form onSubmit={handleRegister} className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                            <label htmlFor="register-fullname" className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 ml-1">Full Name</label>
+                            <label htmlFor="register-fullname" className="block text-[10px] font-bold text-muted uppercase tracking-widest mb-2 ml-1">Full Name</label>
                             <div className="relative group">
-                                <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-primary transition-colors" />
+                                <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted group-focus-within:text-primary transition-colors" />
                                 <input
                                     id="register-fullname"
                                     required
@@ -82,17 +88,17 @@ export default function RegisterPage() {
                                     value={formData.fullName}
                                     onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
                                     placeholder="John Doe"
-                                    className="w-full bg-gray-50 border border-border p-3.5 pl-11 rounded-2xl text-xs placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/30 transition-all font-medium"
+                                    className="w-full border border-border rounded-lg bg-surface p-3.5 pl-11 text-xs text-foreground placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all font-medium"
                                 />
                             </div>
                             {fieldErrors.fullName && (
-                                <p className="text-[10px] font-bold text-red-500 mt-1 ml-1">{fieldErrors.fullName}</p>
+                                <p className="text-[10px] font-bold text-error mt-1 ml-1">{fieldErrors.fullName}</p>
                             )}
                         </div>
                         <div>
-                            <label htmlFor="register-company" className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 ml-1">Company Name</label>
+                            <label htmlFor="register-company" className="block text-[10px] font-bold text-muted uppercase tracking-widest mb-2 ml-1">Company Name</label>
                             <div className="relative group">
-                                <Building className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-primary transition-colors" />
+                                <Building className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted group-focus-within:text-primary transition-colors" />
                                 <input
                                     id="register-company"
                                     required
@@ -100,19 +106,19 @@ export default function RegisterPage() {
                                     value={formData.companyName}
                                     onChange={(e) => setFormData({ ...formData, companyName: e.target.value })}
                                     placeholder="Al Futtaim"
-                                    className="w-full bg-gray-50 border border-border p-3.5 pl-11 rounded-2xl text-xs placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/30 transition-all font-medium"
+                                    className="w-full border border-border rounded-lg bg-surface p-3.5 pl-11 text-xs text-foreground placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all font-medium"
                                 />
                             </div>
                             {fieldErrors.companyName && (
-                                <p className="text-[10px] font-bold text-red-500 mt-1 ml-1">{fieldErrors.companyName}</p>
+                                <p className="text-[10px] font-bold text-error mt-1 ml-1">{fieldErrors.companyName}</p>
                             )}
                         </div>
                     </div>
 
                     <div>
-                        <label htmlFor="register-email" className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 ml-1">Email Address</label>
+                        <label htmlFor="register-email" className="block text-[10px] font-bold text-muted uppercase tracking-widest mb-2 ml-1">Email Address</label>
                         <div className="relative group">
-                            <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-primary transition-colors" />
+                            <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted group-focus-within:text-primary transition-colors" />
                             <input
                                 id="register-email"
                                 required
@@ -120,18 +126,18 @@ export default function RegisterPage() {
                                 value={formData.email}
                                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                                 placeholder="name@company.com"
-                                className="w-full bg-gray-50 border border-border p-3.5 pl-11 rounded-2xl text-xs placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/30 transition-all font-medium"
+                                className="w-full border border-border rounded-lg bg-surface p-3.5 pl-11 text-xs text-foreground placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all font-medium"
                             />
                         </div>
                         {fieldErrors.email && (
-                            <p className="text-[10px] font-bold text-red-500 mt-1 ml-1">{fieldErrors.email}</p>
+                            <p className="text-[10px] font-bold text-error mt-1 ml-1">{fieldErrors.email}</p>
                         )}
                     </div>
 
                     <div>
-                        <label htmlFor="register-password" className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 ml-1">Password</label>
+                        <label htmlFor="register-password" className="block text-[10px] font-bold text-muted uppercase tracking-widest mb-2 ml-1">Password</label>
                         <div className="relative group">
-                            <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-primary transition-colors" />
+                            <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted group-focus-within:text-primary transition-colors" />
                             <input
                                 id="register-password"
                                 required
@@ -139,33 +145,33 @@ export default function RegisterPage() {
                                 value={formData.password}
                                 onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                                 placeholder="Create a strong password"
-                                className="w-full bg-gray-50 border border-border p-3.5 pl-11 rounded-2xl text-xs placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/30 transition-all font-medium"
+                                className="w-full border border-border rounded-lg bg-surface p-3.5 pl-11 text-xs text-foreground placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all font-medium"
                             />
                         </div>
                         {fieldErrors.password && (
-                            <p className="text-[10px] font-bold text-red-500 mt-1 ml-1">{fieldErrors.password}</p>
+                            <p className="text-[10px] font-bold text-error mt-1 ml-1">{fieldErrors.password}</p>
                         )}
                     </div>
 
                     {error && (
-                        <div className="bg-red-50 text-red-600 p-3 rounded-xl text-[10px] font-bold text-center border border-red-100">
+                        <div className="bg-error/10 text-error p-3 rounded-xl text-[10px] font-bold text-center border border-error/20">
                             {error}
                         </div>
                     )}
 
                     <div className="flex items-start gap-3 py-2 px-1">
-                        <input id="register-terms" type="checkbox" required className="mt-1 accent-primary cursor-pointer focus:ring-2 focus:ring-primary/30" />
-                        <label htmlFor="register-terms" className="text-[10px] text-gray-500 font-medium leading-relaxed cursor-pointer">
+                        <input id="register-terms" type="checkbox" required className="mt-1 accent-primary cursor-pointer focus:ring-2 focus:ring-primary/20" />
+                        <label htmlFor="register-terms" className="text-[10px] text-muted font-medium leading-relaxed cursor-pointer">
                             I agree to the <Link href="/terms" className="text-primary font-bold">Terms of Service</Link> and <Link href="/privacy" className="text-primary font-bold">Privacy Policy</Link>.
                         </label>
                     </div>
 
                     <button
                         disabled={loading}
-                        className="w-full bg-primary text-primary-foreground py-4 rounded-2xl text-xs font-black uppercase tracking-[0.1em] shadow-xl shadow-primary/20 hover:opacity-90 active:scale-[0.98] transition-all flex items-center justify-center gap-2 group disabled:opacity-70 mt-2 cursor-pointer disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-primary/30"
+                        className="w-full bg-accent text-accent-foreground py-4 rounded-xl text-xs font-bold uppercase tracking-[0.1em] shadow-xl shadow-accent/20 hover:brightness-110 active:scale-[0.98] transition-all flex items-center justify-center gap-2 group disabled:opacity-70 mt-2 cursor-pointer disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-accent/30"
                     >
                         {loading ? (
-                            <Loader2 className="w-4 h-4 animate-spin text-primary-foreground" />
+                            <Loader2 className="w-4 h-4 animate-spin text-accent-foreground" />
                         ) : (
                             <>
                                 Create Organization
@@ -176,9 +182,9 @@ export default function RegisterPage() {
                 </form>
 
                 <div className="mt-8 pt-8 border-t border-border/50 text-center">
-                    <p className="text-[11px] text-gray-500 font-medium">
+                    <p className="text-[11px] text-muted font-medium">
                         Already have an account?{" "}
-                        <Link href="/auth/login" className="text-primary font-black uppercase tracking-widest ml-1 hover:opacity-80">Sign In</Link>
+                        <Link href="/auth/login" className="text-accent font-bold uppercase tracking-widest ml-1 hover:brightness-110">Sign In</Link>
                     </p>
                 </div>
             </motion.div>

@@ -40,7 +40,7 @@ public class AuthController {
 
     @PostMapping("/login")
     public ResponseEntity<AuthResponse> login(@RequestBody LoginRequest request) {
-        Optional<User> userOpt = userService.findByEmail(request.email());
+        Optional<User> userOpt = userService.findByEmail(request.email().toLowerCase().trim());
         if (userOpt.isPresent()) {
             User user = userOpt.get();
             if (passwordEncoder.matches(request.password(), user.getPasswordHash())) {
@@ -119,5 +119,79 @@ public class AuthController {
     }
 
     public record TenantInfo(String id, String name) {
+    }
+
+    // --- Self-Service Profile ---
+
+    public record ProfileResponse(String id, String email, String name, String role, String phoneNumber) {
+    }
+
+    public record UpdateProfileRequest(String name, String phoneNumber) {
+    }
+
+    public record ChangePasswordRequest(String currentPassword, String newPassword) {
+    }
+
+    @GetMapping("/me")
+    public ResponseEntity<ProfileResponse> getMyProfile(@RequestHeader("X-User-Id") String userIdStr) {
+        UUID userId = UUID.fromString(userIdStr);
+        return userService.findById(userId)
+                .map(user -> ResponseEntity.ok(new ProfileResponse(
+                        user.getId().toString(),
+                        user.getEmail(),
+                        user.getName(),
+                        user.getRole().name(),
+                        user.getPhoneNumber())))
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    @PutMapping("/me")
+    public ResponseEntity<ProfileResponse> updateMyProfile(
+            @RequestHeader("X-User-Id") String userIdStr,
+            @RequestBody UpdateProfileRequest request) {
+        UUID userId = UUID.fromString(userIdStr);
+        Optional<User> userOpt = userService.findById(userId);
+        if (userOpt.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        User user = userOpt.get();
+        if (request.name() != null && !request.name().isBlank()) {
+            user.setName(request.name());
+        }
+        if (request.phoneNumber() != null) {
+            user.setPhoneNumber(request.phoneNumber());
+        }
+
+        User saved = userService.saveUser(user);
+        return ResponseEntity.ok(new ProfileResponse(
+                saved.getId().toString(),
+                saved.getEmail(),
+                saved.getName(),
+                saved.getRole().name(),
+                saved.getPhoneNumber()));
+    }
+
+    @PutMapping("/me/password")
+    public ResponseEntity<?> changePassword(
+            @RequestHeader("X-User-Id") String userIdStr,
+            @RequestBody ChangePasswordRequest request) {
+        UUID userId = UUID.fromString(userIdStr);
+        Optional<User> userOpt = userService.findById(userId);
+        if (userOpt.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        User user = userOpt.get();
+        if (!passwordEncoder.matches(request.currentPassword(), user.getPasswordHash())) {
+            return ResponseEntity.badRequest().body(java.util.Map.of("error", "Current password is incorrect"));
+        }
+        if (request.newPassword() == null || request.newPassword().length() < 6) {
+            return ResponseEntity.badRequest().body(java.util.Map.of("error", "New password must be at least 6 characters"));
+        }
+
+        user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
+        userService.saveUser(user);
+        return ResponseEntity.ok(java.util.Map.of("message", "Password updated successfully"));
     }
 }

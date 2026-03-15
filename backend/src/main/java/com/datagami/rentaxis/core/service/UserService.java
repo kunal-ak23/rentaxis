@@ -35,12 +35,13 @@ public class UserService {
     @Transactional
     public User createUser(String email, String rawPassword, String name, UserRole role, String tenantId,
             String phoneNumber) {
-        if (userRepository.findByEmail(email).isPresent()) {
+        String normalizedEmail = email.toLowerCase().trim();
+        if (userRepository.findByEmail(normalizedEmail).isPresent()) {
             throw new IllegalArgumentException("User with this email already exists.");
         }
 
         User user = new User();
-        user.setEmail(email);
+        user.setEmail(normalizedEmail);
         user.setPasswordHash(passwordEncoder.encode(rawPassword));
         user.setName(name);
         user.setRole(role);
@@ -67,6 +68,11 @@ public class UserService {
         return userRepository.findById(id);
     }
 
+    @Transactional
+    public User saveUser(User user) {
+        return userRepository.save(user);
+    }
+
     public List<User> getAllUsers() {
         return userRepository.findAll();
     }
@@ -80,11 +86,12 @@ public class UserService {
             String phoneNumber) {
         User user = userRepository.findById(id).orElseThrow(() -> new IllegalArgumentException("User not found"));
 
-        if (!user.getEmail().equals(email) && userRepository.findByEmail(email).isPresent()) {
+        String normalizedEmail = email.toLowerCase().trim();
+        if (!user.getEmail().equals(normalizedEmail) && userRepository.findByEmail(normalizedEmail).isPresent()) {
             throw new IllegalArgumentException("User with this email already exists.");
         }
 
-        user.setEmail(email);
+        user.setEmail(normalizedEmail);
         user.setName(name);
         user.setRole(role);
         user.setPhoneNumber(phoneNumber);

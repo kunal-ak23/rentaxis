@@ -4,7 +4,8 @@ import { useState } from "react";
 import { signIn } from "next-auth/react";
 import { Link, useRouter } from "@/i18n/routing";
 import { motion } from "framer-motion";
-import { Mail, Lock, ArrowRight, ShieldCheck, Loader2 } from "lucide-react";
+import { Mail, Lock, ArrowRight, Loader2 } from "lucide-react";
+import Image from "next/image";
 import { useTranslations } from "next-intl";
 
 export default function LoginPage() {
@@ -41,7 +42,7 @@ export default function LoginPage() {
                 if (role === "RENTER") {
                     router.push("/dashboard/renter-portal");
                 } else {
-                    router.push("/dashboard/properties");
+                    router.push("/dashboard");
                 }
             }
         } catch (err) {
@@ -51,31 +52,35 @@ export default function LoginPage() {
     };
 
     return (
-        <div className="min-h-screen bg-[#fafafa] flex items-center justify-center p-4">
+        <div className="min-h-screen bg-sidebar flex items-center justify-center p-4">
             <div className="absolute top-0 left-0 w-full h-full pointer-events-none overflow-hidden">
                 <div className="absolute top-[-10%] right-[-10%] w-[50%] h-[50%] bg-primary/5 rounded-full blur-[120px]" />
-                <div className="absolute bottom-[-10%] left-[-10%] w-[50%] h-[50%] bg-primary/5 rounded-full blur-[120px]" />
+                <div className="absolute bottom-[-10%] left-[-10%] w-[50%] h-[50%] bg-accent/10 rounded-full blur-[120px]" />
             </div>
 
             <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5 }}
-                className="w-full max-w-[420px] bg-white border border-border/50 rounded-[2.5rem] p-8 md:p-12 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.08)] relative z-10"
+                className="w-full max-w-[420px] bg-surface border border-border/50 rounded-xl p-8 md:p-12 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.25)] relative z-10"
             >
                 <div className="text-center mb-10">
-                    <div className="inline-flex items-center justify-center w-12 h-12 bg-primary/5 rounded-2xl mb-6 border border-primary/10">
-                        <ShieldCheck className="text-primary w-6 h-6" />
-                    </div>
-                    <h1 className="text-2xl font-black text-foreground tracking-tight mb-2">Welcome Back</h1>
-                    <p className="text-[13px] text-gray-500 font-medium">Enterprise Lease Management Portal</p>
+                    <Image
+                        src="/logo.png"
+                        alt="RentAxis"
+                        width={180}
+                        height={52}
+                        className="mx-auto mb-4 object-contain"
+                        priority
+                    />
+                    <p className="text-[13px] text-muted font-medium">Property Management Portal</p>
                 </div>
 
                 <form onSubmit={handleLogin} className="space-y-5">
                     <div>
-                        <label htmlFor="login-email" className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 ml-1">Email Address</label>
+                        <label htmlFor="login-email" className="block text-[10px] font-bold text-muted uppercase tracking-widest mb-2 ml-1">Email Address</label>
                         <div className="relative group">
-                            <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-primary transition-colors" />
+                            <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted group-focus-within:text-primary transition-colors" />
                             <input
                                 id="login-email"
                                 required
@@ -83,20 +88,20 @@ export default function LoginPage() {
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
                                 placeholder="name@company.com"
-                                className="w-full bg-gray-50 border border-border p-3.5 pl-11 rounded-2xl text-xs placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/30 transition-all font-medium"
+                                className="w-full border border-border rounded-lg bg-surface p-3.5 pl-11 text-xs text-foreground placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all font-medium"
                             />
                         </div>
                         {fieldErrors.email && (
-                            <p className="text-[10px] font-bold text-red-500 mt-1 ml-1">{fieldErrors.email}</p>
+                            <p className="text-[10px] font-bold text-error mt-1 ml-1">{fieldErrors.email}</p>
                         )}
                     </div>
 
                     <div>
                         <div className="flex items-center justify-between mb-2 ml-1">
-                            <label htmlFor="login-password" className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest">Password</label>
+                            <label htmlFor="login-password" className="block text-[10px] font-bold text-muted uppercase tracking-widest">Password</label>
                         </div>
                         <div className="relative group">
-                            <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-primary transition-colors" />
+                            <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted group-focus-within:text-primary transition-colors" />
                             <input
                                 id="login-password"
                                 required
@@ -104,11 +109,11 @@ export default function LoginPage() {
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
                                 placeholder="••••••••"
-                                className="w-full bg-gray-50 border border-border p-3.5 pl-11 rounded-2xl text-xs placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/30 transition-all font-medium"
+                                className="w-full border border-border rounded-lg bg-surface p-3.5 pl-11 text-xs text-foreground placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all font-medium"
                             />
                         </div>
                         {fieldErrors.password && (
-                            <p className="text-[10px] font-bold text-red-500 mt-1 ml-1">{fieldErrors.password}</p>
+                            <p className="text-[10px] font-bold text-error mt-1 ml-1">{fieldErrors.password}</p>
                         )}
                     </div>
 
@@ -116,7 +121,7 @@ export default function LoginPage() {
                         <motion.div
                             initial={{ opacity: 0, scale: 0.95 }}
                             animate={{ opacity: 1, scale: 1 }}
-                            className="bg-red-50 text-red-600 p-3 rounded-xl text-[10px] font-bold text-center border border-red-100"
+                            className="bg-error/10 text-error p-3 rounded-xl text-[10px] font-bold text-center border border-error/20"
                         >
                             {error}
                         </motion.div>
@@ -124,10 +129,10 @@ export default function LoginPage() {
 
                     <button
                         disabled={loading}
-                        className="w-full bg-primary text-primary-foreground py-4 rounded-2xl text-xs font-black uppercase tracking-[0.1em] shadow-xl shadow-primary/20 hover:opacity-90 active:scale-[0.98] transition-all flex items-center justify-center gap-2 group disabled:opacity-70 cursor-pointer disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-primary/30"
+                        className="w-full bg-accent text-accent-foreground py-4 rounded-xl text-xs font-bold uppercase tracking-[0.1em] shadow-xl shadow-accent/20 hover:brightness-110 active:scale-[0.98] transition-all flex items-center justify-center gap-2 group disabled:opacity-70 cursor-pointer disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-accent/30"
                     >
                         {loading ? (
-                            <Loader2 className="w-4 h-4 animate-spin text-primary-foreground" />
+                            <Loader2 className="w-4 h-4 animate-spin text-accent-foreground" />
                         ) : (
                             <>
                                 Sign In
@@ -138,9 +143,9 @@ export default function LoginPage() {
                 </form>
 
                 <div className="mt-8 pt-8 border-t border-border/50 text-center">
-                    <p className="text-[11px] text-gray-500 font-medium">
+                    <p className="text-[11px] text-muted font-medium">
                         New to RentAxis?{" "}
-                        <Link href="/auth/register" className="text-primary font-black uppercase tracking-widest ml-1 hover:opacity-80">Create Account</Link>
+                        <Link href="/auth/register" className="text-accent font-bold uppercase tracking-widest ml-1 hover:brightness-110">Create Account</Link>
                     </p>
                 </div>
             </motion.div>

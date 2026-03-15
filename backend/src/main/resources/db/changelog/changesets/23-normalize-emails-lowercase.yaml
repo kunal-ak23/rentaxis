@@ -1,0 +1,8 @@
+databaseChangeLog:
+  - changeSet:
+      id: 23-normalize-emails-lowercase
+      author: system
+      comment: "Normalize all existing user emails to lowercase for case-insensitive login"
+      changes:
+        - sql:
+            sql: "UPDATE users SET email = LOWER(TRIM(email)) WHERE email != LOWER(TRIM(email))"
