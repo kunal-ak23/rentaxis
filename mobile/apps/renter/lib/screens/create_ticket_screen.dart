@@ -1,0 +1,548 @@
+import 'dart:io';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:rentaxis_core/rentaxis_core.dart';
+
+final _ticketServiceProvider = Provider<TicketService>((ref) {
+  final client = ref.watch(apiClientProvider);
+  return TicketService(client.dio);
+});
+
+final _leaseServiceProvider = Provider<LeaseService>((ref) {
+  final client = ref.watch(apiClientProvider);
+  return LeaseService(client.dio);
+});
+
+final _myLeasesForTicketProvider =
+    FutureProvider.autoDispose<List<dynamic>>((ref) {
+  final service = ref.watch(_leaseServiceProvider);
+  return service.getMyLeases();
+});
+
+class CreateTicketScreen extends ConsumerStatefulWidget {
+  const CreateTicketScreen({super.key});
+
+  @override
+  ConsumerState<CreateTicketScreen> createState() => _CreateTicketScreenState();
+}
+
+class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final _titleController = TextEditingController();
+  final _descriptionController = TextEditingController();
+
+  String? _selectedLeaseId;
+  String? _selectedPropertyId;
+  String? _selectedUnitId;
+  String? _selectedCategory;
+  String _selectedPriority = 'MEDIUM';
+  final List<File> _attachments = [];
+  bool _isSubmitting = false;
+
+  final _categories = [
+    {'label': 'Plumbing', 'value': 'PLUMBING', 'icon': Icons.plumbing},
+    {
+      'label': 'Electrical',
+      'value': 'ELECTRICAL',
+      'icon': Icons.electrical_services,
+    },
+    {'label': 'HVAC', 'value': 'HVAC', 'icon': Icons.ac_unit},
+    {'label': 'Appliance', 'value': 'APPLIANCE', 'icon': Icons.kitchen},
+    {'label': 'Structural', 'value': 'STRUCTURAL', 'icon': Icons.foundation},
+    {
+      'label': 'Pest Control',
+      'value': 'PEST_CONTROL',
+      'icon': Icons.pest_control,
+    },
+    {
+      'label': 'Cleaning',
+      'value': 'CLEANING',
+      'icon': Icons.cleaning_services,
+    },
+    {'label': 'Security', 'value': 'SECURITY', 'icon': Icons.security},
+    {'label': 'Other', 'value': 'OTHER', 'icon': Icons.more_horiz},
+  ];
+
+  final _priorities = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'];
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _descriptionController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickFromCamera() async {
+    final status = await Permission.camera.request();
+    if (!status.isGranted) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Camera permission required')),
+        );
+      }
+      return;
+    }
+
+    final picker = ImagePicker();
+    final image = await picker.pickImage(
+      source: ImageSource.camera,
+      maxWidth: 1920,
+      maxHeight: 1080,
+      imageQuality: 80,
+    );
+    if (image != null) {
+      setState(() => _attachments.add(File(image.path)));
+    }
+  }
+
+  Future<void> _pickFromGallery() async {
+    final status = await Permission.photos.request();
+    // On some platforms, photos permission might not exist
+    if (!status.isGranted && !status.isLimited) {
+      // Try picking anyway - some platforms don't need explicit permission
+    }
+
+    final picker = ImagePicker();
+    final images = await picker.pickMultiImage(
+      maxWidth: 1920,
+      maxHeight: 1080,
+      imageQuality: 80,
+    );
+    if (images.isNotEmpty) {
+      setState(() {
+        for (final image in images) {
+          _attachments.add(File(image.path));
+        }
+      });
+    }
+  }
+
+  Future<void> _pickDocument() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['pdf', 'doc', 'docx'],
+      allowMultiple: true,
+    );
+    if (result != null) {
+      setState(() {
+        for (final file in result.files) {
+          if (file.path != null) {
+            _attachments.add(File(file.path!));
+          }
+        }
+      });
+    }
+  }
+
+  void _removeAttachment(int index) {
+    setState(() => _attachments.removeAt(index));
+  }
+
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+    if (_selectedCategory == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select a category')),
+      );
+      return;
+    }
+
+    setState(() => _isSubmitting = true);
+
+    try {
+      final data = <String, dynamic>{
+        'title': _titleController.text.trim(),
+        'description': _descriptionController.text.trim(),
+        'category': _selectedCategory,
+        'priority': _selectedPriority,
+        if (_selectedPropertyId != null) 'propertyId': _selectedPropertyId,
+        if (_selectedUnitId != null) 'unitId': _selectedUnitId,
+      };
+
+      final ticket =
+          await ref.read(_ticketServiceProvider).createTicket(data);
+
+      // Upload attachments
+      if (_attachments.isNotEmpty && ticket['id'] != null) {
+        final service = ref.read(_ticketServiceProvider);
+        for (final file in _attachments) {
+          try {
+            await service.uploadAttachment(ticket['id'], file.path);
+          } catch (_) {
+            // Continue uploading remaining attachments
+          }
+        }
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Ticket created successfully'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+        context.pop();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to create ticket'),
+            backgroundColor: AppColors.danger,
+          ),
+        );
+      }
+    }
+
+    if (mounted) setState(() => _isSubmitting = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final leasesAsync = ref.watch(_myLeasesForTicketProvider);
+
+    return GestureDetector(
+      onTap: () => FocusScope.of(context).unfocus(),
+      child: Scaffold(
+        appBar: AppBar(
+          backgroundColor: AppColors.navyDark,
+          title: const Text('Create Ticket'),
+        ),
+        body: LoadingOverlay(
+          isLoading: _isSubmitting,
+          child: Form(
+            key: _formKey,
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                // Property/Unit selector
+                leasesAsync.when(
+                  data: (leases) {
+                    // Auto-select if single lease
+                    if (leases.length == 1 && _selectedLeaseId == null) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted) {
+                          setState(() {
+                            _selectedLeaseId = leases[0]['id'];
+                            _selectedPropertyId =
+                                leases[0]['property']?['id'] ??
+                                    leases[0]['propertyId'];
+                            _selectedUnitId = leases[0]['unit']?['id'] ??
+                                leases[0]['unitId'];
+                          });
+                        }
+                      });
+                    }
+
+                    if (leases.isEmpty) return const SizedBox.shrink();
+
+                    return DropdownButtonFormField<String>(
+                      value: _selectedLeaseId,
+                      decoration: const InputDecoration(
+                        labelText: 'Property / Unit',
+                        prefixIcon: Icon(Icons.apartment, size: 20),
+                      ),
+                      items: leases.map<DropdownMenuItem<String>>((lease) {
+                        final propName = lease['property']?['name'] ??
+                            lease['propertyName'] ??
+                            'Property';
+                        final unitNum = lease['unit']?['unitNumber'] ??
+                            lease['unitNumber'] ??
+                            '';
+                        return DropdownMenuItem(
+                          value: lease['id'] as String,
+                          child: Text('$propName - Unit $unitNum'),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        final lease = leases.firstWhere((l) => l['id'] == value);
+                        setState(() {
+                          _selectedLeaseId = value;
+                          _selectedPropertyId =
+                              lease['property']?['id'] ?? lease['propertyId'];
+                          _selectedUnitId =
+                              lease['unit']?['id'] ?? lease['unitId'];
+                        });
+                      },
+                    );
+                  },
+                  loading: () => const LinearProgressIndicator(),
+                  error: (_, __) => const SizedBox.shrink(),
+                ),
+                const SizedBox(height: 20),
+
+                // Category grid
+                Text('Category',
+                    style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 10),
+                GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3,
+                    mainAxisSpacing: 10,
+                    crossAxisSpacing: 10,
+                    childAspectRatio: 1.1,
+                  ),
+                  itemCount: _categories.length,
+                  itemBuilder: (context, index) {
+                    final cat = _categories[index];
+                    final isSelected = _selectedCategory == cat['value'];
+                    return InkWell(
+                      onTap: () =>
+                          setState(() => _selectedCategory = cat['value'] as String),
+                      borderRadius: BorderRadius.circular(12),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? AppColors.primary.withValues(alpha: 0.1)
+                              : AppColors.surface,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: isSelected
+                                ? AppColors.primary
+                                : AppColors.border,
+                            width: isSelected ? 2 : 1,
+                          ),
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              cat['icon'] as IconData,
+                              color: isSelected
+                                  ? AppColors.primary
+                                  : AppColors.textSecondary,
+                              size: 28,
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              cat['label'] as String,
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: isSelected
+                                    ? FontWeight.w600
+                                    : FontWeight.w400,
+                                color: isSelected
+                                    ? AppColors.primary
+                                    : AppColors.textSecondary,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 20),
+
+                // Title
+                TextFormField(
+                  controller: _titleController,
+                  decoration: const InputDecoration(
+                    labelText: 'Title',
+                    hintText: 'Brief description of the issue',
+                    prefixIcon: Icon(Icons.title, size: 20),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Title is required';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 16),
+
+                // Description
+                TextFormField(
+                  controller: _descriptionController,
+                  decoration: const InputDecoration(
+                    labelText: 'Description',
+                    hintText: 'Provide more details about the issue...',
+                    alignLabelWithHint: true,
+                  ),
+                  maxLines: 4,
+                  minLines: 3,
+                ),
+                const SizedBox(height: 20),
+
+                // Priority
+                Text('Priority',
+                    style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  children: _priorities.map((priority) {
+                    final isSelected = _selectedPriority == priority;
+                    final color = StatusHelper.getPriorityColor(priority);
+                    return ChoiceChip(
+                      label: Text(priority),
+                      selected: isSelected,
+                      selectedColor: color.withValues(alpha: 0.2),
+                      backgroundColor: AppColors.background,
+                      side: BorderSide(
+                        color: isSelected ? color : AppColors.border,
+                      ),
+                      labelStyle: TextStyle(
+                        color: isSelected ? color : AppColors.textSecondary,
+                        fontWeight:
+                            isSelected ? FontWeight.w600 : FontWeight.w400,
+                        fontSize: 12,
+                      ),
+                      onSelected: (_) =>
+                          setState(() => _selectedPriority = priority),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 20),
+
+                // Attachments
+                Text('Attachments',
+                    style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    _AttachButton(
+                      icon: Icons.camera_alt_outlined,
+                      label: 'Camera',
+                      onTap: _pickFromCamera,
+                    ),
+                    const SizedBox(width: 10),
+                    _AttachButton(
+                      icon: Icons.photo_library_outlined,
+                      label: 'Gallery',
+                      onTap: _pickFromGallery,
+                    ),
+                    const SizedBox(width: 10),
+                    _AttachButton(
+                      icon: Icons.attach_file,
+                      label: 'Document',
+                      onTap: _pickDocument,
+                    ),
+                  ],
+                ),
+
+                if (_attachments.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    height: 90,
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: _attachments.length,
+                      itemBuilder: (context, index) {
+                        final file = _attachments[index];
+                        final isImage = file.path.endsWith('.jpg') ||
+                            file.path.endsWith('.jpeg') ||
+                            file.path.endsWith('.png') ||
+                            file.path.endsWith('.heic');
+
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: Stack(
+                            children: [
+                              Container(
+                                width: 80,
+                                height: 80,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(8),
+                                  border:
+                                      Border.all(color: AppColors.border),
+                                ),
+                                clipBehavior: Clip.hardEdge,
+                                child: isImage
+                                    ? Image.file(file, fit: BoxFit.cover)
+                                    : Column(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          const Icon(
+                                            Icons.insert_drive_file,
+                                            color: AppColors.textMuted,
+                                          ),
+                                          Text(
+                                            file.path.split('/').last,
+                                            style: const TextStyle(
+                                                fontSize: 8),
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            textAlign: TextAlign.center,
+                                          ),
+                                        ],
+                                      ),
+                              ),
+                              Positioned(
+                                top: -4,
+                                right: -4,
+                                child: GestureDetector(
+                                  onTap: () => _removeAttachment(index),
+                                  child: Container(
+                                    width: 22,
+                                    height: 22,
+                                    decoration: const BoxDecoration(
+                                      color: AppColors.danger,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(Icons.close,
+                                        color: Colors.white, size: 14),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 32),
+
+                // Submit
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    onPressed: _isSubmitting ? null : _submit,
+                    child: const Text('Submit Ticket'),
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AttachButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _AttachButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: OutlinedButton.icon(
+        onPressed: onTap,
+        icon: Icon(icon, size: 18),
+        label: Text(label, style: const TextStyle(fontSize: 12)),
+        style: OutlinedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+        ),
+      ),
+    );
+  }
+}
