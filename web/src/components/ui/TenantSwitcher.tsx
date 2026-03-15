@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useSession } from "next-auth/react";
 import Cookies from "js-cookie";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { Building2, Check, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { hasPermission, type UserRole } from "@/lib/rbac";
@@ -13,6 +13,7 @@ type Tenant = { id: string; name: string };
 export function TenantSwitcher({ isCollapsed }: { isCollapsed: boolean }) {
     const { data: session } = useSession();
     const router = useRouter();
+    const pathname = usePathname();
     const [tenants, setTenants] = useState<Tenant[]>([]);
     const [isOpen, setIsOpen] = useState(false);
     const [activeTenant, setActiveTenant] = useState<Tenant | null>(null);
@@ -76,47 +77,63 @@ export function TenantSwitcher({ isCollapsed }: { isCollapsed: boolean }) {
             Cookies.remove("active_tenant_id", { path: "/" });
         }
         setIsOpen(false);
-        router.refresh(); // Refresh to apply new context
+        // Hard navigate to dashboard to reload all data with new tenant context
+        const locale = pathname.startsWith('/ar') ? 'ar' : 'en';
+        window.location.href = `/${locale}/dashboard`;
     };
 
-    if (!userExt?.tenantId && userRole !== 'SUPER_ADMIN') return null; // Defensive
+    const buttonRef = useRef<HTMLButtonElement>(null);
+    const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0, width: 0 });
+
+    const openDropdown = () => {
+        if (!canSwitch) return;
+        if (buttonRef.current) {
+            const rect = buttonRef.current.getBoundingClientRect();
+            setDropdownPos({ top: rect.bottom + 8, left: rect.left, width: rect.width });
+        }
+        setIsOpen(!isOpen);
+    };
+
+    if (!userExt?.tenantId && userRole !== 'SUPER_ADMIN') return null;
+    if (!canSwitch) return null; // Hide for single-tenant users (renters, tenant users, etc.)
 
     const isSuperAdmin = userRole === 'SUPER_ADMIN';
 
     return (
-        <div className="relative mb-6 px-3">
+        <div className="relative px-3">
             <button
-                onClick={() => canSwitch && setIsOpen(!isOpen)}
+                ref={buttonRef}
+                onClick={openDropdown}
                 aria-label="Switch organization"
                 className={cn(
-                    "w-full flex items-center justify-between bg-gray-50 border border-border p-2 rounded-xl transition-all duration-200 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-primary/30",
+                    "w-full flex items-center justify-between bg-input border border-border p-2 rounded-xl transition-all duration-200 hover:bg-input/80 focus:outline-none focus:ring-2 focus:ring-primary/20",
                     isCollapsed ? "justify-center" : "",
-                    !canSwitch && "cursor-default hover:bg-gray-50",
+                    !canSwitch && "cursor-default hover:bg-input",
                     canSwitch && "cursor-pointer"
                 )}
             >
                 {isCollapsed ? (
-                    <div className="w-8 h-8 rounded-lg bg-white shadow-sm border border-border/50 flex items-center justify-center">
+                    <div className="w-8 h-8 rounded-lg bg-surface shadow-sm border border-border/50 flex items-center justify-center">
                         <Building2 size={14} className="text-primary" />
                     </div>
                 ) : (
                     <div className="flex items-center gap-3 overflow-hidden">
-                        <div className="w-8 h-8 rounded-lg bg-white shadow-sm border border-border/50 flex items-center justify-center shrink-0">
+                        <div className="w-8 h-8 rounded-lg bg-surface shadow-sm border border-border/50 flex items-center justify-center shrink-0">
                             <Building2 size={14} className="text-primary" />
                         </div>
                         <div className="flex flex-col items-start truncate overflow-hidden text-left relative z-10 w-full" style={{ maxWidth: '140px' }}>
-                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-none mb-0.5">
+                            <span className="text-[10px] font-bold text-muted uppercase tracking-widest leading-none mb-0.5">
                                 {isSuperAdmin ? "Administering" : "Organization"}
                             </span>
-                            <span className="text-xs font-black text-foreground truncate w-full">
-                                {isSuperAdmin && !activeTenant ? "Global View" : activeTenant?.name || "Your Tenant"}
+                            <span className="text-xs font-bold text-foreground truncate w-full">
+                                {isSuperAdmin && !activeTenant ? "Global View" : activeTenant?.name || "Select Tenant"}
                             </span>
                         </div>
                     </div>
                 )}
 
                 {!isCollapsed && canSwitch && (
-                    <ChevronsUpDown size={14} className="text-gray-400 shrink-0" />
+                    <ChevronsUpDown size={14} className="text-muted shrink-0" />
                 )}
             </button>
 
@@ -124,15 +141,18 @@ export function TenantSwitcher({ isCollapsed }: { isCollapsed: boolean }) {
             {isOpen && canSwitch && !isCollapsed && (
                 <>
                     <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
-                    <div className="absolute top-full left-3 right-3 mt-2 bg-white rounded-xl shadow-xl border border-border z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div
+                        className="fixed bg-surface rounded-xl shadow-xl border border-border z-50 overflow-hidden"
+                        style={{ top: dropdownPos.top, left: dropdownPos.left, width: dropdownPos.width }}
+                    >
                         <div className="max-h-[200px] overflow-y-auto p-1">
                             {isSuperAdmin && (
                                 <>
                                     <button
                                         onClick={() => handleSelect(null)}
                                         className={cn(
-                                            "w-full flex items-center justify-between p-2.5 rounded-lg text-xs font-bold transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30",
-                                            !activeTenant ? "bg-primary/5 text-primary" : "text-gray-600 hover:bg-gray-50"
+                                            "w-full flex items-center justify-between p-2.5 rounded-lg text-xs font-bold transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/20",
+                                            !activeTenant ? "bg-primary/5 text-primary" : "text-foreground hover:bg-input"
                                         )}
                                     >
                                         Global System View
@@ -147,8 +167,8 @@ export function TenantSwitcher({ isCollapsed }: { isCollapsed: boolean }) {
                                     key={t.id}
                                     onClick={() => handleSelect(t)}
                                     className={cn(
-                                        "w-full flex items-center justify-between p-2.5 rounded-lg text-xs font-bold transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30",
-                                        activeTenant?.id === t.id ? "bg-primary/5 text-primary" : "text-gray-600 hover:bg-gray-50"
+                                        "w-full flex items-center justify-between p-2.5 rounded-lg text-xs font-bold transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/20",
+                                        activeTenant?.id === t.id ? "bg-primary/5 text-primary" : "text-foreground hover:bg-input"
                                     )}
                                 >
                                     <span className="truncate">{t.name}</span>
@@ -156,7 +176,7 @@ export function TenantSwitcher({ isCollapsed }: { isCollapsed: boolean }) {
                                 </button>
                             ))}
                             {tenants.length === 0 && (
-                                <div className="p-3 text-center text-xs text-gray-400 font-medium">
+                                <div className="p-3 text-center text-xs text-muted font-medium">
                                     No tenants available
                                 </div>
                             )}

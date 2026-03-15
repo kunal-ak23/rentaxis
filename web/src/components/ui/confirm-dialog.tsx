@@ -43,28 +43,28 @@ export function ConfirmDialog({
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.95, y: 10 }}
                         transition={{ duration: 0.2, type: "spring", bounce: 0 }}
-                        className="relative w-full max-w-sm bg-white rounded-[24px] shadow-2xl flex flex-col overflow-hidden"
+                        className="relative w-full max-w-sm bg-surface rounded-xl shadow-2xl flex flex-col overflow-hidden"
                     >
                         <div className="p-6">
-                            <h2 className="text-lg font-black text-foreground mb-2 tracking-tight">{title}</h2>
+                            <h2 className="text-lg font-bold text-foreground mb-2 tracking-tight">{title}</h2>
                             {description && (
-                                <p className="text-sm text-gray-500 font-medium leading-relaxed">{description}</p>
+                                <p className="text-sm text-muted font-medium leading-relaxed">{description}</p>
                             )}
                         </div>
-                        <div className="px-6 py-4 bg-gray-50/80 border-t border-border flex justify-end gap-3">
+                        <div className="px-6 py-4 bg-input/80 border-t border-border flex justify-end gap-3">
                             <button
                                 onClick={onClose}
                                 disabled={isLoading}
-                                className="px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-gray-600 hover:text-gray-900 transition-colors duration-200 bg-white border border-border rounded-xl shadow-sm hover:bg-gray-50 active:scale-95 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-foreground hover:text-foreground/80 transition-colors duration-200 bg-surface border border-border rounded-xl shadow-sm hover:bg-input active:scale-95 cursor-pointer focus:ring-2 focus:ring-primary/20 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 {cancelText}
                             </button>
                             <button
                                 onClick={onConfirm}
                                 disabled={isLoading}
-                                className={`px-4 py-2.5 text-xs font-bold uppercase tracking-wider rounded-xl transition-all duration-200 shadow-md active:scale-95 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 ${isDestructive
-                                    ? "bg-red-500 text-white hover:bg-red-600 shadow-red-500/20"
-                                    : "bg-primary text-primary-foreground hover:opacity-90 shadow-primary/20"
+                                className={`px-4 py-2.5 text-xs font-bold uppercase tracking-wider rounded-xl transition-all duration-200 shadow-md active:scale-95 cursor-pointer focus:ring-2 focus:ring-primary/20 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 ${isDestructive
+                                    ? "bg-error text-white hover:bg-error/90 shadow-error/20"
+                                    : "bg-accent text-accent-foreground hover:brightness-110 shadow-accent/20"
                                     }`}
                             >
                                 {isLoading && <Loader2 size={14} className="animate-spin" />}

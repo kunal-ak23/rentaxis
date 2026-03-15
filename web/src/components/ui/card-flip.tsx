@@ -26,7 +26,7 @@ export default function CardFlip({ front, back, className }: CardFlipProps) {
                 <div className={cn(
                     'absolute inset-0 h-full w-full',
                     '[transform:rotateY(0deg)] [backface-visibility:hidden]',
-                    'overflow-hidden rounded-3xl border border-gray-100 bg-white p-6',
+                    'overflow-hidden rounded-xl border border-border bg-surface p-6',
                     'shadow-sm transition-all duration-700',
                     isFlipped ? 'opacity-0' : 'opacity-100',
                 )}>
@@ -37,7 +37,7 @@ export default function CardFlip({ front, back, className }: CardFlipProps) {
                 <div className={cn(
                     'absolute inset-0 h-full w-full',
                     '[transform:rotateY(180deg)] [backface-visibility:hidden]',
-                    'overflow-hidden rounded-3xl border border-primary/20 bg-primary/5 p-6',
+                    'overflow-hidden rounded-xl border border-primary/20 bg-primary/5 p-6',
                     'shadow-sm flex flex-col transition-all duration-700',
                     !isFlipped ? 'opacity-0' : 'opacity-100',
                 )}>
