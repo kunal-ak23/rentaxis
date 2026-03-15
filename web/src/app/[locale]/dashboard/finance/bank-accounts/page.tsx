@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { Landmark, Plus, Pencil, Trash2, X, Loader2 } from "lucide-react";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 type Account = {
     id: string;
@@ -59,6 +60,13 @@ export default function BankAccountsPage() {
     const [editingAccount, setEditingAccount] = useState<BankAccount | null>(null);
     const [submitting, setSubmitting] = useState(false);
     const [formData, setFormData] = useState(emptyForm);
+    const [confirmDialog, setConfirmDialog] = useState<{
+        title: string;
+        description: string;
+        confirmText: string;
+        isDestructive: boolean;
+        onConfirm: () => void;
+    } | null>(null);
 
     useEffect(() => {
         fetchBankAccounts();
@@ -69,7 +77,11 @@ export default function BankAccountsPage() {
     const fetchBankAccounts = async () => {
         try {
             const res = await fetch("/api/proxy/v1/bank-accounts");
-            if (res.ok) setBankAccounts(await res.json());
+            if (res.ok) {
+                const data = await res.json();
+                data.sort((a: any, b: any) => (a.id || '').localeCompare(b.id || ''));
+                setBankAccounts(data);
+            }
         } catch (err) {
             console.error(err);
         } finally {
@@ -164,16 +176,24 @@ export default function BankAccountsPage() {
         }
     };
 
-    const handleDelete = async (ba: BankAccount) => {
-        if (!window.confirm(t("confirmDelete"))) return;
-        try {
-            const res = await fetch(`/api/proxy/v1/bank-accounts/${ba.id}`, {
-                method: "DELETE",
-            });
-            if (res.ok) fetchBankAccounts();
-        } catch (err) {
-            console.error(err);
-        }
+    const handleDelete = (ba: BankAccount) => {
+        setConfirmDialog({
+            title: "Delete Bank Account",
+            description: "Are you sure you want to delete this bank account?",
+            confirmText: "Delete",
+            isDestructive: true,
+            onConfirm: async () => {
+                setConfirmDialog(null);
+                try {
+                    const res = await fetch(`/api/proxy/v1/bank-accounts/${ba.id}`, {
+                        method: "DELETE",
+                    });
+                    if (res.ok) fetchBankAccounts();
+                } catch (err) {
+                    console.error(err);
+                }
+            },
+        });
     };
 
     const propertyName = (p: Property | null) => {
@@ -186,11 +206,11 @@ export default function BankAccountsPage() {
             {/* Header */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10">
                 <div>
-                    <h1 className="text-xl font-black text-foreground tracking-tight mb-1 flex items-center gap-2">
+                    <h1 className="text-xl font-bold text-foreground tracking-tight mb-1 flex items-center gap-2">
                         <Landmark size={20} className="text-primary" />
                         {t("title")}
                     </h1>
-                    <p className="text-xs text-gray-500 font-medium">
+                    <p className="text-xs text-muted font-medium">
                         {t("description")}
                     </p>
                 </div>
@@ -207,21 +227,21 @@ export default function BankAccountsPage() {
             {loading && (
                 <div className="space-y-3 animate-pulse">
                     {[1, 2, 3, 4].map((i) => (
-                        <div key={i} className="bg-gray-200 rounded-2xl h-16" />
+                        <div key={i} className="bg-input rounded-xl h-16" />
                     ))}
                 </div>
             )}
 
             {/* Empty State */}
             {!loading && bankAccounts.length === 0 && (
-                <div className="text-center py-24 bg-gray-50 border border-dashed border-gray-200 rounded-[2.5rem] flex flex-col items-center">
-                    <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center text-gray-200 shadow-sm mb-6">
+                <div className="text-center py-24 bg-background border border-dashed border-border rounded-xl flex flex-col items-center">
+                    <div className="w-16 h-16 bg-surface rounded-xl flex items-center justify-center text-muted shadow-sm mb-6">
                         <Landmark size={28} />
                     </div>
-                    <h3 className="text-sm font-black text-foreground mb-1">
+                    <h3 className="text-sm font-bold text-foreground mb-1">
                         {t("noBankAccounts")}
                     </h3>
-                    <p className="text-xs text-gray-400 font-medium">
+                    <p className="text-xs text-muted font-medium">
                         {t("addBankAccountDesc")}
                     </p>
                 </div>
@@ -229,45 +249,45 @@ export default function BankAccountsPage() {
 
             {/* Bank Accounts Table */}
             {!loading && bankAccounts.length > 0 && (
-                <div className="bg-white border border-border rounded-2xl overflow-hidden shadow-sm">
+                <div className="bg-surface border border-border rounded-xl overflow-hidden shadow-sm">
                     <div className="overflow-x-auto">
                         <table className="w-full">
                             <thead>
-                                <tr className="border-b border-gray-100">
-                                    <th className="text-left px-5 py-3.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                                <tr className="bg-input/70">
+                                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                         {t("bankName")}
                                     </th>
-                                    <th className="text-left px-5 py-3.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                         {t("accountNumber")}
                                     </th>
-                                    <th className="text-left px-5 py-3.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                         {t("iban")}
                                     </th>
-                                    <th className="text-left px-5 py-3.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                         {t("branchName")}
                                     </th>
-                                    <th className="text-left px-5 py-3.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                         {t("property")}
                                     </th>
-                                    <th className="text-left px-5 py-3.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                         {t("coaAccount")}
                                     </th>
-                                    <th className="text-left px-5 py-3.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                         {t("isDefault")}
                                     </th>
-                                    <th className="text-left px-5 py-3.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                         Status
                                     </th>
-                                    <th className="text-left px-5 py-3.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                         Actions
                                     </th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-gray-50">
+                            <tbody className="divide-y divide-border">
                                 {bankAccounts.map((ba) => (
                                     <tr
                                         key={ba.id}
-                                        className="hover:bg-gray-50/50 transition-all duration-200"
+                                        className="hover:bg-input/30 transition-colors"
                                     >
                                         <td className="px-5 py-3 text-xs text-foreground font-medium">
                                             {ba.bankName}
@@ -291,18 +311,18 @@ export default function BankAccountsPage() {
                                         </td>
                                         <td className="px-5 py-3">
                                             {ba.isDefault && (
-                                                <span className="bg-blue-50 text-blue-700 px-2.5 py-1 rounded-full text-[10px] font-bold">
+                                                <span className="bg-info/10 text-info border border-info/20 px-2.5 py-1 rounded-full text-[10px] font-bold">
                                                     {t("isDefault")}
                                                 </span>
                                             )}
                                         </td>
                                         <td className="px-5 py-3">
                                             {ba.active ? (
-                                                <span className="bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-full text-[10px] font-bold">
+                                                <span className="bg-success/10 text-success border border-success/20 px-2.5 py-1 rounded-full text-[10px] font-bold">
                                                     {t("active")}
                                                 </span>
                                             ) : (
-                                                <span className="bg-gray-100 text-gray-500 px-2.5 py-1 rounded-full text-[10px] font-bold">
+                                                <span className="bg-input text-muted border border-border px-2.5 py-1 rounded-full text-[10px] font-bold">
                                                     {t("inactive")}
                                                 </span>
                                             )}
@@ -311,14 +331,14 @@ export default function BankAccountsPage() {
                                             <div className="flex items-center gap-2">
                                                 <button
                                                     onClick={() => openEditModal(ba)}
-                                                    className="p-1.5 text-gray-400 hover:text-primary rounded-lg hover:bg-primary/5 transition-all cursor-pointer"
+                                                    className="p-1.5 text-muted hover:text-primary rounded-lg hover:bg-primary/5 transition-all cursor-pointer"
                                                     aria-label={t("editAccount")}
                                                 >
                                                     <Pencil size={14} />
                                                 </button>
                                                 <button
                                                     onClick={() => handleDelete(ba)}
-                                                    className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50 transition-all cursor-pointer"
+                                                    className="p-1.5 text-muted hover:text-error rounded-lg hover:bg-error/10 transition-all cursor-pointer"
                                                     aria-label={t("deleteAccount")}
                                                 >
                                                     <Trash2 size={14} />
@@ -336,32 +356,32 @@ export default function BankAccountsPage() {
             {/* Add/Edit Modal */}
             {showModal && (
                 <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm z-50 flex items-start justify-center pt-20">
-                    <div className="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl border border-gray-100 relative max-h-[80vh] overflow-y-auto">
+                    <div className="bg-surface rounded-xl p-8 w-full max-w-2xl shadow-2xl border border-border relative max-h-[80vh] overflow-y-auto">
                         <button
                             onClick={() => {
                                 setShowModal(false);
                                 setEditingAccount(null);
                             }}
-                            className="absolute right-6 top-6 p-2 text-gray-400 hover:text-gray-600 cursor-pointer transition-all duration-200 rounded-lg"
+                            className="absolute right-6 top-6 p-2 text-muted hover:text-foreground cursor-pointer transition-all duration-200 rounded-lg"
                             aria-label="Close"
                         >
                             <X size={18} />
                         </button>
-                        <h2 className="text-lg font-black text-foreground mb-1">
+                        <h2 className="text-lg font-bold text-foreground mb-1">
                             {editingAccount ? t("editAccount") : t("addAccount")}
                         </h2>
-                        <p className="text-xs text-gray-400 mb-6">
+                        <p className="text-xs text-muted mb-6">
                             {t("description")}
                         </p>
 
                         <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-5">
                             <div>
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
                                     {t("bankName")}
                                 </label>
                                 <input
                                     required
-                                    className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                                    className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none"
                                     value={formData.bankName}
                                     onChange={(ev) =>
                                         setFormData({ ...formData, bankName: ev.target.value })
@@ -369,11 +389,11 @@ export default function BankAccountsPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
                                     {t("accountNumber")}
                                 </label>
                                 <input
-                                    className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                                    className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none"
                                     value={formData.accountNumber}
                                     onChange={(ev) =>
                                         setFormData({ ...formData, accountNumber: ev.target.value })
@@ -381,11 +401,11 @@ export default function BankAccountsPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
                                     {t("iban")}
                                 </label>
                                 <input
-                                    className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                                    className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none"
                                     value={formData.iban}
                                     onChange={(ev) =>
                                         setFormData({ ...formData, iban: ev.target.value })
@@ -393,11 +413,11 @@ export default function BankAccountsPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
                                     {t("branchName")}
                                 </label>
                                 <input
-                                    className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                                    className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none"
                                     value={formData.branchName}
                                     onChange={(ev) =>
                                         setFormData({ ...formData, branchName: ev.target.value })
@@ -405,11 +425,11 @@ export default function BankAccountsPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
                                     {t("currency")}
                                 </label>
                                 <input
-                                    className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                                    className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none"
                                     value={formData.currency}
                                     onChange={(ev) =>
                                         setFormData({ ...formData, currency: ev.target.value })
@@ -417,11 +437,11 @@ export default function BankAccountsPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
                                     {t("property")}
                                 </label>
                                 <select
-                                    className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                                    className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none"
                                     value={formData.propertyId}
                                     onChange={(ev) =>
                                         setFormData({ ...formData, propertyId: ev.target.value })
@@ -438,11 +458,11 @@ export default function BankAccountsPage() {
                                 </select>
                             </div>
                             <div>
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
                                     {t("coaAccount")}
                                 </label>
                                 <select
-                                    className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                                    className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none"
                                     value={formData.coaAccountId}
                                     onChange={(ev) =>
                                         setFormData({ ...formData, coaAccountId: ev.target.value })
@@ -460,7 +480,7 @@ export default function BankAccountsPage() {
                                 <label className="flex items-center gap-2 cursor-pointer">
                                     <input
                                         type="checkbox"
-                                        className="rounded border-gray-300"
+                                        className="rounded border-border"
                                         checked={formData.isDefault}
                                         onChange={(ev) =>
                                             setFormData({
@@ -469,17 +489,17 @@ export default function BankAccountsPage() {
                                             })
                                         }
                                     />
-                                    <span className="text-xs font-bold text-gray-500">
+                                    <span className="text-xs font-bold text-muted">
                                         {t("isDefault")}
                                     </span>
                                 </label>
                             </div>
                             <div className="col-span-2">
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
                                     Notes
                                 </label>
                                 <textarea
-                                    className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none h-20 resize-none"
+                                    className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none h-20 resize-none"
                                     value={formData.notes}
                                     onChange={(ev) =>
                                         setFormData({ ...formData, notes: ev.target.value })
@@ -493,7 +513,7 @@ export default function BankAccountsPage() {
                                         setShowModal(false);
                                         setEditingAccount(null);
                                     }}
-                                    className="px-6 py-3 bg-gray-100 text-gray-500 rounded-xl text-xs font-bold"
+                                    className="px-6 py-3 bg-input text-muted border border-border rounded-xl text-xs font-bold"
                                 >
                                     Cancel
                                 </button>
@@ -512,6 +532,16 @@ export default function BankAccountsPage() {
                     </div>
                 </div>
             )}
+
+            <ConfirmDialog
+                isOpen={confirmDialog !== null}
+                onClose={() => setConfirmDialog(null)}
+                onConfirm={confirmDialog?.onConfirm || (() => {})}
+                title={confirmDialog?.title || ""}
+                description={confirmDialog?.description}
+                confirmText={confirmDialog?.confirmText || "Confirm"}
+                isDestructive={confirmDialog?.isDestructive || false}
+            />
         </div>
     );
 }

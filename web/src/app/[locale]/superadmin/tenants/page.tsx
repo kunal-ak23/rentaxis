@@ -2,18 +2,25 @@
 
 import { useState, useEffect } from "react";
 import { useTranslations } from "next-intl";
-import { Plus, X, Building2, Globe, FileText, Settings2, ShieldCheck, Mail, Hash, Loader2 } from "lucide-react";
+import { Plus, X, Building2, Hash, Settings2, ShieldCheck, Loader2, Search, Pencil, Copy, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Pagination } from "@/components/ui/Pagination";
+import { FileUpload } from "@/components/ui/FileUpload";
 
-type Tenant = { id: string; name: string; status: string; createdAt: string };
+type Tenant = { id: string; name: string; status: string; address?: string; trn?: string; logoUrl?: string; ticketOtpRequired?: boolean; createdAt: string };
 
 export default function SuperAdminTenantsPage() {
     const t = useTranslations("Index");
     const [tenants, setTenants] = useState<Tenant[]>([]);
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
-    const [newTenantName, setNewTenantName] = useState("");
     const [showForm, setShowForm] = useState(false);
+    const [editingTenant, setEditingTenant] = useState<Tenant | null>(null);
+    const [formData, setFormData] = useState({ name: "", address: "", trn: "", status: "ACTIVE", logoUrl: "", ticketOtpRequired: true });
+    const [searchQuery, setSearchQuery] = useState("");
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage, setItemsPerPage] = useState(25);
+    const [copiedId, setCopiedId] = useState<string | null>(null);
 
     useEffect(() => {
         fetchTenants();
@@ -25,6 +32,7 @@ export default function SuperAdminTenantsPage() {
             const res = await fetch("/api/proxy/admin/tenants");
             if (res.ok) {
                 const data = await res.json();
+                data.sort((a: Tenant, b: Tenant) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
                 setTenants(data);
             }
         } catch (e) {
@@ -34,19 +42,21 @@ export default function SuperAdminTenantsPage() {
         }
     };
 
-    const createTenant = async (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!newTenantName) return;
+        if (!formData.name) return;
         setSubmitting(true);
         try {
-            const res = await fetch("/api/proxy/admin/tenants", {
-                method: "POST",
+            const url = editingTenant
+                ? `/api/proxy/admin/tenants/${editingTenant.id}`
+                : "/api/proxy/admin/tenants";
+            const res = await fetch(url, {
+                method: editingTenant ? "PUT" : "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ name: newTenantName }),
+                body: JSON.stringify(formData),
             });
             if (res.ok) {
-                setNewTenantName("");
-                setShowForm(false);
+                resetForm();
                 fetchTenants();
             }
         } catch (e) {
@@ -56,69 +66,158 @@ export default function SuperAdminTenantsPage() {
         }
     };
 
+    const openEdit = (tenant: Tenant) => {
+        setEditingTenant(tenant);
+        setFormData({ name: tenant.name, address: tenant.address || "", trn: tenant.trn || "", status: tenant.status || "ACTIVE", logoUrl: tenant.logoUrl || "", ticketOtpRequired: tenant.ticketOtpRequired !== false });
+        setShowForm(true);
+    };
+
+    const resetForm = () => {
+        setShowForm(false);
+        setEditingTenant(null);
+        setFormData({ name: "", address: "", trn: "", status: "ACTIVE", logoUrl: "", ticketOtpRequired: true });
+    };
+
+    const filteredTenants = searchQuery
+        ? tenants.filter((t) =>
+            t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            t.id.toLowerCase().includes(searchQuery.toLowerCase())
+        )
+        : tenants;
+
+    const paginatedTenants = filteredTenants.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
     return (
         <div className="p-8 max-w-7xl mx-auto">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10">
+            <div className="flex items-center justify-between mb-8">
                 <div>
-                    <div className="flex items-center gap-2 mb-1">
-                        <div className="w-5 h-5 bg-purple-50 text-purple-600 rounded flex items-center justify-center border border-purple-100">
-                            <ShieldCheck size={12} />
-                        </div>
-                        <h1 className="text-xl font-black text-foreground tracking-tight">Super Admin: Manage Tenants</h1>
-                    </div>
-                    <p className="text-xs text-gray-400 font-medium">
-                        System-wide infrastructure and data isolation control.
-                    </p>
+                    <h1 className="mb-1">Super Admin: Manage Tenants</h1>
+                    <p className="text-sm text-muted">System-wide infrastructure and data isolation control.</p>
                 </div>
-                <button
-                    onClick={() => setShowForm(true)}
-                    className="flex items-center gap-2 bg-primary text-primary-foreground px-5 py-2.5 rounded-full text-xs font-bold hover:opacity-90 transition-all duration-200 shadow-lg shadow-primary/10 active:scale-95 self-start cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
-                >
-                    <Plus size={14} />
-                    Provision New Organization
-                </button>
+                <div className="flex items-center gap-3">
+                    <div className="relative">
+                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+                        <input
+                            type="text"
+                            placeholder="Search..."
+                            value={searchQuery}
+                            onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+                            className="pl-9 pr-4 py-2 bg-surface border border-border rounded-lg text-sm text-foreground placeholder:text-muted/50 focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none w-64 transition-all"
+                        />
+                    </div>
+                    <button
+                        onClick={() => { resetForm(); setShowForm(true); }}
+                        className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-xs font-semibold hover:bg-primary/90 transition-all cursor-pointer"
+                    >
+                        <Plus size={14} />
+                        Provision New Organization
+                    </button>
+                </div>
             </div>
 
+            {/* Create / Edit Modal */}
             {showForm && (
-                <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
-                    <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl border border-gray-100 relative">
+                <div className="fixed inset-0 bg-foreground/40 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
+                    <div className="bg-surface rounded-xl p-8 max-w-md w-full shadow-2xl border border-border relative">
                         <button
-                            onClick={() => setShowForm(false)}
+                            onClick={resetForm}
                             aria-label="Close"
-                            className="absolute right-6 top-6 p-2 text-gray-400 hover:text-gray-600 transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-full"
+                            className="absolute right-6 top-6 p-2 text-muted hover:text-foreground transition-all duration-200 cursor-pointer rounded-lg"
                         >
                             <X size={18} />
                         </button>
 
-                        <h2 className="text-lg font-black mb-1 text-foreground leading-tight">Provision New Organization</h2>
-                        <p className="text-xs text-gray-400 mb-8 font-medium">Register a new client entity onto the platform.</p>
+                        <h2 className="text-lg font-bold mb-1 text-foreground">
+                            {editingTenant ? "Edit Organization" : "Provision New Organization"}
+                        </h2>
+                        <p className="text-xs text-muted mb-6 font-medium">
+                            {editingTenant ? "Update organization details." : "Register a new client entity onto the platform."}
+                        </p>
 
-                        <form onSubmit={createTenant} className="space-y-5">
+                        <form onSubmit={handleSubmit} className="space-y-4">
+                            {/* Logo Upload */}
                             <div>
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5 ml-1">Organization Name</label>
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1">Organization Logo</label>
+                                <FileUpload
+                                    value={formData.logoUrl}
+                                    onChange={(url) => setFormData({ ...formData, logoUrl: url })}
+                                    onRemove={() => setFormData({ ...formData, logoUrl: "" })}
+                                    folder="assets"
+                                    label="Upload Company Logo"
+                                    hint="PNG, JPG or SVG. Max 2MB. Drag & drop or click to browse."
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1">Organization Name</label>
                                 <input
                                     required
                                     placeholder="e.g. Al Futtaim Properties"
-                                    className="w-full bg-input border border-border p-3 rounded-xl text-xs placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/30 transition-all duration-200"
-                                    value={newTenantName}
-                                    onChange={(e) => setNewTenantName(e.target.value)}
+                                    className="w-full border border-border rounded-lg bg-surface p-3 text-xs text-foreground placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                                    value={formData.name}
+                                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                                 />
                             </div>
-                            <div className="flex justify-end gap-3 mt-4">
+                            <div>
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1">Address</label>
+                                <textarea
+                                    rows={2}
+                                    placeholder="Office address (shown on receipts)"
+                                    className="w-full border border-border rounded-lg bg-surface p-3 text-xs text-foreground placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all resize-none"
+                                    value={formData.address}
+                                    onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1">TRN (Tax Registration Number)</label>
+                                <input
+                                    placeholder="e.g. 100XXXXXXXXX"
+                                    className="w-full border border-border rounded-lg bg-surface p-3 text-xs text-foreground placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                                    value={formData.trn}
+                                    onChange={(e) => setFormData({ ...formData, trn: e.target.value })}
+                                />
+                            </div>
+                            {editingTenant && (
+                                <div>
+                                    <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1">Status</label>
+                                    <select
+                                        value={formData.status}
+                                        onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                                        className="w-full border border-border rounded-lg bg-surface p-3 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all cursor-pointer"
+                                    >
+                                        <option value="ACTIVE">Active</option>
+                                        <option value="INACTIVE">Inactive</option>
+                                    </select>
+                                </div>
+                            )}
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider">Ticket Closure OTP</label>
+                                    <p className="text-[9px] text-muted mt-0.5">Require renters to share OTP to close tickets</p>
+                                </div>
                                 <button
                                     type="button"
-                                    onClick={() => setShowForm(false)}
-                                    className="px-6 py-3 rounded-xl text-xs font-bold text-gray-500 hover:bg-gray-50 transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                                    onClick={() => setFormData({ ...formData, ticketOtpRequired: !formData.ticketOtpRequired })}
+                                    className={cn("w-10 h-5 rounded-full transition-colors cursor-pointer", formData.ticketOtpRequired ? "bg-primary" : "bg-muted/40")}
+                                >
+                                    <div className={cn("w-4 h-4 bg-white rounded-full transition-transform shadow-sm", formData.ticketOtpRequired ? "translate-x-5" : "translate-x-0.5")} />
+                                </button>
+                            </div>
+                            <div className="flex justify-end gap-3 pt-2">
+                                <button
+                                    type="button"
+                                    onClick={resetForm}
+                                    className="bg-surface text-foreground border border-border px-4 py-2 rounded-lg text-xs font-semibold hover:bg-input transition-all cursor-pointer"
                                 >
                                     Cancel
                                 </button>
                                 <button
                                     type="submit"
                                     disabled={submitting}
-                                    className="px-8 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-bold hover:opacity-90 shadow-lg shadow-primary/10 active:scale-95 transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                                    className="bg-primary text-primary-foreground px-4 py-2 rounded-lg text-xs font-semibold hover:bg-primary/90 transition-all cursor-pointer disabled:opacity-50 flex items-center gap-2"
                                 >
                                     {submitting && <Loader2 size={14} className="animate-spin" />}
-                                    Create Organization
+                                    {editingTenant ? "Save Changes" : "Create Organization"}
                                 </button>
                             </div>
                         </form>
@@ -127,73 +226,96 @@ export default function SuperAdminTenantsPage() {
             )}
 
             {loading ? (
-                <div className="bg-white rounded-[2rem] border border-gray-100 shadow-[0_20px_50px_rgba(0,0,0,0.02)] overflow-hidden p-6 space-y-4">
+                <div className="bg-surface rounded-xl border border-border overflow-hidden p-6 space-y-4">
                     {[...Array(4)].map((_, i) => (
                         <div key={i} className="flex gap-6 animate-pulse">
-                            <div className="h-4 bg-gray-100 rounded-lg w-1/4" />
-                            <div className="h-4 bg-gray-100 rounded-lg w-1/3" />
-                            <div className="h-4 bg-gray-100 rounded-lg w-1/6" />
+                            <div className="h-4 bg-input rounded-lg w-1/4" />
+                            <div className="h-4 bg-input rounded-lg w-1/3" />
+                            <div className="h-4 bg-input rounded-lg w-1/6" />
                         </div>
                     ))}
                 </div>
             ) : (
-            <div className="bg-white rounded-[2rem] border border-gray-100 shadow-[0_20px_50px_rgba(0,0,0,0.02)] overflow-hidden">
+            <div className="bg-surface rounded-xl border border-border overflow-hidden">
                 <table className="w-full text-left">
                     <thead>
-                        <tr className="bg-gray-50/50 border-b border-gray-100">
-                            <th className="p-5 text-[10px] font-black uppercase tracking-widest text-gray-400">
-                                <div className="flex items-center gap-2">
-                                    <Hash size={12} />
-                                    ID
-                                </div>
-                            </th>
-                            <th className="p-5 text-[10px] font-black uppercase tracking-widest text-gray-400">
-                                <div className="flex items-center gap-2">
-                                    <Building2 size={12} />
-                                    Organization Name
-                                </div>
-                            </th>
-                            <th className="p-5 text-[10px] font-black uppercase tracking-widest text-gray-400">
-                                <div className="flex items-center gap-2">
-                                    <Settings2 size={12} />
-                                    System Status
-                                </div>
-                            </th>
+                        <tr className="bg-input/50">
+                            <th className="px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">Organization Name</th>
+                            <th className="px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">Address</th>
+                            <th className="px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">TRN</th>
+                            <th className="px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">Status</th>
+                            <th className="px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider text-right">Actions</th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-50">
-                        {tenants.map(t => (
-                            <tr key={t.id} className="group hover:bg-gray-50/50 transition-all duration-200">
-                                <td className="p-5">
-                                    <span className="font-mono text-[10px] text-gray-400">
-                                        {t.id}
-                                    </span>
+                    <tbody>
+                        {paginatedTenants.map(tenant => (
+                            <tr key={tenant.id} className="border-b border-border hover:bg-input/30 transition-colors">
+                                <td className="px-5 py-3.5">
+                                    <div>
+                                        <span className="text-sm font-semibold text-foreground">{tenant.name}</span>
+                                        <p className="text-[10px] text-muted font-mono mt-0.5 flex items-center gap-1">
+                                            {tenant.id}
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    navigator.clipboard.writeText(tenant.id);
+                                                    setCopiedId(tenant.id);
+                                                    setTimeout(() => setCopiedId(null), 2000);
+                                                }}
+                                                className="p-0.5 rounded text-muted hover:text-foreground transition-colors cursor-pointer"
+                                                title="Copy ID"
+                                            >
+                                                {copiedId === tenant.id ? <Check size={10} className="text-success" /> : <Copy size={10} />}
+                                            </button>
+                                        </p>
+                                    </div>
                                 </td>
-                                <td className="p-5">
-                                    <span className="text-sm font-black text-foreground group-hover:text-primary transition-colors">
-                                        {t.name}
-                                    </span>
+                                <td className="px-5 py-3.5 text-xs text-muted max-w-[200px] truncate">
+                                    {tenant.address || "—"}
                                 </td>
-                                <td className="p-5">
+                                <td className="px-5 py-3.5 text-xs text-foreground font-mono">
+                                    {tenant.trn || "—"}
+                                </td>
+                                <td className="px-5 py-3.5">
                                     <span className={cn(
-                                        "px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest",
-                                        t.status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-600' : 'bg-green-50 text-green-600'
+                                        "px-2.5 py-1 rounded-lg text-[10px] font-semibold",
+                                        tenant.status === 'ACTIVE' ? 'bg-success/10 text-success' : 'bg-input text-muted'
                                     )}>
-                                        {t.status || 'ACTIVE'}
+                                        {tenant.status || 'ACTIVE'}
                                     </span>
+                                </td>
+                                <td className="px-5 py-3.5 text-right">
+                                    <button
+                                        onClick={() => openEdit(tenant)}
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/10 rounded-lg transition-colors cursor-pointer"
+                                    >
+                                        <Pencil size={12} />
+                                        Edit
+                                    </button>
                                 </td>
                             </tr>
                         ))}
                     </tbody>
                 </table>
-                {tenants.length === 0 && (
+                {filteredTenants.length === 0 && (
                     <div className="p-24 text-center flex flex-col items-center">
-                        <div className="w-16 h-16 bg-gray-50 rounded-2xl flex items-center justify-center text-gray-200 mb-6 border border-dashed border-gray-200">
+                        <div className="w-16 h-16 bg-input rounded-xl flex items-center justify-center text-muted mb-6 border border-dashed border-border">
                             <ShieldCheck size={32} />
                         </div>
-                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em]">
-                            System core is ready. No organizations provisioned yet.
+                        <p className="text-[10px] font-semibold text-muted uppercase tracking-wider">
+                            No organizations provisioned yet.
                         </p>
+                    </div>
+                )}
+                {filteredTenants.length > 0 && (
+                    <div className="px-5 pb-4">
+                        <Pagination
+                            currentPage={currentPage}
+                            totalItems={filteredTenants.length}
+                            itemsPerPage={itemsPerPage}
+                            onPageChange={setCurrentPage}
+                            onItemsPerPageChange={(n) => { setItemsPerPage(n); setCurrentPage(1); }}
+                        />
                     </div>
                 )}
             </div>

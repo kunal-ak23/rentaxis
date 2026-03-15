@@ -17,6 +17,7 @@ import {
     Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatCurrency, formatCurrencyCompact, formatNumber } from "@/lib/format";
 import { canViewPayments, canManagePayments } from "@/lib/rbac";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import type { UserRole } from "@/lib/rbac";
@@ -58,12 +59,12 @@ type Property = {
 };
 
 const STATUS_COLORS: Record<string, string> = {
-    PENDING: "bg-gray-100 text-gray-700 border-gray-200",
-    COLLECTED: "bg-blue-100 text-blue-700 border-blue-200",
-    DEPOSITED: "bg-amber-100 text-amber-700 border-amber-200",
-    CLEARED: "bg-green-100 text-green-700 border-green-200",
-    BOUNCED: "bg-red-100 text-red-700 border-red-200",
-    REPLACED: "bg-purple-100 text-purple-700 border-purple-200",
+    PENDING: "bg-warning/10 text-warning border border-warning/20",
+    COLLECTED: "bg-info/10 text-info border border-info/20",
+    DEPOSITED: "bg-warning/10 text-warning border border-warning/20",
+    CLEARED: "bg-success/10 text-success border border-success/20",
+    BOUNCED: "bg-error/10 text-error border border-error/20",
+    REPLACED: "bg-info/10 text-info border border-info/20",
 };
 
 const ALL_STATUSES = ["PENDING", "COLLECTED", "DEPOSITED", "CLEARED", "BOUNCED", "REPLACED"];
@@ -291,10 +292,10 @@ export default function PaymentsPage() {
 
     const summaryCards = summary
         ? [
-              { label: t("totalDue"), value: summary.totalAmount ?? 0, color: "text-blue-600", bg: "bg-blue-50", icon: DollarSign },
-              { label: t("collected"), value: summary.collectedAmount ?? 0, color: "text-amber-600", bg: "bg-amber-50", icon: ArrowRightCircle },
-              { label: t("cleared"), value: summary.clearedAmount ?? 0, color: "text-green-600", bg: "bg-green-50", icon: CheckCircle },
-              { label: t("overdue"), value: summary.overdueAmount ?? 0, color: "text-red-600", bg: "bg-red-50", icon: AlertCircle },
+              { label: t("totalDue"), value: summary.totalAmount ?? 0, color: "text-info", bg: "bg-info/10", icon: DollarSign },
+              { label: t("collected"), value: summary.collectedAmount ?? 0, color: "text-warning", bg: "bg-warning/10", icon: ArrowRightCircle },
+              { label: t("cleared"), value: summary.clearedAmount ?? 0, color: "text-success", bg: "bg-success/10", icon: CheckCircle },
+              { label: t("overdue"), value: summary.overdueAmount ?? 0, color: "text-error", bg: "bg-error/10", icon: AlertCircle },
           ]
         : [];
 
@@ -303,11 +304,11 @@ export default function PaymentsPage() {
             {/* Header */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10">
                 <div>
-                    <h1 className="text-xl font-black text-foreground tracking-tight mb-1 flex items-center gap-2">
+                    <h1 className="text-xl font-bold text-foreground tracking-tight mb-1 flex items-center gap-2">
                         <CreditCard size={20} className="text-primary" />
                         {t("title")}
                     </h1>
-                    <p className="text-xs text-gray-500 font-medium">{t("description")}</p>
+                    <p className="text-xs text-muted font-medium">{t("description")}</p>
                 </div>
             </div>
 
@@ -315,12 +316,12 @@ export default function PaymentsPage() {
             {loading && !summary && (
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
                     {[1, 2, 3, 4].map((i) => (
-                        <div key={i} className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm animate-pulse">
+                        <div key={i} className="bg-surface border border-border rounded-xl p-5 animate-pulse">
                             <div className="flex items-center gap-3 mb-3">
-                                <div className="w-9 h-9 rounded-xl bg-gray-100" />
-                                <div className="h-3 w-16 bg-gray-100 rounded" />
+                                <div className="w-9 h-9 rounded-xl bg-input" />
+                                <div className="h-3 w-16 bg-input rounded" />
                             </div>
-                            <div className="h-5 w-24 bg-gray-100 rounded" />
+                            <div className="h-5 w-24 bg-input rounded" />
                         </div>
                     ))}
                 </div>
@@ -334,7 +335,7 @@ export default function PaymentsPage() {
                         return (
                             <div
                                 key={card.label}
-                                className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm"
+                                className="bg-surface rounded-xl p-5 border border-border hover:shadow-md transition-all duration-200"
                             >
                                 <div className="flex items-center gap-3 mb-3">
                                     <div
@@ -345,15 +346,15 @@ export default function PaymentsPage() {
                                     >
                                         <Icon size={16} className={card.color} />
                                     </div>
-                                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                                    <span className="text-xs font-semibold text-muted uppercase tracking-[0.15em]">
                                         {card.label}
                                     </span>
                                 </div>
-                                <p className={cn("text-lg font-black", card.color)}>
-                                    AED {card.value.toLocaleString()}
+                                <p className={cn("text-lg font-bold tabular-nums", card.color)}>
+                                    {formatCurrencyCompact(card.value)}
                                 </p>
                                 {card.label === t("cleared") && summary.totalPayments > 0 && (
-                                    <p className="text-[10px] text-gray-400 mt-1 font-medium">
+                                    <p className="text-[10px] text-muted mt-1 font-medium">
                                         {summary.clearedCount}/{summary.totalPayments} {t("paymentsCleared")}
                                     </p>
                                 )}
@@ -367,7 +368,7 @@ export default function PaymentsPage() {
             <div className="flex flex-col sm:flex-row gap-3 mb-6">
                 <div className="relative">
                     <select
-                        className="appearance-none bg-white border border-border px-4 py-2.5 rounded-xl text-xs font-bold pr-8 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
+                        className="appearance-none bg-surface border border-border px-4 py-2.5 rounded-lg text-xs font-bold pr-8 cursor-pointer focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
                         value={selectedProperty}
                         onChange={(ev) => setSelectedProperty(ev.target.value)}
                     >
@@ -381,7 +382,7 @@ export default function PaymentsPage() {
                 </div>
                 <div className="relative">
                     <select
-                        className="appearance-none bg-white border border-border px-4 py-2.5 rounded-xl text-xs font-bold pr-8 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
+                        className="appearance-none bg-surface border border-border px-4 py-2.5 rounded-lg text-xs font-bold pr-8 cursor-pointer focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
                         value={selectedStatus}
                         onChange={(ev) => setSelectedStatus(ev.target.value)}
                     >
@@ -397,17 +398,17 @@ export default function PaymentsPage() {
 
             {/* Table Skeleton */}
             {loading && (
-                <div className="bg-white border border-border rounded-2xl overflow-hidden shadow-sm">
+                <div className="bg-surface border border-border rounded-xl overflow-hidden">
                     <div className="animate-pulse">
-                        <div className="h-12 bg-gray-50 border-b border-gray-100" />
+                        <div className="h-12 bg-input/70 border-b border-border" />
                         {[1, 2, 3, 4, 5].map((i) => (
-                            <div key={i} className="flex gap-4 px-5 py-4 border-b border-gray-50">
-                                <div className="h-3 w-8 bg-gray-100 rounded" />
-                                <div className="h-3 w-24 bg-gray-100 rounded" />
-                                <div className="h-3 w-20 bg-gray-100 rounded" />
-                                <div className="h-3 w-32 bg-gray-100 rounded" />
-                                <div className="h-3 w-24 bg-gray-100 rounded" />
-                                <div className="h-3 w-16 bg-gray-100 rounded" />
+                            <div key={i} className="flex gap-4 px-5 py-4 border-b border-border">
+                                <div className="h-3 w-8 bg-input rounded" />
+                                <div className="h-3 w-24 bg-input rounded" />
+                                <div className="h-3 w-20 bg-input rounded" />
+                                <div className="h-3 w-32 bg-input rounded" />
+                                <div className="h-3 w-24 bg-input rounded" />
+                                <div className="h-3 w-16 bg-input rounded" />
                             </div>
                         ))}
                     </div>
@@ -415,56 +416,56 @@ export default function PaymentsPage() {
             )}
 
             {/* Payments Table */}
-            {!loading && payments.length > 0 && <div className="bg-white border border-border rounded-2xl overflow-hidden shadow-sm">
+            {!loading && payments.length > 0 && <div className="bg-surface border border-border rounded-xl overflow-hidden">
                 <div className="overflow-x-auto">
                     <table className="w-full">
                         <thead>
-                            <tr className="border-b border-gray-100">
-                                <th className="text-left px-5 py-3.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                            <tr className="bg-input/70">
+                                <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                     #
                                 </th>
-                                <th className="text-left px-5 py-3.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                                <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                     {t("dueDate")}
                                 </th>
-                                <th className="text-right px-5 py-3.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                                <th className="text-right px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                     {t("amount")} (AED)
                                 </th>
-                                <th className="text-left px-5 py-3.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                                <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                     {t("propertyUnit")}
                                 </th>
-                                <th className="text-left px-5 py-3.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                                <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                     {t("renter")}
                                 </th>
-                                <th className="text-left px-5 py-3.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                                <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                     {t("chequeNumber")}
                                 </th>
-                                <th className="text-left px-5 py-3.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                                <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                     {t("status")}
                                 </th>
                                 {canManage && (
-                                    <th className="text-left px-5 py-3.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                         {t("actions")}
                                     </th>
                                 )}
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-50">
+                        <tbody>
                             {payments.map((payment) => (
                                 <tr
                                     key={payment.id}
-                                    className="hover:bg-gray-50/50 transition-all duration-200"
+                                    className="border-b border-border hover:bg-input/30 transition-colors"
                                 >
                                     <td className="px-5 py-3 text-xs font-bold text-foreground">
                                         {payment.installmentNumber}
                                     </td>
                                     <td className="px-5 py-3 text-xs text-foreground font-medium">
                                         <div className="flex items-center gap-1.5">
-                                            <Calendar size={12} className="text-gray-300" />
+                                            <Calendar size={12} className="text-muted" />
                                             {new Date(payment.dueDate).toLocaleDateString()}
                                         </div>
                                     </td>
-                                    <td className="px-5 py-3 text-right text-xs font-black text-foreground">
-                                        {(payment.amount ?? 0).toLocaleString()} AED
+                                    <td className="px-5 py-3 text-right text-xs font-bold text-foreground tabular-nums">
+                                        {formatNumber(payment.amount ?? 0)}
                                     </td>
                                     <td className="px-5 py-3">
                                         <div className="flex items-center gap-1.5">
@@ -472,14 +473,14 @@ export default function PaymentsPage() {
                                                 <>
                                                     <Building2
                                                         size={12}
-                                                        className="text-gray-300"
+                                                        className="text-muted"
                                                     />
                                                     <span className="text-xs text-foreground font-medium">
                                                         {payment.propertyName}
                                                     </span>
                                                 </>
                                             ) : (
-                                                <span className="text-[10px] text-gray-400">
+                                                <span className="text-[10px] text-muted">
                                                     --
                                                 </span>
                                             )}
@@ -501,7 +502,7 @@ export default function PaymentsPage() {
                                             className={cn(
                                                 "inline-flex items-center px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-widest border",
                                                 STATUS_COLORS[payment.status] ||
-                                                    "bg-gray-100 text-gray-500"
+                                                    "bg-input text-muted border border-border"
                                             )}
                                         >
                                             {getStatusLabel(payment.status)}
@@ -513,7 +514,7 @@ export default function PaymentsPage() {
                                                 {payment.status === "PENDING" && (
                                                     <button
                                                         onClick={() => handleCollect(payment.id)}
-                                                        className="px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-[10px] font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                                                        className="px-3 py-1.5 bg-info/10 text-info hover:bg-info/20 rounded-lg text-[10px] font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/20 focus:outline-none"
                                                     >
                                                         {t("collect")}
                                                     </button>
@@ -521,7 +522,7 @@ export default function PaymentsPage() {
                                                 {payment.status === "COLLECTED" && (
                                                     <button
                                                         onClick={() => handleDeposit(payment.id)}
-                                                        className="px-3 py-1.5 bg-amber-50 text-amber-700 hover:bg-amber-100 rounded-lg text-[10px] font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                                                        className="px-3 py-1.5 bg-warning/10 text-warning hover:bg-warning/20 rounded-lg text-[10px] font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/20 focus:outline-none"
                                                     >
                                                         {t("deposit")}
                                                     </button>
@@ -532,7 +533,7 @@ export default function PaymentsPage() {
                                                             onClick={() =>
                                                                 handleClear(payment.id)
                                                             }
-                                                            className="px-3 py-1.5 bg-green-50 text-green-700 hover:bg-green-100 rounded-lg text-[10px] font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                                                            className="px-3 py-1.5 bg-success/10 text-success hover:bg-success/20 rounded-lg text-[10px] font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/20 focus:outline-none"
                                                         >
                                                             {t("clear")}
                                                         </button>
@@ -540,7 +541,7 @@ export default function PaymentsPage() {
                                                             onClick={() =>
                                                                 handleBounce(payment.id)
                                                             }
-                                                            className="px-3 py-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg text-[10px] font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                                                            className="px-3 py-1.5 bg-error/10 text-error hover:bg-error/20 rounded-lg text-[10px] font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/20 focus:outline-none"
                                                         >
                                                             {t("bounce")}
                                                         </button>
@@ -549,7 +550,7 @@ export default function PaymentsPage() {
                                                 {payment.status === "BOUNCED" && (
                                                     <button
                                                         onClick={() => handleReplace(payment.id)}
-                                                        className="px-3 py-1.5 bg-purple-50 text-purple-700 hover:bg-purple-100 rounded-lg text-[10px] font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                                                        className="px-3 py-1.5 bg-info/10 text-info hover:bg-info/20 rounded-lg text-[10px] font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/20 focus:outline-none"
                                                     >
                                                         {t("replace")}
                                                     </button>
@@ -566,14 +567,14 @@ export default function PaymentsPage() {
 
             {/* Empty State */}
             {payments.length === 0 && !loading && (
-                <div className="text-center py-24 bg-gray-50 border border-dashed border-gray-200 rounded-[2.5rem] flex flex-col items-center mt-6">
-                    <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center text-gray-200 shadow-sm mb-6">
+                <div className="text-center py-24 bg-background border border-dashed border-border rounded-xl flex flex-col items-center mt-6">
+                    <div className="w-16 h-16 bg-surface rounded-xl flex items-center justify-center text-muted shadow-sm mb-6">
                         <CreditCard size={32} />
                     </div>
-                    <p className="text-sm font-bold text-gray-400 mb-2 uppercase tracking-widest">
+                    <p className="text-sm font-bold text-muted mb-2 uppercase tracking-widest">
                         {t("noPayments")}
                     </p>
-                    <p className="text-xs text-gray-400 font-medium">{t("activateLeaseFirst")}</p>
+                    <p className="text-xs text-muted font-medium">{t("activateLeaseFirst")}</p>
                 </div>
             )}
 
@@ -592,21 +593,21 @@ export default function PaymentsPage() {
             {/* Cheque Details Modal */}
             {showChequeModal && (
                 <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
-                    <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl border border-gray-100 relative">
+                    <div className="bg-surface rounded-xl p-8 max-w-md w-full shadow-2xl border border-border relative">
                         <button
                             onClick={() => {
                                 setShowChequeModal(false);
                                 setCollectingPaymentId(null);
                             }}
                             aria-label="Close modal"
-                            className="absolute right-6 top-6 p-2 text-gray-400 hover:text-gray-600 cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg"
+                            className="absolute right-6 top-6 p-2 text-muted hover:text-foreground cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/20 focus:outline-none rounded-lg"
                         >
                             <X size={18} />
                         </button>
-                        <h2 className="text-lg font-black mb-1">
+                        <h2 className="text-lg font-bold mb-1">
                             {isReplaceAction ? t("replacementCheque") : t("chequeDetails")}
                         </h2>
-                        <p className="text-xs text-gray-400 mb-8 font-medium">
+                        <p className="text-xs text-muted mb-8 font-medium">
                             {t("enterChequeDetails")}
                         </p>
                         <form
@@ -614,13 +615,13 @@ export default function PaymentsPage() {
                             className="space-y-5"
                         >
                             <div>
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
                                     {t("chequeNumber")}
                                 </label>
                                 <input
                                     required
                                     placeholder="CHQ-000001"
-                                    className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
+                                    className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
                                     value={chequeForm.chequeNumber}
                                     onChange={(ev) =>
                                         setChequeForm({
@@ -631,13 +632,13 @@ export default function PaymentsPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
                                     {t("bankName")}
                                 </label>
                                 <input
                                     required
                                     placeholder="Emirates NBD"
-                                    className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
+                                    className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
                                     value={chequeForm.bankName}
                                     onChange={(ev) =>
                                         setChequeForm({
@@ -648,13 +649,13 @@ export default function PaymentsPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
                                     {t("payerName")}
                                 </label>
                                 <input
                                     required
                                     placeholder="John Doe"
-                                    className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
+                                    className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
                                     value={chequeForm.payerName}
                                     onChange={(ev) =>
                                         setChequeForm({
@@ -665,12 +666,12 @@ export default function PaymentsPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
                                     {t("chequeDate")}
                                 </label>
                                 <input
                                     type="date"
-                                    className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
+                                    className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
                                     value={chequeForm.chequeDate}
                                     onChange={(ev) =>
                                         setChequeForm({
@@ -687,7 +688,7 @@ export default function PaymentsPage() {
                                         setShowChequeModal(false);
                                         setCollectingPaymentId(null);
                                     }}
-                                    className="px-6 py-3 text-xs font-bold text-gray-500 cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-xl"
+                                    className="px-6 py-3 text-xs font-bold text-muted cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/20 focus:outline-none rounded-lg"
                                 >
                                     Cancel
                                 </button>
@@ -695,7 +696,7 @@ export default function PaymentsPage() {
                                     type="submit"
                                     disabled={submittingCheque}
                                     className={cn(
-                                        "px-8 py-3 rounded-xl text-xs font-bold text-white cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none disabled:opacity-50 flex items-center gap-2",
+                                        "px-8 py-3 rounded-lg text-xs font-bold text-white cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/20 focus:outline-none disabled:opacity-50 flex items-center gap-2",
                                         isReplaceAction
                                             ? "bg-purple-600 hover:bg-purple-700"
                                             : "bg-primary hover:opacity-90"

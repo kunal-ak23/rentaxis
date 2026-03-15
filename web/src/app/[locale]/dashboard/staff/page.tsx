@@ -2,7 +2,10 @@
 
 import { useState, useEffect } from "react";
 import { useTranslations, useLocale } from "next-intl";
-import { UserCog, Plus, Pencil, Trash2, X, Loader2, Users, Banknote } from "lucide-react";
+import { UserCog, Plus, Pencil, Trash2, X, Loader2, Users, Banknote, Search } from "lucide-react";
+import { formatCurrency, formatCurrencyCompact } from "@/lib/format";
+import { Pagination } from "@/components/ui/Pagination";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 type Property = {
     id: string;
@@ -65,7 +68,17 @@ export default function StaffPage() {
     const [editingStaff, setEditingStaff] = useState<Staff | null>(null);
     const [submitting, setSubmitting] = useState(false);
     const [formData, setFormData] = useState(emptyForm);
+    const [searchQuery, setSearchQuery] = useState("");
     const [filterPropertyId, setFilterPropertyId] = useState("");
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage, setItemsPerPage] = useState(25);
+    const [confirmDialog, setConfirmDialog] = useState<{
+        title: string;
+        description: string;
+        confirmText: string;
+        isDestructive: boolean;
+        onConfirm: () => void;
+    } | null>(null);
 
     useEffect(() => {
         fetchStaff();
@@ -76,7 +89,11 @@ export default function StaffPage() {
     const fetchStaff = async () => {
         try {
             const res = await fetch("/api/proxy/v1/staff");
-            if (res.ok) setStaff(await res.json());
+            if (res.ok) {
+                const data = await res.json();
+                data.sort((a: any, b: any) => (a.id || '').localeCompare(b.id || ''));
+                setStaff(data);
+            }
         } catch (err) {
             console.error(err);
         } finally {
@@ -179,16 +196,24 @@ export default function StaffPage() {
         }
     };
 
-    const handleDelete = async (member: Staff) => {
-        if (!window.confirm(t("confirmDelete"))) return;
-        try {
-            const res = await fetch(`/api/proxy/v1/staff/${member.id}`, {
-                method: "DELETE",
-            });
-            if (res.ok) fetchStaff();
-        } catch (err) {
-            console.error(err);
-        }
+    const handleDelete = (member: Staff) => {
+        setConfirmDialog({
+            title: "Delete Staff Member",
+            description: "Are you sure you want to delete this staff member?",
+            confirmText: "Delete",
+            isDestructive: true,
+            onConfirm: async () => {
+                setConfirmDialog(null);
+                try {
+                    const res = await fetch(`/api/proxy/v1/staff/${member.id}`, {
+                        method: "DELETE",
+                    });
+                    if (res.ok) fetchStaff();
+                } catch (err) {
+                    console.error(err);
+                }
+            },
+        });
     };
 
     const staffName = (s: Staff) =>
@@ -199,59 +224,81 @@ export default function StaffPage() {
         return locale === "ar" ? p.nameAr || p.nameEn : p.nameEn || p.nameAr;
     };
 
-    const filteredStaff = filterPropertyId
-        ? staff.filter((s) => s.property?.id === filterPropertyId)
+    const searchedStaff = searchQuery
+        ? staff.filter((s) => {
+            const q = searchQuery.toLowerCase();
+            return (
+                (s.nameEn || "").toLowerCase().includes(q) ||
+                (s.nameAr || "").toLowerCase().includes(q) ||
+                (s.designation || "").toLowerCase().includes(q) ||
+                (s.property?.nameEn || "").toLowerCase().includes(q) ||
+                (s.property?.nameAr || "").toLowerCase().includes(q)
+            );
+        })
         : staff;
 
+    const filteredStaff = filterPropertyId
+        ? searchedStaff.filter((s) => s.property?.id === filterPropertyId)
+        : searchedStaff;
+
     const totalSalary = filteredStaff.reduce((sum, s) => sum + (s.monthlySalary || 0), 0);
+
+    const paginatedStaff = filteredStaff.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
     return (
         <div>
             {/* Header */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10">
+            <div className="flex items-center justify-between mb-8">
                 <div>
-                    <h1 className="text-xl font-black text-foreground tracking-tight mb-1 flex items-center gap-2">
-                        <UserCog size={20} className="text-primary" />
-                        {t("title")}
-                    </h1>
-                    <p className="text-xs text-gray-500 font-medium">
-                        {t("description")}
-                    </p>
+                    <h1 className="mb-1">{t("title")}</h1>
+                    <p className="text-sm text-muted">{t("description")}</p>
                 </div>
-                <button
-                    onClick={openAddModal}
-                    className="px-5 py-2.5 bg-primary text-primary-foreground rounded-xl text-xs font-bold flex items-center gap-2 hover:opacity-90 transition-all shadow-md shadow-primary/20"
-                >
-                    <Plus size={14} />
-                    {t("addStaff")}
-                </button>
+                <div className="flex items-center gap-3">
+                    <div className="relative">
+                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+                        <input
+                            type="text"
+                            placeholder="Search..."
+                            value={searchQuery}
+                            onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+                            className="pl-9 pr-4 py-2 bg-surface border border-border rounded-lg text-sm text-foreground placeholder:text-muted/50 focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none w-64 transition-all"
+                        />
+                    </div>
+                    <button
+                        onClick={openAddModal}
+                        className="bg-primary text-primary-foreground px-4 py-2 rounded-lg text-xs font-semibold hover:bg-primary/90 transition-all cursor-pointer flex items-center gap-2"
+                    >
+                        <Plus size={14} />
+                        {t("addStaff")}
+                    </button>
+                </div>
             </div>
 
             {/* Summary Cards */}
             {!loading && staff.length > 0 && (
                 <div className="grid grid-cols-2 gap-4 mb-8">
-                    <div className="bg-white border border-border rounded-2xl p-5 shadow-sm flex items-center gap-4">
+                    <div className="bg-surface border border-border rounded-xl p-5 flex items-center gap-4 hover:shadow-md transition-all duration-200">
                         <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
                             <Users size={20} className="text-primary" />
                         </div>
                         <div>
-                            <div className="text-lg font-black text-foreground">
+                            <div className="text-lg font-bold text-foreground">
                                 {filteredStaff.length}
                             </div>
-                            <div className="text-[10px] font-bold text-gray-400 uppercase">
+                            <div className="text-xs font-semibold text-muted uppercase tracking-wider">
                                 {t("staffCount")}
                             </div>
                         </div>
                     </div>
-                    <div className="bg-white border border-border rounded-2xl p-5 shadow-sm flex items-center gap-4">
+                    <div className="bg-surface border border-border rounded-xl p-5 flex items-center gap-4 hover:shadow-md transition-all duration-200">
                         <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
                             <Banknote size={20} className="text-primary" />
                         </div>
                         <div>
-                            <div className="text-lg font-black text-foreground">
-                                {totalSalary.toLocaleString(undefined, { minimumFractionDigits: 2 })} AED
+                            <div className="text-lg font-bold text-foreground tabular-nums">
+                                {formatCurrencyCompact(totalSalary)}
                             </div>
-                            <div className="text-[10px] font-bold text-gray-400 uppercase">
+                            <div className="text-xs font-semibold text-muted uppercase tracking-wider">
                                 {t("totalSalaryBill")}
                             </div>
                         </div>
@@ -263,9 +310,9 @@ export default function StaffPage() {
             {!loading && staff.length > 0 && (
                 <div className="mb-6">
                     <select
-                        className="bg-input border border-border p-2.5 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                        className="bg-input border border-border p-2.5 rounded-lg text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none"
                         value={filterPropertyId}
-                        onChange={(ev) => setFilterPropertyId(ev.target.value)}
+                        onChange={(ev) => { setFilterPropertyId(ev.target.value); setCurrentPage(1); }}
                     >
                         <option value="">All Properties</option>
                         {properties.map((s) => (
@@ -281,21 +328,21 @@ export default function StaffPage() {
             {loading && (
                 <div className="space-y-3 animate-pulse">
                     {[1, 2, 3, 4].map((i) => (
-                        <div key={i} className="bg-gray-200 rounded-2xl h-16" />
+                        <div key={i} className="bg-input rounded-xl h-16" />
                     ))}
                 </div>
             )}
 
             {/* Empty State */}
             {!loading && filteredStaff.length === 0 && (
-                <div className="text-center py-24 bg-gray-50 border border-dashed border-gray-200 rounded-[2.5rem] flex flex-col items-center">
-                    <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center text-gray-200 shadow-sm mb-6">
+                <div className="text-center py-24 bg-background border border-dashed border-border rounded-xl flex flex-col items-center">
+                    <div className="w-16 h-16 bg-surface rounded-xl flex items-center justify-center text-muted shadow-sm mb-6">
                         <UserCog size={28} />
                     </div>
-                    <h3 className="text-sm font-black text-foreground mb-1">
+                    <h3 className="text-sm font-bold text-foreground mb-1">
                         {t("noStaffFound")}
                     </h3>
-                    <p className="text-xs text-gray-400 font-medium">
+                    <p className="text-xs text-muted font-medium">
                         {t("addStaffDesc")}
                     </p>
                 </div>
@@ -303,39 +350,39 @@ export default function StaffPage() {
 
             {/* Staff Table */}
             {!loading && filteredStaff.length > 0 && (
-                <div className="bg-white border border-border rounded-2xl overflow-hidden shadow-sm">
+                <div className="bg-surface border border-border rounded-xl overflow-hidden">
                     <div className="overflow-x-auto">
                         <table className="w-full">
                             <thead>
-                                <tr className="border-b border-gray-100">
-                                    <th className="text-left px-5 py-3.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                                <tr className="bg-input/50">
+                                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                         {locale === "ar" ? t("nameAr") : t("nameEn")}
                                     </th>
-                                    <th className="text-left px-5 py-3.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                         {t("employeeId")}
                                     </th>
-                                    <th className="text-left px-5 py-3.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                         {t("designation")}
                                     </th>
-                                    <th className="text-left px-5 py-3.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                         {t("property")}
                                     </th>
-                                    <th className="text-left px-5 py-3.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                         {t("monthlySalary")}
                                     </th>
-                                    <th className="text-left px-5 py-3.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                         Status
                                     </th>
-                                    <th className="text-left px-5 py-3.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                         Actions
                                     </th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-gray-50">
-                                {filteredStaff.map((member) => (
+                            <tbody>
+                                {paginatedStaff.map((member) => (
                                     <tr
                                         key={member.id}
-                                        className="hover:bg-gray-50/50 transition-all duration-200"
+                                        className="border-b border-border hover:bg-input/30 transition-colors"
                                     >
                                         <td className="px-5 py-3 text-xs text-foreground font-medium">
                                             {staffName(member)}
@@ -351,18 +398,18 @@ export default function StaffPage() {
                                                 ? propertyName(member.property)
                                                 : "\u2014"}
                                         </td>
-                                        <td className="px-5 py-3 text-xs text-foreground font-medium">
+                                        <td className="px-5 py-3 text-xs text-foreground font-medium tabular-nums">
                                             {member.monthlySalary
-                                                ? member.monthlySalary.toLocaleString(undefined, { minimumFractionDigits: 2 }) + " AED"
+                                                ? formatCurrency(member.monthlySalary)
                                                 : "\u2014"}
                                         </td>
                                         <td className="px-5 py-3">
                                             {member.active ? (
-                                                <span className="bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-full text-[10px] font-bold">
+                                                <span className="bg-success/10 text-success px-2.5 py-1 rounded-lg text-[10px] font-bold border border-success/20">
                                                     {t("active")}
                                                 </span>
                                             ) : (
-                                                <span className="bg-gray-100 text-gray-500 px-2.5 py-1 rounded-full text-[10px] font-bold">
+                                                <span className="bg-input text-muted px-2.5 py-1 rounded-lg text-[10px] font-bold border border-border">
                                                     {t("inactive")}
                                                 </span>
                                             )}
@@ -371,14 +418,14 @@ export default function StaffPage() {
                                             <div className="flex items-center gap-2">
                                                 <button
                                                     onClick={() => openEditModal(member)}
-                                                    className="p-1.5 text-gray-400 hover:text-primary rounded-lg hover:bg-primary/5 transition-all cursor-pointer"
+                                                    className="p-1.5 text-muted hover:text-primary rounded-lg hover:bg-primary/5 transition-all cursor-pointer"
                                                     aria-label={t("editStaff")}
                                                 >
                                                     <Pencil size={14} />
                                                 </button>
                                                 <button
                                                     onClick={() => handleDelete(member)}
-                                                    className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50 transition-all cursor-pointer"
+                                                    className="p-1.5 text-muted hover:text-error rounded-lg hover:bg-error/10 transition-all cursor-pointer"
                                                     aria-label={t("deleteStaff")}
                                                 >
                                                     <Trash2 size={14} />
@@ -390,38 +437,47 @@ export default function StaffPage() {
                             </tbody>
                         </table>
                     </div>
+                    <div className="px-5 pb-4">
+                        <Pagination
+                            currentPage={currentPage}
+                            totalItems={filteredStaff.length}
+                            itemsPerPage={itemsPerPage}
+                            onPageChange={setCurrentPage}
+                            onItemsPerPageChange={(n) => { setItemsPerPage(n); setCurrentPage(1); }}
+                        />
+                    </div>
                 </div>
             )}
 
             {/* Add/Edit Modal */}
             {showModal && (
-                <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm z-50 flex items-start justify-center pt-20">
-                    <div className="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl border border-gray-100 relative max-h-[80vh] overflow-y-auto">
+                <div className="fixed inset-0 bg-foreground/40 backdrop-blur-sm z-50 flex items-start justify-center pt-20">
+                    <div className="bg-surface rounded-xl p-8 w-full max-w-2xl shadow-2xl border border-border relative max-h-[80vh] overflow-y-auto">
                         <button
                             onClick={() => {
                                 setShowModal(false);
                                 setEditingStaff(null);
                             }}
-                            className="absolute right-6 top-6 p-2 text-gray-400 hover:text-gray-600 cursor-pointer transition-all duration-200 rounded-lg"
+                            className="absolute right-6 top-6 p-2 text-muted hover:text-foreground cursor-pointer transition-all duration-200 rounded-lg"
                             aria-label="Close"
                         >
                             <X size={18} />
                         </button>
-                        <h2 className="text-lg font-black text-foreground mb-1">
+                        <h2 className="text-lg font-bold text-foreground mb-1">
                             {editingStaff ? t("editStaff") : t("addStaff")}
                         </h2>
-                        <p className="text-xs text-gray-400 mb-6">
+                        <p className="text-xs text-muted mb-6">
                             {t("description")}
                         </p>
 
                         <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-5">
                             <div>
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1">
                                     {t("nameEn")}
                                 </label>
                                 <input
                                     required
-                                    className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                                    className="w-full bg-input border border-border p-3 rounded-lg text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none"
                                     value={formData.nameEn}
                                     onChange={(ev) =>
                                         setFormData({ ...formData, nameEn: ev.target.value })
@@ -429,11 +485,11 @@ export default function StaffPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1">
                                     {t("nameAr")}
                                 </label>
                                 <input
-                                    className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                                    className="w-full bg-input border border-border p-3 rounded-lg text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none"
                                     value={formData.nameAr}
                                     onChange={(ev) =>
                                         setFormData({ ...formData, nameAr: ev.target.value })
@@ -442,11 +498,11 @@ export default function StaffPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1">
                                     {t("employeeId")}
                                 </label>
                                 <input
-                                    className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                                    className="w-full bg-input border border-border p-3 rounded-lg text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none"
                                     value={formData.employeeId}
                                     onChange={(ev) =>
                                         setFormData({ ...formData, employeeId: ev.target.value })
@@ -454,11 +510,11 @@ export default function StaffPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1">
                                     {t("designation")}
                                 </label>
                                 <input
-                                    className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                                    className="w-full bg-input border border-border p-3 rounded-lg text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none"
                                     value={formData.designation}
                                     onChange={(ev) =>
                                         setFormData({ ...formData, designation: ev.target.value })
@@ -466,11 +522,11 @@ export default function StaffPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1">
                                     {t("department")}
                                 </label>
                                 <input
-                                    className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                                    className="w-full bg-input border border-border p-3 rounded-lg text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none"
                                     value={formData.department}
                                     onChange={(ev) =>
                                         setFormData({ ...formData, department: ev.target.value })
@@ -478,14 +534,14 @@ export default function StaffPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1">
                                     {t("monthlySalary")}
                                 </label>
                                 <input
                                     type="number"
                                     step="0.01"
                                     min="0"
-                                    className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                                    className="w-full bg-input border border-border p-3 rounded-lg text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none"
                                     value={formData.monthlySalary}
                                     onChange={(ev) =>
                                         setFormData({ ...formData, monthlySalary: parseFloat(ev.target.value) || 0 })
@@ -493,12 +549,12 @@ export default function StaffPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1">
                                     {t("joinDate")}
                                 </label>
                                 <input
                                     type="date"
-                                    className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                                    className="w-full bg-input border border-border p-3 rounded-lg text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none"
                                     value={formData.joinDate}
                                     onChange={(ev) =>
                                         setFormData({ ...formData, joinDate: ev.target.value })
@@ -506,11 +562,11 @@ export default function StaffPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1">
                                     {t("phone")}
                                 </label>
                                 <input
-                                    className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                                    className="w-full bg-input border border-border p-3 rounded-lg text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none"
                                     value={formData.phone}
                                     onChange={(ev) =>
                                         setFormData({ ...formData, phone: ev.target.value })
@@ -518,11 +574,11 @@ export default function StaffPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1">
                                     {t("emiratesId")}
                                 </label>
                                 <input
-                                    className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                                    className="w-full bg-input border border-border p-3 rounded-lg text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none"
                                     value={formData.emiratesId}
                                     onChange={(ev) =>
                                         setFormData({ ...formData, emiratesId: ev.target.value })
@@ -530,11 +586,11 @@ export default function StaffPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1">
                                     {t("passportNumber")}
                                 </label>
                                 <input
-                                    className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                                    className="w-full bg-input border border-border p-3 rounded-lg text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none"
                                     value={formData.passportNumber}
                                     onChange={(ev) =>
                                         setFormData({ ...formData, passportNumber: ev.target.value })
@@ -542,11 +598,11 @@ export default function StaffPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1">
                                     {t("property")}
                                 </label>
                                 <select
-                                    className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                                    className="w-full bg-input border border-border p-3 rounded-lg text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none"
                                     value={formData.propertyId}
                                     onChange={(ev) =>
                                         setFormData({ ...formData, propertyId: ev.target.value })
@@ -561,11 +617,11 @@ export default function StaffPage() {
                                 </select>
                             </div>
                             <div>
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1">
                                     {t("salaryAccount")}
                                 </label>
                                 <select
-                                    className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                                    className="w-full bg-input border border-border p-3 rounded-lg text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none"
                                     value={formData.salaryAccountId}
                                     onChange={(ev) =>
                                         setFormData({ ...formData, salaryAccountId: ev.target.value })
@@ -583,13 +639,13 @@ export default function StaffPage() {
                                 <label className="flex items-center gap-2 cursor-pointer">
                                     <input
                                         type="checkbox"
-                                        className="rounded border-gray-300"
+                                        className="rounded border-border"
                                         checked={formData.active}
                                         onChange={(ev) =>
                                             setFormData({ ...formData, active: ev.target.checked })
                                         }
                                     />
-                                    <span className="text-xs font-bold text-gray-500">
+                                    <span className="text-xs font-bold text-foreground">
                                         {t("active")}
                                     </span>
                                 </label>
@@ -601,14 +657,14 @@ export default function StaffPage() {
                                         setShowModal(false);
                                         setEditingStaff(null);
                                     }}
-                                    className="px-6 py-3 bg-gray-100 text-gray-500 rounded-xl text-xs font-bold"
+                                    className="bg-surface text-foreground border border-border px-4 py-2 rounded-lg text-xs font-semibold hover:bg-input transition-all cursor-pointer"
                                 >
                                     Cancel
                                 </button>
                                 <button
                                     type="submit"
                                     disabled={submitting}
-                                    className="px-8 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-bold hover:opacity-90 transition-all disabled:opacity-50 flex items-center gap-2"
+                                    className="bg-primary text-primary-foreground px-4 py-2 rounded-lg text-xs font-semibold hover:bg-primary/90 transition-all cursor-pointer disabled:opacity-50 flex items-center gap-2"
                                 >
                                     {submitting && (
                                         <Loader2 size={14} className="animate-spin" />
@@ -620,6 +676,16 @@ export default function StaffPage() {
                     </div>
                 </div>
             )}
+
+            <ConfirmDialog
+                isOpen={confirmDialog !== null}
+                onClose={() => setConfirmDialog(null)}
+                onConfirm={confirmDialog?.onConfirm || (() => {})}
+                title={confirmDialog?.title || ""}
+                description={confirmDialog?.description}
+                confirmText={confirmDialog?.confirmText || "Confirm"}
+                isDestructive={confirmDialog?.isDestructive || false}
+            />
         </div>
     );
 }

@@ -2,10 +2,13 @@
 
 import { useState, useEffect } from "react";
 import { useTranslations, useLocale } from "next-intl";
-import { Plus, X, FileText, Calendar, DollarSign, Home, CheckCircle, Ban, AlertCircle, LayoutGrid, Columns3, Download, Sparkles, Loader2, RefreshCw, Pencil } from "lucide-react";
+import { Plus, X, FileText, Calendar, DollarSign, Home, CheckCircle, Ban, AlertCircle, LayoutGrid, Columns3, Download, Sparkles, Loader2, RefreshCw, Pencil, List, Eye, Search, Upload } from "lucide-react";
+import { Link } from "@/i18n/routing";
+import { Pagination } from "@/components/ui/Pagination";
 import { useSession } from "next-auth/react";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
+import { formatCurrency, formatCurrencyCompact } from "@/lib/format";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 type Lease = {
@@ -18,6 +21,7 @@ type Lease = {
     endDate: string;
     status: string;
     rentAmount: number;
+    monthlyRent: number | null;
     depositAmount: number;
     ejariNumber: string;
     paymentTerms: number;
@@ -33,13 +37,23 @@ type Unit = {
     id: string;
     unitNumber: string;
     status: string;
-    property?: { id: string };
+    property?: { id: string; nameEn?: string; nameAr?: string };
 };
 
 type Renter = {
     id: string;
     nameEn: string;
     nameAr: string;
+};
+
+type LeaseAttachment = {
+    id: string;
+    leaseId: string;
+    name: string;
+    fileUrl: string;
+    fileType: string;
+    fileSize: number;
+    uploadedAt: string;
 };
 
 type PaymentStats = {
@@ -54,10 +68,10 @@ type PaymentStats = {
 };
 
 const BOARD_COLUMNS = [
-    { key: "draft", label: "Draft", statuses: ["DRAFT"], color: "bg-gray-500" },
-    { key: "pending", label: "Pending Signature", statuses: ["PENDING_SIGNATURE"], color: "bg-yellow-500" },
-    { key: "active", label: "Active", statuses: ["ACTIVE", "NOTICE_GIVEN"], color: "bg-green-500" },
-    { key: "closed", label: "Closed", statuses: ["TERMINATED", "EXPIRED", "CLOSED"], color: "bg-red-500" },
+    { key: "draft", label: "Draft", statuses: ["DRAFT"], color: "bg-muted" },
+    { key: "pending", label: "Pending Signature", statuses: ["PENDING_SIGNATURE"], color: "bg-warning" },
+    { key: "active", label: "Active", statuses: ["ACTIVE", "NOTICE_GIVEN"], color: "bg-success" },
+    { key: "closed", label: "Closed", statuses: ["TERMINATED", "EXPIRED", "CLOSED"], color: "bg-error" },
 ];
 
 export default function LeasesPage() {
@@ -67,7 +81,10 @@ export default function LeasesPage() {
     const [units, setUnits] = useState<Unit[]>([]);
     const [renters, setRenters] = useState<Renter[]>([]);
     const [showForm, setShowForm] = useState(false);
-    const [viewMode, setViewMode] = useState<'grid' | 'board'>('grid');
+    const [viewMode, setViewMode] = useState<'table' | 'cards' | 'board'>('table');
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage, setItemsPerPage] = useState(25);
+    const [searchQuery, setSearchQuery] = useState("");
     const [paymentStatsMap, setPaymentStatsMap] = useState<Record<string, PaymentStats>>({});
     const [paymentStatsLoading, setPaymentStatsLoading] = useState(false);
     const [loading, setLoading] = useState(true);
@@ -82,6 +99,10 @@ export default function LeasesPage() {
     } | null>(null);
     const [previewLoading, setPreviewLoading] = useState(false);
     const [editingLeaseId, setEditingLeaseId] = useState<string | null>(null);
+    const [attachments, setAttachments] = useState<LeaseAttachment[]>([]);
+    const [uploadingDoc, setUploadingDoc] = useState(false);
+    const [docName, setDocName] = useState("");
+    const [docsLeaseId, setDocsLeaseId] = useState<string | null>(null); // Standalone docs modal
 
     // ConfirmDialog state
     const [confirmOpen, setConfirmOpen] = useState(false);
@@ -226,18 +247,10 @@ export default function LeasesPage() {
 
     const handleEditDraft = (lease: Lease) => {
         setPaymentPreview(null);
-        // Use stored monthly rent if available, otherwise derive from total
-        let monthlyRent = lease.rentAmount;
-        if ((lease as Record<string, unknown>).monthlyRent) {
-            monthlyRent = (lease as Record<string, unknown>).monthlyRent as number;
-        } else {
-            const start = new Date(lease.startDate);
-            const end = new Date(lease.endDate);
-            const months = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
-            if (months > 0) monthlyRent = Math.round(lease.rentAmount / months * 100) / 100;
-        }
+        const monthlyRent = lease.monthlyRent || lease.rentAmount;
 
         setEditingLeaseId(lease.id);
+        fetchAttachments(lease.id);
         setFormData({
             unitId: lease.unitId,
             renterId: lease.renterId,
@@ -375,6 +388,67 @@ export default function LeasesPage() {
         }
     };
 
+    const openDocsModal = (leaseId: string) => {
+        setDocsLeaseId(leaseId);
+        setDocName("");
+        fetchAttachments(leaseId);
+    };
+
+    const closeDocsModal = () => {
+        setDocsLeaseId(null);
+        setAttachments([]);
+        setDocName("");
+    };
+
+    const fetchAttachments = async (leaseId: string) => {
+        try {
+            const res = await fetch(`/api/proxy/v1/leases/${leaseId}/attachments`);
+            if (res.ok) setAttachments(await res.json());
+        } catch {}
+    };
+
+    const handleDocUpload = async (leaseId: string, file: File) => {
+        if (!docName.trim()) return;
+        setUploadingDoc(true);
+        try {
+            const formData = new FormData();
+            formData.append("file", file);
+            formData.append("name", docName);
+            const res = await fetch(`/api/upload?path=/api/v1/leases/${leaseId}/attachments`, {
+                method: "POST",
+                body: formData,
+            });
+            if (res.ok) {
+                setDocName("");
+                fetchAttachments(leaseId);
+            }
+        } catch {} finally {
+            setUploadingDoc(false);
+        }
+    };
+
+    const handleDocDelete = async (attachmentId: string, leaseId: string) => {
+        try {
+            const res = await fetch(`/api/proxy/v1/leases/attachments/${attachmentId}`, { method: "DELETE" });
+            if (res.ok) fetchAttachments(leaseId);
+        } catch {}
+    };
+
+    const handleDocDownload = async (attachmentId: string, fileName: string) => {
+        const res = await fetch(`/api/proxy/v1/leases/attachments/${attachmentId}/download`);
+        if (res.ok) {
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+    };
+
     const getRenterDisplayName = (r: Renter) => {
         if (locale === 'ar' && r.nameAr) return r.nameAr;
         return r.nameEn;
@@ -382,14 +456,14 @@ export default function LeasesPage() {
 
     const getStatusColor = (status: string) => {
         switch (status) {
-            case 'ACTIVE': return 'bg-green-100 text-green-700 border-green-200';
-            case 'DRAFT': return 'bg-gray-100 text-gray-700 border-gray-200';
-            case 'PENDING_SIGNATURE': return 'bg-yellow-100 text-yellow-700 border-yellow-200';
-            case 'NOTICE_GIVEN': return 'bg-orange-100 text-orange-700 border-orange-200';
-            case 'TERMINATED': return 'bg-red-100 text-red-700 border-red-200';
-            case 'EXPIRED': return 'bg-orange-100 text-orange-700 border-orange-200';
-            case 'CLOSED': return 'bg-gray-100 text-gray-500 border-gray-200';
-            default: return 'bg-blue-100 text-blue-700 border-blue-200';
+            case 'ACTIVE': return 'bg-success/10 text-success border border-success/20';
+            case 'DRAFT': return 'bg-input text-muted border border-border';
+            case 'PENDING_SIGNATURE': return 'bg-warning/10 text-warning border border-warning/20';
+            case 'NOTICE_GIVEN': return 'bg-warning/10 text-warning border border-warning/20';
+            case 'TERMINATED': return 'bg-error/10 text-error border border-error/20';
+            case 'EXPIRED': return 'bg-warning/10 text-warning border border-warning/20';
+            case 'CLOSED': return 'bg-input text-muted border border-border';
+            default: return 'bg-info/10 text-info border border-info/20';
         }
     };
 
@@ -398,9 +472,9 @@ export default function LeasesPage() {
 
         if (paymentStatsLoading && !stats) {
             return (
-                <div className="mt-3 pt-3 border-t border-gray-100">
-                    <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden animate-pulse" />
-                    <div className="mt-1.5 h-3 w-24 bg-gray-100 rounded animate-pulse" />
+                <div className="mt-3 pt-3 border-t border-border">
+                    <div className="h-1.5 bg-input rounded-full overflow-hidden animate-pulse" />
+                    <div className="mt-1.5 h-3 w-24 bg-input rounded animate-pulse" />
                 </div>
             );
         }
@@ -412,19 +486,19 @@ export default function LeasesPage() {
             : 0;
 
         return (
-            <div className="mt-3 pt-3 border-t border-gray-100">
-                <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+            <div className="mt-3 pt-3 border-t border-border">
+                <div className="h-1.5 bg-input rounded-full overflow-hidden">
                     <div
-                        className="h-full bg-green-500 rounded-full transition-all duration-500"
+                        className="h-full bg-success rounded-full transition-all duration-500"
                         style={{ width: `${progressPercent}%` }}
                     />
                 </div>
                 <div className="flex items-center gap-2 mt-1.5">
-                    <span className="text-xs font-medium text-gray-500">
+                    <span className="text-xs font-medium text-muted">
                         {stats.clearedPayments}/{stats.totalPayments} {t("paymentsProgress")}
                     </span>
                     {stats.overduePayments > 0 && (
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-red-50 text-red-600 border border-red-100">
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-error/10 text-error border border-error/20">
                             {stats.overduePayments} {t("overduePayments")}
                         </span>
                     )}
@@ -434,27 +508,27 @@ export default function LeasesPage() {
     };
 
     const renderSkeletonCard = (compact = false) => (
-        <div className={cn("bg-white rounded-[2rem] p-6 shadow-sm border border-gray-100 animate-pulse", compact && "rounded-2xl p-4")}>
+        <div className={cn("bg-surface rounded-xl p-6 border border-border animate-pulse", compact && "p-4")}>
             <div className="flex items-center gap-3 mb-4">
-                <div className={cn("bg-gray-200 rounded-xl", compact ? "w-8 h-8" : "w-10 h-10")} />
+                <div className={cn("bg-input rounded-xl", compact ? "w-8 h-8" : "w-10 h-10")} />
                 <div className="flex-1">
-                    <div className="h-3.5 bg-gray-200 rounded w-24 mb-1.5" />
-                    <div className="h-2.5 bg-gray-100 rounded w-16" />
+                    <div className="h-3.5 bg-input rounded w-24 mb-1.5" />
+                    <div className="h-2.5 bg-input rounded w-16" />
                 </div>
-                {!compact && <div className="h-5 bg-gray-100 rounded-full w-20" />}
+                {!compact && <div className="h-5 bg-input rounded-full w-20" />}
             </div>
             <div className="space-y-3 mb-4">
-                <div className={cn("bg-gray-50 rounded-xl border border-gray-100/50", compact ? "h-10" : "h-14")} />
-                <div className="h-4 bg-gray-100 rounded w-48 mx-1" />
+                <div className={cn("bg-input rounded-xl border border-border", compact ? "h-10" : "h-14")} />
+                <div className="h-4 bg-input rounded w-48 mx-1" />
             </div>
-            <div className="border-t border-gray-100 pt-4">
-                <div className="h-9 bg-gray-100 rounded-xl" />
+            <div className="border-t border-border pt-4">
+                <div className="h-9 bg-input rounded-xl" />
             </div>
         </div>
     );
 
     const renderLeaseCard = (lease: Lease, compact = false) => (
-        <div key={lease.id} className={cn("bg-white rounded-[2rem] p-6 shadow-sm border border-gray-100 hover:shadow-md transition-all duration-200 flex flex-col justify-between", compact && "rounded-2xl p-4")}>
+        <div key={lease.id} className={cn("bg-surface rounded-xl p-5 border border-border hover:shadow-md transition-all duration-200 flex flex-col justify-between", compact && "p-4")}>
             <div>
                 <div className="flex justify-between items-start mb-4">
                     <div className="flex items-center gap-3">
@@ -462,8 +536,8 @@ export default function LeasesPage() {
                             <FileText size={compact ? 14 : 18} />
                         </div>
                         <div>
-                            <h3 className={cn("font-black text-foreground tracking-tight", compact ? "text-xs" : "text-sm")}>{t("unit")} {lease.unitIdentifier}</h3>
-                            <p className="text-[10px] font-bold text-gray-400">{lease.renterName}</p>
+                            <h3 className={cn("font-bold text-foreground tracking-tight", compact ? "text-xs" : "text-sm")}>{t("unit")} {lease.unitIdentifier}</h3>
+                            <p className="text-[10px] font-bold text-muted">{lease.renterName}</p>
                         </div>
                     </div>
                     {!compact && (
@@ -474,26 +548,26 @@ export default function LeasesPage() {
                 </div>
 
                 <div className={cn("space-y-3", compact ? "mb-3" : "mb-6")}>
-                    <div className={cn("flex justify-between items-center bg-gray-50 rounded-xl border border-gray-100/50", compact ? "p-2" : "p-3")}>
+                    <div className={cn("flex justify-between items-center bg-input/70 rounded-xl border border-border", compact ? "p-2" : "p-3")}>
                         <div className="flex items-center gap-2">
-                            <DollarSign size={14} className="text-gray-400" />
-                            <span className="text-[10px] font-bold text-gray-400 uppercase">{t("rentSummary")}</span>
+                            <DollarSign size={14} className="text-muted" />
+                            <span className="text-[10px] font-semibold text-muted uppercase tracking-[0.15em]">{t("rentSummary")}</span>
                         </div>
-                        <span className={cn("font-black text-foreground text-right", compact ? "text-[10px]" : "text-xs")}>
-                            AED {lease.rentAmount.toLocaleString()}
-                            {!compact && <><br /><span className="text-[9px] text-gray-400 font-medium">({lease.paymentTerms} {t("cheques")})</span></>}
+                        <span className={cn("font-bold text-foreground text-right tabular-nums", compact ? "text-[10px]" : "text-xs")}>
+                            {formatCurrencyCompact(lease.rentAmount)}
+                            {!compact && <><br /><span className="text-[9px] text-muted font-medium">({lease.paymentTerms} {t("cheques")})</span></>}
                         </span>
                     </div>
                     <div className="flex items-center gap-3 px-1">
-                        <Calendar size={14} className="text-gray-400" />
-                        <span className="text-xs font-medium text-gray-600">
+                        <Calendar size={14} className="text-muted" />
+                        <span className="text-xs font-medium text-foreground">
                             {new Date(lease.startDate).toLocaleDateString()} &rarr; {new Date(lease.endDate).toLocaleDateString()}
                         </span>
                     </div>
                     {!compact && lease.ejariNumber && (
                         <div className="flex items-center gap-3 px-1">
-                            <Home size={14} className="text-gray-400" />
-                            <span className="text-xs font-medium text-gray-600">Ejari: {lease.ejariNumber}</span>
+                            <Home size={14} className="text-muted" />
+                            <span className="text-xs font-medium text-foreground">Ejari: {lease.ejariNumber}</span>
                         </div>
                     )}
                 </div>
@@ -502,11 +576,11 @@ export default function LeasesPage() {
             </div>
 
             {canManageLeases && (
-                <div className={cn("flex gap-2 border-t border-gray-100 mt-auto", compact ? "pt-3 flex-wrap" : "pt-4")}>
+                <div className={cn("flex gap-2 border-t border-border mt-auto", compact ? "pt-3 flex-wrap" : "pt-4")}>
                     {lease.status === 'DRAFT' && (
                         <button
                             onClick={() => handleEditDraft(lease)}
-                            className="flex items-center justify-center gap-2 bg-gray-50 text-gray-700 hover:bg-gray-100 py-2.5 px-3 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                            className="flex items-center justify-center gap-2 bg-input text-foreground hover:bg-input/80 py-2.5 px-3 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                         >
                             <Pencil size={14} />
                             {t("edit")}
@@ -567,145 +641,186 @@ export default function LeasesPage() {
                             {t("terminate")}
                         </button>
                     )}
+                    <button
+                        onClick={() => openDocsModal(lease.id)}
+                        className="flex-1 flex items-center justify-center gap-2 bg-input text-foreground hover:bg-border py-2.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer"
+                    >
+                        <FileText size={14} />
+                        Docs
+                    </button>
                 </div>
             )}
         </div>
     );
 
+    const filteredLeases = leases.filter(l => {
+        if (!searchQuery) return true;
+        const q = searchQuery.toLowerCase();
+        return (
+            l.unitIdentifier?.toLowerCase().includes(q) ||
+            l.renterName?.toLowerCase().includes(q) ||
+            l.propertyName?.toLowerCase().includes(q) ||
+            l.status?.toLowerCase().includes(q) ||
+            l.ejariNumber?.toLowerCase().includes(q)
+        );
+    });
+
     return (
         <div>
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10">
+            <div className="flex flex-col gap-4 mb-10">
                 <div>
-                    <h1 className="text-xl font-black text-foreground tracking-tight mb-1">
+                    <h1 className="text-xl font-bold text-foreground tracking-tight mb-1">
                         {t("leases")}
                     </h1>
-                    <p className="text-xs text-gray-500 font-medium">
+                    <p className="text-xs text-muted font-medium">
                         {t("manageLeases")}
                     </p>
                 </div>
-                <div className="flex items-center gap-3">
-                    <div className="flex items-center bg-gray-100 rounded-xl p-1">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                    <div className="relative">
+                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+                        <input
+                            type="text"
+                            placeholder="Search..."
+                            value={searchQuery}
+                            onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+                            className="pl-9 pr-4 py-2 bg-surface border border-border rounded-lg text-sm text-foreground placeholder:text-muted/50 focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none w-64 transition-all"
+                        />
+                    </div>
+                    <div className="flex items-center gap-3">
+                    <div className="flex items-center bg-input rounded-lg p-0.5 border border-border">
                         <button
-                            onClick={() => setViewMode('grid')}
+                            onClick={() => { setViewMode('table'); setCurrentPage(1); }}
                             className={cn(
-                                "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none",
-                                viewMode === 'grid' ? "bg-white text-foreground shadow-sm" : "text-gray-400 hover:text-gray-600"
+                                "px-3 py-1.5 rounded-md text-xs font-medium transition-all cursor-pointer flex items-center gap-1.5",
+                                viewMode === 'table' ? "bg-surface text-foreground shadow-sm border border-border" : "text-muted hover:text-foreground"
                             )}
                         >
-                            <LayoutGrid size={12} />
-                            {t("gridView")}
+                            <List size={13} />
+                            Table
+                        </button>
+                        <button
+                            onClick={() => { setViewMode('cards'); setCurrentPage(1); }}
+                            className={cn(
+                                "px-3 py-1.5 rounded-md text-xs font-medium transition-all cursor-pointer flex items-center gap-1.5",
+                                viewMode === 'cards' ? "bg-surface text-foreground shadow-sm border border-border" : "text-muted hover:text-foreground"
+                            )}
+                        >
+                            <LayoutGrid size={13} />
+                            Cards
                         </button>
                         <button
                             onClick={() => setViewMode('board')}
                             className={cn(
-                                "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none",
-                                viewMode === 'board' ? "bg-white text-foreground shadow-sm" : "text-gray-400 hover:text-gray-600"
+                                "px-3 py-1.5 rounded-md text-xs font-medium transition-all cursor-pointer flex items-center gap-1.5",
+                                viewMode === 'board' ? "bg-surface text-foreground shadow-sm border border-border" : "text-muted hover:text-foreground"
                             )}
                         >
-                            <Columns3 size={12} />
-                            {t("boardView")}
+                            <Columns3 size={13} />
+                            Board
                         </button>
                     </div>
                     {canManageLeases && (
                         <button
                             onClick={() => setShowForm(true)}
-                            className="flex items-center gap-2 bg-primary text-primary-foreground px-5 py-2.5 rounded-full text-xs font-bold hover:opacity-90 transition-all duration-200 shadow-lg shadow-primary/10 active:scale-95 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                            className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-xs font-semibold hover:opacity-90 transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                         >
                             <Plus size={14} />
                             {t("draftLease")}
                         </button>
                     )}
+                    </div>
                 </div>
             </div>
 
             {showForm && (
-                <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-[100] overflow-y-auto">
-                    <div className="bg-white rounded-3xl p-8 max-w-2xl w-full shadow-2xl border border-gray-100 relative my-8">
-                        <button onClick={() => { setShowForm(false); setEditingLeaseId(null); }} aria-label="Close form" className="absolute right-6 top-6 p-2 text-gray-400 hover:text-gray-600 cursor-pointer transition-colors duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg"><X size={18} /></button>
-                        <h2 className="text-lg font-black mb-1">{editingLeaseId ? t("editLease") : t("draftNewLease")}</h2>
-                        <p className="text-xs text-gray-400 mb-8 font-medium">{editingLeaseId ? t("editLeaseDesc") : t("draftNewLeaseDesc")}</p>
+                <div className="fixed inset-0 bg-foreground/40 backdrop-blur-sm flex items-center justify-center p-4 z-[100] overflow-y-auto">
+                    <div className="bg-surface rounded-xl p-8 max-w-2xl w-full shadow-2xl border border-border relative my-8">
+                        <button onClick={() => { setShowForm(false); setEditingLeaseId(null); setAttachments([]); setDocName(""); }} aria-label="Close form" className="absolute right-6 top-6 p-2 text-muted hover:text-foreground cursor-pointer transition-colors duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg"><X size={18} /></button>
+                        <h2 className="text-lg font-bold mb-1">{editingLeaseId ? t("editLease") : t("draftNewLease")}</h2>
+                        <p className="text-xs text-muted mb-8 font-medium">{editingLeaseId ? t("editLeaseDesc") : t("draftNewLeaseDesc")}</p>
                         <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-5">
                             <div className="col-span-1">
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("selectUnit")}</label>
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("selectUnit")}</label>
                                 <select required className="w-full bg-input border border-border p-3 rounded-xl text-xs cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.unitId} onChange={ev => setFormData({ ...formData, unitId: ev.target.value })}>
                                     <option value="">{t("chooseVacantUnit")}</option>
-                                    {units.map(u => <option key={u.id} value={u.id}>{t("unit")} {u.unitNumber}</option>)}
+                                    {units.map(u => <option key={u.id} value={u.id}>{u.property?.nameEn ? `${u.property.nameEn} — ` : ""}{t("unit")} {u.unitNumber}</option>)}
                                 </select>
                             </div>
                             <div className="col-span-1">
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("selectRenter")}</label>
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("selectRenter")}</label>
                                 <select required className="w-full bg-input border border-border p-3 rounded-xl text-xs cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.renterId} onChange={ev => setFormData({ ...formData, renterId: ev.target.value })}>
                                     <option value="">{t("chooseRenter")}</option>
                                     {renters.map(r => <option key={r.id} value={r.id}>{getRenterDisplayName(r)}</option>)}
                                 </select>
                             </div>
                             <div className="col-span-1">
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("startDate")}</label>
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("startDate")}</label>
                                 <input required type="date" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.startDate} onChange={ev => setFormData({ ...formData, startDate: ev.target.value })} />
                             </div>
                             <div className="col-span-1">
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("endDate")}</label>
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("endDate")}</label>
                                 <input required type="date" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.endDate} onChange={ev => setFormData({ ...formData, endDate: ev.target.value })} />
                             </div>
                             <div className="col-span-1">
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">Monthly Rent (AED)</label>
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">Monthly Rent (AED)</label>
                                 <input required type="number" min="0" placeholder="5000" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.rentAmount || ''} onChange={ev => setFormData({ ...formData, rentAmount: Number(ev.target.value) })} />
                             </div>
                             <div className="col-span-1">
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("securityDeposit")}</label>
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("securityDeposit")}</label>
                                 <input required type="number" min="0" placeholder="2500" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.depositAmount || ''} onChange={ev => setFormData({ ...formData, depositAmount: Number(ev.target.value) })} />
                             </div>
                             <div className="col-span-1">
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("ejariNumber")}</label>
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("ejariNumber")}</label>
                                 <input placeholder="EJAR-12345" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.ejariNumber} onChange={ev => setFormData({ ...formData, ejariNumber: ev.target.value })} />
                             </div>
                             <div className="col-span-1">
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("paymentMethod")}</label>
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("paymentMethod")}</label>
                                 <select className="w-full bg-input border border-border p-3 rounded-xl text-xs cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.paymentMethod} onChange={ev => setFormData({ ...formData, paymentMethod: ev.target.value })}>
                                     <option value="CHEQUE">Cheque</option>
                                     <option value="ONLINE">Online Payment</option>
                                 </select>
                             </div>
                             <div className="col-span-1">
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("paymentTerms")}</label>
-                                <div className="w-full bg-gray-50 border border-border p-3 rounded-xl text-xs text-gray-600 font-medium">
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("paymentTerms")}</label>
+                                <div className="w-full bg-input border border-border p-3 rounded-xl text-xs text-muted font-medium">
                                     {paymentPreview ? `${paymentPreview.totalPayments} ${formData.paymentMethod === 'CHEQUE' ? 'Cheques' : 'Payments'}` : 'Select dates & rent amount'}
                                 </div>
                             </div>
                             <div className="col-span-1">
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("depositPaymentMethod")}</label>
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("depositPaymentMethod")}</label>
                                 <select className="w-full bg-input border border-border p-3 rounded-xl text-xs cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.depositPaymentMethod} onChange={ev => setFormData({ ...formData, depositPaymentMethod: ev.target.value })}>
                                     <option value="CHEQUE">Cheque</option>
                                     <option value="ONLINE">Online Payment</option>
                                 </select>
                             </div>
                             <div className="col-span-1">
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("paymentReference")}</label>
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("paymentReference")}</label>
                                 <input placeholder="REF-12345" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.paymentReferenceNumber} onChange={ev => setFormData({ ...formData, paymentReferenceNumber: ev.target.value })} />
                             </div>
                             {/* Payment Schedule Preview */}
                             {paymentPreview && paymentPreview.lines.length > 0 && (
                                 <div className="col-span-2 mt-2">
-                                    <label className="block text-[10px] font-bold text-gray-400 uppercase mb-2 ml-1">
+                                    <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-2 ml-1">
                                         Payment Schedule Preview
                                     </label>
                                     <div className="border border-border rounded-xl overflow-hidden max-h-72 overflow-y-auto">
                                         <table className="w-full">
                                             <thead className="sticky top-0">
-                                                <tr className="bg-gray-50 border-b border-gray-100">
-                                                    <th className="text-left px-4 py-2 text-[10px] font-bold text-gray-400 uppercase">#</th>
-                                                    <th className="text-left px-4 py-2 text-[10px] font-bold text-gray-400 uppercase">Due Date</th>
-                                                    <th className="text-left px-4 py-2 text-[10px] font-bold text-gray-400 uppercase">Period</th>
-                                                    <th className="text-right px-4 py-2 text-[10px] font-bold text-gray-400 uppercase">Amount (AED)</th>
-                                                    <th className="text-center px-4 py-2 text-[10px] font-bold text-gray-400 uppercase">Type</th>
+                                                <tr className="bg-input/70 border-b border-border">
+                                                    <th className="text-left px-4 py-2 text-[11px] font-semibold text-muted uppercase tracking-wider">#</th>
+                                                    <th className="text-left px-4 py-2 text-[11px] font-semibold text-muted uppercase tracking-wider">Due Date</th>
+                                                    <th className="text-left px-4 py-2 text-[11px] font-semibold text-muted uppercase tracking-wider">Period</th>
+                                                    <th className="text-right px-4 py-2 text-[11px] font-semibold text-muted uppercase tracking-wider">Amount (AED)</th>
+                                                    <th className="text-center px-4 py-2 text-[11px] font-semibold text-muted uppercase tracking-wider">Type</th>
                                                 </tr>
                                             </thead>
-                                            <tbody className="divide-y divide-gray-50">
+                                            <tbody className="divide-y divide-border">
                                                 {paymentPreview.lines.map((line, i) => (
-                                                    <tr key={i} className="hover:bg-gray-50/50">
-                                                        <td className="px-4 py-2 text-xs text-gray-500">{line.installmentNumber}</td>
+                                                    <tr key={i} className="hover:bg-input/30 transition-colors">
+                                                        <td className="px-4 py-2 text-xs text-muted">{line.installmentNumber}</td>
                                                         <td className="px-4 py-2 text-xs font-medium">{line.dueDate}</td>
-                                                        <td className="px-4 py-2 text-[10px] text-gray-400">{line.periodStart} &rarr; {line.periodEnd}</td>
+                                                        <td className="px-4 py-2 text-[10px] text-muted">{line.periodStart} &rarr; {line.periodEnd}</td>
                                                         <td className="px-4 py-2 text-right">
                                                             <input
                                                                 type="number"
@@ -723,21 +838,21 @@ export default function LeasesPage() {
                                                         </td>
                                                         <td className="px-4 py-2 text-center">
                                                             {line.proRata ? (
-                                                                <span className="text-[9px] bg-amber-50 text-amber-600 px-2 py-0.5 rounded-full font-bold">Pro-rata</span>
+                                                                <span className="text-[9px] bg-warning/10 text-warning px-2 py-0.5 rounded-full font-bold border border-warning/20">Pro-rata</span>
                                                             ) : (
-                                                                <span className="text-[9px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full font-bold">Full</span>
+                                                                <span className="text-[9px] bg-input text-muted px-2 py-0.5 rounded-full font-bold border border-border">Full</span>
                                                             )}
                                                         </td>
                                                     </tr>
                                                 ))}
                                             </tbody>
                                             <tfoot>
-                                                <tr className="bg-gray-50 border-t-2 border-gray-200">
-                                                    <td colSpan={3} className="px-4 py-2 text-xs font-black uppercase">Total</td>
-                                                    <td className="px-4 py-2 text-right text-xs font-black text-emerald-600">
-                                                        {paymentPreview.totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                <tr className="bg-input/70 border-t-2 border-border">
+                                                    <td colSpan={3} className="px-4 py-2 text-xs font-bold uppercase">Total</td>
+                                                    <td className="px-4 py-2 text-right text-xs font-bold text-primary tabular-nums">
+                                                        {formatCurrency(paymentPreview.totalAmount)}
                                                     </td>
-                                                    <td className="px-4 py-2 text-center text-[10px] text-gray-400">{paymentPreview.totalPayments} payments</td>
+                                                    <td className="px-4 py-2 text-center text-[10px] text-muted">{paymentPreview.totalPayments} payments</td>
                                                 </tr>
                                             </tfoot>
                                         </table>
@@ -745,19 +860,75 @@ export default function LeasesPage() {
                                 </div>
                             )}
                             {previewLoading && (
-                                <div className="col-span-2 flex items-center gap-2 text-xs text-gray-400">
+                                <div className="col-span-2 flex items-center gap-2 text-xs text-muted">
                                     <Loader2 size={14} className="animate-spin" />
                                     Calculating payment schedule...
                                 </div>
                             )}
                             <div className="col-span-2 flex justify-end gap-3 mt-4">
-                                <button type="button" onClick={() => setShowForm(false)} className="px-6 py-3 text-xs font-bold text-gray-500 cursor-pointer hover:text-gray-700 transition-colors duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-xl">{t("cancel")}</button>
+                                <button type="button" onClick={() => setShowForm(false)} className="px-6 py-3 text-xs font-bold text-muted cursor-pointer hover:text-foreground transition-colors duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-xl">{t("cancel")}</button>
                                 <button type="submit" disabled={submitting || !paymentPreview} className="px-8 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-bold cursor-pointer hover:opacity-90 transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none disabled:opacity-50 flex items-center gap-2">
                                     {submitting && <Loader2 size={14} className="animate-spin" />}
                                     {editingLeaseId ? t("saveChanges") : t("draftLease")}
                                 </button>
                             </div>
                         </form>
+
+                        {/* Supporting Documents */}
+                        {editingLeaseId && (
+                            <div className="mt-6 pt-6 border-t border-border">
+                                <h4 className="text-[11px] font-semibold text-muted uppercase tracking-wider mb-3">Supporting Documents</h4>
+
+                                {/* Existing attachments */}
+                                {attachments.length > 0 && (
+                                    <div className="space-y-2 mb-3">
+                                        {attachments.map(doc => (
+                                            <div key={doc.id} className="flex items-center justify-between bg-input/50 rounded-lg px-3 py-2 border border-border">
+                                                <div className="flex items-center gap-2">
+                                                    <FileText size={14} className="text-muted" />
+                                                    <div>
+                                                        <p className="text-xs font-medium text-foreground">{doc.name}</p>
+                                                        <p className="text-[10px] text-muted">{doc.fileType} &bull; {(doc.fileSize / 1024).toFixed(0)} KB</p>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <button onClick={() => handleDocDownload(doc.id, doc.name)} className="text-[10px] font-semibold text-primary hover:text-primary/80 cursor-pointer">Download</button>
+                                                    <button onClick={() => handleDocDelete(doc.id, editingLeaseId)} className="text-[10px] font-semibold text-error hover:text-error/80 cursor-pointer">Delete</button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {/* Upload new */}
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        type="text"
+                                        value={docName}
+                                        onChange={(e) => setDocName(e.target.value)}
+                                        placeholder="Document name (e.g. Emirates ID)"
+                                        className="flex-1 border border-border rounded-lg bg-surface px-3 py-2 text-xs text-foreground placeholder:text-muted/50 focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none"
+                                    />
+                                    <label className={cn(
+                                        "flex items-center gap-1.5 px-3 py-2 bg-primary/10 text-primary rounded-lg text-xs font-semibold hover:bg-primary/20 transition-colors cursor-pointer",
+                                        (!docName.trim() || uploadingDoc) && "opacity-50 cursor-not-allowed"
+                                    )}>
+                                        {uploadingDoc ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+                                        Attach
+                                        <input
+                                            type="file"
+                                            className="hidden"
+                                            disabled={!docName.trim() || uploadingDoc}
+                                            onChange={(e) => {
+                                                const file = e.target.files?.[0];
+                                                if (file && editingLeaseId) handleDocUpload(editingLeaseId, file);
+                                                e.target.value = "";
+                                            }}
+                                        />
+                                    </label>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
@@ -771,29 +942,151 @@ export default function LeasesPage() {
                 </div>
             )}
 
-            {/* Grid View */}
-            {!loading && viewMode === 'grid' && (
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                    {leases.map(lease => renderLeaseCard(lease))}
-                </div>
-            )}
+            {/* Table View */}
+            {!loading && viewMode === 'table' && leases.length > 0 && (() => {
+                const paginatedLeases = filteredLeases.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+                return (
+                    <>
+                        <div className="bg-surface rounded-xl border border-border overflow-hidden">
+                            <table className="w-full">
+                                <thead>
+                                    <tr className="bg-input/50">
+                                        <th className="text-left px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">Unit</th>
+                                        <th className="text-left px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">Renter</th>
+                                        <th className="text-left px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">Property</th>
+                                        <th className="text-left px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">Start Date</th>
+                                        <th className="text-left px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">End Date</th>
+                                        <th className="text-right px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">Monthly Rent (AED)</th>
+                                        <th className="text-center px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">Status</th>
+                                        <th className="text-center px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {paginatedLeases.map(lease => {
+                                        const monthlyRent = lease.monthlyRent || lease.rentAmount;
+                                        return (
+                                            <tr key={lease.id} className="border-b border-border hover:bg-input/30 transition-colors">
+                                                <td className="px-4 py-3 text-xs font-medium text-foreground">{lease.unitIdentifier}</td>
+                                                <td className="px-4 py-3 text-xs text-foreground">{lease.renterName}</td>
+                                                <td className="px-4 py-3 text-xs text-muted">{lease.propertyName}</td>
+                                                <td className="px-4 py-3 text-xs text-foreground tabular-nums">{new Date(lease.startDate).toLocaleDateString()}</td>
+                                                <td className="px-4 py-3 text-xs text-foreground tabular-nums">{new Date(lease.endDate).toLocaleDateString()}</td>
+                                                <td className="px-4 py-3 text-xs font-medium text-foreground text-right tabular-nums">{formatCurrency(monthlyRent)}</td>
+                                                <td className="px-4 py-3 text-center">
+                                                    <span className={cn("inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold", getStatusColor(lease.status))}>
+                                                        {lease.status.replace('_', ' ')}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-3 text-center">
+                                                    <div className="flex items-center justify-center gap-1.5">
+                                                        {lease.status === 'DRAFT' && canManageLeases && (
+                                                            <button
+                                                                onClick={() => handleEditDraft(lease)}
+                                                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium bg-input text-foreground hover:bg-input/80 transition-colors cursor-pointer"
+                                                            >
+                                                                <Pencil size={11} /> Edit
+                                                            </button>
+                                                        )}
+                                                        {lease.status === 'DRAFT' && !lease.hasContract && canManageLeases && (
+                                                            <button
+                                                                onClick={() => handleGenerateContract(lease.id)}
+                                                                disabled={actionLoading === `generate-${lease.id}`}
+                                                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors cursor-pointer disabled:opacity-50"
+                                                            >
+                                                                {actionLoading === `generate-${lease.id}` ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />} Generate
+                                                            </button>
+                                                        )}
+                                                        {(lease.status === 'DRAFT' && lease.hasContract || lease.status === 'PENDING_SIGNATURE') && canManageLeases && (
+                                                            <button
+                                                                onClick={() => handleActivate(lease.id)}
+                                                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium bg-green-50 text-green-700 hover:bg-green-100 transition-colors cursor-pointer"
+                                                            >
+                                                                <CheckCircle size={11} /> Activate
+                                                            </button>
+                                                        )}
+                                                        {lease.status === 'PENDING_SIGNATURE' && canManageLeases && (
+                                                            <button
+                                                                onClick={() => handleDownloadContract(lease.id)}
+                                                                disabled={actionLoading === `download-${lease.id}`}
+                                                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors cursor-pointer disabled:opacity-50"
+                                                            >
+                                                                {actionLoading === `download-${lease.id}` ? <Loader2 size={11} className="animate-spin" /> : <Download size={11} />} PDF
+                                                            </button>
+                                                        )}
+                                                        {lease.status === 'ACTIVE' && canManageLeases && (
+                                                            <button
+                                                                onClick={() => handleTerminate(lease.id)}
+                                                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium bg-red-50 text-red-600 hover:bg-red-100 transition-colors cursor-pointer"
+                                                            >
+                                                                <Ban size={11} /> Terminate
+                                                            </button>
+                                                        )}
+                                                        <button
+                                                            onClick={() => openDocsModal(lease.id)}
+                                                            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium bg-input text-foreground hover:bg-border transition-colors cursor-pointer"
+                                                        >
+                                                            <FileText size={11} /> Docs
+                                                        </button>
+                                                        <Link
+                                                            href={`/dashboard/leases/${lease.id}`}
+                                                            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium text-primary hover:bg-primary/10 transition-colors"
+                                                        >
+                                                            View
+                                                        </Link>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                        <Pagination
+                            currentPage={currentPage}
+                            totalItems={filteredLeases.length}
+                            itemsPerPage={itemsPerPage}
+                            onPageChange={setCurrentPage}
+                            onItemsPerPageChange={(n) => { setItemsPerPage(n); setCurrentPage(1); }}
+                        />
+                    </>
+                );
+            })()}
+
+            {/* Cards View */}
+            {!loading && viewMode === 'cards' && leases.length > 0 && (() => {
+                const paginatedLeases = filteredLeases.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+                return (
+                    <>
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                            {paginatedLeases.map(lease => renderLeaseCard(lease))}
+                        </div>
+                        <Pagination
+                            currentPage={currentPage}
+                            totalItems={filteredLeases.length}
+                            itemsPerPage={itemsPerPage}
+                            onPageChange={setCurrentPage}
+                            onItemsPerPageChange={(n) => { setItemsPerPage(n); setCurrentPage(1); }}
+                        />
+                    </>
+                );
+            })()}
 
             {/* Board View */}
             {!loading && viewMode === 'board' && (
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 pb-4">
                     {BOARD_COLUMNS.map(col => {
-                        const columnLeases = leases.filter(l => col.statuses.includes(l.status));
+                        const columnLeases = filteredLeases.filter(l => col.statuses.includes(l.status));
                         return (
                             <div key={col.key} className="min-w-0">
                                 <div className="flex items-center gap-2 mb-4 px-2">
                                     <div className={cn("w-2.5 h-2.5 rounded-full", col.color)} />
-                                    <h3 className="text-xs font-black text-foreground uppercase tracking-widest">{col.label}</h3>
-                                    <span className="ml-auto text-[10px] font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{columnLeases.length}</span>
+                                    <h3 className="text-xs font-bold text-foreground uppercase tracking-widest">{col.label}</h3>
+                                    <span className="ml-auto text-[10px] font-bold text-muted bg-input px-2 py-0.5 rounded-full">{columnLeases.length}</span>
                                 </div>
-                                <div className="space-y-3 min-h-[200px] bg-gray-50/50 rounded-2xl p-3 border border-gray-100/50">
+                                <div className="space-y-3 min-h-[200px] bg-background rounded-xl p-3 border border-border">
                                     {columnLeases.map(lease => renderLeaseCard(lease, true))}
                                     {columnLeases.length === 0 && (
-                                        <div className="text-center py-8 text-[10px] text-gray-300 font-bold uppercase tracking-widest">
+                                        <div className="text-center py-8 text-[10px] text-muted font-bold uppercase tracking-widest">
                                             No leases
                                         </div>
                                     )}
@@ -805,18 +1098,96 @@ export default function LeasesPage() {
             )}
 
             {!loading && leases.length === 0 && !showForm && (
-                <div className="text-center py-24 bg-gray-50 border border-dashed border-gray-200 rounded-[2.5rem] flex flex-col items-center">
-                    <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center text-gray-200 shadow-sm mb-6">
+                <div className="text-center py-24 bg-background border border-dashed border-border rounded-xl flex flex-col items-center">
+                    <div className="w-16 h-16 bg-surface rounded-xl flex items-center justify-center text-muted shadow-sm mb-6">
                         <AlertCircle size={32} />
                     </div>
-                    <p className="text-sm font-bold text-gray-400 mb-6 uppercase tracking-widest">
+                    <p className="text-sm font-bold text-muted mb-6 uppercase tracking-widest">
                         {t("noLeasesFound")}
                     </p>
                     {canManageLeases && (
-                        <button onClick={() => setShowForm(true)} className="text-xs font-black text-foreground border-b-2 border-primary pb-0.5 hover:text-primary transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none">
+                        <button onClick={() => setShowForm(true)} className="text-xs font-bold text-foreground border-b-2 border-primary pb-0.5 hover:text-primary transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none">
                             {t("draftALease")}
                         </button>
                     )}
+                </div>
+            )}
+
+            {/* Standalone Documents Modal */}
+            {docsLeaseId && !editingLeaseId && (
+                <div className="fixed inset-0 bg-foreground/40 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
+                    <div className="bg-surface rounded-xl p-6 max-w-lg w-full shadow-2xl border border-border relative max-h-[80vh] overflow-y-auto">
+                        <button
+                            onClick={closeDocsModal}
+                            aria-label="Close"
+                            className="absolute right-4 top-4 p-2 text-muted hover:text-foreground transition-all cursor-pointer rounded-lg"
+                        >
+                            <X size={18} />
+                        </button>
+                        <h2 className="text-lg font-bold text-foreground mb-1">Supporting Documents</h2>
+                        <p className="text-xs text-muted mb-5">Upload and manage documents for this lease.</p>
+
+                        {/* Existing attachments */}
+                        {attachments.length > 0 && (
+                            <div className="space-y-2 mb-4">
+                                {attachments.map(doc => (
+                                    <div key={doc.id} className="flex items-center justify-between bg-input/50 rounded-lg px-3 py-2.5 border border-border">
+                                        <div className="flex items-center gap-2 min-w-0">
+                                            <FileText size={14} className="text-muted shrink-0" />
+                                            <div className="min-w-0">
+                                                <p className="text-xs font-medium text-foreground truncate">{doc.name}</p>
+                                                <p className="text-[10px] text-muted">{doc.fileType} &bull; {(doc.fileSize / 1024).toFixed(0)} KB</p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-2 shrink-0">
+                                            <button onClick={() => handleDocDownload(doc.id, doc.name)} className="text-[10px] font-semibold text-primary hover:text-primary/80 cursor-pointer">Download</button>
+                                            <button onClick={() => handleDocDelete(doc.id, docsLeaseId)} className="text-[10px] font-semibold text-error hover:text-error/80 cursor-pointer">Delete</button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {attachments.length === 0 && (
+                            <div className="text-center py-6 text-muted mb-4">
+                                <FileText size={24} className="mx-auto mb-2 opacity-40" />
+                                <p className="text-xs">No documents attached yet.</p>
+                            </div>
+                        )}
+
+                        {/* Upload new */}
+                        <div className="pt-3 border-t border-border">
+                            <p className="text-[10px] text-muted mb-2">Enter a document name, then click Attach to upload a file.</p>
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="text"
+                                    value={docName}
+                                    onChange={(e) => setDocName(e.target.value)}
+                                    placeholder="e.g. Emirates ID, Trade License, Agreement"
+                                    className="flex-1 border border-border rounded-lg bg-surface px-3 py-2 text-xs text-foreground placeholder:text-muted/50 focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none"
+                                />
+                                <label className={cn(
+                                    "flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-colors shrink-0",
+                                    docName.trim() && !uploadingDoc
+                                        ? "bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer"
+                                        : "bg-input text-muted cursor-not-allowed"
+                                )}>
+                                    {uploadingDoc ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+                                    Attach File
+                                    <input
+                                        type="file"
+                                        className="hidden"
+                                        disabled={!docName.trim() || uploadingDoc}
+                                        onChange={(e) => {
+                                            const file = e.target.files?.[0];
+                                            if (file && docsLeaseId) handleDocUpload(docsLeaseId, file);
+                                            if (e.target) e.target.value = "";
+                                        }}
+                                    />
+                                </label>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             )}
 

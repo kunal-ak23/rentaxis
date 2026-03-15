@@ -12,9 +12,11 @@ import {
     AlertTriangle,
     Clock,
     AlertCircle,
+    Download,
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
+import { formatCurrencyCompact } from "@/lib/format";
 
 declare global {
     interface Window {
@@ -60,7 +62,12 @@ export default function RenterPaymentsPage() {
     const fetchPayments = useCallback(async () => {
         try {
             const res = await fetch("/api/proxy/v1/online-payments/my-payments");
-            if (res.ok) setPayments(await res.json());
+            if (res.ok) {
+                const data = await res.json();
+                // Always sort by due date (installment order)
+                data.sort((a: Payment, b: Payment) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+                setPayments(data);
+            }
         } catch (err) {
             console.error(err);
         } finally {
@@ -157,7 +164,11 @@ export default function RenterPaymentsPage() {
                     }
                 },
                 modal: {
-                    ondismiss: () => {
+                    ondismiss: async () => {
+                        // Revert ONLINE_PENDING back to PENDING
+                        try {
+                            await fetch(`/api/proxy/v1/online-payments/cancel/${payment.id}`, { method: "POST" });
+                        } catch {}
                         setProcessingPaymentId(null);
                         fetchPayments();
                     },
@@ -165,7 +176,10 @@ export default function RenterPaymentsPage() {
             };
 
             const rzp = new window.Razorpay(options);
-            rzp.on("payment.failed", () => {
+            rzp.on("payment.failed", async () => {
+                try {
+                    await fetch(`/api/proxy/v1/online-payments/cancel/${payment.id}`, { method: "POST" });
+                } catch {}
                 setErrorMessage(t("paymentFailed"));
                 setProcessingPaymentId(null);
                 fetchPayments();
@@ -188,31 +202,31 @@ export default function RenterPaymentsPage() {
         return (
             <div className="p-8 max-w-5xl mx-auto">
                 <div className="mb-10">
-                    <div className="h-6 w-40 bg-gray-200 rounded animate-pulse mb-2" />
-                    <div className="h-4 w-56 bg-gray-100 rounded animate-pulse" />
+                    <div className="h-6 w-40 bg-input rounded animate-pulse mb-2" />
+                    <div className="h-4 w-56 bg-input rounded animate-pulse" />
                 </div>
                 <div className="space-y-4">
                     {[1, 2].map(i => (
-                        <div key={i} className="bg-white rounded-[2rem] p-6 shadow-sm border border-gray-100 animate-pulse">
+                        <div key={i} className="bg-surface rounded-xl p-5 border border-border animate-pulse">
                             <div className="flex justify-between items-start mb-4">
                                 <div className="flex items-center gap-4">
-                                    <div className="w-12 h-12 bg-gray-200 rounded-2xl" />
+                                    <div className="w-12 h-12 bg-input rounded-xl" />
                                     <div>
-                                        <div className="h-4 w-28 bg-gray-200 rounded mb-2" />
-                                        <div className="h-3 w-40 bg-gray-100 rounded" />
+                                        <div className="h-4 w-28 bg-input rounded mb-2" />
+                                        <div className="h-3 w-40 bg-input rounded" />
                                     </div>
                                 </div>
                             </div>
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
                                 {[1, 2, 3].map(j => (
-                                    <div key={j} className="bg-gray-50 rounded-xl p-3 border border-gray-100/50">
-                                        <div className="h-3 w-12 bg-gray-200 rounded mb-2" />
-                                        <div className="h-4 w-20 bg-gray-200 rounded" />
+                                    <div key={j} className="bg-input rounded-xl p-3 border border-border">
+                                        <div className="h-3 w-12 bg-input rounded mb-2" />
+                                        <div className="h-4 w-20 bg-input rounded" />
                                     </div>
                                 ))}
                             </div>
-                            <div className="border-t border-gray-100 pt-4">
-                                <div className="h-9 w-28 bg-gray-200 rounded-xl" />
+                            <div className="border-t border-border pt-4">
+                                <div className="h-9 w-28 bg-input rounded-xl" />
                             </div>
                         </div>
                     ))}
@@ -225,22 +239,22 @@ export default function RenterPaymentsPage() {
         <div className="p-8 max-w-5xl mx-auto">
             {/* Header */}
             <div className="mb-10">
-                <h1 className="text-xl font-black text-foreground tracking-tight mb-1">
+                <h1 className="text-xl font-bold text-foreground tracking-tight mb-1">
                     {t("title")}
                 </h1>
-                <p className="text-xs text-gray-500 font-medium">
+                <p className="text-xs text-muted font-medium">
                     {t("description")}
                 </p>
             </div>
 
             {/* Error Message */}
             {errorMessage && (
-                <div className="mb-6 bg-red-50 border border-red-200 rounded-2xl p-4 flex items-center gap-3">
-                    <XCircle size={18} className="text-red-500 shrink-0" />
-                    <p className="text-sm font-semibold text-red-700">{errorMessage}</p>
+                <div className="mb-6 bg-error/10 border border-error/20 rounded-xl p-4 flex items-center gap-3">
+                    <XCircle size={18} className="text-error shrink-0" />
+                    <p className="text-sm font-semibold text-error">{errorMessage}</p>
                     <button
                         onClick={() => setErrorMessage(null)}
-                        className="ml-auto text-red-400 hover:text-red-600 cursor-pointer transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-red-300 rounded-full p-1"
+                        className="ml-auto text-error/60 hover:text-error cursor-pointer transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-error/30 rounded-full p-1"
                         aria-label="Dismiss error"
                     >
                         <XCircle size={16} />
@@ -250,9 +264,9 @@ export default function RenterPaymentsPage() {
 
             {/* Gateway not configured warning */}
             {!gatewayConfig?.isActive && (
-                <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-2xl p-4 flex items-center gap-3">
-                    <AlertTriangle size={18} className="text-yellow-600 shrink-0" />
-                    <p className="text-sm font-semibold text-yellow-700">
+                <div className="mb-6 bg-warning/10 border border-warning/20 rounded-xl p-4 flex items-center gap-3">
+                    <AlertTriangle size={18} className="text-warning shrink-0" />
+                    <p className="text-sm font-semibold text-warning">
                         {t("gatewayNotConfigured")}
                     </p>
                 </div>
@@ -269,30 +283,30 @@ export default function RenterPaymentsPage() {
                         return (
                             <div
                                 key={payment.id}
-                                className="bg-white rounded-[2rem] p-6 shadow-sm border border-gray-100 hover:shadow-md transition-all duration-200"
+                                className="bg-surface rounded-xl p-5 border border-border hover:shadow-md transition-all duration-200"
                             >
                                 <div className="flex justify-between items-start mb-4">
                                     <div className="flex items-center gap-4">
-                                        <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center text-primary border border-primary/20">
+                                        <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center text-primary border border-primary/20">
                                             <CreditCard size={22} />
                                         </div>
                                         <div>
-                                            <h3 className="text-sm font-black text-foreground tracking-tight">
-                                                {t("Payments.installment", { defaultMessage: "Installment" })} #{payment.installmentNumber}
+                                            <h3 className="text-sm font-bold text-foreground tracking-tight">
+                                                Installment #{payment.installmentNumber}
                                             </h3>
-                                            <p className="text-[10px] font-bold text-gray-400">
+                                            <p className="text-[10px] font-bold text-muted">
                                                 {payment.propertyName} - {payment.unitIdentifier}
                                             </p>
                                         </div>
                                     </div>
                                     {isOverdue && (
-                                        <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-[9px] font-bold uppercase tracking-widest border bg-red-50 text-red-600 border-red-200">
+                                        <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-[9px] font-bold uppercase tracking-widest bg-error/10 text-error border border-error/20">
                                             <AlertTriangle size={10} />
                                             {payment.daysOverdue} {t("daysOverdue")}
                                         </span>
                                     )}
                                     {isOnlinePending && (
-                                        <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-[9px] font-bold uppercase tracking-widest border bg-yellow-50 text-yellow-600 border-yellow-200">
+                                        <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-[9px] font-bold uppercase tracking-widest bg-warning/10 text-warning border border-warning/20">
                                             <Loader2 size={10} className="animate-spin" />
                                             {t("onlinePending")}
                                         </span>
@@ -300,73 +314,73 @@ export default function RenterPaymentsPage() {
                                 </div>
 
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                                    <div className="bg-gray-50 rounded-xl p-3 border border-gray-100/50">
+                                    <div className="bg-input/70 rounded-xl p-3 border border-border">
                                         <div className="flex items-center gap-2 mb-1">
-                                            <Calendar size={12} className="text-gray-400" />
-                                            <span className="text-[9px] font-bold text-gray-400 uppercase">
+                                            <Calendar size={12} className="text-muted" />
+                                            <span className="text-[9px] font-semibold text-muted uppercase tracking-[0.15em]">
                                                 {t("dueDate")}
                                             </span>
                                         </div>
                                         <p
                                             className={cn(
                                                 "text-xs font-bold",
-                                                isOverdue ? "text-red-600" : "text-foreground"
+                                                isOverdue ? "text-error" : "text-foreground"
                                             )}
                                         >
                                             {new Date(payment.dueDate).toLocaleDateString()}
                                         </p>
                                     </div>
-                                    <div className="bg-gray-50 rounded-xl p-3 border border-gray-100/50">
+                                    <div className="bg-input/70 rounded-xl p-3 border border-border">
                                         <div className="flex items-center gap-2 mb-1">
-                                            <DollarSign size={12} className="text-gray-400" />
-                                            <span className="text-[9px] font-bold text-gray-400 uppercase">
+                                            <DollarSign size={12} className="text-muted" />
+                                            <span className="text-[9px] font-semibold text-muted uppercase tracking-[0.15em]">
                                                 {t("rentAmount")}
                                             </span>
                                         </div>
-                                        <p className="text-sm font-black text-foreground">
-                                            AED {payment.amount.toLocaleString()}
+                                        <p className="text-sm font-bold text-foreground tabular-nums">
+                                            {formatCurrencyCompact(payment.amount)}
                                         </p>
                                     </div>
                                     {payment.penaltyAmount > 0 && (
-                                        <div className="bg-red-50 rounded-xl p-3 border border-red-100/50">
+                                        <div className="bg-error/10 rounded-xl p-3 border border-error/20">
                                             <div className="flex items-center gap-2 mb-1">
-                                                <AlertTriangle size={12} className="text-red-400" />
-                                                <span className="text-[9px] font-bold text-red-400 uppercase">
+                                                <AlertTriangle size={12} className="text-error" />
+                                                <span className="text-[9px] font-semibold text-error uppercase tracking-[0.15em]">
                                                     {t("penalty")}
                                                 </span>
                                             </div>
-                                            <p className="text-sm font-black text-red-600">
-                                                AED {payment.penaltyAmount.toLocaleString()}
+                                            <p className="text-sm font-bold text-error tabular-nums">
+                                                {formatCurrencyCompact(payment.penaltyAmount)}
                                             </p>
                                         </div>
                                     )}
                                     <div className="bg-primary/5 rounded-xl p-3 border border-primary/10">
                                         <div className="flex items-center gap-2 mb-1">
                                             <DollarSign size={12} className="text-primary" />
-                                            <span className="text-[9px] font-bold text-primary uppercase">
+                                            <span className="text-[9px] font-semibold text-primary uppercase tracking-[0.15em]">
                                                 {t("totalPayable")}
                                             </span>
                                         </div>
-                                        <p className="text-sm font-black text-primary">
-                                            AED {payment.totalPayable.toLocaleString()}
+                                        <p className="text-sm font-bold text-primary tabular-nums">
+                                            {formatCurrencyCompact(payment.totalPayable)}
                                         </p>
                                     </div>
                                 </div>
 
                                 {payment.penaltyAmount > 0 && (
-                                    <div className="bg-red-50/50 rounded-xl p-3 mb-4 border border-red-100/50">
-                                        <p className="text-[10px] font-bold text-red-500">
-                                            {t("penaltyBreakdown")}: {t("rentAmount")} AED{" "}
-                                            {payment.amount.toLocaleString()} + {t("penalty")} AED{" "}
-                                            {payment.penaltyAmount.toLocaleString()} = {t("totalPayable")}{" "}
-                                            AED {payment.totalPayable.toLocaleString()}
+                                    <div className="bg-error/5 rounded-xl p-3 mb-4 border border-error/10">
+                                        <p className="text-[10px] font-bold text-error">
+                                            {t("penaltyBreakdown")}: {t("rentAmount")}{" "}
+                                            {formatCurrencyCompact(payment.amount)} + {t("penalty")}{" "}
+                                            {formatCurrencyCompact(payment.penaltyAmount)} = {t("totalPayable")}{" "}
+                                            {formatCurrencyCompact(payment.totalPayable)}
                                         </p>
                                     </div>
                                 )}
 
-                                <div className="flex gap-3 border-t border-gray-100 pt-4">
+                                <div className="flex gap-3 border-t border-border pt-4">
                                     {isOnlinePending ? (
-                                        <div className="flex items-center gap-2 text-xs text-yellow-600 font-medium">
+                                        <div className="flex items-center gap-2 text-xs text-warning font-medium">
                                             <Loader2 size={14} className="animate-spin" />
                                             {t("paymentProcessing")}
                                         </div>
@@ -377,10 +391,10 @@ export default function RenterPaymentsPage() {
                                                 isProcessing || !gatewayConfig?.isActive
                                             }
                                             className={cn(
-                                                "flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-300",
+                                                "flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-semibold transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-accent/30",
                                                 isProcessing || !gatewayConfig?.isActive
-                                                    ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                                                    : "bg-blue-600 text-white hover:bg-blue-700 active:scale-95 cursor-pointer"
+                                                    ? "bg-input text-muted cursor-not-allowed"
+                                                    : "bg-accent text-accent-foreground hover:brightness-110 active:scale-95 cursor-pointer"
                                             )}
                                         >
                                             {isProcessing ? (
@@ -397,49 +411,72 @@ export default function RenterPaymentsPage() {
                     })}
                 </div>
             ) : (
-                <div className="text-center py-24 bg-gray-50 border border-dashed border-gray-200 rounded-[2.5rem] flex flex-col items-center mb-10">
-                    <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center text-green-400 shadow-sm mb-6">
+                <div className="text-center py-24 bg-background border border-dashed border-border rounded-xl flex flex-col items-center mb-10">
+                    <div className="w-16 h-16 bg-surface rounded-xl flex items-center justify-center text-success shadow-sm mb-6">
                         <CheckCircle size={32} />
                     </div>
-                    <p className="text-sm font-bold text-gray-400 mb-2 uppercase tracking-widest">
+                    <p className="text-sm font-bold text-muted mb-2 uppercase tracking-widest">
                         {t("noPaymentsDue")}
                     </p>
-                    <p className="text-xs text-gray-400">{t("allPaid")}</p>
+                    <p className="text-xs text-muted">{t("allPaid")}</p>
                 </div>
             )}
 
             {/* Completed Payments */}
             {completedPayments.length > 0 && (
                 <div>
-                    <h2 className="text-sm font-black text-foreground tracking-tight mb-4">
+                    <h2 className="text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-4">
                         {t("paymentHistory")}
                     </h2>
                     <div className="space-y-3">
                         {completedPayments.map((payment) => (
                             <div
                                 key={payment.id}
-                                className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex items-center justify-between"
+                                className="bg-surface rounded-xl p-4 border border-border hover:shadow-md transition-all duration-200 flex items-center justify-between"
                             >
                                 <div className="flex items-center gap-4">
-                                    <div className="w-10 h-10 bg-green-50 rounded-xl flex items-center justify-center text-green-500 border border-green-100">
+                                    <div className="w-10 h-10 bg-success/10 rounded-xl flex items-center justify-center text-success border border-success/20">
                                         <CheckCircle size={18} />
                                     </div>
                                     <div>
                                         <h4 className="text-xs font-bold text-foreground">
                                             Installment #{payment.installmentNumber}
                                         </h4>
-                                        <p className="text-[10px] font-bold text-gray-400">
+                                        <p className="text-[10px] font-bold text-muted">
                                             {payment.propertyName} - {payment.unitIdentifier}
                                         </p>
                                     </div>
                                 </div>
-                                <div className="text-right">
-                                    <p className="text-sm font-black text-foreground">
-                                        AED {payment.amount.toLocaleString()}
-                                    </p>
-                                    <p className="text-[10px] font-bold text-gray-400">
-                                        {new Date(payment.dueDate).toLocaleDateString()}
-                                    </p>
+                                <div className="flex items-center gap-4">
+                                    <div className="text-right">
+                                        <p className="text-sm font-bold text-foreground tabular-nums">
+                                            {formatCurrencyCompact(payment.amount)}
+                                        </p>
+                                        <p className="text-[10px] font-bold text-muted">
+                                            {new Date(payment.dueDate).toLocaleDateString()}
+                                        </p>
+                                    </div>
+                                    <button
+                                        onClick={async (e) => {
+                                            e.stopPropagation();
+                                            const res = await fetch(`/api/proxy/v1/payments/${payment.id}/receipt`);
+                                            if (res.ok) {
+                                                const blob = await res.blob();
+                                                const url = URL.createObjectURL(blob);
+                                                const a = document.createElement('a');
+                                                a.href = url;
+                                                a.download = `receipt-${payment.installmentNumber}.pdf`;
+                                                document.body.appendChild(a);
+                                                a.click();
+                                                document.body.removeChild(a);
+                                                URL.revokeObjectURL(url);
+                                            }
+                                        }}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 text-primary rounded-lg text-[10px] font-semibold hover:bg-primary/20 transition-colors cursor-pointer"
+                                    >
+                                        <Download size={12} />
+                                        Receipt
+                                    </button>
                                 </div>
                             </div>
                         ))}
@@ -449,15 +486,15 @@ export default function RenterPaymentsPage() {
 
             {/* Success Modal */}
             {successModal && (
-                <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-[2rem] p-8 max-w-sm w-full text-center shadow-xl">
-                        <div className="w-16 h-16 bg-green-50 rounded-2xl flex items-center justify-center text-green-500 mx-auto mb-6">
+                <div className="fixed inset-0 bg-foreground/40 z-50 flex items-center justify-center p-4">
+                    <div className="bg-surface rounded-xl p-8 max-w-sm w-full text-center shadow-xl border border-border">
+                        <div className="w-16 h-16 bg-success/10 rounded-xl flex items-center justify-center text-success mx-auto mb-6">
                             <CheckCircle size={36} />
                         </div>
-                        <h3 className="text-lg font-black text-foreground mb-2">
+                        <h3 className="text-lg font-bold text-foreground mb-2">
                             {t("paymentSuccessful")}
                         </h3>
-                        <p className="text-xs text-gray-500 mb-6">
+                        <p className="text-xs text-muted mb-6">
                             {t("allPaid")}
                         </p>
                         <button

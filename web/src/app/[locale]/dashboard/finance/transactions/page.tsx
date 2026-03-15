@@ -6,6 +6,7 @@ import {
     Receipt, Plus, X, Filter, Calendar, Building2, Home, ChevronDown, Loader2, LayoutList, BookOpen, ChevronLeft, ChevronRight
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatCurrency, formatCurrencyCompact, formatNumber } from "@/lib/format";
 
 type Account = {
     id: string;
@@ -46,11 +47,11 @@ type Transaction = {
 };
 
 const TYPE_COLORS: Record<string, string> = {
-    ASSET: "bg-emerald-100 text-emerald-700",
-    LIABILITY: "bg-rose-100 text-rose-700",
-    INCOME: "bg-blue-100 text-blue-700",
-    EXPENSE: "bg-amber-100 text-amber-700",
-    EQUITY: "bg-violet-100 text-violet-700",
+    ASSET: "bg-success/10 text-success",
+    LIABILITY: "bg-error/10 text-error",
+    INCOME: "bg-info/10 text-info",
+    EXPENSE: "bg-warning/10 text-warning",
+    EQUITY: "bg-info/10 text-info",
 };
 
 export default function TransactionsPage() {
@@ -261,24 +262,24 @@ export default function TransactionsPage() {
         <div>
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10">
                 <div>
-                    <h1 className="text-xl font-black text-foreground tracking-tight mb-1 flex items-center gap-2">
+                    <h1 className="text-xl font-bold text-foreground tracking-tight mb-1 flex items-center gap-2">
                         <Receipt size={20} className="text-primary" />
                         {t("transactions")}
                     </h1>
-                    <p className="text-xs text-gray-500 font-medium">
+                    <p className="text-xs text-muted font-medium">
                         {t("transactionsDesc")}
                     </p>
                 </div>
                 <div className="flex gap-3">
                     {/* View Mode Toggle */}
-                    <div className="flex bg-gray-100 rounded-full p-0.5">
+                    <div className="flex bg-input rounded-full p-0.5">
                         <button
                             onClick={() => { setViewMode("simple"); setCurrentPage(1); }}
                             className={cn(
                                 "flex items-center gap-1.5 px-3.5 py-2 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer",
                                 viewMode === "simple"
-                                    ? "bg-white text-foreground shadow-sm"
-                                    : "text-gray-400 hover:text-gray-600"
+                                    ? "bg-surface text-foreground shadow-sm"
+                                    : "text-muted hover:text-foreground"
                             )}
                         >
                             <LayoutList size={12} />
@@ -289,8 +290,8 @@ export default function TransactionsPage() {
                             className={cn(
                                 "flex items-center gap-1.5 px-3.5 py-2 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer",
                                 viewMode === "accounting"
-                                    ? "bg-white text-foreground shadow-sm"
-                                    : "text-gray-400 hover:text-gray-600"
+                                    ? "bg-surface text-foreground shadow-sm"
+                                    : "text-muted hover:text-foreground"
                             )}
                         >
                             <BookOpen size={12} />
@@ -300,7 +301,7 @@ export default function TransactionsPage() {
                     <button
                         onClick={() => setShowFilters(!showFilters)}
                         className={cn(
-                            "flex items-center gap-2 bg-white text-foreground border border-border px-4 py-2.5 rounded-full text-xs font-bold transition-all duration-200 shadow-sm active:scale-95 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none",
+                            "flex items-center gap-2 bg-surface text-foreground border border-border px-4 py-2.5 rounded-full text-xs font-bold transition-all duration-200 shadow-sm active:scale-95 cursor-pointer focus:ring-2 focus:ring-primary/20 focus:outline-none",
                             showFilters && "bg-primary/5 border-primary/30"
                         )}
                     >
@@ -309,7 +310,7 @@ export default function TransactionsPage() {
                     </button>
                     <button
                         onClick={() => setShowForm(true)}
-                        className="flex items-center gap-2 bg-primary text-primary-foreground px-5 py-2.5 rounded-full text-xs font-bold hover:opacity-90 transition-all duration-200 shadow-lg shadow-primary/10 active:scale-95 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                        className="flex items-center gap-2 bg-primary text-primary-foreground px-5 py-2.5 rounded-full text-xs font-bold hover:bg-primary/90 transition-all duration-200 shadow-lg shadow-primary/10 active:scale-95 cursor-pointer focus:ring-2 focus:ring-primary/20 focus:outline-none"
                     >
                         <Plus size={14} />
                         {t("addTransaction")}
@@ -319,34 +320,34 @@ export default function TransactionsPage() {
 
             {/* Filter Bar */}
             {showFilters && (
-                <div className="mb-8 bg-white border border-border rounded-2xl p-5 shadow-sm">
+                <div className="mb-8 bg-surface border border-border rounded-xl p-5 shadow-sm">
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         <div>
-                            <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5">{t("property")}</label>
-                            <select className="w-full bg-input border border-border p-2.5 rounded-xl text-xs cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={filters.propertyId} onChange={ev => setFilters({ ...filters, propertyId: ev.target.value })}>
+                            <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5">{t("property")}</label>
+                            <select className="w-full border border-border rounded-lg bg-surface p-2.5 text-xs cursor-pointer focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200" value={filters.propertyId} onChange={ev => setFilters({ ...filters, propertyId: ev.target.value })}>
                                 <option value="">All Properties</option>
                                 {properties.map(s => <option key={s.property.id} value={s.property.id}>{s.property.nameEn}</option>)}
                             </select>
                         </div>
                         <div>
-                            <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5">{t("accountType")}</label>
-                            <select className="w-full bg-input border border-border p-2.5 rounded-xl text-xs cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={filters.accountType} onChange={ev => setFilters({ ...filters, accountType: ev.target.value })}>
+                            <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5">{t("accountType")}</label>
+                            <select className="w-full border border-border rounded-lg bg-surface p-2.5 text-xs cursor-pointer focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200" value={filters.accountType} onChange={ev => setFilters({ ...filters, accountType: ev.target.value })}>
                                 <option value="">All Types</option>
                                 {["ASSET", "LIABILITY", "INCOME", "EXPENSE", "EQUITY"].map(type => <option key={type} value={type}>{type}</option>)}
                             </select>
                         </div>
                         <div>
-                            <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5">{t("startDate")}</label>
-                            <input type="date" className="w-full bg-input border border-border p-2.5 rounded-xl text-xs cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={filters.startDate} onChange={ev => setFilters({ ...filters, startDate: ev.target.value })} />
+                            <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5">{t("startDate")}</label>
+                            <input type="date" className="w-full border border-border rounded-lg bg-surface p-2.5 text-xs cursor-pointer focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200" value={filters.startDate} onChange={ev => setFilters({ ...filters, startDate: ev.target.value })} />
                         </div>
                         <div>
-                            <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5">{t("endDate")}</label>
-                            <input type="date" className="w-full bg-input border border-border p-2.5 rounded-xl text-xs cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={filters.endDate} onChange={ev => setFilters({ ...filters, endDate: ev.target.value })} />
+                            <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5">{t("endDate")}</label>
+                            <input type="date" className="w-full border border-border rounded-lg bg-surface p-2.5 text-xs cursor-pointer focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200" value={filters.endDate} onChange={ev => setFilters({ ...filters, endDate: ev.target.value })} />
                         </div>
                     </div>
                     <div className="flex justify-end gap-3 mt-4">
-                        <button onClick={clearFilters} className="text-xs font-bold text-gray-400 hover:text-gray-600 cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg px-2 py-1">{t("clearFilters")}</button>
-                        <button onClick={applyFilters} className="px-6 py-2 bg-primary text-primary-foreground rounded-xl text-xs font-bold cursor-pointer transition-all duration-200 hover:opacity-90 focus:ring-2 focus:ring-primary/30 focus:outline-none">{t("applyFilters")}</button>
+                        <button onClick={clearFilters} className="text-xs font-bold text-muted hover:text-foreground cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/20 focus:outline-none rounded-lg px-2 py-1">{t("clearFilters")}</button>
+                        <button onClick={applyFilters} className="px-6 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-bold cursor-pointer transition-all duration-200 hover:bg-primary/90 focus:ring-2 focus:ring-primary/20 focus:outline-none">{t("applyFilters")}</button>
                     </div>
                 </div>
             )}
@@ -354,29 +355,29 @@ export default function TransactionsPage() {
             {/* Add Transaction Modal */}
             {showForm && (
                 <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
-                    <div className="bg-white rounded-3xl p-8 max-w-2xl w-full shadow-2xl border border-gray-100 relative max-h-[90vh] overflow-y-auto">
-                        <button onClick={() => setShowForm(false)} aria-label="Close modal" className="absolute right-6 top-6 p-2 text-gray-400 hover:text-gray-600 cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg"><X size={18} /></button>
-                        <h2 className="text-lg font-black mb-1">{t("addTransaction")}</h2>
-                        <p className="text-xs text-gray-400 mb-8 font-medium">Record a new financial transaction.</p>
+                    <div className="bg-surface rounded-xl p-8 max-w-2xl w-full shadow-2xl border border-border relative max-h-[90vh] overflow-y-auto">
+                        <button onClick={() => setShowForm(false)} aria-label="Close modal" className="absolute right-6 top-6 p-2 text-muted hover:text-foreground cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/20 focus:outline-none rounded-lg"><X size={18} /></button>
+                        <h2 className="text-lg font-bold mb-1">{t("addTransaction")}</h2>
+                        <p className="text-xs text-muted mb-8 font-medium">Record a new financial transaction.</p>
                         <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-5">
                             <div className="col-span-1">
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("date")}</label>
-                                <input required type="date" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.date} onChange={ev => setFormData({ ...formData, date: ev.target.value })} />
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("date")}</label>
+                                <input required type="date" className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200" value={formData.date} onChange={ev => setFormData({ ...formData, date: ev.target.value })} />
                             </div>
                             <div className="col-span-1">
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("account")}</label>
-                                <select required className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.accountId} onChange={ev => setFormData({ ...formData, accountId: ev.target.value })}>
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("account")}</label>
+                                <select required className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200" value={formData.accountId} onChange={ev => setFormData({ ...formData, accountId: ev.target.value })}>
                                     <option value="">Select Account</option>
                                     {accounts.map(a => <option key={a.id} value={a.id}>{a.code} - {a.name}</option>)}
                                 </select>
                             </div>
                             <div className="col-span-2">
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("description")}</label>
-                                <input required placeholder="e.g. Rental income - Belle Vue tenant January 2025" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.description} onChange={ev => setFormData({ ...formData, description: ev.target.value })} />
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("description")}</label>
+                                <input required placeholder="e.g. Rental income - Belle Vue tenant January 2025" className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200" value={formData.description} onChange={ev => setFormData({ ...formData, description: ev.target.value })} />
                             </div>
                             <div className="col-span-1">
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("debit")}</label>
-                                <input type="number" step="0.01" placeholder="0.00" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.debit || ""} onChange={ev => {
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("debit")}</label>
+                                <input type="number" step="0.01" placeholder="0.00" className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200" value={formData.debit || ""} onChange={ev => {
                                     const debit = Number(ev.target.value);
                                     const amount = debit || formData.credit;
                                     const vatAmt = formData.vatApplicable ? Math.round(amount * formData.vatRate) / 100 : 0;
@@ -384,8 +385,8 @@ export default function TransactionsPage() {
                                 }} />
                             </div>
                             <div className="col-span-1">
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("credit")}</label>
-                                <input type="number" step="0.01" placeholder="0.00" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.credit || ""} onChange={ev => {
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("credit")}</label>
+                                <input type="number" step="0.01" placeholder="0.00" className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200" value={formData.credit || ""} onChange={ev => {
                                     const credit = Number(ev.target.value);
                                     const amount = formData.debit || credit;
                                     const vatAmt = formData.vatApplicable ? Math.round(amount * formData.vatRate) / 100 : 0;
@@ -393,9 +394,9 @@ export default function TransactionsPage() {
                                 }} />
                             </div>
                             <div className="col-span-1">
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("property")} (Project)</label>
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("property")} (Project)</label>
                                 <select
-                                    className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
+                                    className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
                                     value={formData.propertyId}
                                     onChange={ev => {
                                         setFormData({ ...formData, propertyId: ev.target.value, unitId: "" });
@@ -407,9 +408,9 @@ export default function TransactionsPage() {
                                 </select>
                             </div>
                             <div className="col-span-1">
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("unit")} (Property)</label>
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("unit")} (Property)</label>
                                 <select
-                                    className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
+                                    className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
                                     value={formData.unitId}
                                     onChange={ev => setFormData({ ...formData, unitId: ev.target.value })}
                                     disabled={!formData.propertyId}
@@ -420,18 +421,18 @@ export default function TransactionsPage() {
                             </div>
                             <div className="col-span-1 flex items-center gap-3 pt-5">
                                 <label className="flex items-center gap-2 cursor-pointer">
-                                    <input type="checkbox" className="rounded border-gray-300" checked={formData.vatApplicable} onChange={ev => {
+                                    <input type="checkbox" className="rounded border-border" checked={formData.vatApplicable} onChange={ev => {
                                         const checked = ev.target.checked;
                                         const amount = formData.debit || formData.credit;
                                         const vatAmt = checked ? Math.round(amount * formData.vatRate) / 100 : 0;
                                         setFormData({ ...formData, vatApplicable: checked, netAmount: amount, vatAmount: vatAmt, grossAmount: checked ? amount + vatAmt : 0 });
                                     }} />
-                                    <span className="text-xs font-bold text-gray-500">{t("vatApplicable")}</span>
+                                    <span className="text-xs font-bold text-muted">{t("vatApplicable")}</span>
                                 </label>
                             </div>
                             <div className="col-span-1">
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">VAT Rate (%)</label>
-                                <input type="number" step="0.01" placeholder="5" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.vatRate} onChange={ev => {
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">VAT Rate (%)</label>
+                                <input type="number" step="0.01" placeholder="5" className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200" value={formData.vatRate} onChange={ev => {
                                     const vatRate = Number(ev.target.value);
                                     const amount = formData.debit || formData.credit;
                                     const vatAmt = formData.vatApplicable ? Math.round(amount * vatRate) / 100 : 0;
@@ -439,30 +440,30 @@ export default function TransactionsPage() {
                                 }} disabled={!formData.vatApplicable} />
                             </div>
                             {formData.vatApplicable && (formData.debit > 0 || formData.credit > 0) && (
-                                <div className="col-span-2 bg-blue-50 border border-blue-100 rounded-xl p-4">
+                                <div className="col-span-2 bg-info/10 border border-info/20 rounded-xl p-4">
                                     <div className="grid grid-cols-3 gap-4 text-center">
                                         <div>
-                                            <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">Net Amount</p>
-                                            <p className="text-sm font-black text-foreground">{formData.netAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                                            <p className="text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Net Amount</p>
+                                            <p className="text-sm font-bold text-foreground">{formatNumber(formData.netAmount)}</p>
                                         </div>
                                         <div>
-                                            <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">{t("vatAmount")} ({formData.vatRate}%)</p>
-                                            <p className="text-sm font-black text-blue-600">{formData.vatAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                                            <p className="text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">{t("vatAmount")} ({formData.vatRate}%)</p>
+                                            <p className="text-sm font-bold text-blue-600">{formatNumber(formData.vatAmount)}</p>
                                         </div>
                                         <div>
-                                            <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">Gross Amount</p>
-                                            <p className="text-sm font-black text-emerald-600">{formData.grossAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                                            <p className="text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Gross Amount</p>
+                                            <p className="text-sm font-bold text-emerald-600">{formatNumber(formData.grossAmount)}</p>
                                         </div>
                                     </div>
                                 </div>
                             )}
                             <div className="col-span-2">
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("notes")}</label>
-                                <textarea placeholder="Optional notes" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200 h-16 resize-none" value={formData.notes} onChange={ev => setFormData({ ...formData, notes: ev.target.value })} />
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("notes")}</label>
+                                <textarea placeholder="Optional notes" className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200 h-16 resize-none" value={formData.notes} onChange={ev => setFormData({ ...formData, notes: ev.target.value })} />
                             </div>
                             <div className="col-span-2 flex justify-end gap-3 mt-2">
-                                <button type="button" onClick={() => setShowForm(false)} className="px-6 py-3 text-xs font-bold text-gray-500 cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-xl">{t("cancel")}</button>
-                                <button type="submit" disabled={submitting} className="px-8 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-bold cursor-pointer transition-all duration-200 hover:opacity-90 focus:ring-2 focus:ring-primary/30 focus:outline-none disabled:opacity-50 flex items-center gap-2">
+                                <button type="button" onClick={() => setShowForm(false)} className="px-6 py-3 text-xs font-bold text-muted cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/20 focus:outline-none rounded-xl">{t("cancel")}</button>
+                                <button type="submit" disabled={submitting} className="px-8 py-3 bg-primary text-primary-foreground rounded-lg text-xs font-bold cursor-pointer transition-all duration-200 hover:bg-primary/90 focus:ring-2 focus:ring-primary/20 focus:outline-none disabled:opacity-50 flex items-center gap-2">
                                     {submitting && <Loader2 size={14} className="animate-spin" />}
                                     {t("create")}
                                 </button>
@@ -474,17 +475,17 @@ export default function TransactionsPage() {
 
             {/* Table Skeleton */}
             {loading && (
-                <div className="bg-white border border-border rounded-2xl overflow-hidden shadow-sm">
+                <div className="bg-surface border border-border rounded-xl overflow-hidden shadow-sm">
                     <div className="animate-pulse">
-                        <div className="h-12 bg-gray-50 border-b border-gray-100" />
+                        <div className="h-12 bg-input/70 border-b border-border" />
                         {[1, 2, 3, 4, 5].map((i) => (
-                            <div key={i} className="flex gap-4 px-5 py-4 border-b border-gray-50">
-                                <div className="h-3 w-20 bg-gray-100 rounded" />
-                                <div className="h-3 w-40 bg-gray-100 rounded" />
-                                <div className="h-3 w-20 bg-gray-100 rounded" />
-                                <div className="h-3 w-28 bg-gray-100 rounded" />
-                                <div className="h-3 w-16 bg-gray-100 rounded" />
-                                <div className="h-3 w-16 bg-gray-100 rounded" />
+                            <div key={i} className="flex gap-4 px-5 py-4 border-b border-border">
+                                <div className="h-3 w-20 bg-input rounded" />
+                                <div className="h-3 w-40 bg-input rounded" />
+                                <div className="h-3 w-20 bg-input rounded" />
+                                <div className="h-3 w-28 bg-input rounded" />
+                                <div className="h-3 w-16 bg-input rounded" />
+                                <div className="h-3 w-16 bg-input rounded" />
                             </div>
                         ))}
                     </div>
@@ -493,36 +494,36 @@ export default function TransactionsPage() {
 
             {/* ── Simple Ledger View ── */}
             {!loading && viewMode === "simple" && simpleLedger.length > 0 && (
-                <div className="bg-white border border-border rounded-2xl overflow-hidden shadow-sm">
+                <div className="bg-surface border border-border rounded-xl overflow-hidden shadow-sm">
                     <div className="overflow-x-auto">
                         <table className="w-full">
                             <thead>
-                                <tr className="border-b border-gray-100">
-                                    <th className="text-left px-5 py-3.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">{t("date")}</th>
-                                    <th className="text-left px-5 py-3.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">{t("description")}</th>
-                                    <th className="text-left px-5 py-3.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">{t("property")}</th>
+                                <tr className="bg-input/70">
+                                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">{t("date")}</th>
+                                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">{t("description")}</th>
+                                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">{t("property")}</th>
                                     <th className="text-right px-5 py-3.5 text-[10px] font-bold text-emerald-500 uppercase tracking-wider">Money In</th>
                                     <th className="text-right px-5 py-3.5 text-[10px] font-bold text-red-400 uppercase tracking-wider">Money Out</th>
-                                    <th className="text-right px-5 py-3.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">Balance</th>
+                                    <th className="text-right px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">Balance</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-gray-50">
+                            <tbody className="divide-y divide-border">
                                 {paginatedSimple.map(row => (
-                                    <tr key={row.id} className="hover:bg-gray-50/50 transition-all duration-200">
+                                    <tr key={row.id} className="hover:bg-input/30 transition-colors">
                                         <td className="px-5 py-3 text-xs text-foreground font-medium">{row.date}</td>
                                         <td className="px-5 py-3">
                                             <p className="text-xs font-bold text-foreground">{row.description}</p>
-                                            {row.notes && <p className="text-[10px] text-gray-400 mt-0.5">{row.notes}</p>}
+                                            {row.notes && <p className="text-[10px] text-muted mt-0.5">{row.notes}</p>}
                                         </td>
                                         <td className="px-5 py-3">
                                             <div className="flex items-center gap-1.5">
                                                 {row.property ? (
                                                     <>
-                                                        <Building2 size={12} className="text-gray-300" />
+                                                        <Building2 size={12} className="text-muted" />
                                                         <span className="text-xs text-foreground font-medium">{row.property.nameEn}</span>
                                                     </>
                                                 ) : (
-                                                    <span className="text-[10px] text-gray-400 font-bold uppercase">Org</span>
+                                                    <span className="text-[10px] text-muted font-bold uppercase">Org</span>
                                                 )}
                                                 {row.unit && (
                                                     <span className="text-[9px] text-primary bg-primary/5 px-1.5 py-0.5 rounded font-bold ml-1">
@@ -531,33 +532,33 @@ export default function TransactionsPage() {
                                                 )}
                                             </div>
                                         </td>
-                                        <td className="px-5 py-3 text-right text-xs font-bold">
+                                        <td className="px-5 py-3 text-right text-xs font-bold tabular-nums">
                                             {row.moneyIn > 0 ? (
-                                                <span className="text-emerald-600">+{row.moneyIn.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                                <span className="text-emerald-600">+{formatNumber(row.moneyIn)}</span>
                                             ) : "—"}
                                         </td>
-                                        <td className="px-5 py-3 text-right text-xs font-bold">
+                                        <td className="px-5 py-3 text-right text-xs font-bold tabular-nums">
                                             {row.moneyOut > 0 ? (
-                                                <span className="text-red-500">-{row.moneyOut.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                                <span className="text-red-500">-{formatNumber(row.moneyOut)}</span>
                                             ) : "—"}
                                         </td>
-                                        <td className="px-5 py-3 text-right text-xs font-black text-foreground">
-                                            {row.balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                        <td className="px-5 py-3 text-right text-xs font-bold tabular-nums text-foreground">
+                                            {formatNumber(row.balance)}
                                         </td>
                                     </tr>
                                 ))}
                             </tbody>
                             <tfoot>
-                                <tr className="bg-gray-50 border-t-2 border-gray-200">
-                                    <td colSpan={3} className="px-5 py-3 text-xs font-black text-foreground uppercase tracking-wider">Totals</td>
-                                    <td className="px-5 py-3 text-right text-xs font-black text-emerald-600">
-                                        +{simpleTotalIn.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                <tr className="bg-input/70 border-t-2 border-border">
+                                    <td colSpan={3} className="px-5 py-3 text-xs font-bold text-foreground uppercase tracking-wider">Totals</td>
+                                    <td className="px-5 py-3 text-right text-xs font-bold tabular-nums text-emerald-600">
+                                        +{formatNumber(simpleTotalIn)}
                                     </td>
-                                    <td className="px-5 py-3 text-right text-xs font-black text-red-500">
-                                        {simpleTotalOut > 0 ? `-${simpleTotalOut.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : "—"}
+                                    <td className="px-5 py-3 text-right text-xs font-bold tabular-nums text-red-500">
+                                        {simpleTotalOut > 0 ? `-${formatNumber(simpleTotalOut)}` : "—"}
                                     </td>
-                                    <td className="px-5 py-3 text-right text-xs font-black text-foreground">
-                                        {(simpleTotalIn - simpleTotalOut).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                    <td className="px-5 py-3 text-right text-xs font-bold tabular-nums text-foreground">
+                                        {formatNumber(simpleTotalIn - simpleTotalOut)}
                                     </td>
                                 </tr>
                             </tfoot>
@@ -567,49 +568,49 @@ export default function TransactionsPage() {
             )}
 
             {!loading && viewMode === "simple" && simpleLedger.length === 0 && transactions.length > 0 && (
-                <div className="text-center py-16 text-xs text-gray-400 font-medium">
+                <div className="text-center py-16 text-xs text-muted font-medium">
                     No income or expense transactions found. Switch to Accounting view to see all entries.
                 </div>
             )}
 
             {/* ── Accounting View (Double-Entry) ── */}
             {!loading && viewMode === "accounting" && transactions.length > 0 && (
-                <div className="bg-white border border-border rounded-2xl overflow-hidden shadow-sm">
+                <div className="bg-surface border border-border rounded-xl overflow-hidden shadow-sm">
                     <div className="overflow-x-auto">
                         <table className="w-full">
                             <thead>
-                                <tr className="border-b border-gray-100">
-                                    <th className="text-left px-5 py-3.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">{t("date")}</th>
-                                    <th className="text-left px-5 py-3.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">{t("description")}</th>
-                                    <th className="text-left px-5 py-3.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">{t("account")}</th>
-                                    <th className="text-left px-5 py-3.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">{t("property")}</th>
-                                    <th className="text-right px-5 py-3.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">{t("debit")}</th>
-                                    <th className="text-right px-5 py-3.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">{t("credit")}</th>
+                                <tr className="bg-input/70">
+                                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">{t("date")}</th>
+                                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">{t("description")}</th>
+                                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">{t("account")}</th>
+                                    <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">{t("property")}</th>
+                                    <th className="text-right px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">{t("debit")}</th>
+                                    <th className="text-right px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">{t("credit")}</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-gray-50">
+                            <tbody className="divide-y divide-border">
                                 {paginatedTransactions.map(txn => (
-                                    <tr key={txn.id} className="hover:bg-gray-50/50 transition-all duration-200">
+                                    <tr key={txn.id} className="hover:bg-input/30 transition-colors">
                                         <td className="px-5 py-3 text-xs text-foreground font-medium">{txn.date}</td>
                                         <td className="px-5 py-3">
                                             <p className="text-xs font-bold text-foreground">{txn.description}</p>
-                                            {txn.notes && <p className="text-[10px] text-gray-400 mt-0.5">{txn.notes}</p>}
+                                            {txn.notes && <p className="text-[10px] text-muted mt-0.5">{txn.notes}</p>}
                                         </td>
                                         <td className="px-5 py-3">
-                                            <span className={cn("text-[9px] font-black uppercase tracking-wider px-2 py-1 rounded-lg", TYPE_COLORS[txn.accountType] || "bg-gray-100 text-gray-500")}>
+                                            <span className={cn("text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-lg", TYPE_COLORS[txn.accountType] || "bg-input text-muted")}>
                                                 {txn.accountCode}
                                             </span>
-                                            <span className="text-[10px] text-gray-500 ml-2">{txn.account?.name}</span>
+                                            <span className="text-[10px] text-muted ml-2">{txn.account?.name}</span>
                                         </td>
                                         <td className="px-5 py-3">
                                             <div className="flex items-center gap-1.5">
                                                 {txn.property ? (
                                                     <>
-                                                        <Building2 size={12} className="text-gray-300" />
+                                                        <Building2 size={12} className="text-muted" />
                                                         <span className="text-xs text-foreground font-medium">{txn.property.nameEn}</span>
                                                     </>
                                                 ) : (
-                                                    <span className="text-[10px] text-gray-400 font-bold uppercase">Org</span>
+                                                    <span className="text-[10px] text-muted font-bold uppercase">Org</span>
                                                 )}
                                                 {txn.unit && (
                                                     <span className="text-[9px] text-primary bg-primary/5 px-1.5 py-0.5 rounded font-bold ml-1">
@@ -618,20 +619,20 @@ export default function TransactionsPage() {
                                                 )}
                                             </div>
                                         </td>
-                                        <td className="px-5 py-3 text-right text-xs font-bold text-foreground">
-                                            {txn.debit > 0 ? txn.debit.toLocaleString(undefined, { minimumFractionDigits: 2 }) : "—"}
+                                        <td className="px-5 py-3 text-right text-xs font-bold tabular-nums text-foreground">
+                                            {txn.debit > 0 ? formatNumber(txn.debit) : "—"}
                                         </td>
-                                        <td className="px-5 py-3 text-right text-xs font-bold text-foreground">
-                                            {txn.credit > 0 ? txn.credit.toLocaleString(undefined, { minimumFractionDigits: 2 }) : "—"}
+                                        <td className="px-5 py-3 text-right text-xs font-bold tabular-nums text-foreground">
+                                            {txn.credit > 0 ? formatNumber(txn.credit) : "—"}
                                         </td>
                                     </tr>
                                 ))}
                             </tbody>
                             <tfoot>
-                                <tr className="bg-gray-50 border-t-2 border-gray-200">
-                                    <td colSpan={4} className="px-5 py-3 text-xs font-black text-foreground uppercase tracking-wider">Totals</td>
-                                    <td className="px-5 py-3 text-right text-xs font-black text-foreground">{totalDebit.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                                    <td className="px-5 py-3 text-right text-xs font-black text-foreground">{totalCredit.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                                <tr className="bg-input/70 border-t-2 border-border">
+                                    <td colSpan={4} className="px-5 py-3 text-xs font-bold text-foreground uppercase tracking-wider">Totals</td>
+                                    <td className="px-5 py-3 text-right text-xs font-bold tabular-nums text-foreground">{formatNumber(totalDebit)}</td>
+                                    <td className="px-5 py-3 text-right text-xs font-bold tabular-nums text-foreground">{formatNumber(totalCredit)}</td>
                                 </tr>
                             </tfoot>
                         </table>
@@ -642,14 +643,14 @@ export default function TransactionsPage() {
             {/* Pagination */}
             {!loading && activeTotal > pageSize && (
                 <div className="flex items-center justify-between mt-6 px-1">
-                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                    <p className="text-[11px] font-semibold text-muted uppercase tracking-wider">
                         {(safePage - 1) * pageSize + 1}–{Math.min(safePage * pageSize, activeTotal)} of {activeTotal}
                     </p>
                     <div className="flex items-center gap-2">
                         <button
                             onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                             disabled={safePage <= 1}
-                            className="p-2 rounded-lg border border-border text-gray-400 hover:text-foreground hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+                            className="p-2 rounded-lg border border-border text-muted hover:text-foreground hover:bg-input/30 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
                         >
                             <ChevronLeft size={14} />
                         </button>
@@ -659,7 +660,7 @@ export default function TransactionsPage() {
                         <button
                             onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                             disabled={safePage >= totalPages}
-                            className="p-2 rounded-lg border border-border text-gray-400 hover:text-foreground hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+                            className="p-2 rounded-lg border border-border text-muted hover:text-foreground hover:bg-input/30 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
                         >
                             <ChevronRight size={14} />
                         </button>
@@ -668,7 +669,7 @@ export default function TransactionsPage() {
             )}
 
             {transactions.length === 0 && !loading && (
-                <div className="text-center py-16 text-xs text-gray-400 font-medium">
+                <div className="text-center py-16 text-xs text-muted font-medium">
                     No transactions found. Add your first transaction to get started.
                 </div>
             )}

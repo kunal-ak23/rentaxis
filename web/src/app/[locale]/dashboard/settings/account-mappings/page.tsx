@@ -146,7 +146,7 @@ export default function AccountMappingsPage() {
 
     if (userRole && !canConfigureGateway(userRole)) {
         return (
-            <div className="text-center py-16 text-xs text-gray-400 font-medium">
+            <div className="text-center py-16 text-xs text-muted font-medium">
                 You do not have permission to configure account mappings.
             </div>
         );
@@ -164,11 +164,11 @@ export default function AccountMappingsPage() {
         <div>
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10">
                 <div>
-                    <h1 className="text-xl font-black text-foreground tracking-tight mb-1 flex items-center gap-2">
+                    <h1 className="text-xl font-bold text-foreground tracking-tight mb-1 flex items-center gap-2">
                         <GitBranch size={20} className="text-primary" />
                         Account Mappings
                     </h1>
-                    <p className="text-xs text-gray-500 font-medium">
+                    <p className="text-xs text-muted font-medium">
                         Configure which Chart of Accounts codes are used for automated transactions.
                     </p>
                 </div>
@@ -176,10 +176,10 @@ export default function AccountMappingsPage() {
                     onClick={handleSave}
                     disabled={saving}
                     className={cn(
-                        "flex items-center gap-2 px-6 py-2.5 rounded-full text-xs font-bold transition-all duration-200 shadow-lg active:scale-95 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed",
+                        "flex items-center gap-2 px-6 py-2.5 rounded-full text-xs font-bold transition-all duration-200 shadow-lg active:scale-95 cursor-pointer focus:ring-2 focus:ring-primary/20 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed",
                         saved
                             ? "bg-emerald-500 text-white shadow-emerald-500/20"
-                            : "bg-primary text-primary-foreground hover:opacity-90 shadow-primary/10"
+                            : "bg-primary text-primary-foreground hover:bg-primary/90 shadow-primary/10"
                     )}
                 >
                     {saving ? (
@@ -204,12 +204,12 @@ export default function AccountMappingsPage() {
             {loading && (
                 <div className="space-y-4">
                     {[1, 2, 3, 4].map(i => (
-                        <div key={i} className="animate-pulse bg-white border border-border rounded-2xl p-6">
-                            <div className="h-4 w-48 bg-gray-100 rounded mb-3" />
-                            <div className="h-3 w-72 bg-gray-50 rounded mb-6" />
+                        <div key={i} className="animate-pulse bg-surface border border-border rounded-xl p-6">
+                            <div className="h-4 w-48 bg-input rounded mb-3" />
+                            <div className="h-3 w-72 bg-background rounded mb-6" />
                             <div className="grid grid-cols-2 gap-4">
-                                <div className="h-10 bg-gray-50 rounded-xl" />
-                                <div className="h-10 bg-gray-50 rounded-xl" />
+                                <div className="h-10 bg-background rounded-xl" />
+                                <div className="h-10 bg-background rounded-xl" />
                             </div>
                         </div>
                     ))}
@@ -228,14 +228,14 @@ export default function AccountMappingsPage() {
                             <div
                                 key={mapping.transactionNature}
                                 className={cn(
-                                    "bg-white border rounded-2xl p-6 transition-all duration-200",
+                                    "bg-surface border rounded-xl p-5 hover:shadow-md transition-all duration-200",
                                     isConfigured ? "border-emerald-200/60 shadow-sm" : "border-border"
                                 )}
                             >
                                 <div className="flex items-start justify-between mb-4">
                                     <div>
                                         <div className="flex items-center gap-2">
-                                            <h3 className="text-sm font-black text-foreground tracking-tight">
+                                            <h3 className="text-sm font-bold text-foreground tracking-tight">
                                                 {meta?.label || mapping.transactionNature}
                                             </h3>
                                             {wasExisting && (
@@ -244,7 +244,7 @@ export default function AccountMappingsPage() {
                                                 </span>
                                             )}
                                         </div>
-                                        <p className="text-[11px] text-gray-400 font-medium mt-0.5">
+                                        <p className="text-[11px] text-muted font-medium mt-0.5">
                                             {meta?.description}
                                         </p>
                                     </div>
@@ -252,11 +252,11 @@ export default function AccountMappingsPage() {
 
                                 <div className="grid md:grid-cols-2 gap-4">
                                     <div>
-                                        <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5 ml-1">
+                                        <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-1.5 ml-1">
                                             Debit Account (Money In)
                                         </label>
                                         <select
-                                            className="w-full bg-input border border-border p-3 rounded-xl text-xs cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
+                                            className="w-full border border-border rounded-lg bg-surface text-foreground p-3 text-xs cursor-pointer focus:ring-2 focus:ring-primary/20 focus:outline-none transition-all duration-200"
                                             value={mapping.debitAccountId}
                                             onChange={e => updateMapping(index, "debitAccountId", e.target.value)}
                                         >
@@ -277,11 +277,11 @@ export default function AccountMappingsPage() {
                                         </select>
                                     </div>
                                     <div>
-                                        <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5 ml-1">
+                                        <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-1.5 ml-1">
                                             Credit Account (Money Out)
                                         </label>
                                         <select
-                                            className="w-full bg-input border border-border p-3 rounded-xl text-xs cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
+                                            className="w-full border border-border rounded-lg bg-surface text-foreground p-3 text-xs cursor-pointer focus:ring-2 focus:ring-primary/20 focus:outline-none transition-all duration-200"
                                             value={mapping.creditAccountId}
                                             onChange={e => updateMapping(index, "creditAccountId", e.target.value)}
                                         >
@@ -304,7 +304,7 @@ export default function AccountMappingsPage() {
                                 </div>
 
                                 {!isConfigured && !wasExisting && (
-                                    <p className="text-[10px] text-gray-400 font-medium mt-3 ml-1">
+                                    <p className="text-[10px] text-muted font-medium mt-3 ml-1">
                                         Leave empty to use default mapping: {meta?.defaultDebit} → {meta?.defaultCredit}
                                     </p>
                                 )}
@@ -315,7 +315,7 @@ export default function AccountMappingsPage() {
             )}
 
             {!loading && mappings.length === 0 && (
-                <div className="text-center py-16 text-xs text-gray-400 font-medium">
+                <div className="text-center py-16 text-xs text-muted font-medium">
                     No transaction types available. Please check your backend configuration.
                 </div>
             )}

@@ -8,6 +8,7 @@ import { Building2, Home, FileText, ArrowLeft, Plus, MapPin, Upload, Calendar, D
 import { cn } from "@/lib/utils";
 import { useSession } from "next-auth/react";
 import { hasPermission, canConfigureRentSettings, type UserRole } from "@/lib/rbac";
+import { formatCurrency, formatCurrencyCompact } from "@/lib/format";
 
 export default function PropertyDetailPage() {
     const params = useParams();
@@ -58,19 +59,19 @@ export default function PropertyDetailPage() {
 
     if (!property) return (
         <div className="p-8 max-w-7xl mx-auto space-y-6">
-            <div className="h-4 w-32 bg-gray-200 rounded animate-pulse" />
-            <div className="bg-white rounded-3xl p-8 shadow-sm border border-gray-100">
-                <div className="h-6 w-64 bg-gray-200 rounded animate-pulse mb-3" />
-                <div className="h-4 w-48 bg-gray-100 rounded animate-pulse" />
+            <div className="h-4 w-32 bg-input rounded animate-pulse" />
+            <div className="bg-surface rounded-xl p-8 border border-border">
+                <div className="h-6 w-64 bg-input rounded animate-pulse mb-3" />
+                <div className="h-4 w-48 bg-background rounded animate-pulse" />
             </div>
-            <div className="flex gap-6 border-b border-gray-100 pb-4">
+            <div className="flex gap-6 border-b border-border pb-4">
                 {[1, 2, 3, 4].map(i => (
-                    <div key={i} className="h-4 w-20 bg-gray-200 rounded animate-pulse" />
+                    <div key={i} className="h-4 w-20 bg-input rounded animate-pulse" />
                 ))}
             </div>
             <div className="grid grid-cols-3 gap-4">
                 {[1, 2, 3].map(i => (
-                    <div key={i} className="h-24 bg-gray-100 rounded-2xl animate-pulse" />
+                    <div key={i} className="h-24 bg-background rounded-xl animate-pulse" />
                 ))}
             </div>
         </div>
@@ -82,22 +83,22 @@ export default function PropertyDetailPage() {
         <div className="p-8 max-w-7xl mx-auto">
             <button
                 onClick={() => router.back()}
-                className="flex items-center gap-2 text-xs font-bold text-gray-400 hover:text-foreground mb-6 transition-colors cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none rounded"
+                className="flex items-center gap-2 text-xs font-bold text-muted hover:text-foreground mb-6 transition-colors cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none rounded"
             >
                 <ArrowLeft size={14} /> Back to Projects
             </button>
 
-            <div className="bg-white rounded-3xl p-8 shadow-sm border border-gray-100 mb-8">
+            <div className="bg-surface rounded-xl p-8 border border-border mb-8">
                 <div className="flex items-start justify-between">
                     <div>
                         <div className="flex items-center gap-3 mb-2">
-                            <h1 className="text-2xl font-black text-foreground tracking-tight">{displayName}</h1>
-                            <span className="text-[10px] font-black uppercase tracking-widest px-3 py-1 bg-primary/10 text-primary rounded-lg border border-primary/20">
+                            <h1 className="text-2xl font-bold text-foreground tracking-tight">{displayName}</h1>
+                            <span className="text-[10px] font-bold uppercase tracking-widest px-3 py-1 bg-primary/10 text-primary rounded-lg border border-primary/20">
                                 {property.type}
                             </span>
                         </div>
-                        <p className="text-sm font-medium text-gray-500 flex items-center gap-2">
-                            <MapPin size={14} className="text-gray-400" />
+                        <p className="text-sm font-medium text-muted flex items-center gap-2">
+                            <MapPin size={14} className="text-muted" />
                             {property.address ? `${property.address}, ` : ""}{e(property.emirate)}
                             {property.makaniNumber && ` • Makani: ${property.makaniNumber}`}
                         </p>
@@ -105,7 +106,7 @@ export default function PropertyDetailPage() {
                     {canManageRentSettings && (
                         <Link
                             href="/dashboard/settings/rent-settings"
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-foreground transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold border border-border text-muted hover:bg-background hover:text-foreground transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                         >
                             <Settings size={14} />
                             {tOnlinePayments("rentSettings")}
@@ -115,7 +116,7 @@ export default function PropertyDetailPage() {
             </div>
 
             {/* Tabs */}
-            <div className="flex items-center gap-6 mb-8 border-b border-gray-100">
+            <div className="flex items-center gap-6 mb-8 border-b border-border">
                 {[
                     { id: "overview", label: "Overview", icon: Home },
                     { id: "buildings", label: "Buildings", icon: Building2 },
@@ -130,7 +131,7 @@ export default function PropertyDetailPage() {
                             onClick={() => setActiveTab(tab.id as any)}
                             className={cn(
                                 "flex items-center gap-2 pb-4 text-sm font-bold transition-all duration-200 relative cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none rounded",
-                                isActive ? "text-primary" : "text-gray-400 hover:text-gray-600"
+                                isActive ? "text-primary" : "text-muted hover:text-foreground"
                             )}
                         >
                             <Icon size={16} />
@@ -146,22 +147,22 @@ export default function PropertyDetailPage() {
             {/* Content areas */}
             {activeTab === "overview" && (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className="bg-gray-50 rounded-2xl p-6 border border-gray-100 col-span-1 md:col-span-2">
-                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                    <div className="bg-background rounded-xl p-6 border border-border col-span-1 md:col-span-2">
+                        <p className="text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-4 flex items-center gap-2">
                             <Building2 size={12} className="text-primary/40" />
                             {t("propertyManager")}
                         </p>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             {managers.length > 0 ? managers.map(m => (
-                                <div key={m.id} className="bg-white p-4 rounded-xl border border-border/50 shadow-sm flex flex-col gap-1">
-                                    <p className="text-sm font-black text-foreground">{m.name}</p>
-                                    <p className="text-[11px] font-bold text-gray-500">{m.email}</p>
+                                <div key={m.id} className="bg-surface p-4 rounded-xl border border-border hover:shadow-md transition-all duration-200 flex flex-col gap-1">
+                                    <p className="text-sm font-bold text-foreground">{m.name}</p>
+                                    <p className="text-[11px] font-bold text-muted">{m.email}</p>
                                     {m.phoneNumber && (
-                                        <p className="text-[11px] font-black text-primary/70 font-mono mt-1">{m.phoneNumber}</p>
+                                        <p className="text-[11px] font-bold text-primary/70 font-mono mt-1">{m.phoneNumber}</p>
                                     )}
                                 </div>
                             )) : (
-                                <p className="text-xs font-medium text-gray-400 italic">No managers assigned.</p>
+                                <p className="text-xs font-medium text-muted italic">No managers assigned.</p>
                             )}
                         </div>
                     </div>
@@ -212,11 +213,11 @@ function BuildingsTab({ buildings, propertyId, canCreate, onUpdate }: any) {
     return (
         <div>
             <div className="flex justify-between items-center mb-6">
-                <h2 className="text-lg font-black">Buildings</h2>
+                <h2 className="text-lg font-bold">Buildings</h2>
                 {canCreate && (
                     <button
                         onClick={() => setShowForm(true)}
-                        className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-full text-xs font-bold hover:opacity-90 transition-all duration-200 shadow-sm cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                        className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-full text-xs font-bold hover:opacity-90 transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                     >
                         <Plus size={14} /> Add Building
                     </button>
@@ -224,21 +225,21 @@ function BuildingsTab({ buildings, propertyId, canCreate, onUpdate }: any) {
             </div>
 
             {showForm && (
-                <form onSubmit={handleSubmit} className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm mb-6 grid grid-cols-3 gap-4">
+                <form onSubmit={handleSubmit} className="bg-surface p-6 rounded-xl border border-border mb-6 grid grid-cols-3 gap-4">
                     <div>
-                        <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Name (EN)</label>
-                        <input required className="w-full border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.nameEn} onChange={e => setFormData({ ...formData, nameEn: e.target.value })} />
+                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Name (EN)</label>
+                        <input required className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.nameEn} onChange={e => setFormData({ ...formData, nameEn: e.target.value })} />
                     </div>
                     <div>
-                        <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1 text-right">Name (AR)</label>
-                        <input className="w-full border rounded-lg p-2 text-xs text-right focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.nameAr} onChange={e => setFormData({ ...formData, nameAr: e.target.value })} dir="rtl" />
+                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1 text-right">Name (AR)</label>
+                        <input className="w-full bg-input border border-border rounded-lg p-2 text-xs text-right focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.nameAr} onChange={e => setFormData({ ...formData, nameAr: e.target.value })} dir="rtl" />
                     </div>
                     <div>
-                        <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Floors</label>
-                        <input type="number" required className="w-full border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.floors} onChange={e => setFormData({ ...formData, floors: Number(e.target.value) })} />
+                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Floors</label>
+                        <input type="number" required className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.floors} onChange={e => setFormData({ ...formData, floors: Number(e.target.value) })} />
                     </div>
                     <div className="col-span-3 flex justify-end gap-2 mt-2">
-                        <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 text-xs font-bold text-gray-500 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg transition-all duration-200">Cancel</button>
+                        <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 text-xs font-bold text-muted cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg transition-all duration-200">Cancel</button>
                         <button type="submit" disabled={submitting} className="px-4 py-2 bg-primary text-white rounded-lg text-xs font-bold cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed">{submitting ? "Saving..." : "Save"}</button>
                     </div>
                 </form>
@@ -246,18 +247,18 @@ function BuildingsTab({ buildings, propertyId, canCreate, onUpdate }: any) {
 
             <div className="grid grid-cols-3 gap-4">
                 {buildings.map((b: any) => (
-                    <div key={b.id} className="bg-gray-50 p-4 rounded-2xl border border-gray-100 flex justify-between items-center transition-all duration-200 hover:shadow-sm">
+                    <div key={b.id} className="bg-surface rounded-xl p-4 border border-border flex justify-between items-center hover:shadow-md transition-all duration-200">
                         <div>
                             <p className="font-bold text-sm text-foreground">{b.nameEn}</p>
-                            {b.nameAr && <p className="text-xs text-gray-400 font-medium" dir="rtl">{b.nameAr}</p>}
+                            {b.nameAr && <p className="text-xs text-muted font-medium" dir="rtl">{b.nameAr}</p>}
                         </div>
-                        <div className="text-xs font-bold text-gray-400 bg-white px-2 py-1 rounded-md border border-gray-100">
+                        <div className="text-xs font-bold text-muted bg-background px-2 py-1 rounded-md border border-border">
                             {b.floors} Floors
                         </div>
                     </div>
                 ))}
                 {buildings.length === 0 && !showForm && (
-                    <div className="col-span-3 text-center py-12 text-gray-400 font-medium text-xs">No buildings added yet.</div>
+                    <div className="col-span-3 text-center py-12 text-muted font-medium text-xs">No buildings added yet.</div>
                 )}
             </div>
         </div>
@@ -337,18 +338,18 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
     return (
         <div>
             <div className="flex justify-between items-center mb-6">
-                <h2 className="text-lg font-black">Units</h2>
+                <h2 className="text-lg font-bold">Units</h2>
                 {canCreate && (
                     <div className="flex items-center gap-2">
                         <button
                             onClick={() => { setShowForm(true); setShowBulkUpload(false); }}
-                            className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-full text-xs font-bold hover:opacity-90 transition-all duration-200 shadow-sm cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                            className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-full text-xs font-bold hover:opacity-90 transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                         >
                             <Plus size={14} /> Add Unit
                         </button>
                         <button
                             onClick={() => { setShowBulkUpload(!showBulkUpload); setShowForm(false); }}
-                            className="flex items-center gap-2 bg-gray-100 text-foreground px-4 py-2 rounded-full text-xs font-bold hover:bg-gray-200 transition-all duration-200 shadow-sm cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                            className="flex items-center gap-2 bg-background text-foreground px-4 py-2 rounded-full text-xs font-bold hover:bg-input transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                         >
                             <Upload size={14} /> Bulk Upload CSV
                         </button>
@@ -357,49 +358,49 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
             </div>
 
             {showForm && (
-                <form onSubmit={handleAddUnit} className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm mb-6 grid grid-cols-2 md:grid-cols-5 gap-4">
+                <form onSubmit={handleAddUnit} className="bg-surface p-6 rounded-xl border border-border mb-6 grid grid-cols-2 md:grid-cols-5 gap-4">
                     <div>
-                        <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Unit Number</label>
-                        <input required className="w-full border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" placeholder="e.g. 101" value={unitForm.unitNumber} onChange={e => setUnitForm({ ...unitForm, unitNumber: e.target.value })} />
+                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Unit Number</label>
+                        <input required className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" placeholder="e.g. 101" value={unitForm.unitNumber} onChange={e => setUnitForm({ ...unitForm, unitNumber: e.target.value })} />
                     </div>
                     <div>
-                        <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Type</label>
-                        <select className="w-full border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={unitForm.type} onChange={e => setUnitForm({ ...unitForm, type: e.target.value })}>
+                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Type</label>
+                        <select className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={unitForm.type} onChange={e => setUnitForm({ ...unitForm, type: e.target.value })}>
                             {unitTypes.map(ut => <option key={ut} value={ut}>{ut.replace("BHK", " BHK ")}</option>)}
                         </select>
                     </div>
                     <div>
-                        <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Size (Sqft)</label>
-                        <input type="number" className="w-full border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" placeholder="e.g. 850" value={unitForm.sizeSqft} onChange={e => setUnitForm({ ...unitForm, sizeSqft: e.target.value })} />
+                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Size (Sqft)</label>
+                        <input type="number" className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" placeholder="e.g. 850" value={unitForm.sizeSqft} onChange={e => setUnitForm({ ...unitForm, sizeSqft: e.target.value })} />
                     </div>
                     <div>
-                        <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Expected Rent</label>
-                        <input type="number" className="w-full border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" placeholder="e.g. 5000" value={unitForm.expectedRent} onChange={e => setUnitForm({ ...unitForm, expectedRent: e.target.value })} />
+                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Expected Rent</label>
+                        <input type="number" className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" placeholder="e.g. 5000" value={unitForm.expectedRent} onChange={e => setUnitForm({ ...unitForm, expectedRent: e.target.value })} />
                     </div>
                     <div>
-                        <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Building</label>
-                        <select className="w-full border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={unitForm.buildingId} onChange={e => setUnitForm({ ...unitForm, buildingId: e.target.value })}>
+                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Building</label>
+                        <select className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={unitForm.buildingId} onChange={e => setUnitForm({ ...unitForm, buildingId: e.target.value })}>
                             <option value="">No Building</option>
                             {buildings.map((b: any) => <option key={b.id} value={b.id}>{b.nameEn}</option>)}
                         </select>
                     </div>
                     <div className="col-span-2 md:col-span-5 flex justify-end gap-2 mt-2">
-                        <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 text-xs font-bold text-gray-500 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg transition-all duration-200">Cancel</button>
+                        <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 text-xs font-bold text-muted cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg transition-all duration-200">Cancel</button>
                         <button type="submit" disabled={submitting} className="px-4 py-2 bg-primary text-white rounded-lg text-xs font-bold cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed">{submitting ? "Saving..." : "Save Unit"}</button>
                     </div>
                 </form>
             )}
 
             {showBulkUpload && (
-                <form onSubmit={handleBulkUpload} className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm mb-6 flex items-end gap-4">
+                <form onSubmit={handleBulkUpload} className="bg-surface p-6 rounded-xl border border-border mb-6 flex items-end gap-4">
                     <div className="flex-1">
-                        <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">CSV File</label>
+                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">CSV File</label>
                         <input type="file" accept=".csv" required onChange={e => setFile(e.target.files?.[0] || null)} className="w-full text-xs" />
-                        <p className="text-[10px] text-gray-400 mt-1">Format: unitNumber, type, sizeSqft, expectedRent, status</p>
+                        <p className="text-[10px] text-muted mt-1">Format: unitNumber, type, sizeSqft, expectedRent, status</p>
                     </div>
                     <div className="flex-1">
-                        <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Assign to Building (Optional)</label>
-                        <select className="w-full border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={uploadBuildingId} onChange={e => setUploadBuildingId(e.target.value)}>
+                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Assign to Building (Optional)</label>
+                        <select className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={uploadBuildingId} onChange={e => setUploadBuildingId(e.target.value)}>
                             <option value="">No Building (Direct to Property)</option>
                             {buildings.map((b: any) => <option key={b.id} value={b.id}>{b.nameEn}</option>)}
                         </select>
@@ -408,9 +409,9 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
                 </form>
             )}
 
-            <div className="bg-white border rounded-2xl overflow-hidden shadow-sm">
+            <div className="bg-surface border border-border rounded-xl overflow-hidden">
                 <table className="w-full text-left text-sm">
-                    <thead className="bg-gray-50 text-gray-400 text-[10px] uppercase font-bold tracking-wider">
+                    <thead className="bg-background text-muted text-xs font-semibold uppercase tracking-[0.15em]">
                         <tr>
                             <th className="px-6 py-4">Unit #</th>
                             <th className="px-6 py-4">Building</th>
@@ -420,34 +421,34 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
                             <th className="px-6 py-4 text-right">Rent</th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-100">
+                    <tbody className="divide-y divide-border">
                         {units.map((u: any) => (
-                            <tr key={u.id} className="hover:bg-gray-50/50 transition-all duration-200">
+                            <tr key={u.id} className="hover:bg-background/50 transition-all duration-200">
                                 <td className="px-6 py-4 font-bold text-foreground">{u.unitNumber}</td>
-                                <td className="px-6 py-4 text-gray-500 font-medium">
+                                <td className="px-6 py-4 text-muted font-medium">
                                     {buildings.find((b: any) => b.id === u.building?.id)?.nameEn || "N/A"}
                                 </td>
                                 <td className="px-6 py-4">
-                                    <span className="px-2 py-1 text-[10px] font-bold uppercase tracking-widest bg-gray-100 rounded-md">
+                                    <span className="px-2 py-1 text-[10px] font-bold uppercase tracking-widest bg-background rounded-md">
                                         {u.type}
                                     </span>
                                 </td>
                                 <td className="px-6 py-4">
                                     <span className={cn(
                                         "px-2 py-1 text-[10px] font-bold uppercase tracking-widest rounded-md",
-                                        u.status === "VACANT" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"
+                                        u.status === "VACANT" ? "bg-success/10 text-success" : "bg-info/10 text-info"
                                     )}>
                                         {u.status}
                                     </span>
                                 </td>
-                                <td className="px-6 py-4 text-gray-500">{u.sizeSqft}</td>
-                                <td className="px-6 py-4 text-right font-black">AED {u.expectedRent}</td>
+                                <td className="px-6 py-4 text-muted">{u.sizeSqft}</td>
+                                <td className="px-6 py-4 text-right font-bold">{formatCurrencyCompact(u.expectedRent)}</td>
                             </tr>
                         ))}
                     </tbody>
                 </table>
                 {units.length === 0 && (
-                    <div className="text-center py-12 text-gray-400 font-medium text-xs">No units found.</div>
+                    <div className="text-center py-12 text-muted font-medium text-xs">No units found.</div>
                 )}
             </div>
         </div>
@@ -475,21 +476,21 @@ function LeasesTab({ propertyId }: { propertyId: string }) {
 
     const getStatusColor = (status: string) => {
         switch (status) {
-            case 'ACTIVE': return 'bg-green-100 text-green-700';
-            case 'DRAFT': return 'bg-gray-100 text-gray-700';
-            case 'PENDING_SIGNATURE': return 'bg-yellow-100 text-yellow-700';
-            case 'TERMINATED': return 'bg-red-100 text-red-700';
-            case 'EXPIRED': return 'bg-orange-100 text-orange-700';
-            default: return 'bg-blue-100 text-blue-700';
+            case 'ACTIVE': return 'bg-success/10 text-success';
+            case 'DRAFT': return 'bg-background text-muted';
+            case 'PENDING_SIGNATURE': return 'bg-warning/10 text-warning';
+            case 'TERMINATED': return 'bg-error/10 text-error';
+            case 'EXPIRED': return 'bg-warning/10 text-warning';
+            default: return 'bg-info/10 text-info';
         }
     };
 
     return (
         <div>
-            <h2 className="text-lg font-black mb-6">Leases</h2>
-            <div className="bg-white border rounded-2xl overflow-hidden shadow-sm">
+            <h2 className="text-lg font-bold mb-6">Leases</h2>
+            <div className="bg-surface border border-border rounded-xl overflow-hidden">
                 <table className="w-full text-left text-sm">
-                    <thead className="bg-gray-50 text-gray-400 text-[10px] uppercase font-bold tracking-wider">
+                    <thead className="bg-background text-muted text-xs font-semibold uppercase tracking-[0.15em]">
                         <tr>
                             <th className="px-6 py-4">Unit</th>
                             <th className="px-6 py-4">Renter</th>
@@ -498,33 +499,33 @@ function LeasesTab({ propertyId }: { propertyId: string }) {
                             <th className="px-6 py-4 text-right">Rent (AED)</th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-100">
+                    <tbody className="divide-y divide-border">
                         {leases.map((l: any) => (
-                            <tr key={l.id} className="hover:bg-gray-50/50 transition-all duration-200">
+                            <tr key={l.id} className="hover:bg-background/50 transition-all duration-200">
                                 <td className="px-6 py-4 font-bold text-foreground flex items-center gap-2">
-                                    <FileText size={14} className="text-gray-400" />
+                                    <FileText size={14} className="text-muted" />
                                     {t("unit")} {l.unitIdentifier}
                                 </td>
-                                <td className="px-6 py-4 text-gray-600 font-medium">{l.renterName}</td>
+                                <td className="px-6 py-4 text-muted font-medium">{l.renterName}</td>
                                 <td className="px-6 py-4">
                                     <span className={cn("px-2 py-1 text-[10px] font-bold uppercase tracking-widest rounded-md", getStatusColor(l.status))}>
                                         {l.status.replace('_', ' ')}
                                     </span>
                                 </td>
-                                <td className="px-6 py-4 text-gray-500 text-xs flex items-center gap-1">
-                                    <Calendar size={12} className="text-gray-400" />
+                                <td className="px-6 py-4 text-muted text-xs flex items-center gap-1">
+                                    <Calendar size={12} className="text-muted" />
                                     {new Date(l.startDate).toLocaleDateString()} - {new Date(l.endDate).toLocaleDateString()}
                                 </td>
-                                <td className="px-6 py-4 text-right font-black flex items-center justify-end gap-1">
-                                    <DollarSign size={12} className="text-gray-400" />
-                                    {l.rentAmount?.toLocaleString()}
+                                <td className="px-6 py-4 text-right font-bold flex items-center justify-end gap-1">
+                                    <DollarSign size={12} className="text-muted" />
+                                    {formatCurrencyCompact(l.rentAmount)}
                                 </td>
                             </tr>
                         ))}
                     </tbody>
                 </table>
                 {leases.length === 0 && (
-                    <div className="text-center py-12 text-gray-400 font-medium text-xs">No leases found for this property.</div>
+                    <div className="text-center py-12 text-muted font-medium text-xs">No leases found for this property.</div>
                 )}
             </div>
         </div>

@@ -149,10 +149,10 @@ export default function GatewayConfigPage() {
     if (userRole && !canConfigureGateway(userRole)) {
         return (
             <div className="max-w-4xl">
-                <div className="bg-white rounded-2xl p-12 shadow-sm border border-gray-100 text-center">
-                    <ShieldCheck size={48} className="mx-auto text-gray-300 mb-4" />
-                    <h2 className="text-lg font-black text-foreground mb-2">Access Denied</h2>
-                    <p className="text-sm text-gray-500">You do not have permission to configure payment gateways.</p>
+                <div className="bg-surface rounded-xl p-12 shadow-sm border border-border text-center">
+                    <ShieldCheck size={48} className="mx-auto text-muted mb-4" />
+                    <h2 className="text-lg font-bold text-foreground mb-2">Access Denied</h2>
+                    <p className="text-sm text-muted">You do not have permission to configure payment gateways.</p>
                 </div>
             </div>
         );
@@ -164,19 +164,19 @@ export default function GatewayConfigPage() {
         return (
             <div className="max-w-4xl">
                 <div className="mb-8">
-                    <div className="h-8 w-64 bg-gray-200 rounded-lg animate-pulse mb-2" />
-                    <div className="h-4 w-96 bg-gray-100 rounded-lg animate-pulse" />
+                    <div className="h-8 w-64 bg-input rounded-lg animate-pulse mb-2" />
+                    <div className="h-4 w-96 bg-background rounded-lg animate-pulse" />
                 </div>
-                <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 mb-6">
-                    <div className="h-4 w-40 bg-gray-200 rounded animate-pulse mb-4" />
-                    <div className="h-12 w-full bg-gray-100 rounded-xl animate-pulse" />
+                <div className="bg-surface rounded-xl p-6 shadow-sm border border-border mb-6">
+                    <div className="h-4 w-40 bg-input rounded animate-pulse mb-4" />
+                    <div className="h-12 w-full bg-background rounded-xl animate-pulse" />
                 </div>
-                <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 mb-6">
-                    <div className="h-4 w-32 bg-gray-200 rounded animate-pulse mb-6" />
+                <div className="bg-surface rounded-xl p-6 shadow-sm border border-border mb-6">
+                    <div className="h-4 w-32 bg-input rounded animate-pulse mb-6" />
                     <div className="space-y-5">
-                        <div className="h-12 w-full bg-gray-100 rounded-xl animate-pulse" />
-                        <div className="h-12 w-full bg-gray-100 rounded-xl animate-pulse" />
-                        <div className="h-12 w-full bg-gray-100 rounded-xl animate-pulse" />
+                        <div className="h-12 w-full bg-background rounded-xl animate-pulse" />
+                        <div className="h-12 w-full bg-background rounded-xl animate-pulse" />
+                        <div className="h-12 w-full bg-background rounded-xl animate-pulse" />
                     </div>
                 </div>
             </div>
@@ -187,11 +187,11 @@ export default function GatewayConfigPage() {
         <div className="max-w-4xl">
             {/* Page Header */}
             <div className="mb-8">
-                <h1 className="text-2xl font-black text-foreground tracking-tight flex items-center gap-3">
+                <h1 className="text-2xl font-bold text-foreground tracking-tight flex items-center gap-3">
                     <CreditCard size={24} className="text-primary" />
                     {t("gatewayConfig")}
                 </h1>
-                <p className="text-sm text-gray-500 mt-1">
+                <p className="text-sm text-muted mt-1">
                     Configure your payment gateway credentials for online rent collection.
                 </p>
             </div>
@@ -213,8 +213,8 @@ export default function GatewayConfigPage() {
             )}
 
             {/* Card 1: Select Gateway */}
-            <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 mb-6">
-                <h2 className="text-sm font-black text-foreground uppercase tracking-widest mb-4 flex items-center gap-2">
+            <div className="bg-surface rounded-xl p-5 border border-border hover:shadow-md transition-all duration-200 mb-6">
+                <h2 className="text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-4 flex items-center gap-2">
                     <CreditCard size={14} className="text-primary/60" />
                     {t("selectGateway")}
                 </h2>
@@ -224,7 +224,7 @@ export default function GatewayConfigPage() {
                         setSelectedGatewayId(e.target.value);
                         setTestResult(null);
                     }}
-                    className="w-full border border-gray-200 rounded-xl p-3 text-sm font-medium cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all duration-200"
+                    className="w-full border border-border rounded-lg bg-surface text-foreground p-3 text-sm font-medium cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all duration-200"
                 >
                     <option value="">-- Select a gateway --</option>
                     {gateways.map(gw => (
@@ -234,7 +234,7 @@ export default function GatewayConfigPage() {
                     ))}
                 </select>
                 {selectedGateway && selectedGateway.description && (
-                    <p className="text-xs text-gray-400 mt-2">{selectedGateway.description}</p>
+                    <p className="text-xs text-muted mt-2">{selectedGateway.description}</p>
                 )}
                 {existingConfig && (
                     <p className="text-xs text-primary/70 mt-2 font-semibold">
@@ -246,8 +246,8 @@ export default function GatewayConfigPage() {
 
             {/* Card 2: Credentials */}
             {selectedGatewayId && (
-                <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 mb-6">
-                    <h2 className="text-sm font-black text-foreground uppercase tracking-widest mb-6 flex items-center gap-2">
+                <div className="bg-surface rounded-xl p-5 border border-border hover:shadow-md transition-all duration-200 mb-6">
+                    <h2 className="text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-6 flex items-center gap-2">
                         <ShieldCheck size={14} className="text-primary/60" />
                         Credentials
                     </h2>
@@ -255,7 +255,7 @@ export default function GatewayConfigPage() {
                     <div className="space-y-5">
                         {/* API Key */}
                         <div>
-                            <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">
+                            <label className="block text-[10px] font-bold text-muted uppercase tracking-widest mb-1.5">
                                 {t("apiKey")}
                             </label>
                             <input
@@ -263,13 +263,13 @@ export default function GatewayConfigPage() {
                                 value={apiKey}
                                 onChange={e => setApiKey(e.target.value)}
                                 placeholder="pk_test_..."
-                                className="w-full border border-gray-200 rounded-xl p-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all duration-200"
+                                className="w-full border border-border rounded-lg bg-surface p-3 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all duration-200"
                             />
                         </div>
 
                         {/* API Secret */}
                         <div>
-                            <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">
+                            <label className="block text-[10px] font-bold text-muted uppercase tracking-widest mb-1.5">
                                 {t("apiSecret")}
                             </label>
                             <div className="relative">
@@ -278,13 +278,13 @@ export default function GatewayConfigPage() {
                                     value={apiSecret}
                                     onChange={e => setApiSecret(e.target.value)}
                                     placeholder="sk_test_..."
-                                    className="w-full border border-gray-200 rounded-xl p-3 pr-12 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all duration-200"
+                                    className="w-full border border-border rounded-lg bg-surface p-3 pr-12 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all duration-200"
                                 />
                                 <button
                                     type="button"
                                     onClick={() => setShowApiSecret(!showApiSecret)}
                                     aria-label={showApiSecret ? "Hide API secret" : "Show API secret"}
-                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30 rounded-md p-0.5"
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-foreground transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/20 rounded-md p-0.5"
                                 >
                                     {showApiSecret ? <EyeOff size={16} /> : <Eye size={16} />}
                                 </button>
@@ -293,7 +293,7 @@ export default function GatewayConfigPage() {
 
                         {/* Webhook Secret */}
                         <div>
-                            <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">
+                            <label className="block text-[10px] font-bold text-muted uppercase tracking-widest mb-1.5">
                                 {t("webhookSecret")}
                             </label>
                             <div className="relative">
@@ -302,27 +302,27 @@ export default function GatewayConfigPage() {
                                     value={webhookSecret}
                                     onChange={e => setWebhookSecret(e.target.value)}
                                     placeholder="whsec_..."
-                                    className="w-full border border-gray-200 rounded-xl p-3 pr-12 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all duration-200"
+                                    className="w-full border border-border rounded-lg bg-surface p-3 pr-12 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all duration-200"
                                 />
                                 <button
                                     type="button"
                                     onClick={() => setShowWebhookSecret(!showWebhookSecret)}
                                     aria-label={showWebhookSecret ? "Hide webhook secret" : "Show webhook secret"}
-                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30 rounded-md p-0.5"
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-foreground transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/20 rounded-md p-0.5"
                                 >
                                     {showWebhookSecret ? <EyeOff size={16} /> : <Eye size={16} />}
                                 </button>
                             </div>
                             {existingConfig?.hasWebhookSecret && !webhookSecret && (
-                                <p className="text-[10px] text-gray-400 mt-1">Webhook secret is already configured. Leave blank to keep existing.</p>
+                                <p className="text-[10px] text-muted mt-1">Webhook secret is already configured. Leave blank to keep existing.</p>
                             )}
                         </div>
 
                         {/* Test Mode Toggle */}
-                        <div className="flex items-center justify-between bg-gray-50 rounded-xl p-4 border border-gray-100">
+                        <div className="flex items-center justify-between bg-input rounded-xl p-4 border border-border">
                             <div>
                                 <p className="text-sm font-bold text-foreground">{t("testMode")}</p>
-                                <p className="text-[11px] text-gray-400 mt-0.5">
+                                <p className="text-[11px] text-muted mt-0.5">
                                     {isTestMode
                                         ? "Using sandbox/test environment. No real charges."
                                         : "Using production environment. Real charges will be made."}
@@ -335,8 +335,8 @@ export default function GatewayConfigPage() {
                                 aria-label="Toggle test mode"
                                 onClick={() => setIsTestMode(!isTestMode)}
                                 className={cn(
-                                    "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none",
-                                    isTestMode ? "bg-primary" : "bg-gray-300"
+                                    "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:ring-2 focus:ring-primary/20 focus:outline-none",
+                                    isTestMode ? "bg-primary" : "bg-muted/40"
                                 )}
                             >
                                 <span
@@ -353,8 +353,8 @@ export default function GatewayConfigPage() {
 
             {/* Card 3: Actions */}
             {selectedGatewayId && (
-                <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-                    <h2 className="text-sm font-black text-foreground uppercase tracking-widest mb-4 flex items-center gap-2">
+                <div className="bg-surface rounded-xl p-5 border border-border hover:shadow-md transition-all duration-200">
+                    <h2 className="text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-4 flex items-center gap-2">
                         <Wifi size={14} className="text-primary/60" />
                         Actions
                     </h2>
@@ -381,7 +381,7 @@ export default function GatewayConfigPage() {
                         <button
                             onClick={handleTestConnection}
                             disabled={testing}
-                            className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold border border-gray-200 hover:bg-gray-50 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30"
+                            className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-foreground hover:bg-input border border-border transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/20"
                         >
                             {testing ? <Loader2 size={14} className="animate-spin" /> : <Wifi size={14} />}
                             {t("testConnection")}
@@ -390,7 +390,7 @@ export default function GatewayConfigPage() {
                         <button
                             onClick={handleSave}
                             disabled={saving}
-                            className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold bg-primary text-primary-foreground hover:opacity-90 transition-all duration-200 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30"
+                            className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold bg-primary text-primary-foreground hover:bg-primary/90 transition-all duration-200 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/20"
                         >
                             {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
                             {t("saveConfig")}

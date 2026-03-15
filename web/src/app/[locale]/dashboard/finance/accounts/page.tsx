@@ -329,19 +329,19 @@ export default function AccountsPage() {
     const renderAccountForm = (onSubmit: (ev: React.FormEvent) => void, title: string) => (
         <form onSubmit={onSubmit} className="grid grid-cols-2 gap-5">
             <div className="col-span-1">
-                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("code")}</label>
+                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("code")}</label>
                 <input
                     required
                     placeholder="e.g. A-01"
-                    className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
+                    className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
                     value={formData.code}
                     onChange={ev => setFormData({ ...formData, code: ev.target.value })}
                 />
             </div>
             <div className="col-span-1">
-                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("accountType")}</label>
+                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("accountType")}</label>
                 <select
-                    className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
+                    className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
                     value={formData.accountType}
                     onChange={ev => setFormData({ ...formData, accountType: ev.target.value as AccountType, accountSubType: "" })}
                 >
@@ -349,29 +349,29 @@ export default function AccountsPage() {
                 </select>
             </div>
             <div className="col-span-1">
-                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("nameEn")}</label>
+                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("nameEn")}</label>
                 <input
                     required
                     placeholder="Account name in English"
-                    className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
+                    className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
                     value={formData.nameEn}
                     onChange={ev => setFormData({ ...formData, nameEn: ev.target.value })}
                 />
             </div>
             <div className="col-span-1">
-                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("nameAr")}</label>
+                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("nameAr")}</label>
                 <input
                     placeholder="اسم الحساب بالعربي"
                     dir="rtl"
-                    className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
+                    className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
                     value={formData.nameAr}
                     onChange={ev => setFormData({ ...formData, nameAr: ev.target.value })}
                 />
             </div>
             <div className="col-span-1">
-                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("subType")}</label>
+                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("subType")}</label>
                 <select
-                    className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
+                    className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
                     value={formData.accountSubType}
                     onChange={ev => setFormData({ ...formData, accountSubType: ev.target.value })}
                 >
@@ -382,9 +382,9 @@ export default function AccountsPage() {
                 </select>
             </div>
             <div className="col-span-1">
-                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("parent")}</label>
+                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("parent")}</label>
                 <select
-                    className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
+                    className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
                     value={formData.parentCode}
                     onChange={ev => setFormData({ ...formData, parentCode: ev.target.value })}
                 >
@@ -397,10 +397,10 @@ export default function AccountsPage() {
                 </select>
             </div>
             <div className="col-span-2">
-                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("description")}</label>
+                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("description")}</label>
                 <textarea
                     placeholder="Optional description"
-                    className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200 h-20 resize-none"
+                    className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200 h-20 resize-none"
                     value={formData.description}
                     onChange={ev => setFormData({ ...formData, description: ev.target.value })}
                 />
@@ -409,11 +409,11 @@ export default function AccountsPage() {
                 <label className="flex items-center gap-2 cursor-pointer">
                     <input
                         type="checkbox"
-                        className="rounded border-gray-300"
+                        className="rounded border-border"
                         checked={formData.group}
                         onChange={ev => setFormData({ ...formData, group: ev.target.checked })}
                     />
-                    <span className="text-xs font-bold text-gray-500">{t("isGroup")}</span>
+                    <span className="text-xs font-bold text-muted">{t("isGroup")}</span>
                 </label>
             </div>
             <div className="col-span-2 flex justify-end gap-3 mt-2">
@@ -425,14 +425,14 @@ export default function AccountsPage() {
                         setFormData(EMPTY_FORM);
                         setEditId(null);
                     }}
-                    className="px-6 py-3 bg-gray-100 text-gray-500 rounded-xl text-xs font-bold cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                    className="px-6 py-3 bg-input text-muted rounded-lg text-xs font-bold cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/20 focus:outline-none"
                 >
                     {t("cancel")}
                 </button>
                 <button
                     type="submit"
                     disabled={submitting}
-                    className="px-8 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-bold cursor-pointer transition-all duration-200 hover:opacity-90 focus:ring-2 focus:ring-primary/30 focus:outline-none disabled:opacity-50 flex items-center gap-2"
+                    className="px-8 py-3 bg-primary text-primary-foreground rounded-lg text-xs font-bold cursor-pointer transition-all duration-200 hover:bg-primary/90 focus:ring-2 focus:ring-primary/20 focus:outline-none disabled:opacity-50 flex items-center gap-2"
                 >
                     {submitting && <Loader2 size={14} className="animate-spin" />}
                     {title === t("editAccount") ? t("accountUpdated").replace("Account updated", "Save") || "Save" : t("create")}
@@ -451,7 +451,7 @@ export default function AccountsPage() {
             <div key={account.id}>
                 <div
                     className={cn(
-                        "flex items-center justify-between px-5 py-3 hover:bg-gray-50/50 transition-all duration-200 border-b border-gray-50",
+                        "flex items-center justify-between px-5 py-3 hover:bg-input/30 transition-all duration-200 border-b border-border",
                         !account.active && "opacity-50"
                     )}
                     style={{ paddingLeft: `${20 + depth * 24}px` }}
@@ -461,7 +461,7 @@ export default function AccountsPage() {
                         {hasChildren || account.group ? (
                             <button
                                 onClick={() => toggleExpand(account.code)}
-                                className="p-0.5 text-gray-400 hover:text-gray-600 cursor-pointer transition-all duration-200 focus:outline-none flex-shrink-0"
+                                className="p-0.5 text-muted hover:text-foreground cursor-pointer transition-all duration-200 focus:outline-none flex-shrink-0"
                             >
                                 {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                             </button>
@@ -469,23 +469,23 @@ export default function AccountsPage() {
                             <span className="w-[18px] flex-shrink-0" />
                         )}
 
-                        <span className={cn("text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg flex-shrink-0", TYPE_BADGE[account.accountType])}>
+                        <span className={cn("text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-lg flex-shrink-0", TYPE_BADGE[account.accountType])}>
                             {account.code}
                         </span>
 
                         <div className="min-w-0">
-                            <p className={cn("text-xs font-bold text-foreground truncate", account.group && "font-black")}>
+                            <p className={cn("text-xs font-bold text-foreground truncate", account.group && "font-bold")}>
                                 {displayName(account)}
                             </p>
                             {account.description && (
-                                <p className="text-[10px] text-gray-400 mt-0.5 truncate">{account.description}</p>
+                                <p className="text-[10px] text-muted mt-0.5 truncate">{account.description}</p>
                             )}
                         </div>
                     </div>
 
                     <div className="flex items-center gap-2 flex-shrink-0">
                         {account.accountSubType && (
-                            <span className="text-[9px] font-bold text-gray-300 uppercase hidden md:inline">
+                            <span className="text-[9px] font-bold text-muted uppercase hidden md:inline">
                                 {account.accountSubType.replace(/_/g, " ")}
                             </span>
                         )}
@@ -493,20 +493,20 @@ export default function AccountsPage() {
                             <span className="text-[8px] font-bold text-primary bg-primary/5 px-2 py-0.5 rounded-full uppercase tracking-wider">Group</span>
                         )}
                         {account.system && (
-                            <span className="text-[8px] font-bold text-gray-300 bg-gray-50 px-2 py-0.5 rounded-full uppercase tracking-wider">System</span>
+                            <span className="text-[8px] font-bold text-muted bg-input px-2 py-0.5 rounded-full uppercase tracking-wider">System</span>
                         )}
                         {!account.system && (
                             <div className="flex items-center gap-1 ml-2">
                                 <button
                                     onClick={() => openEdit(account)}
-                                    className="p-1.5 text-gray-300 hover:text-primary cursor-pointer transition-all duration-200 rounded-lg hover:bg-primary/5 focus:outline-none"
+                                    className="p-1.5 text-muted hover:text-primary cursor-pointer transition-all duration-200 rounded-lg hover:bg-primary/5 focus:outline-none"
                                     title={t("editAccount")}
                                 >
                                     <Pencil size={13} />
                                 </button>
                                 <button
                                     onClick={() => setShowDeleteConfirm(account.id)}
-                                    className="p-1.5 text-gray-300 hover:text-rose-500 cursor-pointer transition-all duration-200 rounded-lg hover:bg-rose-50 focus:outline-none"
+                                    className="p-1.5 text-muted hover:text-rose-500 cursor-pointer transition-all duration-200 rounded-lg hover:bg-rose-50 focus:outline-none"
                                     title={t("deleteAccount")}
                                 >
                                     <Trash2 size={13} />
@@ -527,11 +527,11 @@ export default function AccountsPage() {
             {/* ── Page Header ── */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10">
                 <div>
-                    <h1 className="text-xl font-black text-foreground tracking-tight mb-1 flex items-center gap-2">
+                    <h1 className="text-xl font-bold text-foreground tracking-tight mb-1 flex items-center gap-2">
                         <BookOpen size={20} className="text-primary" />
                         {t("chartOfAccounts")}
                     </h1>
-                    <p className="text-xs text-gray-500 font-medium">
+                    <p className="text-xs text-muted font-medium">
                         {t("chartOfAccountsDesc")}
                     </p>
                 </div>
@@ -540,7 +540,7 @@ export default function AccountsPage() {
                         <button
                             onClick={handleSeedDefaults}
                             disabled={seeding}
-                            className="flex items-center gap-2 bg-gradient-to-r from-primary to-blue-500 text-white px-5 py-2.5 rounded-full text-xs font-bold hover:opacity-90 transition-all duration-200 shadow-lg shadow-primary/20 active:scale-95 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none disabled:opacity-50"
+                            className="flex items-center gap-2 bg-gradient-to-r from-primary to-blue-500 text-white px-5 py-2.5 rounded-full text-xs font-bold hover:opacity-90 transition-all duration-200 shadow-lg shadow-primary/20 active:scale-95 cursor-pointer focus:ring-2 focus:ring-primary/20 focus:outline-none disabled:opacity-50"
                         >
                             {seeding ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
                             {t("seedDefaults")}
@@ -548,14 +548,14 @@ export default function AccountsPage() {
                     )}
                     <button
                         onClick={() => setShowImportModal(true)}
-                        className="flex items-center gap-2 bg-white text-foreground border border-border px-5 py-2.5 rounded-full text-xs font-bold hover:bg-gray-50 transition-all duration-200 shadow-sm active:scale-95 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                        className="flex items-center gap-2 bg-surface text-foreground border border-border px-5 py-2.5 rounded-full text-xs font-bold hover:bg-input transition-all duration-200 shadow-sm active:scale-95 cursor-pointer focus:ring-2 focus:ring-primary/20 focus:outline-none"
                     >
                         <Upload size={14} />
                         {t("importAccounts")}
                     </button>
                     <button
                         onClick={() => { setFormData(EMPTY_FORM); setShowAddModal(true); }}
-                        className="flex items-center gap-2 bg-primary text-primary-foreground px-5 py-2.5 rounded-full text-xs font-bold hover:opacity-90 transition-all duration-200 shadow-lg shadow-primary/10 active:scale-95 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                        className="flex items-center gap-2 bg-primary text-primary-foreground px-5 py-2.5 rounded-full text-xs font-bold hover:opacity-90 transition-all duration-200 shadow-lg shadow-primary/10 active:scale-95 cursor-pointer focus:ring-2 focus:ring-primary/20 focus:outline-none"
                     >
                         <Plus size={14} />
                         {t("addAccount")}
@@ -564,16 +564,16 @@ export default function AccountsPage() {
             </div>
 
             {/* ── View Toggle + Filters Bar ── */}
-            <div className="mb-6 bg-white border border-border rounded-2xl p-4 shadow-sm flex flex-col md:flex-row md:items-center gap-4">
+            <div className="mb-6 bg-surface border border-border rounded-xl p-4 shadow-sm flex flex-col md:flex-row md:items-center gap-4">
                 {/* View toggle */}
-                <div className="flex bg-gray-100 rounded-full p-0.5">
+                <div className="flex bg-input rounded-full p-0.5">
                     <button
                         onClick={() => setViewMode("tree")}
                         className={cn(
                             "flex items-center gap-1.5 px-3.5 py-2 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer",
                             viewMode === "tree"
-                                ? "bg-white text-foreground shadow-sm"
-                                : "text-gray-400 hover:text-gray-600"
+                                ? "bg-surface text-foreground shadow-sm"
+                                : "text-muted hover:text-foreground"
                         )}
                     >
                         <GitBranch size={12} />
@@ -584,8 +584,8 @@ export default function AccountsPage() {
                         className={cn(
                             "flex items-center gap-1.5 px-3.5 py-2 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer",
                             viewMode === "flat"
-                                ? "bg-white text-foreground shadow-sm"
-                                : "text-gray-400 hover:text-gray-600"
+                                ? "bg-surface text-foreground shadow-sm"
+                                : "text-muted hover:text-foreground"
                         )}
                     >
                         <List size={12} />
@@ -596,7 +596,7 @@ export default function AccountsPage() {
                 {/* Account type filter */}
                 <div>
                     <select
-                        className="bg-input border border-border p-2.5 rounded-xl text-xs cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
+                        className="border border-border rounded-lg bg-surface p-2.5 text-xs cursor-pointer focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
                         value={filterType}
                         onChange={ev => setFilterType(ev.target.value as AccountType | "")}
                     >
@@ -609,14 +609,14 @@ export default function AccountsPage() {
                 <label className="flex items-center gap-2 cursor-pointer">
                     <input
                         type="checkbox"
-                        className="rounded border-gray-300"
+                        className="rounded border-border"
                         checked={activeOnly}
                         onChange={ev => setActiveOnly(ev.target.checked)}
                     />
-                    <span className="text-xs font-bold text-gray-500">{t("activeOnly")}</span>
+                    <span className="text-xs font-bold text-muted">{t("activeOnly")}</span>
                 </label>
 
-                <div className="ml-auto text-[10px] text-gray-400 font-medium">
+                <div className="ml-auto text-[10px] text-muted font-medium">
                     {filtered.length} accounts
                 </div>
             </div>
@@ -624,16 +624,16 @@ export default function AccountsPage() {
             {/* ── Add Account Modal ── */}
             {showAddModal && (
                 <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
-                    <div className="bg-white rounded-3xl p-8 max-w-xl w-full shadow-2xl border border-gray-100 relative max-h-[90vh] overflow-y-auto">
+                    <div className="bg-surface rounded-xl p-8 max-w-xl w-full shadow-2xl border border-border relative max-h-[90vh] overflow-y-auto">
                         <button
                             onClick={() => { setShowAddModal(false); setFormData(EMPTY_FORM); }}
                             aria-label="Close modal"
-                            className="absolute right-6 top-6 p-2 text-gray-400 hover:text-gray-600 cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg"
+                            className="absolute right-6 top-6 p-2 text-muted hover:text-foreground cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/20 focus:outline-none rounded-lg"
                         >
                             <X size={18} />
                         </button>
-                        <h2 className="text-lg font-black mb-1">{t("addAccount")}</h2>
-                        <p className="text-xs text-gray-400 mb-8 font-medium">Create a new account in the chart of accounts.</p>
+                        <h2 className="text-lg font-bold mb-1">{t("addAccount")}</h2>
+                        <p className="text-xs text-muted mb-8 font-medium">Create a new account in the chart of accounts.</p>
                         {renderAccountForm(handleCreate, t("addAccount"))}
                     </div>
                 </div>
@@ -642,16 +642,16 @@ export default function AccountsPage() {
             {/* ── Edit Account Modal ── */}
             {showEditModal && (
                 <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
-                    <div className="bg-white rounded-3xl p-8 max-w-xl w-full shadow-2xl border border-gray-100 relative max-h-[90vh] overflow-y-auto">
+                    <div className="bg-surface rounded-xl p-8 max-w-xl w-full shadow-2xl border border-border relative max-h-[90vh] overflow-y-auto">
                         <button
                             onClick={() => { setShowEditModal(false); setEditId(null); setFormData(EMPTY_FORM); }}
                             aria-label="Close modal"
-                            className="absolute right-6 top-6 p-2 text-gray-400 hover:text-gray-600 cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg"
+                            className="absolute right-6 top-6 p-2 text-muted hover:text-foreground cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/20 focus:outline-none rounded-lg"
                         >
                             <X size={18} />
                         </button>
-                        <h2 className="text-lg font-black mb-1">{t("editAccount")}</h2>
-                        <p className="text-xs text-gray-400 mb-8 font-medium">Update the account details.</p>
+                        <h2 className="text-lg font-bold mb-1">{t("editAccount")}</h2>
+                        <p className="text-xs text-muted mb-8 font-medium">Update the account details.</p>
                         {renderAccountForm(handleUpdate, t("editAccount"))}
                     </div>
                 </div>
@@ -660,16 +660,16 @@ export default function AccountsPage() {
             {/* ── Import Modal ── */}
             {showImportModal && (
                 <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
-                    <div className="bg-white rounded-3xl p-8 max-w-xl w-full shadow-2xl border border-gray-100 relative">
+                    <div className="bg-surface rounded-xl p-8 max-w-xl w-full shadow-2xl border border-border relative">
                         <button
                             onClick={() => { setShowImportModal(false); setImportFile(null); }}
                             aria-label="Close modal"
-                            className="absolute right-6 top-6 p-2 text-gray-400 hover:text-gray-600 cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg"
+                            className="absolute right-6 top-6 p-2 text-muted hover:text-foreground cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/20 focus:outline-none rounded-lg"
                         >
                             <X size={18} />
                         </button>
-                        <h2 className="text-lg font-black mb-1">{t("importAccounts")}</h2>
-                        <p className="text-xs text-gray-400 mb-8 font-medium">{t("importFromFile")}</p>
+                        <h2 className="text-lg font-bold mb-1">{t("importAccounts")}</h2>
+                        <p className="text-xs text-muted mb-8 font-medium">{t("importFromFile")}</p>
 
                         <div
                             onDrop={handleDrop}
@@ -677,8 +677,8 @@ export default function AccountsPage() {
                             onDragLeave={() => setDragOver(false)}
                             onClick={() => fileInputRef.current?.click()}
                             className={cn(
-                                "border-2 border-dashed rounded-2xl p-12 text-center cursor-pointer transition-all duration-200",
-                                dragOver ? "border-primary bg-primary/5" : "border-gray-200 bg-gray-50 hover:border-gray-300"
+                                "border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-all duration-200",
+                                dragOver ? "border-primary bg-primary/5" : "border-border bg-input hover:border-border"
                             )}
                         >
                             <input
@@ -691,16 +691,16 @@ export default function AccountsPage() {
                                     if (file) setImportFile(file);
                                 }}
                             />
-                            <Upload size={32} className="mx-auto text-gray-300 mb-4" />
-                            <p className="text-xs font-bold text-gray-500 mb-1">{t("dragDropFile")}</p>
-                            <p className="text-[10px] text-gray-400">{t("supportedFormats")}</p>
+                            <Upload size={32} className="mx-auto text-muted mb-4" />
+                            <p className="text-xs font-bold text-muted mb-1">{t("dragDropFile")}</p>
+                            <p className="text-[10px] text-muted">{t("supportedFormats")}</p>
                             {importFile && (
-                                <div className="mt-4 inline-flex items-center gap-2 bg-white border border-border px-3 py-2 rounded-xl">
+                                <div className="mt-4 inline-flex items-center gap-2 bg-surface border border-border px-3 py-2 rounded-xl">
                                     <FileSpreadsheet size={14} className="text-primary" />
                                     <span className="text-xs font-bold text-foreground">{importFile.name}</span>
                                     <button
                                         onClick={ev => { ev.stopPropagation(); setImportFile(null); }}
-                                        className="p-0.5 text-gray-400 hover:text-gray-600 cursor-pointer"
+                                        className="p-0.5 text-muted hover:text-foreground cursor-pointer"
                                     >
                                         <X size={12} />
                                     </button>
@@ -712,14 +712,14 @@ export default function AccountsPage() {
                             <button
                                 type="button"
                                 onClick={() => { setShowImportModal(false); setImportFile(null); }}
-                                className="px-6 py-3 bg-gray-100 text-gray-500 rounded-xl text-xs font-bold cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                                className="px-6 py-3 bg-input text-muted rounded-lg text-xs font-bold cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/20 focus:outline-none"
                             >
                                 {t("cancel")}
                             </button>
                             <button
                                 onClick={handleImport}
                                 disabled={!importFile || importing}
-                                className="px-8 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-bold cursor-pointer transition-all duration-200 hover:opacity-90 focus:ring-2 focus:ring-primary/30 focus:outline-none disabled:opacity-50 flex items-center gap-2"
+                                className="px-8 py-3 bg-primary text-primary-foreground rounded-lg text-xs font-bold cursor-pointer transition-all duration-200 hover:bg-primary/90 focus:ring-2 focus:ring-primary/20 focus:outline-none disabled:opacity-50 flex items-center gap-2"
                             >
                                 {importing && <Loader2 size={14} className="animate-spin" />}
                                 {t("importAccounts")}
@@ -732,19 +732,19 @@ export default function AccountsPage() {
             {/* ── Delete Confirm Dialog ── */}
             {showDeleteConfirm && (
                 <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
-                    <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl border border-gray-100 relative">
-                        <h2 className="text-lg font-black mb-2">{t("deleteAccount")}</h2>
-                        <p className="text-xs text-gray-500 mb-8">{t("confirmDeleteAccount")}</p>
+                    <div className="bg-surface rounded-xl p-8 max-w-md w-full shadow-2xl border border-border relative">
+                        <h2 className="text-lg font-bold mb-2">{t("deleteAccount")}</h2>
+                        <p className="text-xs text-muted mb-8">{t("confirmDeleteAccount")}</p>
                         <div className="flex justify-end gap-3">
                             <button
                                 onClick={() => setShowDeleteConfirm(null)}
-                                className="px-6 py-3 bg-gray-100 text-gray-500 rounded-xl text-xs font-bold cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                                className="px-6 py-3 bg-input text-muted rounded-lg text-xs font-bold cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/20 focus:outline-none"
                             >
                                 {t("cancel")}
                             </button>
                             <button
                                 onClick={() => handleDelete(showDeleteConfirm)}
-                                className="px-8 py-3 bg-rose-500 text-white rounded-xl text-xs font-bold cursor-pointer transition-all duration-200 hover:opacity-90 focus:ring-2 focus:ring-rose-300 focus:outline-none flex items-center gap-2"
+                                className="px-8 py-3 bg-error text-white rounded-lg text-xs font-bold cursor-pointer transition-all duration-200 hover:opacity-90 focus:ring-2 focus:ring-rose-300 focus:outline-none flex items-center gap-2"
                             >
                                 <Trash2 size={14} />
                                 {t("deleteAccount")}
@@ -756,15 +756,15 @@ export default function AccountsPage() {
 
             {/* ── Skeleton Loading ── */}
             {loading && (
-                <div className="bg-white border border-border rounded-2xl overflow-hidden shadow-sm">
+                <div className="bg-surface border border-border rounded-xl overflow-hidden shadow-sm">
                     <div className="animate-pulse">
-                        <div className="h-12 bg-gray-50 border-b border-gray-100" />
+                        <div className="h-12 bg-input border-b border-border" />
                         {[1, 2, 3, 4, 5, 6, 7, 8].map(i => (
-                            <div key={i} className="flex gap-4 px-5 py-4 border-b border-gray-50">
-                                <div className="h-3 w-4 bg-gray-100 rounded" />
-                                <div className="h-3 w-16 bg-gray-200 rounded" />
-                                <div className="h-3 w-40 bg-gray-100 rounded" />
-                                <div className="h-3 w-20 bg-gray-100 rounded" />
+                            <div key={i} className="flex gap-4 px-5 py-4 border-b border-border">
+                                <div className="h-3 w-4 bg-input rounded" />
+                                <div className="h-3 w-16 bg-input rounded" />
+                                <div className="h-3 w-40 bg-input rounded" />
+                                <div className="h-3 w-20 bg-input rounded" />
                             </div>
                         ))}
                     </div>
@@ -773,16 +773,16 @@ export default function AccountsPage() {
 
             {/* ── Tree View ── */}
             {!loading && viewMode === "tree" && filtered.length > 0 && (
-                <div className="bg-white border border-border rounded-2xl overflow-hidden shadow-sm">
+                <div className="bg-surface border border-border rounded-xl overflow-hidden shadow-sm">
                     {/* Table header */}
-                    <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100 bg-gray-50/50">
+                    <div className="flex items-center justify-between px-5 py-3.5 border-b border-border bg-input/30">
                         <div className="flex items-center gap-6">
-                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{t("code")}</span>
-                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{t("accountName")}</span>
+                            <span className="text-[11px] font-semibold text-muted uppercase tracking-wider">{t("code")}</span>
+                            <span className="text-[11px] font-semibold text-muted uppercase tracking-wider">{t("accountName")}</span>
                         </div>
                         <div className="flex items-center gap-4">
-                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider hidden md:inline">{t("subType")}</span>
-                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{t("actions")}</span>
+                            <span className="text-[11px] font-semibold text-muted uppercase tracking-wider hidden md:inline">{t("subType")}</span>
+                            <span className="text-[11px] font-semibold text-muted uppercase tracking-wider">{t("actions")}</span>
                         </div>
                     </div>
                     {roots.map(account => renderTreeRow(account, childrenMap, 0))}
@@ -798,62 +798,62 @@ export default function AccountsPage() {
                         const isExpanded = expandedTypes.has(type);
 
                         return (
-                            <div key={type} className="bg-white border border-border rounded-2xl overflow-hidden shadow-sm">
+                            <div key={type} className="bg-surface border border-border rounded-xl overflow-hidden shadow-sm">
                                 <button
                                     onClick={() => toggleType(type)}
-                                    className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-50/50 transition-all duration-200 cursor-pointer focus:outline-none"
+                                    className="w-full flex items-center justify-between px-5 py-4 hover:bg-input/30 transition-all duration-200 cursor-pointer focus:outline-none"
                                 >
                                     <div className="flex items-center gap-3">
                                         <span className={cn("inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold", TYPE_BADGE[type])}>
                                             {type}
                                         </span>
                                         <span className="text-xs font-bold text-foreground">{type.charAt(0) + type.slice(1).toLowerCase()}</span>
-                                        <span className="text-[10px] text-gray-400 font-medium">{items.length} accounts</span>
+                                        <span className="text-[10px] text-muted font-medium">{items.length} accounts</span>
                                     </div>
-                                    {isExpanded ? <ChevronDown size={16} className="text-gray-400" /> : <ChevronRight size={16} className="text-gray-400" />}
+                                    {isExpanded ? <ChevronDown size={16} className="text-muted" /> : <ChevronRight size={16} className="text-muted" />}
                                 </button>
                                 {isExpanded && (
-                                    <div className="border-t border-gray-100">
+                                    <div className="border-t border-border">
                                         <table className="w-full">
                                             <thead>
-                                                <tr className="border-b border-gray-50">
-                                                    <th className="text-left px-5 py-2.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">{t("code")}</th>
-                                                    <th className="text-left px-5 py-2.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">{t("accountName")}</th>
-                                                    <th className="text-left px-5 py-2.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider hidden md:table-cell">{t("subType")}</th>
-                                                    <th className="text-left px-5 py-2.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider hidden md:table-cell">{t("parent")}</th>
-                                                    <th className="text-right px-5 py-2.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">{t("actions")}</th>
+                                                <tr className="border-b border-border">
+                                                    <th className="text-left px-5 py-2.5 text-[11px] font-semibold text-muted uppercase tracking-wider">{t("code")}</th>
+                                                    <th className="text-left px-5 py-2.5 text-[11px] font-semibold text-muted uppercase tracking-wider">{t("accountName")}</th>
+                                                    <th className="text-left px-5 py-2.5 text-[11px] font-semibold text-muted uppercase tracking-wider hidden md:table-cell">{t("subType")}</th>
+                                                    <th className="text-left px-5 py-2.5 text-[11px] font-semibold text-muted uppercase tracking-wider hidden md:table-cell">{t("parent")}</th>
+                                                    <th className="text-right px-5 py-2.5 text-[11px] font-semibold text-muted uppercase tracking-wider">{t("actions")}</th>
                                                 </tr>
                                             </thead>
-                                            <tbody className="divide-y divide-gray-50">
+                                            <tbody className="divide-y divide-border">
                                                 {items
                                                     .sort((a, b) => a.displayOrder - b.displayOrder || a.code.localeCompare(b.code))
                                                     .map(account => (
-                                                        <tr key={account.id} className={cn("hover:bg-gray-50/50 transition-all duration-200", !account.active && "opacity-50")}>
+                                                        <tr key={account.id} className={cn("hover:bg-input/30 transition-all duration-200", !account.active && "opacity-50")}>
                                                             <td className="px-5 py-3">
-                                                                <span className={cn("text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg", TYPE_BADGE[account.accountType])}>
+                                                                <span className={cn("text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-lg", TYPE_BADGE[account.accountType])}>
                                                                     {account.code}
                                                                 </span>
                                                             </td>
                                                             <td className="px-5 py-3">
-                                                                <p className={cn("text-xs font-bold text-foreground", account.group && "font-black")}>
+                                                                <p className={cn("text-xs font-bold text-foreground", account.group && "font-bold")}>
                                                                     {displayName(account)}
                                                                 </p>
                                                                 {account.description && (
-                                                                    <p className="text-[10px] text-gray-400 mt-0.5">{account.description}</p>
+                                                                    <p className="text-[10px] text-muted mt-0.5">{account.description}</p>
                                                                 )}
                                                             </td>
                                                             <td className="px-5 py-3 hidden md:table-cell">
-                                                                <span className="text-[10px] text-gray-400">
+                                                                <span className="text-[10px] text-muted">
                                                                     {account.accountSubType?.replace(/_/g, " ") || "—"}
                                                                 </span>
                                                             </td>
                                                             <td className="px-5 py-3 hidden md:table-cell">
                                                                 {account.parentCode ? (
-                                                                    <span className="text-[10px] font-bold text-gray-300">
+                                                                    <span className="text-[10px] font-bold text-muted">
                                                                         {account.parentCode}
                                                                     </span>
                                                                 ) : (
-                                                                    <span className="text-[10px] text-gray-200">—</span>
+                                                                    <span className="text-[10px] text-muted">—</span>
                                                                 )}
                                                             </td>
                                                             <td className="px-5 py-3 text-right">
@@ -862,19 +862,19 @@ export default function AccountsPage() {
                                                                         <span className="text-[8px] font-bold text-primary bg-primary/5 px-2 py-0.5 rounded-full uppercase tracking-wider mr-1">Group</span>
                                                                     )}
                                                                     {account.system ? (
-                                                                        <span className="text-[8px] font-bold text-gray-300 bg-gray-50 px-2 py-0.5 rounded-full uppercase tracking-wider">System</span>
+                                                                        <span className="text-[8px] font-bold text-muted bg-input px-2 py-0.5 rounded-full uppercase tracking-wider">System</span>
                                                                     ) : (
                                                                         <>
                                                                             <button
                                                                                 onClick={() => openEdit(account)}
-                                                                                className="p-1.5 text-gray-300 hover:text-primary cursor-pointer transition-all duration-200 rounded-lg hover:bg-primary/5 focus:outline-none"
+                                                                                className="p-1.5 text-muted hover:text-primary cursor-pointer transition-all duration-200 rounded-lg hover:bg-primary/5 focus:outline-none"
                                                                                 title={t("editAccount")}
                                                                             >
                                                                                 <Pencil size={13} />
                                                                             </button>
                                                                             <button
                                                                                 onClick={() => setShowDeleteConfirm(account.id)}
-                                                                                className="p-1.5 text-gray-300 hover:text-rose-500 cursor-pointer transition-all duration-200 rounded-lg hover:bg-rose-50 focus:outline-none"
+                                                                                className="p-1.5 text-muted hover:text-rose-500 cursor-pointer transition-all duration-200 rounded-lg hover:bg-rose-50 focus:outline-none"
                                                                                 title={t("deleteAccount")}
                                                                             >
                                                                                 <Trash2 size={13} />
@@ -897,17 +897,17 @@ export default function AccountsPage() {
 
             {/* ── Empty State ── */}
             {filtered.length === 0 && !loading && (
-                <div className="text-center py-24 bg-gray-50 border border-dashed border-gray-200 rounded-[2.5rem] flex flex-col items-center">
-                    <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center text-gray-200 shadow-sm mb-6">
+                <div className="text-center py-24 bg-input border border-dashed border-border rounded-xl flex flex-col items-center">
+                    <div className="w-16 h-16 bg-surface rounded-xl flex items-center justify-center text-muted shadow-sm mb-6">
                         <FileSpreadsheet size={32} />
                     </div>
-                    <p className="text-sm font-bold text-gray-400 mb-2 uppercase tracking-widest">{t("noAccountsFound")}</p>
-                    <p className="text-xs text-gray-400 mb-6">{t("seedAccountsDesc")}</p>
+                    <p className="text-sm font-bold text-muted mb-2 uppercase tracking-widest">{t("noAccountsFound")}</p>
+                    <p className="text-xs text-muted mb-6">{t("seedAccountsDesc")}</p>
                     {accounts.length === 0 && (
                         <button
                             onClick={handleSeedDefaults}
                             disabled={seeding}
-                            className="text-xs font-black text-primary border-b-2 border-primary pb-0.5 hover:opacity-70 transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none disabled:opacity-50"
+                            className="text-xs font-bold text-primary border-b-2 border-primary pb-0.5 hover:opacity-70 transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/20 focus:outline-none disabled:opacity-50"
                         >
                             {t("seedDefaults")}
                         </button>

@@ -2,12 +2,14 @@
 
 import { useState, useEffect } from "react";
 import { useTranslations, useLocale } from "next-intl";
-import { Plus, MapPin, Building2, Hash, ArrowRight, X, Users, DollarSign, PieChart, Activity } from "lucide-react";
+import { Plus, MapPin, Building2, Hash, ArrowRight, X, Users, DollarSign, PieChart, Activity, List, LayoutGrid, Search } from "lucide-react";
 import { Link } from "@/i18n/routing";
 import { cn } from "@/lib/utils";
-import CardFlip from "@/components/ui/card-flip";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useSession } from "next-auth/react";
 import { hasPermission, type UserRole } from "@/lib/rbac";
+import { formatCurrency, formatCurrencyCompact } from "@/lib/format";
+import { Pagination } from "@/components/ui/Pagination";
 
 type Property = {
     id: string;
@@ -47,6 +49,18 @@ export default function PropertiesPage() {
     const userRole = session?.user?.role as UserRole | undefined;
     const canCreate = hasPermission(userRole, 'canCreateProperties');
 
+    const [viewMode, setViewMode] = useState<"table" | "cards">("table");
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage, setItemsPerPage] = useState(25);
+    const [searchQuery, setSearchQuery] = useState("");
+    const [confirmDialog, setConfirmDialog] = useState<{
+        title: string;
+        description: string;
+        confirmText: string;
+        isDestructive: boolean;
+        onConfirm: () => void;
+    } | null>(null);
+
     const [projectFormData, setProjectFormData] = useState({
         nameEn: "",
         nameAr: "",
@@ -70,7 +84,16 @@ export default function PropertiesPage() {
 
     useEffect(() => {
         fetchStats();
+        const onVisibilityChange = () => {
+            if (document.visibilityState === "visible") fetchStats();
+        };
+        document.addEventListener("visibilitychange", onVisibilityChange);
+        return () => document.removeEventListener("visibilitychange", onVisibilityChange);
     }, []);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [stats]);
 
     const fetchStats = async () => {
         try {
@@ -148,36 +171,50 @@ export default function PropertiesPage() {
         }
     };
 
+    const filteredStats = stats.filter(s => {
+        if (!searchQuery) return true;
+        const q = searchQuery.toLowerCase();
+        return (
+            s.property.nameEn?.toLowerCase().includes(q) ||
+            s.property.nameAr?.toLowerCase().includes(q) ||
+            s.property.address?.toLowerCase().includes(q) ||
+            s.property.emirate?.toLowerCase().includes(q) ||
+            s.property.type?.toLowerCase().includes(q)
+        );
+    });
+    const totalItems = filteredStats.length;
+    const paginatedItems = filteredStats.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
     if (loading) {
         return (
             <div>
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10">
                     <div>
-                        <div className="h-6 w-40 bg-gray-200 rounded-lg animate-pulse mb-2" />
-                        <div className="h-4 w-72 bg-gray-100 rounded-lg animate-pulse" />
+                        <div className="h-6 w-40 bg-input rounded-lg animate-pulse mb-2" />
+                        <div className="h-4 w-72 bg-background rounded-lg animate-pulse" />
                     </div>
                     <div className="flex gap-3">
-                        <div className="h-10 w-32 bg-gray-200 rounded-full animate-pulse" />
-                        <div className="h-10 w-32 bg-gray-100 rounded-full animate-pulse" />
+                        <div className="h-10 w-32 bg-input rounded-lg animate-pulse" />
+                        <div className="h-10 w-32 bg-background rounded-lg animate-pulse" />
                     </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                     {[...Array(6)].map((_, i) => (
-                        <div key={i} className="bg-white rounded-[2rem] p-6 border border-gray-100 shadow-sm">
+                        <div key={i} className="bg-surface rounded-xl p-6 border border-border">
                             <div className="flex justify-between items-start mb-6">
-                                <div className="w-12 h-12 bg-gray-100 rounded-2xl animate-pulse" />
-                                <div className="h-5 w-20 bg-gray-100 rounded-lg animate-pulse" />
+                                <div className="w-12 h-12 bg-background rounded-xl animate-pulse" />
+                                <div className="h-5 w-20 bg-background rounded-lg animate-pulse" />
                             </div>
-                            <div className="h-5 w-36 bg-gray-200 rounded-lg animate-pulse mb-2" />
-                            <div className="h-3 w-28 bg-gray-100 rounded animate-pulse mb-4" />
+                            <div className="h-5 w-36 bg-input rounded-lg animate-pulse mb-2" />
+                            <div className="h-3 w-28 bg-background rounded animate-pulse mb-4" />
                             <div className="grid grid-cols-2 gap-4 mt-4">
-                                <div className="bg-gray-50 rounded-2xl p-3 border border-gray-100/50">
-                                    <div className="h-2 w-16 bg-gray-100 rounded animate-pulse mb-2" />
-                                    <div className="h-4 w-8 bg-gray-200 rounded animate-pulse" />
+                                <div className="bg-background rounded-xl p-3 border border-border">
+                                    <div className="h-2 w-16 bg-background rounded animate-pulse mb-2" />
+                                    <div className="h-4 w-8 bg-input rounded animate-pulse" />
                                 </div>
-                                <div className="bg-gray-50 rounded-2xl p-3 border border-gray-100/50">
-                                    <div className="h-2 w-16 bg-gray-100 rounded animate-pulse mb-2" />
-                                    <div className="h-4 w-8 bg-gray-200 rounded animate-pulse" />
+                                <div className="bg-background rounded-xl p-3 border border-border">
+                                    <div className="h-2 w-16 bg-background rounded animate-pulse mb-2" />
+                                    <div className="h-4 w-8 bg-input rounded animate-pulse" />
                                 </div>
                             </div>
                         </div>
@@ -189,60 +226,100 @@ export default function PropertiesPage() {
 
     return (
         <div>
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10">
+            <div className="flex flex-col gap-4 mb-10">
                 <div>
-                    <h1 className="text-xl font-black text-foreground tracking-tight mb-1">
+                    <h1 className="text-xl font-bold text-foreground tracking-tight mb-1">
                         {t("projects")}
                     </h1>
-                    <p className="text-xs text-gray-500 font-medium">
+                    <p className="text-xs text-muted font-medium">
                         Manage your real estate projects and their individual properties.
                     </p>
                 </div>
-                {canCreate && (
-                    <div className="flex gap-3">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                    <div className="relative">
+                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+                        <input
+                            type="text"
+                            placeholder="Search..."
+                            value={searchQuery}
+                            onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+                            className="pl-9 pr-4 py-2 bg-surface border border-border rounded-lg text-sm text-foreground placeholder:text-muted/50 focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none w-64 transition-all"
+                        />
+                    </div>
+                    <div className="flex items-center gap-3">
+                    <div className="flex items-center bg-input rounded-lg p-0.5 border border-border">
                         <button
-                            onClick={() => setShowProjectForm(true)}
-                            className="cursor-pointer flex items-center gap-2 bg-primary text-primary-foreground px-5 py-2.5 rounded-full text-xs font-bold hover:opacity-90 transition-all duration-200 shadow-lg shadow-primary/10 active:scale-95 focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                            onClick={() => setViewMode("table")}
+                            className={cn(
+                                "px-3 py-1.5 rounded-md text-xs font-medium transition-all cursor-pointer flex items-center gap-1.5",
+                                viewMode === "table" ? "bg-surface text-foreground shadow-sm border border-border" : "text-muted hover:text-foreground"
+                            )}
                         >
-                            <Plus size={14} />
-                            {t("addProject")}
+                            <List size={13} /> Table
                         </button>
                         <button
-                            onClick={() => {
-                                if (stats.length === 0) {
-                                    alert("Please add a project first.");
-                                    return;
-                                }
-                                setPropertyFormData(prev => ({ ...prev, propertyId: stats[0].property.id }));
-                                setShowPropertyForm(true);
-                            }}
-                            className="cursor-pointer flex items-center gap-2 bg-white text-foreground border border-border px-5 py-2.5 rounded-full text-xs font-bold hover:bg-gray-50 transition-all duration-200 shadow-sm active:scale-95 focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                            onClick={() => setViewMode("cards")}
+                            className={cn(
+                                "px-3 py-1.5 rounded-md text-xs font-medium transition-all cursor-pointer flex items-center gap-1.5",
+                                viewMode === "cards" ? "bg-surface text-foreground shadow-sm border border-border" : "text-muted hover:text-foreground"
+                            )}
                         >
-                            <Plus size={14} />
-                            {t("addProperty")}
+                            <LayoutGrid size={13} /> Cards
                         </button>
                     </div>
-                )}
+                    {canCreate && (
+                        <>
+                            <button
+                                onClick={() => setShowProjectForm(true)}
+                                className="cursor-pointer flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-xs font-semibold hover:opacity-90 transition-all duration-200 active:scale-95 focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                            >
+                                <Plus size={14} />
+                                {t("addProject")}
+                            </button>
+                            <button
+                                onClick={() => {
+                                    if (stats.length === 0) {
+                                        setConfirmDialog({
+                                            title: "No Projects",
+                                            description: "Please add a project first before adding a property.",
+                                            confirmText: "OK",
+                                            isDestructive: false,
+                                            onConfirm: () => { setConfirmDialog(null); },
+                                        });
+                                        return;
+                                    }
+                                    setPropertyFormData(prev => ({ ...prev, propertyId: stats[0].property.id }));
+                                    setShowPropertyForm(true);
+                                }}
+                                className="cursor-pointer flex items-center gap-2 bg-surface text-foreground border border-border px-4 py-2 rounded-lg text-xs font-semibold hover:bg-background transition-all duration-200 active:scale-95 focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                            >
+                                <Plus size={14} />
+                                {t("addProperty")}
+                            </button>
+                        </>
+                    )}
+                    </div>
+                </div>
             </div>
 
             {/* Project Form Modal */}
             {showProjectForm && (
-                <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
-                    <div className="bg-white rounded-3xl p-8 max-w-xl w-full shadow-2xl border border-gray-100 relative">
-                        <button onClick={() => setShowProjectForm(false)} aria-label="Close" className="cursor-pointer absolute right-6 top-6 p-2 text-gray-400 hover:text-gray-600 transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg"><X size={18} /></button>
-                        <h2 className="text-lg font-black mb-1">{t("addProject")}</h2>
-                        <p className="text-xs text-gray-400 mb-8 font-medium">Create a new Project (Portfolio Group).</p>
+                <div className="fixed inset-0 bg-foreground/40 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
+                    <div className="bg-surface rounded-xl p-8 max-w-xl w-full shadow-2xl border border-border relative">
+                        <button onClick={() => setShowProjectForm(false)} aria-label="Close" className="cursor-pointer absolute right-6 top-6 p-2 text-muted hover:text-foreground transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg"><X size={18} /></button>
+                        <h2 className="text-lg font-bold mb-1">{t("addProject")}</h2>
+                        <p className="text-xs text-muted mb-8 font-medium">Create a new Project (Portfolio Group).</p>
                         <form onSubmit={handleProjectSubmit} className="grid grid-cols-2 gap-5">
                             <div className="col-span-1">
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("nameEn")}</label>
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("nameEn")}</label>
                                 <input placeholder="Project Name (EN)" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={projectFormData.nameEn} onChange={ev => setProjectFormData({ ...projectFormData, nameEn: ev.target.value })} />
                             </div>
                             <div className="col-span-1">
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("nameAr")}</label>
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("nameAr")}</label>
                                 <input placeholder="اسم المشروع (AR)" className="w-full bg-input border border-border p-3 rounded-xl text-xs text-right focus:ring-2 focus:ring-primary/30 focus:outline-none" value={projectFormData.nameAr} onChange={ev => setProjectFormData({ ...projectFormData, nameAr: ev.target.value })} />
                             </div>
                             <div className="col-span-1">
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("emirate")}</label>
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("emirate")}</label>
                                 <select className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={projectFormData.emirate} onChange={ev => setProjectFormData({ ...projectFormData, emirate: ev.target.value })}>
                                     {["DUBAI", "ABU_DHABI", "SHARJAH", "AJMAN", "UMM_AL_QUWAIN", "RAS_AL_KHAIMAH", "FUJAIRAH"].map(opt => (
                                         <option key={opt} value={opt}>{e(opt)}</option>
@@ -250,7 +327,7 @@ export default function PropertiesPage() {
                                 </select>
                             </div>
                             <div className="col-span-2 flex justify-end gap-3 mt-4">
-                                <button type="button" onClick={() => setShowProjectForm(false)} className="cursor-pointer px-6 py-3 text-xs font-bold text-gray-500 transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg">{t("cancel")}</button>
+                                <button type="button" onClick={() => setShowProjectForm(false)} className="cursor-pointer px-6 py-3 text-xs font-bold text-muted transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg">{t("cancel")}</button>
                                 <button type="submit" className="cursor-pointer px-8 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-bold transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none">{t("create")}</button>
                             </div>
                         </form>
@@ -260,14 +337,14 @@ export default function PropertiesPage() {
 
             {/* Property Form Modal */}
             {showPropertyForm && (
-                <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
-                    <div className="bg-white rounded-3xl p-8 max-w-xl w-full shadow-2xl border border-gray-100 relative">
-                        <button onClick={() => setShowPropertyForm(false)} aria-label="Close" className="cursor-pointer absolute right-6 top-6 p-2 text-gray-400 hover:text-gray-600 transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg"><X size={18} /></button>
-                        <h2 className="text-lg font-black mb-1">{t("addProperty")}</h2>
-                        <p className="text-xs text-gray-400 mb-8 font-medium">Add a new Property (Unit) to a Project.</p>
+                <div className="fixed inset-0 bg-foreground/40 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
+                    <div className="bg-surface rounded-xl p-8 max-w-xl w-full shadow-2xl border border-border relative">
+                        <button onClick={() => setShowPropertyForm(false)} aria-label="Close" className="cursor-pointer absolute right-6 top-6 p-2 text-muted hover:text-foreground transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg"><X size={18} /></button>
+                        <h2 className="text-lg font-bold mb-1">{t("addProperty")}</h2>
+                        <p className="text-xs text-muted mb-8 font-medium">Add a new Property (Unit) to a Project.</p>
                         <form onSubmit={handlePropertySubmit} className="grid grid-cols-2 gap-5">
                             <div className="col-span-2">
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">Select Project</label>
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">Select Project</label>
                                 <select className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={propertyFormData.propertyId} onChange={ev => setPropertyFormData({ ...propertyFormData, propertyId: ev.target.value })}>
                                     {stats.map(s => (
                                         <option key={s.property.id} value={s.property.id}>{locale === 'ar' ? s.property.nameAr : s.property.nameEn}</option>
@@ -275,15 +352,15 @@ export default function PropertiesPage() {
                                 </select>
                             </div>
                             <div className="col-span-1">
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("unitNumber")}</label>
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("unitNumber")}</label>
                                 <input required placeholder="e.g. 101" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={propertyFormData.unitNumber} onChange={ev => setPropertyFormData({ ...propertyFormData, unitNumber: ev.target.value })} />
                             </div>
                             <div className="col-span-1">
-                                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">{t("expectedRent")}</label>
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("expectedRent")}</label>
                                 <input type="number" placeholder="50000" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={propertyFormData.expectedRent} onChange={ev => setPropertyFormData({ ...propertyFormData, expectedRent: Number(ev.target.value) })} />
                             </div>
                             <div className="col-span-2 flex justify-end gap-3 mt-4">
-                                <button type="button" onClick={() => setShowPropertyForm(false)} className="cursor-pointer px-6 py-3 text-xs font-bold text-gray-500 transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg">{t("cancel")}</button>
+                                <button type="button" onClick={() => setShowPropertyForm(false)} className="cursor-pointer px-6 py-3 text-xs font-bold text-muted transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg">{t("cancel")}</button>
                                 <button type="submit" className="cursor-pointer px-8 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-bold transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none">{t("create")}</button>
                             </div>
                         </form>
@@ -291,111 +368,166 @@ export default function PropertiesPage() {
                 </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                {stats.map(s => (
-                    <CardFlip
-                        key={s.property.id}
-                        front={
-                            <div className="h-full flex flex-col justify-between">
-                                <div>
-                                    <div className="flex justify-between items-start mb-6">
-                                        <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center text-primary border border-primary/20">
-                                            <Building2 size={24} />
-                                        </div>
-                                        <span className="text-[10px] font-black uppercase tracking-widest px-3 py-1 bg-gray-50 text-gray-400 rounded-lg border border-gray-100">
-                                            {s.property.type}
-                                        </span>
-                                    </div>
-                                    <h3 className="text-lg font-black text-foreground tracking-tight mb-2">
-                                        {locale === 'ar' && s.property.nameAr ? s.property.nameAr : s.property.nameEn}
-                                    </h3>
-                                    <p className="text-xs text-gray-400 font-medium mb-4 flex items-center gap-1.5">
-                                        <MapPin size={12} className="text-primary/40" />
-                                        {s.property.address || e(s.property.emirate)}
-                                    </p>
-                                </div>
-                                <div className="grid grid-cols-2 gap-4 mt-auto">
-                                    <div className="bg-gray-50 rounded-2xl p-3 border border-gray-100/50">
-                                        <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1">Properties</p>
-                                        <p className="text-sm font-black text-foreground">{s.propertyCount}</p>
-                                    </div>
-                                    <div className="bg-gray-50 rounded-2xl p-3 border border-gray-100/50">
-                                        <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1">Vacancies</p>
-                                        <p className="text-sm font-black text-primary">{s.vacancies}</p>
-                                    </div>
-                                </div>
+            {stats.length > 0 && (
+                <>
+                    {viewMode === "table" ? (
+                        <div className="bg-surface rounded-xl border border-border overflow-hidden">
+                            <div className="overflow-x-auto">
+                                <table className="w-full">
+                                    <thead>
+                                        <tr className="bg-input/50">
+                                            <th className="px-5 py-3 text-start text-[11px] font-semibold text-muted uppercase tracking-wider">Name</th>
+                                            <th className="px-5 py-3 text-start text-[11px] font-semibold text-muted uppercase tracking-wider">Location</th>
+                                            <th className="px-5 py-3 text-start text-[11px] font-semibold text-muted uppercase tracking-wider">Type</th>
+                                            <th className="px-5 py-3 text-end text-[11px] font-semibold text-muted uppercase tracking-wider">Units</th>
+                                            <th className="px-5 py-3 text-end text-[11px] font-semibold text-muted uppercase tracking-wider">Vacant</th>
+                                            <th className="px-5 py-3 text-end text-[11px] font-semibold text-muted uppercase tracking-wider">Revenue at Capacity</th>
+                                            <th className="px-5 py-3 text-end text-[11px] font-semibold text-muted uppercase tracking-wider">Actual Revenue</th>
+                                            <th className="px-5 py-3 text-end text-[11px] font-semibold text-muted uppercase tracking-wider">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {paginatedItems.map(s => (
+                                            <tr key={s.property.id} className="border-b border-border hover:bg-input/30 transition-colors">
+                                                <td className="px-5 py-3.5 text-sm text-foreground font-medium">
+                                                    {locale === 'ar' && s.property.nameAr ? s.property.nameAr : s.property.nameEn}
+                                                </td>
+                                                <td className="px-5 py-3.5 text-sm text-foreground">
+                                                    {s.property.address || e(s.property.emirate)}
+                                                </td>
+                                                <td className="px-5 py-3.5">
+                                                    <span className="text-[10px] font-semibold uppercase tracking-widest px-2.5 py-1 bg-input text-muted rounded-md border border-border">
+                                                        {s.property.type}
+                                                    </span>
+                                                </td>
+                                                <td className="px-5 py-3.5 text-sm text-foreground text-end tabular-nums">{s.propertyCount}</td>
+                                                <td className="px-5 py-3.5 text-sm text-end tabular-nums">
+                                                    <span className={cn(s.vacancies > 0 ? "text-warning" : "text-success", "font-medium")}>{s.vacancies}</span>
+                                                </td>
+                                                <td className="px-5 py-3.5 text-sm text-foreground text-end tabular-nums">{formatCurrencyCompact(s.revenueAtCapacity)}</td>
+                                                <td className="px-5 py-3.5 text-sm text-foreground text-end tabular-nums">{formatCurrencyCompact(s.actualRevenue)}</td>
+                                                <td className="px-5 py-3.5 text-end">
+                                                    <Link
+                                                        href={`/dashboard/properties/${s.property.id}`}
+                                                        className="text-xs font-semibold text-primary hover:text-primary/80 transition-colors"
+                                                    >
+                                                        Manage
+                                                    </Link>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
                             </div>
-                        }
-                        back={
-                            <div className="h-full flex flex-col">
-                                <h4 className="text-sm font-black text-primary uppercase tracking-widest mb-6 border-b border-primary/10 pb-2">Financial Snapshot</h4>
-                                <div className="space-y-4 flex-1">
-                                    <div className="flex justify-between items-center group/item transition-all hover:translate-x-1">
-                                        <div className="flex items-center gap-2">
-                                            <PieChart size={14} className="text-primary/40" />
-                                            <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">{t("revenueAtCapacity")}</span>
-                                        </div>
-                                        <span className="text-xs font-black text-foreground">AED {s.revenueAtCapacity.toLocaleString()}</span>
-                                    </div>
-                                    <div className="flex justify-between items-center group/item transition-all hover:translate-x-1">
-                                        <div className="flex items-center gap-2">
-                                            <DollarSign size={14} className="text-primary/40" />
-                                            <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">{t("actualRent")}</span>
-                                        </div>
-                                        <span className="text-xs font-black text-foreground">AED {s.actualRevenue.toLocaleString()}</span>
-                                    </div>
-                                    <div className="flex justify-between items-start group/item transition-all hover:translate-x-1">
-                                        <div className="flex items-center gap-2">
-                                            <Users size={14} className="text-primary/40" />
-                                            <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">{t("propertyManager")}</span>
-                                        </div>
-                                        <div className="flex flex-col items-end gap-1">
-                                            {s.assignedManagers && s.assignedManagers.length > 0 ? s.assignedManagers.map(m => (
-                                                <div key={m.id} className="text-right">
-                                                    <p className="text-xs font-black text-foreground leading-tight">{m.name}</p>
-                                                    {m.phoneNumber && <p className="text-[9px] font-bold text-gray-400 font-mono">{m.phoneNumber}</p>}
-                                                </div>
-                                            )) : (
-                                                <span className="text-xs font-black text-foreground opacity-30 italic">Unassigned</span>
-                                            )}
-                                        </div>
-                                    </div>
-                                    <div className="flex justify-between items-center group/item transition-all hover:translate-x-1">
-                                        <div className="flex items-center gap-2">
-                                            <Activity size={14} className="text-primary/40" />
-                                            <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">{t("fixedExpenses")}</span>
-                                        </div>
-                                        <span className="text-xs font-black text-foreground text-red-500">AED {s.property.fixedExpenses?.toLocaleString()}</span>
-                                    </div>
-                                </div>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            {paginatedItems.map(s => (
                                 <Link
+                                    key={s.property.id}
                                     href={`/dashboard/properties/${s.property.id}`}
-                                    className="mt-6 flex items-center justify-center gap-2 bg-white text-xs font-black text-primary py-3 rounded-2xl border border-primary/20 hover:bg-primary hover:text-white transition-all group/link shadow-sm focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                                    className="group bg-surface rounded-xl border border-border hover:shadow-lg hover:border-primary/30 transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/20 focus:outline-none overflow-hidden"
                                 >
-                                    Manage Property
-                                    <ArrowRight size={14} className="group-hover/link:translate-x-1 transition-transform" />
+                                    {/* Header */}
+                                    <div className="p-5 pb-4">
+                                        <div className="flex justify-between items-start mb-4">
+                                            <div className="w-11 h-11 bg-primary/10 rounded-xl flex items-center justify-center text-primary border border-primary/20">
+                                                <Building2 size={20} />
+                                            </div>
+                                            <span className="text-[10px] font-semibold uppercase tracking-widest px-2.5 py-1 bg-input text-muted rounded-md border border-border">
+                                                {s.property.type}
+                                            </span>
+                                        </div>
+                                        <h3 className="text-base font-bold text-foreground tracking-tight mb-1">
+                                            {locale === 'ar' && s.property.nameAr ? s.property.nameAr : s.property.nameEn}
+                                        </h3>
+                                        <p className="text-xs text-muted font-medium flex items-center gap-1.5">
+                                            <MapPin size={11} className="text-muted/50" />
+                                            {s.property.address || e(s.property.emirate)}
+                                        </p>
+                                    </div>
+
+                                    {/* Stats Row */}
+                                    <div className="grid grid-cols-3 border-t border-border">
+                                        <div className="px-5 py-3 border-r border-border">
+                                            <p className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-0.5">Units</p>
+                                            <p className="text-sm font-bold text-foreground tabular-nums">{s.propertyCount}</p>
+                                        </div>
+                                        <div className="px-5 py-3 border-r border-border">
+                                            <p className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-0.5">Vacant</p>
+                                            <p className={cn("text-sm font-bold tabular-nums", s.vacancies > 0 ? "text-warning" : "text-success")}>{s.vacancies}</p>
+                                        </div>
+                                        <div className="px-5 py-3">
+                                            <p className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-0.5">Revenue</p>
+                                            <p className="text-sm font-bold text-foreground tabular-nums">{formatCurrencyCompact(s.actualRevenue)}</p>
+                                        </div>
+                                    </div>
+
+                                    {/* Financial Details */}
+                                    <div className="px-5 py-3 bg-input/50 border-t border-border space-y-2">
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-[11px] text-muted font-medium">{t("revenueAtCapacity")}</span>
+                                            <span className="text-[11px] font-semibold text-foreground tabular-nums">{formatCurrencyCompact(s.revenueAtCapacity)}</span>
+                                        </div>
+                                        {(s.property.fixedExpenses ?? 0) > 0 && (
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-[11px] text-muted font-medium">{t("fixedExpenses")}</span>
+                                                <span className="text-[11px] font-semibold text-error tabular-nums">{formatCurrencyCompact(s.property.fixedExpenses)}</span>
+                                            </div>
+                                        )}
+                                        {s.assignedManagers && s.assignedManagers.length > 0 && (
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-[11px] text-muted font-medium">{t("propertyManager")}</span>
+                                                <span className="text-[11px] font-semibold text-foreground">{s.assignedManagers.map(m => m.name).join(', ')}</span>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Footer CTA */}
+                                    <div className="px-5 py-3 border-t border-border flex items-center justify-between">
+                                        <span className="text-xs font-semibold text-primary">Manage Property</span>
+                                        <ArrowRight size={14} className="text-primary group-hover:translate-x-1 transition-transform" />
+                                    </div>
                                 </Link>
-                            </div>
-                        }
+                            ))}
+                        </div>
+                    )}
+
+                    <Pagination
+                        currentPage={currentPage}
+                        totalItems={totalItems}
+                        itemsPerPage={itemsPerPage}
+                        onPageChange={setCurrentPage}
+                        onItemsPerPageChange={(n) => { setItemsPerPage(n); setCurrentPage(1); }}
                     />
-                ))}
-            </div>
+                </>
+            )}
 
             {stats.length === 0 && !showProjectForm && (
-                <div className="text-center py-24 bg-gray-50 border border-dashed border-gray-200 rounded-[2.5rem] flex flex-col items-center">
-                    <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center text-gray-200 shadow-sm mb-6">
+                <div className="text-center py-24 bg-background border border-dashed border-border rounded-xl flex flex-col items-center">
+                    <div className="w-16 h-16 bg-surface rounded-xl flex items-center justify-center text-muted mb-6">
                         <Building2 size={32} />
                     </div>
-                    <p className="text-sm font-bold text-gray-400 mb-6 uppercase tracking-widest">
+                    <p className="text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-6">
                         {canCreate ? 'No Projects Found' : 'No Properties Assigned'}
                     </p>
                     {canCreate && (
-                        <button onClick={() => setShowProjectForm(true)} className="cursor-pointer text-xs font-black text-foreground border-b-2 border-primary pb-0.5 hover:text-primary transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none">
+                        <button onClick={() => setShowProjectForm(true)} className="cursor-pointer text-xs font-bold text-foreground border-b-2 border-primary pb-0.5 hover:text-primary transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none">
                             {t("addProject")}
                         </button>
                     )}
                 </div>
             )}
+
+            <ConfirmDialog
+                isOpen={confirmDialog !== null}
+                onClose={() => setConfirmDialog(null)}
+                onConfirm={confirmDialog?.onConfirm || (() => {})}
+                title={confirmDialog?.title || ""}
+                description={confirmDialog?.description}
+                confirmText={confirmDialog?.confirmText || "Confirm"}
+                isDestructive={confirmDialog?.isDestructive || false}
+            />
         </div>
     );
 }
