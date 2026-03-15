@@ -1,22 +1,125 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useSession, signOut } from "next-auth/react";
 import { TenantSwitcher } from "./TenantSwitcher";
 import { Link } from "@/i18n/routing";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useLocale } from "next-intl";
 import { cn } from "@/lib/utils";
-import { LogOut, User, ChevronDown } from "lucide-react";
+import { LogOut, User, ChevronDown, Bell } from "lucide-react";
 import { getRoleLabel, type UserRole } from "@/lib/rbac";
+
+type Notification = {
+    id: string;
+    title: string;
+    message: string;
+    type: string;
+    referenceType: string | null;
+    referenceId: string | null;
+    isRead: boolean;
+    createdAt: string;
+};
+
+function timeAgo(dateStr: string): string {
+    const now = new Date();
+    const date = new Date(dateStr);
+    const diffMs = now.getTime() - date.getTime();
+    const mins = Math.floor(diffMs / 60000);
+    if (mins < 1) return "Just now";
+    if (mins < 60) return `${mins}m ago`;
+    const hours = Math.floor(diffMs / 3600000);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(diffMs / 86400000);
+    if (days < 7) return `${days}d ago`;
+    return date.toLocaleDateString();
+}
 
 export function TopHeader() {
     const { data: session } = useSession();
     const pathname = usePathname();
     const locale = useLocale();
+    const router = useRouter();
     const userRole = session?.user?.role as UserRole | undefined;
     const [isProfileOpen, setIsProfileOpen] = useState(false);
     const buttonRef = useRef<HTMLButtonElement>(null);
+
+    // Notification state
+    const [unreadCount, setUnreadCount] = useState(0);
+    const [notifications, setNotifications] = useState<Notification[]>([]);
+    const [showDropdown, setShowDropdown] = useState(false);
+
+    const fetchUnreadCount = useCallback(async () => {
+        try {
+            const res = await fetch("/api/proxy/v1/notifications/unread-count");
+            if (res.ok) {
+                const data = await res.json();
+                setUnreadCount(typeof data === "number" ? data : data.count ?? 0);
+            }
+        } catch { /* ignore */ }
+    }, []);
+
+    const fetchRecentNotifications = useCallback(async () => {
+        try {
+            const res = await fetch("/api/proxy/v1/notifications?page=0&size=5");
+            if (res.ok) {
+                const data = await res.json();
+                setNotifications(Array.isArray(data) ? data : data.content ?? []);
+            }
+        } catch { /* ignore */ }
+    }, []);
+
+    // Fetch unread count on mount + poll every 30s
+    useEffect(() => {
+        if (!session?.user) return;
+        fetchUnreadCount();
+        const interval = setInterval(fetchUnreadCount, 30000);
+        return () => clearInterval(interval);
+    }, [session?.user, fetchUnreadCount]);
+
+    // Fetch recent notifications when dropdown opens
+    useEffect(() => {
+        if (showDropdown) {
+            fetchRecentNotifications();
+        }
+    }, [showDropdown, fetchRecentNotifications]);
+
+    const toggleDropdown = () => {
+        setShowDropdown((prev) => !prev);
+    };
+
+    const markAllRead = async () => {
+        try {
+            await fetch("/api/proxy/v1/notifications/mark-all-read", { method: "PUT" });
+            setUnreadCount(0);
+            setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+        } catch { /* ignore */ }
+    };
+
+    const handleNotificationClick = async (n: Notification) => {
+        // Mark as read
+        if (!n.isRead) {
+            try {
+                await fetch(`/api/proxy/v1/notifications/${n.id}/read`, { method: "PUT" });
+                setNotifications((prev) => prev.map((x) => x.id === n.id ? { ...x, isRead: true } : x));
+                setUnreadCount((prev) => Math.max(0, prev - 1));
+            } catch { /* ignore */ }
+        }
+        setShowDropdown(false);
+
+        // Navigate based on referenceType
+        if (n.referenceType && n.referenceId) {
+            const routes: Record<string, string> = {
+                TICKET: `/dashboard/tickets/${n.referenceId}`,
+                LEASE: `/dashboard/leases/${n.referenceId}`,
+                PAYMENT: `/dashboard/finance/payments`,
+            };
+            const route = routes[n.referenceType];
+            if (route) {
+                router.push(`/${locale}${route}`);
+            }
+        }
+    };
 
     return (
         <header className="shrink-0 z-30 w-full h-14 bg-surface/80 backdrop-blur-md border-b border-border flex items-center justify-between px-6">
@@ -61,6 +164,51 @@ export function TopHeader() {
                             AR
                         </Link>
                     </div>
+
+                    {/* Notification Bell */}
+                    {session?.user && (
+                        <div className="relative">
+                            <button onClick={toggleDropdown} className="relative p-2 text-muted hover:text-foreground transition-colors cursor-pointer rounded-lg hover:bg-input">
+                                <Bell size={18} />
+                                {unreadCount > 0 && (
+                                    <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-error text-white text-[9px] font-bold rounded-full flex items-center justify-center">
+                                        {unreadCount > 9 ? "9+" : unreadCount}
+                                    </span>
+                                )}
+                            </button>
+                            {showDropdown && (
+                                <>
+                                    <div className="fixed inset-0 z-40" onClick={() => setShowDropdown(false)} />
+                                    <div className="absolute right-0 top-full mt-2 w-80 bg-surface rounded-xl shadow-xl border border-border z-50 overflow-hidden">
+                                        <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+                                            <h3 className="text-xs font-semibold text-foreground">Notifications</h3>
+                                            {unreadCount > 0 && (
+                                                <button onClick={markAllRead} className="text-[10px] text-primary font-semibold cursor-pointer">Mark all read</button>
+                                            )}
+                                        </div>
+                                        <div className="max-h-80 overflow-y-auto divide-y divide-border">
+                                            {notifications.map((n) => (
+                                                <div key={n.id} onClick={() => handleNotificationClick(n)} className={cn("px-4 py-3 hover:bg-input/50 cursor-pointer transition-colors", !n.isRead && "bg-primary/5")}>
+                                                    <p className="text-xs font-medium text-foreground">{n.title}</p>
+                                                    <p className="text-[10px] text-muted mt-0.5 line-clamp-1">{n.message}</p>
+                                                    <p className="text-[9px] text-muted mt-1">{timeAgo(n.createdAt)}</p>
+                                                </div>
+                                            ))}
+                                            {notifications.length === 0 && (
+                                                <div className="px-4 py-8 text-center text-muted">
+                                                    <Bell size={20} className="mx-auto mb-2 opacity-40" />
+                                                    <p className="text-xs">No notifications</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                        <Link href="/dashboard/notifications" onClick={() => setShowDropdown(false)} className="block px-4 py-2.5 text-center text-xs font-semibold text-primary border-t border-border hover:bg-input/50 transition-colors">
+                                            View All Notifications
+                                        </Link>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    )}
 
                     {/* User Profile with Popover */}
                     {session?.user && (

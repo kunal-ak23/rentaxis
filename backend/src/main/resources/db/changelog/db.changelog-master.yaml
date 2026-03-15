@@ -57,3 +57,9 @@ databaseChangeLog:
       file: db/changelog/changesets/28-ticket-history.yaml
   - include:
       file: db/changelog/changesets/29-ticket-enhancements.yaml
+  - include:
+      file: db/changelog/changesets/30-notifications.yaml
+  - include:
+      file: db/changelog/changesets/31-notifications-nullable-tenant.yaml
+  - include:
+      file: db/changelog/changesets/32-fix-table-permissions.yaml

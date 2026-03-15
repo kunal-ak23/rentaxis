@@ -1,0 +1,8 @@
+databaseChangeLog:
+  - changeSet:
+      id: 32-fix-table-permissions
+      author: system
+      comment: "Placeholder - permissions fixed manually per environment"
+      changes:
+        - sql:
+            sql: "SELECT 1"

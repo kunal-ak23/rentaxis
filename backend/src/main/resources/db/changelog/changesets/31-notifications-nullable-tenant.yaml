@@ -1,0 +1,10 @@
+databaseChangeLog:
+  - changeSet:
+      id: 31-notifications-nullable-tenant
+      author: system
+      comment: "Allow nullable tenant_id on notifications for system-wide alerts (SUPER_ADMIN)"
+      changes:
+        - dropNotNullConstraint:
+            tableName: notifications
+            columnName: tenant_id
+            columnDataType: uuid

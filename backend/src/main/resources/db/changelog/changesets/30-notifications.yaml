@@ -1,0 +1,130 @@
+databaseChangeLog:
+  - changeSet:
+      id: 30-create-notifications-table
+      author: rentaxis
+      changes:
+        - createTable:
+            tableName: notifications
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: tenant_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: user_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: type
+                  type: varchar(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: title
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: message
+                  type: text
+              - column:
+                  name: reference_type
+                  type: varchar(30)
+              - column:
+                  name: reference_id
+                  type: uuid
+              - column:
+                  name: channel
+                  type: varchar(20)
+                  defaultValue: IN_APP
+              - column:
+                  name: is_read
+                  type: boolean
+                  defaultValueBoolean: false
+              - column:
+                  name: sent_at
+                  type: timestamp
+                  defaultValueComputed: now()
+              - column:
+                  name: created_at
+                  type: timestamp
+                  defaultValueComputed: now()
+        - createIndex:
+            indexName: idx_notifications_user_id
+            tableName: notifications
+            columns:
+              - column:
+                  name: user_id
+        - createIndex:
+            indexName: idx_notifications_tenant_id
+            tableName: notifications
+            columns:
+              - column:
+                  name: tenant_id
+        - createIndex:
+            indexName: idx_notifications_user_id_is_read
+            tableName: notifications
+            columns:
+              - column:
+                  name: user_id
+              - column:
+                  name: is_read
+
+  - changeSet:
+      id: 30-create-device-tokens-table
+      author: rentaxis
+      changes:
+        - createTable:
+            tableName: device_tokens
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: user_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: token
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: platform
+                  type: varchar(20)
+              - column:
+                  name: created_at
+                  type: timestamp
+                  defaultValueComputed: now()
+        - createIndex:
+            indexName: idx_device_tokens_user_id
+            tableName: device_tokens
+            columns:
+              - column:
+                  name: user_id
+
+  - changeSet:
+      id: 30-add-payment-reminder-days-to-rent-settings
+      author: rentaxis
+      changes:
+        - addColumn:
+            tableName: rent_collection_settings
+            columns:
+              - column:
+                  name: payment_reminder_days
+                  type: varchar(50)
+                  defaultValue: "7,3,1"

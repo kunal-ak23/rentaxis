@@ -46,6 +46,7 @@ public class MaintenanceTicketService {
     private final UserPropertyAssignmentRepository propertyAssignmentRepository;
     private final TicketHistoryRepository historyRepository;
     private final LandlordOrgRepository landlordOrgRepository;
+    private final NotificationService notificationService;
 
     @Value("${AZURE_STORAGE_CONNECTION_STRING:}")
     private String azureConnectionString;
@@ -159,6 +160,17 @@ public class MaintenanceTicketService {
         recordHistory(saved, action, previousStatus, saved.getStatus().name(),
                 previousAssignee, assignTo, performedBy != null ? performedBy : assignTo, notes);
         log.info("Assigned ticket {} to user {}", ticketId, assignTo);
+
+        // Notify assignee
+        try {
+            notificationService.notify(ticket.getTenantId(), assignTo,
+                    "TICKET_ASSIGNED", "Ticket Assigned to You",
+                    "Ticket: " + ticket.getTitle(),
+                    "TICKET", ticket.getId());
+        } catch (Exception e) {
+            log.warn("Failed to send ticket assignment notification for ticket {}", ticketId, e);
+        }
+
         return mapToDTO(saved);
     }
 
@@ -188,6 +200,19 @@ public class MaintenanceTicketService {
         recordHistory(saved, "STATUS_CHANGED", fromStatus, targetStatus.name(),
                 null, null, performedBy != null ? performedBy : ticket.getReportedBy(),
                 "Status changed: " + fromStatus + " → " + targetStatus.name());
+
+        // Notify reporter when ticket is resolved
+        if (targetStatus == TicketStatus.RESOLVED) {
+            try {
+                notificationService.notify(ticket.getTenantId(), ticket.getReportedBy(),
+                        "TICKET_RESOLVED", "Ticket Resolved",
+                        "Your ticket '" + ticket.getTitle() + "' has been resolved. Please share the OTP to close.",
+                        "TICKET", ticket.getId());
+            } catch (Exception e) {
+                log.warn("Failed to send ticket resolved notification for ticket {}", ticketId, e);
+            }
+        }
+
         return mapToDTO(saved);
     }
 
@@ -275,6 +300,20 @@ public class MaintenanceTicketService {
         reply.setMessage(message);
 
         TicketReply saved = replyRepository.save(reply);
+
+        // Notify the other party about the new reply
+        try {
+            UUID notifyUser = userId.equals(ticket.getReportedBy()) ? ticket.getAssignedTo() : ticket.getReportedBy();
+            if (notifyUser != null) {
+                notificationService.notify(ticket.getTenantId(), notifyUser,
+                        "TICKET_REPLY", "New Reply on Ticket",
+                        "New reply on: " + ticket.getTitle(),
+                        "TICKET", ticket.getId());
+            }
+        } catch (Exception e) {
+            log.warn("Failed to send ticket reply notification for ticket {}", ticketId, e);
+        }
+
         return mapReplyToDTO(saved);
     }
 

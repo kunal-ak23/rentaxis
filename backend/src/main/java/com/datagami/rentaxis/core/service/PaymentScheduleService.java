@@ -38,6 +38,7 @@ public class PaymentScheduleService {
     private final FinancialTransactionService financialTransactionService;
     private final AccountMappingService accountMappingService;
     private final RentCollectionSettingsRepository rentCollectionSettingsRepository;
+    private final NotificationService notificationService;
 
     @Transactional
     public List<PaymentSchedule> generateScheduleForLease(Lease lease) {
@@ -262,6 +263,20 @@ public class PaymentScheduleService {
         creditTxn.setProperty(payment.getProperty());
         creditTxn.setUnit(payment.getUnit());
         financialTransactionService.createTransaction(creditTxn);
+
+        // Notify renter that payment has been cleared
+        try {
+            UUID renterUserId = payment.getLease().getRenter().getUserId();
+            if (renterUserId != null) {
+                notificationService.notify(TenantContextHolder.getTenantId(),
+                        renterUserId,
+                        "PAYMENT_CLEARED", "Payment Cleared",
+                        "Installment #" + payment.getInstallmentNumber() + " has been cleared. Receipt available.",
+                        "PAYMENT", payment.getId());
+            }
+        } catch (Exception e) {
+            // Don't fail the payment clearing if notification fails
+        }
 
         return mapToDTO(payment);
     }

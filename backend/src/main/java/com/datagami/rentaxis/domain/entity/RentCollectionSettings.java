@@ -39,6 +39,9 @@ public class RentCollectionSettings extends BaseTenantEntity {
     @Column(name = "online_payment_enabled")
     private Boolean onlinePaymentEnabled;
 
+    @Column(name = "payment_reminder_days", length = 50)
+    private String paymentReminderDays = "7,3,1";
+
     @Column(name = "created_at")
     private Instant createdAt;
 
