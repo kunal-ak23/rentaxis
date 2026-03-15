@@ -13,4 +13,6 @@ public class RenterDTO {
     private String email;
     private String phone;
     private Language primaryLanguage;
+    private UUID userId;
+    private String portalPassword; // Only set on creation, not stored
 }

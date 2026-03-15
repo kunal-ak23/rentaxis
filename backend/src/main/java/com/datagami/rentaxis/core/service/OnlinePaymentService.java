@@ -223,6 +223,29 @@ public class OnlinePaymentService {
         return response;
     }
 
+    @Transactional
+    public void cancelPendingOnlinePayment(UUID paymentScheduleId) {
+        PaymentSchedule schedule = paymentScheduleRepository.findById(paymentScheduleId)
+                .orElseThrow(() -> new RuntimeException("Payment schedule not found"));
+
+        if (schedule.getStatus() == PaymentStatus.ONLINE_PENDING) {
+            schedule.setStatus(PaymentStatus.PENDING);
+            schedule.setStatusChangedAt(Instant.now());
+            paymentScheduleRepository.save(schedule);
+
+            // Also mark any CREATED online payments as FAILED
+            List<OnlinePayment> onlinePayments = onlinePaymentRepository.findByPaymentScheduleId(paymentScheduleId);
+            for (OnlinePayment op : onlinePayments) {
+                if (op.getStatus() == OnlinePaymentStatus.CREATED) {
+                    op.setStatus(OnlinePaymentStatus.FAILED);
+                    op.setFailureReason("User cancelled checkout");
+                    op.setUpdatedAt(Instant.now());
+                    onlinePaymentRepository.save(op);
+                }
+            }
+        }
+    }
+
     public void clearPaymentFromWebhook(PaymentSchedule payment) {
         clearPaymentOnline(payment);
     }

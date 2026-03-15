@@ -37,4 +37,11 @@ public class OnlinePaymentController {
     public ResponseEntity<VerifyPaymentResponseDTO> verifyPayment(@RequestBody VerifyPaymentRequestDTO dto) {
         return ResponseEntity.ok(onlinePaymentService.verifyPayment(dto));
     }
+
+    @PostMapping("/cancel/{paymentScheduleId}")
+    @PreAuthorize("hasRole('RENTER')")
+    public ResponseEntity<Void> cancelPendingPayment(@PathVariable UUID paymentScheduleId) {
+        onlinePaymentService.cancelPendingOnlinePayment(paymentScheduleId);
+        return ResponseEntity.ok().build();
+    }
 }

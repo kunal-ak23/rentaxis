@@ -94,10 +94,14 @@ public class TenantGatewayConfigService {
         dto.setGatewayName(config.getGateway().getName());
 
         // Mask the API key for GET responses
-        String decryptedKey = encryptionService.decrypt(config.getApiKeyEncrypted());
-        if (decryptedKey.length() > 8) {
-            dto.setApiKeyMasked(decryptedKey.substring(0, 8) + "****");
-        } else {
+        try {
+            String decryptedKey = encryptionService.decrypt(config.getApiKeyEncrypted());
+            if (decryptedKey != null && decryptedKey.length() > 8) {
+                dto.setApiKeyMasked(decryptedKey.substring(0, 8) + "****");
+            } else {
+                dto.setApiKeyMasked("****");
+            }
+        } catch (Exception e) {
             dto.setApiKeyMasked("****");
         }
         // Never return secrets in GET response

@@ -25,7 +25,7 @@ public class TenantGatewayConfigController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'RENTER')")
     public ResponseEntity<TenantGatewayConfigDTO> getActiveConfig() {
         TenantGatewayConfigDTO config = tenantGatewayConfigService.getActiveConfig();
         if (config == null) {

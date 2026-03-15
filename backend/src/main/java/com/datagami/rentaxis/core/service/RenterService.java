@@ -50,23 +50,32 @@ public class RenterService {
 
         Renter saved = renterRepository.save(renter);
 
+        String generatedPassword = null;
+
         // Auto-create portal user account if requested
         if (dto.isCreatePortalAccount() && dto.getEmail() != null && !dto.getEmail().isBlank()) {
-            UUID tenantId = TenantContextHolder.getTenantId();
-            String defaultPassword = "Renter@" + saved.getId().toString().substring(0, 6);
-            User user = userService.createUser(
-                    dto.getEmail(),
-                    defaultPassword,
-                    dto.getNameEn(),
-                    UserRole.RENTER,
-                    tenantId != null ? tenantId.toString() : null,
-                    dto.getPhone()
-            );
-            saved.setUserId(user.getId());
-            renterRepository.save(saved);
+            try {
+                UUID tenantId = TenantContextHolder.getTenantId();
+                generatedPassword = "Renter@" + saved.getId().toString().substring(0, 6);
+                User user = userService.createUser(
+                        dto.getEmail(),
+                        generatedPassword,
+                        dto.getNameEn(),
+                        UserRole.RENTER,
+                        tenantId != null ? tenantId.toString() : null,
+                        dto.getPhone()
+                );
+                saved.setUserId(user.getId());
+                renterRepository.save(saved);
+            } catch (Exception e) {
+                generatedPassword = null;
+                System.err.println("Failed to create portal account for renter " + saved.getId() + ": " + e.getMessage());
+            }
         }
 
-        return mapToDTO(saved);
+        RenterDTO result = mapToDTO(saved);
+        result.setPortalPassword(generatedPassword);
+        return result;
     }
 
     @Transactional
@@ -93,6 +102,7 @@ public class RenterService {
         dto.setEmail(renter.getEmail());
         dto.setPhone(renter.getPhone());
         dto.setPrimaryLanguage(renter.getPrimaryLanguage());
+        dto.setUserId(renter.getUserId());
         return dto;
     }
 }
