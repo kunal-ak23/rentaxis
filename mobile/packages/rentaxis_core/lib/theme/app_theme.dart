@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class AppColors {
-  static const primary = Color(0xFF0F766E); // Teal
-  static const primaryLight = Color(0xFF14B8A6);
+  static const primary = Color(0xFF14555C); // Dark teal (matches logo)
+  static const primaryLight = Color(0xFF1A7A7A);
   static const accent = Color(0xFFC8A951); // Gold
   static const navyDark = Color(0xFF0F1B2D); // Dark Navy
   static const background = Color(0xFFFAFAF8); // Warm White

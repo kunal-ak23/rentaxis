@@ -36,67 +36,6 @@ class HomeScreen extends ConsumerWidget {
     final notifState = ref.watch(notificationProvider);
 
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: AppColors.surface,
-        elevation: 0,
-        title: Image.asset(
-          'assets/logo_horizontal.png',
-          height: 32,
-          fit: BoxFit.contain,
-        ),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: Stack(
-              children: [
-                IconButton(
-                  icon: const Icon(
-                    Icons.notifications_outlined,
-                    color: AppColors.textPrimary,
-                  ),
-                  onPressed: () => context.push('/notifications'),
-                ),
-                if (notifState.unreadCount > 0)
-                  Positioned(
-                    right: 8,
-                    top: 8,
-                    child: TweenAnimationBuilder<double>(
-                      tween: Tween(begin: 0.0, end: 1.0),
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.easeOutBack,
-                      builder: (context, value, child) {
-                        return Transform.scale(
-                          scale: value,
-                          child: child,
-                        );
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: const BoxDecoration(
-                          color: AppColors.danger,
-                          shape: BoxShape.circle,
-                        ),
-                        constraints:
-                            const BoxConstraints(minWidth: 18, minHeight: 18),
-                        child: Text(
-                          notifState.unreadCount > 99
-                              ? '99+'
-                              : '${notifState.unreadCount}',
-                          style: GoogleFonts.josefinSans(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
       body: RefreshIndicator(
         color: AppColors.primary,
         onRefresh: () async {

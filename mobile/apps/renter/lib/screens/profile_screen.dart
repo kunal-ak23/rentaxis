@@ -196,20 +196,19 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final auth = ref.watch(authProvider);
 
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: AppColors.surface,
-        title: Text(
-          'Profile',
-          style: GoogleFonts.cinzel(
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: AppColors.textPrimary,
-          ),
-        ),
-      ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 40),
         children: [
+          // Page title
+          Text(
+            'Profile',
+            style: GoogleFonts.cinzel(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 16),
           // Avatar with gradient border
           Center(
             child: Column(

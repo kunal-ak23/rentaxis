@@ -29,19 +29,21 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
     final ticketsAsync = ref.watch(ticketsProvider);
 
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: AppColors.surface,
-        title: Text(
-          'Maintenance Tickets',
-          style: GoogleFonts.cinzel(
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: AppColors.textPrimary,
-          ),
-        ),
-      ),
       body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Page title
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+            child: Text(
+              'Maintenance Tickets',
+              style: GoogleFonts.cinzel(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+            ),
+          ),
           // Search bar
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
@@ -146,10 +148,14 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => context.push('/tickets/create'),
-        elevation: 4,
-        child: const Icon(Icons.add, color: Colors.white),
+      floatingActionButton: Padding(
+        padding: const EdgeInsets.only(bottom: 100),
+        child: FloatingActionButton(
+          onPressed: () => context.push('/tickets/create'),
+          backgroundColor: AppColors.primary,
+          elevation: 6,
+          child: const Icon(Icons.add, color: Colors.white),
+        ),
       ),
     );
   }

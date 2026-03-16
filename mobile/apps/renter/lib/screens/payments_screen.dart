@@ -154,53 +154,69 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
   Widget build(BuildContext context) {
     final paymentsAsync = ref.watch(_myPaymentsProvider);
 
+    return Column(
+      children: [
+        // Page title + tab bar
+        Container(
+          color: AppColors.surface,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                child: Text(
+                  'Payments',
+                  style: GoogleFonts.cinzel(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                padding: const EdgeInsets.all(3),
+                decoration: BoxDecoration(
+                  color: AppColors.background,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: TabBar(
+                  controller: _tabController,
+                  indicator: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(8),
+                    boxShadow: AppShadows.soft,
+                  ),
+                  indicatorSize: TabBarIndicatorSize.tab,
+                  dividerColor: Colors.transparent,
+                  labelColor: AppColors.primary,
+                  unselectedLabelColor: AppColors.textMuted,
+                  labelStyle: GoogleFonts.josefinSans(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  unselectedLabelStyle: GoogleFonts.josefinSans(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w400,
+                  ),
+                  labelPadding: EdgeInsets.zero,
+                  tabs: const [
+                    Tab(text: 'Upcoming', height: 36),
+                    Tab(text: 'History', height: 36),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        // Body
+        Expanded(child: _buildBody(paymentsAsync)),
+      ],
+    );
+  }
+
+  Widget _buildBody(AsyncValue<List<dynamic>> paymentsAsync) {
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: AppColors.surface,
-        title: Text(
-          'Payments',
-          style: GoogleFonts.cinzel(
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: AppColors.textPrimary,
-          ),
-        ),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(52),
-          child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-            padding: const EdgeInsets.all(3),
-            decoration: BoxDecoration(
-              color: AppColors.background,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: TabBar(
-              controller: _tabController,
-              indicator: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(10),
-                boxShadow: AppShadows.soft,
-              ),
-              indicatorSize: TabBarIndicatorSize.tab,
-              dividerColor: Colors.transparent,
-              labelColor: AppColors.primary,
-              unselectedLabelColor: AppColors.textMuted,
-              labelStyle: GoogleFonts.josefinSans(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-              ),
-              unselectedLabelStyle: GoogleFonts.josefinSans(
-                fontSize: 14,
-                fontWeight: FontWeight.w400,
-              ),
-              tabs: const [
-                Tab(text: 'Upcoming'),
-                Tab(text: 'History'),
-              ],
-            ),
-          ),
-        ),
-      ),
       body: paymentsAsync.when(
         data: (payments) {
           final upcoming = payments.where((p) {
@@ -346,35 +362,33 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
     final unitNumber =
         payment['unit']?['unitNumber'] ?? payment['unitNumber'] ?? '';
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: ClipRRect(
         borderRadius: BorderRadius.circular(16),
-        boxShadow: AppShadows.soft,
-        border: isOverdue
-            ? Border.all(
-                color: AppColors.danger.withValues(alpha: 0.2),
-              )
-            : null,
-      ),
-      child: IntrinsicHeight(
-        child: Row(
-          children: [
-            // Left accent border
-            Container(
-              width: 4,
-              decoration: BoxDecoration(
-                color: isOverdue ? AppColors.danger : AppColors.primary,
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(16),
-                  bottomLeft: Radius.circular(16),
-                ),
+        child: Container(
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: AppShadows.soft,
+            border: isOverdue
+                ? Border.all(
+                    color: AppColors.danger.withValues(alpha: 0.2),
+                  )
+                : null,
+          ),
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Left accent border — gold for upcoming, red for overdue
+              Container(
+                width: 5,
+                color: isOverdue ? AppColors.danger : AppColors.accent,
               ),
-            ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(18),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(18),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -493,7 +507,9 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
                 ),
               ),
             ),
-          ],
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -534,27 +550,25 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
     final label = payment['installmentLabel'] ?? payment['label'] ?? '';
     final status = payment['status'] ?? '';
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: ClipRRect(
         borderRadius: BorderRadius.circular(16),
-        boxShadow: AppShadows.soft,
-      ),
-      child: IntrinsicHeight(
-        child: Row(
-          children: [
-            // Green accent
-            Container(
-              width: 4,
-              decoration: const BoxDecoration(
+        child: Container(
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: AppShadows.soft,
+          ),
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Green accent
+              Container(
+                width: 5,
                 color: AppColors.success,
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(16),
-                  bottomLeft: Radius.circular(16),
-                ),
               ),
-            ),
             Expanded(
               child: ListTile(
                 contentPadding:
@@ -616,7 +630,9 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
                 ),
               ),
             ),
-          ],
+              ],
+            ),
+          ),
         ),
       ),
     );

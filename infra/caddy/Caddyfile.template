@@ -1,40 +1,44 @@
 {$DOMAIN} {
-    # Frontend — Next.js
-    handle /api/proxy/* {
-        # API proxy requests go to Next.js (which proxies to backend)
+    # NextAuth session endpoint — must go to Next.js
+    handle /api/auth/session* {
         reverse_proxy web:3000
     }
 
+    # Backend auth endpoints (login, register, me, tenants)
     handle /api/auth/* {
-        # Auth endpoints (mobile apps + direct API calls)
         reverse_proxy backend:8080
     }
 
+    # Frontend API proxy requests go to Next.js
+    handle /api/proxy/* {
+        reverse_proxy web:3000
+    }
+
+    # Admin endpoints (mobile apps)
     handle /api/admin/* {
-        # Admin endpoints (mobile apps)
         reverse_proxy backend:8080
     }
 
+    # API v1 endpoints (mobile apps + webhooks + external)
     handle /api/v1/* {
-        # API v1 endpoints (mobile apps + webhooks + external integrations)
         reverse_proxy backend:8080
     }
 
+    # Webhook endpoints
     handle /api/webhooks/* {
-        # Webhook endpoints
         reverse_proxy backend:8080
     }
 
+    # Health check
     handle /actuator/* {
-        # Health check endpoints
         reverse_proxy backend:8080
     }
 
+    # Everything else — Next.js frontend
     handle {
         reverse_proxy web:3000
     }
 
-    # Security headers
     header {
         X-Frame-Options "SAMEORIGIN"
         X-Content-Type-Options "nosniff"
@@ -43,10 +47,8 @@
         -Server
     }
 
-    # Gzip compression
     encode gzip
 
-    # Access logs
     log {
         output file /var/log/caddy/access.log {
             roll_size 50mb
