@@ -5,8 +5,28 @@
         reverse_proxy web:3000
     }
 
+    handle /api/auth/* {
+        # Auth endpoints (mobile apps + direct API calls)
+        reverse_proxy backend:8080
+    }
+
+    handle /api/admin/* {
+        # Admin endpoints (mobile apps)
+        reverse_proxy backend:8080
+    }
+
     handle /api/v1/* {
-        # Direct API calls (webhooks, external integrations)
+        # API v1 endpoints (mobile apps + webhooks + external integrations)
+        reverse_proxy backend:8080
+    }
+
+    handle /api/webhooks/* {
+        # Webhook endpoints
+        reverse_proxy backend:8080
+    }
+
+    handle /actuator/* {
+        # Health check endpoints
         reverse_proxy backend:8080
     }
 

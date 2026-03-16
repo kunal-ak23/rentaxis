@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
@@ -81,7 +82,8 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Payment failed: ${response.message ?? 'Unknown error'}'),
+          content:
+              Text('Payment failed: ${response.message ?? 'Unknown error'}'),
           backgroundColor: AppColors.danger,
         ),
       );
@@ -102,10 +104,12 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
 
       final options = {
         'key': order['razorpayKeyId'],
-        'amount': order['amountInPaise'] ?? ((order['amount'] ?? 0) * 100).toInt(),
+        'amount':
+            order['amountInPaise'] ?? ((order['amount'] ?? 0) * 100).toInt(),
         'order_id': order['razorpayOrderId'] ?? order['orderId'],
         'name': 'RentAxis',
-        'description': 'Rent Payment - ${payment['installmentLabel'] ?? ''}',
+        'description':
+            'Rent Payment - ${payment['installmentLabel'] ?? ''}',
         'prefill': {
           'email': ref.read(authProvider).email ?? '',
         },
@@ -152,17 +156,49 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: AppColors.navyDark,
-        title: const Text('Payments'),
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: AppColors.accent,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white54,
-          tabs: const [
-            Tab(text: 'Upcoming'),
-            Tab(text: 'History'),
-          ],
+        backgroundColor: AppColors.surface,
+        title: Text(
+          'Payments',
+          style: GoogleFonts.cinzel(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: AppColors.textPrimary,
+          ),
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(52),
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              color: AppColors.background,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: TabBar(
+              controller: _tabController,
+              indicator: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(10),
+                boxShadow: AppShadows.soft,
+              ),
+              indicatorSize: TabBarIndicatorSize.tab,
+              dividerColor: Colors.transparent,
+              labelColor: AppColors.primary,
+              unselectedLabelColor: AppColors.textMuted,
+              labelStyle: GoogleFonts.josefinSans(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+              unselectedLabelStyle: GoogleFonts.josefinSans(
+                fontSize: 14,
+                fontWeight: FontWeight.w400,
+              ),
+              tabs: const [
+                Tab(text: 'Upcoming'),
+                Tab(text: 'History'),
+              ],
+            ),
+          ),
         ),
       ),
       body: paymentsAsync.when(
@@ -181,7 +217,6 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
                 status == 'DEPOSITED';
           }).toList();
 
-          // Sort upcoming: overdue first, then by due date
           upcoming.sort((a, b) {
             final aOverdue = a['status'] == 'OVERDUE' ? 0 : 1;
             final bOverdue = b['status'] == 'OVERDUE' ? 0 : 1;
@@ -189,11 +224,9 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
             return (a['dueDate'] ?? '').compareTo(b['dueDate'] ?? '');
           });
 
-          // Sort history: most recent first
           history.sort(
               (a, b) => (b['dueDate'] ?? '').compareTo(a['dueDate'] ?? ''));
 
-          // Calculate total due
           num totalDue = 0;
           for (final p in upcoming) {
             totalDue += (p['totalPayable'] ?? p['amount'] ?? 0) as num;
@@ -207,8 +240,9 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
             ],
           );
         },
-        loading: () => const Center(
-          child: CircularProgressIndicator(color: AppColors.primary),
+        loading: () => Padding(
+          padding: const EdgeInsets.all(20),
+          child: ListShimmer(itemCount: 3),
         ),
         error: (err, _) => ErrorState(
           message: 'Failed to load payments',
@@ -234,52 +268,64 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
               ],
             )
           : ListView(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
               children: [
-                // Summary card
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [AppColors.navyDark, Color(0xFF1A3352)],
+                // Summary card with glass-morphism
+                AnimatedListItem(
+                  index: 0,
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [AppColors.navyDark, Color(0xFF163048)],
+                      ),
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: AppShadows.medium,
                     ),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Total Due',
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.7),
-                          fontSize: 13,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Total Due',
+                          style: GoogleFonts.josefinSans(
+                            color: Colors.white.withValues(alpha: 0.6),
+                            fontSize: 13,
+                            letterSpacing: 0.5,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        Formatters.currency(totalDue),
-                        style: const TextStyle(
-                          color: AppColors.accent,
-                          fontSize: 28,
-                          fontWeight: FontWeight.w700,
+                        const SizedBox(height: 6),
+                        Text(
+                          Formatters.currency(totalDue),
+                          style: GoogleFonts.josefinSans(
+                            color: AppColors.accent,
+                            fontSize: 32,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${upcoming.length} payment${upcoming.length == 1 ? '' : 's'} pending',
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.5),
-                          fontSize: 12,
+                        const SizedBox(height: 6),
+                        Text(
+                          '${upcoming.length} payment${upcoming.length == 1 ? '' : 's'} pending',
+                          style: GoogleFonts.josefinSans(
+                            color: Colors.white.withValues(alpha: 0.4),
+                            fontSize: 12,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 18),
 
                 // Payment cards
-                ...upcoming.map((p) => _buildUpcomingCard(p)),
+                ...upcoming.asMap().entries.map((entry) {
+                  return AnimatedListItem(
+                    index: entry.key + 1,
+                    child: _buildUpcomingCard(entry.value),
+                  );
+                }),
               ],
             ),
     );
@@ -295,127 +341,157 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
     final totalPayable = payment['totalPayable'] ?? amount;
     final dueDate = Formatters.date(payment['dueDate']);
     final label = payment['installmentLabel'] ?? payment['label'] ?? '';
-    final propertyName = payment['property']?['name'] ??
-        payment['propertyName'] ??
-        '';
-    final unitNumber = payment['unit']?['unitNumber'] ??
-        payment['unitNumber'] ??
-        '';
+    final propertyName =
+        payment['property']?['name'] ?? payment['propertyName'] ?? '';
+    final unitNumber =
+        payment['unit']?['unitNumber'] ?? payment['unitNumber'] ?? '';
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(
-          color: isOverdue
-              ? AppColors.danger.withValues(alpha: 0.4)
-              : AppColors.border,
-        ),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: AppShadows.soft,
+        border: isOverdue
+            ? Border.all(
+                color: AppColors.danger.withValues(alpha: 0.2),
+              )
+            : null,
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      child: IntrinsicHeight(
+        child: Row(
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Text(
-                    label.isNotEmpty ? label : 'Payment',
-                    style: Theme.of(context).textTheme.titleMedium,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+            // Left accent border
+            Container(
+              width: 4,
+              decoration: BoxDecoration(
+                color: isOverdue ? AppColors.danger : AppColors.primary,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(16),
+                  bottomLeft: Radius.circular(16),
                 ),
-                StatusBadge(
-                  label: status,
-                  color: StatusHelper.getPaymentStatusColor(status),
-                ),
-              ],
-            ),
-            if (propertyName.isNotEmpty || unitNumber.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Text(
-                [propertyName, if (unitNumber.isNotEmpty) 'Unit $unitNumber']
-                    .join(' - '),
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: AppColors.textSecondary),
               ),
-            ],
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                _PaymentDetail(label: 'Due Date', value: dueDate),
-                _PaymentDetail(
-                    label: 'Amount', value: Formatters.currency(amount)),
-                if ((penalty as num) > 0)
-                  _PaymentDetail(
-                    label: 'Penalty',
-                    value: Formatters.currency(penalty),
-                    valueColor: AppColors.danger,
-                  ),
-              ],
             ),
-            const SizedBox(height: 12),
-            const Divider(height: 1),
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Column(
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(18),
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Total Payable',
-                        style: Theme.of(context).textTheme.labelSmall),
-                    Text(
-                      Formatters.currency(totalPayable),
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.primary,
-                      ),
-                    ),
-                  ],
-                ),
-                if (!isProcessing)
-                  ElevatedButton(
-                    onPressed: () => _initiatePayment(payment),
-                    child: const Text('Pay Now'),
-                  )
-                else
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: AppColors.statusPending.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: AppColors.statusPending,
+                        Expanded(
+                          child: Text(
+                            label.isNotEmpty ? label : 'Payment',
+                            style: Theme.of(context).textTheme.titleMedium,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        SizedBox(width: 8),
-                        Text(
-                          'Processing...',
-                          style: TextStyle(
-                            color: AppColors.statusPending,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                          ),
+                        StatusBadge(
+                          label: status,
+                          color:
+                              StatusHelper.getPaymentStatusColor(status),
                         ),
                       ],
                     ),
-                  ),
-              ],
+                    if (propertyName.isNotEmpty ||
+                        unitNumber.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        [
+                          propertyName,
+                          if (unitNumber.isNotEmpty) 'Unit $unitNumber'
+                        ].join(' - '),
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(color: AppColors.textMuted),
+                      ),
+                    ],
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        _PaymentDetail(
+                            label: 'Due Date', value: dueDate),
+                        _PaymentDetail(
+                            label: 'Amount',
+                            value: Formatters.currency(amount)),
+                        if ((penalty as num) > 0)
+                          _PaymentDetail(
+                            label: 'Penalty',
+                            value: Formatters.currency(penalty),
+                            valueColor: AppColors.danger,
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Divider(
+                      height: 1,
+                      color: AppColors.border.withValues(alpha: 0.5),
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Total Payable',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .labelSmall),
+                            Text(
+                              Formatters.currency(totalPayable),
+                              style: GoogleFonts.josefinSans(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (!isProcessing)
+                          _PayNowButton(
+                            onPressed: () => _initiatePayment(payment),
+                          )
+                        else
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 20, vertical: 12),
+                            decoration: BoxDecoration(
+                              color: AppColors.statusPending
+                                  .withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: AppColors.statusPending,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Processing...',
+                                  style: GoogleFonts.josefinSans(
+                                    color: AppColors.statusPending,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
             ),
           ],
         ),
@@ -439,11 +515,14 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
               ],
             )
           : ListView.builder(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
               itemCount: history.length,
               itemBuilder: (context, index) {
                 final payment = history[index];
-                return _buildHistoryCard(payment);
+                return AnimatedListItem(
+                  index: index,
+                  child: _buildHistoryCard(payment),
+                );
               },
             ),
     );
@@ -455,56 +534,143 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
     final label = payment['installmentLabel'] ?? payment['label'] ?? '';
     final status = payment['status'] ?? '';
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 10),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        leading: Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            color: AppColors.success.withValues(alpha: 0.1),
-            shape: BoxShape.circle,
-          ),
-          child: const Icon(
-            Icons.check_circle,
-            color: AppColors.success,
-            size: 22,
-          ),
-        ),
-        title: Text(
-          label.isNotEmpty ? label : 'Payment',
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-        subtitle: Text(
-          '$dueDate  |  $status',
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-        trailing: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.end,
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: AppShadows.soft,
+      ),
+      child: IntrinsicHeight(
+        child: Row(
           children: [
-            Text(
-              Formatters.currency(amount),
-              style: const TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 14,
-                color: AppColors.textPrimary,
+            // Green accent
+            Container(
+              width: 4,
+              decoration: const BoxDecoration(
+                color: AppColors.success,
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(16),
+                  bottomLeft: Radius.circular(16),
+                ),
               ),
             ),
-            const SizedBox(height: 4),
-            GestureDetector(
-              onTap: () => _downloadReceipt(payment['id']),
-              child: const Text(
-                'Download Receipt',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: AppColors.primary,
-                  fontWeight: FontWeight.w600,
+            Expanded(
+              child: ListTile(
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                leading: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: AppColors.success.withValues(alpha: 0.08),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.check_circle,
+                    color: AppColors.success,
+                    size: 22,
+                  ),
+                ),
+                title: Text(
+                  label.isNotEmpty ? label : 'Payment',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                subtitle: Text(
+                  '$dueDate  |  $status',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                trailing: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      Formatters.currency(amount),
+                      style: GoogleFonts.josefinSans(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    GestureDetector(
+                      onTap: () => _downloadReceipt(payment['id']),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.download_rounded,
+                              size: 14, color: AppColors.primary),
+                          const SizedBox(width: 3),
+                          Text(
+                            'Receipt',
+                            style: GoogleFonts.josefinSans(
+                              fontSize: 11,
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PayNowButton extends StatefulWidget {
+  final VoidCallback onPressed;
+
+  const _PayNowButton({required this.onPressed});
+
+  @override
+  State<_PayNowButton> createState() => _PayNowButtonState();
+}
+
+class _PayNowButtonState extends State<_PayNowButton> {
+  double _scale = 1.0;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _scale = 0.95),
+      onTapUp: (_) {
+        setState(() => _scale = 1.0);
+        widget.onPressed();
+      },
+      onTapCancel: () => setState(() => _scale = 1.0),
+      child: AnimatedScale(
+        scale: _scale,
+        duration: const Duration(milliseconds: 150),
+        curve: Curves.easeOut,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [AppColors.primary, AppColors.primaryLight],
+            ),
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.primary.withValues(alpha: 0.25),
+                blurRadius: 8,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Text(
+            'Pay Now',
+            style: GoogleFonts.josefinSans(
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
+            ),
+          ),
         ),
       ),
     );
@@ -529,10 +695,10 @@ class _PaymentDetail extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(label, style: Theme.of(context).textTheme.labelSmall),
-          const SizedBox(height: 2),
+          const SizedBox(height: 3),
           Text(
             value,
-            style: TextStyle(
+            style: GoogleFonts.josefinSans(
               fontSize: 13,
               fontWeight: FontWeight.w600,
               color: valueColor ?? AppColors.textPrimary,

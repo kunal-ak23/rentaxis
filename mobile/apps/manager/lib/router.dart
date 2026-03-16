@@ -22,18 +22,32 @@ final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authProvider);
 
   return GoRouter(
-    initialLocation: '/login',
+    initialLocation: '/splash',
     redirect: (context, state) {
       final isLoggedIn = authState.isAuthenticated;
       final isLoading = authState.isLoading;
       final isLoginRoute = state.matchedLocation == '/login';
+      final isSplashRoute = state.matchedLocation == '/splash';
 
+      if (isSplashRoute) return null;
       if (isLoading) return null;
       if (!isLoggedIn && !isLoginRoute) return '/login';
       if (isLoggedIn && isLoginRoute) return '/';
       return null;
     },
     routes: [
+      GoRoute(
+        path: '/splash',
+        builder: (context, state) => VideoSplashScreen(
+          onComplete: () {
+            if (authState.isAuthenticated) {
+              GoRouter.of(context).go('/');
+            } else {
+              GoRouter.of(context).go('/login');
+            }
+          },
+        ),
+      ),
       GoRoute(
         path: '/login',
         builder: (context, state) => const LoginScreen(),

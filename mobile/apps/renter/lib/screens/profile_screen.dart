@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
 final _authServiceForProfileProvider = Provider<AuthService>((ref) {
@@ -38,7 +39,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   void _loadProfile() {
     final auth = ref.read(authProvider);
     _nameController.text = auth.name ?? '';
-    // Phone would come from profile API
     _nameController.addListener(_onFieldChanged);
     _phoneController.addListener(_onFieldChanged);
   }
@@ -144,7 +144,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         setState(() => _isChangingPassword = false);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Failed to change password. Check your current password.'),
+            content: Text(
+                'Failed to change password. Check your current password.'),
             backgroundColor: AppColors.danger,
           ),
         );
@@ -156,17 +157,30 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Logout'),
-        content: const Text('Are you sure you want to logout?'),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        title: Text('Logout',
+            style: GoogleFonts.cinzel(
+              fontWeight: FontWeight.w600,
+              fontSize: 18,
+            )),
+        content: Text('Are you sure you want to logout?',
+            style: GoogleFonts.josefinSans()),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: Text('Cancel',
+                style: GoogleFonts.josefinSans(
+                    fontWeight: FontWeight.w600)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: AppColors.danger),
-            child: const Text('Logout'),
+            style:
+                TextButton.styleFrom(foregroundColor: AppColors.danger),
+            child: Text('Logout',
+                style: GoogleFonts.josefinSans(
+                    fontWeight: FontWeight.w600)),
           ),
         ],
       ),
@@ -183,29 +197,59 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: AppColors.navyDark,
-        title: const Text('Profile'),
+        backgroundColor: AppColors.surface,
+        title: Text(
+          'Profile',
+          style: GoogleFonts.cinzel(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: AppColors.textPrimary,
+          ),
+        ),
       ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
         children: [
-          // Avatar
+          // Avatar with gradient border
           Center(
             child: Column(
               children: [
-                CircleAvatar(
-                  radius: 44,
-                  backgroundColor: AppColors.primary.withValues(alpha: 0.1),
-                  child: Text(
-                    _getInitials(auth.name ?? 'U'),
-                    style: const TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.primary,
+                Container(
+                  width: 96,
+                  height: 96,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [AppColors.primary, AppColors.accent],
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color:
+                            AppColors.primary.withValues(alpha: 0.2),
+                        blurRadius: 16,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(3),
+                    child: CircleAvatar(
+                      radius: 45,
+                      backgroundColor: AppColors.surface,
+                      child: Text(
+                        _getInitials(auth.name ?? 'U'),
+                        style: GoogleFonts.cinzel(
+                          fontSize: 28,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.primary,
+                        ),
+                      ),
                     ),
                   ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 14),
                 if (auth.role != null)
                   StatusBadge(
                     label: auth.role!,
@@ -214,11 +258,26 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 28),
+          const SizedBox(height: 32),
+
+          // Section label
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 12),
+            child: Text(
+              'Personal Information',
+              style: GoogleFonts.josefinSans(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textMuted,
+                letterSpacing: 1.0,
+              ),
+            ),
+          ),
 
           // Name
           TextFormField(
             controller: _nameController,
+            style: GoogleFonts.josefinSans(fontSize: 15),
             decoration: const InputDecoration(
               labelText: 'Name',
               prefixIcon: Icon(Icons.person_outline, size: 20),
@@ -230,6 +289,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           TextFormField(
             initialValue: auth.email ?? '',
             readOnly: true,
+            style: GoogleFonts.josefinSans(
+              fontSize: 15,
+              color: AppColors.textSecondary,
+            ),
             decoration: InputDecoration(
               labelText: 'Email',
               prefixIcon: const Icon(Icons.email_outlined, size: 20),
@@ -245,154 +308,248 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           TextFormField(
             controller: _phoneController,
             keyboardType: TextInputType.phone,
+            style: GoogleFonts.josefinSans(fontSize: 15),
             decoration: const InputDecoration(
               labelText: 'Phone Number',
               prefixIcon: Icon(Icons.phone_outlined, size: 20),
               hintText: '+971 XX XXX XXXX',
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 22),
 
           // Save button
-          if (_hasChanges)
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _isSaving ? null : _saveProfile,
-                child: _isSaving
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white),
-                      )
-                    : const Text('Save Changes'),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 250),
+            transitionBuilder: (child, animation) => SizeTransition(
+              sizeFactor: animation,
+              child: FadeTransition(opacity: animation, child: child),
+            ),
+            child: _hasChanges
+                ? SizedBox(
+                    key: const ValueKey('save_btn'),
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: _isSaving ? null : _saveProfile,
+                      child: _isSaving
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Text('Save Changes'),
+                    ),
+                  )
+                : const SizedBox.shrink(key: ValueKey('no_save')),
+          ),
+          const SizedBox(height: 28),
+
+          // Section label
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 8),
+            child: Text(
+              'Security',
+              style: GoogleFonts.josefinSans(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textMuted,
+                letterSpacing: 1.0,
               ),
             ),
-          const SizedBox(height: 24),
+          ),
 
           // Change Password
-          const Divider(),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.lock_outline, color: AppColors.primary),
-            title: const Text('Change Password'),
-            trailing: Icon(
-              _showPasswordSection
-                  ? Icons.keyboard_arrow_up
-                  : Icons.keyboard_arrow_down,
-              color: AppColors.textMuted,
+          Container(
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: AppShadows.soft,
             ),
-            onTap: () =>
-                setState(() => _showPasswordSection = !_showPasswordSection),
+            child: Column(
+              children: [
+                ListTile(
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 16),
+                  leading: const Icon(Icons.lock_outline,
+                      color: AppColors.primary),
+                  title: Text('Change Password',
+                      style: GoogleFonts.josefinSans(
+                          fontWeight: FontWeight.w500)),
+                  trailing: AnimatedRotation(
+                    turns: _showPasswordSection ? 0.5 : 0.0,
+                    duration: const Duration(milliseconds: 200),
+                    child: const Icon(Icons.keyboard_arrow_down,
+                        color: AppColors.textMuted),
+                  ),
+                  onTap: () => setState(() =>
+                      _showPasswordSection = !_showPasswordSection),
+                ),
+                AnimatedCrossFade(
+                  firstChild: const SizedBox.shrink(),
+                  secondChild: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    child: Column(
+                      children: [
+                        const SizedBox(height: 8),
+                        TextFormField(
+                          controller: _currentPasswordController,
+                          obscureText: _obscureCurrent,
+                          style: GoogleFonts.josefinSans(fontSize: 15),
+                          decoration: InputDecoration(
+                            labelText: 'Current Password',
+                            prefixIcon: const Icon(
+                                Icons.lock_outline,
+                                size: 20),
+                            suffixIcon: IconButton(
+                              icon: Icon(
+                                _obscureCurrent
+                                    ? Icons.visibility_off_outlined
+                                    : Icons.visibility_outlined,
+                                size: 20,
+                              ),
+                              onPressed: () => setState(() =>
+                                  _obscureCurrent = !_obscureCurrent),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        TextFormField(
+                          controller: _newPasswordController,
+                          obscureText: _obscureNew,
+                          style: GoogleFonts.josefinSans(fontSize: 15),
+                          decoration: InputDecoration(
+                            labelText: 'New Password',
+                            prefixIcon: const Icon(Icons.lock_reset,
+                                size: 20),
+                            suffixIcon: IconButton(
+                              icon: Icon(
+                                _obscureNew
+                                    ? Icons.visibility_off_outlined
+                                    : Icons.visibility_outlined,
+                                size: 20,
+                              ),
+                              onPressed: () => setState(
+                                  () => _obscureNew = !_obscureNew),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        TextFormField(
+                          controller: _confirmPasswordController,
+                          obscureText: true,
+                          style: GoogleFonts.josefinSans(fontSize: 15),
+                          decoration: const InputDecoration(
+                            labelText: 'Confirm New Password',
+                            prefixIcon:
+                                Icon(Icons.lock_reset, size: 20),
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton(
+                            onPressed: _isChangingPassword
+                                ? null
+                                : _changePassword,
+                            child: _isChangingPassword
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: AppColors.primary),
+                                  )
+                                : const Text('Update Password'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  crossFadeState: _showPasswordSection
+                      ? CrossFadeState.showSecond
+                      : CrossFadeState.showFirst,
+                  duration: const Duration(milliseconds: 250),
+                ),
+              ],
+            ),
           ),
 
-          if (_showPasswordSection) ...[
-            const SizedBox(height: 8),
-            TextFormField(
-              controller: _currentPasswordController,
-              obscureText: _obscureCurrent,
-              decoration: InputDecoration(
-                labelText: 'Current Password',
-                prefixIcon: const Icon(Icons.lock_outline, size: 20),
-                suffixIcon: IconButton(
-                  icon: Icon(
-                    _obscureCurrent
-                        ? Icons.visibility_off_outlined
-                        : Icons.visibility_outlined,
-                    size: 20,
-                  ),
-                  onPressed: () =>
-                      setState(() => _obscureCurrent = !_obscureCurrent),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _newPasswordController,
-              obscureText: _obscureNew,
-              decoration: InputDecoration(
-                labelText: 'New Password',
-                prefixIcon: const Icon(Icons.lock_reset, size: 20),
-                suffixIcon: IconButton(
-                  icon: Icon(
-                    _obscureNew
-                        ? Icons.visibility_off_outlined
-                        : Icons.visibility_outlined,
-                    size: 20,
-                  ),
-                  onPressed: () =>
-                      setState(() => _obscureNew = !_obscureNew),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _confirmPasswordController,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'Confirm New Password',
-                prefixIcon: Icon(Icons.lock_reset, size: 20),
-              ),
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton(
-                onPressed: _isChangingPassword ? null : _changePassword,
-                child: _isChangingPassword
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: AppColors.primary),
-                      )
-                    : const Text('Update Password'),
-              ),
-            ),
-          ],
+          const SizedBox(height: 20),
 
-          const SizedBox(height: 16),
-          const Divider(),
-
-          // Language toggle
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.language, color: AppColors.primary),
-            title: const Text('Language'),
-            trailing: const Text(
-              'English',
-              style: TextStyle(
-                color: AppColors.textSecondary,
-                fontSize: 14,
-              ),
-            ),
-            onTap: () {
-              // Language selection would be implemented with locale provider
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                    content: Text('Language selection coming soon')),
-              );
-            },
-          ),
-
-          const Divider(),
-
-          // App version
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.info_outline, color: AppColors.textMuted),
-            title: const Text('App Version'),
-            trailing: const Text(
-              '1.0.0',
-              style: TextStyle(
+          // Section label
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 8),
+            child: Text(
+              'Preferences',
+              style: GoogleFonts.josefinSans(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
                 color: AppColors.textMuted,
-                fontSize: 14,
+                letterSpacing: 1.0,
               ),
             ),
           ),
 
-          const SizedBox(height: 24),
+          Container(
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: AppShadows.soft,
+            ),
+            child: Column(
+              children: [
+                // Language toggle
+                ListTile(
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 16),
+                  leading: const Icon(Icons.language,
+                      color: AppColors.primary),
+                  title: Text('Language',
+                      style: GoogleFonts.josefinSans(
+                          fontWeight: FontWeight.w500)),
+                  trailing: Text(
+                    'English',
+                    style: GoogleFonts.josefinSans(
+                      color: AppColors.textMuted,
+                      fontSize: 14,
+                    ),
+                  ),
+                  onTap: () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                          content:
+                              Text('Language selection coming soon')),
+                    );
+                  },
+                ),
+                Divider(
+                  height: 1,
+                  indent: 16,
+                  endIndent: 16,
+                  color: AppColors.border.withValues(alpha: 0.5),
+                ),
+                // App version
+                ListTile(
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 16),
+                  leading: const Icon(Icons.info_outline,
+                      color: AppColors.textMuted),
+                  title: Text('App Version',
+                      style: GoogleFonts.josefinSans(
+                          fontWeight: FontWeight.w500)),
+                  trailing: Text(
+                    '1.0.0',
+                    style: GoogleFonts.josefinSans(
+                      color: AppColors.textMuted,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 32),
 
           // Logout
           SizedBox(
@@ -400,11 +557,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             child: OutlinedButton.icon(
               onPressed: _logout,
               icon: const Icon(Icons.logout, color: AppColors.danger),
-              label: const Text('Logout'),
+              label: Text('Logout',
+                  style: GoogleFonts.josefinSans(
+                      fontWeight: FontWeight.w600)),
               style: OutlinedButton.styleFrom(
                 foregroundColor: AppColors.danger,
                 side: const BorderSide(color: AppColors.danger),
-                padding: const EdgeInsets.symmetric(vertical: 14),
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
             ),
           ),

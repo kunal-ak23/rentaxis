@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
 final _ticketServiceProvider = Provider<TicketService>((ref) {
@@ -29,23 +30,55 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: AppColors.navyDark,
-        title: const Text('Maintenance Tickets'),
+        backgroundColor: AppColors.surface,
+        title: Text(
+          'Maintenance Tickets',
+          style: GoogleFonts.cinzel(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: AppColors.textPrimary,
+          ),
+        ),
       ),
       body: Column(
         children: [
           // Search bar
           Padding(
-            padding: const EdgeInsets.all(16),
-            child: TextField(
-              onChanged: (value) => setState(() => _searchQuery = value),
-              decoration: InputDecoration(
-                hintText: 'Search tickets...',
-                prefixIcon: const Icon(Icons.search, size: 20),
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+            child: Container(
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: AppShadows.soft,
+              ),
+              child: TextField(
+                onChanged: (value) => setState(() => _searchQuery = value),
+                style: GoogleFonts.josefinSans(fontSize: 14),
+                decoration: InputDecoration(
+                  hintText: 'Search tickets...',
+                  hintStyle: GoogleFonts.josefinSans(
+                    color: AppColors.textMuted,
+                    fontSize: 14,
+                  ),
+                  prefixIcon: const Icon(Icons.search,
+                      size: 20, color: AppColors.textMuted),
+                  contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 18, vertical: 14),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide.none,
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide.none,
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(
+                        color: AppColors.primary, width: 1.5),
+                  ),
+                  filled: true,
+                  fillColor: AppColors.surface,
                 ),
               ),
             ),
@@ -85,21 +118,25 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
                   color: AppColors.primary,
                   onRefresh: () async => ref.invalidate(ticketsProvider),
                   child: ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
                     itemCount: filtered.length,
                     itemBuilder: (context, index) {
                       final ticket = filtered[index];
-                      return _TicketCard(
-                        ticket: ticket,
-                        onTap: () =>
-                            context.push('/tickets/${ticket['id']}'),
+                      return AnimatedListItem(
+                        index: index,
+                        child: _TicketCard(
+                          ticket: ticket,
+                          onTap: () =>
+                              context.push('/tickets/${ticket['id']}'),
+                        ),
                       );
                     },
                   ),
                 );
               },
-              loading: () => const Center(
-                child: CircularProgressIndicator(color: AppColors.primary),
+              loading: () => Padding(
+                padding: const EdgeInsets.all(20),
+                child: ListShimmer(itemCount: 4),
               ),
               error: (err, _) => ErrorState(
                 message: 'Failed to load tickets',
@@ -111,7 +148,7 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => context.push('/tickets/create'),
-        backgroundColor: AppColors.primary,
+        elevation: 4,
         child: const Icon(Icons.add, color: Colors.white),
       ),
     );
@@ -136,76 +173,91 @@ class _TicketCard extends StatelessWidget {
         ticket['unit']?['unitNumber'] ?? ticket['unitNumber'] ?? '';
     final createdAt = Formatters.timeAgo(ticket['createdAt']);
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 10),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Title row
-              Row(
-                children: [
-                  _categoryIcon(category),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          title,
-                          style: Theme.of(context).textTheme.titleMedium,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        if (propertyName.isNotEmpty ||
-                            unitNumber.isNotEmpty) ...[
-                          const SizedBox(height: 2),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: AppShadows.soft,
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Title row
+                Row(
+                  children: [
+                    _categoryIcon(category),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
                           Text(
-                            [
-                              propertyName,
-                              if (unitNumber.isNotEmpty) 'Unit $unitNumber',
-                            ].join(' - '),
-                            style: Theme.of(context).textTheme.bodySmall,
+                            title,
+                            style: Theme.of(context).textTheme.titleMedium,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
+                          if (propertyName.isNotEmpty ||
+                              unitNumber.isNotEmpty) ...[
+                            const SizedBox(height: 3),
+                            Text(
+                              [
+                                propertyName,
+                                if (unitNumber.isNotEmpty)
+                                  'Unit $unitNumber',
+                              ].join(' - '),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(color: AppColors.textMuted),
+                            ),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    createdAt,
-                    style: Theme.of(context).textTheme.labelSmall,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-
-              // Badges
-              Row(
-                children: [
-                  StatusBadge(
-                    label: status,
-                    color: StatusHelper.getTicketStatusColor(status),
-                  ),
-                  const SizedBox(width: 8),
-                  StatusBadge(
-                    label: priority,
-                    color: StatusHelper.getPriorityColor(priority),
-                  ),
-                  if (category.isNotEmpty) ...[
                     const SizedBox(width: 8),
                     Text(
-                      category.replaceAll('_', ' '),
+                      createdAt,
                       style: Theme.of(context).textTheme.labelSmall,
                     ),
                   ],
-                ],
-              ),
-            ],
+                ),
+                const SizedBox(height: 12),
+
+                // Badges
+                Row(
+                  children: [
+                    StatusBadge(
+                      label: status,
+                      color: StatusHelper.getTicketStatusColor(status),
+                    ),
+                    const SizedBox(width: 8),
+                    StatusBadge(
+                      label: priority,
+                      color: StatusHelper.getPriorityColor(priority),
+                    ),
+                    if (category.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      Text(
+                        category.replaceAll('_', ' '),
+                        style: Theme.of(context)
+                            .textTheme
+                            .labelSmall
+                            ?.copyWith(color: AppColors.textMuted),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -226,13 +278,13 @@ class _TicketCard extends StatelessWidget {
     };
 
     return Container(
-      width: 40,
-      height: 40,
+      width: 44,
+      height: 44,
       decoration: BoxDecoration(
         color: AppColors.primary.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(10),
+        shape: BoxShape.circle,
       ),
-      child: Icon(iconData, color: AppColors.primary, size: 20),
+      child: Icon(iconData, color: AppColors.primary, size: 22),
     );
   }
 }

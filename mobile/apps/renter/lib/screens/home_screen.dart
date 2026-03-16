@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
@@ -36,49 +37,67 @@ class HomeScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: AppColors.navyDark,
-        title: const Text(
+        backgroundColor: AppColors.surface,
+        elevation: 0,
+        title: Text(
           'RentAxis',
-          style: TextStyle(
+          style: GoogleFonts.cinzel(
             color: AppColors.accent,
             fontWeight: FontWeight.w700,
             fontSize: 20,
-            letterSpacing: 0.5,
+            letterSpacing: 1.0,
           ),
         ),
         actions: [
-          Stack(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.notifications_outlined),
-                onPressed: () => context.push('/notifications'),
-              ),
-              if (notifState.unreadCount > 0)
-                Positioned(
-                  right: 8,
-                  top: 8,
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: const BoxDecoration(
-                      color: AppColors.danger,
-                      shape: BoxShape.circle,
-                    ),
-                    constraints:
-                        const BoxConstraints(minWidth: 18, minHeight: 18),
-                    child: Text(
-                      notifState.unreadCount > 99
-                          ? '99+'
-                          : '${notifState.unreadCount}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: Stack(
+              children: [
+                IconButton(
+                  icon: const Icon(
+                    Icons.notifications_outlined,
+                    color: AppColors.textPrimary,
+                  ),
+                  onPressed: () => context.push('/notifications'),
+                ),
+                if (notifState.unreadCount > 0)
+                  Positioned(
+                    right: 8,
+                    top: 8,
+                    child: TweenAnimationBuilder<double>(
+                      tween: Tween(begin: 0.0, end: 1.0),
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeOutBack,
+                      builder: (context, value, child) {
+                        return Transform.scale(
+                          scale: value,
+                          child: child,
+                        );
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(
+                          color: AppColors.danger,
+                          shape: BoxShape.circle,
+                        ),
+                        constraints:
+                            const BoxConstraints(minWidth: 18, minHeight: 18),
+                        child: Text(
+                          notifState.unreadCount > 99
+                              ? '99+'
+                              : '${notifState.unreadCount}',
+                          style: GoogleFonts.josefinSans(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
                       ),
-                      textAlign: TextAlign.center,
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ],
       ),
@@ -90,20 +109,29 @@ class HomeScreen extends ConsumerWidget {
           ref.read(notificationProvider.notifier).fetchUnreadCount();
         },
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
           children: [
             // Greeting
-            _buildGreeting(context, authState),
-            const SizedBox(height: 20),
-
-            // Quick Actions
-            _buildQuickActions(context),
+            AnimatedListItem(
+              index: 0,
+              child: _buildGreeting(context, authState),
+            ),
             const SizedBox(height: 24),
 
+            // Quick Actions
+            AnimatedListItem(
+              index: 1,
+              child: _buildQuickActions(context),
+            ),
+            const SizedBox(height: 28),
+
             // Active Leases
-            Text('My Leases',
-                style: Theme.of(context).textTheme.headlineSmall),
-            const SizedBox(height: 12),
+            AnimatedListItem(
+              index: 2,
+              child: Text('My Leases',
+                  style: Theme.of(context).textTheme.headlineSmall),
+            ),
+            const SizedBox(height: 14),
 
             leasesAsync.when(
               data: (leases) {
@@ -115,23 +143,21 @@ class HomeScreen extends ConsumerWidget {
                   );
                 }
                 return Column(
-                  children: leases.map((lease) {
-                    return _LeaseCard(
-                      lease: lease,
-                      nextPayment: _findNextPayment(
-                        paymentsAsync.valueOrNull ?? [],
-                        lease['id'],
+                  children: leases.asMap().entries.map((entry) {
+                    return AnimatedListItem(
+                      index: entry.key + 3,
+                      child: _LeaseCard(
+                        lease: entry.value,
+                        nextPayment: _findNextPayment(
+                          paymentsAsync.valueOrNull ?? [],
+                          entry.value['id'],
+                        ),
                       ),
                     );
                   }).toList(),
                 );
               },
-              loading: () => const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(32),
-                  child: CircularProgressIndicator(color: AppColors.primary),
-                ),
-              ),
+              loading: () => const ListShimmer(itemCount: 2),
               error: (err, _) => ErrorState(
                 message: 'Failed to load leases',
                 onRetry: () => ref.invalidate(_myLeasesProvider),
@@ -145,13 +171,19 @@ class HomeScreen extends ConsumerWidget {
 
   Widget _buildGreeting(BuildContext context, AuthState authState) {
     final firstName = (authState.name ?? 'there').split(' ').first;
+    final hour = DateTime.now().hour;
+    final greeting = hour < 12
+        ? 'Good Morning'
+        : hour < 17
+            ? 'Good Afternoon'
+            : 'Good Evening';
     final today = DateFormat('EEEE, d MMMM yyyy').format(DateTime.now());
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Hi $firstName',
+          '$greeting, $firstName',
           style: Theme.of(context).textTheme.headlineMedium,
         ),
         const SizedBox(height: 4),
@@ -160,7 +192,7 @@ class HomeScreen extends ConsumerWidget {
           style: Theme.of(context)
               .textTheme
               .bodyMedium
-              ?.copyWith(color: AppColors.textSecondary),
+              ?.copyWith(color: AppColors.textMuted),
         ),
       ],
     );
@@ -212,7 +244,7 @@ class HomeScreen extends ConsumerWidget {
   }
 }
 
-class _QuickActionButton extends StatelessWidget {
+class _QuickActionButton extends StatefulWidget {
   final IconData icon;
   final String label;
   final Color color;
@@ -226,31 +258,54 @@ class _QuickActionButton extends StatelessWidget {
   });
 
   @override
+  State<_QuickActionButton> createState() => _QuickActionButtonState();
+}
+
+class _QuickActionButtonState extends State<_QuickActionButton> {
+  double _scale = 1.0;
+
+  @override
   Widget build(BuildContext context) {
     return Expanded(
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: color.withValues(alpha: 0.2)),
-          ),
-          child: Column(
-            children: [
-              Icon(icon, color: color, size: 28),
-              const SizedBox(height: 8),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: color,
+      child: GestureDetector(
+        onTapDown: (_) => setState(() => _scale = 0.95),
+        onTapUp: (_) {
+          setState(() => _scale = 1.0);
+          widget.onTap();
+        },
+        onTapCancel: () => setState(() => _scale = 1.0),
+        child: AnimatedScale(
+          scale: _scale,
+          duration: const Duration(milliseconds: 150),
+          curve: Curves.easeOut,
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 18),
+            decoration: BoxDecoration(
+              color: widget.color.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: widget.color.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(widget.icon, color: widget.color, size: 24),
                 ),
-              ),
-            ],
+                const SizedBox(height: 10),
+                Text(
+                  widget.label,
+                  style: GoogleFonts.josefinSans(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: widget.color,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -275,72 +330,105 @@ class _LeaseCard extends StatelessWidget {
     final startDate = Formatters.date(lease['startDate']);
     final endDate = Formatters.date(lease['endDate']);
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: AppShadows.soft,
+      ),
+      child: IntrinsicHeight(
+        child: Row(
           children: [
-            // Header
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        propertyName,
-                        style: Theme.of(context).textTheme.titleLarge,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'Unit $unitNumber',
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodySmall
-                            ?.copyWith(color: AppColors.textSecondary),
-                      ),
+            // Teal accent stripe
+            Container(
+              width: 4,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [AppColors.primary, AppColors.primaryLight],
+                ),
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(16),
+                  bottomLeft: Radius.circular(16),
+                ),
+              ),
+            ),
+            // Content
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Header
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                propertyName,
+                                style:
+                                    Theme.of(context).textTheme.titleLarge,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                'Unit $unitNumber',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(color: AppColors.textMuted),
+                              ),
+                            ],
+                          ),
+                        ),
+                        StatusBadge(
+                          label: status,
+                          color: StatusHelper.getLeaseStatusColor(status),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Divider(
+                      height: 1,
+                      color: AppColors.border.withValues(alpha: 0.5),
+                    ),
+                    const SizedBox(height: 14),
+
+                    // Rent & Dates
+                    Row(
+                      children: [
+                        _InfoItem(
+                          label: 'Monthly Rent',
+                          value: Formatters.currency(monthlyRent),
+                          valueStyle: GoogleFonts.josefinSans(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                        const Spacer(),
+                        _InfoItem(
+                          label: 'Period',
+                          value: '$startDate - $endDate',
+                        ),
+                      ],
+                    ),
+
+                    // Next Payment Alert
+                    if (nextPayment != null) ...[
+                      const SizedBox(height: 14),
+                      _NextPaymentAlert(payment: nextPayment!),
                     ],
-                  ),
+                  ],
                 ),
-                StatusBadge(
-                  label: status,
-                  color: StatusHelper.getLeaseStatusColor(status),
-                ),
-              ],
+              ),
             ),
-            const SizedBox(height: 12),
-            const Divider(height: 1),
-            const SizedBox(height: 12),
-
-            // Rent & Dates
-            Row(
-              children: [
-                _InfoItem(
-                  label: 'Monthly Rent',
-                  value: Formatters.currency(monthlyRent),
-                  valueStyle: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.primary,
-                  ),
-                ),
-                const Spacer(),
-                _InfoItem(
-                  label: 'Period',
-                  value: '$startDate - $endDate',
-                ),
-              ],
-            ),
-
-            // Next Payment Alert
-            if (nextPayment != null) ...[
-              const SizedBox(height: 12),
-              _NextPaymentAlert(payment: nextPayment!),
-            ],
           ],
         ),
       ),
@@ -353,7 +441,8 @@ class _InfoItem extends StatelessWidget {
   final String value;
   final TextStyle? valueStyle;
 
-  const _InfoItem({required this.label, required this.value, this.valueStyle});
+  const _InfoItem(
+      {required this.label, required this.value, this.valueStyle});
 
   @override
   Widget build(BuildContext context) {
@@ -361,7 +450,7 @@ class _InfoItem extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(label, style: Theme.of(context).textTheme.labelSmall),
-        const SizedBox(height: 2),
+        const SizedBox(height: 3),
         Text(
           value,
           style: valueStyle ?? Theme.of(context).textTheme.titleMedium,
@@ -391,7 +480,6 @@ class _NextPaymentAlert extends StatelessWidget {
       } catch (_) {}
     }
 
-    final color = isOverdue ? AppColors.danger : AppColors.warning;
     final message = isOverdue
         ? '${daysUntil.abs()} days overdue'
         : daysUntil == 0
@@ -400,44 +488,49 @@ class _NextPaymentAlert extends StatelessWidget {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withValues(alpha: 0.25)),
+        gradient: LinearGradient(
+          colors: [
+            AppColors.navyDark,
+            AppColors.navyDark.withValues(alpha: 0.9),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         children: [
           Icon(
             isOverdue ? Icons.warning_amber_rounded : Icons.schedule,
-            color: color,
+            color: isOverdue ? AppColors.danger : AppColors.accent,
             size: 20,
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   message,
-                  style: TextStyle(
+                  style: GoogleFonts.josefinSans(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
-                    color: color,
+                    color: Colors.white.withValues(alpha: 0.7),
                   ),
                 ),
                 Text(
                   Formatters.currency(amount),
-                  style: TextStyle(
-                    fontSize: 14,
+                  style: GoogleFonts.josefinSans(
+                    fontSize: 16,
                     fontWeight: FontWeight.w700,
-                    color: color,
+                    color: Colors.white,
                   ),
                 ),
               ],
             ),
           ),
-          Icon(Icons.chevron_right, color: color, size: 20),
+          Icon(Icons.chevron_right,
+              color: Colors.white.withValues(alpha: 0.5), size: 20),
         ],
       ),
     );
