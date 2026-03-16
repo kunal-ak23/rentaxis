@@ -87,7 +87,7 @@ class _VideoSplashScreenState extends State<VideoSplashScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Logo image with fade + scale
+            // Square logo with fade + scale
             AnimatedBuilder(
               animation: _logoController,
               builder: (context, child) {
@@ -97,36 +97,32 @@ class _VideoSplashScreenState extends State<VideoSplashScreen>
                     scale: _logoScale.value,
                     child: Image.asset(
                       'assets/logo.png',
-                      width: 160,
-                      height: 160,
+                      width: 140,
+                      height: 140,
                     ),
                   ),
                 );
               },
             ),
-            const SizedBox(height: 28),
+            const SizedBox(height: 20),
 
-            // "RentAxis" text
+            // Horizontal logo with text (fades in after)
             AnimatedBuilder(
               animation: _titleController,
               builder: (context, child) {
                 return Opacity(
                   opacity: _titleFade.value,
-                  child: Text(
-                    'RentAxis',
-                    style: GoogleFonts.cinzel(
-                      fontSize: 32,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.navyDark,
-                      letterSpacing: 2.0,
-                    ),
+                  child: Image.asset(
+                    'assets/logo_horizontal.png',
+                    height: 36,
+                    fit: BoxFit.contain,
                   ),
                 );
               },
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
 
-            // "Property Management" subtitle
+            // Subtitle
             AnimatedBuilder(
               animation: _subtitleController,
               builder: (context, child) {
@@ -135,7 +131,7 @@ class _VideoSplashScreenState extends State<VideoSplashScreen>
                   child: Text(
                     'Property Management',
                     style: GoogleFonts.josefinSans(
-                      fontSize: 14,
+                      fontSize: 13,
                       fontWeight: FontWeight.w400,
                       color: AppColors.textMuted,
                       letterSpacing: 1.5,

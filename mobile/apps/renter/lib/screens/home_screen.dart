@@ -39,14 +39,10 @@ class HomeScreen extends ConsumerWidget {
       appBar: AppBar(
         backgroundColor: AppColors.surface,
         elevation: 0,
-        title: Text(
-          'RentAxis',
-          style: GoogleFonts.cinzel(
-            color: AppColors.accent,
-            fontWeight: FontWeight.w700,
-            fontSize: 20,
-            letterSpacing: 1.0,
-          ),
+        title: Image.asset(
+          'assets/logo_horizontal.png',
+          height: 32,
+          fit: BoxFit.contain,
         ),
         actions: [
           Padding(

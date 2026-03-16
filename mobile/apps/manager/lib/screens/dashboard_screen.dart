@@ -43,14 +43,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: AppColors.navyDark,
-        title: const Text(
-          'RentAxis',
-          style: TextStyle(
-            color: AppColors.accent,
-            fontWeight: FontWeight.w700,
-            fontSize: 20,
-            letterSpacing: 1,
-          ),
+        title: Image.asset(
+          'assets/logo_horizontal.png',
+          height: 32,
+          fit: BoxFit.contain,
         ),
         actions: [
           Stack(
