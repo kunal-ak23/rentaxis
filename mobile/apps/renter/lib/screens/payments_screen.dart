@@ -51,9 +51,9 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
   void _handlePaymentSuccess(PaymentSuccessResponse response) async {
     try {
       await ref.read(_paymentServiceProvider).verifyPayment({
-        'razorpayPaymentId': response.paymentId,
-        'razorpayOrderId': response.orderId,
-        'razorpaySignature': response.signature,
+        'gatewayPaymentId': response.paymentId,
+        'gatewayOrderId': response.orderId,
+        'gatewaySignature': response.signature,
       });
       if (mounted) {
         ref.invalidate(_myPaymentsProvider);
@@ -77,8 +77,15 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
     setState(() => _processingPaymentId = null);
   }
 
-  void _handlePaymentError(PaymentFailureResponse response) {
+  void _handlePaymentError(PaymentFailureResponse response) async {
+    // Cancel the ONLINE_PENDING state so payment reverts to PENDING
+    if (_processingPaymentId != null) {
+      try {
+        await ref.read(_paymentServiceProvider).cancelPayment(_processingPaymentId!);
+      } catch (_) {}
+    }
     setState(() => _processingPaymentId = null);
+    ref.invalidate(_myPaymentsProvider);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -103,17 +110,17 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
           await ref.read(_paymentServiceProvider).createOrder(paymentId);
 
       final options = {
-        'key': order['razorpayKeyId'],
-        'amount':
-            order['amountInPaise'] ?? ((order['amount'] ?? 0) * 100).toInt(),
-        'order_id': order['razorpayOrderId'] ?? order['orderId'],
+        'key': order['gatewayKey'],
+        'amount': ((order['amount'] ?? 0) * 100).toInt(), // Convert to paise
+        'order_id': order['orderId'],
         'name': 'RentAxis',
         'description':
-            'Rent Payment - ${payment['installmentLabel'] ?? ''}',
+            'Rent Payment - ${payment['installmentLabel'] ?? payment['label'] ?? ''}',
         'prefill': {
-          'email': ref.read(authProvider).email ?? '',
+          'email': order['renterEmail'] ?? ref.read(authProvider).email ?? '',
+          'contact': '',
         },
-        'currency': 'AED',
+        'currency': order['currency'] ?? 'INR',
       };
 
       _razorpay.open(options);
@@ -284,7 +291,7 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
               ],
             )
           : ListView(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 150),
               children: [
                 // Summary card with glass-morphism
                 AnimatedListItem(
@@ -356,11 +363,10 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
     final penalty = payment['penaltyAmount'] ?? 0;
     final totalPayable = payment['totalPayable'] ?? amount;
     final dueDate = Formatters.date(payment['dueDate']);
-    final label = payment['installmentLabel'] ?? payment['label'] ?? '';
-    final propertyName =
-        payment['property']?['name'] ?? payment['propertyName'] ?? '';
-    final unitNumber =
-        payment['unit']?['unitNumber'] ?? payment['unitNumber'] ?? '';
+    final installmentNum = payment['installmentNumber'] ?? '';
+    final label = installmentNum != '' ? 'Installment #$installmentNum' : (payment['installmentLabel'] ?? payment['label'] ?? 'Payment');
+    final propertyName = payment['propertyName'] ?? '';
+    final unitNumber = payment['unitIdentifier'] ?? '';
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
@@ -531,7 +537,7 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
               ],
             )
           : ListView.builder(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 150),
               itemCount: history.length,
               itemBuilder: (context, index) {
                 final payment = history[index];
@@ -547,7 +553,11 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
   Widget _buildHistoryCard(Map<String, dynamic> payment) {
     final amount = payment['totalPayable'] ?? payment['amount'] ?? 0;
     final dueDate = Formatters.date(payment['dueDate']);
-    final label = payment['installmentLabel'] ?? payment['label'] ?? '';
+    final installmentNum = payment['installmentNumber'] ?? '';
+    final label = installmentNum != '' ? 'Installment #$installmentNum' : (payment['installmentLabel'] ?? payment['label'] ?? 'Payment');
+    final propertyName = payment['propertyName'] ?? '';
+    final unitId = payment['unitIdentifier'] ?? '';
+    final subtitle = [propertyName, if (unitId.isNotEmpty) unitId].where((s) => s.isNotEmpty).join(' - ');
     final status = payment['status'] ?? '';
 
     return Padding(
@@ -590,9 +600,19 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
                   label.isNotEmpty ? label : 'Payment',
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
-                subtitle: Text(
-                  '$dueDate  |  $status',
-                  style: Theme.of(context).textTheme.bodySmall,
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (subtitle.isNotEmpty)
+                      Text(
+                        subtitle,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppColors.textMuted),
+                      ),
+                    Text(
+                      dueDate,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
                 ),
                 trailing: Column(
                   mainAxisAlignment: MainAxisAlignment.center,

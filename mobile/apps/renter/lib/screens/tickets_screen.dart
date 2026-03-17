@@ -29,7 +29,9 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
     final ticketsAsync = ref.watch(ticketsProvider);
 
     return Scaffold(
-      body: Column(
+      body: Stack(
+        children: [
+          Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Page title
@@ -120,7 +122,7 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
                   color: AppColors.primary,
                   onRefresh: () async => ref.invalidate(ticketsProvider),
                   child: ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 150),
                     itemCount: filtered.length,
                     itemBuilder: (context, index) {
                       final ticket = filtered[index];
@@ -146,16 +148,20 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
               ),
             ),
           ),
-        ],
-      ),
-      floatingActionButton: Padding(
-        padding: const EdgeInsets.only(bottom: 100),
-        child: FloatingActionButton(
-          onPressed: () => context.push('/tickets/create'),
-          backgroundColor: AppColors.primary,
-          elevation: 6,
-          child: const Icon(Icons.add, color: Colors.white),
+          ],
         ),
+        // FAB positioned above the floating nav
+        Positioned(
+          right: 20,
+          bottom: 110,
+          child: FloatingActionButton(
+            onPressed: () => context.push('/tickets/create'),
+            backgroundColor: AppColors.primary,
+            elevation: 6,
+            child: const Icon(Icons.add, color: Colors.white),
+          ),
+        ),
+        ],
       ),
     );
   }

@@ -113,18 +113,19 @@ class _FrostedBottomNav extends StatelessWidget {
         child: ClipRRect(
           borderRadius: BorderRadius.circular(28),
           child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+            filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
             child: Container(
               height: 72,
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.45),
+                color: AppColors.background.withValues(alpha: 0.82),
                 borderRadius: BorderRadius.circular(28),
                 border: Border.all(
-                  color: AppColors.border.withValues(alpha: 0.4),
+                  color: AppColors.border.withValues(alpha: 0.6),
+                  width: 1.2,
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.08),
+                    color: Colors.black.withValues(alpha: 0.12),
                     blurRadius: 24,
                     offset: const Offset(0, 8),
                   ),

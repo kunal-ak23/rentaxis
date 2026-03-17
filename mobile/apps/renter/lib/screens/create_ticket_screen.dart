@@ -210,7 +210,9 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
       onTap: () => FocusScope.of(context).unfocus(),
       child: Scaffold(
         appBar: AppBar(
-          backgroundColor: AppColors.navyDark,
+          backgroundColor: AppColors.surface,
+          foregroundColor: AppColors.textPrimary,
+          elevation: 0,
           title: const Text('Create Ticket'),
         ),
         body: LoadingOverlay(
@@ -223,17 +225,15 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                 // Property/Unit selector
                 leasesAsync.when(
                   data: (leases) {
-                    // Auto-select if single lease
                     if (leases.length == 1 && _selectedLeaseId == null) {
                       WidgetsBinding.instance.addPostFrameCallback((_) {
                         if (mounted) {
                           setState(() {
                             _selectedLeaseId = leases[0]['id'];
                             _selectedPropertyId =
-                                leases[0]['property']?['id'] ??
-                                    leases[0]['propertyId'];
-                            _selectedUnitId = leases[0]['unit']?['id'] ??
-                                leases[0]['unitId'];
+                                leases[0]['propertyId'] ?? leases[0]['property']?['id'];
+                            _selectedUnitId =
+                                leases[0]['unitId'] ?? leases[0]['unit']?['id'];
                           });
                         }
                       });
@@ -248,15 +248,18 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                         prefixIcon: Icon(Icons.apartment, size: 20),
                       ),
                       items: leases.map<DropdownMenuItem<String>>((lease) {
-                        final propName = lease['property']?['name'] ??
-                            lease['propertyName'] ??
+                        final propName = lease['propertyName'] ??
+                            lease['property']?['nameEn'] ??
                             'Property';
-                        final unitNum = lease['unit']?['unitNumber'] ??
-                            lease['unitNumber'] ??
+                        final unitId = lease['unitIdentifier'] ??
+                            lease['unit']?['unitNumber'] ??
                             '';
+                        final display = unitId.isNotEmpty
+                            ? '$propName - $unitId'
+                            : propName;
                         return DropdownMenuItem(
                           value: lease['id'] as String,
-                          child: Text('$propName - Unit $unitNum'),
+                          child: Text(display, overflow: TextOverflow.ellipsis),
                         );
                       }).toList(),
                       onChanged: (value) {
@@ -264,9 +267,9 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                         setState(() {
                           _selectedLeaseId = value;
                           _selectedPropertyId =
-                              lease['property']?['id'] ?? lease['propertyId'];
+                              lease['propertyId'] ?? lease['property']?['id'];
                           _selectedUnitId =
-                              lease['unit']?['id'] ?? lease['unitId'];
+                              lease['unitId'] ?? lease['unit']?['id'];
                         });
                       },
                     );
@@ -274,75 +277,9 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                   loading: () => const LinearProgressIndicator(),
                   error: (_, __) => const SizedBox.shrink(),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 16),
 
-                // Category grid
-                Text('Category',
-                    style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 10),
-                GridView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 3,
-                    mainAxisSpacing: 10,
-                    crossAxisSpacing: 10,
-                    childAspectRatio: 1.1,
-                  ),
-                  itemCount: _categories.length,
-                  itemBuilder: (context, index) {
-                    final cat = _categories[index];
-                    final isSelected = _selectedCategory == cat['value'];
-                    return InkWell(
-                      onTap: () =>
-                          setState(() => _selectedCategory = cat['value'] as String),
-                      borderRadius: BorderRadius.circular(12),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: isSelected
-                              ? AppColors.primary.withValues(alpha: 0.1)
-                              : AppColors.surface,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: isSelected
-                                ? AppColors.primary
-                                : AppColors.border,
-                            width: isSelected ? 2 : 1,
-                          ),
-                        ),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              cat['icon'] as IconData,
-                              color: isSelected
-                                  ? AppColors.primary
-                                  : AppColors.textSecondary,
-                              size: 28,
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              cat['label'] as String,
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: isSelected
-                                    ? FontWeight.w600
-                                    : FontWeight.w400,
-                                color: isSelected
-                                    ? AppColors.primary
-                                    : AppColors.textSecondary,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-                const SizedBox(height: 20),
-
-                // Title
+                // Title (first for quick input)
                 TextFormField(
                   controller: _titleController,
                   decoration: const InputDecoration(
@@ -359,6 +296,72 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                 ),
                 const SizedBox(height: 16),
 
+                // Category grid (compact)
+                Text('Category',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(color: AppColors.textSecondary)),
+                const SizedBox(height: 8),
+                GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3,
+                    mainAxisSpacing: 8,
+                    crossAxisSpacing: 8,
+                    childAspectRatio: 1.3,
+                  ),
+                  itemCount: _categories.length,
+                  itemBuilder: (context, index) {
+                    final cat = _categories[index];
+                    final isSelected = _selectedCategory == cat['value'];
+                    return InkWell(
+                      onTap: () =>
+                          setState(() => _selectedCategory = cat['value'] as String),
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? AppColors.primary.withValues(alpha: 0.1)
+                              : AppColors.surface,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: isSelected
+                                ? AppColors.primary
+                                : AppColors.border,
+                            width: isSelected ? 1.5 : 1,
+                          ),
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              cat['icon'] as IconData,
+                              color: isSelected
+                                  ? AppColors.primary
+                                  : AppColors.textSecondary,
+                              size: 22,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              cat['label'] as String,
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: isSelected
+                                    ? FontWeight.w600
+                                    : FontWeight.w400,
+                                color: isSelected
+                                    ? AppColors.primary
+                                    : AppColors.textSecondary,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 16),
+
                 // Description
                 TextFormField(
                   controller: _descriptionController,
@@ -370,12 +373,12 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                   maxLines: 4,
                   minLines: 3,
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 16),
 
                 // Priority
                 Text('Priority',
-                    style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 10),
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(color: AppColors.textSecondary)),
+                const SizedBox(height: 8),
                 Wrap(
                   spacing: 8,
                   children: _priorities.map((priority) {

@@ -8,5 +8,6 @@ public enum TicketCategory {
     PEST_CONTROL,
     CLEANING,
     APPLIANCE,
+    SECURITY,
     OTHER
 }

@@ -44,7 +44,7 @@ class HomeScreen extends ConsumerWidget {
           ref.read(notificationProvider.notifier).fetchUnreadCount();
         },
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 150),
           children: [
             // Greeting
             AnimatedListItem(
@@ -119,7 +119,11 @@ class HomeScreen extends ConsumerWidget {
       children: [
         Text(
           '$greeting, $firstName',
-          style: Theme.of(context).textTheme.headlineMedium,
+          style: GoogleFonts.inter(
+            fontSize: 22,
+            fontWeight: FontWeight.w700,
+            color: AppColors.textPrimary,
+          ),
         ),
         const SizedBox(height: 4),
         Text(
@@ -257,9 +261,9 @@ class _LeaseCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final propertyName =
-        lease['property']?['name'] ?? lease['propertyName'] ?? 'Property';
+        lease['propertyName'] ?? lease['property']?['nameEn'] ?? lease['property']?['name'] ?? 'Property';
     final unitNumber =
-        lease['unit']?['unitNumber'] ?? lease['unitNumber'] ?? '-';
+        lease['unitIdentifier'] ?? lease['unit']?['unitNumber'] ?? lease['unitNumber'] ?? '';
     final status = lease['status'] ?? 'ACTIVE';
     final monthlyRent = lease['monthlyRent'] ?? lease['rentAmount'] ?? 0;
     final startDate = Formatters.date(lease['startDate']);
@@ -421,52 +425,55 @@ class _NextPaymentAlert extends StatelessWidget {
             ? 'Due today'
             : 'Due in $daysUntil days';
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            AppColors.navyDark,
-            AppColors.navyDark.withValues(alpha: 0.9),
+    return GestureDetector(
+      onTap: () => GoRouter.of(context).go('/payments'),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              AppColors.navyDark,
+              AppColors.navyDark.withValues(alpha: 0.9),
+            ],
+          ),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              isOverdue ? Icons.warning_amber_rounded : Icons.schedule,
+              color: isOverdue ? AppColors.danger : AppColors.accent,
+              size: 20,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    message,
+                    style: GoogleFonts.josefinSans(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white.withValues(alpha: 0.7),
+                    ),
+                  ),
+                  Text(
+                    Formatters.currency(amount),
+                    style: GoogleFonts.josefinSans(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right,
+                color: Colors.white.withValues(alpha: 0.5), size: 20),
           ],
         ),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            isOverdue ? Icons.warning_amber_rounded : Icons.schedule,
-            color: isOverdue ? AppColors.danger : AppColors.accent,
-            size: 20,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  message,
-                  style: GoogleFonts.josefinSans(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white.withValues(alpha: 0.7),
-                  ),
-                ),
-                Text(
-                  Formatters.currency(amount),
-                  style: GoogleFonts.josefinSans(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Icon(Icons.chevron_right,
-              color: Colors.white.withValues(alpha: 0.5), size: 20),
-        ],
       ),
     );
   }

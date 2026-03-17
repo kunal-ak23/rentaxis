@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useTranslations, useLocale } from "next-intl";
-import { Plus, MapPin, Building2, Hash, ArrowRight, X, Users, DollarSign, PieChart, Activity, List, LayoutGrid, Search, AlertCircle, RefreshCw } from "lucide-react";
+import { Plus, MapPin, Building2, Hash, ArrowRight, X, Users, DollarSign, PieChart, Activity, List, LayoutGrid, Search, AlertCircle, RefreshCw, Upload } from "lucide-react";
 import { Link } from "@/i18n/routing";
 import { cn } from "@/lib/utils";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -102,6 +102,15 @@ export default function PropertiesPage() {
         currentTenantName: ""
     });
 
+    const [showImportForm, setShowImportForm] = useState(false);
+    const [importFile, setImportFile] = useState<File | null>(null);
+    const [importPreview, setImportPreview] = useState<string[][]>([]);
+    const [importLoading, setImportLoading] = useState(false);
+    const [importResult, setImportResult] = useState<any>(null);
+    const [importFormData, setImportFormData] = useState({
+        nameEn: "", nameAr: "", emirate: "DUBAI", address: "", type: "RESIDENTIAL", makaniNumber: ""
+    });
+
     useEffect(() => {
         fetchStats();
         const onVisibilityChange = () => {
@@ -192,6 +201,60 @@ export default function PropertiesPage() {
             }
         } catch (err) {
             console.error(err);
+        }
+    };
+
+    const handleFileSelect = (file: File) => {
+        setImportFile(file);
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const text = e.target?.result as string;
+            const rows = text.split("\n").filter(r => r.trim()).map(r => r.split(","));
+            setImportPreview(rows.slice(0, 6)); // header + 5 rows
+        };
+        reader.readAsText(file);
+    };
+
+    const downloadTemplate = async () => {
+        const res = await fetch("/api/proxy/v1/properties/import/template");
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "property-import-template.csv";
+        a.click();
+        URL.revokeObjectURL(url);
+    };
+
+    const handleImportSubmit = async (ev: React.FormEvent) => {
+        ev.preventDefault();
+        if (!importFile) return;
+        setImportLoading(true);
+        try {
+            const formData = new FormData();
+            formData.append("file", importFile);
+            formData.append("nameEn", importFormData.nameEn);
+            formData.append("nameAr", importFormData.nameAr);
+            formData.append("emirate", importFormData.emirate);
+            formData.append("address", importFormData.address);
+            formData.append("type", importFormData.type);
+            formData.append("makaniNumber", importFormData.makaniNumber);
+
+            const res = await fetch("/api/proxy/v1/properties/import", {
+                method: "POST",
+                body: formData,
+            });
+            const data = await res.json();
+            if (res.ok) {
+                setImportResult(data);
+                fetchStats();
+            } else {
+                setImportResult(data);
+            }
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setImportLoading(false);
         }
     };
 
@@ -341,6 +404,13 @@ export default function PropertiesPage() {
                                 <Plus size={14} />
                                 {t("addProperty")}
                             </button>
+                            <button
+                                onClick={() => setShowImportForm(true)}
+                                className="cursor-pointer flex items-center gap-2 bg-surface text-foreground border border-border px-4 py-2 rounded-lg text-xs font-semibold hover:bg-background transition-all duration-200 active:scale-95 focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                            >
+                                <Upload size={14} />
+                                Import Property
+                            </button>
                         </>
                     )}
                     </div>
@@ -482,6 +552,176 @@ export default function PropertiesPage() {
                             <div className="col-span-2 flex justify-end gap-3 mt-4">
                                 <button type="button" onClick={() => setShowPropertyForm(false)} className="cursor-pointer px-6 py-3 text-xs font-bold text-muted transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg">{t("cancel")}</button>
                                 <button type="submit" className="cursor-pointer px-8 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-bold transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none">{t("create")}</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Import Property Modal */}
+            {showImportForm && (
+                <div className="fixed inset-0 bg-foreground/40 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
+                    <div className="bg-surface rounded-xl p-8 max-w-2xl w-full shadow-2xl border border-border relative max-h-[90vh] overflow-y-auto">
+                        <button onClick={() => { setShowImportForm(false); setImportFile(null); setImportPreview([]); setImportResult(null); }} aria-label="Close" className="cursor-pointer absolute right-6 top-6 p-2 text-muted hover:text-foreground transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg"><X size={18} /></button>
+                        <h2 className="text-lg font-bold mb-1">Import Property</h2>
+                        <p className="text-xs text-muted mb-8 font-medium">
+                            Bulk import buildings and units from a CSV file into a new or existing project.
+                        </p>
+
+                        {/* Import Result */}
+                        {importResult && (
+                            <div className={cn(
+                                "mb-6 rounded-xl px-5 py-4 border text-sm",
+                                importResult.errors || importResult.error || importResult.message?.toLowerCase().includes("error")
+                                    ? "bg-error/10 border-error/30 text-error"
+                                    : "bg-success/10 border-success/30 text-success"
+                            )}>
+                                {importResult.errors ? (
+                                    <div>
+                                        <p className="font-semibold mb-2">Import failed:</p>
+                                        <ul className="list-disc list-inside space-y-1 text-xs">
+                                            {(Array.isArray(importResult.errors) ? importResult.errors : [importResult.errors]).map((err: string, i: number) => (
+                                                <li key={i}>{err}</li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                ) : importResult.error ? (
+                                    <p className="font-semibold">{importResult.error}</p>
+                                ) : (
+                                    <div>
+                                        <p className="font-semibold mb-1">Import successful!</p>
+                                        <p className="text-xs">
+                                            {importResult.buildingsCreated !== undefined && `Buildings created: ${importResult.buildingsCreated}. `}
+                                            {importResult.unitsCreated !== undefined && `Units created: ${importResult.unitsCreated}.`}
+                                            {importResult.message && importResult.message}
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        <form onSubmit={handleImportSubmit} className="grid grid-cols-2 gap-5">
+                            <div className="col-span-1">
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("nameEn")} *</label>
+                                <input required placeholder="Project Name (EN)" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={importFormData.nameEn} onChange={ev => setImportFormData({ ...importFormData, nameEn: ev.target.value })} />
+                            </div>
+                            <div className="col-span-1">
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("nameAr")}</label>
+                                <input placeholder="اسم المشروع (AR)" className="w-full bg-input border border-border p-3 rounded-xl text-xs text-right focus:ring-2 focus:ring-primary/30 focus:outline-none" value={importFormData.nameAr} onChange={ev => setImportFormData({ ...importFormData, nameAr: ev.target.value })} />
+                            </div>
+                            <div className="col-span-1">
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("emirate")}</label>
+                                <select className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={importFormData.emirate} onChange={ev => setImportFormData({ ...importFormData, emirate: ev.target.value })}>
+                                    {["DUBAI", "ABU_DHABI", "SHARJAH", "AJMAN", "UMM_AL_QUWAIN", "RAS_AL_KHAIMAH", "FUJAIRAH"].map(opt => (
+                                        <option key={opt} value={opt}>{e(opt)}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="col-span-1">
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">Type</label>
+                                <select className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={importFormData.type} onChange={ev => setImportFormData({ ...importFormData, type: ev.target.value })}>
+                                    {["RESIDENTIAL", "COMMERCIAL", "MIXED", "INDUSTRIAL"].map(opt => (
+                                        <option key={opt} value={opt}>{opt.charAt(0) + opt.slice(1).toLowerCase()}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="col-span-2">
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">Address</label>
+                                <input placeholder="Building name, street, area" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={importFormData.address} onChange={ev => setImportFormData({ ...importFormData, address: ev.target.value })} />
+                            </div>
+                            <div className="col-span-1">
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">Makani Number</label>
+                                <input placeholder="e.g. 12345-67890" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={importFormData.makaniNumber} onChange={ev => setImportFormData({ ...importFormData, makaniNumber: ev.target.value })} />
+                            </div>
+
+                            {/* CSV Upload Section */}
+                            <div className="col-span-2 mt-2">
+                                <div className="flex items-center justify-between mb-2">
+                                    <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] ml-1">CSV File *</label>
+                                    <button type="button" onClick={downloadTemplate} className="cursor-pointer text-xs font-semibold text-primary hover:text-primary/80 transition-colors">
+                                        Download Template
+                                    </button>
+                                </div>
+                                <div
+                                    className={cn(
+                                        "border-2 border-dashed rounded-xl p-6 text-center transition-colors",
+                                        importFile ? "border-primary/40 bg-primary/5" : "border-border hover:border-primary/30"
+                                    )}
+                                    onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                                    onDrop={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        const file = e.dataTransfer.files?.[0];
+                                        if (file && file.name.endsWith(".csv")) handleFileSelect(file);
+                                    }}
+                                >
+                                    {importFile ? (
+                                        <div className="flex items-center justify-center gap-2">
+                                            <Upload size={14} className="text-primary" />
+                                            <span className="text-xs font-semibold text-foreground">{importFile.name}</span>
+                                            <button type="button" onClick={() => { setImportFile(null); setImportPreview([]); }} className="cursor-pointer text-muted hover:text-error transition-colors ml-2">
+                                                <X size={14} />
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <label className="cursor-pointer">
+                                            <div className="flex flex-col items-center gap-2">
+                                                <Upload size={20} className="text-muted" />
+                                                <span className="text-xs text-muted font-medium">Drop CSV file here or click to browse</span>
+                                            </div>
+                                            <input
+                                                type="file"
+                                                accept=".csv"
+                                                className="hidden"
+                                                onChange={(e) => {
+                                                    const file = e.target.files?.[0];
+                                                    if (file) handleFileSelect(file);
+                                                }}
+                                            />
+                                        </label>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* CSV Preview */}
+                            {importPreview.length > 0 && (
+                                <div className="col-span-2 mt-1">
+                                    <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-2 ml-1">Preview</label>
+                                    <div className="overflow-x-auto rounded-lg border border-border">
+                                        <table className="w-full text-xs">
+                                            <thead>
+                                                <tr className="bg-input/50">
+                                                    {importPreview[0]?.map((header, i) => (
+                                                        <th key={i} className="px-3 py-2 text-start text-[10px] font-semibold text-muted uppercase tracking-wider whitespace-nowrap">{header.trim()}</th>
+                                                    ))}
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {importPreview.slice(1).map((row, ri) => (
+                                                    <tr key={ri} className="border-t border-border">
+                                                        {row.map((cell, ci) => (
+                                                            <td key={ci} className="px-3 py-1.5 text-foreground whitespace-nowrap">{cell.trim()}</td>
+                                                        ))}
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="col-span-2 flex justify-end gap-3 mt-4">
+                                <button type="button" onClick={() => { setShowImportForm(false); setImportFile(null); setImportPreview([]); setImportResult(null); }} className="cursor-pointer px-6 py-3 text-xs font-bold text-muted transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg">{t("cancel")}</button>
+                                <button
+                                    type="submit"
+                                    disabled={importLoading || !importFile || !importFormData.nameEn}
+                                    className={cn(
+                                        "cursor-pointer px-8 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-bold transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none",
+                                        (importLoading || !importFile || !importFormData.nameEn) && "opacity-50 cursor-not-allowed"
+                                    )}
+                                >
+                                    {importLoading ? "Importing..." : "Import"}
+                                </button>
                             </div>
                         </form>
                     </div>
