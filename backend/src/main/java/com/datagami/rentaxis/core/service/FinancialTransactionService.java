@@ -85,9 +85,9 @@ public class FinancialTransactionService {
             return repository.findByAccountType(accountType);
         }
         if (startDate != null && endDate != null) {
-            return repository.findByDateBetween(startDate, endDate);
+            return repository.findByDateBetweenOrderByDateAsc(startDate, endDate);
         }
-        return repository.findAll();
+        return repository.findAllByOrderByDateAsc();
     }
 
     @Transactional(readOnly = true)
@@ -139,9 +139,9 @@ public class FinancialTransactionService {
     public ReportDTO getOrganisationReport(LocalDate startDate, LocalDate endDate) {
         List<FinancialTransaction> transactions;
         if (startDate != null && endDate != null) {
-            transactions = repository.findByDateBetween(startDate, endDate);
+            transactions = repository.findByDateBetweenOrderByDateAsc(startDate, endDate);
         } else {
-            transactions = repository.findAll();
+            transactions = repository.findAllByOrderByDateAsc();
         }
         ReportDTO report = buildReport(transactions);
         report.setReportType("ORGANISATION");

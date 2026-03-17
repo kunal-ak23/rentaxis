@@ -220,7 +220,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
           child: Form(
             key: _formKey,
             child: ListView(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 150),
               children: [
                 // Property/Unit selector
                 leasesAsync.when(
@@ -307,7 +307,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                     crossAxisCount: 3,
                     mainAxisSpacing: 8,
                     crossAxisSpacing: 8,
-                    childAspectRatio: 1.3,
+                    childAspectRatio: 1.5,
                   ),
                   itemCount: _categories.length,
                   itemBuilder: (context, index) {
@@ -338,13 +338,13 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                               color: isSelected
                                   ? AppColors.primary
                                   : AppColors.textSecondary,
-                              size: 22,
+                              size: 20,
                             ),
-                            const SizedBox(height: 4),
+                            const SizedBox(height: 2),
                             Text(
                               cat['label'] as String,
                               style: TextStyle(
-                                fontSize: 10,
+                                fontSize: 9,
                                 fontWeight: isSelected
                                     ? FontWeight.w600
                                     : FontWeight.w400,

@@ -20,6 +20,10 @@ public interface FinancialTransactionRepository extends JpaRepository<FinancialT
 
     List<FinancialTransaction> findByDateBetween(LocalDate startDate, LocalDate endDate);
 
+    List<FinancialTransaction> findAllByOrderByDateAsc();
+
+    List<FinancialTransaction> findByDateBetweenOrderByDateAsc(LocalDate startDate, LocalDate endDate);
+
     List<FinancialTransaction> findByPropertyIdAndDateBetween(UUID propertyId, LocalDate startDate, LocalDate endDate);
 
     List<FinancialTransaction> findByUnitIdAndDateBetween(UUID unitId, LocalDate startDate, LocalDate endDate);
