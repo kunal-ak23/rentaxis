@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useTranslations, useLocale } from "next-intl";
-import { Plus, MapPin, Building2, Hash, ArrowRight, X, Users, DollarSign, PieChart, Activity, List, LayoutGrid, Search } from "lucide-react";
+import { Plus, MapPin, Building2, Hash, ArrowRight, X, Users, DollarSign, PieChart, Activity, List, LayoutGrid, Search, AlertCircle, RefreshCw } from "lucide-react";
 import { Link } from "@/i18n/routing";
 import { cn } from "@/lib/utils";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -37,12 +37,32 @@ type PropertyStats = {
     assignedManagers: PropertyManager[];
 };
 
+function getOccupancy(s: PropertyStats) {
+    const totalUnits = s.propertyCount;
+    const occupiedUnits = totalUnits - s.vacancies;
+    const occupancyPct = totalUnits > 0 ? Math.round((occupiedUnits / totalUnits) * 100) : 0;
+    return occupancyPct;
+}
+
+function getOccupancyColor(pct: number) {
+    if (pct >= 80) return "bg-success";
+    if (pct >= 50) return "bg-warning";
+    return "bg-error";
+}
+
+function getOccupancyTextColor(pct: number) {
+    if (pct >= 80) return "text-success";
+    if (pct >= 50) return "text-warning";
+    return "text-error";
+}
+
 export default function PropertiesPage() {
     const t = useTranslations("MasterData");
     const e = useTranslations("Emirates");
     const locale = useLocale();
     const [stats, setStats] = useState<PropertyStats[]>([]);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
     const [showProjectForm, setShowProjectForm] = useState(false);
     const [showPropertyForm, setShowPropertyForm] = useState(false);
     const { data: session } = useSession();
@@ -101,9 +121,13 @@ export default function PropertiesPage() {
             if (res.ok) {
                 const data = await res.json();
                 setStats(data);
+                setError(null);
+            } else {
+                setError("Failed to load properties");
             }
         } catch (err) {
             console.error(err);
+            setError("Failed to load properties");
         } finally {
             setLoading(false);
         }
@@ -226,12 +250,31 @@ export default function PropertiesPage() {
 
     return (
         <div>
+            {/* Error Banner */}
+            {error && (
+                <div className="mb-6 flex items-center justify-between gap-3 bg-error/10 border border-error/30 text-error rounded-xl px-5 py-3">
+                    <div className="flex items-center gap-2">
+                        <AlertCircle size={16} />
+                        <span className="text-sm font-medium">{error}</span>
+                    </div>
+                    <button
+                        onClick={() => { setError(null); setLoading(true); fetchStats(); }}
+                        className="cursor-pointer flex items-center gap-1.5 text-xs font-semibold bg-error/10 hover:bg-error/20 px-3 py-1.5 rounded-lg transition-colors"
+                    >
+                        <RefreshCw size={12} />
+                        {/* TODO: t("retry") */}
+                        Retry
+                    </button>
+                </div>
+            )}
+
             <div className="flex flex-col gap-4 mb-10">
                 <div>
                     <h1 className="text-xl font-bold text-foreground tracking-tight mb-1">
                         {t("projects")}
                     </h1>
                     <p className="text-xs text-muted font-medium">
+                        {/* TODO: t("projectsDescription") */}
                         Manage your real estate projects and their individual properties.
                     </p>
                 </div>
@@ -240,7 +283,7 @@ export default function PropertiesPage() {
                         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
                         <input
                             type="text"
-                            placeholder="Search..."
+                            placeholder={/* TODO: t("search") */ "Search..."}
                             value={searchQuery}
                             onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
                             className="pl-9 pr-4 py-2 bg-surface border border-border rounded-lg text-sm text-foreground placeholder:text-muted/50 focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none w-64 transition-all"
@@ -255,6 +298,7 @@ export default function PropertiesPage() {
                                 viewMode === "table" ? "bg-surface text-foreground shadow-sm border border-border" : "text-muted hover:text-foreground"
                             )}
                         >
+                            {/* TODO: t("table") */}
                             <List size={13} /> Table
                         </button>
                         <button
@@ -264,6 +308,7 @@ export default function PropertiesPage() {
                                 viewMode === "cards" ? "bg-surface text-foreground shadow-sm border border-border" : "text-muted hover:text-foreground"
                             )}
                         >
+                            {/* TODO: t("cards") */}
                             <LayoutGrid size={13} /> Cards
                         </button>
                     </div>
@@ -280,9 +325,9 @@ export default function PropertiesPage() {
                                 onClick={() => {
                                     if (stats.length === 0) {
                                         setConfirmDialog({
-                                            title: "No Projects",
-                                            description: "Please add a project first before adding a property.",
-                                            confirmText: "OK",
+                                            title: /* TODO: t("noProjects") */ "No Projects",
+                                            description: /* TODO: t("addProjectFirst") */ "Please add a project first before adding a property.",
+                                            confirmText: /* TODO: t("ok") */ "OK",
                                             isDestructive: false,
                                             onConfirm: () => { setConfirmDialog(null); },
                                         });
@@ -308,7 +353,10 @@ export default function PropertiesPage() {
                     <div className="bg-surface rounded-xl p-8 max-w-xl w-full shadow-2xl border border-border relative">
                         <button onClick={() => setShowProjectForm(false)} aria-label="Close" className="cursor-pointer absolute right-6 top-6 p-2 text-muted hover:text-foreground transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg"><X size={18} /></button>
                         <h2 className="text-lg font-bold mb-1">{t("addProject")}</h2>
-                        <p className="text-xs text-muted mb-8 font-medium">Create a new Project (Portfolio Group).</p>
+                        <p className="text-xs text-muted mb-8 font-medium">
+                            {/* TODO: t("addProjectDescription") */}
+                            Create a new Project (Portfolio Group).
+                        </p>
                         <form onSubmit={handleProjectSubmit} className="grid grid-cols-2 gap-5">
                             <div className="col-span-1">
                                 <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("nameEn")}</label>
@@ -326,6 +374,37 @@ export default function PropertiesPage() {
                                     ))}
                                 </select>
                             </div>
+                            <div className="col-span-1">
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
+                                    {/* TODO: t("type") */}
+                                    Type
+                                </label>
+                                <select className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={projectFormData.type} onChange={ev => setProjectFormData({ ...projectFormData, type: ev.target.value })}>
+                                    {["RESIDENTIAL", "COMMERCIAL", "MIXED", "INDUSTRIAL"].map(opt => (
+                                        <option key={opt} value={opt}>{opt.charAt(0) + opt.slice(1).toLowerCase()}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="col-span-2">
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
+                                    {/* TODO: t("address") */}
+                                    Address
+                                </label>
+                                <input placeholder="Building name, street, area" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={projectFormData.address} onChange={ev => setProjectFormData({ ...projectFormData, address: ev.target.value })} />
+                            </div>
+                            <div className="col-span-1">
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
+                                    {/* TODO: t("makaniNumber") */}
+                                    Makani Number
+                                </label>
+                                <input placeholder="e.g. 12345-67890" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={projectFormData.makaniNumber} onChange={ev => setProjectFormData({ ...projectFormData, makaniNumber: ev.target.value })} />
+                            </div>
+                            <div className="col-span-1">
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
+                                    {t("fixedExpenses")}
+                                </label>
+                                <input type="number" placeholder="0" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={projectFormData.fixedExpenses || ""} onChange={ev => setProjectFormData({ ...projectFormData, fixedExpenses: Number(ev.target.value) })} />
+                            </div>
                             <div className="col-span-2 flex justify-end gap-3 mt-4">
                                 <button type="button" onClick={() => setShowProjectForm(false)} className="cursor-pointer px-6 py-3 text-xs font-bold text-muted transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg">{t("cancel")}</button>
                                 <button type="submit" className="cursor-pointer px-8 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-bold transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none">{t("create")}</button>
@@ -341,10 +420,16 @@ export default function PropertiesPage() {
                     <div className="bg-surface rounded-xl p-8 max-w-xl w-full shadow-2xl border border-border relative">
                         <button onClick={() => setShowPropertyForm(false)} aria-label="Close" className="cursor-pointer absolute right-6 top-6 p-2 text-muted hover:text-foreground transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg"><X size={18} /></button>
                         <h2 className="text-lg font-bold mb-1">{t("addProperty")}</h2>
-                        <p className="text-xs text-muted mb-8 font-medium">Add a new Property (Unit) to a Project.</p>
+                        <p className="text-xs text-muted mb-8 font-medium">
+                            {/* TODO: t("addPropertyDescription") */}
+                            Add a new Property (Unit) to a Project.
+                        </p>
                         <form onSubmit={handlePropertySubmit} className="grid grid-cols-2 gap-5">
                             <div className="col-span-2">
-                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">Select Project</label>
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
+                                    {/* TODO: t("selectProject") */}
+                                    Select Project
+                                </label>
                                 <select className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={propertyFormData.propertyId} onChange={ev => setPropertyFormData({ ...propertyFormData, propertyId: ev.target.value })}>
                                     {stats.map(s => (
                                         <option key={s.property.id} value={s.property.id}>{locale === 'ar' ? s.property.nameAr : s.property.nameEn}</option>
@@ -356,8 +441,43 @@ export default function PropertiesPage() {
                                 <input required placeholder="e.g. 101" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={propertyFormData.unitNumber} onChange={ev => setPropertyFormData({ ...propertyFormData, unitNumber: ev.target.value })} />
                             </div>
                             <div className="col-span-1">
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
+                                    {/* TODO: t("type") */}
+                                    Type
+                                </label>
+                                <select className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={propertyFormData.type} onChange={ev => setPropertyFormData({ ...propertyFormData, type: ev.target.value })}>
+                                    {["STUDIO", "BHK1", "BHK2", "BHK3", "BHK4", "PENTHOUSE", "SHOP", "OFFICE", "WAREHOUSE"].map(opt => (
+                                        <option key={opt} value={opt}>{opt.replace("BHK", "BHK ")}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="col-span-1">
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
+                                    {/* TODO: t("sizeSqft") */}
+                                    Size (sqft)
+                                </label>
+                                <input type="number" placeholder="0" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={propertyFormData.sizeSqft || ""} onChange={ev => setPropertyFormData({ ...propertyFormData, sizeSqft: Number(ev.target.value) })} />
+                            </div>
+                            <div className="col-span-1">
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
+                                    {/* TODO: t("status") */}
+                                    Status
+                                </label>
+                                <select className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={propertyFormData.status} onChange={ev => setPropertyFormData({ ...propertyFormData, status: ev.target.value })}>
+                                    <option value="VACANT">Vacant</option>
+                                    <option value="OCCUPIED">Occupied</option>
+                                </select>
+                            </div>
+                            <div className="col-span-1">
                                 <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("expectedRent")}</label>
-                                <input type="number" placeholder="50000" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={propertyFormData.expectedRent} onChange={ev => setPropertyFormData({ ...propertyFormData, expectedRent: Number(ev.target.value) })} />
+                                <input type="number" placeholder="50000" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={propertyFormData.expectedRent || ""} onChange={ev => setPropertyFormData({ ...propertyFormData, expectedRent: Number(ev.target.value) })} />
+                            </div>
+                            <div className="col-span-1">
+                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
+                                    {/* TODO: t("actualRent") */}
+                                    Actual Rent
+                                </label>
+                                <input type="number" placeholder="0" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={propertyFormData.actualRent || ""} onChange={ev => setPropertyFormData({ ...propertyFormData, actualRent: Number(ev.target.value) })} />
                             </div>
                             <div className="col-span-2 flex justify-end gap-3 mt-4">
                                 <button type="button" onClick={() => setShowPropertyForm(false)} className="cursor-pointer px-6 py-3 text-xs font-bold text-muted transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg">{t("cancel")}</button>
@@ -376,120 +496,190 @@ export default function PropertiesPage() {
                                 <table className="w-full">
                                     <thead>
                                         <tr className="bg-input/50">
-                                            <th className="px-5 py-3 text-start text-[11px] font-semibold text-muted uppercase tracking-wider">Name</th>
-                                            <th className="px-5 py-3 text-start text-[11px] font-semibold text-muted uppercase tracking-wider">Location</th>
-                                            <th className="px-5 py-3 text-start text-[11px] font-semibold text-muted uppercase tracking-wider">Type</th>
-                                            <th className="px-5 py-3 text-end text-[11px] font-semibold text-muted uppercase tracking-wider">Units</th>
-                                            <th className="px-5 py-3 text-end text-[11px] font-semibold text-muted uppercase tracking-wider">Vacant</th>
+                                            <th className="px-5 py-3 text-start text-[11px] font-semibold text-muted uppercase tracking-wider">
+                                                {/* TODO: t("name") */}
+                                                Name
+                                            </th>
+                                            <th className="px-5 py-3 text-start text-[11px] font-semibold text-muted uppercase tracking-wider">
+                                                {/* TODO: t("location") */}
+                                                Location
+                                            </th>
+                                            <th className="px-5 py-3 text-start text-[11px] font-semibold text-muted uppercase tracking-wider">
+                                                {/* TODO: t("type") */}
+                                                Type
+                                            </th>
+                                            <th className="px-5 py-3 text-end text-[11px] font-semibold text-muted uppercase tracking-wider">
+                                                {/* TODO: t("units") */}
+                                                Units
+                                            </th>
+                                            <th className="px-5 py-3 text-end text-[11px] font-semibold text-muted uppercase tracking-wider">
+                                                {/* TODO: t("vacant") */}
+                                                Vacant
+                                            </th>
+                                            <th className="px-5 py-3 text-end text-[11px] font-semibold text-muted uppercase tracking-wider">
+                                                {/* TODO: t("occupancy") */}
+                                                Occupancy
+                                            </th>
                                             <th className="px-5 py-3 text-end text-[11px] font-semibold text-muted uppercase tracking-wider">Revenue at Capacity</th>
                                             <th className="px-5 py-3 text-end text-[11px] font-semibold text-muted uppercase tracking-wider">Actual Revenue</th>
-                                            <th className="px-5 py-3 text-end text-[11px] font-semibold text-muted uppercase tracking-wider">Actions</th>
+                                            <th className="px-5 py-3 text-end text-[11px] font-semibold text-muted uppercase tracking-wider">
+                                                {/* TODO: t("actions") */}
+                                                Actions
+                                            </th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {paginatedItems.map(s => (
-                                            <tr key={s.property.id} className="border-b border-border hover:bg-input/30 transition-colors">
-                                                <td className="px-5 py-3.5 text-sm text-foreground font-medium">
-                                                    {locale === 'ar' && s.property.nameAr ? s.property.nameAr : s.property.nameEn}
-                                                </td>
-                                                <td className="px-5 py-3.5 text-sm text-foreground">
-                                                    {s.property.address || e(s.property.emirate)}
-                                                </td>
-                                                <td className="px-5 py-3.5">
-                                                    <span className="text-[10px] font-semibold uppercase tracking-widest px-2.5 py-1 bg-input text-muted rounded-md border border-border">
-                                                        {s.property.type}
-                                                    </span>
-                                                </td>
-                                                <td className="px-5 py-3.5 text-sm text-foreground text-end tabular-nums">{s.propertyCount}</td>
-                                                <td className="px-5 py-3.5 text-sm text-end tabular-nums">
-                                                    <span className={cn(s.vacancies > 0 ? "text-warning" : "text-success", "font-medium")}>{s.vacancies}</span>
-                                                </td>
-                                                <td className="px-5 py-3.5 text-sm text-foreground text-end tabular-nums">{formatCurrencyCompact(s.revenueAtCapacity)}</td>
-                                                <td className="px-5 py-3.5 text-sm text-foreground text-end tabular-nums">{formatCurrencyCompact(s.actualRevenue)}</td>
-                                                <td className="px-5 py-3.5 text-end">
-                                                    <Link
-                                                        href={`/dashboard/properties/${s.property.id}`}
-                                                        className="text-xs font-semibold text-primary hover:text-primary/80 transition-colors"
-                                                    >
-                                                        Manage
-                                                    </Link>
-                                                </td>
-                                            </tr>
-                                        ))}
+                                        {paginatedItems.map(s => {
+                                            const occupancyPct = getOccupancy(s);
+                                            return (
+                                                <tr key={s.property.id} className="border-b border-border hover:bg-input/30 transition-colors">
+                                                    <td className="px-5 py-3.5 text-sm text-foreground font-medium">
+                                                        {locale === 'ar' && s.property.nameAr ? s.property.nameAr : s.property.nameEn}
+                                                    </td>
+                                                    <td className="px-5 py-3.5 text-sm text-foreground">
+                                                        {s.property.address || e(s.property.emirate)}
+                                                    </td>
+                                                    <td className="px-5 py-3.5">
+                                                        <span className="text-[10px] font-semibold uppercase tracking-widest px-2.5 py-1 bg-input text-muted rounded-md border border-border">
+                                                            {s.property.type}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-5 py-3.5 text-sm text-foreground text-end tabular-nums">{s.propertyCount}</td>
+                                                    <td className="px-5 py-3.5 text-sm text-end tabular-nums">
+                                                        <span className={cn(s.vacancies > 0 ? "text-warning" : "text-success", "font-medium")}>{s.vacancies}</span>
+                                                    </td>
+                                                    <td className="px-5 py-3.5 text-end">
+                                                        <span className={cn(
+                                                            "text-xs font-semibold px-2 py-0.5 rounded-md",
+                                                            occupancyPct >= 80 ? "bg-success/10 text-success" :
+                                                            occupancyPct >= 50 ? "bg-warning/10 text-warning" :
+                                                            "bg-error/10 text-error"
+                                                        )}>
+                                                            {occupancyPct}%
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-5 py-3.5 text-sm text-foreground text-end tabular-nums">{formatCurrency(s.revenueAtCapacity)}</td>
+                                                    <td className="px-5 py-3.5 text-sm text-foreground text-end tabular-nums">{formatCurrency(s.actualRevenue)}</td>
+                                                    <td className="px-5 py-3.5 text-end">
+                                                        <Link
+                                                            href={`/dashboard/properties/${s.property.id}`}
+                                                            className="text-xs font-semibold text-primary hover:text-primary/80 transition-colors"
+                                                        >
+                                                            {/* TODO: t("manage") */}
+                                                            Manage
+                                                        </Link>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
                                     </tbody>
                                 </table>
                             </div>
                         </div>
                     ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            {paginatedItems.map(s => (
-                                <Link
-                                    key={s.property.id}
-                                    href={`/dashboard/properties/${s.property.id}`}
-                                    className="group bg-surface rounded-xl border border-border hover:shadow-lg hover:border-primary/30 transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/20 focus:outline-none overflow-hidden"
-                                >
-                                    {/* Header */}
-                                    <div className="p-5 pb-4">
-                                        <div className="flex justify-between items-start mb-4">
-                                            <div className="w-11 h-11 bg-primary/10 rounded-xl flex items-center justify-center text-primary border border-primary/20">
-                                                <Building2 size={20} />
+                            {paginatedItems.map(s => {
+                                const occupancyPct = getOccupancy(s);
+                                return (
+                                    <Link
+                                        key={s.property.id}
+                                        href={`/dashboard/properties/${s.property.id}`}
+                                        className="group bg-surface rounded-xl border border-border hover:shadow-lg hover:border-primary/30 transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/20 focus:outline-none overflow-hidden"
+                                    >
+                                        {/* Header */}
+                                        <div className="p-5 pb-4">
+                                            <div className="flex justify-between items-start mb-4">
+                                                <div className="w-11 h-11 bg-primary/10 rounded-xl flex items-center justify-center text-primary border border-primary/20">
+                                                    <Building2 size={20} />
+                                                </div>
+                                                <span className="text-[10px] font-semibold uppercase tracking-widest px-2.5 py-1 bg-input text-muted rounded-md border border-border">
+                                                    {s.property.type}
+                                                </span>
                                             </div>
-                                            <span className="text-[10px] font-semibold uppercase tracking-widest px-2.5 py-1 bg-input text-muted rounded-md border border-border">
-                                                {s.property.type}
+                                            <h3 className="text-base font-bold text-foreground tracking-tight mb-1">
+                                                {locale === 'ar' && s.property.nameAr ? s.property.nameAr : s.property.nameEn}
+                                            </h3>
+                                            <p className="text-xs text-muted font-medium flex items-center gap-1.5">
+                                                <MapPin size={11} className="text-muted/50" />
+                                                {s.property.address || e(s.property.emirate)}
+                                            </p>
+                                        </div>
+
+                                        {/* Stats Row */}
+                                        <div className="grid grid-cols-3 border-t border-border">
+                                            <div className="px-5 py-3 border-r border-border">
+                                                <p className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-0.5">
+                                                    {/* TODO: t("units") */}
+                                                    Units
+                                                </p>
+                                                <p className="text-sm font-bold text-foreground tabular-nums">{s.propertyCount}</p>
+                                            </div>
+                                            <div className="px-5 py-3 border-r border-border">
+                                                <p className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-0.5">
+                                                    {/* TODO: t("vacant") */}
+                                                    Vacant
+                                                </p>
+                                                <p className={cn("text-sm font-bold tabular-nums", s.vacancies > 0 ? "text-warning" : "text-success")}>{s.vacancies}</p>
+                                            </div>
+                                            <div className="px-5 py-3">
+                                                <p className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-0.5">
+                                                    {/* TODO: t("revenue") */}
+                                                    Revenue
+                                                </p>
+                                                <p className="text-sm font-bold text-foreground tabular-nums">{formatCurrencyCompact(s.actualRevenue)}</p>
+                                            </div>
+                                        </div>
+
+                                        {/* Occupancy Progress Bar */}
+                                        <div className="px-5 py-3 border-t border-border">
+                                            <div className="flex justify-between items-center mb-1.5">
+                                                <span className="text-[10px] font-semibold text-muted uppercase tracking-wider">
+                                                    {/* TODO: t("occupancy") */}
+                                                    Occupancy
+                                                </span>
+                                                <span className={cn("text-xs font-bold tabular-nums", getOccupancyTextColor(occupancyPct))}>
+                                                    {occupancyPct}%
+                                                </span>
+                                            </div>
+                                            <div className="w-full h-1.5 bg-input rounded-full overflow-hidden">
+                                                <div
+                                                    className={cn("h-full rounded-full transition-all", getOccupancyColor(occupancyPct))}
+                                                    style={{ width: `${occupancyPct}%` }}
+                                                />
+                                            </div>
+                                        </div>
+
+                                        {/* Financial Details */}
+                                        <div className="px-5 py-3 bg-input/50 border-t border-border space-y-2">
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-[11px] text-muted font-medium">{t("revenueAtCapacity")}</span>
+                                                <span className="text-[11px] font-semibold text-foreground tabular-nums">{formatCurrencyCompact(s.revenueAtCapacity)}</span>
+                                            </div>
+                                            {(s.property.fixedExpenses ?? 0) > 0 && (
+                                                <div className="flex justify-between items-center">
+                                                    <span className="text-[11px] text-muted font-medium">{t("fixedExpenses")}</span>
+                                                    <span className="text-[11px] font-semibold text-error tabular-nums">{formatCurrencyCompact(s.property.fixedExpenses)}</span>
+                                                </div>
+                                            )}
+                                            {s.assignedManagers && s.assignedManagers.length > 0 && (
+                                                <div className="flex justify-between items-center">
+                                                    <span className="text-[11px] text-muted font-medium">{t("propertyManager")}</span>
+                                                    <span className="text-[11px] font-semibold text-foreground">{s.assignedManagers.map(m => m.name).join(', ')}</span>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Footer CTA */}
+                                        <div className="px-5 py-3 border-t border-border flex items-center justify-between">
+                                            <span className="text-xs font-semibold text-primary">
+                                                {/* TODO: t("manageProperty") */}
+                                                Manage Property
                                             </span>
+                                            <ArrowRight size={14} className="text-primary group-hover:translate-x-1 transition-transform" />
                                         </div>
-                                        <h3 className="text-base font-bold text-foreground tracking-tight mb-1">
-                                            {locale === 'ar' && s.property.nameAr ? s.property.nameAr : s.property.nameEn}
-                                        </h3>
-                                        <p className="text-xs text-muted font-medium flex items-center gap-1.5">
-                                            <MapPin size={11} className="text-muted/50" />
-                                            {s.property.address || e(s.property.emirate)}
-                                        </p>
-                                    </div>
-
-                                    {/* Stats Row */}
-                                    <div className="grid grid-cols-3 border-t border-border">
-                                        <div className="px-5 py-3 border-r border-border">
-                                            <p className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-0.5">Units</p>
-                                            <p className="text-sm font-bold text-foreground tabular-nums">{s.propertyCount}</p>
-                                        </div>
-                                        <div className="px-5 py-3 border-r border-border">
-                                            <p className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-0.5">Vacant</p>
-                                            <p className={cn("text-sm font-bold tabular-nums", s.vacancies > 0 ? "text-warning" : "text-success")}>{s.vacancies}</p>
-                                        </div>
-                                        <div className="px-5 py-3">
-                                            <p className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-0.5">Revenue</p>
-                                            <p className="text-sm font-bold text-foreground tabular-nums">{formatCurrencyCompact(s.actualRevenue)}</p>
-                                        </div>
-                                    </div>
-
-                                    {/* Financial Details */}
-                                    <div className="px-5 py-3 bg-input/50 border-t border-border space-y-2">
-                                        <div className="flex justify-between items-center">
-                                            <span className="text-[11px] text-muted font-medium">{t("revenueAtCapacity")}</span>
-                                            <span className="text-[11px] font-semibold text-foreground tabular-nums">{formatCurrencyCompact(s.revenueAtCapacity)}</span>
-                                        </div>
-                                        {(s.property.fixedExpenses ?? 0) > 0 && (
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-[11px] text-muted font-medium">{t("fixedExpenses")}</span>
-                                                <span className="text-[11px] font-semibold text-error tabular-nums">{formatCurrencyCompact(s.property.fixedExpenses)}</span>
-                                            </div>
-                                        )}
-                                        {s.assignedManagers && s.assignedManagers.length > 0 && (
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-[11px] text-muted font-medium">{t("propertyManager")}</span>
-                                                <span className="text-[11px] font-semibold text-foreground">{s.assignedManagers.map(m => m.name).join(', ')}</span>
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    {/* Footer CTA */}
-                                    <div className="px-5 py-3 border-t border-border flex items-center justify-between">
-                                        <span className="text-xs font-semibold text-primary">Manage Property</span>
-                                        <ArrowRight size={14} className="text-primary group-hover:translate-x-1 transition-transform" />
-                                    </div>
-                                </Link>
-                            ))}
+                                    </Link>
+                                );
+                            })}
                         </div>
                     )}
 
@@ -509,6 +699,7 @@ export default function PropertiesPage() {
                         <Building2 size={32} />
                     </div>
                     <p className="text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-6">
+                        {/* TODO: t("noProjectsFound") / t("noPropertiesAssigned") */}
                         {canCreate ? 'No Projects Found' : 'No Properties Assigned'}
                     </p>
                     {canCreate && (
