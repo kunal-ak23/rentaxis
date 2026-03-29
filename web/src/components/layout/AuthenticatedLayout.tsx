@@ -10,6 +10,7 @@ import { Loader2 } from "lucide-react";
 import { TopHeader } from "@/components/ui/TopHeader";
 import TourProvider from "@/components/tour/TourProvider";
 import HelpFAB from "@/components/help/HelpFAB";
+import type { UserRole } from "@/lib/rbac";
 
 export default function AuthenticatedLayout({
     children,
@@ -40,7 +41,7 @@ export default function AuthenticatedLayout({
     if (!session) return null;
 
     return (
-        <TourProvider>
+        <TourProvider role={session?.user?.role as UserRole | undefined}>
             <div className="flex h-screen overflow-hidden bg-background">
                 <MvpSidebar />
                 <div className="flex flex-col flex-1 min-w-0">

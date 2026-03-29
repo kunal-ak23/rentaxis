@@ -107,7 +107,7 @@ export default function MvpSidebar() {
     const allItems = menuItems.length > 0 ? menuItems : renterItems.length > 0 ? renterItems : tenantUserItems;
 
     const renderSection = (
-        items: typeof menuItems,
+        items: { name: string; href: string; icon: React.ElementType; tourId?: string }[],
         label: string,
         layoutIdPrefix: string,
         sectionDataTour?: string
