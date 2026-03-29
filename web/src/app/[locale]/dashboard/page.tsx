@@ -22,6 +22,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Link } from "@/i18n/routing";
 import { formatCurrencyCompact } from "@/lib/format";
+import WelcomeBanner from '@/components/help/WelcomeBanner';
 
 type DashboardSummary = {
     totalProperties: number;
@@ -133,7 +134,7 @@ export default function DashboardPage() {
     return (
         <div>
             {/* Header */}
-            <div className="mb-10">
+            <div className="mb-10" data-tour="dashboard-header">
                 <h1 className="mb-1">
                     {t("title")}
                 </h1>
@@ -141,6 +142,8 @@ export default function DashboardPage() {
                     {t("description")}
                 </p>
             </div>
+
+            <WelcomeBanner />
 
             {/* KPI Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
