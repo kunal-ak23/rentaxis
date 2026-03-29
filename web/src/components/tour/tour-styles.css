@@ -1,0 +1,87 @@
+/* Shepherd.js theme overrides for RentAxis */
+
+.shepherd-element {
+  max-width: 360px;
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+  border: 1px solid rgba(15, 118, 110, 0.2);
+  z-index: 10000;
+}
+
+.shepherd-element .shepherd-content {
+  border-radius: 12px;
+  padding: 0;
+}
+
+.shepherd-element .shepherd-header {
+  background: #0F766E;
+  padding: 12px 16px;
+  border-radius: 12px 12px 0 0;
+}
+
+.shepherd-element .shepherd-title {
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.shepherd-element .shepherd-cancel-icon {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.shepherd-element .shepherd-cancel-icon:hover {
+  color: white;
+}
+
+.shepherd-element .shepherd-text {
+  padding: 16px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #374151;
+}
+
+.shepherd-element .shepherd-footer {
+  padding: 0 16px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.shepherd-element .shepherd-button {
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 150ms;
+}
+
+.shepherd-element .shepherd-button-secondary {
+  background: transparent;
+  color: #6B7280;
+  border: 1px solid #E5E7EB;
+}
+
+.shepherd-element .shepherd-button-secondary:hover {
+  background: #F3F4F6;
+}
+
+.shepherd-element .shepherd-button-primary {
+  background: #C8A951;
+  color: white;
+  border: none;
+}
+
+.shepherd-element .shepherd-button-primary:hover {
+  background: #B89A42;
+}
+
+.shepherd-progress {
+  font-size: 11px;
+  color: #9CA3AF;
+  padding: 0 16px 8px;
+}
+
+.shepherd-modal-overlay-container {
+  z-index: 9999;
+}
