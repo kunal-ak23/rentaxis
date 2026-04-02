@@ -76,14 +76,9 @@ public class LeaseController {
             @PathVariable UUID id,
             @RequestBody(required = false) TerminateWithSettlementDTO dto,
             HttpServletRequest request) {
-        // If settlement deductions are provided, create settlement first
-        if (dto != null && dto.getDeductions() != null && !dto.getDeductions().isEmpty()) {
-            String userIdStr = request.getHeader("X-User-Id");
-            UUID settledBy = userIdStr != null ? UUID.fromString(userIdStr) : null;
-            settlementService.createSettlement(id, dto, settledBy);
-        }
-        String notes = dto != null ? dto.getNotes() : null;
-        return ResponseEntity.ok(leaseService.terminateLease(id, notes));
+        String userIdStr = request.getHeader("X-User-Id");
+        UUID settledBy = userIdStr != null ? UUID.fromString(userIdStr) : null;
+        return ResponseEntity.ok(leaseService.terminateWithSettlement(id, dto, settledBy));
     }
 
     @GetMapping("/{id}/settlement/preview")
@@ -94,14 +89,11 @@ public class LeaseController {
 
     @GetMapping("/{id}/settlement")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
-    public ResponseEntity<?> getSettlement(@PathVariable UUID id) {
+    public ResponseEntity<SettlementResponseDTO> getSettlement(@PathVariable UUID id) {
         return settlementService.getSettlement(id)
                 .map(settlement -> {
                     var deductions = settlementService.getSettlementDeductions(settlement.getId());
-                    var response = new java.util.HashMap<String, Object>();
-                    response.put("settlement", settlement);
-                    response.put("deductions", deductions);
-                    return ResponseEntity.ok(response);
+                    return ResponseEntity.ok(new SettlementResponseDTO(settlement, deductions));
                 })
                 .orElse(ResponseEntity.notFound().build());
     }

@@ -42,7 +42,7 @@ public class SettlementService {
         // Sum all PENDING and ONLINE_PENDING payment schedules as unpaid rent
         List<PaymentSchedule> payments = paymentScheduleRepository.findByLeaseId(leaseId);
         BigDecimal unpaidRentTotal = payments.stream()
-                .filter(ps -> ps.getStatus() == PaymentStatus.PENDING || ps.getStatus() == PaymentStatus.ONLINE_PENDING)
+                .filter(ps -> ps.getStatus() == PaymentStatus.PENDING || ps.getStatus() == PaymentStatus.ONLINE_PENDING || ps.getStatus() == PaymentStatus.OVERDUE)
                 .map(PaymentSchedule::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
