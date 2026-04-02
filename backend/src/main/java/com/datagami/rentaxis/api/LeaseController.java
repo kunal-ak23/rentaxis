@@ -1,11 +1,9 @@
 package com.datagami.rentaxis.api;
 
-import com.datagami.rentaxis.api.dto.CreateLeaseDTO;
-import com.datagami.rentaxis.api.dto.LeaseDTO;
-import com.datagami.rentaxis.api.dto.LeaseDocumentDTO;
-import com.datagami.rentaxis.api.dto.LeaseEventDTO;
+import com.datagami.rentaxis.api.dto.*;
 import com.datagami.rentaxis.core.service.ContractGenerationService;
 import com.datagami.rentaxis.core.service.LeaseService;
+import com.datagami.rentaxis.core.service.SettlementService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -26,6 +24,7 @@ public class LeaseController {
 
     private final LeaseService leaseService;
     private final ContractGenerationService contractGenerationService;
+    private final SettlementService settlementService;
 
     @GetMapping
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
@@ -75,8 +74,36 @@ public class LeaseController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
     public ResponseEntity<LeaseDTO> terminateLease(
             @PathVariable UUID id,
-            @RequestParam(required = false) String notes) {
+            @RequestBody(required = false) TerminateWithSettlementDTO dto,
+            HttpServletRequest request) {
+        // If settlement deductions are provided, create settlement first
+        if (dto != null && dto.getDeductions() != null && !dto.getDeductions().isEmpty()) {
+            String userIdStr = request.getHeader("X-User-Id");
+            UUID settledBy = userIdStr != null ? UUID.fromString(userIdStr) : null;
+            settlementService.createSettlement(id, dto, settledBy);
+        }
+        String notes = dto != null ? dto.getNotes() : null;
         return ResponseEntity.ok(leaseService.terminateLease(id, notes));
+    }
+
+    @GetMapping("/{id}/settlement/preview")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
+    public ResponseEntity<SettlementPreviewDTO> getSettlementPreview(@PathVariable UUID id) {
+        return ResponseEntity.ok(settlementService.getSettlementPreview(id));
+    }
+
+    @GetMapping("/{id}/settlement")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
+    public ResponseEntity<?> getSettlement(@PathVariable UUID id) {
+        return settlementService.getSettlement(id)
+                .map(settlement -> {
+                    var deductions = settlementService.getSettlementDeductions(settlement.getId());
+                    var response = new java.util.HashMap<String, Object>();
+                    response.put("settlement", settlement);
+                    response.put("deductions", deductions);
+                    return ResponseEntity.ok(response);
+                })
+                .orElse(ResponseEntity.notFound().build());
     }
 
     @GetMapping("/{id}/events")

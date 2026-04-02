@@ -26,4 +26,6 @@ public interface LeaseRepository extends JpaRepository<Lease, UUID> {
 
     @Query("SELECT l FROM Lease l WHERE l.unit.property.id = :propertyId")
     List<Lease> findByUnitPropertyId(@Param("propertyId") UUID propertyId);
+
+    List<Lease> findByStatus(LeaseStatus status);
 }
