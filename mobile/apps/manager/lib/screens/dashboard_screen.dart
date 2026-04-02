@@ -295,6 +295,18 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 label: 'New Ticket',
                 onTap: () => context.push('/tickets/create'),
               ),
+              const SizedBox(width: 10),
+              _QuickActionChip(
+                icon: Icons.badge_outlined,
+                label: 'Staff',
+                onTap: () => context.push('/staff'),
+              ),
+              const SizedBox(width: 10),
+              _QuickActionChip(
+                icon: Icons.assessment_outlined,
+                label: 'Reports',
+                onTap: () => context.push('/finance-reports'),
+              ),
             ],
           ),
         ),

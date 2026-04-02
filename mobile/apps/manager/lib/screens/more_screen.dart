@@ -76,38 +76,56 @@ class MoreScreen extends ConsumerWidget {
             const SizedBox(height: 24),
 
             // Menu sections
-            _SectionHeader(title: 'Management'),
+            _SectionHeader(title: 'People'),
+            _MenuItem(
+              icon: Icons.badge_outlined,
+              label: 'Staff',
+              onTap: () => context.push('/staff'),
+            ),
             _MenuItem(
               icon: Icons.people_outline,
               label: 'Renters',
               onTap: () => context.push('/renters'),
             ),
+            const SizedBox(height: 16),
+
+            _SectionHeader(title: 'Finance'),
+            _MenuItem(
+              icon: Icons.account_balance_outlined,
+              label: 'Accounts & Transactions',
+              onTap: () => context.push('/finance'),
+            ),
+            _MenuItem(
+              icon: Icons.account_balance_wallet_outlined,
+              label: 'Bank Accounts',
+              onTap: () => context.push('/bank-accounts'),
+            ),
+            _MenuItem(
+              icon: Icons.store_outlined,
+              label: 'Vendors',
+              onTap: () => context.push('/vendors'),
+            ),
+            _MenuItem(
+              icon: Icons.assessment_outlined,
+              label: 'Reports',
+              onTap: () => context.push('/finance-reports'),
+            ),
+            const SizedBox(height: 16),
+
+            _SectionHeader(title: 'Operations'),
             _MenuItem(
               icon: Icons.confirmation_number_outlined,
               label: 'Tickets',
               onTap: () => context.push('/tickets'),
             ),
-            _MenuItem(
-              icon: Icons.account_balance_outlined,
-              label: 'Finance',
-              onTap: () => context.push('/finance'),
-            ),
-            const SizedBox(height: 16),
-
-            _SectionHeader(title: 'Account'),
-            _MenuItem(
-              icon: Icons.person_outline,
-              label: 'Profile',
-              onTap: () => context.push('/profile'),
-            ),
-            _MenuItem(
-              icon: Icons.lock_outline,
-              label: 'Change Password',
-              onTap: () => context.push('/profile'),
-            ),
             const SizedBox(height: 16),
 
             _SectionHeader(title: 'Settings'),
+            _MenuItem(
+              icon: Icons.settings_outlined,
+              label: 'App Settings',
+              onTap: () => context.push('/settings'),
+            ),
             _MenuItem(
               icon: Icons.language,
               label: 'Language',
@@ -122,13 +140,21 @@ class MoreScreen extends ConsumerWidget {
                 );
               },
             ),
+            const SizedBox(height: 16),
+
+            _SectionHeader(title: 'Account'),
+            _MenuItem(
+              icon: Icons.person_outline,
+              label: 'Profile',
+              onTap: () => context.push('/profile'),
+            ),
             _MenuItem(
               icon: Icons.info_outline,
               label: 'About',
               onTap: () {
                 showAboutDialog(
                   context: context,
-                  applicationName: 'RentAxis Manager',
+                  applicationName: 'RentAxis Admin',
                   applicationVersion: '1.0.0',
                   applicationLegalese:
                       'Property Management Suite for UAE Landlords',
