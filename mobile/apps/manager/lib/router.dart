@@ -17,6 +17,19 @@ import 'screens/renters_screen.dart';
 import 'screens/finance_screen.dart';
 import 'screens/more_screen.dart';
 import 'screens/profile_screen.dart';
+import 'screens/staff_screen.dart';
+import 'screens/staff_detail_screen.dart';
+import 'screens/vendors_screen.dart';
+import 'screens/vendor_detail_screen.dart';
+import 'screens/bank_accounts_screen.dart';
+import 'screens/finance_reports_screen.dart';
+import 'screens/report_detail_screen.dart';
+import 'screens/lease_penalties_screen.dart';
+import 'screens/lease_settlement_screen.dart';
+import 'screens/settings_hub_screen.dart';
+import 'screens/rent_settings_screen.dart';
+import 'screens/gateway_config_screen.dart';
+import 'screens/account_mappings_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authProvider);
@@ -80,6 +93,20 @@ final routerProvider = Provider<GoRouter>((ref) {
                 builder: (context, state) => LeaseDetailScreen(
                   leaseId: state.pathParameters['id']!,
                 ),
+                routes: [
+                  GoRoute(
+                    path: 'penalties',
+                    builder: (context, state) => LeasePenaltiesScreen(
+                      leaseId: state.pathParameters['id']!,
+                    ),
+                  ),
+                  GoRoute(
+                    path: 'settlement',
+                    builder: (context, state) => LeaseSettlementScreen(
+                      leaseId: state.pathParameters['id']!,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -118,6 +145,56 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/profile',
             builder: (context, state) => const ProfileScreen(),
+          ),
+          GoRoute(
+            path: '/staff',
+            builder: (context, state) => const StaffScreen(),
+            routes: [
+              GoRoute(
+                path: ':id',
+                builder: (context, state) => StaffDetailScreen(
+                  staffId: state.pathParameters['id']!,
+                ),
+              ),
+            ],
+          ),
+          GoRoute(
+            path: '/vendors',
+            builder: (context, state) => const VendorsScreen(),
+            routes: [
+              GoRoute(
+                path: ':id',
+                builder: (context, state) => VendorDetailScreen(
+                  vendorId: state.pathParameters['id']!,
+                ),
+              ),
+            ],
+          ),
+          GoRoute(
+            path: '/bank-accounts',
+            builder: (context, state) => const BankAccountsScreen(),
+          ),
+          GoRoute(
+            path: '/finance-reports',
+            builder: (context, state) => const FinanceReportsScreen(),
+          ),
+          GoRoute(
+            path: '/settings',
+            builder: (context, state) => const SettingsHubScreen(),
+            routes: [
+              GoRoute(
+                path: 'rent',
+                builder: (context, state) => const RentSettingsScreen(),
+              ),
+              GoRoute(
+                path: 'gateway',
+                builder: (context, state) => const GatewayConfigScreen(),
+              ),
+              GoRoute(
+                path: 'mappings',
+                builder: (context, state) => const AccountMappingsScreen(),
+              ),
+            ],
           ),
         ],
       ),
