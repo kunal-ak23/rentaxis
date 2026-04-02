@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:go_router/go_router.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
 final _leaseServiceProvider = Provider<LeaseService>((ref) {
@@ -348,6 +349,10 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
                 _buildDocuments(),
                 const SizedBox(height: 20),
                 _buildAttachments(),
+                const SizedBox(height: 20),
+                _buildPenaltiesLink(),
+                const SizedBox(height: 20),
+                _buildSettlementLink(),
               ],
             ),
           ),
@@ -623,6 +628,90 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
             }).toList(),
           ),
       ],
+    );
+  }
+
+  Widget _buildPenaltiesLink() {
+    return InkWell(
+      onTap: () => context.push('/leases/${widget.leaseId}/penalties'),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.danger.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.gavel, color: AppColors.danger, size: 22),
+            ),
+            const SizedBox(width: 14),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Penalties', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+                  SizedBox(height: 2),
+                  Text('View and manage late payment penalties', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: AppColors.textMuted),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSettlementLink() {
+    final status = _lease?['status'] ?? '';
+    if (status != 'ACTIVE' && status != 'TERMINATED' && status != 'NOTICE_GIVEN') {
+      return const SizedBox.shrink();
+    }
+    return InkWell(
+      onTap: () => context.push('/leases/${widget.leaseId}/settlement'),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.accent.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.handshake_outlined, color: AppColors.accent, size: 22),
+            ),
+            const SizedBox(width: 14),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Settlement', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+                  SizedBox(height: 2),
+                  Text('View settlement preview or details', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: AppColors.textMuted),
+          ],
+        ),
+      ),
     );
   }
 }

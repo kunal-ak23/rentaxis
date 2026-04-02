@@ -12,6 +12,16 @@ final _unitServiceProvider = Provider<UnitService>((ref) {
   return UnitService(client.dio);
 });
 
+final _contactServiceProvider = Provider<PropertyContactService>((ref) {
+  final client = ref.watch(apiClientProvider);
+  return PropertyContactService(client.dio);
+});
+
+final _buildingServiceProvider = Provider<BuildingService>((ref) {
+  final client = ref.watch(apiClientProvider);
+  return BuildingService(client.dio);
+});
+
 class PropertyDetailScreen extends ConsumerStatefulWidget {
   final String propertyId;
   const PropertyDetailScreen({super.key, required this.propertyId});
@@ -24,6 +34,8 @@ class PropertyDetailScreen extends ConsumerStatefulWidget {
 class _PropertyDetailScreenState extends ConsumerState<PropertyDetailScreen> {
   Map<String, dynamic>? _property;
   List<dynamic> _units = [];
+  List<dynamic> _contacts = [];
+  List<dynamic> _buildings = [];
   bool _isLoading = true;
   String? _error;
 
@@ -41,14 +53,20 @@ class _PropertyDetailScreenState extends ConsumerState<PropertyDetailScreen> {
     try {
       final propService = ref.read(_propertyServiceProvider);
       final unitService = ref.read(_unitServiceProvider);
+      final contactService = ref.read(_contactServiceProvider);
+      final buildingService = ref.read(_buildingServiceProvider);
       final results = await Future.wait([
         propService.getPropertyById(widget.propertyId),
         unitService.getUnitsByProperty(widget.propertyId),
+        contactService.getContacts(widget.propertyId),
+        buildingService.getBuildingsByProperty(widget.propertyId),
       ]);
       if (!mounted) return;
       setState(() {
         _property = results[0] as Map<String, dynamic>;
         _units = results[1] as List<dynamic>;
+        _contacts = results[2] as List<dynamic>;
+        _buildings = results[3] as List<dynamic>;
         _isLoading = false;
       });
     } catch (e) {
@@ -210,6 +228,92 @@ class _PropertyDetailScreenState extends ConsumerState<PropertyDetailScreen> {
                         // Unit detail - future enhancement
                       },
                     )),
+
+              // Contacts section
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  const Icon(Icons.contacts_outlined, size: 20, color: AppColors.primary),
+                  const SizedBox(width: 8),
+                  Text('Contacts', style: Theme.of(context).textTheme.headlineSmall),
+                  const Spacer(),
+                  TextButton.icon(
+                    onPressed: () => _showAddContactSheet(context),
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('Add'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              if (_contacts.isEmpty)
+                const Text('No contacts', style: TextStyle(fontSize: 13, color: AppColors.textSecondary))
+              else
+                ..._contacts.map((contact) => Card(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  child: ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: AppColors.accent.withValues(alpha: 0.1),
+                      child: const Icon(Icons.person_outline, color: AppColors.accent, size: 20),
+                    ),
+                    title: Text(contact['name'] ?? 'Contact', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (contact['role'] != null) Text(contact['role'], style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                        if (contact['phone'] != null) Text(contact['phone'], style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
+                        if (contact['email'] != null) Text(contact['email'], style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
+                      ],
+                    ),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.delete_outline, size: 18, color: AppColors.danger),
+                      onPressed: () async {
+                        final confirmed = await showDialog<bool>(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            title: const Text('Delete Contact'),
+                            content: const Text('Remove this contact?'),
+                            actions: [
+                              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                              ElevatedButton(
+                                onPressed: () => Navigator.pop(ctx, true),
+                                style: ElevatedButton.styleFrom(backgroundColor: AppColors.danger),
+                                child: const Text('Delete'),
+                              ),
+                            ],
+                          ),
+                        );
+                        if (confirmed == true) {
+                          try {
+                            await ref.read(_contactServiceProvider).deleteContact(widget.propertyId, contact['id']);
+                            _loadData();
+                          } catch (_) {}
+                        }
+                      },
+                    ),
+                  ),
+                )),
+
+              // Buildings section
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  const Icon(Icons.domain_outlined, size: 20, color: AppColors.primary),
+                  const SizedBox(width: 8),
+                  Text('Buildings', style: Theme.of(context).textTheme.headlineSmall),
+                ],
+              ),
+              const SizedBox(height: 8),
+              if (_buildings.isEmpty)
+                const Text('No buildings', style: TextStyle(fontSize: 13, color: AppColors.textSecondary))
+              else
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _buildings.map((b) => Chip(
+                    avatar: const Icon(Icons.domain, size: 16, color: AppColors.primary),
+                    label: Text(b['name'] ?? 'Building', style: const TextStyle(fontSize: 12)),
+                  )).toList(),
+                ),
             ],
           ),
         ),
@@ -349,6 +453,69 @@ class _PropertyDetailScreenState extends ConsumerState<PropertyDetailScreen> {
                   ),
                 ],
               ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showAddContactSheet(BuildContext context) {
+    final nameCtrl = TextEditingController();
+    final roleCtrl = TextEditingController();
+    final phoneCtrl = TextEditingController();
+    final emailCtrl = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(ctx).viewInsets.bottom + 24),
+        child: Form(
+          key: formKey,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2)))),
+                const SizedBox(height: 20),
+                Text('New Contact', style: Theme.of(ctx).textTheme.headlineSmall),
+                const SizedBox(height: 20),
+                TextFormField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Name', prefixIcon: Icon(Icons.person_outline)), validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null),
+                const SizedBox(height: 16),
+                TextFormField(controller: roleCtrl, decoration: const InputDecoration(labelText: 'Role', prefixIcon: Icon(Icons.work_outline))),
+                const SizedBox(height: 16),
+                TextFormField(controller: phoneCtrl, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'Phone', prefixIcon: Icon(Icons.phone_outlined))),
+                const SizedBox(height: 16),
+                TextFormField(controller: emailCtrl, keyboardType: TextInputType.emailAddress, decoration: const InputDecoration(labelText: 'Email', prefixIcon: Icon(Icons.email_outlined))),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () async {
+                      if (!formKey.currentState!.validate()) return;
+                      try {
+                        await ref.read(_contactServiceProvider).createContact(widget.propertyId, {
+                          'name': nameCtrl.text.trim(),
+                          if (roleCtrl.text.isNotEmpty) 'role': roleCtrl.text.trim(),
+                          if (phoneCtrl.text.isNotEmpty) 'phone': phoneCtrl.text.trim(),
+                          if (emailCtrl.text.isNotEmpty) 'email': emailCtrl.text.trim(),
+                        });
+                        if (ctx.mounted) Navigator.pop(ctx);
+                        _loadData();
+                      } catch (e) {
+                        if (ctx.mounted) ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('Failed to add contact')));
+                      }
+                    },
+                    child: const Text('Add Contact'),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
