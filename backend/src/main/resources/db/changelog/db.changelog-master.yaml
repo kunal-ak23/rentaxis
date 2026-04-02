@@ -67,3 +67,5 @@ databaseChangeLog:
       file: db/changelog/changesets/33-performance-indexes.yaml
   - include:
       file: db/changelog/changesets/34-property-contacts.yaml
+  - include:
+      file: db/changelog/changesets/35-penalties-and-settlements.yaml

@@ -1,0 +1,229 @@
+databaseChangeLog:
+  - changeSet:
+      id: 35-create-payment-penalties-table
+      author: rentaxis
+      changes:
+        - createTable:
+            tableName: payment_penalties
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: payment_schedule_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: lease_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: tenant_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: penalty_amount
+                  type: decimal(15,2)
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: days_overdue
+                  type: int
+                  defaultValueNumeric: 0
+              - column:
+                  name: penalty_type
+                  type: varchar(30)
+              - column:
+                  name: penalty_rate
+                  type: decimal(15,4)
+              - column:
+                  name: grace_period_days
+                  type: int
+              - column:
+                  name: waived
+                  type: boolean
+                  defaultValueBoolean: false
+              - column:
+                  name: waived_by
+                  type: uuid
+              - column:
+                  name: waived_reason
+                  type: varchar(500)
+              - column:
+                  name: waived_at
+                  type: timestamp
+              - column:
+                  name: last_calculated_at
+                  type: timestamp
+              - column:
+                  name: created_at
+                  type: timestamp
+                  defaultValueComputed: now()
+              - column:
+                  name: updated_at
+                  type: timestamp
+                  defaultValueComputed: now()
+        - addUniqueConstraint:
+            tableName: payment_penalties
+            columnNames: payment_schedule_id
+            constraintName: uk_payment_penalties_schedule
+        - addForeignKeyConstraint:
+            baseTableName: payment_penalties
+            baseColumnNames: payment_schedule_id
+            referencedTableName: payment_schedules
+            referencedColumnNames: id
+            constraintName: fk_payment_penalties_schedule
+        - addForeignKeyConstraint:
+            baseTableName: payment_penalties
+            baseColumnNames: lease_id
+            referencedTableName: leases
+            referencedColumnNames: id
+            constraintName: fk_payment_penalties_lease
+        - createIndex:
+            indexName: idx_payment_penalties_lease_id
+            tableName: payment_penalties
+            columns:
+              - column:
+                  name: lease_id
+        - createIndex:
+            indexName: idx_payment_penalties_tenant_id
+            tableName: payment_penalties
+            columns:
+              - column:
+                  name: tenant_id
+
+  - changeSet:
+      id: 35-create-lease-settlements-table
+      author: rentaxis
+      changes:
+        - createTable:
+            tableName: lease_settlements
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: lease_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: tenant_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: deposit_amount
+                  type: decimal(15,2)
+                  defaultValueNumeric: 0
+              - column:
+                  name: total_deductions
+                  type: decimal(15,2)
+                  defaultValueNumeric: 0
+              - column:
+                  name: refund_amount
+                  type: decimal(15,2)
+                  defaultValueNumeric: 0
+              - column:
+                  name: notes
+                  type: text
+              - column:
+                  name: settled_by
+                  type: uuid
+              - column:
+                  name: settled_at
+                  type: timestamp
+              - column:
+                  name: created_at
+                  type: timestamp
+                  defaultValueComputed: now()
+              - column:
+                  name: updated_at
+                  type: timestamp
+                  defaultValueComputed: now()
+        - addUniqueConstraint:
+            tableName: lease_settlements
+            columnNames: lease_id
+            constraintName: uk_lease_settlements_lease
+        - addForeignKeyConstraint:
+            baseTableName: lease_settlements
+            baseColumnNames: lease_id
+            referencedTableName: leases
+            referencedColumnNames: id
+            constraintName: fk_lease_settlements_lease
+        - createIndex:
+            indexName: idx_lease_settlements_tenant_id
+            tableName: lease_settlements
+            columns:
+              - column:
+                  name: tenant_id
+
+  - changeSet:
+      id: 35-create-lease-settlement-deductions-table
+      author: rentaxis
+      changes:
+        - createTable:
+            tableName: lease_settlement_deductions
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: settlement_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: tenant_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: category
+                  type: varchar(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: description
+                  type: varchar(500)
+              - column:
+                  name: amount
+                  type: decimal(15,2)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: auto_calculated
+                  type: boolean
+                  defaultValueBoolean: false
+              - column:
+                  name: created_at
+                  type: timestamp
+                  defaultValueComputed: now()
+        - addForeignKeyConstraint:
+            baseTableName: lease_settlement_deductions
+            baseColumnNames: settlement_id
+            referencedTableName: lease_settlements
+            referencedColumnNames: id
+            constraintName: fk_settlement_deductions_settlement
+        - createIndex:
+            indexName: idx_settlement_deductions_settlement_id
+            tableName: lease_settlement_deductions
+            columns:
+              - column:
+                  name: settlement_id

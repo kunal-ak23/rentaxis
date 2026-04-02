@@ -1,6 +1,7 @@
 package com.datagami.rentaxis.domain.entity;
 
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.Column;
 import jakarta.persistence.MappedSuperclass;
 import jakarta.persistence.PrePersist;
@@ -15,6 +16,7 @@ import java.util.UUID;
 @Filter(name = "tenantFilter", condition = "tenant_id = :tenantId")
 public abstract class BaseTenantEntity {
 
+    @JsonIgnore
     @Column(name = "tenant_id", nullable = false)
     private UUID tenantId;
 

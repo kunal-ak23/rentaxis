@@ -2,13 +2,15 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { Link } from "@/i18n/routing";
 import { cn } from "@/lib/utils";
+import { hasRole, type UserRole } from "@/lib/rbac";
 import { formatCurrency, formatCurrencyCompact } from "@/lib/format";
 import {
     ArrowLeft, FileText, User, Building2, Calendar, DollarSign, CreditCard,
     Home, Download, Upload, Trash2, Loader2, CheckCircle, Clock, AlertTriangle,
-    Hash, Phone, Mail, MapPin, Wrench,
+    Hash, Phone, Mail, MapPin, Wrench, X, Ban, Plus,
 } from "lucide-react";
 
 type Lease = {
@@ -40,6 +42,68 @@ type Ticket = {
     category: string; createdAt: string; assignedToName: string | null;
 };
 
+type PaymentPenalty = {
+    id: string;
+    paymentScheduleId: string;
+    leaseId: string;
+    penaltyAmount: number;
+    daysOverdue: number;
+    penaltyType: string;
+    penaltyRate: number;
+    gracePeriodDays: number;
+    waived: boolean;
+    waivedBy?: string;
+    waivedReason?: string;
+    waivedAt?: string;
+    lastCalculatedAt: string;
+};
+
+type SettlementPreview = {
+    depositAmount: number;
+    unpaidRentTotal: number;
+    penaltyTotal: number;
+    suggestedRefund: number;
+};
+
+type SettlementDeduction = {
+    category: string;
+    description: string;
+    amount: number;
+};
+
+type Settlement = {
+    id: string;
+    leaseId: string;
+    depositAmount: number;
+    totalDeductions: number;
+    refundAmount: number;
+    notes: string;
+    settledBy: string;
+    settledByName?: string;
+    settledAt: string;
+    deductions: { category: string; description: string; amount: number }[];
+};
+
+const DEDUCTION_CATEGORIES = [
+    { value: "PROPERTY_DAMAGE", label: "Property Damage" },
+    { value: "EARLY_TERMINATION_FEE", label: "Early Termination Fee" },
+    { value: "CLEANING", label: "Cleaning" },
+    { value: "UTILITY_ARREARS", label: "Utility Arrears" },
+    { value: "KEY_REPLACEMENT", label: "Key Replacement" },
+    { value: "OTHER", label: "Other" },
+];
+
+const DEDUCTION_CATEGORY_LABELS: Record<string, string> = {
+    UNPAID_RENT: "Unpaid Rent",
+    PENALTIES: "Late Penalties",
+    PROPERTY_DAMAGE: "Property Damage",
+    EARLY_TERMINATION_FEE: "Early Termination Fee",
+    CLEANING: "Cleaning",
+    UTILITY_ARREARS: "Utility Arrears",
+    KEY_REPLACEMENT: "Key Replacement",
+    OTHER: "Other",
+};
+
 const TICKET_STATUS_COLORS: Record<string, string> = {
     OPEN: "bg-warning/10 text-warning", ASSIGNED: "bg-info/10 text-info",
     IN_PROGRESS: "bg-primary/10 text-primary", RESOLVED: "bg-success/10 text-success",
@@ -67,6 +131,7 @@ const PAYMENT_STATUS_COLORS: Record<string, string> = {
     DEPOSITED: "bg-primary/10 text-primary",
     CLEARED: "bg-success/10 text-success",
     BOUNCED: "bg-error/10 text-error",
+    OVERDUE: "bg-error/10 text-error",
     REPLACED: "bg-input text-muted",
     CANCELLED: "bg-input text-muted",
     ONLINE_PENDING: "bg-warning/10 text-warning",
@@ -75,15 +140,32 @@ const PAYMENT_STATUS_COLORS: Record<string, string> = {
 export default function LeaseDetailPage() {
     const params = useParams();
     const leaseId = params.id as string;
+    const { data: session } = useSession();
+    const userRole = session?.user?.role as UserRole | undefined;
+    const isAdmin = hasRole(userRole, ["SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER"]);
 
     const [lease, setLease] = useState<Lease | null>(null);
     const [renter, setRenter] = useState<Renter | null>(null);
     const [payments, setPayments] = useState<Payment[]>([]);
+    const [penalties, setPenalties] = useState<PaymentPenalty[]>([]);
     const [attachments, setAttachments] = useState<Attachment[]>([]);
     const [loading, setLoading] = useState(true);
     const [docName, setDocName] = useState("");
     const [uploadingDoc, setUploadingDoc] = useState(false);
     const [tickets, setTickets] = useState<Ticket[]>([]);
+    const [waiveModalPenalty, setWaiveModalPenalty] = useState<PaymentPenalty | null>(null);
+    const [waiveReason, setWaiveReason] = useState("");
+    const [waiving, setWaiving] = useState(false);
+
+    // Settlement state
+    const [showSettlementModal, setShowSettlementModal] = useState(false);
+    const [settlementPreview, setSettlementPreview] = useState<SettlementPreview | null>(null);
+    const [settlementPreviewLoading, setSettlementPreviewLoading] = useState(false);
+    const [settlementNotes, setSettlementNotes] = useState("");
+    const [autoDeductions, setAutoDeductions] = useState<SettlementDeduction[]>([]);
+    const [manualDeductions, setManualDeductions] = useState<SettlementDeduction[]>([]);
+    const [terminateLoading, setTerminateLoading] = useState(false);
+    const [settlement, setSettlement] = useState<Settlement | null>(null);
 
     const fetchLease = useCallback(async () => {
         try {
@@ -118,6 +200,98 @@ export default function LeaseDetailPage() {
         } catch {}
     }, [leaseId]);
 
+    const fetchPenalties = useCallback(async () => {
+        try {
+            const res = await fetch(`/api/proxy/v1/leases/${leaseId}/penalties`);
+            if (res.ok) setPenalties(await res.json());
+        } catch {}
+    }, [leaseId]);
+
+    const handleWaivePenalty = async () => {
+        if (!waiveModalPenalty || !waiveReason.trim()) return;
+        setWaiving(true);
+        try {
+            const res = await fetch(`/api/proxy/v1/penalties/${waiveModalPenalty.id}/waive`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ reason: waiveReason.trim() }),
+            });
+            if (res.ok) {
+                setWaiveModalPenalty(null);
+                setWaiveReason("");
+                fetchPenalties();
+            }
+        } catch {} finally { setWaiving(false); }
+    };
+
+    const fetchSettlement = useCallback(async () => {
+        try {
+            const res = await fetch(`/api/proxy/v1/leases/${leaseId}/settlement`);
+            if (res.ok) {
+                const data = await res.json();
+                // Backend returns { settlement: {...}, deductions: [...] }
+                setSettlement({
+                    ...data.settlement,
+                    deductions: data.deductions || [],
+                });
+            }
+        } catch {}
+    }, [leaseId]);
+
+    const openSettlementModal = async () => {
+        setSettlementPreviewLoading(true);
+        setShowSettlementModal(true);
+        setSettlementNotes("");
+        setManualDeductions([]);
+        try {
+            const res = await fetch(`/api/proxy/v1/leases/${leaseId}/settlement/preview`);
+            if (res.ok) {
+                const preview: SettlementPreview = await res.json();
+                setSettlementPreview(preview);
+                const auto: SettlementDeduction[] = [];
+                if (preview.unpaidRentTotal > 0) {
+                    auto.push({ category: "UNPAID_RENT", description: "Outstanding rent", amount: preview.unpaidRentTotal });
+                }
+                if (preview.penaltyTotal > 0) {
+                    auto.push({ category: "PENALTIES", description: "Late payment penalties", amount: preview.penaltyTotal });
+                }
+                setAutoDeductions(auto);
+            }
+        } catch {} finally {
+            setSettlementPreviewLoading(false);
+        }
+    };
+
+    const handleTerminateWithSettlement = async () => {
+        setTerminateLoading(true);
+        try {
+            const allDeductions = [
+                ...autoDeductions.filter(d => d.amount > 0),
+                ...manualDeductions.filter(d => d.amount > 0),
+            ];
+            const res = await fetch(`/api/proxy/v1/leases/${leaseId}/terminate`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    notes: settlementNotes || undefined,
+                    deductions: allDeductions,
+                }),
+            });
+            if (res.ok) {
+                setShowSettlementModal(false);
+                fetchLease();
+                fetchPayments();
+                fetchPenalties();
+            }
+        } catch {} finally {
+            setTerminateLoading(false);
+        }
+    };
+
+    const settlementDepositAmount = settlementPreview?.depositAmount ?? 0;
+    const totalDeductionAmount = [...autoDeductions, ...manualDeductions].reduce((sum, d) => sum + (d.amount || 0), 0);
+    const refundAmount = settlementDepositAmount - totalDeductionAmount;
+
     const fetchTickets = useCallback(async () => {
         try {
             const res = await fetch("/api/proxy/v1/tickets");
@@ -130,12 +304,18 @@ export default function LeaseDetailPage() {
     }, [lease?.unitId]);
 
     useEffect(() => {
-        Promise.all([fetchLease(), fetchPayments(), fetchAttachments()]).finally(() => setLoading(false));
-    }, [fetchLease, fetchPayments, fetchAttachments]);
+        Promise.all([fetchLease(), fetchPayments(), fetchAttachments(), fetchPenalties()]).finally(() => setLoading(false));
+    }, [fetchLease, fetchPayments, fetchAttachments, fetchPenalties]);
 
     useEffect(() => {
         if (lease?.unitId) fetchTickets();
     }, [lease?.unitId, fetchTickets]);
+
+    useEffect(() => {
+        if (lease?.status === "TERMINATED" || lease?.status === "CLOSED") {
+            fetchSettlement();
+        }
+    }, [lease?.status, fetchSettlement]);
 
     const handleDocUpload = async (file: File) => {
         if (!docName.trim()) return;
@@ -241,6 +421,14 @@ export default function LeaseDetailPage() {
                         className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-xs font-semibold hover:bg-primary/90 transition-all cursor-pointer"
                     >
                         <Download size={14} /> Download Contract
+                    </button>
+                )}
+                {lease.status === "ACTIVE" && hasRole(userRole, ["SUPER_ADMIN", "TENANT_ADMIN"]) && (
+                    <button
+                        onClick={openSettlementModal}
+                        className="flex items-center gap-2 bg-error text-white px-4 py-2 rounded-lg text-xs font-semibold hover:bg-error/90 transition-all cursor-pointer"
+                    >
+                        <Ban size={14} /> Terminate
                     </button>
                 )}
             </div>
@@ -402,6 +590,19 @@ export default function LeaseDetailPage() {
 
                 {/* Right Column: Payment Schedule */}
                 <div className="lg:col-span-2">
+                    {/* Penalty Summary */}
+                    {(() => {
+                        const activePenalties = penalties.filter(p => !p.waived);
+                        const totalOutstanding = activePenalties.reduce((sum, p) => sum + p.penaltyAmount, 0);
+                        if (activePenalties.length === 0) return null;
+                        return (
+                            <div className="bg-warning/10 border border-warning/20 rounded-xl px-5 py-3 mb-4 flex items-center gap-2">
+                                <AlertTriangle size={14} className="text-warning shrink-0" />
+                                <span className="text-sm font-semibold text-warning">Total Outstanding Penalties: {formatCurrency(totalOutstanding)}</span>
+                            </div>
+                        );
+                    })()}
+
                     <div className="bg-surface rounded-xl border border-border">
                         <div className="px-5 py-3.5 border-b border-border">
                             <h2 className="text-xs font-semibold text-muted uppercase tracking-wider flex items-center gap-2"><CreditCard size={13} /> Payment Schedule</h2>
@@ -414,6 +615,7 @@ export default function LeaseDetailPage() {
                                         <th className="px-4 py-2.5 text-start text-[10px] font-semibold text-muted uppercase tracking-wider">Due Date</th>
                                         <th className="px-4 py-2.5 text-end text-[10px] font-semibold text-muted uppercase tracking-wider">Amount</th>
                                         <th className="px-4 py-2.5 text-center text-[10px] font-semibold text-muted uppercase tracking-wider">Status</th>
+                                        <th className="px-4 py-2.5 text-end text-[10px] font-semibold text-muted uppercase tracking-wider">Penalty</th>
                                         <th className="px-4 py-2.5 text-start text-[10px] font-semibold text-muted uppercase tracking-wider">Cheque #</th>
                                         <th className="px-4 py-2.5 text-start text-[10px] font-semibold text-muted uppercase tracking-wider">Bank</th>
                                         <th className="px-4 py-2.5 text-end text-[10px] font-semibold text-muted uppercase tracking-wider">Receipt</th>
@@ -429,6 +631,26 @@ export default function LeaseDetailPage() {
                                                 <span className={cn("px-2 py-0.5 rounded-md text-[9px] font-semibold", PAYMENT_STATUS_COLORS[p.status] || "bg-input text-muted")}>
                                                     {p.status.replace("_", " ")}
                                                 </span>
+                                            </td>
+                                            <td className="px-4 py-2.5 text-end">
+                                                {(() => {
+                                                    const penalty = penalties.find(pen => pen.paymentScheduleId === p.id);
+                                                    if (!penalty) return <span className="text-xs text-muted">—</span>;
+                                                    if (penalty.waived) return <span className="text-xs text-muted line-through">Waived</span>;
+                                                    return (
+                                                        <span className="inline-flex items-center gap-1.5">
+                                                            <span className="text-xs font-medium text-error tabular-nums">{formatCurrency(penalty.penaltyAmount)}</span>
+                                                            {isAdmin && (
+                                                                <button
+                                                                    onClick={() => { setWaiveModalPenalty(penalty); setWaiveReason(""); }}
+                                                                    className="text-[9px] font-semibold text-warning hover:text-warning/80 cursor-pointer underline"
+                                                                >
+                                                                    Waive
+                                                                </button>
+                                                            )}
+                                                        </span>
+                                                    );
+                                                })()}
                                             </td>
                                             <td className="px-4 py-2.5 text-xs text-muted">{p.chequeNumber || "—"}</td>
                                             <td className="px-4 py-2.5 text-xs text-muted">{p.bankName || "—"}</td>
@@ -456,6 +678,274 @@ export default function LeaseDetailPage() {
                     </div>
                 </div>
             </div>
+
+            {/* Waive Penalty Modal */}
+            {waiveModalPenalty && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+                    <div className="bg-surface rounded-xl border border-border shadow-xl w-full max-w-sm mx-4">
+                        <div className="flex items-center justify-between px-5 py-3.5 border-b border-border">
+                            <h3 className="text-sm font-semibold text-foreground">Waive Penalty</h3>
+                            <button onClick={() => setWaiveModalPenalty(null)} className="p-1 text-muted hover:text-foreground cursor-pointer"><X size={14} /></button>
+                        </div>
+                        <div className="p-5 space-y-4">
+                            <div>
+                                <p className="text-xs text-muted mb-1">Penalty Amount</p>
+                                <p className="text-sm font-semibold text-error">{formatCurrency(waiveModalPenalty.penaltyAmount)}</p>
+                                <p className="text-[10px] text-muted mt-0.5">{waiveModalPenalty.daysOverdue} days overdue</p>
+                            </div>
+                            <div>
+                                <label className="text-xs font-medium text-foreground block mb-1.5">Reason for waiving</label>
+                                <textarea
+                                    value={waiveReason}
+                                    onChange={(e) => setWaiveReason(e.target.value)}
+                                    placeholder="Enter reason..."
+                                    rows={3}
+                                    className="w-full border border-border rounded-lg bg-surface px-3 py-2 text-xs text-foreground placeholder:text-muted/50 focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none resize-none"
+                                />
+                            </div>
+                            <div className="flex items-center gap-2 justify-end">
+                                <button
+                                    onClick={() => setWaiveModalPenalty(null)}
+                                    className="px-3 py-1.5 rounded-lg text-xs font-semibold text-muted hover:text-foreground border border-border hover:bg-input transition-colors cursor-pointer"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleWaivePenalty}
+                                    disabled={!waiveReason.trim() || waiving}
+                                    className={cn(
+                                        "px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer",
+                                        waiveReason.trim() && !waiving
+                                            ? "bg-warning text-white hover:bg-warning/90"
+                                            : "bg-input text-muted cursor-not-allowed"
+                                    )}
+                                >
+                                    {waiving ? <Loader2 size={12} className="animate-spin" /> : "Confirm Waive"}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Settlement Summary for TERMINATED/CLOSED leases */}
+            {(lease.status === "TERMINATED" || lease.status === "CLOSED") && settlement && (
+                <div className="mt-6 bg-surface rounded-xl border border-border">
+                    <div className="px-5 py-3.5 border-b border-border">
+                        <h2 className="text-xs font-semibold text-muted uppercase tracking-wider flex items-center gap-2">
+                            <DollarSign size={13} /> Settlement Summary
+                        </h2>
+                    </div>
+                    <div className="px-5 py-4 space-y-3">
+                        <div className="flex justify-between items-center">
+                            <span className="text-xs text-muted">Security Deposit</span>
+                            <span className="text-xs font-semibold text-foreground tabular-nums">{formatCurrency(settlement.depositAmount)}</span>
+                        </div>
+                        <div className="border-t border-border pt-3 space-y-2">
+                            <p className="text-[10px] font-semibold text-muted uppercase tracking-wider">Deductions</p>
+                            {settlement.deductions.map((d, i) => (
+                                <div key={i} className="flex justify-between items-center">
+                                    <div>
+                                        <span className="text-xs text-foreground">{DEDUCTION_CATEGORY_LABELS[d.category] || d.category}</span>
+                                        {d.description && <span className="text-[10px] text-muted ml-2">({d.description})</span>}
+                                    </div>
+                                    <span className="text-xs font-medium text-error tabular-nums">- {formatCurrency(d.amount)}</span>
+                                </div>
+                            ))}
+                        </div>
+                        <div className="border-t border-border pt-3 flex justify-between items-center">
+                            <span className="text-xs font-semibold text-muted">Total Deductions</span>
+                            <span className="text-xs font-semibold text-error tabular-nums">- {formatCurrency(settlement.totalDeductions)}</span>
+                        </div>
+                        <div className="border-t-2 border-border pt-3 flex justify-between items-center">
+                            <span className="text-sm font-bold text-foreground">Refund to Renter</span>
+                            <span className={cn("text-sm font-bold tabular-nums", settlement.refundAmount >= 0 ? "text-success" : "text-error")}>
+                                {formatCurrency(settlement.refundAmount)}
+                            </span>
+                        </div>
+                        {settlement.notes && (
+                            <div className="border-t border-border pt-3">
+                                <p className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-1">Notes</p>
+                                <p className="text-xs text-foreground">{settlement.notes}</p>
+                            </div>
+                        )}
+                        <div className="border-t border-border pt-3 flex justify-between items-center text-[10px] text-muted">
+                            <span>Settled by: {settlement.settledByName || settlement.settledBy}</span>
+                            <span>{new Date(settlement.settledAt).toLocaleDateString()} {new Date(settlement.settledAt).toLocaleTimeString()}</span>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Settlement Modal */}
+            {showSettlementModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+                    <div className="bg-surface rounded-xl border border-border shadow-xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+                        <div className="px-5 py-4 border-b border-border flex items-center justify-between sticky top-0 bg-surface z-10">
+                            <h2 className="text-sm font-bold text-foreground">Terminate Lease &mdash; Settlement</h2>
+                            <button onClick={() => setShowSettlementModal(false)} className="p-1 text-muted hover:text-foreground cursor-pointer">
+                                <X size={16} />
+                            </button>
+                        </div>
+
+                        {settlementPreviewLoading ? (
+                            <div className="flex items-center justify-center py-12">
+                                <Loader2 className="w-5 h-5 animate-spin text-primary opacity-60" />
+                            </div>
+                        ) : settlementPreview ? (
+                            <div className="px-5 py-4 space-y-5">
+                                {/* Security Deposit */}
+                                <div className="bg-primary/5 border border-primary/20 rounded-lg px-4 py-3">
+                                    <p className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-1">Security Deposit</p>
+                                    <p className="text-lg font-bold text-foreground tabular-nums">{formatCurrency(settlementPreview.depositAmount)}</p>
+                                </div>
+
+                                {/* Auto-calculated deductions */}
+                                {autoDeductions.length > 0 && (
+                                    <div>
+                                        <p className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-2">Auto-calculated Deductions</p>
+                                        <div className="space-y-2">
+                                            {autoDeductions.map((d, i) => (
+                                                <div key={i} className="flex items-center gap-3 bg-input/50 rounded-lg px-3 py-2 border border-border">
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-xs font-medium text-foreground">{DEDUCTION_CATEGORY_LABELS[d.category]}</span>
+                                                            <span className="px-1.5 py-0.5 rounded text-[8px] font-bold bg-info/10 text-info uppercase">Auto</span>
+                                                        </div>
+                                                        <p className="text-[10px] text-muted">{d.description}</p>
+                                                    </div>
+                                                    <input
+                                                        type="number"
+                                                        value={d.amount}
+                                                        min={0}
+                                                        step={0.01}
+                                                        onChange={(e) => {
+                                                            const val = parseFloat(e.target.value) || 0;
+                                                            setAutoDeductions(prev => prev.map((dd, ii) => ii === i ? { ...dd, amount: val } : dd));
+                                                        }}
+                                                        className="w-28 border border-border rounded-lg bg-surface px-3 py-1.5 text-xs text-foreground text-end tabular-nums focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none"
+                                                    />
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Manual deductions */}
+                                <div>
+                                    <div className="flex items-center justify-between mb-2">
+                                        <p className="text-[10px] font-semibold text-muted uppercase tracking-wider">Manual Deductions</p>
+                                        <button
+                                            onClick={() => setManualDeductions(prev => [...prev, { category: "PROPERTY_DAMAGE", description: "", amount: 0 }])}
+                                            className="flex items-center gap-1 text-[10px] font-semibold text-primary hover:text-primary/80 cursor-pointer"
+                                        >
+                                            <Plus size={12} /> Add Deduction
+                                        </button>
+                                    </div>
+                                    {manualDeductions.length > 0 ? (
+                                        <div className="space-y-2">
+                                            {manualDeductions.map((d, i) => (
+                                                <div key={i} className="bg-input/50 rounded-lg px-3 py-2 border border-border space-y-2">
+                                                    <div className="flex items-center gap-2">
+                                                        <select
+                                                            value={d.category}
+                                                            onChange={(e) => setManualDeductions(prev => prev.map((dd, ii) => ii === i ? { ...dd, category: e.target.value } : dd))}
+                                                            className="flex-1 border border-border rounded-lg bg-surface px-2 py-1.5 text-xs text-foreground focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none"
+                                                        >
+                                                            {DEDUCTION_CATEGORIES.map(c => (
+                                                                <option key={c.value} value={c.value}>{c.label}</option>
+                                                            ))}
+                                                        </select>
+                                                        <input
+                                                            type="number"
+                                                            value={d.amount}
+                                                            min={0}
+                                                            step={0.01}
+                                                            placeholder="Amount"
+                                                            onChange={(e) => {
+                                                                const val = parseFloat(e.target.value) || 0;
+                                                                setManualDeductions(prev => prev.map((dd, ii) => ii === i ? { ...dd, amount: val } : dd));
+                                                            }}
+                                                            className="w-28 border border-border rounded-lg bg-surface px-3 py-1.5 text-xs text-foreground text-end tabular-nums focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none"
+                                                        />
+                                                        <button
+                                                            onClick={() => setManualDeductions(prev => prev.filter((_, ii) => ii !== i))}
+                                                            className="p-1 text-error hover:text-error/80 cursor-pointer"
+                                                        >
+                                                            <X size={14} />
+                                                        </button>
+                                                    </div>
+                                                    <input
+                                                        type="text"
+                                                        value={d.description}
+                                                        placeholder="Description (optional)"
+                                                        onChange={(e) => setManualDeductions(prev => prev.map((dd, ii) => ii === i ? { ...dd, description: e.target.value } : dd))}
+                                                        className="w-full border border-border rounded-lg bg-surface px-3 py-1.5 text-xs text-foreground placeholder:text-muted/50 focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none"
+                                                    />
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <p className="text-xs text-muted text-center py-3 bg-input/30 rounded-lg border border-dashed border-border">No manual deductions added.</p>
+                                    )}
+                                </div>
+
+                                {/* Settlement Summary Bar */}
+                                <div className="bg-input/50 rounded-lg border border-border px-4 py-3 space-y-2">
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-xs text-muted">Security Deposit</span>
+                                        <span className="text-xs font-semibold text-foreground tabular-nums">{formatCurrency(settlementDepositAmount)}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-xs text-muted">Total Deductions</span>
+                                        <span className="text-xs font-semibold text-error tabular-nums">- {formatCurrency(totalDeductionAmount)}</span>
+                                    </div>
+                                    <div className="border-t border-border pt-2 flex justify-between items-center">
+                                        <span className="text-sm font-bold text-foreground">Refund to Renter</span>
+                                        <span className={cn("text-sm font-bold tabular-nums", refundAmount >= 0 ? "text-success" : "text-error")}>
+                                            {formatCurrency(refundAmount)}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                {/* Notes */}
+                                <div>
+                                    <p className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-2">Notes (optional)</p>
+                                    <textarea
+                                        value={settlementNotes}
+                                        onChange={(e) => setSettlementNotes(e.target.value)}
+                                        placeholder="Termination notes..."
+                                        rows={3}
+                                        className="w-full border border-border rounded-lg bg-surface px-3 py-2 text-xs text-foreground placeholder:text-muted/50 focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none resize-none"
+                                    />
+                                </div>
+
+                                {/* Buttons */}
+                                <div className="flex justify-end gap-3 pt-2">
+                                    <button
+                                        onClick={() => setShowSettlementModal(false)}
+                                        className="px-4 py-2 rounded-lg text-xs font-semibold text-muted hover:text-foreground bg-input hover:bg-input/80 transition-colors cursor-pointer"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={handleTerminateWithSettlement}
+                                        disabled={terminateLoading}
+                                        className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold text-white bg-error hover:bg-error/90 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        {terminateLoading && <Loader2 size={12} className="animate-spin" />}
+                                        Terminate & Settle
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="px-5 py-8 text-center">
+                                <p className="text-xs text-muted">Failed to load settlement preview.</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

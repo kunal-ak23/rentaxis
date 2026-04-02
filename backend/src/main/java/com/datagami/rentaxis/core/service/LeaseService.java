@@ -3,6 +3,7 @@ package com.datagami.rentaxis.core.service;
 import com.datagami.rentaxis.api.dto.CreateLeaseDTO;
 import com.datagami.rentaxis.api.dto.LeaseDTO;
 import com.datagami.rentaxis.api.dto.LeaseEventDTO;
+import com.datagami.rentaxis.api.dto.TerminateWithSettlementDTO;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
@@ -33,6 +34,7 @@ public class LeaseService {
     private final LeaseDocumentRepository leaseDocumentRepository;
     private final PaymentScheduleService paymentScheduleService;
     private final PaymentScheduleRepository paymentScheduleRepository;
+    private final SettlementService settlementService;
 
     @Transactional(readOnly = true)
     public List<LeaseDTO> getAllLeases() {
@@ -189,7 +191,7 @@ public class LeaseService {
         // Cancel pending payment schedules
         List<PaymentSchedule> pendingPayments = paymentScheduleRepository.findByLeaseId(leaseId);
         for (PaymentSchedule ps : pendingPayments) {
-            if (ps.getStatus() == PaymentStatus.PENDING || ps.getStatus() == PaymentStatus.ONLINE_PENDING) {
+            if (ps.getStatus() == PaymentStatus.PENDING || ps.getStatus() == PaymentStatus.ONLINE_PENDING || ps.getStatus() == PaymentStatus.OVERDUE) {
                 ps.setStatus(PaymentStatus.CANCELLED);
                 paymentScheduleRepository.save(ps);
             }
@@ -200,6 +202,16 @@ public class LeaseService {
                 notes != null ? notes : "Lease terminated early");
 
         return mapToDTO(savedLease);
+    }
+
+    @Transactional
+    public LeaseDTO terminateWithSettlement(UUID leaseId, TerminateWithSettlementDTO dto, UUID settledBy) {
+        // Create settlement first (within same transaction)
+        if (dto != null && dto.getDeductions() != null && !dto.getDeductions().isEmpty()) {
+            settlementService.createSettlement(leaseId, dto, settledBy);
+        }
+        // Then terminate
+        return terminateLease(leaseId, dto != null ? dto.getNotes() : null);
     }
 
     @Transactional(readOnly = true)
