@@ -4,11 +4,58 @@ import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useTranslations, useLocale } from "next-intl";
 import { Link } from "@/i18n/routing";
-import { Building2, Home, FileText, ArrowLeft, Plus, MapPin, Upload, Calendar, DollarSign, Settings } from "lucide-react";
+import { Building2, Home, FileText, ArrowLeft, Plus, MapPin, Upload, Calendar, DollarSign, Settings, Wrench, Zap, Hammer, Shield, Hospital, Pill, Siren, HelpCircle, Phone, Mail, Pencil, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSession } from "next-auth/react";
 import { hasPermission, canConfigureRentSettings, type UserRole } from "@/lib/rbac";
 import { formatCurrency, formatCurrencyCompact } from "@/lib/format";
+
+type PropertyContact = {
+    id: string;
+    propertyId: string;
+    category: string;
+    customLabel?: string;
+    name: string;
+    phone: string;
+    email?: string;
+    address?: string;
+    notes?: string;
+    sortOrder: number;
+};
+
+const CONTACT_CATEGORIES = [
+    { value: 'PLUMBER', label: 'Plumber', icon: 'Wrench' },
+    { value: 'ELECTRICIAN', label: 'Electrician', icon: 'Zap' },
+    { value: 'HANDYMAN', label: 'Handyman', icon: 'Hammer' },
+    { value: 'SECURITY', label: 'Security', icon: 'Shield' },
+    { value: 'HOSPITAL_CLINIC', label: 'Hospital / Clinic', icon: 'Hospital' },
+    { value: 'PHARMACY', label: 'Pharmacy', icon: 'Pill' },
+    { value: 'BUILDING_MAINTENANCE', label: 'Building Maintenance', icon: 'Building2' },
+    { value: 'CIVIL_DEFENSE', label: 'Civil Defense', icon: 'Siren' },
+    { value: 'OTHER', label: 'Other', icon: 'HelpCircle' },
+] as const;
+
+function getCategoryIcon(category: string) {
+    const map: Record<string, React.ElementType> = {
+        PLUMBER: Wrench,
+        ELECTRICIAN: Zap,
+        HANDYMAN: Hammer,
+        SECURITY: Shield,
+        HOSPITAL_CLINIC: Hospital,
+        PHARMACY: Pill,
+        BUILDING_MAINTENANCE: Building2,
+        CIVIL_DEFENSE: Siren,
+        OTHER: HelpCircle,
+    };
+    return map[category] || HelpCircle;
+}
+
+function getCategoryLabel(category: string, customLabel?: string) {
+    if (category === 'OTHER' && customLabel) return customLabel;
+    return CONTACT_CATEGORIES.find(c => c.value === category)?.label || category;
+}
+
+const EMPTY_CONTACT_FORM = { category: 'PLUMBER', customLabel: '', name: '', phone: '', email: '', address: '', notes: '' };
 
 export default function PropertyDetailPage() {
     const params = useParams();
@@ -29,12 +76,18 @@ export default function PropertyDetailPage() {
     const [buildings, setBuildings] = useState<any[]>([]);
     const [units, setUnits] = useState<any[]>([]);
     const [managers, setManagers] = useState<any[]>([]);
+    const [contacts, setContacts] = useState<PropertyContact[]>([]);
+    const [showContactForm, setShowContactForm] = useState(false);
+    const [editingContact, setEditingContact] = useState<PropertyContact | null>(null);
+    const [contactFormData, setContactFormData] = useState(EMPTY_CONTACT_FORM);
+    const [contactSubmitting, setContactSubmitting] = useState(false);
 
     useEffect(() => {
         fetchProperty();
         fetchBuildings();
         fetchUnits();
         fetchManagers();
+        fetchContacts();
     }, [propertyId]);
 
     const fetchProperty = async () => {
@@ -55,6 +108,69 @@ export default function PropertyDetailPage() {
     const fetchManagers = async () => {
         const res = await fetch(`/api/proxy/v1/properties/${propertyId}/managers`);
         if (res.ok) setManagers(await res.json());
+    };
+
+    const fetchContacts = async () => {
+        try {
+            const res = await fetch(`/api/proxy/v1/properties/${propertyId}/contacts`);
+            if (res.ok) setContacts(await res.json());
+        } catch (err) {
+            console.error("Failed to fetch contacts:", err);
+        }
+    };
+
+    const openAddContact = () => {
+        setEditingContact(null);
+        setContactFormData(EMPTY_CONTACT_FORM);
+        setShowContactForm(true);
+    };
+
+    const openEditContact = (contact: PropertyContact) => {
+        setEditingContact(contact);
+        setContactFormData({
+            category: contact.category,
+            customLabel: contact.customLabel || '',
+            name: contact.name,
+            phone: contact.phone,
+            email: contact.email || '',
+            address: contact.address || '',
+            notes: contact.notes || '',
+        });
+        setShowContactForm(true);
+    };
+
+    const handleContactSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setContactSubmitting(true);
+        try {
+            const payload = {
+                ...contactFormData,
+                propertyId,
+                sortOrder: editingContact ? editingContact.sortOrder : contacts.length,
+            };
+            const url = editingContact
+                ? `/api/proxy/v1/properties/${propertyId}/contacts/${editingContact.id}`
+                : `/api/proxy/v1/properties/${propertyId}/contacts`;
+            const res = await fetch(url, {
+                method: editingContact ? 'PUT' : 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            if (res.ok) {
+                setShowContactForm(false);
+                setEditingContact(null);
+                setContactFormData(EMPTY_CONTACT_FORM);
+                fetchContacts();
+            }
+        } finally {
+            setContactSubmitting(false);
+        }
+    };
+
+    const handleDeleteContact = async (contactId: string) => {
+        if (!confirm('Delete this contact?')) return;
+        const res = await fetch(`/api/proxy/v1/properties/${propertyId}/contacts/${contactId}`, { method: 'DELETE' });
+        if (res.ok) fetchContacts();
     };
 
     if (!property) return (
@@ -145,7 +261,7 @@ export default function PropertyDetailPage() {
             </div>
 
             {/* Content areas */}
-            {activeTab === "overview" && (
+            {activeTab === "overview" && (<>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div className="bg-background rounded-xl p-6 border border-border col-span-1 md:col-span-2">
                         <p className="text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-4 flex items-center gap-2">
@@ -167,7 +283,186 @@ export default function PropertyDetailPage() {
                         </div>
                     </div>
                 </div>
-            )}
+
+                {/* Key Contacts Section */}
+                <div className="mt-6">
+                    <div className="bg-background rounded-xl p-6 border border-border">
+                        <div className="flex items-center justify-between mb-4">
+                            <p className="text-xs font-semibold text-muted uppercase tracking-[0.15em] flex items-center gap-2">
+                                <Phone size={12} className="text-primary/40" />
+                                Key Contacts
+                            </p>
+                            {canCreate && (
+                                <button
+                                    onClick={openAddContact}
+                                    className="flex items-center gap-2 bg-primary text-primary-foreground px-3 py-1.5 rounded-full text-[11px] font-bold hover:opacity-90 transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                                >
+                                    <Plus size={12} /> Add Contact
+                                </button>
+                            )}
+                        </div>
+
+                        {contacts.length > 0 ? (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {contacts.map(contact => {
+                                    const CategoryIcon = getCategoryIcon(contact.category);
+                                    return (
+                                        <div key={contact.id} className="bg-surface p-4 rounded-xl border border-border hover:shadow-md transition-all duration-200 flex flex-col gap-2">
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-2">
+                                                    <CategoryIcon size={14} className="text-primary/60" />
+                                                    <span className="text-[10px] font-bold uppercase tracking-widest text-muted">
+                                                        {getCategoryLabel(contact.category, contact.customLabel)}
+                                                    </span>
+                                                </div>
+                                                {canCreate && (
+                                                    <div className="flex items-center gap-1">
+                                                        <button
+                                                            onClick={() => openEditContact(contact)}
+                                                            className="p-1 rounded hover:bg-background text-muted hover:text-foreground transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                                                        >
+                                                            <Pencil size={12} />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleDeleteContact(contact.id)}
+                                                            className="p-1 rounded hover:bg-error/10 text-muted hover:text-error transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                                                        >
+                                                            <Trash2 size={12} />
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <p className="text-sm font-bold text-foreground">{contact.name}</p>
+                                            <a href={`tel:${contact.phone}`} className="text-[11px] font-bold text-primary/70 font-mono flex items-center gap-1 hover:text-primary transition-colors">
+                                                <Phone size={11} /> {contact.phone}
+                                            </a>
+                                            {contact.email && (
+                                                <a href={`mailto:${contact.email}`} className="text-[11px] font-medium text-muted flex items-center gap-1 hover:text-foreground transition-colors">
+                                                    <Mail size={11} /> {contact.email}
+                                                </a>
+                                            )}
+                                            {contact.address && (
+                                                <p className="text-[10px] text-muted flex items-center gap-1">
+                                                    <MapPin size={10} /> {contact.address}
+                                                </p>
+                                            )}
+                                            {contact.notes && (
+                                                <p className="text-[10px] text-muted italic mt-1">{contact.notes}</p>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        ) : (
+                            <p className="text-xs font-medium text-muted italic">No key contacts added yet. Add contacts like plumber, electrician, nearest hospital, etc.</p>
+                        )}
+                    </div>
+                </div>
+
+                {/* Contact Form Modal */}
+                {showContactForm && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+                        <div className="bg-surface rounded-xl border border-border shadow-xl w-full max-w-lg mx-4 p-6">
+                            <h3 className="text-lg font-bold text-foreground mb-4">
+                                {editingContact ? 'Edit Contact' : 'Add Contact'}
+                            </h3>
+                            <form onSubmit={handleContactSubmit} className="space-y-4">
+                                <div>
+                                    <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Category</label>
+                                    <select
+                                        className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
+                                        value={contactFormData.category}
+                                        onChange={e => setContactFormData({ ...contactFormData, category: e.target.value })}
+                                    >
+                                        {CONTACT_CATEGORIES.map(c => (
+                                            <option key={c.value} value={c.value}>{c.label}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                {contactFormData.category === 'OTHER' && (
+                                    <div>
+                                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Custom Label</label>
+                                        <input
+                                            className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
+                                            placeholder="e.g. Pest Control"
+                                            value={contactFormData.customLabel}
+                                            onChange={e => setContactFormData({ ...contactFormData, customLabel: e.target.value })}
+                                        />
+                                    </div>
+                                )}
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Name *</label>
+                                        <input
+                                            required
+                                            className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
+                                            placeholder="Contact name"
+                                            value={contactFormData.name}
+                                            onChange={e => setContactFormData({ ...contactFormData, name: e.target.value })}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Phone *</label>
+                                        <input
+                                            required
+                                            className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
+                                            placeholder="+971 50 123 4567"
+                                            value={contactFormData.phone}
+                                            onChange={e => setContactFormData({ ...contactFormData, phone: e.target.value })}
+                                        />
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Email</label>
+                                    <input
+                                        type="email"
+                                        className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
+                                        placeholder="email@example.com"
+                                        value={contactFormData.email}
+                                        onChange={e => setContactFormData({ ...contactFormData, email: e.target.value })}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Address</label>
+                                    <textarea
+                                        className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200 resize-none"
+                                        rows={2}
+                                        placeholder="Street address or location"
+                                        value={contactFormData.address}
+                                        onChange={e => setContactFormData({ ...contactFormData, address: e.target.value })}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Notes</label>
+                                    <textarea
+                                        className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200 resize-none"
+                                        rows={2}
+                                        placeholder="Any additional notes"
+                                        value={contactFormData.notes}
+                                        onChange={e => setContactFormData({ ...contactFormData, notes: e.target.value })}
+                                    />
+                                </div>
+                                <div className="flex justify-end gap-2 pt-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => { setShowContactForm(false); setEditingContact(null); }}
+                                        className="px-4 py-2 text-xs font-bold text-muted cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg transition-all duration-200"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        disabled={contactSubmitting}
+                                        className="px-4 py-2 bg-primary text-white rounded-lg text-xs font-bold cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        {contactSubmitting ? 'Saving...' : (editingContact ? 'Update Contact' : 'Save Contact')}
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                )}
+            </>)}
 
             {activeTab === "buildings" && (
                 <BuildingsTab buildings={buildings} propertyId={propertyId} canCreate={canCreate} onUpdate={fetchBuildings} />

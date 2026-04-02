@@ -65,3 +65,5 @@ databaseChangeLog:
       file: db/changelog/changesets/32-fix-table-permissions.yaml
   - include:
       file: db/changelog/changesets/33-performance-indexes.yaml
+  - include:
+      file: db/changelog/changesets/34-property-contacts.yaml
