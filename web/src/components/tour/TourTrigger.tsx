@@ -11,8 +11,8 @@ interface TourTriggerProps {
 }
 
 export default function TourTrigger({ tour, variant = 'card' }: TourTriggerProps) {
-  const { startTour } = useTour();
-  const completed = isTourCompleted(tour.id);
+  const { startTour, completedTourIds } = useTour();
+  const completed = completedTourIds.includes(tour.id);
 
   if (variant === 'inline') {
     return (
