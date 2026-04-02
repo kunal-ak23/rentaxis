@@ -127,7 +127,7 @@ export function TopHeader() {
                 {/* Left Side: Context Switcher */}
                 <div className="flex items-center w-[300px]">
                     {session?.user && (
-                        <div className="w-full">
+                        <div className="w-full" data-tour="tenant-switcher">
                             <TenantSwitcher isCollapsed={false} />
                         </div>
                     )}

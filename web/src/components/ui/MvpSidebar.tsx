@@ -19,6 +19,7 @@ import {
     Landmark,
     UserCog,
     Wrench,
+    HelpCircle,
 } from 'lucide-react';
 import Image from "next/image";
 import { Link } from "@/i18n/routing";
@@ -58,25 +59,25 @@ export default function MvpSidebar() {
     const menuItems = [
         ...(hasPermission(userRole, 'canViewProperties')
             ? [
-                { name: t("properties"), href: "/dashboard/properties", icon: LayoutDashboard },
-                { name: t("renters"), href: "/dashboard/renters", icon: Contact },
-                { name: t("leases"), href: "/dashboard/leases", icon: FileText },
-                { name: "Tickets", href: "/dashboard/tickets", icon: Wrench }
+                { name: t("properties"), href: "/dashboard/properties", icon: LayoutDashboard, tourId: 'sidebar-properties' },
+                { name: t("renters"), href: "/dashboard/renters", icon: Contact, tourId: 'sidebar-renters' },
+                { name: t("leases"), href: "/dashboard/leases", icon: FileText, tourId: 'sidebar-leases' },
+                { name: "Tickets", href: "/dashboard/tickets", icon: Wrench, tourId: 'sidebar-tickets' }
             ]
             : []),
         ...(hasPermission(userRole, 'canManageTenants')
-            ? [{ name: "Tenants", href: "/superadmin/tenants", icon: ShieldCheck }]
+            ? [{ name: "Tenants", href: "/superadmin/tenants", icon: ShieldCheck, tourId: 'sidebar-tenants' }]
             : []),
         ...(hasPermission(userRole, 'canManageUsers')
-            ? [{ name: "Users", href: "/superadmin/users", icon: Users }]
+            ? [{ name: "Users", href: "/superadmin/users", icon: Users, tourId: 'sidebar-users' }]
             : []),
     ];
 
     const financeItems = hasPermission(userRole, 'canAccessFinance') ? [
-        { name: t("chartOfAccounts"), href: "/dashboard/finance/accounts", icon: BookOpen },
-        { name: t("transactions"), href: "/dashboard/finance/transactions", icon: Receipt },
-        { name: t("reports"), href: "/dashboard/finance/reports", icon: BarChart3 },
-        { name: tPayments("payments"), href: "/dashboard/finance/payments", icon: CreditCard },
+        { name: t("chartOfAccounts"), href: "/dashboard/finance/accounts", icon: BookOpen, tourId: 'sidebar-accounts' },
+        { name: t("transactions"), href: "/dashboard/finance/transactions", icon: Receipt, tourId: 'sidebar-transactions' },
+        { name: t("reports"), href: "/dashboard/finance/reports", icon: BarChart3, tourId: 'sidebar-reports' },
+        { name: tPayments("payments"), href: "/dashboard/finance/payments", icon: CreditCard, tourId: 'sidebar-payments' },
         { name: tVendors("title"), href: "/dashboard/finance/vendors", icon: Users },
         { name: tBankAccounts("title"), href: "/dashboard/finance/bank-accounts", icon: Landmark },
     ] : [];
@@ -98,24 +99,25 @@ export default function MvpSidebar() {
 
     // Renter portal items
     const renterItems = hasPermission(userRole, 'canViewRenterPortal') ? [
-        { name: "My Leases", href: "/dashboard/renter-portal", icon: FileText },
-        { name: tOnlinePayments("myPayments"), href: "/dashboard/renter-portal/payments", icon: CreditCard },
-        { name: "My Tickets", href: "/dashboard/tickets", icon: Wrench },
+        { name: "My Leases", href: "/dashboard/renter-portal", icon: FileText, tourId: 'sidebar-my-leases' },
+        { name: tOnlinePayments("myPayments"), href: "/dashboard/renter-portal/payments", icon: CreditCard, tourId: 'sidebar-my-payments' },
+        { name: "My Tickets", href: "/dashboard/tickets", icon: Wrench, tourId: 'sidebar-my-tickets' },
     ] : [];
 
     const allItems = menuItems.length > 0 ? menuItems : renterItems.length > 0 ? renterItems : tenantUserItems;
 
     const renderSection = (
-        items: typeof menuItems,
+        items: { name: string; href: string; icon: React.ElementType; tourId?: string }[],
         label: string,
-        layoutIdPrefix: string
+        layoutIdPrefix: string,
+        sectionDataTour?: string
     ) => (
         <>
             <div className={cn(
                 "px-4 mt-7 mb-2.5 text-[9px] font-semibold uppercase tracking-[0.2em]",
                 "text-sidebar-muted",
                 isCollapsed && "hidden"
-            )}>
+            )} {...(sectionDataTour ? { 'data-tour': sectionDataTour } : {})}>
                 {label}
             </div>
             {items.map((item) => {
@@ -125,6 +127,7 @@ export default function MvpSidebar() {
                     <SidebarTooltip key={item.href} label={item.name} enabled={isCollapsed}>
                         <Link
                             href={item.href}
+                            data-tour={item.tourId}
                             className={cn(
                                 "group flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 text-[13px] font-medium relative cursor-pointer",
                                 "focus:outline-none focus:ring-2 focus:ring-accent/30",
@@ -188,7 +191,7 @@ export default function MvpSidebar() {
                 </Link>
             </div>
 
-            <nav className="flex-1 py-1 px-3 space-y-0.5 overflow-y-auto">
+            <nav data-tour="sidebar-nav" className="flex-1 py-1 px-3 space-y-0.5 overflow-y-auto">
                 {/* Dashboard Home */}
                 <SidebarTooltip label={tDashboard("dashboard")} enabled={isCollapsed}>
                     <Link
@@ -217,9 +220,44 @@ export default function MvpSidebar() {
                 </SidebarTooltip>
 
                 {allItems.length > 0 && renderSection(allItems, "Overview", "overview")}
-                {financeItems.length > 0 && renderSection(financeItems, "Finance", "finance")}
+                {financeItems.length > 0 && renderSection(financeItems, "Finance", "finance", "sidebar-finance")}
                 {hrItems.length > 0 && renderSection(hrItems, "HR", "hr")}
                 {settingsItems.length > 0 && renderSection(settingsItems, "Settings", "settings")}
+
+                {/* Support Section */}
+                <div className={cn(
+                    "px-4 mt-7 mb-2.5 text-[9px] font-semibold uppercase tracking-[0.2em]",
+                    "text-sidebar-muted",
+                    isCollapsed && "hidden"
+                )}>
+                    Support
+                </div>
+                <SidebarTooltip label="Help & Guides" enabled={isCollapsed}>
+                    <Link
+                        href="/dashboard/help"
+                        data-tour="sidebar-help"
+                        className={cn(
+                            "group flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 text-[13px] font-medium relative cursor-pointer",
+                            "focus:outline-none focus:ring-2 focus:ring-accent/30",
+                            pathname.includes("/dashboard/help")
+                                ? "bg-white/10 text-white"
+                                : "text-sidebar-muted hover:bg-white/5 hover:text-white",
+                            isCollapsed && "justify-center"
+                        )}
+                    >
+                        <HelpCircle size={16} className={cn(
+                            "shrink-0 transition-colors",
+                            pathname.includes("/dashboard/help") ? "text-accent" : "group-hover:text-white/80"
+                        )} />
+                        {!isCollapsed && <span className="flex-1">Help &amp; Guides</span>}
+                        {pathname.includes("/dashboard/help") && !isCollapsed && (
+                            <motion.div
+                                layoutId="sidebar-help-indicator"
+                                className="absolute left-0 w-[3px] h-5 bg-accent rounded-r-full"
+                            />
+                        )}
+                    </Link>
+                </SidebarTooltip>
             </nav>
 
             {/* Footer */}

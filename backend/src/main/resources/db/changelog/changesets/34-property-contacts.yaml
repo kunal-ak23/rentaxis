@@ -1,0 +1,82 @@
+databaseChangeLog:
+  - changeSet:
+      id: 34-create-property-contacts-table
+      author: rentaxis
+      changes:
+        - createTable:
+            tableName: property_contacts
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: property_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: tenant_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: category
+                  type: varchar(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: custom_label
+                  type: varchar(100)
+              - column:
+                  name: name
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: phone
+                  type: varchar(20)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: email
+                  type: varchar(100)
+              - column:
+                  name: address
+                  type: text
+              - column:
+                  name: notes
+                  type: text
+              - column:
+                  name: sort_order
+                  type: int
+                  defaultValueNumeric: 0
+              - column:
+                  name: created_at
+                  type: timestamp
+                  defaultValueComputed: now()
+              - column:
+                  name: updated_at
+                  type: timestamp
+                  defaultValueComputed: now()
+        - addForeignKeyConstraint:
+            baseTableName: property_contacts
+            baseColumnNames: property_id
+            referencedTableName: properties
+            referencedColumnNames: id
+            constraintName: fk_property_contacts_property
+        - createIndex:
+            indexName: idx_property_contacts_property_id
+            tableName: property_contacts
+            columns:
+              - column:
+                  name: property_id
+        - createIndex:
+            indexName: idx_property_contacts_tenant_id
+            tableName: property_contacts
+            columns:
+              - column:
+                  name: tenant_id
