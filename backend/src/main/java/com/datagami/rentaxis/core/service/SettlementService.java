@@ -12,6 +12,7 @@ import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.LeaseSettlementDeductionRepository;
 import com.datagami.rentaxis.domain.repository.LeaseSettlementRepository;
 import com.datagami.rentaxis.domain.repository.PaymentScheduleRepository;
+import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,8 +35,7 @@ public class SettlementService {
 
     @Transactional(readOnly = true)
     public SettlementPreviewDTO getSettlementPreview(UUID leaseId) {
-        Lease lease = leaseRepository.findById(leaseId)
-                .orElseThrow(() -> new NotFoundException("Lease not found"));
+        Lease lease = findLeaseWithTenantCheck(leaseId);
 
         BigDecimal depositAmount = lease.getDepositAmount() != null ? lease.getDepositAmount() : BigDecimal.ZERO;
 
@@ -61,8 +61,7 @@ public class SettlementService {
 
     @Transactional
     public LeaseSettlement createSettlement(UUID leaseId, TerminateWithSettlementDTO dto, UUID settledBy) {
-        Lease lease = leaseRepository.findById(leaseId)
-                .orElseThrow(() -> new NotFoundException("Lease not found"));
+        Lease lease = findLeaseWithTenantCheck(leaseId);
 
         BigDecimal depositAmount = lease.getDepositAmount() != null ? lease.getDepositAmount() : BigDecimal.ZERO;
 
@@ -109,5 +108,15 @@ public class SettlementService {
     @Transactional(readOnly = true)
     public List<LeaseSettlementDeduction> getSettlementDeductions(UUID settlementId) {
         return leaseSettlementDeductionRepository.findBySettlementIdOrderByCreatedAtAsc(settlementId);
+    }
+
+    private Lease findLeaseWithTenantCheck(UUID leaseId) {
+        Lease lease = leaseRepository.findById(leaseId)
+                .orElseThrow(() -> new NotFoundException("Lease not found"));
+        UUID currentTenantId = TenantContextHolder.getTenantId();
+        if (currentTenantId != null && !currentTenantId.equals(lease.getTenantId())) {
+            throw new NotFoundException("Lease not found");
+        }
+        return lease;
     }
 }
