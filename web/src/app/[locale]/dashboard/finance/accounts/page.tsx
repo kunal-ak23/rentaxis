@@ -526,7 +526,7 @@ export default function AccountsPage() {
         <div>
             {/* ── Page Header ── */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10">
-                <div>
+                <div data-tour="accounts-header">
                     <h1 className="text-xl font-bold text-foreground tracking-tight mb-1 flex items-center gap-2">
                         <BookOpen size={20} className="text-primary" />
                         {t("chartOfAccounts")}

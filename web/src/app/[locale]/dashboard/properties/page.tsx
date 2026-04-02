@@ -332,7 +332,7 @@ export default function PropertiesPage() {
             )}
 
             <div className="flex flex-col gap-4 mb-10">
-                <div>
+                <div data-tour="properties-header">
                     <h1 className="text-xl font-bold text-foreground tracking-tight mb-1">
                         {t("projects")}
                     </h1>
@@ -399,6 +399,7 @@ export default function PropertiesPage() {
                                     setPropertyFormData(prev => ({ ...prev, propertyId: stats[0].property.id }));
                                     setShowPropertyForm(true);
                                 }}
+                                data-tour="add-property-btn"
                                 className="cursor-pointer flex items-center gap-2 bg-surface text-foreground border border-border px-4 py-2 rounded-lg text-xs font-semibold hover:bg-background transition-all duration-200 active:scale-95 focus:ring-2 focus:ring-primary/30 focus:outline-none"
                             >
                                 <Plus size={14} />
@@ -731,7 +732,7 @@ export default function PropertiesPage() {
             {stats.length > 0 && (
                 <>
                     {viewMode === "table" ? (
-                        <div className="bg-surface rounded-xl border border-border overflow-hidden">
+                        <div data-tour="properties-table" className="bg-surface rounded-xl border border-border overflow-hidden">
                             <div className="overflow-x-auto">
                                 <table className="w-full">
                                     <thead>
