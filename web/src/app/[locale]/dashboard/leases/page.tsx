@@ -335,7 +335,11 @@ export default function LeasesPage() {
             onConfirm: async () => {
                 setActionLoading('terminate');
                 try {
-                    const res = await fetch(`/api/proxy/v1/leases/${id}/terminate?notes=Early Termination UI`, { method: "POST" });
+                    const res = await fetch(`/api/proxy/v1/leases/${id}/terminate`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ notes: "Quick termination from list view" }),
+                    });
                     if (res.ok) fetchLeases();
                 } catch (err) {
                     console.error(err);

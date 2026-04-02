@@ -362,7 +362,7 @@ export default function PropertyDetailPage() {
                 {/* Contact Form Modal */}
                 {showContactForm && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowContactForm(false)} onKeyDown={(e) => { if (e.key === 'Escape') setShowContactForm(false); }}>
-                        <div className="bg-surface rounded-xl border border-border shadow-xl w-full max-w-lg mx-4 p-6" onClick={(e) => e.stopPropagation()}
+                        <div className="bg-surface rounded-xl border border-border shadow-xl w-full max-w-lg mx-4 p-6" onClick={(e) => e.stopPropagation()}>
                             <h3 className="text-lg font-bold text-foreground mb-4">
                                 {editingContact ? 'Edit Contact' : 'Add Contact'}
                             </h3>
