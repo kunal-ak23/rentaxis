@@ -3,6 +3,7 @@
 import { ArrowLeft, Clock } from 'lucide-react';
 import { Link } from '@/i18n/routing';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import RoleFilter from './RoleFilter';
 import TourTrigger from '@/components/tour/TourTrigger';
 import { getTourById } from '@/components/tour/tours';
@@ -52,8 +53,8 @@ export default function HelpArticle({ article }: HelpArticleProps) {
       )}
 
       {/* Article content */}
-      <div className="prose prose-gray max-w-none prose-headings:text-gray-900 prose-a:text-primary prose-strong:text-gray-900 prose-table:text-sm">
-        <ReactMarkdown>{article.content}</ReactMarkdown>
+      <div className="prose prose-gray max-w-none prose-headings:text-gray-900 prose-a:text-primary prose-strong:text-gray-900 prose-table:text-sm prose-th:bg-gray-50 prose-th:px-3 prose-th:py-2 prose-td:px-3 prose-td:py-2 prose-td:border-t prose-td:border-gray-200">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{article.content}</ReactMarkdown>
       </div>
     </div>
   );
