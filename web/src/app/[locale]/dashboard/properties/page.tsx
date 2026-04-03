@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { Plus, MapPin, Building2, Hash, ArrowRight, X, Users, DollarSign, PieChart, Activity, List, LayoutGrid, Search, AlertCircle, RefreshCw, Upload, FileSpreadsheet, CheckCircle2, Loader2, Download } from "lucide-react";
 import { Link } from "@/i18n/routing";
@@ -118,6 +118,7 @@ export default function PropertiesPage() {
     const [portfolioJobId, setPortfolioJobId] = useState<string | null>(null);
     const [portfolioResult, setPortfolioResult] = useState<any>(null);
     const [portfolioUploading, setPortfolioUploading] = useState(false);
+    const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
     useEffect(() => {
         fetchStats();
@@ -247,6 +248,12 @@ export default function PropertiesPage() {
         }
     };
 
+    useEffect(() => {
+        return () => {
+            if (pollingRef.current) clearInterval(pollingRef.current);
+        };
+    }, []);
+
     const pollPortfolioStatus = (jobId: string) => {
         const interval = setInterval(async () => {
             try {
@@ -255,12 +262,14 @@ export default function PropertiesPage() {
                 const data = await res.json();
                 if (data.status === "COMPLETED" || data.status === "VALIDATION_FAILED" || data.status === "FAILED") {
                     clearInterval(interval);
+                    pollingRef.current = null;
                     setPortfolioResult(data);
                     setPortfolioStep("result");
                     if (data.status === "COMPLETED") fetchStats();
                 }
             } catch { /* keep polling */ }
         }, 2000);
+        pollingRef.current = interval;
     };
 
     const downloadPortfolioTemplate = async () => {

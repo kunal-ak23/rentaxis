@@ -1,4 +1,3 @@
-import 'dart:developer' as dev;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../api/api_client.dart';
@@ -69,21 +68,14 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   Future<void> _init() async {
-    dev.log('[AUTH_DEBUG] _init() started', name: 'AuthProvider');
     final userId = await _storage.read(key: 'userId');
-    dev.log('[AUTH_DEBUG] stored userId: $userId', name: 'AuthProvider');
     if (userId != null) {
       try {
-        dev.log('[AUTH_DEBUG] fetching profile...', name: 'AuthProvider');
         final profile = await _authService.getProfile();
-        dev.log('[AUTH_DEBUG] profile response: $profile', name: 'AuthProvider');
 
-        dev.log('[AUTH_DEBUG] fetching tenants...', name: 'AuthProvider');
         final tenants = await _authService.getTenants();
-        dev.log('[AUTH_DEBUG] tenants response: $tenants', name: 'AuthProvider');
 
         final savedTenantId = await _storage.read(key: 'tenantId');
-        dev.log('[AUTH_DEBUG] stored tenantId: $savedTenantId', name: 'AuthProvider');
 
         TenantContext.currentTenantId = savedTenantId;
 
@@ -98,24 +90,19 @@ class AuthNotifier extends StateNotifier<AuthState> {
               (tenants.isNotEmpty ? tenants[0]['tenantId'] : null),
           tenants: List<Map<String, dynamic>>.from(tenants),
         );
-        dev.log('[AUTH_DEBUG] _init() SUCCESS - authenticated', name: 'AuthProvider');
-      } catch (e, stack) {
-        dev.log('[AUTH_DEBUG] _init() FAILED: $e', name: 'AuthProvider', error: e, stackTrace: stack);
+      } catch (e) {
         await _clearStorage();
         state = const AuthState(isAuthenticated: false, isLoading: false);
       }
     } else {
-      dev.log('[AUTH_DEBUG] no stored userId - unauthenticated', name: 'AuthProvider');
       state = const AuthState(isAuthenticated: false, isLoading: false);
     }
   }
 
   Future<bool> login(String email, String password) async {
-    dev.log('[AUTH_DEBUG] login() called for: $email', name: 'AuthProvider');
     state = state.copyWith(isLoading: true, error: null);
     try {
       final response = await _authService.login(email, password);
-      dev.log('[AUTH_DEBUG] login response: id=${response.id}, role=${response.role}, tenantId=${response.tenantId}', name: 'AuthProvider');
 
       await _storage.write(key: 'userId', value: response.id);
       await _storage.write(key: 'userRole', value: response.role);
@@ -126,10 +113,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
         await _storage.write(key: 'userTenantId', value: tenantId);
         TenantContext.currentTenantId = tenantId;
       }
-      dev.log('[AUTH_DEBUG] TenantContext.currentTenantId = ${TenantContext.currentTenantId}', name: 'AuthProvider');
 
       final tenants = await _authService.getTenants();
-      dev.log('[AUTH_DEBUG] tenants after login: $tenants', name: 'AuthProvider');
 
       state = AuthState(
         isAuthenticated: true,
@@ -141,10 +126,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
         tenantId: tenantId,
         tenants: List<Map<String, dynamic>>.from(tenants),
       );
-      dev.log('[AUTH_DEBUG] login() SUCCESS', name: 'AuthProvider');
       return true;
-    } catch (e, stack) {
-      dev.log('[AUTH_DEBUG] login() FAILED: $e', name: 'AuthProvider', error: e, stackTrace: stack);
+    } catch (e) {
       state = state.copyWith(
         isLoading: false,
         error: 'Invalid email or password',

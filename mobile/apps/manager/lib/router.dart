@@ -1,4 +1,3 @@
-import 'dart:developer' as dev;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
@@ -44,19 +43,14 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isLoginRoute = state.matchedLocation == '/login';
       final isSplashRoute = state.matchedLocation == '/splash';
 
-      dev.log('[ROUTER_DEBUG] redirect: location=${state.matchedLocation}, isLoggedIn=$isLoggedIn, isLoading=$isLoading', name: 'Router');
-
       if (isSplashRoute) return null;
       if (isLoading) {
-        dev.log('[ROUTER_DEBUG] still loading auth - no redirect', name: 'Router');
         return null;
       }
       if (!isLoggedIn && !isLoginRoute) {
-        dev.log('[ROUTER_DEBUG] not logged in -> /login', name: 'Router');
         return '/login';
       }
       if (isLoggedIn && isLoginRoute) {
-        dev.log('[ROUTER_DEBUG] logged in on login page -> /', name: 'Router');
         return '/';
       }
       return null;

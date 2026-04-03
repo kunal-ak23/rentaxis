@@ -42,6 +42,10 @@ public class PortfolioImportController {
             return ResponseEntity.badRequest().body(Map.of("error", "Only .xlsx files are supported"));
         }
 
+        if (file.getSize() > 5 * 1024 * 1024) {
+            return ResponseEntity.badRequest().body(Map.of("error", "File size exceeds 5MB limit"));
+        }
+
         try {
             byte[] fileBytes = file.getBytes();
             UUID tenantId = TenantContextHolder.getTenantId();
@@ -65,6 +69,7 @@ public class PortfolioImportController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
     public ResponseEntity<PortfolioImportResultDTO> getStatus(@PathVariable UUID jobId) {
         return importJobRepository.findById(jobId)
+                .filter(job -> job.getTenantId().equals(TenantContextHolder.getTenantId()))
                 .map(job -> ResponseEntity.ok(mapToResult(job)))
                 .orElse(ResponseEntity.notFound().build());
     }

@@ -17,7 +17,7 @@ RentAxis is a **multi-tenant property management SaaS** for UAE landlords. Prope
 - **RBAC roles:** `SUPER_ADMIN`, `TENANT_ADMIN`, `PROPERTY_MANAGER`, `TENANT_USER`, `RENTER`
 
 ## Key Directories
-- `backend/` — Spring Boot API (26 controllers, `com.datagami.rentaxis.api.*`)
+- `backend/` — Spring Boot API (27 controllers, `com.datagami.rentaxis.api.*`)
 - `web/` — Next.js frontend (dashboard, renter portal, superadmin)
 - `mobile/apps/manager/` — Flutter Admin app (28 screens)
 - `mobile/apps/renter/` — Flutter Renter app (9 screens)
@@ -26,7 +26,7 @@ RentAxis is a **multi-tenant property management SaaS** for UAE landlords. Prope
 ## Critical Rules
 1. **Never bypass tenant isolation** — all queries must scope by `tenant_id`
 2. **Never store secrets in code** — use environment variables (`.env.*` files are gitignored)
-3. **Liquibase migrations are append-only** — never modify existing changesets (next: `17-*.yaml`)
+3. **Liquibase migrations are append-only** — never modify existing changesets (next: `37-*.yaml`)
 4. **Multi-tenant data leaks are P0 bugs**
 5. **Arabic RTL support** — ensure UI works in both LTR and RTL
 6. **Frontend API calls** — use Next.js proxy rewrite; never hardcode backend URLs in client components
