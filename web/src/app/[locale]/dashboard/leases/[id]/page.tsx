@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Link } from "@/i18n/routing";
 import { cn } from "@/lib/utils";
@@ -139,6 +139,7 @@ const PAYMENT_STATUS_COLORS: Record<string, string> = {
 
 export default function LeaseDetailPage() {
     const params = useParams();
+    const searchParams = useSearchParams();
     const leaseId = params.id as string;
     const { data: session } = useSession();
     const userRole = session?.user?.role as UserRole | undefined;
@@ -310,6 +311,13 @@ export default function LeaseDetailPage() {
     useEffect(() => {
         if (lease?.unitId) fetchTickets();
     }, [lease?.unitId, fetchTickets]);
+
+    // Auto-open settlement modal when redirected from list with ?action=terminate
+    useEffect(() => {
+        if (searchParams.get("action") === "terminate" && lease?.status === "ACTIVE" && !showSettlementModal) {
+            openSettlementModal();
+        }
+    }, [lease?.status, searchParams]);
 
     useEffect(() => {
         if (lease?.status === "TERMINATED" || lease?.status === "CLOSED") {

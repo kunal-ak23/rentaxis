@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { Plus, X, FileText, Calendar, DollarSign, Home, CheckCircle, Ban, AlertCircle, LayoutGrid, Columns3, Download, Sparkles, Loader2, RefreshCw, Pencil, List, Eye, Search, Upload } from "lucide-react";
-import { Link } from "@/i18n/routing";
+import { Link, useRouter } from "@/i18n/routing";
 import { Pagination } from "@/components/ui/Pagination";
 import { useSession } from "next-auth/react";
 import { hasPermission, type UserRole } from "@/lib/rbac";
@@ -326,7 +326,13 @@ export default function LeasesPage() {
         setConfirmOpen(true);
     };
 
+    const router = useRouter();
+
     const handleTerminate = (id: string) => {
+        // Redirect to lease detail page where the full settlement modal is available
+        router.push(`/dashboard/leases/${id}?action=terminate`);
+        return;
+        // Legacy direct terminate (kept for reference)
         setConfirmConfig({
             title: t("terminateLease"),
             description: t("confirmTerminate"),
