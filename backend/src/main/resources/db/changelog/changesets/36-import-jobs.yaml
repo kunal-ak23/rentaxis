@@ -1,0 +1,77 @@
+databaseChangeLog:
+  - changeSet:
+      id: 36-import-jobs
+      author: rentaxis
+      changes:
+        - createTable:
+            tableName: import_jobs
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: tenant_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: varchar(30)
+                  defaultValue: VALIDATING
+                  constraints:
+                    nullable: false
+              - column:
+                  name: file_name
+                  type: varchar(255)
+              - column:
+                  name: properties_created
+                  type: int
+                  defaultValueNumeric: 0
+              - column:
+                  name: buildings_created
+                  type: int
+                  defaultValueNumeric: 0
+              - column:
+                  name: units_created
+                  type: int
+                  defaultValueNumeric: 0
+              - column:
+                  name: renters_created
+                  type: int
+                  defaultValueNumeric: 0
+              - column:
+                  name: leases_created
+                  type: int
+                  defaultValueNumeric: 0
+              - column:
+                  name: schedules_created
+                  type: int
+                  defaultValueNumeric: 0
+              - column:
+                  name: errors
+                  type: jsonb
+              - column:
+                  name: created_by
+                  type: uuid
+              - column:
+                  name: created_at
+                  type: timestamp
+                  defaultValueComputed: CURRENT_TIMESTAMP
+              - column:
+                  name: completed_at
+                  type: timestamp
+        - addForeignKeyConstraint:
+            baseTableName: import_jobs
+            baseColumnNames: tenant_id
+            referencedTableName: landlord_org
+            referencedColumnNames: id
+            constraintName: fk_import_jobs_tenant
+        - createIndex:
+            tableName: import_jobs
+            indexName: idx_import_jobs_tenant_id
+            columns:
+              - column:
+                  name: tenant_id

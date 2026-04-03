@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
@@ -41,19 +42,30 @@ class PaymentsScreen extends ConsumerStatefulWidget {
   ConsumerState<PaymentsScreen> createState() => _PaymentsScreenState();
 }
 
-class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
+class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
+    with SingleTickerProviderStateMixin {
   String? _selectedPropertyId;
-  String? _selectedStatus;
+  late TabController _tabController;
 
-  final _statusOptions = [
-    null,
-    'PENDING',
-    'COLLECTED',
-    'DEPOSITED',
-    'CLEARED',
-    'BOUNCED',
-    'OVERDUE',
-  ];
+  static const _pageSize = 20;
+  int _currentPage = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 4, vsync: this);
+    _tabController.addListener(() {
+      if (!_tabController.indexIsChanging) {
+        setState(() => _currentPage = 0);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
 
   Future<void> _refresh() async {
     ref.invalidate(_paymentSummaryProvider);
@@ -74,77 +86,71 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
           summaryAsync.when(
             loading: () => const SizedBox(
               height: 90,
-              child: Center(
-                child: CircularProgressIndicator(color: AppColors.primary),
-              ),
+              child: Center(child: ListShimmer(itemCount: 1)),
             ),
             error: (_, __) => const SizedBox.shrink(),
             data: (summary) => _buildSummaryCards(summary),
           ),
 
-          // Filter bar
+          // Property filter
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: propertiesAsync.when(
-                    loading: () => const SizedBox.shrink(),
-                    error: (_, __) => const SizedBox.shrink(),
-                    data: (properties) => DropdownButtonFormField<String?>(
-                      value: _selectedPropertyId,
-                      isExpanded: true,
-                      decoration: const InputDecoration(
-                        contentPadding:
-                            EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                        hintText: 'All Properties',
-                      ),
-                      items: [
-                        const DropdownMenuItem<String?>(
-                          value: null,
-                          child: Text('All Properties',
-                              style: TextStyle(fontSize: 13)),
-                        ),
-                        ...properties.map((p) => DropdownMenuItem<String?>(
-                              value: p['id'],
-                              child: Text(p['name'] ?? '',
-                                  style: const TextStyle(fontSize: 13),
-                                  overflow: TextOverflow.ellipsis),
-                            )),
-                      ],
-                      onChanged: (v) =>
-                          setState(() => _selectedPropertyId = v),
-                    ),
-                  ),
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
+            child: propertiesAsync.when(
+              loading: () => const SizedBox.shrink(),
+              error: (_, __) => const SizedBox.shrink(),
+              data: (properties) => DropdownButtonFormField<String?>(
+                value: _selectedPropertyId,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  contentPadding:
+                      EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  hintText: 'All Properties',
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: DropdownButtonFormField<String?>(
-                    value: _selectedStatus,
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                      contentPadding:
-                          EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      hintText: 'All Status',
-                    ),
-                    items: _statusOptions
-                        .map((s) => DropdownMenuItem<String?>(
-                              value: s,
-                              child: Text(
-                                s?.replaceAll('_', ' ') ?? 'All Status',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: s != null
-                                      ? StatusHelper.getPaymentStatusColor(s)
-                                      : null,
-                                ),
-                              ),
-                            ))
-                        .toList(),
-                    onChanged: (v) =>
-                        setState(() => _selectedStatus = v),
+                items: [
+                  const DropdownMenuItem<String?>(
+                    value: null,
+                    child: Text('All Properties',
+                        style: TextStyle(fontSize: 13)),
                   ),
-                ),
+                  ...properties.map((p) => DropdownMenuItem<String?>(
+                        value: p['id'],
+                        child: Text(p['name'] ?? '',
+                            style: const TextStyle(fontSize: 13),
+                            overflow: TextOverflow.ellipsis),
+                      )),
+                ],
+                onChanged: (v) =>
+                    setState(() => _selectedPropertyId = v),
+              ),
+            ),
+          ),
+
+          // Status tabs
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+            child: TabBar(
+              controller: _tabController,
+              indicatorSize: TabBarIndicatorSize.tab,
+              indicator: BoxDecoration(
+                color: AppColors.primary,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              labelColor: Colors.white,
+              unselectedLabelColor: AppColors.textSecondary,
+              labelStyle: GoogleFonts.josefinSans(
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+              ),
+              unselectedLabelStyle: GoogleFonts.josefinSans(
+                fontWeight: FontWeight.w500,
+                fontSize: 13,
+              ),
+              dividerHeight: 0,
+              tabs: const [
+                Tab(text: 'Upcoming'),
+                Tab(text: 'Overdue'),
+                Tab(text: 'Paid'),
+                Tab(text: 'All'),
               ],
             ),
           ),
@@ -152,9 +158,7 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
           // Payment list
           Expanded(
             child: paymentsAsync.when(
-              loading: () => const Center(
-                child: CircularProgressIndicator(color: AppColors.primary),
-              ),
+              loading: () => const ListShimmer(itemCount: 3),
               error: (e, _) => ErrorState(
                 message: 'Failed to load payments',
                 onRetry: _refresh,
@@ -165,9 +169,21 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
                       p['propertyId'] != _selectedPropertyId) {
                     return false;
                   }
-                  if (_selectedStatus != null &&
-                      p['status'] != _selectedStatus) {
-                    return false;
+                  final status = p['status'] ?? '';
+                  switch (_tabController.index) {
+                    case 0: // Upcoming
+                      if (status != 'PENDING' && status != 'ONLINE_PENDING') {
+                        return false;
+                      }
+                      break;
+                    case 1: // Overdue
+                      if (status != 'OVERDUE') return false;
+                      break;
+                    case 2: // Paid
+                      if (status != 'CLEARED') return false;
+                      break;
+                    case 3: // All
+                      break;
                   }
                   return true;
                 }).toList();
@@ -179,18 +195,47 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
                   );
                 }
 
+                final visibleCount = ((_currentPage + 1) * _pageSize)
+                    .clamp(0, filtered.length);
+                final hasMore = visibleCount < filtered.length;
+
                 return RefreshIndicator(
                   onRefresh: _refresh,
                   color: AppColors.primary,
                   child: ListView.builder(
                     physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                    itemCount: filtered.length,
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 150),
+                    itemCount: visibleCount + (hasMore ? 1 : 0),
                     itemBuilder: (context, index) {
+                      if (index == visibleCount) {
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          child: Center(
+                            child: OutlinedButton(
+                              onPressed: () =>
+                                  setState(() => _currentPage++),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AppColors.primary,
+                                side: BorderSide(
+                                    color: AppColors.primary
+                                        .withValues(alpha: 0.3)),
+                              ),
+                              child: Text(
+                                'Show More (${filtered.length - visibleCount} remaining)',
+                                style: GoogleFonts.josefinSans(
+                                    fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                          ),
+                        );
+                      }
                       final payment = filtered[index];
-                      return _PaymentCard(
-                        payment: payment,
-                        onTap: () => _showPaymentActions(payment),
+                      return AnimatedListItem(
+                        index: index,
+                        child: _PaymentCard(
+                          payment: payment,
+                          onTap: () => _showPaymentActions(payment),
+                        ),
                       );
                     },
                   ),
@@ -229,7 +274,7 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
       height: 90,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
         itemCount: items.length,
         separatorBuilder: (_, __) => const SizedBox(width: 10),
         itemBuilder: (context, index) {
@@ -249,7 +294,7 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
                 Row(
                   children: [
                     Text('${item.count}',
-                        style: TextStyle(
+                        style: GoogleFonts.josefinSans(
                           fontWeight: FontWeight.w700,
                           fontSize: 18,
                           color: item.color,
@@ -257,7 +302,7 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
                     const SizedBox(width: 4),
                     Flexible(
                       child: Text(item.label,
-                          style: TextStyle(
+                          style: GoogleFonts.josefinSans(
                             fontSize: 11,
                             color: item.color.withValues(alpha: 0.8),
                           ),
@@ -266,7 +311,7 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
                   ],
                 ),
                 Text(item.amount,
-                    style: TextStyle(
+                    style: GoogleFonts.josefinSans(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                       color: item.color,
@@ -534,11 +579,16 @@ class _PaymentCard extends StatelessWidget {
     final statusColor = StatusHelper.getPaymentStatusColor(status);
     final amount = (payment['amount'] ?? 0).toDouble();
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: AppShadows.soft,
+      ),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         child: Padding(
           padding: const EdgeInsets.all(14),
           child: Row(
@@ -559,15 +609,15 @@ class _PaymentCard extends StatelessWidget {
                   children: [
                     Text(
                       payment['renterName'] ?? 'Unknown',
-                      style: const TextStyle(
+                      style: GoogleFonts.josefinSans(
                         fontWeight: FontWeight.w600,
                         fontSize: 14,
                       ),
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Unit ${payment['unitNumber'] ?? '-'} | #${payment['installmentNumber'] ?? '-'}',
-                      style: const TextStyle(
+                      '${payment['propertyName'] ?? '-'} | Unit ${payment['unitIdentifier'] ?? payment['unitNumber'] ?? '-'}',
+                      style: GoogleFonts.josefinSans(
                         fontSize: 12,
                         color: AppColors.textSecondary,
                       ),
@@ -575,7 +625,7 @@ class _PaymentCard extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       'Due: ${Formatters.date(payment['dueDate'])}',
-                      style: const TextStyle(
+                      style: GoogleFonts.josefinSans(
                         fontSize: 11,
                         color: AppColors.textMuted,
                       ),
@@ -588,7 +638,7 @@ class _PaymentCard extends StatelessWidget {
                 children: [
                   Text(
                     Formatters.currency(amount),
-                    style: const TextStyle(
+                    style: GoogleFonts.josefinSans(
                       fontWeight: FontWeight.w700,
                       fontSize: 14,
                     ),
@@ -660,7 +710,7 @@ class _PaymentActionSheet extends StatelessWidget {
                     Expanded(
                       child: Text(
                         payment['renterName'] ?? 'Unknown',
-                        style: const TextStyle(
+                        style: GoogleFonts.josefinSans(
                           fontWeight: FontWeight.w600,
                           fontSize: 16,
                         ),
@@ -674,7 +724,7 @@ class _PaymentActionSheet extends StatelessWidget {
                   children: [
                     Text(
                       Formatters.currency(amount),
-                      style: const TextStyle(
+                      style: GoogleFonts.josefinSans(
                         fontWeight: FontWeight.w700,
                         fontSize: 20,
                         color: AppColors.primary,
@@ -683,7 +733,7 @@ class _PaymentActionSheet extends StatelessWidget {
                     const Spacer(),
                     Text(
                       'Due: ${Formatters.date(payment['dueDate'])}',
-                      style: const TextStyle(
+                      style: GoogleFonts.josefinSans(
                         fontSize: 12,
                         color: AppColors.textSecondary,
                       ),

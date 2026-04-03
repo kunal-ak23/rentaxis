@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
 final _propertyServiceProvider = Provider<PropertyService>((ref) {
@@ -47,32 +48,16 @@ class _PropertiesScreenState extends ConsumerState<PropertiesScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Properties'),
+        title: _buildSearchableTitle(),
+        titleSpacing: 20,
       ),
       body: Column(
         children: [
-          // Search bar
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: TextField(
-              onChanged: (v) => setState(() => _searchQuery = v.toLowerCase()),
-              decoration: InputDecoration(
-                hintText: 'Search properties...',
-                prefixIcon:
-                    const Icon(Icons.search, color: AppColors.textMuted),
-                suffixIcon: _searchQuery.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear, size: 18),
-                        onPressed: () => setState(() => _searchQuery = ''),
-                      )
-                    : null,
-              ),
-            ),
-          ),
           Expanded(
             child: propertiesAsync.when(
-              loading: () => const Center(
-                child: CircularProgressIndicator(color: AppColors.primary),
+              loading: () => const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 20),
+                child: ListShimmer(itemCount: 3),
               ),
               error: (e, _) => ErrorState(
                 message: 'Failed to load properties',
@@ -81,10 +66,11 @@ class _PropertiesScreenState extends ConsumerState<PropertiesScreen> {
               data: (properties) {
                 final allUnits = unitsAsync.valueOrNull ?? [];
                 final filtered = properties.where((p) {
+                  final prop = p['property'] ?? p;
                   final name =
-                      (p['name'] ?? '').toString().toLowerCase();
+                      (prop['nameEn'] ?? prop['name'] ?? '').toString().toLowerCase();
                   final address =
-                      (p['address'] ?? '').toString().toLowerCase();
+                      (prop['address'] ?? '').toString().toLowerCase();
                   return name.contains(_searchQuery) ||
                       address.contains(_searchQuery);
                 }).toList();
@@ -106,30 +92,40 @@ class _PropertiesScreenState extends ConsumerState<PropertiesScreen> {
                   color: AppColors.primary,
                   child: ListView.builder(
                     physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 80),
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 150),
                     itemCount: filtered.length,
                     itemBuilder: (context, index) {
-                      final property = filtered[index];
-                      final propertyId = property['id'] ?? '';
+                      final item = filtered[index];
+                      final prop = item['property'] ?? item;
+                      final propertyId = prop['id'] ?? item['id'] ?? '';
                       final units = allUnits
-                          .where((u) => u['propertyId'] == propertyId)
+                          .where((u) {
+                            final unitPropId = u['propertyId'] ?? u['property']?['id'];
+                            return unitPropId == propertyId;
+                          })
                           .toList();
                       final occupied = units
                           .where((u) => u['status'] == 'OCCUPIED')
                           .length;
                       final total = units.length;
+                      final vacancies = item['vacancies'] ?? 0;
+                      final unitCount = total > 0 ? total : (item['propertyCount'] ?? 0);
+                      final occupiedCount = total > 0 ? occupied : (unitCount - (vacancies as int));
                       final occupancy =
-                          total > 0 ? occupied / total : 0.0;
+                          unitCount > 0 ? occupiedCount / unitCount : 0.0;
 
-                      return _PropertyCard(
-                        name: property['name'] ?? '',
-                        address: property['address'] ?? '',
-                        emirate: property['emirate'] ?? '',
-                        totalUnits: total,
-                        occupiedUnits: occupied,
-                        occupancy: occupancy,
-                        onTap: () =>
-                            context.push('/properties/$propertyId'),
+                      return AnimatedListItem(
+                        index: index,
+                        child: _PropertyCard(
+                          name: prop['nameEn'] ?? prop['name'] ?? '',
+                          address: prop['address'] ?? '',
+                          emirate: prop['emirate'] ?? '',
+                          totalUnits: unitCount,
+                          occupiedUnits: occupiedCount,
+                          occupancy: occupancy,
+                          onTap: () =>
+                              context.push('/properties/$propertyId'),
+                        ),
                       );
                     },
                   ),
@@ -139,11 +135,58 @@ class _PropertiesScreenState extends ConsumerState<PropertiesScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: AppColors.primary,
-        onPressed: () => _showCreatePropertySheet(context),
-        child: const Icon(Icons.add, color: Colors.white),
+      floatingActionButton: Padding(
+        padding: const EdgeInsets.only(bottom: 120),
+        child: FloatingActionButton(
+          backgroundColor: AppColors.primary,
+          onPressed: () => _showCreatePropertySheet(context),
+          child: const Icon(Icons.add, color: Colors.white),
+        ),
       ),
+    );
+  }
+
+  bool _showSearch = false;
+
+  Widget _buildSearchableTitle() {
+    if (_showSearch) {
+      return SizedBox(
+        height: 40,
+        child: TextField(
+          autofocus: true,
+          onChanged: (v) => setState(() => _searchQuery = v.toLowerCase()),
+          style: GoogleFonts.josefinSans(fontSize: 14),
+          decoration: InputDecoration(
+            hintText: 'Search properties...',
+            hintStyle: GoogleFonts.josefinSans(fontSize: 14, color: AppColors.textMuted),
+            prefixIcon: const Icon(Icons.search, size: 20, color: AppColors.textMuted),
+            suffixIcon: IconButton(
+              icon: const Icon(Icons.close, size: 18),
+              onPressed: () => setState(() {
+                _showSearch = false;
+                _searchQuery = '';
+              }),
+            ),
+            contentPadding: const EdgeInsets.symmetric(vertical: 0),
+            filled: true,
+            fillColor: AppColors.background,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
+            ),
+          ),
+        ),
+      );
+    }
+    return Row(
+      children: [
+        const Text('Properties'),
+        const Spacer(),
+        IconButton(
+          icon: const Icon(Icons.search, color: AppColors.textSecondary, size: 22),
+          onPressed: () => setState(() => _showSearch = true),
+        ),
+      ],
     );
   }
 
@@ -288,96 +331,105 @@ class _PropertyCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
+    return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(10),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: AppShadows.soft,
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.apartment_rounded,
+                          color: AppColors.primary, size: 24),
                     ),
-                    child: const Icon(Icons.apartment_rounded,
-                        color: AppColors.primary, size: 24),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(name,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 15,
-                            )),
-                        const SizedBox(height: 2),
-                        Text(
-                          '$address, ${emirate.replaceAll('_', ' ')}',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: AppColors.textSecondary,
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(name,
+                              style: GoogleFonts.josefinSans(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 15,
+                              )),
+                          const SizedBox(height: 2),
+                          Text(
+                            '$address, ${emirate.replaceAll('_', ' ')}',
+                            style: GoogleFonts.josefinSans(
+                              fontSize: 12,
+                              color: AppColors.textSecondary,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                  const Icon(Icons.chevron_right,
-                      color: AppColors.textMuted),
-                ],
-              ),
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  _StatChip(
-                    label: 'Units',
-                    value: '$totalUnits',
-                    color: AppColors.info,
-                  ),
-                  const SizedBox(width: 8),
-                  _StatChip(
-                    label: 'Occupied',
-                    value: '$occupiedUnits',
-                    color: AppColors.success,
-                  ),
-                  const SizedBox(width: 8),
-                  _StatChip(
-                    label: 'Vacant',
-                    value: '${totalUnits - occupiedUnits}',
-                    color: AppColors.warning,
-                  ),
-                  const Spacer(),
-                  Text(
-                    '${(occupancy * 100).toStringAsFixed(0)}%',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 16,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: LinearProgressIndicator(
-                  value: occupancy.clamp(0.0, 1.0),
-                  backgroundColor: AppColors.border,
-                  color: AppColors.success,
-                  minHeight: 4,
+                    const Icon(Icons.chevron_right,
+                        color: AppColors.textMuted),
+                  ],
                 ),
-              ),
-            ],
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    _StatChip(
+                      label: 'Units',
+                      value: '$totalUnits',
+                      color: AppColors.info,
+                    ),
+                    const SizedBox(width: 8),
+                    _StatChip(
+                      label: 'Occupied',
+                      value: '$occupiedUnits',
+                      color: AppColors.success,
+                    ),
+                    const SizedBox(width: 8),
+                    _StatChip(
+                      label: 'Vacant',
+                      value: '${totalUnits - occupiedUnits}',
+                      color: AppColors.warning,
+                    ),
+                    const Spacer(),
+                    Text(
+                      '${(occupancy * 100).toStringAsFixed(0)}%',
+                      style: GoogleFonts.cinzel(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 16,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: occupancy.clamp(0.0, 1.0),
+                    backgroundColor: AppColors.border,
+                    color: AppColors.success,
+                    minHeight: 4,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

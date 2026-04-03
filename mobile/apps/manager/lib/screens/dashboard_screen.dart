@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
 final _dashboardServiceProvider = Provider<DashboardService>((ref) {
@@ -22,14 +23,6 @@ class DashboardScreen extends ConsumerStatefulWidget {
 }
 
 class _DashboardScreenState extends ConsumerState<DashboardScreen> {
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(notificationProvider.notifier).startPolling();
-    });
-  }
-
   Future<void> _refresh() async {
     ref.invalidate(_dashboardDataProvider);
     ref.read(notificationProvider.notifier).fetchUnreadCount();
@@ -38,110 +31,102 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   @override
   Widget build(BuildContext context) {
     final dashboardAsync = ref.watch(_dashboardDataProvider);
-    final notifState = ref.watch(notificationProvider);
 
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: AppColors.navyDark,
-        title: Image.asset(
-          'assets/logo_horizontal.png',
-          height: 32,
-          fit: BoxFit.contain,
-        ),
-        actions: [
-          Stack(
-            alignment: Alignment.center,
-            children: [
-              IconButton(
-                icon: const Icon(Icons.notifications_outlined,
-                    color: Colors.white),
-                onPressed: () {
-                  // Navigate to more screen for now
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Notifications coming soon')),
-                  );
-                },
-              ),
-              if (notifState.unreadCount > 0)
-                Positioned(
-                  top: 8,
-                  right: 8,
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: const BoxDecoration(
-                      color: AppColors.danger,
-                      shape: BoxShape.circle,
-                    ),
-                    constraints: const BoxConstraints(
-                      minWidth: 18,
-                      minHeight: 18,
-                    ),
-                    child: Text(
-                      notifState.unreadCount > 99
-                          ? '99+'
-                          : '${notifState.unreadCount}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ],
+    return dashboardAsync.when(
+      loading: () => const Padding(
+        padding: EdgeInsets.fromLTRB(20, 16, 20, 150),
+        child: _DashboardShimmer(),
       ),
-      body: dashboardAsync.when(
-        loading: () => const Center(
-          child: CircularProgressIndicator(color: AppColors.primary),
-        ),
-        error: (error, _) => ErrorState(
-          message: 'Failed to load dashboard',
-          onRetry: _refresh,
-        ),
-        data: (data) => RefreshIndicator(
-          onRefresh: _refresh,
-          color: AppColors.primary,
-          child: SingleChildScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildKpiSection(data),
-                const SizedBox(height: 24),
-                _buildAlertsSection(data),
-                const SizedBox(height: 24),
-                _buildQuickActions(),
-                const SizedBox(height: 24),
-                _buildRecentActivity(data),
-              ],
-            ),
+      error: (error, stackTrace) => ErrorState(
+        message: 'Failed to load dashboard',
+        onRetry: _refresh,
+      ),
+      data: (data) => RefreshIndicator(
+        onRefresh: _refresh,
+        color: AppColors.primary,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 150),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AnimatedListItem(
+                index: 0,
+                child: _buildGreeting(),
+              ),
+              const SizedBox(height: 24),
+              AnimatedListItem(
+                index: 1,
+                child: _buildKpiSection(data),
+              ),
+              const SizedBox(height: 24),
+              AnimatedListItem(
+                index: 2,
+                child: _buildAlertsSection(data),
+              ),
+              const SizedBox(height: 24),
+              AnimatedListItem(
+                index: 3,
+                child: _buildQuickActions(),
+              ),
+              const SizedBox(height: 24),
+              AnimatedListItem(
+                index: 4,
+                child: _buildRecentActivity(data),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 
+  Widget _buildGreeting() {
+    final hour = DateTime.now().hour;
+    final greeting = hour < 12 ? 'Good Morning' : (hour < 17 ? 'Good Afternoon' : 'Good Evening');
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          greeting,
+          style: GoogleFonts.cinzel(
+            fontSize: 22,
+            fontWeight: FontWeight.w700,
+            color: AppColors.navyDark,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Here\'s your portfolio overview',
+          style: GoogleFonts.josefinSans(
+            fontSize: 14,
+            color: AppColors.textSecondary,
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildKpiSection(Map<String, dynamic> data) {
-    final properties = data['propertyCount'] ?? 0;
-    final units = data['unitCount'] ?? 0;
-    final occupiedUnits = data['occupiedUnitCount'] ?? 0;
-    final activeLeases = data['activeLeaseCount'] ?? 0;
-    final totalRevenue = (data['totalRevenue'] ?? 0).toDouble();
+    final properties = data['totalProperties'] ?? data['propertyCount'] ?? 0;
+    final units = data['totalUnits'] ?? data['unitCount'] ?? 0;
+    final occupiedUnits = data['occupiedUnits'] ?? data['occupiedUnitCount'] ?? 0;
+    final activeLeases = data['activeLeases'] ?? data['activeLeaseCount'] ?? 0;
+    final totalRevenue = (data['totalRentRevenue'] ?? data['totalRevenue'] ?? 0).toDouble();
     final pendingAmount = (data['pendingAmount'] ?? 0).toDouble();
     final overdueAmount = (data['overdueAmount'] ?? 0).toDouble();
-    final clearedAmount = (data['clearedAmount'] ?? 0).toDouble();
-    final occupancyPct = units > 0 ? (occupiedUnits / units * 100) : 0.0;
+    final clearedAmount = (data['collectedAmount'] ?? data['clearedAmount'] ?? 0).toDouble();
+    final occupancyPct = data['occupancyRate'] != null
+        ? (data['occupancyRate'] as num).toDouble()
+        : (units > 0 ? (occupiedUnits / units * 100) : 0.0);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('Overview',
             style: Theme.of(context).textTheme.headlineSmall),
-        const SizedBox(height: 12),
+        const SizedBox(height: 14),
         GridView.count(
           crossAxisCount: 2,
           shrinkWrap: true,
@@ -155,12 +140,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               iconColor: AppColors.primary,
               label: 'Properties',
               value: '$properties',
+              onTap: () => context.go('/properties'),
             ),
             _KpiCard(
               icon: Icons.door_front_door_outlined,
               iconColor: AppColors.info,
               label: 'Units',
               value: '$units',
+              onTap: () => context.go('/properties'),
             ),
             _KpiCard(
               icon: Icons.pie_chart_outline_rounded,
@@ -168,12 +155,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               label: 'Occupancy',
               value: '${occupancyPct.toStringAsFixed(0)}%',
               progressValue: occupancyPct / 100,
+              onTap: () => context.go('/properties'),
             ),
             _KpiCard(
               icon: Icons.description_outlined,
               iconColor: AppColors.accent,
               label: 'Active Leases',
               value: '$activeLeases',
+              onTap: () => context.go('/leases'),
             ),
             _KpiCard(
               icon: Icons.account_balance_wallet_outlined,
@@ -181,24 +170,28 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               label: 'Total Revenue',
               value: Formatters.currencyCompact(totalRevenue),
               isWide: true,
+              onTap: () => context.go('/payments'),
             ),
             _KpiCard(
               icon: Icons.pending_actions_outlined,
               iconColor: AppColors.warning,
               label: 'Pending',
               value: Formatters.currencyCompact(pendingAmount),
+              onTap: () => context.go('/payments'),
             ),
             _KpiCard(
               icon: Icons.warning_amber_rounded,
               iconColor: AppColors.danger,
               label: 'Overdue',
               value: Formatters.currencyCompact(overdueAmount),
+              onTap: () => context.go('/payments'),
             ),
             _KpiCard(
               icon: Icons.check_circle_outline,
               iconColor: AppColors.success,
               label: 'Cleared',
               value: Formatters.currencyCompact(clearedAmount),
+              onTap: () => context.go('/payments'),
             ),
           ],
         ),
@@ -207,7 +200,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   }
 
   Widget _buildAlertsSection(Map<String, dynamic> data) {
-    final expiringLeases = data['expiringLeaseCount'] ?? 0;
+    final expiringLeases = data['expiringLeases'] ?? data['expiringLeaseCount'] ?? 0;
     final overduePayments = data['overduePaymentCount'] ?? 0;
     final overdueTotal = (data['overdueAmount'] ?? 0).toDouble();
     final openTickets = data['openTicketCount'] ?? 0;
@@ -228,7 +221,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 style: Theme.of(context).textTheme.headlineSmall),
           ],
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 14),
         if (expiringLeases > 0)
           _AlertCard(
             icon: Icons.timer_outlined,
@@ -267,7 +260,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       children: [
         Text('Quick Actions',
             style: Theme.of(context).textTheme.headlineSmall),
-        const SizedBox(height: 12),
+        const SizedBox(height: 14),
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: Row(
@@ -295,6 +288,18 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 label: 'New Ticket',
                 onTap: () => context.push('/tickets/create'),
               ),
+              const SizedBox(width: 10),
+              _QuickActionChip(
+                icon: Icons.badge_outlined,
+                label: 'Staff',
+                onTap: () => context.push('/staff'),
+              ),
+              const SizedBox(width: 10),
+              _QuickActionChip(
+                icon: Icons.assessment_outlined,
+                label: 'Reports',
+                onTap: () => context.push('/finance-reports'),
+              ),
             ],
           ),
         ),
@@ -313,13 +318,19 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       children: [
         Text('Recent Activity',
             style: Theme.of(context).textTheme.headlineSmall),
-        const SizedBox(height: 12),
-        ...activities.take(10).map((activity) => _ActivityItem(
+        const SizedBox(height: 14),
+        ...activities.take(10).indexed.map((entry) {
+          final (i, activity) = entry;
+          return AnimatedListItem(
+            index: i + 5,
+            child: _ActivityItem(
               icon: _activityIcon(activity['type'] ?? ''),
               iconColor: _activityColor(activity['type'] ?? ''),
               description: activity['description'] ?? '',
-              time: Formatters.timeAgo(activity['createdAt']),
-            )),
+              time: Formatters.timeAgo(activity['timestamp'] ?? activity['createdAt']),
+            ),
+          );
+        }),
       ],
     );
   }
@@ -328,6 +339,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     return switch (type) {
       'PAYMENT_COLLECTED' => Icons.payments_outlined,
       'PAYMENT_CLEARED' => Icons.check_circle_outline,
+      'PAYMENT_PENDING' => Icons.pending_actions_outlined,
+      'PAYMENT_ONLINE_PENDING' => Icons.cloud_sync_outlined,
       'LEASE_ACTIVATED' => Icons.description_outlined,
       'LEASE_CREATED' => Icons.note_add_outlined,
       'TICKET_CREATED' => Icons.confirmation_number_outlined,
@@ -341,6 +354,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     return switch (type) {
       'PAYMENT_COLLECTED' => AppColors.info,
       'PAYMENT_CLEARED' => AppColors.success,
+      'PAYMENT_PENDING' => AppColors.warning,
+      'PAYMENT_ONLINE_PENDING' => AppColors.warning,
       'LEASE_ACTIVATED' => AppColors.primary,
       'LEASE_CREATED' => AppColors.accent,
       'TICKET_CREATED' => AppColors.warning,
@@ -351,6 +366,62 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   }
 }
 
+// --- Shimmer Loading ---
+
+class _DashboardShimmer extends StatelessWidget {
+  const _DashboardShimmer();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const ShimmerLoading(height: 24, width: 180),
+        const SizedBox(height: 6),
+        const ShimmerLoading(height: 14, width: 220),
+        const SizedBox(height: 28),
+        const ShimmerLoading(height: 18, width: 100),
+        const SizedBox(height: 14),
+        GridView.count(
+          crossAxisCount: 2,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+          childAspectRatio: 1.55,
+          children: List.generate(4, (_) => Container(
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: AppShadows.soft,
+            ),
+            padding: const EdgeInsets.all(14),
+            child: const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ShimmerLoading(height: 30, width: 30, borderRadius: 8),
+                Spacer(),
+                ShimmerLoading(height: 20, width: 80),
+                SizedBox(height: 4),
+                ShimmerLoading(height: 12, width: 60),
+              ],
+            ),
+          )),
+        ),
+        const SizedBox(height: 28),
+        const ShimmerLoading(height: 18, width: 120),
+        const SizedBox(height: 14),
+        ...List.generate(3, (_) => const Padding(
+          padding: EdgeInsets.only(bottom: 10),
+          child: CardShimmer(),
+        )),
+      ],
+    );
+  }
+}
+
+// --- KPI Card ---
+
 class _KpiCard extends StatelessWidget {
   final IconData icon;
   final Color iconColor;
@@ -358,6 +429,7 @@ class _KpiCard extends StatelessWidget {
   final String value;
   final double? progressValue;
   final bool isWide;
+  final VoidCallback? onTap;
 
   const _KpiCard({
     required this.icon,
@@ -366,38 +438,36 @@ class _KpiCard extends StatelessWidget {
     required this.value,
     this.progressValue,
     this.isWide = false,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: AppColors.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: AppShadows.soft,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: iconColor.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(icon, size: 18, color: iconColor),
-              ),
-              const Spacer(),
-            ],
+          Container(
+            padding: const EdgeInsets.all(7),
+            decoration: BoxDecoration(
+              color: iconColor.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, size: 18, color: iconColor),
           ),
           const Spacer(),
           Text(
             value,
-            style: const TextStyle(
+            style: GoogleFonts.josefinSans(
               fontSize: 20,
               fontWeight: FontWeight.w700,
               color: AppColors.textPrimary,
@@ -408,7 +478,7 @@ class _KpiCard extends StatelessWidget {
           const SizedBox(height: 2),
           Text(
             label,
-            style: const TextStyle(
+            style: GoogleFonts.josefinSans(
               fontSize: 12,
               color: AppColors.textSecondary,
             ),
@@ -427,9 +497,11 @@ class _KpiCard extends StatelessWidget {
           ],
         ],
       ),
-    );
+    ));
   }
 }
+
+// --- Alert Card ---
 
 class _AlertCard extends StatelessWidget {
   final IconData icon;
@@ -450,12 +522,12 @@ class _AlertCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(16),
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.06),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(color: color.withValues(alpha: 0.2)),
         ),
         child: Row(
@@ -464,7 +536,7 @@ class _AlertCard extends StatelessWidget {
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 color: color.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(10),
               ),
               child: Icon(icon, color: color, size: 20),
             ),
@@ -474,14 +546,14 @@ class _AlertCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(title,
-                      style: TextStyle(
+                      style: GoogleFonts.josefinSans(
                         fontWeight: FontWeight.w600,
                         fontSize: 14,
                         color: color,
                       )),
                   const SizedBox(height: 2),
                   Text(subtitle,
-                      style: const TextStyle(
+                      style: GoogleFonts.josefinSans(
                         fontSize: 12,
                         color: AppColors.textSecondary,
                       )),
@@ -495,6 +567,8 @@ class _AlertCard extends StatelessWidget {
     );
   }
 }
+
+// --- Quick Action Chip ---
 
 class _QuickActionChip extends StatelessWidget {
   final IconData icon;
@@ -528,7 +602,7 @@ class _QuickActionChip extends StatelessWidget {
             const SizedBox(width: 8),
             Text(
               label,
-              style: const TextStyle(
+              style: GoogleFonts.josefinSans(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
                 color: AppColors.primary,
@@ -540,6 +614,8 @@ class _QuickActionChip extends StatelessWidget {
     );
   }
 }
+
+// --- Activity Item ---
 
 class _ActivityItem extends StatelessWidget {
   final IconData icon;
@@ -557,7 +633,7 @@ class _ActivityItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.only(bottom: 12),
       child: Row(
         children: [
           Container(
@@ -572,7 +648,7 @@ class _ActivityItem extends StatelessWidget {
           Expanded(
             child: Text(
               description,
-              style: const TextStyle(
+              style: GoogleFonts.josefinSans(
                 fontSize: 13,
                 color: AppColors.textPrimary,
               ),
@@ -583,7 +659,7 @@ class _ActivityItem extends StatelessWidget {
           const SizedBox(width: 8),
           Text(
             time,
-            style: const TextStyle(
+            style: GoogleFonts.josefinSans(
               fontSize: 11,
               color: AppColors.textMuted,
             ),

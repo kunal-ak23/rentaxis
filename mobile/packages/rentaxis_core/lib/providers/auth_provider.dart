@@ -72,7 +72,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
     if (userId != null) {
       try {
         final profile = await _authService.getProfile();
+
         final tenants = await _authService.getTenants();
+
         final savedTenantId = await _storage.read(key: 'tenantId');
 
         TenantContext.currentTenantId = savedTenantId;
@@ -88,7 +90,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
               (tenants.isNotEmpty ? tenants[0]['tenantId'] : null),
           tenants: List<Map<String, dynamic>>.from(tenants),
         );
-      } catch (_) {
+      } catch (e) {
         await _clearStorage();
         state = const AuthState(isAuthenticated: false, isLoading: false);
       }

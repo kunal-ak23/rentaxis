@@ -37,6 +37,7 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
   NotificationNotifier(this._service) : super(const NotificationState());
 
   void startPolling() {
+    _pollingTimer?.cancel();
     fetchUnreadCount();
     _pollingTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       fetchUnreadCount();
