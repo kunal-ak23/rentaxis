@@ -43,9 +43,11 @@ public class PortfolioImportPersistService {
             Property p = new Property();
             p.setNameEn(getCellString(row, 0));
             p.setNameAr(getCellString(row, 1).isEmpty() ? null : getCellString(row, 1));
-            p.setEmirate(Emirate.valueOf(getCellString(row, 2).toUpperCase()));
+            String emirateStr = getCellString(row, 2).trim().toUpperCase().replace(" ", "_");
+            log.info("Parsing emirate from cell: '{}' -> '{}'", getCellString(row, 2), emirateStr);
+            p.setEmirate(Emirate.valueOf(emirateStr));
             p.setAddress(getCellString(row, 3).isEmpty() ? null : getCellString(row, 3));
-            p.setType(PropertyType.valueOf(getCellString(row, 4).toUpperCase()));
+            p.setType(PropertyType.valueOf(getCellString(row, 4).trim().toUpperCase().replace(" ", "_")));
             p.setMakaniNumber(getCellString(row, 5).isEmpty() ? null : getCellString(row, 5));
 
             propertyMap.put(p.getNameEn(), propertyRepository.save(p));
