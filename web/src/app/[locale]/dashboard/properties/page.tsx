@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useTranslations, useLocale } from "next-intl";
-import { Plus, MapPin, Building2, Hash, ArrowRight, X, Users, DollarSign, PieChart, Activity, List, LayoutGrid, Search, AlertCircle, RefreshCw, Upload } from "lucide-react";
+import { Plus, MapPin, Building2, Hash, ArrowRight, X, Users, DollarSign, PieChart, Activity, List, LayoutGrid, Search, AlertCircle, RefreshCw, Upload, FileSpreadsheet, CheckCircle2, Loader2, Download } from "lucide-react";
 import { Link } from "@/i18n/routing";
 import { cn } from "@/lib/utils";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -111,6 +111,14 @@ export default function PropertiesPage() {
         nameEn: "", nameAr: "", emirate: "DUBAI", address: "", type: "RESIDENTIAL", makaniNumber: ""
     });
 
+    // Portfolio Import state
+    const [showPortfolioImport, setShowPortfolioImport] = useState(false);
+    const [portfolioFile, setPortfolioFile] = useState<File | null>(null);
+    const [portfolioStep, setPortfolioStep] = useState<"upload" | "processing" | "result">("upload");
+    const [portfolioJobId, setPortfolioJobId] = useState<string | null>(null);
+    const [portfolioResult, setPortfolioResult] = useState<any>(null);
+    const [portfolioUploading, setPortfolioUploading] = useState(false);
+
     useEffect(() => {
         fetchStats();
         const onVisibilityChange = () => {
@@ -213,6 +221,66 @@ export default function PropertiesPage() {
             setImportPreview(rows.slice(0, 6)); // header + 5 rows
         };
         reader.readAsText(file);
+    };
+
+    const handlePortfolioUpload = async () => {
+        if (!portfolioFile) return;
+        setPortfolioUploading(true);
+        try {
+            const formData = new FormData();
+            formData.append("file", portfolioFile);
+            const res = await fetch("/api/proxy/v1/import/portfolio", { method: "POST", body: formData });
+            const data = await res.json();
+            if (res.ok && data.jobId) {
+                setPortfolioJobId(data.jobId);
+                setPortfolioStep("processing");
+                pollPortfolioStatus(data.jobId);
+            } else {
+                setPortfolioResult({ status: "FAILED", errors: [{ sheet: "General", row: 0, field: "", message: data.error || "Upload failed" }] });
+                setPortfolioStep("result");
+            }
+        } catch (err) {
+            setPortfolioResult({ status: "FAILED", errors: [{ sheet: "General", row: 0, field: "", message: "Network error" }] });
+            setPortfolioStep("result");
+        } finally {
+            setPortfolioUploading(false);
+        }
+    };
+
+    const pollPortfolioStatus = (jobId: string) => {
+        const interval = setInterval(async () => {
+            try {
+                const res = await fetch(`/api/proxy/v1/import/portfolio/${jobId}/status`);
+                if (!res.ok) return;
+                const data = await res.json();
+                if (data.status === "COMPLETED" || data.status === "VALIDATION_FAILED" || data.status === "FAILED") {
+                    clearInterval(interval);
+                    setPortfolioResult(data);
+                    setPortfolioStep("result");
+                    if (data.status === "COMPLETED") fetchStats();
+                }
+            } catch { /* keep polling */ }
+        }, 2000);
+    };
+
+    const downloadPortfolioTemplate = async () => {
+        const res = await fetch("/api/proxy/v1/import/portfolio/template");
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "portfolio-import-template.xlsx";
+        a.click();
+        URL.revokeObjectURL(url);
+    };
+
+    const resetPortfolioImport = () => {
+        setShowPortfolioImport(false);
+        setPortfolioFile(null);
+        setPortfolioStep("upload");
+        setPortfolioJobId(null);
+        setPortfolioResult(null);
+        setPortfolioUploading(false);
     };
 
     const downloadTemplate = async () => {
@@ -412,6 +480,13 @@ export default function PropertiesPage() {
                                 <Upload size={14} />
                                 Import Property
                             </button>
+                            <button
+                                onClick={() => setShowPortfolioImport(true)}
+                                className="cursor-pointer flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-xs font-semibold hover:bg-primary/90 transition-all duration-200 active:scale-95 focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                            >
+                                <FileSpreadsheet size={14} />
+                                Import Portfolio
+                            </button>
                         </>
                     )}
                     </div>
@@ -555,6 +630,209 @@ export default function PropertiesPage() {
                                 <button type="submit" className="cursor-pointer px-8 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-bold transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none">{t("create")}</button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Portfolio Import Modal */}
+            {showPortfolioImport && (
+                <div className="fixed inset-0 bg-foreground/40 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
+                    <div className="bg-surface rounded-xl p-8 max-w-2xl w-full shadow-2xl border border-border relative max-h-[90vh] overflow-y-auto">
+                        <button onClick={resetPortfolioImport} aria-label="Close" className="cursor-pointer absolute right-6 top-6 p-2 text-muted hover:text-foreground transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg">
+                            <X size={18} />
+                        </button>
+
+                        {/* Step: Upload */}
+                        {portfolioStep === "upload" && (
+                            <div>
+                                <div className="flex items-center gap-3 mb-1">
+                                    <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center text-primary border border-primary/20">
+                                        <FileSpreadsheet size={20} />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-lg font-bold">Import Portfolio</h2>
+                                        <p className="text-xs text-muted font-medium">Upload a multi-sheet Excel workbook to import properties, units, renters, and leases at once.</p>
+                                    </div>
+                                </div>
+
+                                <div className="mt-6 mb-4 flex items-center justify-between">
+                                    <span className="text-xs font-semibold text-muted uppercase tracking-[0.15em]">Excel File (.xlsx)</span>
+                                    <button type="button" onClick={downloadPortfolioTemplate} className="cursor-pointer flex items-center gap-1.5 text-xs font-semibold text-primary hover:text-primary/80 transition-colors">
+                                        <Download size={12} />
+                                        Download Template
+                                    </button>
+                                </div>
+
+                                <div
+                                    className={cn(
+                                        "border-2 border-dashed rounded-xl p-10 text-center transition-colors",
+                                        portfolioFile ? "border-primary/40 bg-primary/5" : "border-border hover:border-primary/30"
+                                    )}
+                                    onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                                    onDrop={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        const file = e.dataTransfer.files?.[0];
+                                        if (file && file.name.toLowerCase().endsWith(".xlsx")) setPortfolioFile(file);
+                                    }}
+                                >
+                                    {portfolioFile ? (
+                                        <div className="flex items-center justify-center gap-3">
+                                            <FileSpreadsheet size={18} className="text-primary" />
+                                            <span className="text-sm font-semibold text-foreground">{portfolioFile.name}</span>
+                                            <span className="text-xs text-muted">({(portfolioFile.size / 1024).toFixed(1)} KB)</span>
+                                            <button type="button" onClick={() => setPortfolioFile(null)} className="cursor-pointer text-muted hover:text-error transition-colors ml-2">
+                                                <X size={14} />
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <label className="cursor-pointer">
+                                            <div className="flex flex-col items-center gap-3">
+                                                <Upload size={28} className="text-muted" />
+                                                <span className="text-xs text-muted font-medium">Drop .xlsx file here or click to browse</span>
+                                                <span className="text-[10px] text-muted/60">Sheets: Properties, Units, Renters, Leases</span>
+                                            </div>
+                                            <input
+                                                type="file"
+                                                accept=".xlsx"
+                                                className="hidden"
+                                                onChange={(e) => {
+                                                    const file = e.target.files?.[0];
+                                                    if (file) setPortfolioFile(file);
+                                                }}
+                                            />
+                                        </label>
+                                    )}
+                                </div>
+
+                                <div className="flex justify-end gap-3 mt-6">
+                                    <button type="button" onClick={resetPortfolioImport} className="cursor-pointer px-6 py-3 text-xs font-bold text-muted transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg">Cancel</button>
+                                    <button
+                                        type="button"
+                                        onClick={handlePortfolioUpload}
+                                        disabled={!portfolioFile || portfolioUploading}
+                                        className={cn(
+                                            "cursor-pointer px-8 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-bold transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none flex items-center gap-2",
+                                            (!portfolioFile || portfolioUploading) && "opacity-50 cursor-not-allowed"
+                                        )}
+                                    >
+                                        {portfolioUploading ? <><Loader2 size={14} className="animate-spin" /> Uploading...</> : <>Upload & Import</>}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Step: Processing */}
+                        {portfolioStep === "processing" && (
+                            <div className="text-center py-8">
+                                <Loader2 size={40} className="animate-spin text-primary mx-auto mb-6" />
+                                <h2 className="text-lg font-bold mb-2">Processing Import</h2>
+                                <p className="text-xs text-muted font-medium mb-1">Validating and importing your portfolio data...</p>
+                                <p className="text-[10px] text-muted/60">This may take a few moments for large files.</p>
+                            </div>
+                        )}
+
+                        {/* Step: Result */}
+                        {portfolioStep === "result" && portfolioResult && (
+                            <div>
+                                {portfolioResult.status === "COMPLETED" ? (
+                                    <>
+                                        <div className="flex items-center gap-3 mb-6">
+                                            <div className="w-10 h-10 bg-success/10 rounded-xl flex items-center justify-center text-success border border-success/20">
+                                                <CheckCircle2 size={20} />
+                                            </div>
+                                            <div>
+                                                <h2 className="text-lg font-bold text-success">Import Successful</h2>
+                                                <p className="text-xs text-muted font-medium">Your portfolio has been imported successfully.</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-3 gap-3 mb-6">
+                                            {[
+                                                { label: "Properties", count: portfolioResult.propertiesCreated },
+                                                { label: "Buildings", count: portfolioResult.buildingsCreated },
+                                                { label: "Units", count: portfolioResult.unitsCreated },
+                                                { label: "Renters", count: portfolioResult.rentersCreated },
+                                                { label: "Leases", count: portfolioResult.leasesCreated },
+                                                { label: "Payment Schedules", count: portfolioResult.paymentSchedulesCreated },
+                                            ].map(item => (
+                                                <div key={item.label} className="bg-input/50 rounded-lg p-3 border border-border text-center">
+                                                    <p className="text-lg font-bold text-foreground tabular-nums">{item.count}</p>
+                                                    <p className="text-[10px] font-semibold text-muted uppercase tracking-wider">{item.label}</p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </>
+                                ) : (
+                                    <>
+                                        <div className="flex items-center gap-3 mb-6">
+                                            <div className="w-10 h-10 bg-error/10 rounded-xl flex items-center justify-center text-error border border-error/20">
+                                                <AlertCircle size={20} />
+                                            </div>
+                                            <div>
+                                                <h2 className="text-lg font-bold text-error">
+                                                    {portfolioResult.status === "VALIDATION_FAILED" ? "Validation Failed" : "Import Failed"}
+                                                </h2>
+                                                <p className="text-xs text-muted font-medium">
+                                                    {portfolioResult.status === "VALIDATION_FAILED"
+                                                        ? "Please fix the errors below and re-upload."
+                                                        : "An unexpected error occurred during import."}
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        {portfolioResult.errors && portfolioResult.errors.length > 0 && (
+                                            <div className="mb-6 max-h-64 overflow-y-auto">
+                                                {/* Group errors by sheet */}
+                                                {Object.entries(
+                                                    (portfolioResult.errors as Array<{ sheet: string; row: number; field: string; message: string }>)
+                                                        .reduce((acc: Record<string, Array<{ row: number; field: string; message: string }>>, err) => {
+                                                            (acc[err.sheet] = acc[err.sheet] || []).push(err);
+                                                            return acc;
+                                                        }, {})
+                                                ).map(([sheet, errors]) => (
+                                                    <div key={sheet} className="mb-3">
+                                                        <h4 className="text-xs font-semibold text-foreground mb-1.5 flex items-center gap-1.5">
+                                                            <FileSpreadsheet size={12} className="text-muted" />
+                                                            {sheet}
+                                                            <span className="text-[10px] text-error font-medium">({(errors as Array<{ row: number; field: string; message: string }>).length} {(errors as Array<{ row: number; field: string; message: string }>).length === 1 ? 'error' : 'errors'})</span>
+                                                        </h4>
+                                                        <div className="space-y-1">
+                                                            {(errors as Array<{ row: number; field: string; message: string }>).map((err, i) => (
+                                                                <div key={i} className="flex items-start gap-2 text-xs bg-error/5 border border-error/10 rounded-lg px-3 py-2">
+                                                                    {err.row > 0 && <span className="text-[10px] font-mono text-muted shrink-0">Row {err.row}</span>}
+                                                                    {err.field && <span className="text-[10px] font-semibold text-error shrink-0">{err.field}:</span>}
+                                                                    <span className="text-foreground">{err.message}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </>
+                                )}
+
+                                <div className="flex justify-end gap-3">
+                                    {portfolioResult.status !== "COMPLETED" && (
+                                        <button
+                                            type="button"
+                                            onClick={() => { setPortfolioStep("upload"); setPortfolioFile(null); setPortfolioResult(null); }}
+                                            className="cursor-pointer px-6 py-3 text-xs font-bold text-primary transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg"
+                                        >
+                                            Try Again
+                                        </button>
+                                    )}
+                                    <button
+                                        type="button"
+                                        onClick={resetPortfolioImport}
+                                        className="cursor-pointer px-8 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-bold transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                                    >
+                                        Close
+                                    </button>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
