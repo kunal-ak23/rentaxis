@@ -1,6 +1,7 @@
 package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.dto.ImportErrorDTO;
+import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.*;
 import com.datagami.rentaxis.domain.entity.enums.*;
 import com.datagami.rentaxis.domain.repository.*;
@@ -8,10 +9,18 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.io.ByteArrayInputStream;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -274,6 +283,227 @@ public class PortfolioImportService {
             if (existingEmails.contains(email.toLowerCase())) {
                 errors.add(new ImportErrorDTO("Renters", 0, "Email", "Renter with email '" + email + "' already exists in the system"));
             }
+        }
+    }
+
+    // --- Persist Phase ---
+
+    @Transactional
+    public void persistWorkbook(Workbook workbook, ImportJob job) {
+        Sheet propertiesSheet = workbook.getSheet("Properties");
+        Sheet unitsSheet = workbook.getSheet("Units");
+        Sheet rentersSheet = workbook.getSheet("Renters");
+        Sheet leasesSheet = workbook.getSheet("Leases");
+
+        // 1. Create Properties
+        Map<String, Property> propertyMap = new LinkedHashMap<>();
+        for (int i = 1; i <= propertiesSheet.getLastRowNum(); i++) {
+            Row row = propertiesSheet.getRow(i);
+            if (row == null || isRowEmpty(row)) continue;
+
+            Property p = new Property();
+            p.setNameEn(getCellString(row, 0));
+            p.setNameAr(getCellString(row, 1).isEmpty() ? null : getCellString(row, 1));
+            p.setEmirate(Emirate.valueOf(getCellString(row, 2).toUpperCase()));
+            p.setAddress(getCellString(row, 3).isEmpty() ? null : getCellString(row, 3));
+            p.setType(PropertyType.valueOf(getCellString(row, 4).toUpperCase()));
+            p.setMakaniNumber(getCellString(row, 5).isEmpty() ? null : getCellString(row, 5));
+
+            propertyMap.put(p.getNameEn(), propertyRepository.save(p));
+        }
+        job.setPropertiesCreated(propertyMap.size());
+
+        // 2. Create Buildings (deduplicate by property + buildingName)
+        Map<String, Building> buildingMap = new LinkedHashMap<>(); // "propertyName|buildingName" -> Building
+        int buildingsCreated = 0;
+        for (int i = 1; i <= unitsSheet.getLastRowNum(); i++) {
+            Row row = unitsSheet.getRow(i);
+            if (row == null || isRowEmpty(row)) continue;
+
+            String propertyName = getCellString(row, 0);
+            String buildingName = getCellString(row, 1);
+            if (buildingName.isEmpty()) continue;
+
+            String key = propertyName + "|" + buildingName;
+            if (!buildingMap.containsKey(key)) {
+                Property property = propertyMap.get(propertyName);
+                Building b = new Building();
+                b.setProperty(property);
+                b.setNameEn(buildingName);
+                buildingMap.put(key, buildingRepository.save(b));
+                buildingsCreated++;
+            }
+        }
+        job.setBuildingsCreated(buildingsCreated);
+
+        // 3. Create Units
+        Map<String, Unit> unitMap = new LinkedHashMap<>(); // "propertyName|unitNumber" -> Unit
+        for (int i = 1; i <= unitsSheet.getLastRowNum(); i++) {
+            Row row = unitsSheet.getRow(i);
+            if (row == null || isRowEmpty(row)) continue;
+
+            String propertyName = getCellString(row, 0);
+            String buildingName = getCellString(row, 1);
+            String unitNumber = getCellString(row, 2);
+            String unitType = getCellString(row, 3);
+            String sizeSqft = getCellString(row, 4);
+            String expectedRent = getCellString(row, 5);
+
+            Property property = propertyMap.get(propertyName);
+            Unit u = new Unit();
+            u.setProperty(property);
+            u.setUnitNumber(unitNumber);
+            u.setStatus(UnitStatus.VACANT);
+
+            if (!buildingName.isEmpty()) {
+                u.setBuilding(buildingMap.get(propertyName + "|" + buildingName));
+            }
+            if (!unitType.isEmpty()) {
+                u.setType(UnitType.valueOf(unitType.toUpperCase()));
+            }
+            if (!sizeSqft.isEmpty()) {
+                u.setSizeSqft(new BigDecimal(sizeSqft));
+            }
+            if (!expectedRent.isEmpty()) {
+                u.setExpectedRent(new BigDecimal(expectedRent));
+            }
+
+            unitMap.put(propertyName + "|" + unitNumber, unitRepository.save(u));
+        }
+        job.setUnitsCreated(unitMap.size());
+
+        // 4. Create Renters
+        Map<String, Renter> renterMap = new LinkedHashMap<>(); // email -> Renter
+        for (int i = 1; i <= rentersSheet.getLastRowNum(); i++) {
+            Row row = rentersSheet.getRow(i);
+            if (row == null || isRowEmpty(row)) continue;
+
+            Renter r = new Renter();
+            r.setNameEn(getCellString(row, 0));
+            r.setNameAr(getCellString(row, 1).isEmpty() ? null : getCellString(row, 1));
+            r.setEmail(getCellString(row, 2));
+            r.setPhone(getCellString(row, 3).isEmpty() ? null : getCellString(row, 3));
+
+            renterMap.put(r.getEmail().toLowerCase(), renterRepository.save(r));
+        }
+        job.setRentersCreated(renterMap.size());
+
+        // 5. Create Leases + Payment Schedules
+        int leasesCreated = 0;
+        int schedulesCreated = 0;
+        for (int i = 1; i <= leasesSheet.getLastRowNum(); i++) {
+            Row row = leasesSheet.getRow(i);
+            if (row == null || isRowEmpty(row)) continue;
+
+            String propertyName = getCellString(row, 0);
+            String unitNumber = getCellString(row, 1);
+            String renterEmail = getCellString(row, 2);
+            LocalDate startDate = parseDate(getCellString(row, 3));
+            LocalDate endDate = parseDate(getCellString(row, 4));
+            BigDecimal rentAmount = new BigDecimal(getCellString(row, 5));
+            String depositStr = getCellString(row, 6);
+            String paymentTermsStr = getCellString(row, 7);
+            String paymentMethodStr = getCellString(row, 8);
+            String ejariNumber = getCellString(row, 9);
+
+            Unit unit = unitMap.get(propertyName + "|" + unitNumber);
+            Renter renter = renterMap.get(renterEmail.toLowerCase());
+
+            Lease lease = new Lease();
+            lease.setUnit(unit);
+            lease.setRenter(renter);
+            lease.setStartDate(startDate);
+            lease.setEndDate(endDate);
+            lease.setRentAmount(rentAmount);
+            lease.setStatus(LeaseStatus.ACTIVE);
+
+            // Calculate monthly rent
+            long months = ChronoUnit.MONTHS.between(startDate, endDate);
+            if (months < 1) months = 1;
+            lease.setMonthlyRent(rentAmount.divide(BigDecimal.valueOf(months), 2, RoundingMode.HALF_UP));
+
+            if (!depositStr.isEmpty()) {
+                lease.setDepositAmount(new BigDecimal(depositStr));
+            }
+            if (!paymentTermsStr.isEmpty()) {
+                lease.setPaymentTerms(Integer.parseInt(paymentTermsStr));
+            }
+            if (!paymentMethodStr.isEmpty()) {
+                lease.setPaymentMethod(PaymentMethod.valueOf(paymentMethodStr.toUpperCase()));
+            }
+            if (!ejariNumber.isEmpty()) {
+                lease.setEjariNumber(ejariNumber);
+            }
+
+            Lease savedLease = leaseRepository.save(lease);
+            leasesCreated++;
+
+            // Update unit status to OCCUPIED
+            unit.setStatus(UnitStatus.OCCUPIED);
+            unit.setCurrentTenantName(renter.getNameEn());
+            unit.setActualRent(rentAmount);
+            unitRepository.save(unit);
+
+            // Auto-generate payment schedules
+            var schedules = paymentScheduleService.generateScheduleForLease(savedLease);
+            schedulesCreated += schedules.size();
+        }
+
+        job.setLeasesCreated(leasesCreated);
+        job.setSchedulesCreated(schedulesCreated);
+        importJobRepository.save(job);
+    }
+
+    // --- Async Orchestrator ---
+
+    @Async("importExecutor")
+    public void processImportAsync(byte[] fileBytes, ImportJob job, UUID tenantId) {
+        // Set tenant context for this async thread
+        TenantContextHolder.setTenantId(tenantId);
+        try {
+            Workbook workbook = new XSSFWorkbook(new ByteArrayInputStream(fileBytes));
+
+            // Phase 1: Validate
+            job.setStatus("VALIDATING");
+            importJobRepository.save(job);
+
+            List<ImportErrorDTO> errors = validateWorkbook(workbook);
+            if (!errors.isEmpty()) {
+                job.setStatus("VALIDATION_FAILED");
+                job.setErrors(objectMapper.writeValueAsString(errors));
+                job.setCompletedAt(Instant.now());
+                importJobRepository.save(job);
+                workbook.close();
+                return;
+            }
+
+            // Phase 2: Persist
+            job.setStatus("PERSISTING");
+            importJobRepository.save(job);
+
+            persistWorkbook(workbook, job);
+
+            job.setStatus("COMPLETED");
+            job.setCompletedAt(Instant.now());
+            importJobRepository.save(job);
+
+            workbook.close();
+            log.info("Portfolio import completed: jobId={}, properties={}, units={}, leases={}, schedules={}",
+                    job.getId(), job.getPropertiesCreated(), job.getUnitsCreated(),
+                    job.getLeasesCreated(), job.getSchedulesCreated());
+        } catch (Exception e) {
+            log.error("Portfolio import failed: jobId={}", job.getId(), e);
+            job.setStatus("FAILED");
+            try {
+                job.setErrors(objectMapper.writeValueAsString(
+                        List.of(new ImportErrorDTO("General", 0, "", e.getMessage()))));
+            } catch (Exception jsonEx) {
+                job.setErrors("[{\"sheet\":\"General\",\"row\":0,\"field\":\"\",\"message\":\"Import failed\"}]");
+            }
+            job.setCompletedAt(Instant.now());
+            importJobRepository.save(job);
+        } finally {
+            TenantContextHolder.clear();
         }
     }
 
