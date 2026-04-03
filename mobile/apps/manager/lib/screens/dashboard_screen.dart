@@ -1,3 +1,4 @@
+import 'dart:developer' as dev;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -93,14 +94,22 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           ),
         ],
       ),
-      body: dashboardAsync.when(
+      body: Builder(builder: (_) {
+        dev.log('[DASHBOARD_DEBUG] dashboardAsync state: isLoading=${dashboardAsync.isLoading}, hasError=${dashboardAsync.hasError}, hasValue=${dashboardAsync.hasValue}', name: 'DashboardScreen');
+        if (dashboardAsync.hasError) {
+          dev.log('[DASHBOARD_DEBUG] dashboardAsync error: ${dashboardAsync.error}', name: 'DashboardScreen');
+        }
+        return dashboardAsync.when(
         loading: () => const Center(
           child: CircularProgressIndicator(color: AppColors.primary),
         ),
-        error: (error, _) => ErrorState(
-          message: 'Failed to load dashboard',
+        error: (error, stackTrace) {
+          dev.log('[DASHBOARD_DEBUG] UI showing error: $error', name: 'DashboardScreen', error: error, stackTrace: stackTrace);
+          return ErrorState(
+          message: 'Failed to load dashboard: $error',
           onRetry: _refresh,
-        ),
+        );
+        },
         data: (data) => RefreshIndicator(
           onRefresh: _refresh,
           color: AppColors.primary,
@@ -121,20 +130,23 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             ),
           ),
         ),
-      ),
+      );
+      }),
     );
   }
 
   Widget _buildKpiSection(Map<String, dynamic> data) {
-    final properties = data['propertyCount'] ?? 0;
-    final units = data['unitCount'] ?? 0;
-    final occupiedUnits = data['occupiedUnitCount'] ?? 0;
-    final activeLeases = data['activeLeaseCount'] ?? 0;
-    final totalRevenue = (data['totalRevenue'] ?? 0).toDouble();
+    final properties = data['totalProperties'] ?? data['propertyCount'] ?? 0;
+    final units = data['totalUnits'] ?? data['unitCount'] ?? 0;
+    final occupiedUnits = data['occupiedUnits'] ?? data['occupiedUnitCount'] ?? 0;
+    final activeLeases = data['activeLeases'] ?? data['activeLeaseCount'] ?? 0;
+    final totalRevenue = (data['totalRentRevenue'] ?? data['totalRevenue'] ?? 0).toDouble();
     final pendingAmount = (data['pendingAmount'] ?? 0).toDouble();
     final overdueAmount = (data['overdueAmount'] ?? 0).toDouble();
-    final clearedAmount = (data['clearedAmount'] ?? 0).toDouble();
-    final occupancyPct = units > 0 ? (occupiedUnits / units * 100) : 0.0;
+    final clearedAmount = (data['collectedAmount'] ?? data['clearedAmount'] ?? 0).toDouble();
+    final occupancyPct = data['occupancyRate'] != null
+        ? (data['occupancyRate'] as num).toDouble()
+        : (units > 0 ? (occupiedUnits / units * 100) : 0.0);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -207,7 +219,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   }
 
   Widget _buildAlertsSection(Map<String, dynamic> data) {
-    final expiringLeases = data['expiringLeaseCount'] ?? 0;
+    final expiringLeases = data['expiringLeases'] ?? data['expiringLeaseCount'] ?? 0;
     final overduePayments = data['overduePaymentCount'] ?? 0;
     final overdueTotal = (data['overdueAmount'] ?? 0).toDouble();
     final openTickets = data['openTicketCount'] ?? 0;
@@ -330,7 +342,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               icon: _activityIcon(activity['type'] ?? ''),
               iconColor: _activityColor(activity['type'] ?? ''),
               description: activity['description'] ?? '',
-              time: Formatters.timeAgo(activity['createdAt']),
+              time: Formatters.timeAgo(activity['timestamp'] ?? activity['createdAt']),
             )),
       ],
     );
@@ -340,6 +352,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     return switch (type) {
       'PAYMENT_COLLECTED' => Icons.payments_outlined,
       'PAYMENT_CLEARED' => Icons.check_circle_outline,
+      'PAYMENT_PENDING' => Icons.pending_actions_outlined,
+      'PAYMENT_ONLINE_PENDING' => Icons.cloud_sync_outlined,
       'LEASE_ACTIVATED' => Icons.description_outlined,
       'LEASE_CREATED' => Icons.note_add_outlined,
       'TICKET_CREATED' => Icons.confirmation_number_outlined,
@@ -353,6 +367,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     return switch (type) {
       'PAYMENT_COLLECTED' => AppColors.info,
       'PAYMENT_CLEARED' => AppColors.success,
+      'PAYMENT_PENDING' => AppColors.warning,
+      'PAYMENT_ONLINE_PENDING' => AppColors.warning,
       'LEASE_ACTIVATED' => AppColors.primary,
       'LEASE_CREATED' => AppColors.accent,
       'TICKET_CREATED' => AppColors.warning,

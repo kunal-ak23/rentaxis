@@ -81,10 +81,11 @@ class _PropertiesScreenState extends ConsumerState<PropertiesScreen> {
               data: (properties) {
                 final allUnits = unitsAsync.valueOrNull ?? [];
                 final filtered = properties.where((p) {
+                  final prop = p['property'] ?? p;
                   final name =
-                      (p['name'] ?? '').toString().toLowerCase();
+                      (prop['nameEn'] ?? prop['name'] ?? '').toString().toLowerCase();
                   final address =
-                      (p['address'] ?? '').toString().toLowerCase();
+                      (prop['address'] ?? '').toString().toLowerCase();
                   return name.contains(_searchQuery) ||
                       address.contains(_searchQuery);
                 }).toList();
@@ -109,24 +110,31 @@ class _PropertiesScreenState extends ConsumerState<PropertiesScreen> {
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 80),
                     itemCount: filtered.length,
                     itemBuilder: (context, index) {
-                      final property = filtered[index];
-                      final propertyId = property['id'] ?? '';
+                      final item = filtered[index];
+                      final prop = item['property'] ?? item;
+                      final propertyId = prop['id'] ?? item['id'] ?? '';
                       final units = allUnits
-                          .where((u) => u['propertyId'] == propertyId)
+                          .where((u) {
+                            final unitPropId = u['propertyId'] ?? u['property']?['id'];
+                            return unitPropId == propertyId;
+                          })
                           .toList();
                       final occupied = units
                           .where((u) => u['status'] == 'OCCUPIED')
                           .length;
                       final total = units.length;
+                      final vacancies = item['vacancies'] ?? 0;
+                      final unitCount = total > 0 ? total : (item['propertyCount'] ?? 0);
+                      final occupiedCount = total > 0 ? occupied : (unitCount - (vacancies as int));
                       final occupancy =
-                          total > 0 ? occupied / total : 0.0;
+                          unitCount > 0 ? occupiedCount / unitCount : 0.0;
 
                       return _PropertyCard(
-                        name: property['name'] ?? '',
-                        address: property['address'] ?? '',
-                        emirate: property['emirate'] ?? '',
-                        totalUnits: total,
-                        occupiedUnits: occupied,
+                        name: prop['nameEn'] ?? prop['name'] ?? '',
+                        address: prop['address'] ?? '',
+                        emirate: prop['emirate'] ?? '',
+                        totalUnits: unitCount,
+                        occupiedUnits: occupiedCount,
                         occupancy: occupancy,
                         onTap: () =>
                             context.push('/properties/$propertyId'),
