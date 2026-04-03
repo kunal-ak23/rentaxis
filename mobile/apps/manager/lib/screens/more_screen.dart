@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
 class MoreScreen extends ConsumerWidget {
@@ -13,7 +14,7 @@ class MoreScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('More')),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -24,6 +25,7 @@ class MoreScreen extends ConsumerWidget {
               decoration: BoxDecoration(
                 color: AppColors.navyDark,
                 borderRadius: BorderRadius.circular(16),
+                boxShadow: AppShadows.soft,
               ),
               child: Row(
                 children: [
@@ -32,7 +34,7 @@ class MoreScreen extends ConsumerWidget {
                     backgroundColor: AppColors.accent.withValues(alpha: 0.2),
                     child: Text(
                       (authState.name ?? 'U')[0].toUpperCase(),
-                      style: const TextStyle(
+                      style: GoogleFonts.josefinSans(
                         color: AppColors.accent,
                         fontWeight: FontWeight.w700,
                         fontSize: 18,
@@ -46,7 +48,7 @@ class MoreScreen extends ConsumerWidget {
                       children: [
                         Text(
                           authState.name ?? 'User',
-                          style: const TextStyle(
+                          style: GoogleFonts.josefinSans(
                             color: Colors.white,
                             fontWeight: FontWeight.w600,
                             fontSize: 16,
@@ -55,7 +57,7 @@ class MoreScreen extends ConsumerWidget {
                         const SizedBox(height: 2),
                         Text(
                           authState.email ?? '',
-                          style: TextStyle(
+                          style: GoogleFonts.josefinSans(
                             color: Colors.white.withValues(alpha: 0.6),
                             fontSize: 13,
                           ),
@@ -129,9 +131,9 @@ class MoreScreen extends ConsumerWidget {
             _MenuItem(
               icon: Icons.language,
               label: 'Language',
-              trailing: const Text('English',
+              trailing: Text('English',
                   style:
-                      TextStyle(fontSize: 13, color: AppColors.textMuted)),
+                      GoogleFonts.josefinSans(fontSize: 13, color: AppColors.textMuted)),
               onTap: () {
                 // Language switching - placeholder
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -204,7 +206,7 @@ class MoreScreen extends ConsumerWidget {
                 ),
               ),
             ),
-            const SizedBox(height: 32),
+            const SizedBox(height: 150),
           ],
         ),
       ),
@@ -222,7 +224,7 @@ class _SectionHeader extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 8),
       child: Text(
         title,
-        style: const TextStyle(
+        style: GoogleFonts.cinzel(
           fontSize: 12,
           fontWeight: FontWeight.w600,
           color: AppColors.textMuted,
@@ -250,13 +252,14 @@ class _MenuItem extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: BorderRadius.circular(16),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        margin: const EdgeInsets.only(bottom: 8),
         decoration: BoxDecoration(
-          border: Border(
-            bottom: BorderSide(color: AppColors.border.withValues(alpha: 0.5)),
-          ),
+          color: Theme.of(context).cardColor,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: AppShadows.soft,
         ),
         child: Row(
           children: [
@@ -265,7 +268,7 @@ class _MenuItem extends StatelessWidget {
             Expanded(
               child: Text(
                 label,
-                style: const TextStyle(
+                style: GoogleFonts.josefinSans(
                   fontSize: 15,
                   fontWeight: FontWeight.w500,
                 ),

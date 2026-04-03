@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
@@ -74,9 +75,7 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
           summaryAsync.when(
             loading: () => const SizedBox(
               height: 90,
-              child: Center(
-                child: CircularProgressIndicator(color: AppColors.primary),
-              ),
+              child: Center(child: ListShimmer(itemCount: 1)),
             ),
             error: (_, __) => const SizedBox.shrink(),
             data: (summary) => _buildSummaryCards(summary),
@@ -84,7 +83,7 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
 
           // Filter bar
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
             child: Row(
               children: [
                 Expanded(
@@ -152,9 +151,7 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
           // Payment list
           Expanded(
             child: paymentsAsync.when(
-              loading: () => const Center(
-                child: CircularProgressIndicator(color: AppColors.primary),
-              ),
+              loading: () => const ListShimmer(itemCount: 3),
               error: (e, _) => ErrorState(
                 message: 'Failed to load payments',
                 onRetry: _refresh,
@@ -184,13 +181,16 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
                   color: AppColors.primary,
                   child: ListView.builder(
                     physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 150),
                     itemCount: filtered.length,
                     itemBuilder: (context, index) {
                       final payment = filtered[index];
-                      return _PaymentCard(
-                        payment: payment,
-                        onTap: () => _showPaymentActions(payment),
+                      return AnimatedListItem(
+                        index: index,
+                        child: _PaymentCard(
+                          payment: payment,
+                          onTap: () => _showPaymentActions(payment),
+                        ),
                       );
                     },
                   ),
@@ -229,7 +229,7 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
       height: 90,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
         itemCount: items.length,
         separatorBuilder: (_, __) => const SizedBox(width: 10),
         itemBuilder: (context, index) {
@@ -249,7 +249,7 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
                 Row(
                   children: [
                     Text('${item.count}',
-                        style: TextStyle(
+                        style: GoogleFonts.josefinSans(
                           fontWeight: FontWeight.w700,
                           fontSize: 18,
                           color: item.color,
@@ -257,7 +257,7 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
                     const SizedBox(width: 4),
                     Flexible(
                       child: Text(item.label,
-                          style: TextStyle(
+                          style: GoogleFonts.josefinSans(
                             fontSize: 11,
                             color: item.color.withValues(alpha: 0.8),
                           ),
@@ -266,7 +266,7 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
                   ],
                 ),
                 Text(item.amount,
-                    style: TextStyle(
+                    style: GoogleFonts.josefinSans(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                       color: item.color,
@@ -534,11 +534,16 @@ class _PaymentCard extends StatelessWidget {
     final statusColor = StatusHelper.getPaymentStatusColor(status);
     final amount = (payment['amount'] ?? 0).toDouble();
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: AppShadows.soft,
+      ),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         child: Padding(
           padding: const EdgeInsets.all(14),
           child: Row(
@@ -559,7 +564,7 @@ class _PaymentCard extends StatelessWidget {
                   children: [
                     Text(
                       payment['renterName'] ?? 'Unknown',
-                      style: const TextStyle(
+                      style: GoogleFonts.josefinSans(
                         fontWeight: FontWeight.w600,
                         fontSize: 14,
                       ),
@@ -567,7 +572,7 @@ class _PaymentCard extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       'Unit ${payment['unitNumber'] ?? '-'} | #${payment['installmentNumber'] ?? '-'}',
-                      style: const TextStyle(
+                      style: GoogleFonts.josefinSans(
                         fontSize: 12,
                         color: AppColors.textSecondary,
                       ),
@@ -575,7 +580,7 @@ class _PaymentCard extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       'Due: ${Formatters.date(payment['dueDate'])}',
-                      style: const TextStyle(
+                      style: GoogleFonts.josefinSans(
                         fontSize: 11,
                         color: AppColors.textMuted,
                       ),
@@ -588,7 +593,7 @@ class _PaymentCard extends StatelessWidget {
                 children: [
                   Text(
                     Formatters.currency(amount),
-                    style: const TextStyle(
+                    style: GoogleFonts.josefinSans(
                       fontWeight: FontWeight.w700,
                       fontSize: 14,
                     ),
@@ -660,7 +665,7 @@ class _PaymentActionSheet extends StatelessWidget {
                     Expanded(
                       child: Text(
                         payment['renterName'] ?? 'Unknown',
-                        style: const TextStyle(
+                        style: GoogleFonts.josefinSans(
                           fontWeight: FontWeight.w600,
                           fontSize: 16,
                         ),
@@ -674,7 +679,7 @@ class _PaymentActionSheet extends StatelessWidget {
                   children: [
                     Text(
                       Formatters.currency(amount),
-                      style: const TextStyle(
+                      style: GoogleFonts.josefinSans(
                         fontWeight: FontWeight.w700,
                         fontSize: 20,
                         color: AppColors.primary,
@@ -683,7 +688,7 @@ class _PaymentActionSheet extends StatelessWidget {
                     const Spacer(),
                     Text(
                       'Due: ${Formatters.date(payment['dueDate'])}',
-                      style: const TextStyle(
+                      style: GoogleFonts.josefinSans(
                         fontSize: 12,
                         color: AppColors.textSecondary,
                       ),

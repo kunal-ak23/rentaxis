@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
 final _ticketServiceProvider = Provider<TicketService>((ref) {
@@ -52,12 +53,12 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
         children: [
           // Segment control
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
             child: Container(
               decoration: BoxDecoration(
                 color: AppColors.background,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppColors.border),
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: AppShadows.soft,
               ),
               child: Row(
                 children: [
@@ -81,7 +82,7 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
             height: 44,
             child: ListView(
               scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 20),
               children: [
                 // Status filter
                 DropdownButton<String?>(
@@ -137,9 +138,7 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
           // Ticket list
           Expanded(
             child: ticketsAsync.when(
-              loading: () => const Center(
-                child: CircularProgressIndicator(color: AppColors.primary),
-              ),
+              loading: () => const ListShimmer(itemCount: 3),
               error: (e, _) => ErrorState(
                 message: 'Failed to load tickets',
                 onRetry: _refresh,
@@ -176,14 +175,17 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
                   color: AppColors.primary,
                   child: ListView.builder(
                     physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 150),
                     itemCount: filtered.length,
                     itemBuilder: (context, index) {
                       final ticket = filtered[index];
-                      return _TicketCard(
-                        ticket: ticket,
-                        onTap: () =>
-                            context.push('/tickets/${ticket['id']}'),
+                      return AnimatedListItem(
+                        index: index,
+                        child: _TicketCard(
+                          ticket: ticket,
+                          onTap: () =>
+                              context.push('/tickets/${ticket['id']}'),
+                        ),
                       );
                     },
                   ),
@@ -227,7 +229,7 @@ class _SegmentTab extends StatelessWidget {
           child: Text(
             label,
             textAlign: TextAlign.center,
-            style: TextStyle(
+            style: GoogleFonts.josefinSans(
               fontSize: 13,
               fontWeight: FontWeight.w600,
               color: isSelected ? Colors.white : AppColors.textSecondary,
@@ -252,11 +254,16 @@ class _TicketCard extends StatelessWidget {
     final statusColor = StatusHelper.getTicketStatusColor(status);
     final priorityColor = StatusHelper.getPriorityColor(priority);
 
-    return Card(
+    return Container(
       margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: AppShadows.soft,
+      ),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         child: Padding(
           padding: const EdgeInsets.all(14),
           child: Column(
@@ -267,7 +274,7 @@ class _TicketCard extends StatelessWidget {
                   Expanded(
                     child: Text(
                       ticket['title'] ?? 'No title',
-                      style: const TextStyle(
+                      style: GoogleFonts.josefinSans(
                         fontWeight: FontWeight.w600,
                         fontSize: 15,
                       ),
@@ -289,7 +296,7 @@ class _TicketCard extends StatelessWidget {
                     Flexible(
                       child: Text(
                         '${ticket['propertyName']}${ticket['unitNumber'] != null ? ' - Unit ${ticket['unitNumber']}' : ''}',
-                        style: const TextStyle(
+                        style: GoogleFonts.josefinSans(
                           fontSize: 12,
                           color: AppColors.textSecondary,
                         ),
@@ -311,7 +318,7 @@ class _TicketCard extends StatelessWidget {
                     const SizedBox(width: 4),
                     Text(
                       ticket['assignedToName'],
-                      style: const TextStyle(
+                      style: GoogleFonts.josefinSans(
                         fontSize: 12,
                         color: AppColors.textSecondary,
                       ),
@@ -320,7 +327,7 @@ class _TicketCard extends StatelessWidget {
                   const Spacer(),
                   Text(
                     Formatters.timeAgo(ticket['createdAt']),
-                    style: const TextStyle(
+                    style: GoogleFonts.josefinSans(
                       fontSize: 11,
                       color: AppColors.textMuted,
                     ),

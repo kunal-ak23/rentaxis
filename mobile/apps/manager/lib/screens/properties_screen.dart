@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
 final _propertyServiceProvider = Provider<PropertyService>((ref) {
@@ -53,7 +54,7 @@ class _PropertiesScreenState extends ConsumerState<PropertiesScreen> {
         children: [
           // Search bar
           Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
             child: TextField(
               onChanged: (v) => setState(() => _searchQuery = v.toLowerCase()),
               decoration: InputDecoration(
@@ -71,8 +72,9 @@ class _PropertiesScreenState extends ConsumerState<PropertiesScreen> {
           ),
           Expanded(
             child: propertiesAsync.when(
-              loading: () => const Center(
-                child: CircularProgressIndicator(color: AppColors.primary),
+              loading: () => const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 20),
+                child: ListShimmer(itemCount: 3),
               ),
               error: (e, _) => ErrorState(
                 message: 'Failed to load properties',
@@ -107,7 +109,7 @@ class _PropertiesScreenState extends ConsumerState<PropertiesScreen> {
                   color: AppColors.primary,
                   child: ListView.builder(
                     physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 80),
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 150),
                     itemCount: filtered.length,
                     itemBuilder: (context, index) {
                       final item = filtered[index];
@@ -129,15 +131,18 @@ class _PropertiesScreenState extends ConsumerState<PropertiesScreen> {
                       final occupancy =
                           unitCount > 0 ? occupiedCount / unitCount : 0.0;
 
-                      return _PropertyCard(
-                        name: prop['nameEn'] ?? prop['name'] ?? '',
-                        address: prop['address'] ?? '',
-                        emirate: prop['emirate'] ?? '',
-                        totalUnits: unitCount,
-                        occupiedUnits: occupiedCount,
-                        occupancy: occupancy,
-                        onTap: () =>
-                            context.push('/properties/$propertyId'),
+                      return AnimatedListItem(
+                        index: index,
+                        child: _PropertyCard(
+                          name: prop['nameEn'] ?? prop['name'] ?? '',
+                          address: prop['address'] ?? '',
+                          emirate: prop['emirate'] ?? '',
+                          totalUnits: unitCount,
+                          occupiedUnits: occupiedCount,
+                          occupancy: occupancy,
+                          onTap: () =>
+                              context.push('/properties/$propertyId'),
+                        ),
                       );
                     },
                   ),
@@ -296,96 +301,105 @@ class _PropertyCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
+    return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(10),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: AppShadows.soft,
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.apartment_rounded,
+                          color: AppColors.primary, size: 24),
                     ),
-                    child: const Icon(Icons.apartment_rounded,
-                        color: AppColors.primary, size: 24),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(name,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 15,
-                            )),
-                        const SizedBox(height: 2),
-                        Text(
-                          '$address, ${emirate.replaceAll('_', ' ')}',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: AppColors.textSecondary,
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(name,
+                              style: GoogleFonts.josefinSans(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 15,
+                              )),
+                          const SizedBox(height: 2),
+                          Text(
+                            '$address, ${emirate.replaceAll('_', ' ')}',
+                            style: GoogleFonts.josefinSans(
+                              fontSize: 12,
+                              color: AppColors.textSecondary,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                  const Icon(Icons.chevron_right,
-                      color: AppColors.textMuted),
-                ],
-              ),
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  _StatChip(
-                    label: 'Units',
-                    value: '$totalUnits',
-                    color: AppColors.info,
-                  ),
-                  const SizedBox(width: 8),
-                  _StatChip(
-                    label: 'Occupied',
-                    value: '$occupiedUnits',
-                    color: AppColors.success,
-                  ),
-                  const SizedBox(width: 8),
-                  _StatChip(
-                    label: 'Vacant',
-                    value: '${totalUnits - occupiedUnits}',
-                    color: AppColors.warning,
-                  ),
-                  const Spacer(),
-                  Text(
-                    '${(occupancy * 100).toStringAsFixed(0)}%',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 16,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: LinearProgressIndicator(
-                  value: occupancy.clamp(0.0, 1.0),
-                  backgroundColor: AppColors.border,
-                  color: AppColors.success,
-                  minHeight: 4,
+                    const Icon(Icons.chevron_right,
+                        color: AppColors.textMuted),
+                  ],
                 ),
-              ),
-            ],
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    _StatChip(
+                      label: 'Units',
+                      value: '$totalUnits',
+                      color: AppColors.info,
+                    ),
+                    const SizedBox(width: 8),
+                    _StatChip(
+                      label: 'Occupied',
+                      value: '$occupiedUnits',
+                      color: AppColors.success,
+                    ),
+                    const SizedBox(width: 8),
+                    _StatChip(
+                      label: 'Vacant',
+                      value: '${totalUnits - occupiedUnits}',
+                      color: AppColors.warning,
+                    ),
+                    const Spacer(),
+                    Text(
+                      '${(occupancy * 100).toStringAsFixed(0)}%',
+                      style: GoogleFonts.cinzel(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 16,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: occupancy.clamp(0.0, 1.0),
+                    backgroundColor: AppColors.border,
+                    color: AppColors.success,
+                    minHeight: 4,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
