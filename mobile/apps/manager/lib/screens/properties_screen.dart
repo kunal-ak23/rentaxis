@@ -48,28 +48,11 @@ class _PropertiesScreenState extends ConsumerState<PropertiesScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Properties'),
+        title: _buildSearchableTitle(),
+        titleSpacing: 20,
       ),
       body: Column(
         children: [
-          // Search bar
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-            child: TextField(
-              onChanged: (v) => setState(() => _searchQuery = v.toLowerCase()),
-              decoration: InputDecoration(
-                hintText: 'Search properties...',
-                prefixIcon:
-                    const Icon(Icons.search, color: AppColors.textMuted),
-                suffixIcon: _searchQuery.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear, size: 18),
-                        onPressed: () => setState(() => _searchQuery = ''),
-                      )
-                    : null,
-              ),
-            ),
-          ),
           Expanded(
             child: propertiesAsync.when(
               loading: () => const Padding(
@@ -153,13 +136,57 @@ class _PropertiesScreenState extends ConsumerState<PropertiesScreen> {
         ],
       ),
       floatingActionButton: Padding(
-        padding: const EdgeInsets.only(bottom: 80),
+        padding: const EdgeInsets.only(bottom: 100),
         child: FloatingActionButton(
           backgroundColor: AppColors.primary,
           onPressed: () => _showCreatePropertySheet(context),
           child: const Icon(Icons.add, color: Colors.white),
         ),
       ),
+    );
+  }
+
+  bool _showSearch = false;
+
+  Widget _buildSearchableTitle() {
+    if (_showSearch) {
+      return SizedBox(
+        height: 40,
+        child: TextField(
+          autofocus: true,
+          onChanged: (v) => setState(() => _searchQuery = v.toLowerCase()),
+          style: GoogleFonts.josefinSans(fontSize: 14),
+          decoration: InputDecoration(
+            hintText: 'Search properties...',
+            hintStyle: GoogleFonts.josefinSans(fontSize: 14, color: AppColors.textMuted),
+            prefixIcon: const Icon(Icons.search, size: 20, color: AppColors.textMuted),
+            suffixIcon: IconButton(
+              icon: const Icon(Icons.close, size: 18),
+              onPressed: () => setState(() {
+                _showSearch = false;
+                _searchQuery = '';
+              }),
+            ),
+            contentPadding: const EdgeInsets.symmetric(vertical: 0),
+            filled: true,
+            fillColor: AppColors.background,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
+            ),
+          ),
+        ),
+      );
+    }
+    return Row(
+      children: [
+        const Text('Properties'),
+        const Spacer(),
+        IconButton(
+          icon: const Icon(Icons.search, color: AppColors.textSecondary, size: 22),
+          onPressed: () => setState(() => _showSearch = true),
+        ),
+      ],
     );
   }
 

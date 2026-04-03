@@ -48,7 +48,7 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
     final authState = ref.watch(authProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Tickets')),
+      appBar: AppBar(title: const Text('Tickets'), titleSpacing: 20),
       body: Column(
         children: [
           // Segment control
@@ -196,7 +196,7 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
         ],
       ),
       floatingActionButton: Padding(
-        padding: const EdgeInsets.only(bottom: 80),
+        padding: const EdgeInsets.only(bottom: 100),
         child: FloatingActionButton(
           backgroundColor: AppColors.primary,
           onPressed: () => context.push('/tickets/create'),
