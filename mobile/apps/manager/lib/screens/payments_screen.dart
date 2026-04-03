@@ -42,19 +42,30 @@ class PaymentsScreen extends ConsumerStatefulWidget {
   ConsumerState<PaymentsScreen> createState() => _PaymentsScreenState();
 }
 
-class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
+class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
+    with SingleTickerProviderStateMixin {
   String? _selectedPropertyId;
-  String? _selectedStatus;
+  late TabController _tabController;
 
-  final _statusOptions = [
-    null,
-    'PENDING',
-    'COLLECTED',
-    'DEPOSITED',
-    'CLEARED',
-    'BOUNCED',
-    'OVERDUE',
-  ];
+  static const _pageSize = 20;
+  int _currentPage = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 4, vsync: this);
+    _tabController.addListener(() {
+      if (!_tabController.indexIsChanging) {
+        setState(() => _currentPage = 0);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
 
   Future<void> _refresh() async {
     ref.invalidate(_paymentSummaryProvider);
@@ -81,69 +92,65 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
             data: (summary) => _buildSummaryCards(summary),
           ),
 
-          // Filter bar
+          // Property filter
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: propertiesAsync.when(
-                    loading: () => const SizedBox.shrink(),
-                    error: (_, __) => const SizedBox.shrink(),
-                    data: (properties) => DropdownButtonFormField<String?>(
-                      value: _selectedPropertyId,
-                      isExpanded: true,
-                      decoration: const InputDecoration(
-                        contentPadding:
-                            EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                        hintText: 'All Properties',
-                      ),
-                      items: [
-                        const DropdownMenuItem<String?>(
-                          value: null,
-                          child: Text('All Properties',
-                              style: TextStyle(fontSize: 13)),
-                        ),
-                        ...properties.map((p) => DropdownMenuItem<String?>(
-                              value: p['id'],
-                              child: Text(p['name'] ?? '',
-                                  style: const TextStyle(fontSize: 13),
-                                  overflow: TextOverflow.ellipsis),
-                            )),
-                      ],
-                      onChanged: (v) =>
-                          setState(() => _selectedPropertyId = v),
-                    ),
-                  ),
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
+            child: propertiesAsync.when(
+              loading: () => const SizedBox.shrink(),
+              error: (_, __) => const SizedBox.shrink(),
+              data: (properties) => DropdownButtonFormField<String?>(
+                value: _selectedPropertyId,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  contentPadding:
+                      EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  hintText: 'All Properties',
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: DropdownButtonFormField<String?>(
-                    value: _selectedStatus,
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                      contentPadding:
-                          EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      hintText: 'All Status',
-                    ),
-                    items: _statusOptions
-                        .map((s) => DropdownMenuItem<String?>(
-                              value: s,
-                              child: Text(
-                                s?.replaceAll('_', ' ') ?? 'All Status',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: s != null
-                                      ? StatusHelper.getPaymentStatusColor(s)
-                                      : null,
-                                ),
-                              ),
-                            ))
-                        .toList(),
-                    onChanged: (v) =>
-                        setState(() => _selectedStatus = v),
+                items: [
+                  const DropdownMenuItem<String?>(
+                    value: null,
+                    child: Text('All Properties',
+                        style: TextStyle(fontSize: 13)),
                   ),
-                ),
+                  ...properties.map((p) => DropdownMenuItem<String?>(
+                        value: p['id'],
+                        child: Text(p['name'] ?? '',
+                            style: const TextStyle(fontSize: 13),
+                            overflow: TextOverflow.ellipsis),
+                      )),
+                ],
+                onChanged: (v) =>
+                    setState(() => _selectedPropertyId = v),
+              ),
+            ),
+          ),
+
+          // Status tabs
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+            child: TabBar(
+              controller: _tabController,
+              indicatorSize: TabBarIndicatorSize.tab,
+              indicator: BoxDecoration(
+                color: AppColors.primary,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              labelColor: Colors.white,
+              unselectedLabelColor: AppColors.textSecondary,
+              labelStyle: GoogleFonts.josefinSans(
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+              ),
+              unselectedLabelStyle: GoogleFonts.josefinSans(
+                fontWeight: FontWeight.w500,
+                fontSize: 13,
+              ),
+              dividerHeight: 0,
+              tabs: const [
+                Tab(text: 'Upcoming'),
+                Tab(text: 'Overdue'),
+                Tab(text: 'Paid'),
+                Tab(text: 'All'),
               ],
             ),
           ),
@@ -162,9 +169,21 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
                       p['propertyId'] != _selectedPropertyId) {
                     return false;
                   }
-                  if (_selectedStatus != null &&
-                      p['status'] != _selectedStatus) {
-                    return false;
+                  final status = p['status'] ?? '';
+                  switch (_tabController.index) {
+                    case 0: // Upcoming
+                      if (status != 'PENDING' && status != 'ONLINE_PENDING') {
+                        return false;
+                      }
+                      break;
+                    case 1: // Overdue
+                      if (status != 'OVERDUE') return false;
+                      break;
+                    case 2: // Paid
+                      if (status != 'CLEARED') return false;
+                      break;
+                    case 3: // All
+                      break;
                   }
                   return true;
                 }).toList();
@@ -176,14 +195,40 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
                   );
                 }
 
+                final visibleCount = ((_currentPage + 1) * _pageSize)
+                    .clamp(0, filtered.length);
+                final hasMore = visibleCount < filtered.length;
+
                 return RefreshIndicator(
                   onRefresh: _refresh,
                   color: AppColors.primary,
                   child: ListView.builder(
                     physics: const AlwaysScrollableScrollPhysics(),
                     padding: const EdgeInsets.fromLTRB(20, 0, 20, 150),
-                    itemCount: filtered.length,
+                    itemCount: visibleCount + (hasMore ? 1 : 0),
                     itemBuilder: (context, index) {
+                      if (index == visibleCount) {
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          child: Center(
+                            child: OutlinedButton(
+                              onPressed: () =>
+                                  setState(() => _currentPage++),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AppColors.primary,
+                                side: BorderSide(
+                                    color: AppColors.primary
+                                        .withValues(alpha: 0.3)),
+                              ),
+                              child: Text(
+                                'Show More (${filtered.length - visibleCount} remaining)',
+                                style: GoogleFonts.josefinSans(
+                                    fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                          ),
+                        );
+                      }
                       final payment = filtered[index];
                       return AnimatedListItem(
                         index: index,
@@ -571,7 +616,7 @@ class _PaymentCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Unit ${payment['unitNumber'] ?? '-'} | #${payment['installmentNumber'] ?? '-'}',
+                      '${payment['propertyName'] ?? '-'} | Unit ${payment['unitIdentifier'] ?? payment['unitNumber'] ?? '-'}',
                       style: GoogleFonts.josefinSans(
                         fontSize: 12,
                         color: AppColors.textSecondary,

@@ -195,10 +195,13 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: AppColors.primary,
-        onPressed: () => context.push('/tickets/create'),
-        child: const Icon(Icons.add, color: Colors.white),
+      floatingActionButton: Padding(
+        padding: const EdgeInsets.only(bottom: 80),
+        child: FloatingActionButton(
+          backgroundColor: AppColors.primary,
+          onPressed: () => context.push('/tickets/create'),
+          child: const Icon(Icons.add, color: Colors.white),
+        ),
       ),
     );
   }

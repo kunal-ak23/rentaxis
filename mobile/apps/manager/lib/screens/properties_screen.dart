@@ -152,10 +152,13 @@ class _PropertiesScreenState extends ConsumerState<PropertiesScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: AppColors.primary,
-        onPressed: () => _showCreatePropertySheet(context),
-        child: const Icon(Icons.add, color: Colors.white),
+      floatingActionButton: Padding(
+        padding: const EdgeInsets.only(bottom: 80),
+        child: FloatingActionButton(
+          backgroundColor: AppColors.primary,
+          onPressed: () => _showCreatePropertySheet(context),
+          child: const Icon(Icons.add, color: Colors.white),
+        ),
       ),
     );
   }
