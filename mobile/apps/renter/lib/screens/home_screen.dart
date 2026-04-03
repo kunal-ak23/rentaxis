@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 final _leaseServiceProvider = Provider<LeaseService>((ref) {
   final client = ref.watch(apiClientProvider);
@@ -23,6 +24,11 @@ final _myLeasesProvider = FutureProvider.autoDispose<List<dynamic>>((ref) {
 final _myPaymentsProvider = FutureProvider.autoDispose<List<dynamic>>((ref) {
   final service = ref.watch(_paymentServiceProvider);
   return service.getMyPayments();
+});
+
+final _contactServiceProvider = Provider<PropertyContactService>((ref) {
+  final client = ref.watch(apiClientProvider);
+  return PropertyContactService(client.dio);
 });
 
 class HomeScreen extends ConsumerWidget {
@@ -97,6 +103,26 @@ class HomeScreen extends ConsumerWidget {
                 message: 'Failed to load leases',
                 onRetry: () => ref.invalidate(_myLeasesProvider),
               ),
+            ),
+
+            // Key Contacts section
+            const SizedBox(height: 28),
+            leasesAsync.when(
+              data: (leases) {
+                if (leases.isEmpty) return const SizedBox.shrink();
+                // Get unique property IDs from leases
+                final propertyIds = leases
+                    .map((l) => l['propertyId'] ?? l['property']?['id'] ?? l['unit']?['propertyId'])
+                    .whereType<String>()
+                    .toSet();
+                if (propertyIds.isEmpty) return const SizedBox.shrink();
+                return _KeyContactsSection(
+                  propertyIds: propertyIds,
+                  contactService: ref.read(_contactServiceProvider),
+                );
+              },
+              loading: () => const SizedBox.shrink(),
+              error: (_, __) => const SizedBox.shrink(),
             ),
           ],
         ),
@@ -475,6 +501,200 @@ class _NextPaymentAlert extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+// --- Key Contacts Section ---
+
+class _KeyContactsSection extends StatefulWidget {
+  final Set<String> propertyIds;
+  final PropertyContactService contactService;
+
+  const _KeyContactsSection({
+    required this.propertyIds,
+    required this.contactService,
+  });
+
+  @override
+  State<_KeyContactsSection> createState() => _KeyContactsSectionState();
+}
+
+class _KeyContactsSectionState extends State<_KeyContactsSection> {
+  List<Map<String, dynamic>> _contacts = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadContacts();
+  }
+
+  Future<void> _loadContacts() async {
+    try {
+      final allContacts = <Map<String, dynamic>>[];
+      for (final propId in widget.propertyIds) {
+        final contacts = await widget.contactService.getContacts(propId);
+        for (final c in contacts) {
+          allContacts.add(Map<String, dynamic>.from(c));
+        }
+      }
+      if (mounted) {
+        setState(() {
+          _contacts = allContacts;
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  IconData _categoryIcon(String? category) {
+    return switch (category?.toUpperCase()) {
+      'PLUMBER' => Icons.plumbing,
+      'ELECTRICIAN' => Icons.electrical_services,
+      'HANDYMAN' => Icons.handyman,
+      'SECURITY' => Icons.security,
+      'HOSPITAL_CLINIC' => Icons.local_hospital,
+      'PHARMACY' => Icons.local_pharmacy,
+      'BUILDING_MAINTENANCE' => Icons.build_circle_outlined,
+      'CIVIL_DEFENSE' => Icons.shield_outlined,
+      _ => Icons.contacts_outlined,
+    };
+  }
+
+  Color _categoryColor(String? category) {
+    return switch (category?.toUpperCase()) {
+      'PLUMBER' => AppColors.info,
+      'ELECTRICIAN' => AppColors.warning,
+      'HANDYMAN' => AppColors.primary,
+      'SECURITY' => AppColors.danger,
+      'HOSPITAL_CLINIC' => AppColors.danger,
+      'PHARMACY' => AppColors.success,
+      'BUILDING_MAINTENANCE' => AppColors.accent,
+      'CIVIL_DEFENSE' => AppColors.danger,
+      _ => AppColors.textSecondary,
+    };
+  }
+
+  String _categoryLabel(String? category) {
+    if (category == null) return 'Contact';
+    return category
+        .replaceAll('_', ' ')
+        .split(' ')
+        .map((w) => w.isEmpty ? '' : '${w[0].toUpperCase()}${w.substring(1).toLowerCase()}')
+        .join(' ');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Key Contacts', style: Theme.of(context).textTheme.headlineSmall),
+          const SizedBox(height: 14),
+          const ShimmerLoading(height: 70),
+        ],
+      );
+    }
+
+    if (_contacts.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        AnimatedListItem(
+          index: 6,
+          child: Row(
+            children: [
+              const Icon(Icons.contacts_outlined, size: 20, color: AppColors.primary),
+              const SizedBox(width: 8),
+              Text('Key Contacts', style: Theme.of(context).textTheme.headlineSmall),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        ..._contacts.asMap().entries.map((entry) {
+          final contact = entry.value;
+          final category = contact['category'] as String?;
+          final name = contact['name'] ?? 'Contact';
+          final phone = contact['phone'] as String?;
+          final role = contact['customLabel'] ?? _categoryLabel(category);
+
+          return AnimatedListItem(
+            index: entry.key + 7,
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: AppShadows.soft,
+              ),
+              child: ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                leading: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: _categoryColor(category).withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    _categoryIcon(category),
+                    color: _categoryColor(category),
+                    size: 22,
+                  ),
+                ),
+                title: Text(
+                  name,
+                  style: GoogleFonts.josefinSans(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      role,
+                      style: GoogleFonts.josefinSans(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    if (phone != null && phone.isNotEmpty)
+                      Text(
+                        phone,
+                        style: GoogleFonts.josefinSans(
+                          fontSize: 12,
+                          color: AppColors.textMuted,
+                        ),
+                      ),
+                  ],
+                ),
+                trailing: phone != null && phone.isNotEmpty
+                    ? IconButton(
+                        icon: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: AppColors.success.withValues(alpha: 0.1),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.phone, color: AppColors.success, size: 18),
+                        ),
+                        onPressed: () => launchUrl(Uri.parse('tel:$phone')),
+                      )
+                    : null,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+            ),
+          );
+        }),
+      ],
     );
   }
 }
