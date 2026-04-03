@@ -175,8 +175,8 @@ public class PropertyService {
         Property property = new Property();
         property.setNameEn(nameEn);
         property.setNameAr(nameAr);
-        property.setEmirate(Emirate.valueOf(emirate));
-        property.setType(PropertyType.valueOf(type));
+        property.setEmirate(Emirate.valueOf(emirate.toUpperCase()));
+        property.setType(PropertyType.valueOf(type.toUpperCase()));
         property.setAddress(address);
         property.setMakaniNumber(makaniNumber);
         property = repository.save(property);
