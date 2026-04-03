@@ -5,6 +5,7 @@ import lombok.Data;
 
 @Data
 @AllArgsConstructor
+@lombok.NoArgsConstructor
 public class ImportErrorDTO {
     private String sheet;
     private int row;

@@ -3,6 +3,8 @@ package com.datagami.rentaxis.domain.entity;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -40,6 +42,7 @@ public class ImportJob extends BaseTenantEntity {
     @Column(name = "schedules_created")
     private int schedulesCreated;
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")
     private String errors;
 

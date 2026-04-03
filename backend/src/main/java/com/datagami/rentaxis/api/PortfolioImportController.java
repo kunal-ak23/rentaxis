@@ -29,7 +29,8 @@ public class PortfolioImportController {
     private final PortfolioImportService importService;
     private final PortfolioTemplateService templateService;
     private final ImportJobRepository importJobRepository;
-    private final ObjectMapper objectMapper;
+
+    private static final ObjectMapper objectMapper = new ObjectMapper();
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")

@@ -66,7 +66,7 @@ databaseChangeLog:
         - addForeignKeyConstraint:
             baseTableName: import_jobs
             baseColumnNames: tenant_id
-            referencedTableName: tenants
+            referencedTableName: landlord_org
             referencedColumnNames: id
             constraintName: fk_import_jobs_tenant
         - createIndex:

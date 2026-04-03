@@ -36,7 +36,8 @@ public class PortfolioImportService {
     private final RenterRepository renterRepository;
     private final LeaseRepository leaseRepository;
     private final PaymentScheduleService paymentScheduleService;
-    private final ObjectMapper objectMapper;
+
+    private static final ObjectMapper objectMapper = new ObjectMapper();
 
     // --- Validation Phase (no DB writes) ---
 
