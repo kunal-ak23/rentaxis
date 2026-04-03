@@ -196,7 +196,7 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
         ],
       ),
       floatingActionButton: Padding(
-        padding: const EdgeInsets.only(bottom: 100),
+        padding: const EdgeInsets.only(bottom: 120),
         child: FloatingActionButton(
           backgroundColor: AppColors.primary,
           onPressed: () => context.push('/tickets/create'),

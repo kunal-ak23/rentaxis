@@ -31,6 +31,7 @@ import 'screens/settings_hub_screen.dart';
 import 'screens/rent_settings_screen.dart';
 import 'screens/gateway_config_screen.dart';
 import 'screens/account_mappings_screen.dart';
+import 'screens/notifications_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authProvider);
@@ -141,6 +142,10 @@ final routerProvider = Provider<GoRouter>((ref) {
                 ),
               ),
             ],
+          ),
+          GoRoute(
+            path: '/notifications',
+            builder: (context, state) => const NotificationsScreen(),
           ),
           GoRoute(
             path: '/renters',

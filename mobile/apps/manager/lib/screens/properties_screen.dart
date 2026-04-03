@@ -136,7 +136,7 @@ class _PropertiesScreenState extends ConsumerState<PropertiesScreen> {
         ],
       ),
       floatingActionButton: Padding(
-        padding: const EdgeInsets.only(bottom: 100),
+        padding: const EdgeInsets.only(bottom: 120),
         child: FloatingActionButton(
           backgroundColor: AppColors.primary,
           onPressed: () => _showCreatePropertySheet(context),
