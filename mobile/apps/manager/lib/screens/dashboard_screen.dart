@@ -140,12 +140,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               iconColor: AppColors.primary,
               label: 'Properties',
               value: '$properties',
+              onTap: () => context.go('/properties'),
             ),
             _KpiCard(
               icon: Icons.door_front_door_outlined,
               iconColor: AppColors.info,
               label: 'Units',
               value: '$units',
+              onTap: () => context.go('/properties'),
             ),
             _KpiCard(
               icon: Icons.pie_chart_outline_rounded,
@@ -153,12 +155,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               label: 'Occupancy',
               value: '${occupancyPct.toStringAsFixed(0)}%',
               progressValue: occupancyPct / 100,
+              onTap: () => context.go('/properties'),
             ),
             _KpiCard(
               icon: Icons.description_outlined,
               iconColor: AppColors.accent,
               label: 'Active Leases',
               value: '$activeLeases',
+              onTap: () => context.go('/leases'),
             ),
             _KpiCard(
               icon: Icons.account_balance_wallet_outlined,
@@ -166,24 +170,28 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               label: 'Total Revenue',
               value: Formatters.currencyCompact(totalRevenue),
               isWide: true,
+              onTap: () => context.go('/payments'),
             ),
             _KpiCard(
               icon: Icons.pending_actions_outlined,
               iconColor: AppColors.warning,
               label: 'Pending',
               value: Formatters.currencyCompact(pendingAmount),
+              onTap: () => context.go('/payments'),
             ),
             _KpiCard(
               icon: Icons.warning_amber_rounded,
               iconColor: AppColors.danger,
               label: 'Overdue',
               value: Formatters.currencyCompact(overdueAmount),
+              onTap: () => context.go('/payments'),
             ),
             _KpiCard(
               icon: Icons.check_circle_outline,
               iconColor: AppColors.success,
               label: 'Cleared',
               value: Formatters.currencyCompact(clearedAmount),
+              onTap: () => context.go('/payments'),
             ),
           ],
         ),
@@ -421,6 +429,7 @@ class _KpiCard extends StatelessWidget {
   final String value;
   final double? progressValue;
   final bool isWide;
+  final VoidCallback? onTap;
 
   const _KpiCard({
     required this.icon,
@@ -429,11 +438,14 @@ class _KpiCard extends StatelessWidget {
     required this.value,
     this.progressValue,
     this.isWide = false,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: AppColors.surface,
@@ -485,7 +497,7 @@ class _KpiCard extends StatelessWidget {
           ],
         ],
       ),
-    );
+    ));
   }
 }
 
