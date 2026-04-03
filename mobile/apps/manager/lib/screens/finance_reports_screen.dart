@@ -299,7 +299,13 @@ class _FinanceReportsScreenState extends ConsumerState<FinanceReportsScreen> {
             ),
           ),
         ),
-        if (_loading) const LoadingOverlay(),
+        if (_loading)
+          Container(
+            color: Colors.black26,
+            child: const Center(
+              child: CircularProgressIndicator(color: AppColors.primary),
+            ),
+          ),
       ],
     );
   }
