@@ -130,7 +130,8 @@ public class PortfolioImportService {
                 errors.add(new ImportErrorDTO("Units", rowNum, "UnitNumber", "Unit number is required"));
             } else if (!propertyName.isEmpty()) {
                 // Composite key: buildingName|unitNumber — allows same unit number in different buildings
-                String compositeKey = buildingName + "|" + unitNumber;
+                // Lowercase buildingName so "Tower A" and "tower a" are treated as the same building
+                String compositeKey = buildingName.toLowerCase() + "|" + unitNumber;
                 Set<String> units = unitsByProperty.computeIfAbsent(propertyName, k -> new HashSet<>());
                 if (!units.add(compositeKey)) {
                     errors.add(new ImportErrorDTO("Units", rowNum, "UnitNumber", "Duplicate unit number '" + unitNumber + "' in building '" + buildingName + "' of property '" + propertyName + "'"));
@@ -195,6 +196,8 @@ public class PortfolioImportService {
             String startDateStr = getCellString(row, 4);
             String endDateStr = getCellString(row, 5);
             String rentAmountStr = getCellString(row, 6);
+            String depositStr = getCellString(row, 7);
+            String paymentTermsStr = getCellString(row, 8);
             String paymentMethod = getCellString(row, 9);
 
             // Cross-sheet: property+unit
@@ -208,10 +211,12 @@ public class PortfolioImportService {
                 errors.add(new ImportErrorDTO("Leases", rowNum, "UnitNumber", "Unit number is required"));
             } else if (!propertyName.isEmpty()) {
                 // Use composite key buildingName|unitNumber to match units validation
-                String compositeKey = buildingName + "|" + unitNumber;
+                String compositeKey = buildingName.toLowerCase() + "|" + unitNumber;
                 Set<String> units = unitsByProperty.getOrDefault(propertyName, Collections.emptySet());
                 if (!units.contains(compositeKey)) {
-                    errors.add(new ImportErrorDTO("Leases", rowNum, "UnitNumber", "Unit '" + unitNumber + "' in building '" + buildingName + "' not found in property '" + propertyName + "' on Units sheet"));
+                    errors.add(new ImportErrorDTO("Leases", rowNum, "UnitNumber",
+                            "Unit '" + unitNumber + "' in building '" + buildingName + "' not found in property '" + propertyName +
+                            "' on Units sheet. Ensure BuildingName matches the Units sheet (leave blank if unit has no building)."));
                 }
             }
 
@@ -249,6 +254,20 @@ public class PortfolioImportService {
             } else {
                 try { Double.parseDouble(rentAmountStr); } catch (NumberFormatException e) {
                     errors.add(new ImportErrorDTO("Leases", rowNum, "RentAmount", "Rent amount must be numeric"));
+                }
+            }
+
+            // Deposit amount
+            if (!depositStr.isEmpty()) {
+                try { Double.parseDouble(depositStr); } catch (NumberFormatException e) {
+                    errors.add(new ImportErrorDTO("Leases", rowNum, "DepositAmount", "Deposit amount must be numeric"));
+                }
+            }
+
+            // Payment terms
+            if (!paymentTermsStr.isEmpty()) {
+                try { Integer.parseInt(paymentTermsStr); } catch (NumberFormatException e) {
+                    errors.add(new ImportErrorDTO("Leases", rowNum, "PaymentTerms", "Payment terms must be a whole number (e.g. 12 for monthly installments)"));
                 }
             }
 

@@ -65,7 +65,7 @@ public class PortfolioImportPersistService {
             String buildingName = getCellString(row, 1);
             if (buildingName.isEmpty()) continue;
 
-            String key = propertyName + "|" + buildingName;
+            String key = propertyName + "|" + buildingName.toLowerCase();
             if (!buildingMap.containsKey(key)) {
                 Property property = propertyMap.get(propertyName);
                 Building b = new Building();
@@ -97,7 +97,7 @@ public class PortfolioImportPersistService {
             u.setStatus(UnitStatus.VACANT);
 
             if (!buildingName.isEmpty()) {
-                u.setBuilding(buildingMap.get(propertyName + "|" + buildingName));
+                u.setBuilding(buildingMap.get(propertyName + "|" + buildingName.toLowerCase()));
             }
             if (!unitType.isEmpty()) {
                 u.setType(UnitType.valueOf(unitType.toUpperCase()));
@@ -109,7 +109,7 @@ public class PortfolioImportPersistService {
                 u.setExpectedRent(new BigDecimal(expectedRent));
             }
 
-            unitMap.put(propertyName + "|" + buildingName + "|" + unitNumber, unitRepository.save(u));
+            unitMap.put(propertyName + "|" + buildingName.toLowerCase() + "|" + unitNumber, unitRepository.save(u));
         }
         job.setUnitsCreated(unitMap.size());
 
@@ -148,8 +148,19 @@ public class PortfolioImportPersistService {
             String paymentMethodStr = getCellString(row, 9);
             String ejariNumber = getCellString(row, 10);
 
-            Unit unit = unitMap.get(propertyName + "|" + buildingName + "|" + unitNumber);
+            Unit unit = unitMap.get(propertyName + "|" + buildingName.toLowerCase() + "|" + unitNumber);
             Renter renter = renterMap.get(renterEmail.toLowerCase());
+
+            if (unit == null) {
+                throw new IllegalStateException(
+                        "Unit not found during persist for: " + propertyName + " | " + buildingName + " | " + unitNumber +
+                        " — this indicates a validation bug, please report it");
+            }
+            if (renter == null) {
+                throw new IllegalStateException(
+                        "Renter not found during persist for email: " + renterEmail +
+                        " — this indicates a validation bug, please report it");
+            }
 
             Lease lease = new Lease();
             lease.setUnit(unit);
