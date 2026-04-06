@@ -78,7 +78,7 @@ public class PortfolioImportPersistService {
         job.setBuildingsCreated(buildingsCreated);
 
         // 3. Create Units
-        Map<String, Unit> unitMap = new LinkedHashMap<>(); // "propertyName|unitNumber" -> Unit
+        Map<String, Unit> unitMap = new LinkedHashMap<>(); // "propertyName|buildingName|unitNumber" -> Unit
         for (int i = 1; i <= unitsSheet.getLastRowNum(); i++) {
             Row row = unitsSheet.getRow(i);
             if (row == null || isRowEmpty(row)) continue;
@@ -109,7 +109,7 @@ public class PortfolioImportPersistService {
                 u.setExpectedRent(new BigDecimal(expectedRent));
             }
 
-            unitMap.put(propertyName + "|" + unitNumber, unitRepository.save(u));
+            unitMap.put(propertyName + "|" + buildingName + "|" + unitNumber, unitRepository.save(u));
         }
         job.setUnitsCreated(unitMap.size());
 
@@ -137,17 +137,18 @@ public class PortfolioImportPersistService {
             if (row == null || isRowEmpty(row)) continue;
 
             String propertyName = getCellString(row, 0);
-            String unitNumber = getCellString(row, 1);
-            String renterEmail = getCellString(row, 2);
-            LocalDate startDate = parseDate(getCellString(row, 3));
-            LocalDate endDate = parseDate(getCellString(row, 4));
-            BigDecimal rentAmount = new BigDecimal(getCellString(row, 5));
-            String depositStr = getCellString(row, 6);
-            String paymentTermsStr = getCellString(row, 7);
-            String paymentMethodStr = getCellString(row, 8);
-            String ejariNumber = getCellString(row, 9);
+            String buildingName = getCellString(row, 1);
+            String unitNumber = getCellString(row, 2);
+            String renterEmail = getCellString(row, 3);
+            LocalDate startDate = parseDate(getCellString(row, 4));
+            LocalDate endDate = parseDate(getCellString(row, 5));
+            BigDecimal rentAmount = new BigDecimal(getCellString(row, 6));
+            String depositStr = getCellString(row, 7);
+            String paymentTermsStr = getCellString(row, 8);
+            String paymentMethodStr = getCellString(row, 9);
+            String ejariNumber = getCellString(row, 10);
 
-            Unit unit = unitMap.get(propertyName + "|" + unitNumber);
+            Unit unit = unitMap.get(propertyName + "|" + buildingName + "|" + unitNumber);
             Renter renter = renterMap.get(renterEmail.toLowerCase());
 
             Lease lease = new Lease();

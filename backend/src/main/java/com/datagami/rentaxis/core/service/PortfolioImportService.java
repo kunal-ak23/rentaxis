@@ -51,7 +51,7 @@ public class PortfolioImportService {
 
         // Collect data for cross-sheet validation
         Set<String> propertyNames = new HashSet<>();
-        Map<String, Set<String>> unitsByProperty = new HashMap<>(); // propertyName -> set of unitNumbers
+        Map<String, Set<String>> unitsByProperty = new HashMap<>(); // propertyName -> set of "buildingName|unitNumber" composite keys
         Set<String> renterEmails = new HashSet<>();
 
         // Validate Properties sheet
@@ -114,6 +114,7 @@ public class PortfolioImportService {
             int rowNum = i + 1;
 
             String propertyName = getCellString(row, 0);
+            String buildingName = getCellString(row, 1);
             String unitNumber = getCellString(row, 2);
             String unitType = getCellString(row, 3);
             String sizeSqft = getCellString(row, 4);
@@ -128,9 +129,11 @@ public class PortfolioImportService {
             if (unitNumber.isEmpty()) {
                 errors.add(new ImportErrorDTO("Units", rowNum, "UnitNumber", "Unit number is required"));
             } else if (!propertyName.isEmpty()) {
+                // Composite key: buildingName|unitNumber — allows same unit number in different buildings
+                String compositeKey = buildingName + "|" + unitNumber;
                 Set<String> units = unitsByProperty.computeIfAbsent(propertyName, k -> new HashSet<>());
-                if (!units.add(unitNumber)) {
-                    errors.add(new ImportErrorDTO("Units", rowNum, "UnitNumber", "Duplicate unit number '" + unitNumber + "' in property '" + propertyName + "'"));
+                if (!units.add(compositeKey)) {
+                    errors.add(new ImportErrorDTO("Units", rowNum, "UnitNumber", "Duplicate unit number '" + unitNumber + "' in building '" + buildingName + "' of property '" + propertyName + "'"));
                 }
             }
 
@@ -186,12 +189,13 @@ public class PortfolioImportService {
             int rowNum = i + 1;
 
             String propertyName = getCellString(row, 0);
-            String unitNumber = getCellString(row, 1);
-            String renterEmail = getCellString(row, 2);
-            String startDateStr = getCellString(row, 3);
-            String endDateStr = getCellString(row, 4);
-            String rentAmountStr = getCellString(row, 5);
-            String paymentMethod = getCellString(row, 8);
+            String buildingName = getCellString(row, 1);
+            String unitNumber = getCellString(row, 2);
+            String renterEmail = getCellString(row, 3);
+            String startDateStr = getCellString(row, 4);
+            String endDateStr = getCellString(row, 5);
+            String rentAmountStr = getCellString(row, 6);
+            String paymentMethod = getCellString(row, 9);
 
             // Cross-sheet: property+unit
             if (propertyName.isEmpty()) {
@@ -203,9 +207,11 @@ public class PortfolioImportService {
             if (unitNumber.isEmpty()) {
                 errors.add(new ImportErrorDTO("Leases", rowNum, "UnitNumber", "Unit number is required"));
             } else if (!propertyName.isEmpty()) {
+                // Use composite key buildingName|unitNumber to match units validation
+                String compositeKey = buildingName + "|" + unitNumber;
                 Set<String> units = unitsByProperty.getOrDefault(propertyName, Collections.emptySet());
-                if (!units.contains(unitNumber)) {
-                    errors.add(new ImportErrorDTO("Leases", rowNum, "UnitNumber", "Unit '" + unitNumber + "' not found in property '" + propertyName + "' on Units sheet"));
+                if (!units.contains(compositeKey)) {
+                    errors.add(new ImportErrorDTO("Leases", rowNum, "UnitNumber", "Unit '" + unitNumber + "' in building '" + buildingName + "' not found in property '" + propertyName + "' on Units sheet"));
                 }
             }
 
