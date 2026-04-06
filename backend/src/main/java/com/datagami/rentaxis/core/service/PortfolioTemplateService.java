@@ -80,18 +80,18 @@ public class PortfolioTemplateService {
 
     private void createLeasesSheet(XSSFWorkbook workbook, CellStyle headerStyle) {
         XSSFSheet sheet = workbook.createSheet("Leases");
-        String[] headers = {"PropertyName", "UnitNumber", "RenterEmail", "StartDate", "EndDate",
+        String[] headers = {"PropertyName", "BuildingName", "UnitNumber", "RenterEmail", "StartDate", "EndDate",
                 "RentAmount", "DepositAmount", "PaymentTerms", "PaymentMethod", "EjariNumber"};
         createHeaderRow(sheet, headers, headerStyle);
 
-        // Dropdown: PaymentMethod (column I)
+        // Dropdown: PaymentMethod (column J)
         String[] methods = {"CHEQUE", "ONLINE"};
-        addDropdown(sheet, 1, 100, 8, 8, methods);
+        addDropdown(sheet, 1, 100, 9, 9, methods);
 
         // Example rows
-        addRow(sheet, 1, "Marina Heights", "101", "ahmed@email.com", "2026-01-01", "2026-12-31",
+        addRow(sheet, 1, "Marina Heights", "Tower A", "101", "ahmed@email.com", "2026-01-01", "2026-12-31",
                 "60000", "5000", "12", "CHEQUE", "EJ-2026-001");
-        addRow(sheet, 2, "Marina Heights", "102", "sara@email.com", "2026-03-01", "2027-02-28",
+        addRow(sheet, 2, "Marina Heights", "Tower A", "102", "sara@email.com", "2026-03-01", "2027-02-28",
                 "85000", "7000", "12", "CHEQUE", "EJ-2026-002");
 
         autoSizeColumns(sheet, headers.length);

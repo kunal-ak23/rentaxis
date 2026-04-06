@@ -51,7 +51,7 @@ public class PortfolioImportService {
 
         // Collect data for cross-sheet validation
         Set<String> propertyNames = new HashSet<>();
-        Map<String, Set<String>> unitsByProperty = new HashMap<>(); // propertyName -> set of unitNumbers
+        Map<String, Set<String>> unitsByProperty = new HashMap<>(); // propertyName -> set of "buildingName|unitNumber" composite keys
         Set<String> renterEmails = new HashSet<>();
 
         // Validate Properties sheet
@@ -114,6 +114,7 @@ public class PortfolioImportService {
             int rowNum = i + 1;
 
             String propertyName = getCellString(row, 0);
+            String buildingName = getCellString(row, 1);
             String unitNumber = getCellString(row, 2);
             String unitType = getCellString(row, 3);
             String sizeSqft = getCellString(row, 4);
@@ -128,9 +129,12 @@ public class PortfolioImportService {
             if (unitNumber.isEmpty()) {
                 errors.add(new ImportErrorDTO("Units", rowNum, "UnitNumber", "Unit number is required"));
             } else if (!propertyName.isEmpty()) {
-                Set<String> units = unitsByProperty.computeIfAbsent(propertyName, k -> new HashSet<>());
-                if (!units.add(unitNumber)) {
-                    errors.add(new ImportErrorDTO("Units", rowNum, "UnitNumber", "Duplicate unit number '" + unitNumber + "' in property '" + propertyName + "'"));
+                // Composite key: buildingName|unitNumber — allows same unit number in different buildings
+                // Lowercase both so casing differences across sheets don't cause false mismatches
+                String compositeKey = buildingName.toLowerCase() + "|" + unitNumber.toLowerCase();
+                Set<String> units = unitsByProperty.computeIfAbsent(propertyName.toLowerCase(), k -> new HashSet<>());
+                if (!units.add(compositeKey)) {
+                    errors.add(new ImportErrorDTO("Units", rowNum, "UnitNumber", "Duplicate unit number '" + unitNumber + "' in building '" + buildingName + "' of property '" + propertyName + "'"));
                 }
             }
 
@@ -186,12 +190,15 @@ public class PortfolioImportService {
             int rowNum = i + 1;
 
             String propertyName = getCellString(row, 0);
-            String unitNumber = getCellString(row, 1);
-            String renterEmail = getCellString(row, 2);
-            String startDateStr = getCellString(row, 3);
-            String endDateStr = getCellString(row, 4);
-            String rentAmountStr = getCellString(row, 5);
-            String paymentMethod = getCellString(row, 8);
+            String buildingName = getCellString(row, 1);
+            String unitNumber = getCellString(row, 2);
+            String renterEmail = getCellString(row, 3);
+            String startDateStr = getCellString(row, 4);
+            String endDateStr = getCellString(row, 5);
+            String rentAmountStr = getCellString(row, 6);
+            String depositStr = getCellString(row, 7);
+            String paymentTermsStr = getCellString(row, 8);
+            String paymentMethod = getCellString(row, 9);
 
             // Cross-sheet: property+unit
             if (propertyName.isEmpty()) {
@@ -203,9 +210,13 @@ public class PortfolioImportService {
             if (unitNumber.isEmpty()) {
                 errors.add(new ImportErrorDTO("Leases", rowNum, "UnitNumber", "Unit number is required"));
             } else if (!propertyName.isEmpty()) {
-                Set<String> units = unitsByProperty.getOrDefault(propertyName, Collections.emptySet());
-                if (!units.contains(unitNumber)) {
-                    errors.add(new ImportErrorDTO("Leases", rowNum, "UnitNumber", "Unit '" + unitNumber + "' not found in property '" + propertyName + "' on Units sheet"));
+                // Use composite key buildingName|unitNumber to match units validation
+                String compositeKey = buildingName.toLowerCase() + "|" + unitNumber.toLowerCase();
+                Set<String> units = unitsByProperty.getOrDefault(propertyName.toLowerCase(), Collections.emptySet());
+                if (!units.contains(compositeKey)) {
+                    errors.add(new ImportErrorDTO("Leases", rowNum, "UnitNumber",
+                            "Unit '" + unitNumber + "' in building '" + buildingName + "' not found in property '" + propertyName +
+                            "' on Units sheet. Ensure BuildingName matches the Units sheet (leave blank if unit has no building)."));
                 }
             }
 
@@ -243,6 +254,20 @@ public class PortfolioImportService {
             } else {
                 try { Double.parseDouble(rentAmountStr); } catch (NumberFormatException e) {
                     errors.add(new ImportErrorDTO("Leases", rowNum, "RentAmount", "Rent amount must be numeric"));
+                }
+            }
+
+            // Deposit amount
+            if (!depositStr.isEmpty()) {
+                try { Double.parseDouble(depositStr); } catch (NumberFormatException e) {
+                    errors.add(new ImportErrorDTO("Leases", rowNum, "DepositAmount", "Deposit amount must be numeric"));
+                }
+            }
+
+            // Payment terms
+            if (!paymentTermsStr.isEmpty()) {
+                try { Integer.parseInt(paymentTermsStr); } catch (NumberFormatException e) {
+                    errors.add(new ImportErrorDTO("Leases", rowNum, "PaymentTerms", "Payment terms must be a whole number (e.g. 12 for monthly installments)"));
                 }
             }
 
@@ -317,6 +342,14 @@ public class PortfolioImportService {
         } catch (Exception e) {
             log.error("Portfolio import failed: jobId={}", job.getId(), e);
             job.setStatus("FAILED");
+            // Reset counts — the @Transactional on persistWorkbook rolled back all DB writes,
+            // so any counts mutated before the exception must not appear on the failed job record
+            job.setPropertiesCreated(0);
+            job.setBuildingsCreated(0);
+            job.setUnitsCreated(0);
+            job.setRentersCreated(0);
+            job.setLeasesCreated(0);
+            job.setSchedulesCreated(0);
             try {
                 job.setErrors(objectMapper.writeValueAsString(
                         List.of(new ImportErrorDTO("General", 0, "", e.getMessage()))));
