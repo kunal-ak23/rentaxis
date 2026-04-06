@@ -130,9 +130,9 @@ public class PortfolioImportService {
                 errors.add(new ImportErrorDTO("Units", rowNum, "UnitNumber", "Unit number is required"));
             } else if (!propertyName.isEmpty()) {
                 // Composite key: buildingName|unitNumber — allows same unit number in different buildings
-                // Lowercase buildingName so "Tower A" and "tower a" are treated as the same building
-                String compositeKey = buildingName.toLowerCase() + "|" + unitNumber;
-                Set<String> units = unitsByProperty.computeIfAbsent(propertyName, k -> new HashSet<>());
+                // Lowercase both so casing differences across sheets don't cause false mismatches
+                String compositeKey = buildingName.toLowerCase() + "|" + unitNumber.toLowerCase();
+                Set<String> units = unitsByProperty.computeIfAbsent(propertyName.toLowerCase(), k -> new HashSet<>());
                 if (!units.add(compositeKey)) {
                     errors.add(new ImportErrorDTO("Units", rowNum, "UnitNumber", "Duplicate unit number '" + unitNumber + "' in building '" + buildingName + "' of property '" + propertyName + "'"));
                 }
@@ -211,8 +211,8 @@ public class PortfolioImportService {
                 errors.add(new ImportErrorDTO("Leases", rowNum, "UnitNumber", "Unit number is required"));
             } else if (!propertyName.isEmpty()) {
                 // Use composite key buildingName|unitNumber to match units validation
-                String compositeKey = buildingName.toLowerCase() + "|" + unitNumber;
-                Set<String> units = unitsByProperty.getOrDefault(propertyName, Collections.emptySet());
+                String compositeKey = buildingName.toLowerCase() + "|" + unitNumber.toLowerCase();
+                Set<String> units = unitsByProperty.getOrDefault(propertyName.toLowerCase(), Collections.emptySet());
                 if (!units.contains(compositeKey)) {
                     errors.add(new ImportErrorDTO("Leases", rowNum, "UnitNumber",
                             "Unit '" + unitNumber + "' in building '" + buildingName + "' not found in property '" + propertyName +
@@ -342,6 +342,14 @@ public class PortfolioImportService {
         } catch (Exception e) {
             log.error("Portfolio import failed: jobId={}", job.getId(), e);
             job.setStatus("FAILED");
+            // Reset counts — the @Transactional on persistWorkbook rolled back all DB writes,
+            // so any counts mutated before the exception must not appear on the failed job record
+            job.setPropertiesCreated(0);
+            job.setBuildingsCreated(0);
+            job.setUnitsCreated(0);
+            job.setRentersCreated(0);
+            job.setLeasesCreated(0);
+            job.setSchedulesCreated(0);
             try {
                 job.setErrors(objectMapper.writeValueAsString(
                         List.of(new ImportErrorDTO("General", 0, "", e.getMessage()))));

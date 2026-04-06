@@ -50,7 +50,7 @@ public class PortfolioImportPersistService {
             p.setType(PropertyType.valueOf(getCellString(row, 4).trim().toUpperCase().replace(" ", "_")));
             p.setMakaniNumber(getCellString(row, 5).isEmpty() ? null : getCellString(row, 5));
 
-            propertyMap.put(p.getNameEn(), propertyRepository.save(p));
+            propertyMap.put(p.getNameEn().toLowerCase(), propertyRepository.save(p));
         }
         job.setPropertiesCreated(propertyMap.size());
 
@@ -65,9 +65,9 @@ public class PortfolioImportPersistService {
             String buildingName = getCellString(row, 1);
             if (buildingName.isEmpty()) continue;
 
-            String key = propertyName + "|" + buildingName.toLowerCase();
+            String key = propertyName.toLowerCase() + "|" + buildingName.toLowerCase();
             if (!buildingMap.containsKey(key)) {
-                Property property = propertyMap.get(propertyName);
+                Property property = propertyMap.get(propertyName.toLowerCase());
                 Building b = new Building();
                 b.setProperty(property);
                 b.setNameEn(buildingName);
@@ -90,14 +90,14 @@ public class PortfolioImportPersistService {
             String sizeSqft = getCellString(row, 4);
             String expectedRent = getCellString(row, 5);
 
-            Property property = propertyMap.get(propertyName);
+            Property property = propertyMap.get(propertyName.toLowerCase());
             Unit u = new Unit();
             u.setProperty(property);
             u.setUnitNumber(unitNumber);
             u.setStatus(UnitStatus.VACANT);
 
             if (!buildingName.isEmpty()) {
-                u.setBuilding(buildingMap.get(propertyName + "|" + buildingName.toLowerCase()));
+                u.setBuilding(buildingMap.get(propertyName.toLowerCase() + "|" + buildingName.toLowerCase()));
             }
             if (!unitType.isEmpty()) {
                 u.setType(UnitType.valueOf(unitType.toUpperCase()));
@@ -109,7 +109,7 @@ public class PortfolioImportPersistService {
                 u.setExpectedRent(new BigDecimal(expectedRent));
             }
 
-            unitMap.put(propertyName + "|" + buildingName.toLowerCase() + "|" + unitNumber, unitRepository.save(u));
+            unitMap.put(propertyName.toLowerCase() + "|" + buildingName.toLowerCase() + "|" + unitNumber.toLowerCase(), unitRepository.save(u));
         }
         job.setUnitsCreated(unitMap.size());
 
@@ -148,7 +148,7 @@ public class PortfolioImportPersistService {
             String paymentMethodStr = getCellString(row, 9);
             String ejariNumber = getCellString(row, 10);
 
-            Unit unit = unitMap.get(propertyName + "|" + buildingName.toLowerCase() + "|" + unitNumber);
+            Unit unit = unitMap.get(propertyName.toLowerCase() + "|" + buildingName.toLowerCase() + "|" + unitNumber.toLowerCase());
             Renter renter = renterMap.get(renterEmail.toLowerCase());
 
             if (unit == null) {
