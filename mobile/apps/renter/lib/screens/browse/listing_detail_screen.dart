@@ -16,10 +16,6 @@ final _listingDetailProvider = FutureProvider.autoDispose
       return service.getMarketplaceListing(params.tenantSlug, params.slug);
     });
 
-// Reserved for future wishlist state sync
-// ignore: unused_element
-final _wishlistIdProvider = StateProvider.autoDispose<String?>((ref) => null);
-
 class _DetailParams {
   final String tenantSlug;
   final String slug;
