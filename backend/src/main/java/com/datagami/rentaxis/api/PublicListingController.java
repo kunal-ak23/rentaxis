@@ -27,9 +27,10 @@ import java.util.UUID;
 @RequestMapping("/public/l")
 public class PublicListingController {
 
-    // Fixed offset ~200m to obscure exact location
-    private static final double LAT_OFFSET = 0.0018;
-    private static final double LNG_OFFSET = -0.0021;
+    // Per-listing pseudo-random offset, ~220m max in any direction.
+    // Deterministic per listing id (so repeat loads give the same coords)
+    // but different per listing (so reversing requires knowing the seed).
+    private static final double MAX_OFFSET_DEG = 0.002;
 
     private static final long RENT_ROUND = 10_000L;
 
@@ -97,12 +98,13 @@ public class PublicListingController {
         // Rent: round down to nearest 10k, format as "AED 80-90k"
         String rentLabel = buildRentLabel(l.getAnnualRent());
 
-        // Approximate coordinates with fixed offset
+        // Approximate coordinates with per-listing pseudo-random offset
+        double[] offset = computeOffset(l.getId());
         BigDecimal approxLat = l.getLat() != null
-                ? l.getLat().add(BigDecimal.valueOf(LAT_OFFSET))
+                ? l.getLat().add(BigDecimal.valueOf(offset[0]))
                 : null;
         BigDecimal approxLng = l.getLng() != null
-                ? l.getLng().add(BigDecimal.valueOf(LNG_OFFSET))
+                ? l.getLng().add(BigDecimal.valueOf(offset[1]))
                 : null;
 
         // Available label
@@ -153,6 +155,17 @@ public class PublicListingController {
         String month = l.getAvailableFrom().format(DateTimeFormatter.ofPattern("MMMM"));
         int year = l.getAvailableFrom().getYear();
         return "Available from " + month + " " + year;
+    }
+
+    private double[] computeOffset(UUID listingId) {
+        if (listingId == null) {
+            return new double[]{0.0, 0.0};
+        }
+        long seed = listingId.getMostSignificantBits() ^ listingId.getLeastSignificantBits();
+        java.util.Random r = new java.util.Random(seed);
+        double lat = (r.nextDouble() - 0.5) * 2 * MAX_OFFSET_DEG;
+        double lng = (r.nextDouble() - 0.5) * 2 * MAX_OFFSET_DEG;
+        return new double[]{lat, lng};
     }
 
     private void checkEnabled() {
