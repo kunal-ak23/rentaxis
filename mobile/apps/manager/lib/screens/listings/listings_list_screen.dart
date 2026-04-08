@@ -130,7 +130,7 @@ class _ListingRow extends StatelessWidget {
     final status = listing['status'] as String? ?? 'DRAFT';
     final rent = listing['annualRent'] as num?;
     final interests = listing['interestsCount'] as int? ?? 0;
-    final updatedAt = listing['updatedAt'] as String?;
+    final createdAt = listing['createdAt'] as String?;
 
     final statusColor = switch (status) {
       'PUBLISHED' => AppColors.success,
@@ -206,9 +206,9 @@ class _ListingRow extends StatelessWidget {
                     const SizedBox(height: 4),
                     Row(
                       children: [
-                        if (updatedAt != null)
+                        if (createdAt != null)
                           Text(
-                            Formatters.timeAgo(updatedAt),
+                            Formatters.timeAgo(createdAt),
                             style: GoogleFonts.josefinSans(
                               fontSize: 11,
                               color: AppColors.textMuted,
