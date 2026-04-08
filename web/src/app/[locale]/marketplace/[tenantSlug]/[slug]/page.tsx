@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, use } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -149,10 +149,10 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
 }
 
 // ─── Main page ────────────────────────────────────────────────────────────────
-export default function ListingDetailPage({ params }: { params: { tenantSlug: string; slug: string } }) {
+export default function ListingDetailPage({ params }: { params: Promise<{ tenantSlug: string; slug: string }> }) {
   const t = useTranslations('Marketplace');
   const locale = useLocale();
-  const { tenantSlug, slug } = params;
+  const { tenantSlug, slug } = use(params);
   const { data: session } = useSession();
   const router = useRouter();
 

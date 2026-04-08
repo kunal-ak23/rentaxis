@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import { useTranslations } from "next-intl";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
+import { useSession } from "next-auth/react";
 import {
   Plus, Search, List, LayoutGrid, Pencil, Trash2, Users,
   AlertCircle, RefreshCw, Loader2, Image as ImageIcon,
@@ -51,7 +52,16 @@ function BedroomsLabel({ beds, t }: { beds: number | null; t: ReturnType<typeof 
 }
 
 export default function ListingsPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-64"><Loader2 size={24} className="animate-spin text-muted" /></div>}>
+      <ListingsContent />
+    </Suspense>
+  );
+}
+
+function ListingsContent() {
   const t = useTranslations('Listings');
+  const { data: session } = useSession();
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
@@ -83,6 +93,8 @@ export default function ListingsPage() {
   const [interestsListingId, setInterestsListingId] = useState<string | null>(null);
   const [interestsTitle, setInterestsTitle] = useState<string>('');
 
+  const token = (session?.user as { accessToken?: string })?.accessToken;
+
   const loadListings = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -93,7 +105,7 @@ export default function ListingsPage() {
         status: statusFilter || undefined,
         search: searchQuery || undefined,
         sort: `createdAt,${sortDir}`,
-      });
+      }, token);
       setListings(data.content);
       setTotalElements(data.totalElements);
     } catch {
@@ -101,7 +113,7 @@ export default function ListingsPage() {
     } finally {
       setLoading(false);
     }
-  }, [currentPage, itemsPerPage, statusFilter, searchQuery, sortDir, t]);
+  }, [currentPage, itemsPerPage, statusFilter, searchQuery, sortDir, token, t]);
 
   useEffect(() => { loadListings(); }, [loadListings]);
 
@@ -122,7 +134,7 @@ export default function ListingsPage() {
       onConfirm: async () => {
         setConfirmOpen(false);
         setActionLoading(`publish-${listing.id}`);
-        try { await publishListing(listing.id); await loadListings(); } catch {}
+        try { await publishListing(listing.id, token); await loadListings(); } catch {}
         finally { setActionLoading(null); }
       },
     });
@@ -138,7 +150,7 @@ export default function ListingsPage() {
       onConfirm: async () => {
         setConfirmOpen(false);
         setActionLoading(`unlist-${listing.id}`);
-        try { await unlistListing(listing.id); await loadListings(); } catch {}
+        try { await unlistListing(listing.id, token); await loadListings(); } catch {}
         finally { setActionLoading(null); }
       },
     });
@@ -154,7 +166,7 @@ export default function ListingsPage() {
       onConfirm: async () => {
         setConfirmOpen(false);
         setActionLoading(`delete-${listing.id}`);
-        try { await deleteListing(listing.id); await loadListings(); } catch {}
+        try { await deleteListing(listing.id, token); await loadListings(); } catch {}
         finally { setActionLoading(null); }
       },
     });

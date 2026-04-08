@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, use, Suspense } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -321,10 +321,18 @@ function FilterPanel({
 }
 
 // ─── Main page ────────────────────────────────────────────────────────────────
-export default function MarketplacePage({ params }: { params: { tenantSlug: string } }) {
+export default function MarketplacePage({ params }: { params: Promise<{ tenantSlug: string }> }) {
+  const { tenantSlug } = use(params);
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-neutral-50 flex items-center justify-center"><Loader2 size={32} className="animate-spin text-neutral-400" /></div>}>
+      <MarketplaceContent tenantSlug={tenantSlug} />
+    </Suspense>
+  );
+}
+
+function MarketplaceContent({ tenantSlug }: { tenantSlug: string }) {
   const t = useTranslations('Marketplace');
   const locale = useLocale();
-  const { tenantSlug } = params;
   const { data: session } = useSession();
   const searchParams = useSearchParams();
   const router = useRouter();
