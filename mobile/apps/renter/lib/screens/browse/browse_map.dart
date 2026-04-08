@@ -14,7 +14,7 @@ class BrowseMap extends ConsumerStatefulWidget {
 }
 
 class _BrowseMapState extends ConsumerState<BrowseMap> {
-  GoogleMapController? _mapController;
+  GoogleMapController? _mapController; // ignore: unused_field
   Map<String, dynamic>? _selectedListing;
   Set<Marker> _markers = {};
 

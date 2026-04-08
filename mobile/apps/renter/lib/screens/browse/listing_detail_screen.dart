@@ -21,6 +21,8 @@ final _listingDetailProvider = FutureProvider.autoDispose
   return service.getMarketplaceListing(params.tenantSlug, params.slug);
 });
 
+// Reserved for future wishlist state sync
+// ignore: unused_element
 final _wishlistIdProvider =
     StateProvider.autoDispose<String?>((ref) => null);
 
@@ -109,7 +111,6 @@ class _ListingDetailViewState extends ConsumerState<_ListingDetailView> {
   @override
   Widget build(BuildContext context) {
     final l = widget.listing;
-    final title = l['titleEn'] as String? ?? 'Listing';
     final status = l['status'] as String? ?? '';
     final isUpcoming = status == 'UPCOMING';
 
