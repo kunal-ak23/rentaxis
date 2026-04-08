@@ -25,6 +25,8 @@ export 'api/services/penalty_service.dart';
 export 'api/services/settlement_service.dart';
 export 'api/services/report_service.dart';
 export 'api/services/property_contact_service.dart';
+export 'api/services/listing_api_service.dart';
+export 'api/services/location_service.dart';
 
 // Models
 export 'models/auth_response.dart';
