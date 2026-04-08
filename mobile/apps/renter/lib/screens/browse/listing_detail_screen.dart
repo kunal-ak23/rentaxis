@@ -12,14 +12,13 @@ import 'package:url_launcher/url_launcher.dart';
 
 final _listingDetailProvider = FutureProvider.autoDispose
     .family<Map<String, dynamic>, _DetailParams>((ref, params) async {
-  final service = ref.watch(listingApiServiceProvider);
-  return service.getMarketplaceListing(params.tenantSlug, params.slug);
-});
+      final service = ref.watch(listingApiServiceProvider);
+      return service.getMarketplaceListing(params.tenantSlug, params.slug);
+    });
 
 // Reserved for future wishlist state sync
 // ignore: unused_element
-final _wishlistIdProvider =
-    StateProvider.autoDispose<String?>((ref) => null);
+final _wishlistIdProvider = StateProvider.autoDispose<String?>((ref) => null);
 
 class _DetailParams {
   final String tenantSlug;
@@ -44,12 +43,12 @@ class ListingDetailScreen extends ConsumerWidget {
     final tenantSlug = resolveTenantSlug(authState);
 
     if (tenantSlug == null) {
-      return const Scaffold(
-          body: Center(child: Text('Tenant not configured')));
+      return const Scaffold(body: Center(child: Text('Tenant not configured')));
     }
 
     final detailAsync = ref.watch(
-        _listingDetailProvider(_DetailParams(tenantSlug, slug)));
+      _listingDetailProvider(_DetailParams(tenantSlug, slug)),
+    );
 
     return detailAsync.when(
       loading: () => Scaffold(
@@ -60,8 +59,9 @@ class ListingDetailScreen extends ConsumerWidget {
         appBar: AppBar(),
         body: ErrorState(
           message: 'Failed to load listing',
-          onRetry: () =>
-              ref.invalidate(_listingDetailProvider(_DetailParams(tenantSlug, slug))),
+          onRetry: () => ref.invalidate(
+            _listingDetailProvider(_DetailParams(tenantSlug, slug)),
+          ),
         ),
       ),
       data: (listing) => _ListingDetailView(listing: listing),
@@ -76,8 +76,7 @@ class _ListingDetailView extends ConsumerStatefulWidget {
   const _ListingDetailView({required this.listing});
 
   @override
-  ConsumerState<_ListingDetailView> createState() =>
-      _ListingDetailViewState();
+  ConsumerState<_ListingDetailView> createState() => _ListingDetailViewState();
 }
 
 class _ListingDetailViewState extends ConsumerState<_ListingDetailView> {
@@ -137,14 +136,17 @@ class _ListingDetailViewState extends ConsumerState<_ListingDetailView> {
                   Text(
                     l['descriptionEn'] as String,
                     style: GoogleFonts.josefinSans(
-                        fontSize: 14,
-                        color: AppColors.textSecondary,
-                        height: 1.6),
+                      fontSize: 14,
+                      color: AppColors.textSecondary,
+                      height: 1.6,
+                    ),
                   ),
                   const SizedBox(height: 20),
                 ],
-                _AmenitiesGrid(amenities:
-                    (l['amenities'] as List? ?? []).cast<Map<String, dynamic>>()),
+                _AmenitiesGrid(
+                  amenities: (l['amenities'] as List? ?? [])
+                      .cast<Map<String, dynamic>>(),
+                ),
                 const SizedBox(height: 20),
                 _MapCard(listing: l),
                 const SizedBox(height: 20),
@@ -156,14 +158,16 @@ class _ListingDetailViewState extends ConsumerState<_ListingDetailView> {
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _wishlistLoading ? null : () => _toggleWishlist(_wishlisted),
-        backgroundColor:
-            isUpcoming ? AppColors.accent : AppColors.primary,
+        backgroundColor: isUpcoming ? AppColors.accent : AppColors.primary,
         icon: _wishlistLoading
             ? const SizedBox(
                 width: 20,
                 height: 20,
                 child: CircularProgressIndicator(
-                    color: Colors.white, strokeWidth: 2))
+                  color: Colors.white,
+                  strokeWidth: 2,
+                ),
+              )
             : Icon(
                 _wishlisted ? Icons.favorite : Icons.favorite_border,
                 color: Colors.white,
@@ -171,7 +175,9 @@ class _ListingDetailViewState extends ConsumerState<_ListingDetailView> {
         label: Text(
           isUpcoming ? 'Notify me' : (_wishlisted ? 'Saved' : 'Save'),
           style: GoogleFonts.josefinSans(
-              color: Colors.white, fontWeight: FontWeight.w600),
+            color: Colors.white,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
     );
@@ -229,8 +235,12 @@ class _HeroCarouselState extends State<_HeroCarousel> {
         height: 280,
         color: AppColors.background,
         child: const Center(
-            child: Icon(Icons.apartment_outlined,
-                size: 64, color: AppColors.textMuted)),
+          child: Icon(
+            Icons.apartment_outlined,
+            size: 64,
+            color: AppColors.textMuted,
+          ),
+        ),
       );
     }
 
@@ -250,9 +260,13 @@ class _HeroCarouselState extends State<_HeroCarousel> {
                   fit: BoxFit.cover,
                   width: double.infinity,
                   errorBuilder: (_, __, ___) => Container(
-                      color: AppColors.background,
-                      child: const Icon(Icons.broken_image_outlined,
-                          size: 48, color: AppColors.textMuted)),
+                    color: AppColors.background,
+                    child: const Icon(
+                      Icons.broken_image_outlined,
+                      size: 48,
+                      color: AppColors.textMuted,
+                    ),
+                  ),
                 ),
               );
             },
@@ -264,29 +278,28 @@ class _HeroCarouselState extends State<_HeroCarousel> {
               right: 0,
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(
-                  widget.photos.length.clamp(0, 8),
-                  (i) => AnimatedContainer(
+                children: List.generate(widget.photos.length.clamp(0, 8), (i) {
+                  final activeDot = _current.clamp(0, 7);
+                  return AnimatedContainer(
                     duration: const Duration(milliseconds: 200),
                     margin: const EdgeInsets.symmetric(horizontal: 3),
-                    width: _current == i ? 16 : 6,
+                    width: activeDot == i ? 16 : 6,
                     height: 6,
                     decoration: BoxDecoration(
-                      color: _current == i
+                      color: activeDot == i
                           ? Colors.white
                           : Colors.white.withValues(alpha: 0.5),
                       borderRadius: BorderRadius.circular(3),
                     ),
-                  ),
-                ),
+                  );
+                }),
               ),
             ),
           Positioned(
             bottom: 12,
             right: 12,
             child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               decoration: BoxDecoration(
                 color: Colors.black.withValues(alpha: 0.5),
                 borderRadius: BorderRadius.circular(12),
@@ -294,7 +307,9 @@ class _HeroCarouselState extends State<_HeroCarousel> {
               child: Text(
                 '${_current + 1}/${widget.photos.length}',
                 style: GoogleFonts.josefinSans(
-                    fontSize: 12, color: Colors.white),
+                  fontSize: 12,
+                  color: Colors.white,
+                ),
               ),
             ),
           ),
@@ -304,18 +319,19 @@ class _HeroCarouselState extends State<_HeroCarousel> {
   }
 
   void _openGallery(BuildContext context, int initial) {
-    Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => _FullscreenGallery(
-          photos: widget.photos, initialIndex: initial),
-    ));
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) =>
+            _FullscreenGallery(photos: widget.photos, initialIndex: initial),
+      ),
+    );
   }
 }
 
 class _FullscreenGallery extends StatefulWidget {
   final List<Map<String, dynamic>> photos;
   final int initialIndex;
-  const _FullscreenGallery(
-      {required this.photos, required this.initialIndex});
+  const _FullscreenGallery({required this.photos, required this.initialIndex});
 
   @override
   State<_FullscreenGallery> createState() => _FullscreenGalleryState();
@@ -341,8 +357,9 @@ class _FullscreenGalleryState extends State<_FullscreenGallery> {
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
-          backgroundColor: Colors.black,
-          iconTheme: const IconThemeData(color: Colors.white)),
+        backgroundColor: Colors.black,
+        iconTheme: const IconThemeData(color: Colors.white),
+      ),
       body: PhotoViewGallery.builder(
         itemCount: widget.photos.length,
         pageController: _pageController,
@@ -393,9 +410,10 @@ class _QuickFacts extends StatelessWidget {
                 child: Text(
                   title,
                   style: GoogleFonts.cinzel(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary),
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                  ),
                 ),
               ),
               _StatusBadgeInline(status: status),
@@ -418,17 +436,27 @@ class _QuickFacts extends StatelessWidget {
             runSpacing: 8,
             children: [
               if (beds != null)
-                _FactChip(Icons.bed_outlined, '$beds bed${beds != 1 ? 's' : ''}'),
+                _FactChip(
+                  Icons.bed_outlined,
+                  '$beds bed${beds != 1 ? 's' : ''}',
+                ),
               if (baths != null)
-                _FactChip(Icons.bathtub_outlined, '$baths bath${baths != 1 ? 's' : ''}'),
+                _FactChip(
+                  Icons.bathtub_outlined,
+                  '$baths bath${baths != 1 ? 's' : ''}',
+                ),
               if (size != null)
                 _FactChip(Icons.square_foot, '${size.round()} sqft'),
               if (furnishing != null)
-                _FactChip(Icons.chair_outlined,
-                    furnishing.replaceAll('_', ' ').toLowerCase()),
+                _FactChip(
+                  Icons.chair_outlined,
+                  furnishing.replaceAll('_', ' ').toLowerCase(),
+                ),
               if (viewType != null)
-                _FactChip(Icons.landscape_outlined,
-                    '${viewType.toLowerCase()} view'),
+                _FactChip(
+                  Icons.landscape_outlined,
+                  '${viewType.toLowerCase()} view',
+                ),
             ],
           ),
           if (availableFrom != null || deposit != null || cheques != null) ...[
@@ -438,14 +466,20 @@ class _QuickFacts extends StatelessWidget {
               runSpacing: 8,
               children: [
                 if (availableFrom != null)
-                  _FactChip(Icons.calendar_today_outlined,
-                      'From ${Formatters.date(availableFrom)}'),
+                  _FactChip(
+                    Icons.calendar_today_outlined,
+                    'From ${Formatters.date(availableFrom)}',
+                  ),
                 if (deposit != null)
-                  _FactChip(Icons.security_outlined,
-                      'Dep. ${Formatters.currencyCompact(deposit)}'),
+                  _FactChip(
+                    Icons.security_outlined,
+                    'Dep. ${Formatters.currencyCompact(deposit)}',
+                  ),
                 if (cheques != null)
-                  _FactChip(Icons.receipt_long_outlined,
-                      '$cheques cheque${cheques != 1 ? 's' : ''}'),
+                  _FactChip(
+                    Icons.receipt_long_outlined,
+                    '$cheques cheque${cheques != 1 ? 's' : ''}',
+                  ),
               ],
             ),
           ],
@@ -467,9 +501,13 @@ class _FactChip extends StatelessWidget {
       children: [
         Icon(icon, size: 16, color: AppColors.textMuted),
         const SizedBox(width: 4),
-        Text(label,
-            style: GoogleFonts.josefinSans(
-                fontSize: 13, color: AppColors.textSecondary)),
+        Text(
+          label,
+          style: GoogleFonts.josefinSans(
+            fontSize: 13,
+            color: AppColors.textSecondary,
+          ),
+        ),
       ],
     );
   }
@@ -509,17 +547,18 @@ class _AmenitiesGrid extends StatelessWidget {
           spacing: 8,
           runSpacing: 8,
           children: amenities.map((a) {
-            final name =
-                (a['amenity'] as String? ?? '').replaceAll('_', ' ').toLowerCase();
+            final name = (a['amenity'] as String? ?? '')
+                .replaceAll('_', ' ')
+                .toLowerCase();
             final label = a['customLabel'] as String? ?? name;
             return Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
                 color: AppColors.primary.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(
-                    color: AppColors.primary.withValues(alpha: 0.2)),
+                  color: AppColors.primary.withValues(alpha: 0.2),
+                ),
               ),
               child: Text(
                 label,
@@ -561,10 +600,9 @@ class _MapCard extends StatelessWidget {
           child: SizedBox(
             height: 180,
             child: GoogleMap(
-              initialCameraPosition:
-                  CameraPosition(target: position, zoom: 15),
+              initialCameraPosition: CameraPosition(target: position, zoom: 15),
               markers: {
-                Marker(markerId: const MarkerId('loc'), position: position)
+                Marker(markerId: const MarkerId('loc'), position: position),
               },
               zoomControlsEnabled: false,
               myLocationButtonEnabled: false,
@@ -579,10 +617,11 @@ class _MapCard extends StatelessWidget {
           child: Text(
             'Get directions',
             style: GoogleFonts.josefinSans(
-                fontSize: 13,
-                color: AppColors.primary,
-                fontWeight: FontWeight.w600,
-                decoration: TextDecoration.underline),
+              fontSize: 13,
+              color: AppColors.primary,
+              fontWeight: FontWeight.w600,
+              decoration: TextDecoration.underline,
+            ),
           ),
         ),
       ],
@@ -591,7 +630,8 @@ class _MapCard extends StatelessWidget {
 
   Future<void> _openMaps(double lat, double lng) async {
     final uri = Uri.parse(
-        'https://www.google.com/maps/search/?api=1&query=$lat,$lng');
+      'https://www.google.com/maps/search/?api=1&query=$lat,$lng',
+    );
     if (await canLaunchUrl(uri)) await launchUrl(uri);
   }
 }
@@ -604,12 +644,13 @@ class _MediaLinks extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final media = (listing['media'] as List? ?? []).cast<Map<String, dynamic>>();
-    final floorPlans = media.where((m) => m['mediaType'] == 'FLOOR_PLAN').toList();
-    final videos =
-        media.where((m) => m['mediaType'] == 'VIDEO_URL').toList();
-    final tours =
-        media.where((m) => m['mediaType'] == 'TOUR_360_URL').toList();
+    final media = (listing['media'] as List? ?? [])
+        .cast<Map<String, dynamic>>();
+    final floorPlans = media
+        .where((m) => m['mediaType'] == 'FLOOR_PLAN')
+        .toList();
+    final videos = media.where((m) => m['mediaType'] == 'VIDEO_URL').toList();
+    final tours = media.where((m) => m['mediaType'] == 'TOUR_360_URL').toList();
 
     if (floorPlans.isEmpty && videos.isEmpty && tours.isEmpty)
       return const SizedBox.shrink();
@@ -625,19 +666,22 @@ class _MediaLinks extends StatelessWidget {
           children: [
             for (final fp in floorPlans)
               _MediaBtn(
-                  icon: Icons.architecture_outlined,
-                  label: 'Floor plan',
-                  url: fp['url'] as String),
+                icon: Icons.architecture_outlined,
+                label: 'Floor plan',
+                url: fp['url'] as String,
+              ),
             for (final v in videos)
               _MediaBtn(
-                  icon: Icons.play_circle_outline,
-                  label: 'Video tour',
-                  url: v['url'] as String),
+                icon: Icons.play_circle_outline,
+                label: 'Video tour',
+                url: v['url'] as String,
+              ),
             for (final t in tours)
               _MediaBtn(
-                  icon: Icons.threesixty,
-                  label: '360° tour',
-                  url: t['url'] as String),
+                icon: Icons.threesixty,
+                label: '360° tour',
+                url: t['url'] as String,
+              ),
           ],
         ),
       ],
@@ -649,8 +693,7 @@ class _MediaBtn extends StatelessWidget {
   final IconData icon;
   final String label;
   final String url;
-  const _MediaBtn(
-      {required this.icon, required this.label, required this.url});
+  const _MediaBtn({required this.icon, required this.label, required this.url});
 
   @override
   Widget build(BuildContext context) {
@@ -660,8 +703,7 @@ class _MediaBtn extends StatelessWidget {
         if (await canLaunchUrl(uri)) await launchUrl(uri);
       },
       child: Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
           color: AppColors.surface,
           borderRadius: BorderRadius.circular(12),
@@ -672,9 +714,13 @@ class _MediaBtn extends StatelessWidget {
           children: [
             Icon(icon, size: 18, color: AppColors.primary),
             const SizedBox(width: 6),
-            Text(label,
-                style: GoogleFonts.josefinSans(
-                    fontSize: 13, color: AppColors.primary)),
+            Text(
+              label,
+              style: GoogleFonts.josefinSans(
+                fontSize: 13,
+                color: AppColors.primary,
+              ),
+            ),
           ],
         ),
       ),
@@ -693,9 +739,10 @@ class _SectionTitle extends StatelessWidget {
     return Text(
       text,
       style: GoogleFonts.cinzel(
-          fontSize: 14,
-          fontWeight: FontWeight.w600,
-          color: AppColors.textPrimary),
+        fontSize: 14,
+        fontWeight: FontWeight.w600,
+        color: AppColors.textPrimary,
+      ),
     );
   }
 }
