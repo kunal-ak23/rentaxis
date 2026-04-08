@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
+import 'browse_filters.dart';
 import 'browse_filters_sheet.dart';
 import 'browse_map.dart';
 
