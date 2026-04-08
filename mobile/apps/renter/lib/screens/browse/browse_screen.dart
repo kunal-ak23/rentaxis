@@ -59,6 +59,27 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
       final q = _searchController.text.trim().toLowerCase();
       if (q != _searchQuery) setState(() => _searchQuery = q);
     });
+    // Seed near-me filters from device location on first open.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _seedLocation());
+  }
+
+  Future<void> _seedLocation() async {
+    // Only seed if user hasn't manually set a location filter.
+    final current = ref.read(browseFiltersProvider);
+    if (current.nearLat != null) return;
+    try {
+      final locationService = ref.read(locationServiceProvider);
+      final pos = await locationService.getCurrentPosition();
+      if (pos != null && mounted) {
+        ref.read(browseFiltersProvider.notifier).state = current.copyWith(
+          nearLat: pos.latitude,
+          nearLng: pos.longitude,
+          radiusKm: 10,
+        );
+      }
+    } catch (_) {
+      // Location permission denied or unavailable — browse without proximity.
+    }
   }
 
   @override
