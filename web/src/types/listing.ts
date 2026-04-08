@@ -67,3 +67,35 @@ export interface PageResponse<T> {
   content: T[]; totalElements: number; totalPages: number
   number: number; size: number
 }
+
+// ─── Public (unauthenticated) preview DTO ─────────────────────────────────────
+export interface PublicListingDTO {
+  // Identity
+  tenantSlug: string
+  slug: string
+  title: string
+  // Location (coarse — no exact address)
+  buildingName: string | null
+  area: string | null
+  emirate: string | null
+  approxLat: number | null
+  approxLng: number | null
+  // Redacted facts
+  bedrooms: number | null
+  bathrooms: number | null
+  furnishing: Furnishing | null
+  // Rent (range, not exact)
+  rentRangeLabel: string  // e.g. "AED 80–90k / year"
+  // Availability
+  availableLabel: string  // "Available now" or "Available from Jan 2027"
+  availableNow: boolean
+  // Media (cover only)
+  coverPhotoUrl: string | null
+  // SEO fields
+  seoTitle: string | null
+  seoDescription: string | null
+  seoKeywords: string | null
+  ogImageUrl: string | null
+  // Gate flag
+  loginRequired: true
+}

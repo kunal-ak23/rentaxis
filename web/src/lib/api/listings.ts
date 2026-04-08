@@ -4,10 +4,30 @@ import type {
   UnitListingCreateRequest,
   InterestDTO,
   PageResponse,
+  PublicListingDTO,
 } from '@/types/listing'
 
 const BASE = '/api/proxy/v1/listings'
 const MARKET_BASE = '/api/proxy/v1/marketplace'
+
+// ─── Public (unauthenticated) preview ────────────────────────────────────────
+
+/**
+ * Fetches the public (unauthenticated) listing preview from the backend.
+ * Called server-side; uses the backend URL directly to bypass the Next.js proxy.
+ * Returns null when the listing is not found (404), throws on other errors.
+ */
+export async function fetchPublicListing(
+  tenantSlug: string,
+  unitSlug: string
+): Promise<PublicListingDTO | null> {
+  const backendUrl = process.env.BACKEND_URL || 'http://localhost:8080'
+  const url = `${backendUrl}/public/l/${tenantSlug}/${unitSlug}`
+  const res = await fetch(url, { next: { revalidate: 3600 } })
+  if (res.status === 404) return null
+  if (!res.ok) throw new Error(`fetchPublicListing failed: ${res.status}`)
+  return res.json() as Promise<PublicListingDTO>
+}
 
 // ─── Marketplace (renter-facing) helpers ────────────────────────────────────
 
