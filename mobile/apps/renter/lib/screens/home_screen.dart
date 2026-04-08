@@ -684,7 +684,10 @@ class _KeyContactsSectionState extends State<_KeyContactsSection> {
                           ),
                           child: const Icon(Icons.phone, color: AppColors.success, size: 18),
                         ),
-                        onPressed: () => launchUrl(Uri.parse('tel:$phone')),
+                        onPressed: () async {
+                          final uri = Uri.parse('tel:$phone');
+                          if (await canLaunchUrl(uri)) await launchUrl(uri);
+                        },
                       )
                     : null,
                 shape: RoundedRectangleBorder(
