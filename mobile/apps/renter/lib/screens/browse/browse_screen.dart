@@ -46,12 +46,31 @@ class BrowseScreen extends ConsumerStatefulWidget {
 
 class _BrowseScreenState extends ConsumerState<BrowseScreen> {
   bool _mapMode = false;
+  String _searchQuery = '';
   final _searchController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController.addListener(() {
+      final q = _searchController.text.trim().toLowerCase();
+      if (q != _searchQuery) setState(() => _searchQuery = q);
+    });
+  }
 
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  List<Map<String, dynamic>> _applySearch(List<Map<String, dynamic>> items) {
+    if (_searchQuery.isEmpty) return items;
+    return items.where((l) {
+      final title = (l['title'] as String? ?? '').toLowerCase();
+      final property = (l['propertyName'] as String? ?? '').toLowerCase();
+      return title.contains(_searchQuery) || property.contains(_searchQuery);
+    }).toList();
   }
 
   @override
@@ -82,8 +101,9 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
                   onRetry: () => ref.invalidate(browseListingsProvider),
                 ),
                 data: (data) {
-                  final items =
+                  final allItems =
                       (data['content'] as List? ?? []).cast<Map<String, dynamic>>();
+                  final items = _applySearch(allItems);
                   if (items.isEmpty) {
                     return EmptyState(
                       icon: Icons.apartment_outlined,
