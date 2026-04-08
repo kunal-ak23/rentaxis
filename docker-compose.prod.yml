@@ -51,6 +51,7 @@ services:
       - AZURE_EMAIL_SENDER=${AZURE_EMAIL_SENDER:-}
       - RENTAXIS_ENCRYPTION_KEY=${ENCRYPTION_KEY:-}
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+      - FEATURE_LISTINGS_ENABLED=${FEATURE_LISTINGS_ENABLED:-false}
     deploy:
       resources:
         limits:
