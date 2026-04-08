@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, use } from "react";
 import { useTranslations } from "next-intl";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/i18n/routing";
 import { useSession } from "next-auth/react";
 import {
   ArrowLeft, Save, Eye, EyeOff, Loader2, AlertCircle, CheckCircle2,
