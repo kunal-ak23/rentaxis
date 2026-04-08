@@ -34,6 +34,7 @@ export 'models/auth_response.dart';
 // Providers
 export 'providers/auth_provider.dart';
 export 'providers/notification_provider.dart';
+export 'providers/wishlist_provider.dart';
 
 // Theme
 export 'theme/app_theme.dart';

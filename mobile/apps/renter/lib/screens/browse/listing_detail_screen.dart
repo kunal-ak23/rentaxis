@@ -81,10 +81,10 @@ class _ListingDetailView extends ConsumerStatefulWidget {
 }
 
 class _ListingDetailViewState extends ConsumerState<_ListingDetailView> {
-  bool _wishlisted = false;
   bool _wishlistLoading = false;
-
   late final List<Map<String, dynamic>> _photos;
+
+  String get _listingId => widget.listing['id'] as String? ?? '';
 
   @override
   void initState() {
@@ -92,7 +92,6 @@ class _ListingDetailViewState extends ConsumerState<_ListingDetailView> {
     final media = (widget.listing['media'] as List? ?? [])
         .cast<Map<String, dynamic>>();
     _photos = media.where((m) => m['mediaType'] == 'PHOTO').toList();
-    // The wishlist FAB state would ideally come from a provider; simplified here
   }
 
   @override
@@ -100,6 +99,8 @@ class _ListingDetailViewState extends ConsumerState<_ListingDetailView> {
     final l = widget.listing;
     final status = l['status'] as String? ?? '';
     final isUpcoming = status == 'UPCOMING';
+    // Derive initial wishlist state from the shared provider (loaded at startup)
+    final _wishlisted = ref.watch(wishlistIdsProvider).contains(_listingId);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -154,7 +155,7 @@ class _ListingDetailViewState extends ConsumerState<_ListingDetailView> {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: _wishlistLoading ? null : () => _toggleWishlist(),
+        onPressed: _wishlistLoading ? null : () => _toggleWishlist(_wishlisted),
         backgroundColor:
             isUpcoming ? AppColors.accent : AppColors.primary,
         icon: _wishlistLoading
@@ -176,19 +177,26 @@ class _ListingDetailViewState extends ConsumerState<_ListingDetailView> {
     );
   }
 
-  Future<void> _toggleWishlist() async {
-    final listingId = widget.listing['id'] as String?;
-    if (listingId == null) return;
+  Future<void> _toggleWishlist(bool currentlyWishlisted) async {
+    if (_listingId.isEmpty) return;
     setState(() => _wishlistLoading = true);
+    final notifier = ref.read(wishlistIdsProvider.notifier);
     try {
       final service = ref.read(listingApiServiceProvider);
-      if (_wishlisted) {
-        await service.removeInterest(listingId);
+      if (currentlyWishlisted) {
+        notifier.remove(_listingId); // optimistic
+        await service.removeInterest(_listingId);
       } else {
-        await service.addInterest(listingId);
+        notifier.add(_listingId); // optimistic
+        await service.addInterest(_listingId);
       }
-      setState(() => _wishlisted = !_wishlisted);
     } catch (e) {
+      // Roll back optimistic update
+      if (currentlyWishlisted) {
+        notifier.add(_listingId);
+      } else {
+        notifier.remove(_listingId);
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to update wishlist: $e')),
