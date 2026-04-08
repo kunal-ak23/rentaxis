@@ -381,7 +381,7 @@ function ListingsContent() {
                   onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')}
                 >
                   <span className="inline-flex items-center gap-1 group-hover:text-foreground transition-colors">
-                    {t('colUpdated')}
+                    {t('colCreated')}
                     {sortDir === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                   </span>
                 </th>

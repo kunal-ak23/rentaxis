@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
+import { getTranslations } from 'next-intl/server'
 import { MapPin, Bed, Bath, Building, LogIn } from 'lucide-react'
 import { fetchPublicListing } from '@/lib/api/listings'
 
@@ -72,6 +73,7 @@ export default async function PublicListingPage({
   params: Promise<{ tenantSlug: string; unitSlug: string }>
 }) {
   const { tenantSlug, unitSlug } = await params
+  const t = await getTranslations({ locale: 'en', namespace: 'PublicListing' })
 
   let listing = null
   try {
@@ -116,11 +118,11 @@ export default async function PublicListingPage({
   // ─── Derived display values ──────────────────────────────────────────────────
   const furnishingLabel =
     listing.furnishing === 'UNFURNISHED'
-      ? 'Unfurnished'
+      ? t('furnishedLabel.UNFURNISHED')
       : listing.furnishing === 'SEMI_FURNISHED'
-      ? 'Semi-Furnished'
+      ? t('furnishedLabel.SEMI_FURNISHED')
       : listing.furnishing === 'FULLY_FURNISHED'
-      ? 'Fully Furnished'
+      ? t('furnishedLabel.FULLY_FURNISHED')
       : null
 
   const truncatedDesc = listing.seoDescription
@@ -169,14 +171,14 @@ export default async function PublicListingPage({
               <span className="flex items-center gap-1.5">
                 <Bed size={15} className="text-neutral-400" />
                 {listing.bedrooms === 0
-                  ? 'Studio'
-                  : `${listing.bedrooms} ${listing.bedrooms === 1 ? 'bed' : 'beds'}`}
+                  ? t('studio')
+                  : `${listing.bedrooms} ${listing.bedrooms === 1 ? t('bedSingular') : t('bedPlural')}`}
               </span>
             )}
             {listing.bathrooms != null && (
               <span className="flex items-center gap-1.5">
                 <Bath size={15} className="text-neutral-400" />
-                {listing.bathrooms} {listing.bathrooms === 1 ? 'bath' : 'baths'}
+                {listing.bathrooms} {listing.bathrooms === 1 ? t('bathSingular') : t('bathPlural')}
               </span>
             )}
             {furnishingLabel && (
@@ -227,17 +229,17 @@ export default async function PublicListingPage({
           {listing.loginRequired && (
             <div className="rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 p-6 text-white shadow-lg">
               <p className="text-base font-semibold mb-1">
-                See full details, photos, and save this listing
+                {t('ctaTitle')}
               </p>
               <p className="text-blue-200 text-sm mb-4">
-                Create a free account or sign in to view all photos, exact location, pricing details, and save to your wishlist.
+                {t('ctaSubtitle')}
               </p>
               <a
                 href={`/auth/signin?callbackUrl=${callbackUrl}`}
                 className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white text-indigo-700 font-semibold text-sm hover:bg-blue-50 transition-colors shadow"
               >
                 <LogIn size={16} />
-                Login to Continue
+                {t('ctaButton')}
               </a>
             </div>
           )}

@@ -60,23 +60,6 @@ const amenityIconMap: Record<ListingAmenity, React.ElementType> = {
   OTHER: Star,
 };
 
-function amenityLabel(amenity: ListingAmenity): string {
-  const labels: Record<ListingAmenity, string> = {
-    POOL: "Pool", GYM: "Gym", SAUNA: "Sauna", STEAM_ROOM: "Steam Room",
-    JACUZZI: "Jacuzzi", KIDS_PLAY_AREA: "Kids Play Area", KIDS_POOL: "Kids Pool",
-    BBQ_AREA: "BBQ Area", GARDEN: "Garden", ROOFTOP_LOUNGE: "Rooftop Lounge",
-    SECURITY_24_7: "24/7 Security", CCTV: "CCTV", CONCIERGE: "Concierge",
-    INTERCOM: "Intercom", COVERED_PARKING: "Covered Parking", VISITOR_PARKING: "Visitor Parking",
-    EV_CHARGING: "EV Charging", ELEVATOR: "Elevator", CENTRAL_AC: "Central AC",
-    DISTRICT_COOLING: "District Cooling", MAIDS_ROOM: "Maid's Room", STUDY_ROOM: "Study Room",
-    STORAGE_ROOM: "Storage Room", LAUNDRY_ROOM: "Laundry Room", BUILT_IN_WARDROBES: "Built-in Wardrobes",
-    BALCONY: "Balcony", PRIVATE_GARDEN: "Private Garden", MAID_SERVICE: "Maid Service",
-    PET_FRIENDLY: "Pet Friendly", SMART_HOME: "Smart Home", SOLAR_POWER: "Solar Power",
-    NEAR_METRO: "Near Metro", NEAR_SCHOOL: "Near School", NEAR_MALL: "Near Mall",
-    SEA_VIEW: "Sea View", OTHER: "Other",
-  };
-  return labels[amenity] ?? amenity;
-}
 
 // ─── Lightbox ─────────────────────────────────────────────────────────────────
 function Lightbox({
@@ -421,7 +404,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ tenant
                     return (
                       <div key={i} className="flex items-center gap-2 text-sm text-neutral-700">
                         <Icon size={15} className="text-neutral-400 shrink-0" />
-                        <span>{a.customLabel ?? amenityLabel(a.amenity)}</span>
+                        <span>{a.customLabel ?? t(`amenity.${a.amenity}`)}</span>
                       </div>
                     );
                   })}

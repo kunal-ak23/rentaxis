@@ -39,7 +39,7 @@ function StatusBadge({ status, interestStatus, t }: {
   if (status === 'UPCOMING') {
     return (
       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-700 border border-blue-200">
-        Upcoming
+        {t('statusUpcoming')}
       </span>
     );
   }
