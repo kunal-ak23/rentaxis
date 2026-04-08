@@ -8,8 +8,8 @@ import type {
   PublicListingDTO,
 } from '@/types/listing'
 
-const BASE = '/api/proxy/v1/listings'
-const MARKET_BASE = '/api/proxy/v1/marketplace'
+const BASE = '/api/proxy/listings'
+const MARKET_BASE = '/api/proxy/marketplace'
 
 // ─── Public (unauthenticated) preview ────────────────────────────────────────
 
