@@ -176,7 +176,7 @@ class _WishlistItem extends StatelessWidget {
     final statusColor = switch (status) {
       'PUBLISHED' => AppColors.success,
       'UPCOMING' => AppColors.accent,
-      'UNLISTED' => AppColors.textMuted,
+      'UNLISTED' => const Color(0xFFF59E0B), // amber
       _ => AppColors.textMuted,
     };
 

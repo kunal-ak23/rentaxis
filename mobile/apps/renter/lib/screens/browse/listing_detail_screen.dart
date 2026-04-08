@@ -518,7 +518,7 @@ class _StatusBadgeInline extends StatelessWidget {
     final color = switch (status) {
       'PUBLISHED' => AppColors.success,
       'UPCOMING' => AppColors.accent,
-      'UNLISTED' => AppColors.textMuted,
+      'UNLISTED' => const Color(0xFFF59E0B), // amber
       _ => AppColors.textMuted,
     };
     return StatusBadge(label: status, color: color);

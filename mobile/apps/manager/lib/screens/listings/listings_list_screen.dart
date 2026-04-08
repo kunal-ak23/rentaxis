@@ -135,6 +135,7 @@ class _ListingRow extends StatelessWidget {
     final statusColor = switch (status) {
       'PUBLISHED' => AppColors.success,
       'UPCOMING' => AppColors.accent,
+      'UNLISTED' => const Color(0xFFF59E0B), // amber
       'DRAFT' => AppColors.textMuted,
       _ => AppColors.textMuted,
     };
