@@ -15,7 +15,6 @@ const nextConfig: NextConfig = {
   output: "standalone",
   env: {
     NEXT_PUBLIC_APP_VERSION: `0.6.0.${gitHash}`,
-    NEXT_PUBLIC_BACKEND_URL: backendUrl,
   },
   experimental: {
     proxyTimeout: 120000,
@@ -29,6 +28,14 @@ const nextConfig: NextConfig = {
       {
         source: '/api/v1/assets/serve/:path*',
         destination: `${backendUrl}/api/v1/assets/serve/:path*`,
+      },
+      {
+        source: '/api/marketplace/:path*',
+        destination: `${backendUrl}/api/marketplace/:path*`,
+      },
+      {
+        source: '/public/l/:path*',
+        destination: `${backendUrl}/public/l/:path*`,
       },
     ];
   },
