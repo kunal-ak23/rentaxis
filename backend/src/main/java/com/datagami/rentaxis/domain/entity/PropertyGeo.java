@@ -18,7 +18,7 @@ import java.util.UUID;
 @Table(name = "property_geo")
 @Getter
 @Setter
-public class PropertyGeo {
+public class PropertyGeo extends BaseTenantEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)

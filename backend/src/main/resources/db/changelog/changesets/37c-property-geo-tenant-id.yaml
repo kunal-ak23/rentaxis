@@ -1,0 +1,45 @@
+databaseChangeLog:
+  - changeSet:
+      id: 37c-property-geo-add-tenant-id
+      author: rentaxis
+      changes:
+        - addColumn:
+            tableName: property_geo
+            columns:
+              - column:
+                  name: tenant_id
+                  type: uuid
+
+  - changeSet:
+      id: 37c-property-geo-backfill-tenant-id
+      author: rentaxis
+      changes:
+        - sql:
+            splitStatements: false
+            stripComments: true
+            sql: |
+              UPDATE property_geo pg
+              SET tenant_id = p.tenant_id
+              FROM properties p
+              WHERE pg.property_id = p.id
+                AND pg.tenant_id IS NULL;
+
+  - changeSet:
+      id: 37c-property-geo-tenant-id-not-null
+      author: rentaxis
+      changes:
+        - addNotNullConstraint:
+            tableName: property_geo
+            columnName: tenant_id
+            columnDataType: uuid
+
+  - changeSet:
+      id: 37c-property-geo-tenant-id-index
+      author: rentaxis
+      changes:
+        - createIndex:
+            tableName: property_geo
+            indexName: idx_property_geo_tenant_id
+            columns:
+              - column:
+                  name: tenant_id
