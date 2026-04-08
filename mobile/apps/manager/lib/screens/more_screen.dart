@@ -78,6 +78,14 @@ class MoreScreen extends ConsumerWidget {
             const SizedBox(height: 24),
 
             // Menu sections
+            _SectionHeader(title: 'Marketplace'),
+            _MenuItem(
+              icon: Icons.apartment_outlined,
+              label: 'Listings',
+              onTap: () => context.push('/listings'),
+            ),
+            const SizedBox(height: 16),
+
             _SectionHeader(title: 'People'),
             _MenuItem(
               icon: Icons.badge_outlined,

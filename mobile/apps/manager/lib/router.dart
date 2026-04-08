@@ -31,6 +31,9 @@ import 'screens/rent_settings_screen.dart';
 import 'screens/gateway_config_screen.dart';
 import 'screens/account_mappings_screen.dart';
 import 'screens/notifications_screen.dart';
+import 'screens/listings/listings_list_screen.dart';
+import 'screens/listings/listing_edit_screen.dart';
+import 'screens/listings/listing_interests_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authProvider);
@@ -188,6 +191,26 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/finance-reports',
             builder: (context, state) => const FinanceReportsScreen(),
+          ),
+          GoRoute(
+            path: '/listings',
+            builder: (context, state) => const ListingsListScreen(),
+            routes: [
+              GoRoute(
+                path: ':id',
+                builder: (context, state) => ListingEditScreen(
+                  listingId: state.pathParameters['id']!,
+                ),
+                routes: [
+                  GoRoute(
+                    path: 'interests',
+                    builder: (context, state) => ListingInterestsScreen(
+                      listingId: state.pathParameters['id']!,
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
           GoRoute(
             path: '/settings',
