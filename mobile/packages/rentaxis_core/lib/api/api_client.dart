@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'interceptors/auth_interceptor.dart';
 import 'interceptors/tenant_interceptor.dart';
@@ -21,7 +22,9 @@ class ApiClient {
 
     dio.interceptors.add(AuthInterceptor(_storage));
     dio.interceptors.add(TenantInterceptor());
-    dio.interceptors
-        .add(LogInterceptor(requestBody: true, responseBody: true));
+    if (kDebugMode) {
+      dio.interceptors
+          .add(LogInterceptor(requestBody: true, responseBody: true));
+    }
   }
 }
