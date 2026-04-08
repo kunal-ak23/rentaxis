@@ -11,6 +11,9 @@ import 'screens/ticket_detail_screen.dart';
 import 'screens/notifications_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/shell_screen.dart';
+import 'screens/browse/browse_screen.dart';
+import 'screens/browse/listing_detail_screen.dart';
+import 'screens/wishlist/wishlist_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authProvider);
@@ -81,6 +84,22 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/notifications',
             builder: (context, state) => const NotificationsScreen(),
+          ),
+          GoRoute(
+            path: '/browse',
+            builder: (context, state) => const BrowseScreen(),
+            routes: [
+              GoRoute(
+                path: ':slug',
+                builder: (context, state) => ListingDetailScreen(
+                  slug: state.pathParameters['slug']!,
+                ),
+              ),
+            ],
+          ),
+          GoRoute(
+            path: '/wishlist',
+            builder: (context, state) => const WishlistScreen(),
           ),
         ],
       ),

@@ -1,0 +1,686 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:photo_view/photo_view.dart';
+import 'package:photo_view/photo_view_gallery.dart';
+import 'package:rentaxis_core/rentaxis_core.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+// ── Providers ─────────────────────────────────────────────────────────────────
+
+final _listingApiServiceProvider = Provider<ListingApiService>((ref) {
+  final client = ref.watch(apiClientProvider);
+  return ListingApiService(client.dio);
+});
+
+final _listingDetailProvider = FutureProvider.autoDispose
+    .family<Map<String, dynamic>, _DetailParams>((ref, params) async {
+  final service = ref.watch(_listingApiServiceProvider);
+  return service.getMarketplaceListing(params.tenantSlug, params.slug);
+});
+
+final _wishlistIdProvider =
+    StateProvider.autoDispose<String?>((ref) => null);
+
+class _DetailParams {
+  final String tenantSlug;
+  final String slug;
+  const _DetailParams(this.tenantSlug, this.slug);
+  @override
+  bool operator ==(Object o) =>
+      o is _DetailParams && tenantSlug == o.tenantSlug && slug == o.slug;
+  @override
+  int get hashCode => Object.hash(tenantSlug, slug);
+}
+
+// ── Screen ────────────────────────────────────────────────────────────────────
+
+class ListingDetailScreen extends ConsumerWidget {
+  final String slug;
+  const ListingDetailScreen({super.key, required this.slug});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final authState = ref.watch(authProvider);
+    final tenantSlug = _resolveTenantSlug(authState);
+
+    if (tenantSlug == null) {
+      return const Scaffold(
+          body: Center(child: Text('Tenant not configured')));
+    }
+
+    final detailAsync = ref.watch(
+        _listingDetailProvider(_DetailParams(tenantSlug, slug)));
+
+    return detailAsync.when(
+      loading: () => Scaffold(
+        appBar: AppBar(backgroundColor: Colors.transparent),
+        body: const Center(child: CircularProgressIndicator()),
+      ),
+      error: (e, _) => Scaffold(
+        appBar: AppBar(),
+        body: ErrorState(
+          message: 'Failed to load listing',
+          onRetry: () =>
+              ref.invalidate(_listingDetailProvider(_DetailParams(tenantSlug, slug))),
+        ),
+      ),
+      data: (listing) => _ListingDetailView(listing: listing),
+    );
+  }
+}
+
+String? _resolveTenantSlug(AuthState auth) {
+  if (auth.tenants.isEmpty) return null;
+  final match = auth.tenants
+      .where((t) => t['tenantId'] == auth.tenantId || t['id'] == auth.tenantId);
+  final tenant = match.isNotEmpty ? match.first : auth.tenants.first;
+  return tenant['slug'] as String?;
+}
+
+// ── Detail view ───────────────────────────────────────────────────────────────
+
+class _ListingDetailView extends ConsumerStatefulWidget {
+  final Map<String, dynamic> listing;
+  const _ListingDetailView({required this.listing});
+
+  @override
+  ConsumerState<_ListingDetailView> createState() =>
+      _ListingDetailViewState();
+}
+
+class _ListingDetailViewState extends ConsumerState<_ListingDetailView> {
+  bool _wishlisted = false;
+  bool _wishlistLoading = false;
+
+  late final List<Map<String, dynamic>> _photos;
+
+  @override
+  void initState() {
+    super.initState();
+    final media = (widget.listing['media'] as List? ?? [])
+        .cast<Map<String, dynamic>>();
+    _photos = media.where((m) => m['mediaType'] == 'PHOTO').toList();
+    // The wishlist FAB state would ideally come from a provider; simplified here
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l = widget.listing;
+    final title = l['titleEn'] as String? ?? 'Listing';
+    final status = l['status'] as String? ?? '';
+    final isUpcoming = status == 'UPCOMING';
+
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: GestureDetector(
+          onTap: () => context.pop(),
+          child: Container(
+            margin: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.4),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.arrow_back, color: Colors.white, size: 20),
+          ),
+        ),
+      ),
+      body: CustomScrollView(
+        slivers: [
+          SliverToBoxAdapter(
+            child: _HeroCarousel(photos: _photos, listing: l),
+          ),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 20, 16, 120),
+            sliver: SliverList(
+              delegate: SliverChildListDelegate([
+                _QuickFacts(listing: l),
+                const SizedBox(height: 20),
+                if (l['descriptionEn'] != null) ...[
+                  _SectionTitle('Description'),
+                  const SizedBox(height: 8),
+                  Text(
+                    l['descriptionEn'] as String,
+                    style: GoogleFonts.josefinSans(
+                        fontSize: 14,
+                        color: AppColors.textSecondary,
+                        height: 1.6),
+                  ),
+                  const SizedBox(height: 20),
+                ],
+                _AmenitiesGrid(amenities:
+                    (l['amenities'] as List? ?? []).cast<Map<String, dynamic>>()),
+                const SizedBox(height: 20),
+                _MapCard(listing: l),
+                const SizedBox(height: 20),
+                _MediaLinks(listing: l),
+              ]),
+            ),
+          ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _wishlistLoading ? null : () => _toggleWishlist(),
+        backgroundColor:
+            isUpcoming ? AppColors.accent : AppColors.primary,
+        icon: _wishlistLoading
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                    color: Colors.white, strokeWidth: 2))
+            : Icon(
+                _wishlisted ? Icons.favorite : Icons.favorite_border,
+                color: Colors.white,
+              ),
+        label: Text(
+          isUpcoming ? 'Notify me' : (_wishlisted ? 'Saved' : 'Save'),
+          style: GoogleFonts.josefinSans(
+              color: Colors.white, fontWeight: FontWeight.w600),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _toggleWishlist() async {
+    final listingId = widget.listing['id'] as String?;
+    if (listingId == null) return;
+    setState(() => _wishlistLoading = true);
+    try {
+      final service = ref.read(_listingApiServiceProvider);
+      if (_wishlisted) {
+        await service.removeInterest(listingId);
+      } else {
+        await service.addInterest(listingId);
+      }
+      setState(() => _wishlisted = !_wishlisted);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to update wishlist: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _wishlistLoading = false);
+    }
+  }
+}
+
+// ── Hero Carousel ─────────────────────────────────────────────────────────────
+
+class _HeroCarousel extends StatefulWidget {
+  final List<Map<String, dynamic>> photos;
+  final Map<String, dynamic> listing;
+  const _HeroCarousel({required this.photos, required this.listing});
+
+  @override
+  State<_HeroCarousel> createState() => _HeroCarouselState();
+}
+
+class _HeroCarouselState extends State<_HeroCarousel> {
+  int _current = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.photos.isEmpty) {
+      return Container(
+        height: 280,
+        color: AppColors.background,
+        child: const Center(
+            child: Icon(Icons.apartment_outlined,
+                size: 64, color: AppColors.textMuted)),
+      );
+    }
+
+    return SizedBox(
+      height: 300,
+      child: Stack(
+        children: [
+          PageView.builder(
+            itemCount: widget.photos.length,
+            onPageChanged: (i) => setState(() => _current = i),
+            itemBuilder: (_, i) {
+              final url = widget.photos[i]['url'] as String;
+              return GestureDetector(
+                onTap: () => _openGallery(context, i),
+                child: Image.network(
+                  url,
+                  fit: BoxFit.cover,
+                  width: double.infinity,
+                  errorBuilder: (_, __, ___) => Container(
+                      color: AppColors.background,
+                      child: const Icon(Icons.broken_image_outlined,
+                          size: 48, color: AppColors.textMuted)),
+                ),
+              );
+            },
+          ),
+          if (widget.photos.length > 1)
+            Positioned(
+              bottom: 12,
+              left: 0,
+              right: 0,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(
+                  widget.photos.length.clamp(0, 8),
+                  (i) => AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    margin: const EdgeInsets.symmetric(horizontal: 3),
+                    width: _current == i ? 16 : 6,
+                    height: 6,
+                    decoration: BoxDecoration(
+                      color: _current == i
+                          ? Colors.white
+                          : Colors.white.withValues(alpha: 0.5),
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          Positioned(
+            bottom: 12,
+            right: 12,
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                '${_current + 1}/${widget.photos.length}',
+                style: GoogleFonts.josefinSans(
+                    fontSize: 12, color: Colors.white),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openGallery(BuildContext context, int initial) {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => _FullscreenGallery(
+          photos: widget.photos, initialIndex: initial),
+    ));
+  }
+}
+
+class _FullscreenGallery extends StatelessWidget {
+  final List<Map<String, dynamic>> photos;
+  final int initialIndex;
+  const _FullscreenGallery(
+      {required this.photos, required this.initialIndex});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+          backgroundColor: Colors.black,
+          iconTheme: const IconThemeData(color: Colors.white)),
+      body: PhotoViewGallery.builder(
+        itemCount: photos.length,
+        pageController: PageController(initialPage: initialIndex),
+        builder: (_, i) => PhotoViewGalleryPageOptions(
+          imageProvider: NetworkImage(photos[i]['url'] as String),
+          minScale: PhotoViewComputedScale.contained,
+          maxScale: PhotoViewComputedScale.covered * 2,
+        ),
+        backgroundDecoration: const BoxDecoration(color: Colors.black),
+      ),
+    );
+  }
+}
+
+// ── Quick Facts ───────────────────────────────────────────────────────────────
+
+class _QuickFacts extends StatelessWidget {
+  final Map<String, dynamic> listing;
+  const _QuickFacts({required this.listing});
+
+  @override
+  Widget build(BuildContext context) {
+    final title = listing['titleEn'] as String? ?? 'Listing';
+    final status = listing['status'] as String? ?? '';
+    final rent = listing['annualRent'] as num?;
+    final beds = listing['bedrooms'] as int?;
+    final baths = listing['bathrooms'] as int?;
+    final size = listing['sizeSqft'] as num?;
+    final furnishing = listing['furnishing'] as String?;
+    final viewType = listing['viewType'] as String?;
+    final availableFrom = listing['availableFrom'] as String?;
+    final deposit = listing['securityDeposit'] as num?;
+    final cheques = listing['chequesAccepted'] as int?;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: AppShadows.soft,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: GoogleFonts.cinzel(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary),
+                ),
+              ),
+              _StatusBadgeInline(status: status),
+            ],
+          ),
+          if (rent != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              '${Formatters.currencyCompact(rent)}/year',
+              style: GoogleFonts.josefinSans(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+                color: AppColors.primary,
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            children: [
+              if (beds != null)
+                _FactChip(Icons.bed_outlined, '$beds bed${beds != 1 ? 's' : ''}'),
+              if (baths != null)
+                _FactChip(Icons.bathtub_outlined, '$baths bath${baths != 1 ? 's' : ''}'),
+              if (size != null)
+                _FactChip(Icons.square_foot, '${size.round()} sqft'),
+              if (furnishing != null)
+                _FactChip(Icons.chair_outlined,
+                    furnishing.replaceAll('_', ' ').toLowerCase()),
+              if (viewType != null)
+                _FactChip(Icons.landscape_outlined,
+                    '${viewType.toLowerCase()} view'),
+            ],
+          ),
+          if (availableFrom != null || deposit != null || cheques != null) ...[
+            const Divider(height: 24),
+            Wrap(
+              spacing: 16,
+              runSpacing: 8,
+              children: [
+                if (availableFrom != null)
+                  _FactChip(Icons.calendar_today_outlined,
+                      'From ${Formatters.date(availableFrom)}'),
+                if (deposit != null)
+                  _FactChip(Icons.security_outlined,
+                      'Dep. ${Formatters.currencyCompact(deposit)}'),
+                if (cheques != null)
+                  _FactChip(Icons.receipt_long_outlined,
+                      '$cheques cheque${cheques != 1 ? 's' : ''}'),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _FactChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  const _FactChip(this.icon, this.label);
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 16, color: AppColors.textMuted),
+        const SizedBox(width: 4),
+        Text(label,
+            style: GoogleFonts.josefinSans(
+                fontSize: 13, color: AppColors.textSecondary)),
+      ],
+    );
+  }
+}
+
+class _StatusBadgeInline extends StatelessWidget {
+  final String status;
+  const _StatusBadgeInline({required this.status});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = switch (status) {
+      'PUBLISHED' => AppColors.success,
+      'UPCOMING' => AppColors.accent,
+      'UNLISTED' => AppColors.textMuted,
+      _ => AppColors.textMuted,
+    };
+    return StatusBadge(label: status, color: color);
+  }
+}
+
+// ── Amenities Grid ────────────────────────────────────────────────────────────
+
+class _AmenitiesGrid extends StatelessWidget {
+  final List<Map<String, dynamic>> amenities;
+  const _AmenitiesGrid({required this.amenities});
+
+  @override
+  Widget build(BuildContext context) {
+    if (amenities.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionTitle('Amenities'),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: amenities.map((a) {
+            final name =
+                (a['amenity'] as String? ?? '').replaceAll('_', ' ').toLowerCase();
+            final label = a['customLabel'] as String? ?? name;
+            return Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                    color: AppColors.primary.withValues(alpha: 0.2)),
+              ),
+              child: Text(
+                label,
+                style: GoogleFonts.josefinSans(
+                  fontSize: 12,
+                  color: AppColors.primary,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Map Card ──────────────────────────────────────────────────────────────────
+
+class _MapCard extends StatelessWidget {
+  final Map<String, dynamic> listing;
+  const _MapCard({required this.listing});
+
+  @override
+  Widget build(BuildContext context) {
+    final lat = listing['lat'] as num?;
+    final lng = listing['lng'] as num?;
+    if (lat == null || lng == null) return const SizedBox.shrink();
+
+    final position = LatLng(lat.toDouble(), lng.toDouble());
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionTitle('Location'),
+        const SizedBox(height: 10),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: SizedBox(
+            height: 180,
+            child: GoogleMap(
+              initialCameraPosition:
+                  CameraPosition(target: position, zoom: 15),
+              markers: {
+                Marker(markerId: const MarkerId('loc'), position: position)
+              },
+              zoomControlsEnabled: false,
+              myLocationButtonEnabled: false,
+              mapToolbarEnabled: false,
+              liteModeEnabled: true,
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        GestureDetector(
+          onTap: () => _openMaps(lat.toDouble(), lng.toDouble()),
+          child: Text(
+            'Get directions',
+            style: GoogleFonts.josefinSans(
+                fontSize: 13,
+                color: AppColors.primary,
+                fontWeight: FontWeight.w600,
+                decoration: TextDecoration.underline),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _openMaps(double lat, double lng) async {
+    final uri = Uri.parse(
+        'https://www.google.com/maps/search/?api=1&query=$lat,$lng');
+    if (await canLaunchUrl(uri)) launchUrl(uri);
+  }
+}
+
+// ── Media Links ───────────────────────────────────────────────────────────────
+
+class _MediaLinks extends StatelessWidget {
+  final Map<String, dynamic> listing;
+  const _MediaLinks({required this.listing});
+
+  @override
+  Widget build(BuildContext context) {
+    final media = (listing['media'] as List? ?? []).cast<Map<String, dynamic>>();
+    final floorPlans = media.where((m) => m['mediaType'] == 'FLOOR_PLAN').toList();
+    final videos =
+        media.where((m) => m['mediaType'] == 'VIDEO_URL').toList();
+    final tours =
+        media.where((m) => m['mediaType'] == 'TOUR_360_URL').toList();
+
+    if (floorPlans.isEmpty && videos.isEmpty && tours.isEmpty)
+      return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionTitle('More media'),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final fp in floorPlans)
+              _MediaBtn(
+                  icon: Icons.architecture_outlined,
+                  label: 'Floor plan',
+                  url: fp['url'] as String),
+            for (final v in videos)
+              _MediaBtn(
+                  icon: Icons.play_circle_outline,
+                  label: 'Video tour',
+                  url: v['url'] as String),
+            for (final t in tours)
+              _MediaBtn(
+                  icon: Icons.threesixty,
+                  label: '360° tour',
+                  url: t['url'] as String),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _MediaBtn extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String url;
+  const _MediaBtn(
+      {required this.icon, required this.label, required this.url});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () async {
+        final uri = Uri.parse(url);
+        if (await canLaunchUrl(uri)) launchUrl(uri);
+      },
+      child: Container(
+        padding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: AppShadows.soft,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 18, color: AppColors.primary),
+            const SizedBox(width: 6),
+            Text(label,
+                style: GoogleFonts.josefinSans(
+                    fontSize: 13, color: AppColors.primary)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+class _SectionTitle extends StatelessWidget {
+  final String text;
+  const _SectionTitle(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      style: GoogleFonts.cinzel(
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+          color: AppColors.textPrimary),
+    );
+  }
+}

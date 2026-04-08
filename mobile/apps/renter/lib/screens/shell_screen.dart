@@ -69,10 +69,12 @@ class _ShellScreenState extends ConsumerState<ShellScreen> {
             case 0:
               context.go('/');
             case 1:
-              context.go('/payments');
+              context.go('/browse');
             case 2:
-              context.go('/tickets');
+              context.go('/payments');
             case 3:
+              context.go('/tickets');
+            case 4:
               context.go('/profile');
           }
         },
@@ -81,9 +83,11 @@ class _ShellScreenState extends ConsumerState<ShellScreen> {
   }
 
   int _calculateIndex(String location) {
-    if (location.startsWith('/payments')) return 1;
-    if (location.startsWith('/tickets')) return 2;
-    if (location.startsWith('/profile')) return 3;
+    if (location.startsWith('/browse')) return 1;
+    if (location.startsWith('/wishlist')) return 1;
+    if (location.startsWith('/payments')) return 2;
+    if (location.startsWith('/tickets')) return 3;
+    if (location.startsWith('/profile')) return 4;
     return 0;
   }
 }
@@ -99,6 +103,7 @@ class _FrostedBottomNav extends StatelessWidget {
 
   static const _items = [
     (icon: Icons.home_outlined, activeIcon: Icons.home_rounded, label: 'Home'),
+    (icon: Icons.search_outlined, activeIcon: Icons.search_rounded, label: 'Browse'),
     (icon: Icons.payment_outlined, activeIcon: Icons.payment_rounded, label: 'Payments'),
     (icon: Icons.handyman_outlined, activeIcon: Icons.handyman_rounded, label: 'Tickets'),
     (icon: Icons.person_outline_rounded, activeIcon: Icons.person_rounded, label: 'More'),
