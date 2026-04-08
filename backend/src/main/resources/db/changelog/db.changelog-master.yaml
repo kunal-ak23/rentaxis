@@ -71,3 +71,5 @@ databaseChangeLog:
       file: db/changelog/changesets/35-penalties-and-settlements.yaml
   - include:
       file: db/changelog/changesets/36-import-jobs.yaml
+  - include:
+      file: db/changelog/changesets/37a-tenants-slug.yaml

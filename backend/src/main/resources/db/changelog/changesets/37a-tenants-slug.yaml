@@ -1,0 +1,73 @@
+databaseChangeLog:
+  - changeSet:
+      id: 37a-add-slug-to-landlord-org
+      author: rentaxis
+      changes:
+        - addColumn:
+            tableName: landlord_org
+            columns:
+              - column:
+                  name: slug
+                  type: varchar(128)
+        - createIndex:
+            tableName: landlord_org
+            indexName: idx_landlord_org_slug_unique
+            unique: true
+            columns:
+              - column:
+                  name: slug
+
+  - changeSet:
+      id: 37a-backfill-landlord-org-slug
+      author: rentaxis
+      changes:
+        - sql:
+            splitStatements: false
+            stripComments: true
+            sql: |
+              -- Deterministic slugify of landlord_org.name with id-suffix tiebreaker for uniqueness.
+              -- Idempotent: only touches rows where slug IS NULL.
+              WITH base AS (
+                SELECT
+                  id,
+                  NULLIF(
+                    trim(
+                      both '-' from
+                        regexp_replace(lower(coalesce(name, '')), '[^a-z0-9]+', '-', 'g')
+                    ),
+                    ''
+                  ) AS base_slug
+                FROM landlord_org
+                WHERE slug IS NULL
+              ),
+              candidates AS (
+                SELECT
+                  id,
+                  COALESCE(base_slug, 'tenant') AS base_slug,
+                  COALESCE(base_slug, 'tenant') || '-' || substring(id::text, 1, 6) AS unique_slug
+                FROM base
+              )
+              UPDATE landlord_org l
+              SET slug = CASE
+                WHEN EXISTS (
+                  SELECT 1 FROM landlord_org x
+                  WHERE x.slug = c.base_slug AND x.id <> l.id
+                ) THEN c.unique_slug
+                ELSE c.base_slug
+              END
+              FROM candidates c
+              WHERE l.id = c.id;
+
+              -- Safety net: if any remain null (shouldn't), assign id-suffix slug.
+              UPDATE landlord_org
+              SET slug = 'tenant-' || substring(id::text, 1, 8)
+              WHERE slug IS NULL;
+
+  - changeSet:
+      id: 37a-landlord-org-slug-not-null
+      author: rentaxis
+      changes:
+        - addNotNullConstraint:
+            tableName: landlord_org
+            columnName: slug
+            columnDataType: varchar(128)
