@@ -20,4 +20,6 @@ public interface UnitListingRepository extends JpaRepository<UnitListing, UUID>,
     boolean existsBySlugAndTenantId(String slug, UUID tenantId);
 
     Page<UnitListing> findByTenantIdAndStatus(UUID tenantId, ListingStatus status, Pageable pageable);
+
+    Optional<UnitListing> findByUnitId(UUID unitId);
 }
