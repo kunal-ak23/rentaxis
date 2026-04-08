@@ -30,6 +30,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -55,7 +56,8 @@ class PublicListingControllerTest {
     void setUp() {
         tenantId = UUID.randomUUID();
         listing = new UnitListing();
-        listing.setId(UUID.randomUUID());
+        // Fixed UUID so computeOffset() is deterministic (seeded from UUID bits)
+        listing.setId(UUID.fromString("123e4567-e89b-12d3-a456-426614174000"));
         listing.setTenantId(tenantId);
         listing.setSlug("marina-2br");
         listing.setTitleEn("Marina 2BR");
@@ -95,10 +97,8 @@ class PublicListingControllerTest {
 
         PublicListingDTO dto = response.getBody();
         assertThat(dto).isNotNull();
-        // Rent label should be a range like "AED 80k-90k", NOT "AED 85000"
-        assertThat(dto.rentRangeLabel()).isNotEqualTo("AED 85000");
-        assertThat(dto.rentRangeLabel()).contains("AED");
-        assertThat(dto.rentRangeLabel()).contains("k");
+        // buildRentLabel(85000) rounds down to nearest 10k → "AED 80k-90k" (deterministic)
+        assertThat(dto.rentRangeLabel()).isEqualTo("AED 80k-90k");
     }
 
     @Test
@@ -109,9 +109,13 @@ class PublicListingControllerTest {
 
         PublicListingDTO dto = response.getBody();
         assertThat(dto).isNotNull();
-        // Approximate coords should differ from the stored exact coords
+        // Offset is seeded from fixed UUID → deterministic and non-zero
+        // Magnitude must be within ±MAX_OFFSET_DEG (0.002 degrees, ~220m)
+        BigDecimal maxOffset = new BigDecimal("0.002");
         assertThat(dto.approxLat()).isNotEqualByComparingTo(listing.getLat());
         assertThat(dto.approxLng()).isNotEqualByComparingTo(listing.getLng());
+        assertThat(dto.approxLat().subtract(listing.getLat()).abs()).isLessThanOrEqualTo(maxOffset);
+        assertThat(dto.approxLng().subtract(listing.getLng()).abs()).isLessThanOrEqualTo(maxOffset);
     }
 
     @Test
@@ -122,6 +126,8 @@ class PublicListingControllerTest {
 
         assertThatThrownBy(() -> controller.getPublicListing("wrong-tenant", "marina-2br"))
                 .isInstanceOf(NotFoundException.class);
+        // Verify the exception originated from the tenant-scoped service call, not another path
+        verify(marketplaceService).resolveByTenantSlugAndUnitSlug("wrong-tenant", "marina-2br");
     }
 
     @Test
