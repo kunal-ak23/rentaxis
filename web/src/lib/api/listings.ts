@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import type {
   UnitListingSummaryDTO,
   UnitListingDTO,
@@ -16,18 +17,20 @@ const MARKET_BASE = '/api/proxy/v1/marketplace'
  * Fetches the public (unauthenticated) listing preview from the backend.
  * Called server-side; uses the backend URL directly to bypass the Next.js proxy.
  * Returns null when the listing is not found (404), throws on other errors.
+ * Wrapped with React.cache() so generateMetadata and the page component share
+ * a single fetch per ISR cache miss.
  */
-export async function fetchPublicListing(
+export const fetchPublicListing = cache(async (
   tenantSlug: string,
   unitSlug: string
-): Promise<PublicListingDTO | null> {
+): Promise<PublicListingDTO | null> => {
   const backendUrl = process.env.BACKEND_URL || 'http://localhost:8080'
   const url = `${backendUrl}/public/l/${tenantSlug}/${unitSlug}`
   const res = await fetch(url, { next: { revalidate: 3600 } })
   if (res.status === 404) return null
   if (!res.ok) throw new Error(`fetchPublicListing failed: ${res.status}`)
   return res.json() as Promise<PublicListingDTO>
-}
+})
 
 // ─── Marketplace (renter-facing) helpers ────────────────────────────────────
 
@@ -250,11 +253,12 @@ export async function reorderMedia(
 export async function fetchInterests(
   listingId: string,
   token?: string,
-  page = 0
+  page = 0,
+  size = 10
 ): Promise<PageResponse<InterestDTO>> {
   const headers: HeadersInit = {}
   if (token) headers['Authorization'] = `Bearer ${token}`
-  const q = new URLSearchParams({ page: String(page), size: '10' })
+  const q = new URLSearchParams({ page: String(page), size: String(size) })
   const res = await fetch(`${BASE}/${listingId}/interests?${q}`, { headers })
   if (!res.ok) throw new Error(`Failed to fetch interests: ${res.status}`)
   return res.json()

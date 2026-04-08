@@ -15,7 +15,6 @@ const nextConfig: NextConfig = {
   output: "standalone",
   env: {
     NEXT_PUBLIC_APP_VERSION: `0.6.0.${gitHash}`,
-    NEXT_PUBLIC_BACKEND_URL: backendUrl,
   },
   experimental: {
     proxyTimeout: 120000,

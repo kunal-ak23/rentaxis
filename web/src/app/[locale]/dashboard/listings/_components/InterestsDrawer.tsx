@@ -39,6 +39,7 @@ export function InterestsDrawer({ listingId, listingTitle, onClose }: InterestsD
   const [totalPages, setTotalPages] = useState(0);
   const [currentPage, setCurrentPage] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
 
   const load = useCallback(async (page: number) => {
     setLoading(true);
@@ -64,29 +65,37 @@ export function InterestsDrawer({ listingId, listingTitle, onClose }: InterestsD
     return () => document.removeEventListener('keydown', handler);
   }, [onClose]);
 
-  function exportCsv() {
-    const headers = [
-      t('interestName'), t('interestEmail'), t('interestPhone'),
-      t('interestNote'), t('interestDate'), t('interestStatus'),
-    ];
-    const rows = interests.map(i => [
-      i.renterName ?? '',
-      i.renterEmail ?? '',
-      i.renterPhone ?? '',
-      i.note ?? '',
-      new Date(i.createdAt).toLocaleDateString(),
-      i.status,
-    ]);
-    const csv = [headers, ...rows]
-      .map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
-      .join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `interests-${listingId}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+  async function exportCsv() {
+    setExporting(true);
+    try {
+      const all = await fetchInterests(listingId, token, 0, 1000);
+      const headers = [
+        t('interestName'), t('interestEmail'), t('interestPhone'),
+        t('interestNote'), t('interestDate'), t('interestStatus'),
+      ];
+      const rows = all.content.map(i => [
+        i.renterName ?? '',
+        i.renterEmail ?? '',
+        i.renterPhone ?? '',
+        i.note ?? '',
+        new Date(i.createdAt).toLocaleDateString(),
+        i.status,
+      ]);
+      const csv = [headers, ...rows]
+        .map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
+        .join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `interests-${listingId}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      // silent — user can retry
+    } finally {
+      setExporting(false);
+    }
   }
 
   function getStatusLabel(status: InterestStatus) {
@@ -129,10 +138,11 @@ export function InterestsDrawer({ listingId, listingTitle, onClose }: InterestsD
             {totalElements > 0 && (
               <button
                 onClick={exportCsv}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-input text-foreground hover:bg-input/80 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30"
+                disabled={exporting}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-input text-foreground hover:bg-input/80 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-60"
               >
-                <Download size={13} />
-                {t('exportCsv')}
+                {exporting ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+                {exporting ? t('loadingText') : t('exportCsv')}
               </button>
             )}
             <button
