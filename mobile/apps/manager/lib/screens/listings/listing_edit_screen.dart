@@ -95,17 +95,6 @@ class _ListingEditScreenState extends ConsumerState<ListingEditScreen>
     ('OTHER', 'Other'),
   ];
 
-  static const _allAmenities = [
-    'POOL', 'GYM', 'SAUNA', 'STEAM_ROOM', 'JACUZZI',
-    'KIDS_PLAY_AREA', 'KIDS_POOL', 'BBQ_AREA', 'GARDEN', 'ROOFTOP_LOUNGE',
-    'SECURITY_24_7', 'CCTV', 'CONCIERGE', 'INTERCOM',
-    'COVERED_PARKING', 'VISITOR_PARKING', 'EV_CHARGING', 'ELEVATOR',
-    'CENTRAL_AC', 'DISTRICT_COOLING', 'MAIDS_ROOM', 'STUDY_ROOM',
-    'STORAGE_ROOM', 'LAUNDRY_ROOM', 'BUILT_IN_WARDROBES',
-    'BALCONY', 'PRIVATE_GARDEN', 'MAID_SERVICE', 'PET_FRIENDLY',
-    'SMART_HOME', 'SOLAR_POWER', 'NEAR_METRO', 'NEAR_SCHOOL',
-    'NEAR_MALL', 'SEA_VIEW',
-  ];
 
   @override
   void initState() {
@@ -709,7 +698,7 @@ class _AmenitiesTabState extends State<_AmenitiesTab> {
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: _ListingEditScreenState._allAmenities.map((a) {
+            children: kAllAmenities.map((a) {
               final isSelected = s._amenities.contains(a);
               final label = a
                   .split('_')
