@@ -35,8 +35,10 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/v1/auth/**", "/api/auth/**", "/api/webhooks/**", "/actuator/health", "/error", "/api/v1/assets/serve/**", "/public/**").permitAll()
                         .anyRequest().authenticated())
-                .addFilterBefore(publicRateLimitFilter, UsernamePasswordAuthenticationFilter.class)
-                .addFilterBefore(apiSecurityFilter, UsernamePasswordAuthenticationFilter.class);
+                // Order matters: rate limit MUST run before auth so abusive IPs are
+                // throttled before any token parsing / DB lookups happen.
+                .addFilterBefore(apiSecurityFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(publicRateLimitFilter, ApiSecurityFilter.class);
         return http.build();
     }
 

@@ -71,7 +71,7 @@ public class UnitListingService {
         if (statusFilter != null) {
             return listingRepository.findByTenantIdAndStatus(tenantId, statusFilter, pageable);
         }
-        return listingRepository.findAll(pageable);
+        return listingRepository.findByTenantId(tenantId, pageable);
     }
 
     @Transactional(readOnly = true)

@@ -1,10 +1,12 @@
 package com.datagami.rentaxis.core.service;
 
+import com.datagami.rentaxis.api.exception.ListingNotAvailableException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.event.InterestReceivedEvent;
 import com.datagami.rentaxis.domain.entity.UnitListing;
 import com.datagami.rentaxis.domain.entity.UnitListingInterest;
 import com.datagami.rentaxis.domain.entity.enums.InterestStatus;
+import com.datagami.rentaxis.domain.entity.enums.ListingStatus;
 import com.datagami.rentaxis.domain.repository.UnitListingInterestRepository;
 import com.datagami.rentaxis.domain.repository.UnitListingRepository;
 import org.springframework.context.ApplicationEventPublisher;
@@ -36,7 +38,10 @@ public class InterestService {
      * Add interest for a renter in a listing. Idempotent: if already exists, returns the existing row.
      */
     public UnitListingInterest addInterest(UUID tenantId, UUID listingId, UUID renterUserId, String note) {
-        verifyListingOwnership(tenantId, listingId);
+        UnitListing listing = verifyListingOwnership(tenantId, listingId);
+        if (listing.getStatus() != ListingStatus.PUBLISHED && listing.getStatus() != ListingStatus.UPCOMING) {
+            throw new ListingNotAvailableException("Listing not available for interest");
+        }
 
         Optional<UnitListingInterest> existing = interestRepository.findByListingIdAndRenterUserId(listingId, renterUserId);
         if (existing.isPresent()) {
@@ -95,11 +100,12 @@ public class InterestService {
 
     // ---- Helpers ----
 
-    private void verifyListingOwnership(UUID tenantId, UUID listingId) {
+    private UnitListing verifyListingOwnership(UUID tenantId, UUID listingId) {
         UnitListing listing = listingRepository.findById(listingId)
                 .orElseThrow(() -> new NotFoundException("Listing not found"));
         if (!Objects.equals(listing.getTenantId(), tenantId)) {
             throw new NotFoundException("Listing not found");
         }
+        return listing;
     }
 }

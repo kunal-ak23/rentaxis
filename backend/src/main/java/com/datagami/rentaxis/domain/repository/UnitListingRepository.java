@@ -21,5 +21,11 @@ public interface UnitListingRepository extends JpaRepository<UnitListing, UUID>,
 
     Page<UnitListing> findByTenantIdAndStatus(UUID tenantId, ListingStatus status, Pageable pageable);
 
+    Page<UnitListing> findByTenantId(UUID tenantId, Pageable pageable);
+
     Optional<UnitListing> findByUnitId(UUID unitId);
+
+    java.util.List<UnitListing> findAllByIdIn(java.util.Collection<UUID> ids);
+
+    java.util.List<UnitListing> findByStatus(ListingStatus status);
 }
