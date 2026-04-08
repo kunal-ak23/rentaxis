@@ -204,6 +204,9 @@ class _BrowseFiltersSheetState extends State<BrowseFiltersSheet> {
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: () {
+                  // Preserve proximity coordinates seeded by the location
+                  // service — they are not exposed as user-editable fields
+                  // in this sheet.
                   widget.onApply(BrowseFilters(
                     minBedrooms: _minBedrooms,
                     minRent:
@@ -213,6 +216,9 @@ class _BrowseFiltersSheetState extends State<BrowseFiltersSheet> {
                         : null,
                     furnishing: _furnishing,
                     availableNow: _availableNow ? true : null,
+                    nearLat: widget.current.nearLat,
+                    nearLng: widget.current.nearLng,
+                    radiusKm: widget.current.radiusKm,
                   ));
                   Navigator.of(context).pop();
                 },
