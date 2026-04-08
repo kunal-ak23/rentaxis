@@ -56,6 +56,15 @@ public class GlobalExceptionHandler {
         ));
     }
 
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<Map<String, Object>> handleIllegalArgument(IllegalArgumentException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+                "error", true,
+                "message", ex.getMessage() == null ? "Invalid request" : ex.getMessage(),
+                "status", 400
+        ));
+    }
+
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<Map<String, Object>> handleRuntime(RuntimeException ex) {
         log.error("Unhandled exception", ex);

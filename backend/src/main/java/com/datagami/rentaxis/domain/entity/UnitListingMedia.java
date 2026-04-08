@@ -35,4 +35,7 @@ public class UnitListingMedia {
 
     @Column(name = "is_cover")
     private Boolean isCover = false;
+
+    @Column(name = "blob_path", length = 512)
+    private String blobPath;
 }

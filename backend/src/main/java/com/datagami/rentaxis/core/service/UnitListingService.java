@@ -20,12 +20,15 @@ import com.datagami.rentaxis.domain.repository.UnitListingInterestRepository;
 import com.datagami.rentaxis.domain.repository.UnitListingMediaRepository;
 import com.datagami.rentaxis.domain.repository.UnitListingRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+
+import java.util.Set;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -46,6 +49,12 @@ public class UnitListingService {
     private final SlugService slugService;
     private final ApplicationEventPublisher eventPublisher;
     private final BlobStorageService blobStorageService;
+
+    private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of(
+            "image/jpeg", "image/png", "image/webp", "application/pdf");
+
+    @Value("${rentaxis.listings.max-media-size-bytes:10485760}")
+    private long maxMediaSizeBytes = 10_485_760L;
 
     public UnitListingService(
             UnitListingRepository listingRepository,
@@ -162,7 +171,10 @@ public class UnitListingService {
     public UnitListingMediaDTO addMedia(UUID tenantId, UUID listingId, MultipartFile file,
                                         String caption, Boolean isCover) {
         get(tenantId, listingId);
-        String url = blobStorageService.upload(tenantId, listingId, file);
+        validateMediaUpload(file);
+        BlobStorageService.UploadResult uploaded = blobStorageService.upload(tenantId, listingId, file);
+        String url = uploaded.url();
+        String blobPath = uploaded.blobPath();
 
         ListingMediaType type = inferMediaType(file);
         List<UnitListingMedia> siblings = mediaRepository.findByListingIdOrderBySortOrderAsc(listingId);
@@ -188,6 +200,7 @@ public class UnitListingService {
         media.setCaption(caption);
         media.setSortOrder(nextSort);
         media.setIsCover(Boolean.TRUE.equals(isCover));
+        media.setBlobPath(blobPath);
         UnitListingMedia saved = mediaRepository.save(media);
         return toMediaDto(saved);
     }
@@ -199,7 +212,14 @@ public class UnitListingService {
         if (!Objects.equals(media.getListingId(), listingId)) {
             throw new NotFoundException("Media not found");
         }
-        String blobPath = extractBlobPath(media.getUrl());
+        // Prefer the persisted blob_path; fall back to URL parsing for legacy
+        // rows uploaded before the column was added.
+        // TODO: remove the URL fallback after one migration cycle (when no
+        // unit_listing_media row has a null blob_path).
+        String blobPath = media.getBlobPath();
+        if (blobPath == null) {
+            blobPath = extractBlobPath(media.getUrl());
+        }
         if (blobPath != null) {
             blobStorageService.delete(blobPath);
         }
@@ -295,6 +315,22 @@ public class UnitListingService {
             entry.setAmenity(a.amenity());
             entry.setCustomLabel(a.customLabel());
             amenityRepository.save(entry);
+        }
+    }
+
+    private void validateMediaUpload(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("Media file is required");
+        }
+        String contentType = file.getContentType();
+        if (contentType == null || !ALLOWED_CONTENT_TYPES.contains(contentType.toLowerCase())) {
+            throw new IllegalArgumentException(
+                    "Unsupported media type: " + contentType
+                            + ". Allowed: " + ALLOWED_CONTENT_TYPES);
+        }
+        if (file.getSize() > maxMediaSizeBytes) {
+            throw new IllegalArgumentException(
+                    "Media file exceeds maximum size of " + maxMediaSizeBytes + " bytes");
         }
     }
 

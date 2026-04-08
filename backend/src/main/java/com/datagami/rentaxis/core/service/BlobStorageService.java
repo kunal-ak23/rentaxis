@@ -31,10 +31,18 @@ public class BlobStorageService {
     private volatile BlobContainerClient containerClient;
 
     /**
-     * Uploads {@code file} to {@code listings/{tenantId}/{listingId}/{uuid}.{ext}}
-     * and returns the blob's public URL.
+     * Result of an upload — both the public URL and the container-relative
+     * blob path are returned so callers can persist them and avoid fragile
+     * string parsing at delete time.
      */
-    public String upload(UUID tenantId, UUID listingId, MultipartFile file) {
+    public record UploadResult(String url, String blobPath) {
+    }
+
+    /**
+     * Uploads {@code file} to {@code listings/{tenantId}/{listingId}/{uuid}.{ext}}
+     * and returns both the blob's public URL and its container-relative path.
+     */
+    public UploadResult upload(UUID tenantId, UUID listingId, MultipartFile file) {
         if (tenantId == null || listingId == null || file == null) {
             throw new BlobStorageException("tenantId, listingId, and file are required");
         }
@@ -44,7 +52,7 @@ public class BlobStorageService {
         try (InputStream in = file.getInputStream()) {
             BlobClient blobClient = getContainerClient().getBlobClient(blobPath);
             blobClient.upload(in, file.getSize(), true);
-            return blobClient.getBlobUrl();
+            return new UploadResult(blobClient.getBlobUrl(), blobPath);
         } catch (IOException e) {
             throw new BlobStorageException("Failed to read upload stream for " + blobPath, e);
         } catch (com.azure.storage.blob.models.BlobStorageException e) {
