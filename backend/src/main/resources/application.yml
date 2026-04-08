@@ -40,3 +40,5 @@ rentaxis:
     storage-path: ./data/contracts
   encryption:
     key: ${RENTAXIS_ENCRYPTION_KEY:}
+  features:
+    listings-enabled: ${FEATURE_LISTINGS_ENABLED:false}
