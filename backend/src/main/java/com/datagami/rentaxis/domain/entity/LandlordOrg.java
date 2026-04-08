@@ -36,6 +36,27 @@ public class LandlordOrg {
     @Column(name = "ticket_otp_required")
     private Boolean ticketOtpRequired = true;
 
+    @Column(nullable = false, unique = true)
+    private String slug;
+
+    @PrePersist
+    public void onPrePersist() {
+        if (this.slug == null || this.slug.isBlank()) {
+            String base = this.name == null ? "" : this.name.toLowerCase();
+            String slugified = base.replaceAll("[^a-z0-9]+", "-").replaceAll("(^-+|-+$)", "");
+            // TODO: handle slug collisions at the service layer; DB unique constraint enforces uniqueness for now.
+            this.slug = slugified.isBlank() ? "tenant" : slugified;
+        }
+    }
+
+    public String getSlug() {
+        return slug;
+    }
+
+    public void setSlug(String slug) {
+        this.slug = slug;
+    }
+
     // Getters and Setters
     public UUID getId() {
         return id;
