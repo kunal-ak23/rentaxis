@@ -165,13 +165,16 @@ class _ListingEditScreenState extends ConsumerState<ListingEditScreen>
     final isNew = _listingId == null;
     final detailAsync = ref.watch(_listingDetailProvider(widget.listingId));
 
-    if (!isNew) {
-      detailAsync.whenData((l) {
-        if (l != null) _populateFromListing(l);
-      });
-    } else {
-      _loaded = true;
-    }
+    if (isNew) _loaded = true;
+
+    // Populate form fields when listing data loads — use ref.listen to keep
+    // side effects out of the build phase.
+    ref.listen<AsyncValue<Map<String, dynamic>?>>(
+      _listingDetailProvider(widget.listingId),
+      (_, next) {
+        if (!isNew) next.whenData((l) { if (l != null) _populateFromListing(l); });
+      },
+    );
 
     final status = isNew
         ? 'DRAFT'
