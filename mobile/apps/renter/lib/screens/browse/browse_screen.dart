@@ -10,7 +10,7 @@ import 'browse_map.dart';
 // ── Providers ────────────────────────────────────────────────────────────────
 
 final browseFiltersProvider =
-    StateProvider<BrowseFilters>((ref) => const BrowseFilters());
+    StateProvider.autoDispose<BrowseFilters>((ref) => const BrowseFilters());
 
 final browseListingsProvider =
     FutureProvider.autoDispose<Map<String, dynamic>>((ref) async {
