@@ -5,7 +5,6 @@ import com.datagami.rentaxis.api.dto.UnitListingCreateRequest;
 import com.datagami.rentaxis.api.dto.UnitListingMediaDTO;
 import com.datagami.rentaxis.api.dto.UnitListingUpdateRequest;
 import com.datagami.rentaxis.api.exception.NotFoundException;
-import com.datagami.rentaxis.core.event.InterestReceivedEvent;
 import com.datagami.rentaxis.core.event.ListingPublishedEvent;
 import com.datagami.rentaxis.core.event.ListingUnlistedEvent;
 import com.datagami.rentaxis.domain.entity.UnitListing;
