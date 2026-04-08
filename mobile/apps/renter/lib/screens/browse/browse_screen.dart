@@ -144,6 +144,7 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
                     child: _ListingListView(
                       listings: items,
                       truncated: allItems.length >= 50,
+                      serverCount: allItems.length,
                     ),
                   );
                 },
@@ -336,6 +337,14 @@ class _ActiveFilterChips extends ConsumerWidget {
         ),
       );
     }
+    if (filters.nearLat != null)
+      chips.add(
+        _ChipData(
+          'Near me${filters.radiusKm != null ? ' (${filters.radiusKm!.round()} km)' : ''}',
+          () => ref.read(browseFiltersProvider.notifier).state = filters
+              .copyWith(clearNearby: true),
+        ),
+      );
     if (chips.isEmpty) return const SizedBox.shrink();
 
     return SizedBox(
@@ -396,7 +405,13 @@ class _FilterChip extends StatelessWidget {
 class _ListingListView extends StatelessWidget {
   final List<Map<String, dynamic>> listings;
   final bool truncated;
-  const _ListingListView({required this.listings, this.truncated = false});
+  // Server-side count before client search filtering, used for footer text.
+  final int serverCount;
+  const _ListingListView({
+    required this.listings,
+    this.truncated = false,
+    this.serverCount = 0,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -409,7 +424,7 @@ class _ListingListView extends StatelessWidget {
           return Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: Text(
-              'Showing first ${listings.length} results — refine filters to see more',
+              'Showing first $serverCount results — refine filters to see more',
               textAlign: TextAlign.center,
               style: GoogleFonts.josefinSans(
                 fontSize: 12,

@@ -22,11 +22,12 @@ class BrowseFilters {
   });
 
   int get activeCount => [
-        minBedrooms,
-        furnishing,
-        if (availableNow == true) true,
-        if (minRent != null || maxRent != null) true,
-      ].whereType<Object>().length;
+    minBedrooms,
+    furnishing,
+    if (availableNow == true) true,
+    if (minRent != null || maxRent != null) true,
+    if (nearLat != null) true,
+  ].whereType<Object>().length;
 
   BrowseFilters copyWith({
     int? minBedrooms,
@@ -41,17 +42,19 @@ class BrowseFilters {
     bool clearFurnishing = false,
     bool clearAvailableNow = false,
     bool clearRent = false,
+    bool clearNearby = false,
   }) {
     return BrowseFilters(
       minBedrooms: clearMinBedrooms ? null : (minBedrooms ?? this.minBedrooms),
       minRent: clearRent ? null : (minRent ?? this.minRent),
       maxRent: clearRent ? null : (maxRent ?? this.maxRent),
       furnishing: clearFurnishing ? null : (furnishing ?? this.furnishing),
-      availableNow:
-          clearAvailableNow ? null : (availableNow ?? this.availableNow),
-      nearLat: nearLat ?? this.nearLat,
-      nearLng: nearLng ?? this.nearLng,
-      radiusKm: radiusKm ?? this.radiusKm,
+      availableNow: clearAvailableNow
+          ? null
+          : (availableNow ?? this.availableNow),
+      nearLat: clearNearby ? null : (nearLat ?? this.nearLat),
+      nearLng: clearNearby ? null : (nearLng ?? this.nearLng),
+      radiusKm: clearNearby ? null : (radiusKm ?? this.radiusKm),
     );
   }
 }
