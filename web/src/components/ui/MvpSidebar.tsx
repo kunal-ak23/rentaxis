@@ -20,6 +20,7 @@ import {
     UserCog,
     Wrench,
     HelpCircle,
+    Building2,
 } from 'lucide-react';
 import Image from "next/image";
 import { Link } from "@/i18n/routing";
@@ -62,6 +63,7 @@ export default function MvpSidebar() {
                 { name: t("properties"), href: "/dashboard/properties", icon: LayoutDashboard, tourId: 'sidebar-properties' },
                 { name: t("renters"), href: "/dashboard/renters", icon: Contact, tourId: 'sidebar-renters' },
                 { name: t("leases"), href: "/dashboard/leases", icon: FileText, tourId: 'sidebar-leases' },
+                { name: "Listings", href: "/dashboard/listings", icon: Building2, tourId: 'sidebar-listings' },
                 { name: "Tickets", href: "/dashboard/tickets", icon: Wrench, tourId: 'sidebar-tickets' }
             ]
             : []),

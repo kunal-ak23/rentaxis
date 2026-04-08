@@ -81,6 +81,7 @@ jobs:
           NEXTAUTH_SECRET=${{ secrets.NEXTAUTH_SECRET }}
           AZURE_STORAGE_CONNECTION_STRING=${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}
           AZURE_STORAGE_CONTAINER_PREFIX=${{ secrets.AZURE_STORAGE_CONTAINER_PREFIX }}
+          FEATURE_LISTINGS_ENABLED=true
           EOF
           sed -i 's/^[[:space:]]*//' /tmp/rentaxis.env
 
