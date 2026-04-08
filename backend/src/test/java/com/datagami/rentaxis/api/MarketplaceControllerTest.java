@@ -10,6 +10,7 @@ import com.datagami.rentaxis.domain.entity.enums.InterestStatus;
 import com.datagami.rentaxis.domain.entity.enums.ListingStatus;
 import com.datagami.rentaxis.domain.repository.UnitListingAmenityRepository;
 import com.datagami.rentaxis.domain.repository.UnitListingMediaRepository;
+import com.datagami.rentaxis.domain.repository.UnitListingRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -52,6 +53,8 @@ class MarketplaceControllerTest {
     UnitListingMediaRepository mediaRepository;
     @Mock
     UnitListingAmenityRepository amenityRepository;
+    @Mock
+    UnitListingRepository listingRepository;
     @Mock
     FeatureFlags featureFlags;
 
@@ -153,7 +156,7 @@ class MarketplaceControllerTest {
         when(interestService.wishlistForRenter(renterId)).thenReturn(List.of(interest));
         UnitListing listing = publishedListing();
         listing.setId(listingId);
-        when(marketplaceService.getListingById(listingId)).thenReturn(listing);
+        when(listingRepository.findAllByIdIn(any())).thenReturn(List.of(listing));
 
         ResponseEntity<List<com.datagami.rentaxis.api.dto.UnitListingSummaryDTO>> resp = controller.wishlist();
 

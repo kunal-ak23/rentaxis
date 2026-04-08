@@ -96,9 +96,12 @@ public class UnitListingController {
     }
 
     @GetMapping("/{id}/interests")
-    public ResponseEntity<List<InterestDTO>> interests(@PathVariable UUID id) {
+    public ResponseEntity<Page<InterestDTO>> interests(
+            @PathVariable UUID id,
+            @PageableDefault(sort = "createdAt", direction = Sort.Direction.ASC) Pageable pageable) {
         checkEnabled();
-        return ResponseEntity.ok(service.listInterests(TenantContextHolder.getTenantId(), id));
+        return ResponseEntity.ok(
+                service.listInterests(TenantContextHolder.getTenantId(), id, pageable));
     }
 
     @PostMapping("/{id}/media")

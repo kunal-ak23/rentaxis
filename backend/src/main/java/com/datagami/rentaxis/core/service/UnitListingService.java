@@ -144,14 +144,24 @@ public class UnitListingService {
     }
 
     @Transactional(readOnly = true)
-    public List<InterestDTO> listInterests(UUID tenantId, UUID listingId) {
+    public Page<InterestDTO> listInterests(UUID tenantId, UUID listingId, Pageable pageable) {
         get(tenantId, listingId);
-        List<UnitListingInterest> interests =
-                interestRepository.findByListingIdAndStatus(listingId, InterestStatus.ACTIVE);
-        List<InterestDTO> result = new ArrayList<>();
-        for (UnitListingInterest interest : interests) {
-            User user = userRepository.findById(interest.getRenterUserId()).orElse(null);
-            result.add(new InterestDTO(
+        Page<UnitListingInterest> page = interestRepository.findByListingIdAndStatus(
+                listingId, InterestStatus.ACTIVE, pageable);
+
+        List<UUID> renterIds = page.getContent().stream()
+                .map(UnitListingInterest::getRenterUserId)
+                .toList();
+        java.util.Map<UUID, User> usersById = new java.util.HashMap<>();
+        if (!renterIds.isEmpty()) {
+            for (User u : userRepository.findAllById(renterIds)) {
+                usersById.put(u.getId(), u);
+            }
+        }
+
+        return page.map(interest -> {
+            User user = usersById.get(interest.getRenterUserId());
+            return new InterestDTO(
                     interest.getId(),
                     interest.getListingId(),
                     interest.getRenterUserId(),
@@ -161,9 +171,8 @@ public class UnitListingService {
                     interest.getNote(),
                     interest.getStatus(),
                     interest.getCreatedAt()
-            ));
-        }
-        return result;
+            );
+        });
     }
 
     // ---- Media ----

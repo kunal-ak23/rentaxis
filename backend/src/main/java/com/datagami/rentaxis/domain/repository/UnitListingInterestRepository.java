@@ -2,6 +2,8 @@ package com.datagami.rentaxis.domain.repository;
 
 import com.datagami.rentaxis.domain.entity.UnitListingInterest;
 import com.datagami.rentaxis.domain.entity.enums.InterestStatus;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -13,6 +15,8 @@ import java.util.UUID;
 public interface UnitListingInterestRepository extends JpaRepository<UnitListingInterest, UUID> {
 
     List<UnitListingInterest> findByListingIdAndStatus(UUID listingId, InterestStatus status);
+
+    Page<UnitListingInterest> findByListingIdAndStatus(UUID listingId, InterestStatus status, Pageable pageable);
 
     Optional<UnitListingInterest> findByListingIdAndRenterUserId(UUID listingId, UUID renterUserId);
 

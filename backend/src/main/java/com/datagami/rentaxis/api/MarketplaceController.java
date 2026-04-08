@@ -15,6 +15,7 @@ import com.datagami.rentaxis.domain.entity.UnitListingMedia;
 import com.datagami.rentaxis.domain.entity.enums.Furnishing;
 import com.datagami.rentaxis.domain.repository.UnitListingAmenityRepository;
 import com.datagami.rentaxis.domain.repository.UnitListingMediaRepository;
+import com.datagami.rentaxis.domain.repository.UnitListingRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -28,8 +29,11 @@ import org.springframework.web.bind.annotation.*;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/marketplace")
@@ -40,17 +44,20 @@ public class MarketplaceController {
     private final InterestService interestService;
     private final UnitListingMediaRepository mediaRepository;
     private final UnitListingAmenityRepository amenityRepository;
+    private final UnitListingRepository listingRepository;
     private final FeatureFlags featureFlags;
 
     public MarketplaceController(MarketplaceService marketplaceService,
                                   InterestService interestService,
                                   UnitListingMediaRepository mediaRepository,
                                   UnitListingAmenityRepository amenityRepository,
+                                  UnitListingRepository listingRepository,
                                   FeatureFlags featureFlags) {
         this.marketplaceService = marketplaceService;
         this.interestService = interestService;
         this.mediaRepository = mediaRepository;
         this.amenityRepository = amenityRepository;
+        this.listingRepository = listingRepository;
         this.featureFlags = featureFlags;
     }
 
@@ -111,14 +118,30 @@ public class MarketplaceController {
         checkEnabled();
         UUID renterUserId = currentUserId();
         List<UnitListingInterest> interests = interestService.wishlistForRenter(renterUserId);
+        if (interests.isEmpty()) {
+            return ResponseEntity.ok(List.of());
+        }
 
+        // Wishlist is intentionally cross-tenant: a renter may have wishlisted
+        // listings across multiple landlords. We bypass MarketplaceService
+        // (which would apply tenant scoping) and load the listings directly
+        // by id in a single query. NOTE: derived JpaRepository queries are
+        // not intercepted by TenantAspect, so this is safe today; if that
+        // changes, this query must use @Query(nativeQuery = true) or be
+        // explicitly excluded.
+        List<UUID> listingIds = interests.stream()
+                .map(UnitListingInterest::getListingId)
+                .collect(Collectors.toList());
+        List<UnitListing> listings = listingRepository.findAllByIdIn(listingIds);
+        Map<UUID, UnitListing> byId = new HashMap<>();
+        for (UnitListing l : listings) {
+            byId.put(l.getId(), l);
+        }
         List<UnitListingSummaryDTO> result = new ArrayList<>();
         for (UnitListingInterest interest : interests) {
-            try {
-                UnitListing listing = marketplaceService.getListingById(interest.getListingId());
+            UnitListing listing = byId.get(interest.getListingId());
+            if (listing != null) {
                 result.add(toSummary(listing));
-            } catch (NotFoundException ignored) {
-                // Listing removed or unlisted — skip silently
             }
         }
         return ResponseEntity.ok(result);

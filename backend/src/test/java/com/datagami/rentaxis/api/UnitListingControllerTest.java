@@ -176,9 +176,11 @@ class UnitListingControllerTest {
     @Test
     void interests_returns200() {
         UUID id = UUID.randomUUID();
-        when(service.listInterests(tenantId, id)).thenReturn(List.of());
+        when(service.listInterests(eq(tenantId), eq(id), any(Pageable.class)))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of()));
 
-        ResponseEntity<?> response = controller.interests(id);
+        ResponseEntity<?> response = controller.interests(id,
+                org.springframework.data.domain.PageRequest.of(0, 20));
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
     }
