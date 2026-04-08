@@ -311,11 +311,30 @@ class _HeroCarouselState extends State<_HeroCarousel> {
   }
 }
 
-class _FullscreenGallery extends StatelessWidget {
+class _FullscreenGallery extends StatefulWidget {
   final List<Map<String, dynamic>> photos;
   final int initialIndex;
   const _FullscreenGallery(
       {required this.photos, required this.initialIndex});
+
+  @override
+  State<_FullscreenGallery> createState() => _FullscreenGalleryState();
+}
+
+class _FullscreenGalleryState extends State<_FullscreenGallery> {
+  late final PageController _pageController;
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController(initialPage: widget.initialIndex);
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -325,10 +344,10 @@ class _FullscreenGallery extends StatelessWidget {
           backgroundColor: Colors.black,
           iconTheme: const IconThemeData(color: Colors.white)),
       body: PhotoViewGallery.builder(
-        itemCount: photos.length,
-        pageController: PageController(initialPage: initialIndex),
+        itemCount: widget.photos.length,
+        pageController: _pageController,
         builder: (_, i) => PhotoViewGalleryPageOptions(
-          imageProvider: NetworkImage(photos[i]['url'] as String),
+          imageProvider: NetworkImage(widget.photos[i]['url'] as String),
           minScale: PhotoViewComputedScale.contained,
           maxScale: PhotoViewComputedScale.covered * 2,
         ),
