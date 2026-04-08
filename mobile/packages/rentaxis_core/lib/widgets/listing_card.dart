@@ -187,11 +187,12 @@ class _StatusPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (status == 'PUBLISHED') return const SizedBox.shrink();
-    final color = switch (status) {
-      'UPCOMING' => AppColors.accent,
-      'DRAFT' => AppColors.textMuted,
-      _ => AppColors.textMuted,
+    final (label, color) = switch (status) {
+      'PUBLISHED' => ('Live', AppColors.success),
+      'UPCOMING' => ('Upcoming', AppColors.accent),
+      'UNLISTED' => ('Unlisted', const Color(0xFFF59E0B)), // amber
+      'DRAFT' => ('Draft', AppColors.textMuted),
+      _ => (status, AppColors.textMuted),
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -200,7 +201,7 @@ class _StatusPill extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
-        status,
+        label,
         style: GoogleFonts.josefinSans(
             fontSize: 10, color: Colors.white, fontWeight: FontWeight.w600),
       ),
