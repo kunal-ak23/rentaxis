@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, use } from "react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import {
   ArrowLeft, Save, Eye, EyeOff, Loader2, AlertCircle, CheckCircle2,
   Copy, Check, ChevronUp, ChevronDown, Trash2, Upload, Image as ImageIcon,
@@ -96,6 +97,8 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
   const isNew = id === 'new';
   const t = useTranslations('Listings');
   const router = useRouter();
+  const { data: session } = useSession();
+  const token = (session?.user as { accessToken?: string })?.accessToken;
 
   const [listing, setListing] = useState<UnitListingDTO | null>(null);
   const [form, setForm] = useState<FormState>(DEFAULT_FORM);
@@ -141,7 +144,7 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
   useEffect(() => {
     if (isNew) return;
     setLoading(true);
-    fetchListing(id)
+    fetchListing(id, token)
       .then(data => {
         setListing(data);
         setForm({
@@ -230,11 +233,11 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
     try {
       const body = buildSaveBody();
       if (isNew) {
-        const created = await createListing(body);
+        const created = await createListing(body, token);
         showToast('success', t('savedSuccess'));
         router.replace(`/dashboard/listings/${created.id}`);
       } else {
-        const updated = await updateListing(id, body);
+        const updated = await updateListing(id, body, token);
         setListing(updated);
         setMedia([...updated.media].sort((a, b) => a.sortOrder - b.sortOrder));
         showToast('success', t('savedSuccess'));
@@ -250,8 +253,8 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
     if (!listing) return;
     setActionLoading('publish');
     try {
-      await publishListing(listing.id);
-      const updated = await fetchListing(listing.id);
+      await publishListing(listing.id, token);
+      const updated = await fetchListing(listing.id, token);
       setListing(updated);
       showToast('success', t('publishSuccess'));
     } catch {
@@ -265,8 +268,8 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
     if (!listing) return;
     setActionLoading('unlist');
     try {
-      await unlistListing(listing.id);
-      const updated = await fetchListing(listing.id);
+      await unlistListing(listing.id, token);
+      const updated = await fetchListing(listing.id, token);
       setListing(updated);
       showToast('success', t('unlistSuccess'));
     } catch {
@@ -284,8 +287,8 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
       fd.append('file', file);
       if (uploadCaption) fd.append('caption', uploadCaption);
       fd.append('isCover', String(uploadIsCover));
-      await uploadMedia(listing.id, fd);
-      const updated = await fetchListing(listing.id);
+      await uploadMedia(listing.id, fd, token);
+      const updated = await fetchListing(listing.id, token);
       setMedia([...updated.media].sort((a, b) => a.sortOrder - b.sortOrder));
       setUploadCaption('');
       setUploadIsCover(false);
@@ -300,7 +303,7 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
   async function handleDeleteMedia(mediaId: string) {
     if (!listing) return;
     try {
-      await deleteMedia(listing.id, mediaId);
+      await deleteMedia(listing.id, mediaId, token);
       setMedia(prev => prev.filter(m => m.id !== mediaId));
     } catch {
       showToast('error', t('saveError'));
@@ -317,7 +320,7 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
     [newMedia[idx], newMedia[targetIdx]] = [newMedia[targetIdx], newMedia[idx]];
     setMedia(newMedia);
     try {
-      await reorderMedia(listing.id, newMedia.map(m => m.id));
+      await reorderMedia(listing.id, newMedia.map(m => m.id), token);
     } catch {}
   }
 

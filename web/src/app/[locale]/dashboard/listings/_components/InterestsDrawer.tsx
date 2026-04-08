@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useTranslations } from "next-intl";
+import { useSession } from "next-auth/react";
 import { X, Download, Loader2, ChevronLeft, ChevronRight, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fetchInterests } from "@/lib/api/listings";
@@ -31,6 +32,8 @@ function getInitials(name: string | null): string {
 
 export function InterestsDrawer({ listingId, listingTitle, onClose }: InterestsDrawerProps) {
   const t = useTranslations('Listings');
+  const { data: session } = useSession();
+  const token = (session?.user as { accessToken?: string })?.accessToken;
   const [interests, setInterests] = useState<InterestDTO[]>([]);
   const [totalElements, setTotalElements] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
@@ -40,7 +43,7 @@ export function InterestsDrawer({ listingId, listingTitle, onClose }: InterestsD
   const load = useCallback(async (page: number) => {
     setLoading(true);
     try {
-      const data = await fetchInterests(listingId, undefined, page);
+      const data = await fetchInterests(listingId, token, page);
       setInterests(data.content);
       setTotalElements(data.totalElements);
       setTotalPages(data.totalPages);
@@ -50,7 +53,7 @@ export function InterestsDrawer({ listingId, listingTitle, onClose }: InterestsD
     } finally {
       setLoading(false);
     }
-  }, [listingId]);
+  }, [listingId, token]);
 
   useEffect(() => { load(0); }, [load]);
 

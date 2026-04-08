@@ -436,12 +436,13 @@ function MarketplaceContent({ tenantSlug }: { tenantSlug: string }) {
       return;
     }
     const token = (session.user as { accessToken?: string })?.accessToken ?? '';
+    const prev = new Set(wishlistedIds);
     if (wishlistedIds.has(id)) {
-      removeInterest(id, token).catch(() => {});
-      setWishlistedIds(prev => { const n = new Set(prev); n.delete(id); return n; });
+      setWishlistedIds(p => { const n = new Set(p); n.delete(id); return n; });
+      removeInterest(id, token).catch(() => setWishlistedIds(prev));
     } else {
-      addInterest(id, undefined, token).catch(() => {});
-      setWishlistedIds(prev => new Set([...prev, id]));
+      setWishlistedIds(p => new Set([...p, id]));
+      addInterest(id, undefined, token).catch(() => setWishlistedIds(prev));
     }
   }
 

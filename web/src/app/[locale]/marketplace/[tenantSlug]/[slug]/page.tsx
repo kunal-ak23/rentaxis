@@ -317,7 +317,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ tenant
                   {floorPlans.map(m => (
                     <button
                       key={m.id}
-                      onClick={() => setLightboxIndex(photos.findIndex(p => p.id === m.id) >= 0 ? photos.findIndex(p => p.id === m.id) : null as unknown as number)}
+                      onClick={() => window.open(m.url, '_blank', 'noopener,noreferrer')}
                       className="px-3 py-1.5 rounded-xl border border-neutral-200 bg-white text-xs font-medium text-neutral-600 hover:bg-neutral-50 transition-colors cursor-pointer"
                     >
                       {t('floorPlan')}
