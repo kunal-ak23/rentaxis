@@ -211,7 +211,7 @@ class _InterestCard extends StatelessWidget {
 
   Future<void> _launch(String url) async {
     final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) launchUrl(uri);
+    if (await canLaunchUrl(uri)) await launchUrl(uri);
   }
 }
 

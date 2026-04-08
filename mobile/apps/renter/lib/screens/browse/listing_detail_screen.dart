@@ -592,7 +592,7 @@ class _MapCard extends StatelessWidget {
   Future<void> _openMaps(double lat, double lng) async {
     final uri = Uri.parse(
         'https://www.google.com/maps/search/?api=1&query=$lat,$lng');
-    if (await canLaunchUrl(uri)) launchUrl(uri);
+    if (await canLaunchUrl(uri)) await launchUrl(uri);
   }
 }
 
@@ -657,7 +657,7 @@ class _MediaBtn extends StatelessWidget {
     return GestureDetector(
       onTap: () async {
         final uri = Uri.parse(url);
-        if (await canLaunchUrl(uri)) launchUrl(uri);
+        if (await canLaunchUrl(uri)) await launchUrl(uri);
       },
       child: Container(
         padding:
