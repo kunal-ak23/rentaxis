@@ -12,9 +12,13 @@ import com.datagami.rentaxis.domain.repository.UnitListingRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
+
+import java.util.Set;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -35,8 +39,8 @@ public class ListingNotificationService {
      * Interests that are already NOTIFIED are skipped (dedupe guard).
      * Transitions interest status to NOTIFIED after sending.
      */
-    @EventListener
-    @Transactional
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void onListingPublished(ListingPublishedEvent event) {
         log.info("ListingPublishedEvent received for listing {}", event.listingId());
 
@@ -82,8 +86,8 @@ public class ListingNotificationService {
     /**
      * When a renter expresses interest, notify all TENANT_ADMIN users of that tenant.
      */
-    @EventListener
-    @Transactional
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void onInterestReceived(InterestReceivedEvent event) {
         log.info("InterestReceivedEvent received for listing {}, renter {}",
                 event.listingId(), event.renterUserId());
@@ -92,9 +96,10 @@ public class ListingNotificationService {
         String listingTitle = listingOpt.map(l -> l.getTitleEn() != null ? l.getTitleEn() : "your listing")
                 .orElse("your listing");
 
+        Set<UserRole> notifyRoles = Set.of(UserRole.TENANT_ADMIN, UserRole.PROPERTY_MANAGER);
         List<User> tenantAdmins = userRepository.findByTenantId(event.tenantId())
                 .stream()
-                .filter(u -> u.getRole() == UserRole.TENANT_ADMIN)
+                .filter(u -> notifyRoles.contains(u.getRole()))
                 .toList();
 
         for (User admin : tenantAdmins) {
