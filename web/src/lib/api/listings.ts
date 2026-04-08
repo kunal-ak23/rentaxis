@@ -7,6 +7,89 @@ import type {
 } from '@/types/listing'
 
 const BASE = '/api/proxy/v1/listings'
+const MARKET_BASE = '/api/proxy/v1/marketplace'
+
+// ─── Marketplace (renter-facing) helpers ────────────────────────────────────
+
+export interface MarketplaceListingsParams {
+  page?: number
+  size?: number
+  bedrooms?: number
+  minRent?: number
+  maxRent?: number
+  furnishing?: string
+  availableNow?: boolean
+  sort?: string
+}
+
+export async function fetchMarketplaceListings(
+  tenantSlug: string,
+  params: MarketplaceListingsParams,
+  token?: string
+): Promise<PageResponse<UnitListingSummaryDTO>> {
+  const q = new URLSearchParams()
+  if (params.page !== undefined) q.set('page', String(params.page))
+  if (params.size !== undefined) q.set('size', String(params.size))
+  if (params.bedrooms !== undefined) q.set('bedrooms', String(params.bedrooms))
+  if (params.minRent !== undefined) q.set('minRent', String(params.minRent))
+  if (params.maxRent !== undefined) q.set('maxRent', String(params.maxRent))
+  if (params.furnishing) q.set('furnishing', params.furnishing)
+  if (params.availableNow) q.set('availableNow', 'true')
+  if (params.sort) q.set('sort', params.sort)
+
+  const headers: HeadersInit = {}
+  if (token) headers['Authorization'] = `Bearer ${token}`
+
+  const res = await fetch(`${MARKET_BASE}/${tenantSlug}/listings?${q.toString()}`, { headers })
+  if (!res.ok) throw new Error(`Failed to fetch marketplace listings: ${res.status}`)
+  return res.json()
+}
+
+export async function fetchMarketplaceListing(
+  tenantSlug: string,
+  slug: string,
+  token?: string
+): Promise<UnitListingDTO> {
+  const headers: HeadersInit = {}
+  if (token) headers['Authorization'] = `Bearer ${token}`
+  const res = await fetch(`${MARKET_BASE}/${tenantSlug}/listings/${slug}`, { headers })
+  if (!res.ok) throw new Error(`Failed to fetch marketplace listing: ${res.status}`)
+  return res.json()
+}
+
+export async function addInterest(
+  listingId: string,
+  note: string | undefined,
+  token: string
+): Promise<void> {
+  const headers: HeadersInit = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
+  const res = await fetch(`${MARKET_BASE}/listings/${listingId}/interest`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ note: note || null }),
+  })
+  if (!res.ok) throw new Error(`Failed to add interest: ${res.status}`)
+}
+
+export async function removeInterest(listingId: string, token: string): Promise<void> {
+  const headers: HeadersInit = { 'Authorization': `Bearer ${token}` }
+  const res = await fetch(`${MARKET_BASE}/listings/${listingId}/interest`, {
+    method: 'DELETE',
+    headers,
+  })
+  if (!res.ok) throw new Error(`Failed to remove interest: ${res.status}`)
+}
+
+export async function fetchWishlist(
+  token: string,
+  page = 0
+): Promise<PageResponse<UnitListingSummaryDTO>> {
+  const headers: HeadersInit = { 'Authorization': `Bearer ${token}` }
+  const q = new URLSearchParams({ page: String(page), size: '20' })
+  const res = await fetch(`${MARKET_BASE}/me/wishlist?${q}`, { headers })
+  if (!res.ok) throw new Error(`Failed to fetch wishlist: ${res.status}`)
+  return res.json()
+}
 
 export async function fetchListings(
   params: {
