@@ -1,0 +1,357 @@
+databaseChangeLog:
+  - changeSet:
+      id: 37-create-unit-listings
+      author: rentaxis
+      changes:
+        - createTable:
+            tableName: unit_listings
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: tenant_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: unit_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: varchar(30)
+                  defaultValue: DRAFT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: title_en
+                  type: varchar(255)
+              - column:
+                  name: title_ar
+                  type: varchar(255)
+              - column:
+                  name: description_en
+                  type: text
+              - column:
+                  name: description_ar
+                  type: text
+              - column:
+                  name: bedrooms
+                  type: int
+              - column:
+                  name: bathrooms
+                  type: int
+              - column:
+                  name: size_sqft
+                  type: numeric(12,2)
+              - column:
+                  name: floor
+                  type: int
+              - column:
+                  name: parking_spaces
+                  type: int
+              - column:
+                  name: furnishing
+                  type: varchar(30)
+              - column:
+                  name: view_type
+                  type: varchar(30)
+              - column:
+                  name: annual_rent
+                  type: numeric(14,2)
+              - column:
+                  name: security_deposit
+                  type: numeric(14,2)
+              - column:
+                  name: min_lease_months
+                  type: int
+              - column:
+                  name: cheques_accepted
+                  type: int
+              - column:
+                  name: dewa_included
+                  type: boolean
+                  defaultValueBoolean: false
+              - column:
+                  name: chiller_included
+                  type: boolean
+                  defaultValueBoolean: false
+              - column:
+                  name: utilities_estimate
+                  type: numeric(14,2)
+              - column:
+                  name: available_from
+                  type: date
+              - column:
+                  name: slug
+                  type: varchar(200)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: seo_title
+                  type: varchar(255)
+              - column:
+                  name: seo_description
+                  type: varchar(500)
+              - column:
+                  name: seo_keywords
+                  type: varchar(500)
+              - column:
+                  name: og_image_url
+                  type: varchar(1000)
+              - column:
+                  name: lat
+                  type: numeric(10,7)
+              - column:
+                  name: lng
+                  type: numeric(10,7)
+              - column:
+                  name: published_at
+                  type: timestamp
+              - column:
+                  name: created_at
+                  type: timestamp
+                  defaultValueComputed: CURRENT_TIMESTAMP
+              - column:
+                  name: updated_at
+                  type: timestamp
+                  defaultValueComputed: CURRENT_TIMESTAMP
+        - addForeignKeyConstraint:
+            baseTableName: unit_listings
+            baseColumnNames: unit_id
+            referencedTableName: units
+            referencedColumnNames: id
+            constraintName: fk_unit_listings_unit
+        - addUniqueConstraint:
+            tableName: unit_listings
+            columnNames: tenant_id, slug
+            constraintName: uq_unit_listings_tenant_slug
+        - createIndex:
+            tableName: unit_listings
+            indexName: idx_unit_listings_tenant_status
+            columns:
+              - column:
+                  name: tenant_id
+              - column:
+                  name: status
+        - createIndex:
+            tableName: unit_listings
+            indexName: idx_unit_listings_status_rent
+            columns:
+              - column:
+                  name: status
+              - column:
+                  name: annual_rent
+        - createIndex:
+            tableName: unit_listings
+            indexName: idx_unit_listings_status_bedrooms
+            columns:
+              - column:
+                  name: status
+              - column:
+                  name: bedrooms
+
+  - changeSet:
+      id: 37-create-unit-listing-amenities
+      author: rentaxis
+      changes:
+        - createTable:
+            tableName: unit_listing_amenities
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: listing_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: amenity
+                  type: varchar(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: custom_label
+                  type: varchar(100)
+        - addForeignKeyConstraint:
+            baseTableName: unit_listing_amenities
+            baseColumnNames: listing_id
+            referencedTableName: unit_listings
+            referencedColumnNames: id
+            constraintName: fk_unit_listing_amenities_listing
+            onDelete: CASCADE
+        - createIndex:
+            tableName: unit_listing_amenities
+            indexName: idx_unit_listing_amenities_listing
+            columns:
+              - column:
+                  name: listing_id
+
+  - changeSet:
+      id: 37-create-unit-listing-media
+      author: rentaxis
+      changes:
+        - createTable:
+            tableName: unit_listing_media
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: listing_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: media_type
+                  type: varchar(30)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: url
+                  type: varchar(1000)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: caption
+                  type: varchar(500)
+              - column:
+                  name: sort_order
+                  type: int
+                  defaultValueNumeric: 0
+              - column:
+                  name: is_cover
+                  type: boolean
+                  defaultValueBoolean: false
+        - addForeignKeyConstraint:
+            baseTableName: unit_listing_media
+            baseColumnNames: listing_id
+            referencedTableName: unit_listings
+            referencedColumnNames: id
+            constraintName: fk_unit_listing_media_listing
+            onDelete: CASCADE
+        - createIndex:
+            tableName: unit_listing_media
+            indexName: idx_unit_listing_media_listing
+            columns:
+              - column:
+                  name: listing_id
+
+  - changeSet:
+      id: 37-create-unit-listing-interests
+      author: rentaxis
+      changes:
+        - createTable:
+            tableName: unit_listing_interests
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: tenant_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: listing_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: renter_user_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: note
+                  type: text
+              - column:
+                  name: status
+                  type: varchar(30)
+                  defaultValue: ACTIVE
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamp
+                  defaultValueComputed: CURRENT_TIMESTAMP
+              - column:
+                  name: notified_at
+                  type: timestamp
+        - addForeignKeyConstraint:
+            baseTableName: unit_listing_interests
+            baseColumnNames: listing_id
+            referencedTableName: unit_listings
+            referencedColumnNames: id
+            constraintName: fk_unit_listing_interests_listing
+            onDelete: CASCADE
+        - addUniqueConstraint:
+            tableName: unit_listing_interests
+            columnNames: listing_id, renter_user_id
+            constraintName: uq_unit_listing_interests_listing_renter
+        - createIndex:
+            tableName: unit_listing_interests
+            indexName: idx_unit_listing_interests_listing
+            columns:
+              - column:
+                  name: listing_id
+
+  - changeSet:
+      id: 37-create-property-geo
+      author: rentaxis
+      changes:
+        - createTable:
+            tableName: property_geo
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: property_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    unique: true
+                    uniqueConstraintName: uq_property_geo_property
+              - column:
+                  name: lat
+                  type: numeric(10,7)
+              - column:
+                  name: lng
+                  type: numeric(10,7)
+              - column:
+                  name: google_place_id
+                  type: varchar(255)
+              - column:
+                  name: nearby_landmarks
+                  type: jsonb
+        - addForeignKeyConstraint:
+            baseTableName: property_geo
+            baseColumnNames: property_id
+            referencedTableName: properties
+            referencedColumnNames: id
+            constraintName: fk_property_geo_property
+            onDelete: CASCADE

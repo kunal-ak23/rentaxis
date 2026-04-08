@@ -73,3 +73,5 @@ databaseChangeLog:
       file: db/changelog/changesets/36-import-jobs.yaml
   - include:
       file: db/changelog/changesets/37a-tenants-slug.yaml
+  - include:
+      file: db/changelog/changesets/37-unit-listings.yaml
