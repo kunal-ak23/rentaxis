@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /l/
+Allow: /marketplace/
+Disallow: /dashboard/
+Disallow: /api/
+Disallow: /auth/
+
+# Sitemaps
+# Update with production domain (set NEXT_PUBLIC_APP_URL in production env)
+Sitemap: https://rentaxis.com/sitemap-index.xml

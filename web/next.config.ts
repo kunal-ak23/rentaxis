@@ -34,6 +34,10 @@ const nextConfig: NextConfig = {
         source: '/api/marketplace/:path*',
         destination: `${backendUrl}/api/marketplace/:path*`,
       },
+      {
+        source: '/public/l/:path*',
+        destination: `${backendUrl}/public/l/:path*`,
+      },
     ];
   },
 };
