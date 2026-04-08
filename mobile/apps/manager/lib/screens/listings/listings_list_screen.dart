@@ -6,14 +6,9 @@ import 'package:rentaxis_core/rentaxis_core.dart';
 
 // ── Providers ─────────────────────────────────────────────────────────────────
 
-final _listingApiProvider = Provider<ListingApiService>((ref) {
-  final client = ref.watch(apiClientProvider);
-  return ListingApiService(client.dio);
-});
-
 final _listingsProvider =
     FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
-  final service = ref.watch(_listingApiProvider);
+  final service = ref.watch(listingApiServiceProvider);
   final data = await service.getListings(size: 100);
   return (data['content'] as List? ?? []).cast<Map<String, dynamic>>();
 });

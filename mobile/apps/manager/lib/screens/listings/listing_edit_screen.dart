@@ -11,15 +11,10 @@ import 'package:url_launcher/url_launcher.dart';
 
 // ── Providers ─────────────────────────────────────────────────────────────────
 
-final _listingApiProvider = Provider<ListingApiService>((ref) {
-  final client = ref.watch(apiClientProvider);
-  return ListingApiService(client.dio);
-});
-
 final _listingDetailProvider = FutureProvider.autoDispose
     .family<Map<String, dynamic>?, String>((ref, id) async {
   if (id == 'new') return null;
-  final service = ref.watch(_listingApiProvider);
+  final service = ref.watch(listingApiServiceProvider);
   return service.getListing(id);
 });
 
@@ -290,7 +285,7 @@ class _ListingEditScreenState extends ConsumerState<ListingEditScreen>
     }
     setState(() => _saving = true);
     try {
-      final service = ref.read(_listingApiProvider);
+      final service = ref.read(listingApiServiceProvider);
       final data = _buildPayload();
 
       if (_listingId == null) {
@@ -325,7 +320,7 @@ class _ListingEditScreenState extends ConsumerState<ListingEditScreen>
     if (_listingId == null) return;
     setState(() => _publishing = true);
     try {
-      final service = ref.read(_listingApiProvider);
+      final service = ref.read(listingApiServiceProvider);
       if (currentStatus == 'PUBLISHED') {
         await service.unlistListing(_listingId!);
       } else {
@@ -379,7 +374,7 @@ class _ListingEditScreenState extends ConsumerState<ListingEditScreen>
 
   Future<void> _flushPendingUploads() async {
     if (_listingId == null || _pendingUploads.isEmpty) return;
-    final service = ref.read(_listingApiProvider);
+    final service = ref.read(listingApiServiceProvider);
     for (final file in List.of(_pendingUploads)) {
       final bytes = await file.readAsBytes();
       final name = file.path.split('/').last;
@@ -970,7 +965,7 @@ class _MediaTabState extends State<_MediaTab> {
   Future<void> _deleteExisting(String mediaId) async {
     if (s._listingId == null) return;
     try {
-      final service = s.ref.read(_listingApiProvider);
+      final service = s.ref.read(listingApiServiceProvider);
       await service.deleteMedia(s._listingId!, mediaId);
       setState(() =>
           s._existingMedia.removeWhere((m) => m['id'] == mediaId));

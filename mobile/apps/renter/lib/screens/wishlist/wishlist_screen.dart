@@ -6,14 +6,9 @@ import 'package:rentaxis_core/rentaxis_core.dart';
 
 // ── Providers ─────────────────────────────────────────────────────────────────
 
-final _listingApiServiceProvider = Provider<ListingApiService>((ref) {
-  final client = ref.watch(apiClientProvider);
-  return ListingApiService(client.dio);
-});
-
 final _wishlistProvider =
     FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
-  final service = ref.watch(_listingApiServiceProvider);
+  final service = ref.watch(listingApiServiceProvider);
   final data = await service.getWishlist(size: 100);
   return (data['content'] as List? ?? []).cast<Map<String, dynamic>>();
 });
@@ -127,7 +122,7 @@ class _WishlistScreenState extends ConsumerState<WishlistScreen> {
   Future<void> _removeItem(String id) async {
     setState(() => _removedIds.add(id));
     try {
-      final service = ref.read(_listingApiServiceProvider);
+      final service = ref.read(listingApiServiceProvider);
       await service.removeInterest(id);
     } catch (e) {
       setState(() => _removedIds.remove(id));

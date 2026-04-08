@@ -9,20 +9,15 @@ import 'browse_map.dart';
 
 // ── Providers ────────────────────────────────────────────────────────────────
 
-final _listingApiServiceProvider = Provider<ListingApiService>((ref) {
-  final client = ref.watch(apiClientProvider);
-  return ListingApiService(client.dio);
-});
-
 final browseFiltersProvider =
     StateProvider<BrowseFilters>((ref) => const BrowseFilters());
 
 final browseListingsProvider =
     FutureProvider.autoDispose<Map<String, dynamic>>((ref) async {
-  final service = ref.watch(_listingApiServiceProvider);
+  final service = ref.watch(listingApiServiceProvider);
   final filters = ref.watch(browseFiltersProvider);
   final authState = ref.watch(authProvider);
-  final tenantSlug = _resolveTenantSlug(authState);
+  final tenantSlug = resolveTenantSlug(authState);
   if (tenantSlug == null) return {'content': [], 'totalElements': 0};
 
   return service.getMarketplaceListings(
@@ -39,14 +34,6 @@ final browseListingsProvider =
     size: 50,
   );
 });
-
-String? _resolveTenantSlug(AuthState auth) {
-  if (auth.tenants.isEmpty) return null;
-  final match = auth.tenants.where((t) =>
-      t['tenantId'] == auth.tenantId || t['id'] == auth.tenantId);
-  final tenant = match.isNotEmpty ? match.first : auth.tenants.first;
-  return tenant['slug'] as String?;
-}
 
 // ── Screen ───────────────────────────────────────────────────────────────────
 

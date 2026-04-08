@@ -2,6 +2,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../api/api_client.dart';
 import '../api/services/auth_service.dart';
+import '../api/services/listing_api_service.dart';
+import '../api/services/location_service.dart';
 import '../api/tenant_context.dart';
 
 final apiClientProvider = Provider<ApiClient>((ref) => ApiClient());
@@ -10,6 +12,29 @@ final authServiceProvider = Provider<AuthService>((ref) {
   final client = ref.watch(apiClientProvider);
   return AuthService(client.dio);
 });
+
+/// Single shared instance of ListingApiService — use this everywhere instead
+/// of declaring a local private provider per file.
+final listingApiServiceProvider = Provider<ListingApiService>((ref) {
+  final client = ref.watch(apiClientProvider);
+  return ListingApiService(client.dio);
+});
+
+/// Single shared LocationService (geolocator wrapper).
+final locationServiceProvider = Provider<LocationService>(
+  (_) => LocationService(),
+);
+
+/// Resolves the tenant slug from [AuthState] using only the authoritative
+/// `tenantId` field. Returns null if the tenant cannot be matched — callers
+/// must handle the null case rather than falling back to the wrong tenant.
+String? resolveTenantSlug(AuthState auth) {
+  if (auth.tenants.isEmpty || auth.tenantId == null) return null;
+  final matches =
+      auth.tenants.where((t) => t['tenantId'] == auth.tenantId);
+  if (matches.isEmpty) return null;
+  return matches.first['slug'] as String?;
+}
 
 class AuthState {
   final bool isAuthenticated;

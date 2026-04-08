@@ -6,14 +6,9 @@ import 'package:url_launcher/url_launcher.dart';
 
 // ── Provider ──────────────────────────────────────────────────────────────────
 
-final _listingApiProvider = Provider<ListingApiService>((ref) {
-  final client = ref.watch(apiClientProvider);
-  return ListingApiService(client.dio);
-});
-
 final _interestsProvider = FutureProvider.autoDispose
     .family<List<Map<String, dynamic>>, String>((ref, listingId) async {
-  final service = ref.watch(_listingApiProvider);
+  final service = ref.watch(listingApiServiceProvider);
   final data = await service.getInterests(listingId, size: 100);
   return (data['content'] as List? ?? []).cast<Map<String, dynamic>>();
 });

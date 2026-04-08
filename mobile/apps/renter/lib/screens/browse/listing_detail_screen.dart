@@ -10,14 +10,9 @@ import 'package:url_launcher/url_launcher.dart';
 
 // ── Providers ─────────────────────────────────────────────────────────────────
 
-final _listingApiServiceProvider = Provider<ListingApiService>((ref) {
-  final client = ref.watch(apiClientProvider);
-  return ListingApiService(client.dio);
-});
-
 final _listingDetailProvider = FutureProvider.autoDispose
     .family<Map<String, dynamic>, _DetailParams>((ref, params) async {
-  final service = ref.watch(_listingApiServiceProvider);
+  final service = ref.watch(listingApiServiceProvider);
   return service.getMarketplaceListing(params.tenantSlug, params.slug);
 });
 
@@ -46,7 +41,7 @@ class ListingDetailScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authProvider);
-    final tenantSlug = _resolveTenantSlug(authState);
+    final tenantSlug = resolveTenantSlug(authState);
 
     if (tenantSlug == null) {
       return const Scaffold(
@@ -72,14 +67,6 @@ class ListingDetailScreen extends ConsumerWidget {
       data: (listing) => _ListingDetailView(listing: listing),
     );
   }
-}
-
-String? _resolveTenantSlug(AuthState auth) {
-  if (auth.tenants.isEmpty) return null;
-  final match = auth.tenants
-      .where((t) => t['tenantId'] == auth.tenantId || t['id'] == auth.tenantId);
-  final tenant = match.isNotEmpty ? match.first : auth.tenants.first;
-  return tenant['slug'] as String?;
 }
 
 // ── Detail view ───────────────────────────────────────────────────────────────
@@ -194,7 +181,7 @@ class _ListingDetailViewState extends ConsumerState<_ListingDetailView> {
     if (listingId == null) return;
     setState(() => _wishlistLoading = true);
     try {
-      final service = ref.read(_listingApiServiceProvider);
+      final service = ref.read(listingApiServiceProvider);
       if (_wishlisted) {
         await service.removeInterest(listingId);
       } else {
