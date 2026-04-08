@@ -76,6 +76,25 @@ class ListingUpcomingJobTest {
     }
 
     @Test
+    void run_revertsUpcomingToDraft_whenLeaseExtended() {
+        UUID unitId = UUID.randomUUID();
+        UnitListing upcoming = listing(unitId, ListingStatus.UPCOMING);
+        upcoming.setAvailableFrom(LocalDate.now().plusDays(20));
+
+        // The upcoming listing exists, but no active lease ends inside the window.
+        when(listingRepository.findByStatus(ListingStatus.UPCOMING))
+                .thenReturn(List.of(upcoming));
+        when(leaseRepository.findByStatusAndEndDateBetween(
+                eq(LeaseStatus.ACTIVE), any(LocalDate.class), any(LocalDate.class)))
+                .thenReturn(List.of());
+
+        job.run();
+
+        assertThat(upcoming.getStatus()).isEqualTo(ListingStatus.DRAFT);
+        verify(listingRepository).save(upcoming);
+    }
+
+    @Test
     void run_doesNotFlipPublishedListing() {
         UUID unitId = UUID.randomUUID();
         LocalDate leaseEnd = LocalDate.now().plusDays(10);

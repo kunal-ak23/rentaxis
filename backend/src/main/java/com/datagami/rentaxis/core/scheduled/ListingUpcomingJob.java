@@ -42,6 +42,37 @@ public class ListingUpcomingJob {
 
         log.info("ListingUpcomingJob starting — checking leases ending between {} and {}", today, horizon);
 
+        // Step 1: re-check existing UPCOMING listings. If the lease was
+        // extended past the horizon (or no longer exists), revert to DRAFT;
+        // otherwise refresh availableFrom in case the lease end date moved.
+        int reverted = 0;
+        int refreshed = 0;
+        for (UnitListing listing : listingRepository.findByStatus(ListingStatus.UPCOMING)) {
+            if (listing.getUnitId() == null) {
+                continue;
+            }
+            Optional<Lease> currentLeaseOpt = leaseRepository
+                    .findByStatusAndEndDateBetween(LeaseStatus.ACTIVE, today, horizon)
+                    .stream()
+                    .filter(l -> l.getUnit() != null
+                            && java.util.Objects.equals(l.getUnit().getId(), listing.getUnitId()))
+                    .findFirst();
+            if (currentLeaseOpt.isEmpty()) {
+                listing.setStatus(ListingStatus.DRAFT);
+                listingRepository.save(listing);
+                reverted++;
+                log.info("Listing {} reverted UPCOMING -> DRAFT (lease no longer ending in window)",
+                        listing.getId());
+            } else {
+                LocalDate newAvailable = currentLeaseOpt.get().getEndDate().plusDays(1);
+                if (!newAvailable.equals(listing.getAvailableFrom())) {
+                    listing.setAvailableFrom(newAvailable);
+                    listingRepository.save(listing);
+                    refreshed++;
+                }
+            }
+        }
+
         List<Lease> expiringLeases = leaseRepository.findByStatusAndEndDateBetween(
                 LeaseStatus.ACTIVE, today, horizon);
 
@@ -72,6 +103,7 @@ public class ListingUpcomingJob {
             }
         }
 
-        log.info("ListingUpcomingJob finished — promoted {} listings to UPCOMING", promoted);
+        log.info("ListingUpcomingJob finished — promoted {}, refreshed {}, reverted {}",
+                promoted, refreshed, reverted);
     }
 }
