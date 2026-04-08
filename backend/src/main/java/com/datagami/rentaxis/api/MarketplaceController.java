@@ -1,0 +1,192 @@
+package com.datagami.rentaxis.api;
+
+import com.datagami.rentaxis.api.dto.MarketplaceSearchRequest;
+import com.datagami.rentaxis.api.dto.UnitListingDTO;
+import com.datagami.rentaxis.api.dto.UnitListingMediaDTO;
+import com.datagami.rentaxis.api.dto.UnitListingSummaryDTO;
+import com.datagami.rentaxis.api.exception.NotFoundException;
+import com.datagami.rentaxis.config.FeatureFlags;
+import com.datagami.rentaxis.core.service.InterestService;
+import com.datagami.rentaxis.core.service.MarketplaceService;
+import com.datagami.rentaxis.domain.entity.UnitListing;
+import com.datagami.rentaxis.domain.entity.UnitListingAmenityEntry;
+import com.datagami.rentaxis.domain.entity.UnitListingInterest;
+import com.datagami.rentaxis.domain.entity.UnitListingMedia;
+import com.datagami.rentaxis.domain.entity.enums.Furnishing;
+import com.datagami.rentaxis.domain.repository.UnitListingAmenityRepository;
+import com.datagami.rentaxis.domain.repository.UnitListingMediaRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.bind.annotation.*;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+
+@RestController
+@RequestMapping("/api/marketplace")
+@PreAuthorize("hasRole('RENTER')")
+public class MarketplaceController {
+
+    private final MarketplaceService marketplaceService;
+    private final InterestService interestService;
+    private final UnitListingMediaRepository mediaRepository;
+    private final UnitListingAmenityRepository amenityRepository;
+    private final FeatureFlags featureFlags;
+
+    public MarketplaceController(MarketplaceService marketplaceService,
+                                  InterestService interestService,
+                                  UnitListingMediaRepository mediaRepository,
+                                  UnitListingAmenityRepository amenityRepository,
+                                  FeatureFlags featureFlags) {
+        this.marketplaceService = marketplaceService;
+        this.interestService = interestService;
+        this.mediaRepository = mediaRepository;
+        this.amenityRepository = amenityRepository;
+        this.featureFlags = featureFlags;
+    }
+
+    @GetMapping("/{tenantSlug}/listings")
+    public ResponseEntity<Page<UnitListingSummaryDTO>> listListings(
+            @PathVariable String tenantSlug,
+            @RequestParam(required = false) Integer minBedrooms,
+            @RequestParam(required = false) BigDecimal minRent,
+            @RequestParam(required = false) BigDecimal maxRent,
+            @RequestParam(required = false) Furnishing furnishing,
+            @RequestParam(required = false) Boolean availableNow,
+            @RequestParam(required = false) LocalDate availableByDate,
+            @RequestParam(required = false) Double nearLat,
+            @RequestParam(required = false) Double nearLng,
+            @RequestParam(required = false) Double radiusKm,
+            @PageableDefault(sort = "createdAt", direction = Sort.Direction.ASC) Pageable pageable) {
+        checkEnabled();
+        UUID tenantId = marketplaceService.resolveTenantSlug(tenantSlug);
+        MarketplaceSearchRequest req = new MarketplaceSearchRequest(
+                minBedrooms, minRent, maxRent, furnishing,
+                availableNow, availableByDate, nearLat, nearLng, radiusKm);
+        Page<UnitListing> page = marketplaceService.search(tenantId, req, pageable);
+        return ResponseEntity.ok(page.map(this::toSummary));
+    }
+
+    @GetMapping("/{tenantSlug}/listings/{slug}")
+    public ResponseEntity<UnitListingDTO> getBySlug(
+            @PathVariable String tenantSlug,
+            @PathVariable String slug) {
+        checkEnabled();
+        UnitListing listing = marketplaceService.resolveByTenantSlugAndUnitSlug(tenantSlug, slug);
+        return ResponseEntity.ok(toDetail(listing));
+    }
+
+    @PostMapping("/listings/{id}/interest")
+    public ResponseEntity<Void> addInterest(
+            @PathVariable UUID id,
+            @RequestBody(required = false) NoteRequest body) {
+        checkEnabled();
+        UUID renterUserId = currentUserId();
+        UnitListing listing = marketplaceService.getListingById(id);
+        interestService.addInterest(listing.getTenantId(), id, renterUserId,
+                body != null ? body.note() : null);
+        return ResponseEntity.status(HttpStatus.CREATED).build();
+    }
+
+    @DeleteMapping("/listings/{id}/interest")
+    public ResponseEntity<Void> withdrawInterest(@PathVariable UUID id) {
+        checkEnabled();
+        UUID renterUserId = currentUserId();
+        UnitListing listing = marketplaceService.getListingById(id);
+        interestService.withdraw(listing.getTenantId(), id, renterUserId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/me/wishlist")
+    public ResponseEntity<List<UnitListingSummaryDTO>> wishlist() {
+        checkEnabled();
+        UUID renterUserId = currentUserId();
+        List<UnitListingInterest> interests = interestService.wishlistForRenter(renterUserId);
+
+        List<UnitListingSummaryDTO> result = new ArrayList<>();
+        for (UnitListingInterest interest : interests) {
+            try {
+                UnitListing listing = marketplaceService.getListingById(interest.getListingId());
+                result.add(toSummary(listing));
+            } catch (NotFoundException ignored) {
+                // Listing removed or unlisted — skip silently
+            }
+        }
+        return ResponseEntity.ok(result);
+    }
+
+    public record NoteRequest(String note) {
+    }
+
+    // ---- Helpers ----
+
+    private void checkEnabled() {
+        if (!featureFlags.isListingsEnabled()) {
+            throw new NotFoundException("Listings feature is disabled");
+        }
+    }
+
+    private UUID currentUserId() {
+        return UUID.fromString(SecurityContextHolder.getContext().getAuthentication().getName());
+    }
+
+    private UnitListingSummaryDTO toSummary(UnitListing l) {
+        List<UnitListingMedia> media = mediaRepository.findByListingIdOrderBySortOrderAsc(l.getId());
+        String coverUrl = media.stream()
+                .filter(m -> Boolean.TRUE.equals(m.getIsCover()))
+                .findFirst()
+                .or(() -> media.stream().findFirst())
+                .map(UnitListingMedia::getUrl)
+                .orElse(null);
+
+        return new UnitListingSummaryDTO(
+                l.getId(),
+                l.getTitleEn(),
+                null,
+                l.getBedrooms(),
+                l.getAnnualRent(),
+                l.getStatus(),
+                coverUrl,
+                0L,
+                l.getUpdatedAt(),
+                l.getSlug()
+        );
+    }
+
+    private UnitListingDTO toDetail(UnitListing l) {
+        List<UnitListingMedia> media = mediaRepository.findByListingIdOrderBySortOrderAsc(l.getId());
+        List<UnitListingAmenityEntry> amenityEntries = amenityRepository.findByListingId(l.getId());
+
+        List<UnitListingDTO.AmenityEntry> amenities = amenityEntries.stream()
+                .map(a -> new UnitListingDTO.AmenityEntry(a.getAmenity(), a.getCustomLabel()))
+                .toList();
+
+        List<UnitListingMediaDTO> mediaDtos = media.stream()
+                .map(m -> new UnitListingMediaDTO(m.getId(), m.getMediaType(), m.getUrl(),
+                        m.getCaption(), m.getSortOrder(), m.getIsCover()))
+                .toList();
+
+        return new UnitListingDTO(
+                l.getId(), l.getUnitId(), l.getStatus(),
+                l.getTitleEn(), l.getTitleAr(), l.getDescriptionEn(), l.getDescriptionAr(),
+                l.getBedrooms(), l.getBathrooms(), l.getSizeSqft(), l.getFloor(), l.getParkingSpaces(),
+                l.getFurnishing(), l.getViewType(),
+                l.getAnnualRent(), l.getSecurityDeposit(), l.getMinLeaseMonths(),
+                l.getChequesAccepted(), l.getDewaIncluded(), l.getChillerIncluded(),
+                l.getUtilitiesEstimate(), l.getAvailableFrom(),
+                l.getSlug(), l.getSeoTitle(), l.getSeoDescription(), l.getSeoKeywords(), l.getOgImageUrl(),
+                l.getLat(), l.getLng(),
+                l.getPublishedAt(), l.getCreatedAt(), l.getUpdatedAt(),
+                amenities, mediaDtos
+        );
+    }
+}

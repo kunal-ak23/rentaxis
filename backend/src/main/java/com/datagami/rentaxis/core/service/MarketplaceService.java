@@ -59,6 +59,14 @@ public class MarketplaceService {
         return getBySlug(tenantId, unitSlug);
     }
 
+    /**
+     * Get a listing by its primary key (any status), used internally for tenant ID resolution.
+     */
+    public UnitListing getListingById(UUID listingId) {
+        return listingRepository.findById(listingId)
+                .orElseThrow(() -> new NotFoundException("Listing not found: " + listingId));
+    }
+
     // ---- Spec builder ----
 
     private Specification<UnitListing> buildSpec(UUID tenantId, MarketplaceSearchRequest req) {
