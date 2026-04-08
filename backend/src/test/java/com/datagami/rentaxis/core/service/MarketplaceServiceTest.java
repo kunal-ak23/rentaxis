@@ -72,7 +72,6 @@ class MarketplaceServiceTest {
     @Test
     @SuppressWarnings("unchecked")
     void search_crossTenantIsolated() {
-        UUID tenantA = UUID.randomUUID();
         UUID tenantB = UUID.randomUUID();
 
         // Return empty page for tenantB
@@ -88,7 +87,6 @@ class MarketplaceServiceTest {
 
     @Test
     void getBySlug_throwsWhenWrongTenant() {
-        UUID tenantId = UUID.randomUUID();
         UUID wrongTenantId = UUID.randomUUID();
         String slug = "great-flat";
 
