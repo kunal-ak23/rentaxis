@@ -14,7 +14,7 @@ class BrowseMap extends ConsumerStatefulWidget {
 }
 
 class _BrowseMapState extends ConsumerState<BrowseMap> {
-  GoogleMapController? _mapController; // ignore: unused_field
+  GoogleMapController? _mapController;
   Map<String, dynamic>? _selectedListing;
   Set<Marker> _markers = {};
 
@@ -44,7 +44,12 @@ class _BrowseMapState extends ConsumerState<BrowseMap> {
       markers.add(Marker(
         markerId: MarkerId(listing['id'] as String),
         position: LatLng(lat.toDouble(), lng.toDouble()),
-        onTap: () => setState(() => _selectedListing = listing),
+        onTap: () {
+          setState(() => _selectedListing = listing);
+          _mapController?.animateCamera(
+            CameraUpdate.newLatLng(LatLng(lat.toDouble(), lng.toDouble())),
+          );
+        },
         infoWindow: InfoWindow(
           title: listing['title'] as String? ?? '',
         ),
