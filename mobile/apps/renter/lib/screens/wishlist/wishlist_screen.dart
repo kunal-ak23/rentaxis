@@ -8,10 +8,10 @@ import 'package:rentaxis_core/rentaxis_core.dart';
 
 final _wishlistProvider =
     FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
-  final service = ref.watch(listingApiServiceProvider);
-  final data = await service.getWishlist(size: 100);
-  return (data['content'] as List? ?? []).cast<Map<String, dynamic>>();
-});
+      final service = ref.watch(listingApiServiceProvider);
+      final data = await service.getWishlist(size: 100);
+      return (data['content'] as List? ?? []).cast<Map<String, dynamic>>();
+    });
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 
@@ -72,6 +72,7 @@ class _WishlistScreenState extends ConsumerState<WishlistScreen> {
             );
           }
 
+          final truncated = items.length >= 100;
           return RefreshIndicator(
             onRefresh: () async {
               _removedIds.clear();
@@ -79,8 +80,21 @@ class _WishlistScreenState extends ConsumerState<WishlistScreen> {
             },
             child: ListView.builder(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-              itemCount: visible.length,
+              itemCount: visible.length + (truncated ? 1 : 0),
               itemBuilder: (_, i) {
+                if (truncated && i == visible.length) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
+                      'Showing first 100 saved listings',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.josefinSans(
+                        fontSize: 12,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                  );
+                }
                 final item = visible[i];
                 final id = item['id'] as String? ?? '';
                 return AnimatedListItem(
@@ -96,16 +110,18 @@ class _WishlistScreenState extends ConsumerState<WishlistScreen> {
                         color: AppColors.danger,
                         borderRadius: BorderRadius.circular(16),
                       ),
-                      child: const Icon(Icons.delete_outline,
-                          color: Colors.white, size: 24),
+                      child: const Icon(
+                        Icons.delete_outline,
+                        color: Colors.white,
+                        size: 24,
+                      ),
                     ),
                     onDismissed: (_) => _removeItem(id),
                     child: Padding(
                       padding: const EdgeInsets.only(bottom: 14),
                       child: _WishlistItem(
                         listing: item,
-                        onTap: () =>
-                            context.push('/browse/${item['slug']}'),
+                        onTap: () => context.push('/browse/${item['slug']}'),
                         onRemove: () => _removeItem(id),
                       ),
                     ),
@@ -175,17 +191,24 @@ class _WishlistItem extends StatelessWidget {
         child: Row(
           children: [
             ClipRRect(
-              borderRadius:
-                  const BorderRadius.horizontal(left: Radius.circular(16)),
+              borderRadius: const BorderRadius.horizontal(
+                left: Radius.circular(16),
+              ),
               child: coverUrl != null
-                  ? Image.network(coverUrl,
-                      width: 100, height: 100, fit: BoxFit.cover)
+                  ? Image.network(
+                      coverUrl,
+                      width: 100,
+                      height: 100,
+                      fit: BoxFit.cover,
+                    )
                   : Container(
                       width: 100,
                       height: 100,
                       color: AppColors.background,
-                      child: const Icon(Icons.apartment_outlined,
-                          color: AppColors.textMuted),
+                      child: const Icon(
+                        Icons.apartment_outlined,
+                        color: AppColors.textMuted,
+                      ),
                     ),
             ),
             Expanded(
@@ -202,9 +225,10 @@ class _WishlistItem extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: GoogleFonts.josefinSans(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.textPrimary),
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textPrimary,
+                            ),
                           ),
                         ),
                         StatusBadge(label: status, color: statusColor),
@@ -216,20 +240,28 @@ class _WishlistItem extends StatelessWidget {
                         propertyName,
                         maxLines: 1,
                         style: GoogleFonts.josefinSans(
-                            fontSize: 12, color: AppColors.textMuted),
+                          fontSize: 12,
+                          color: AppColors.textMuted,
+                        ),
                       ),
                     ],
                     const SizedBox(height: 6),
                     Row(
                       children: [
                         if (beds != null) ...[
-                          const Icon(Icons.bed_outlined,
-                              size: 14, color: AppColors.textMuted),
+                          const Icon(
+                            Icons.bed_outlined,
+                            size: 14,
+                            color: AppColors.textMuted,
+                          ),
                           const SizedBox(width: 3),
-                          Text('$beds',
-                              style: GoogleFonts.josefinSans(
-                                  fontSize: 12,
-                                  color: AppColors.textSecondary)),
+                          Text(
+                            '$beds',
+                            style: GoogleFonts.josefinSans(
+                              fontSize: 12,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
                           const SizedBox(width: 8),
                         ],
                         if (rent != null)
@@ -251,8 +283,11 @@ class _WishlistItem extends StatelessWidget {
               padding: const EdgeInsets.only(right: 12),
               child: GestureDetector(
                 onTap: onRemove,
-                child: const Icon(Icons.favorite,
-                    size: 22, color: AppColors.danger),
+                child: const Icon(
+                  Icons.favorite,
+                  size: 22,
+                  color: AppColors.danger,
+                ),
               ),
             ),
           ],

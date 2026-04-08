@@ -8,10 +8,10 @@ import 'package:rentaxis_core/rentaxis_core.dart';
 
 final _listingsProvider =
     FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
-  final service = ref.watch(listingApiServiceProvider);
-  final data = await service.getListings(size: 100);
-  return (data['content'] as List? ?? []).cast<Map<String, dynamic>>();
-});
+      final service = ref.watch(listingApiServiceProvider);
+      final data = await service.getListings(size: 100);
+      return (data['content'] as List? ?? []).cast<Map<String, dynamic>>();
+    });
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 
@@ -57,24 +57,39 @@ class ListingsListScreen extends ConsumerWidget {
               subtitle: 'Create your first listing to get started',
             );
           }
+          final truncated = items.length >= 100;
           return RefreshIndicator(
             onRefresh: () async => ref.invalidate(_listingsProvider),
             child: ListView.builder(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-              itemCount: items.length,
-              itemBuilder: (_, i) => AnimatedListItem(
-                index: i,
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: 14),
-                  child: _ListingRow(
-                    listing: items[i],
-                    onTap: () =>
-                        context.push('/listings/${items[i]['id']}'),
-                    onInterests: () => context
-                        .push('/listings/${items[i]['id']}/interests'),
+              itemCount: items.length + (truncated ? 1 : 0),
+              itemBuilder: (_, i) {
+                if (truncated && i == items.length) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
+                      'Showing first 100 listings',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.josefinSans(
+                        fontSize: 12,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                  );
+                }
+                return AnimatedListItem(
+                  index: i,
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 14),
+                    child: _ListingRow(
+                      listing: items[i],
+                      onTap: () => context.push('/listings/${items[i]['id']}'),
+                      onInterests: () =>
+                          context.push('/listings/${items[i]['id']}/interests'),
+                    ),
                   ),
-                ),
-              ),
+                );
+              },
             ),
           );
         },
@@ -86,7 +101,9 @@ class ListingsListScreen extends ConsumerWidget {
         label: Text(
           'New listing',
           style: GoogleFonts.josefinSans(
-              color: Colors.white, fontWeight: FontWeight.w600),
+            color: Colors.white,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
     );
@@ -134,12 +151,17 @@ class _ListingRow extends StatelessWidget {
           children: [
             // Cover thumbnail
             ClipRRect(
-              borderRadius:
-                  const BorderRadius.horizontal(left: Radius.circular(16)),
+              borderRadius: const BorderRadius.horizontal(
+                left: Radius.circular(16),
+              ),
               child: coverUrl != null
-                  ? Image.network(coverUrl,
-                      width: 90, height: 90, fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _Placeholder())
+                  ? Image.network(
+                      coverUrl,
+                      width: 90,
+                      height: 90,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _Placeholder(),
+                    )
                   : _Placeholder(),
             ),
 
@@ -147,7 +169,9 @@ class _ListingRow extends StatelessWidget {
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.symmetric(
-                    horizontal: 12, vertical: 10),
+                  horizontal: 12,
+                  vertical: 10,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -159,9 +183,10 @@ class _ListingRow extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: GoogleFonts.josefinSans(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.textPrimary),
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textPrimary,
+                            ),
                           ),
                         ),
                         StatusBadge(label: status, color: statusColor),
@@ -172,9 +197,10 @@ class _ListingRow extends StatelessWidget {
                       Text(
                         Formatters.currencyCompact(rent),
                         style: GoogleFonts.josefinSans(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.primary),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.primary,
+                        ),
                       ),
                     const SizedBox(height: 4),
                     Row(
@@ -183,7 +209,9 @@ class _ListingRow extends StatelessWidget {
                           Text(
                             Formatters.timeAgo(updatedAt),
                             style: GoogleFonts.josefinSans(
-                                fontSize: 11, color: AppColors.textMuted),
+                              fontSize: 11,
+                              color: AppColors.textMuted,
+                            ),
                           ),
                         const Spacer(),
                         // Interests badge
@@ -191,21 +219,28 @@ class _ListingRow extends StatelessWidget {
                           onTap: onInterests,
                           child: Row(
                             children: [
-                              const Icon(Icons.people_outline,
-                                  size: 15, color: AppColors.textSecondary),
+                              const Icon(
+                                Icons.people_outline,
+                                size: 15,
+                                color: AppColors.textSecondary,
+                              ),
                               const SizedBox(width: 3),
                               Text(
                                 '$interests',
                                 style: GoogleFonts.josefinSans(
-                                    fontSize: 12,
-                                    color: AppColors.textSecondary),
+                                  fontSize: 12,
+                                  color: AppColors.textSecondary,
+                                ),
                               ),
                             ],
                           ),
                         ),
                         const SizedBox(width: 8),
-                        const Icon(Icons.chevron_right,
-                            size: 18, color: AppColors.textMuted),
+                        const Icon(
+                          Icons.chevron_right,
+                          size: 18,
+                          color: AppColors.textMuted,
+                        ),
                       ],
                     ),
                   ],

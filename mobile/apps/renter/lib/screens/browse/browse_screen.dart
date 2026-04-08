@@ -9,31 +9,33 @@ import 'browse_map.dart';
 
 // ── Providers ────────────────────────────────────────────────────────────────
 
-final browseFiltersProvider =
-    StateProvider.autoDispose<BrowseFilters>((ref) => const BrowseFilters());
+final browseFiltersProvider = StateProvider.autoDispose<BrowseFilters>(
+  (ref) => const BrowseFilters(),
+);
 
-final browseListingsProvider =
-    FutureProvider.autoDispose<Map<String, dynamic>>((ref) async {
-  final service = ref.watch(listingApiServiceProvider);
-  final filters = ref.watch(browseFiltersProvider);
-  final authState = ref.watch(authProvider);
-  final tenantSlug = resolveTenantSlug(authState);
-  if (tenantSlug == null) return {'content': [], 'totalElements': 0};
+final browseListingsProvider = FutureProvider.autoDispose<Map<String, dynamic>>(
+  (ref) async {
+    final service = ref.watch(listingApiServiceProvider);
+    final filters = ref.watch(browseFiltersProvider);
+    final authState = ref.watch(authProvider);
+    final tenantSlug = resolveTenantSlug(authState);
+    if (tenantSlug == null) return {'content': [], 'totalElements': 0};
 
-  return service.getMarketplaceListings(
-    tenantSlug,
-    minBedrooms: filters.minBedrooms,
-    minRent: filters.minRent,
-    maxRent: filters.maxRent,
-    furnishing: filters.furnishing,
-    availableNow: filters.availableNow,
-    nearLat: filters.nearLat,
-    nearLng: filters.nearLng,
-    radiusKm: filters.radiusKm,
-    page: 0,
-    size: 50,
-  );
-});
+    return service.getMarketplaceListings(
+      tenantSlug,
+      minBedrooms: filters.minBedrooms,
+      minRent: filters.minRent,
+      maxRent: filters.maxRent,
+      furnishing: filters.furnishing,
+      availableNow: filters.availableNow,
+      nearLat: filters.nearLat,
+      nearLng: filters.nearLng,
+      radiusKm: filters.radiusKm,
+      page: 0,
+      size: 50,
+    );
+  },
+);
 
 // ── Screen ───────────────────────────────────────────────────────────────────
 
@@ -101,8 +103,8 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
                   onRetry: () => ref.invalidate(browseListingsProvider),
                 ),
                 data: (data) {
-                  final allItems =
-                      (data['content'] as List? ?? []).cast<Map<String, dynamic>>();
+                  final allItems = (data['content'] as List? ?? [])
+                      .cast<Map<String, dynamic>>();
                   final items = _applySearch(allItems);
                   if (items.isEmpty) {
                     return EmptyState(
@@ -117,7 +119,10 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
                   return RefreshIndicator(
                     onRefresh: () async =>
                         ref.invalidate(browseListingsProvider),
-                    child: _ListingListView(listings: items),
+                    child: _ListingListView(
+                      listings: items,
+                      truncated: allItems.length >= 50,
+                    ),
                   );
                 },
               ),
@@ -195,8 +200,11 @@ class _SearchBar extends StatelessWidget {
                     fontSize: 14,
                     color: AppColors.textMuted,
                   ),
-                  prefixIcon: const Icon(Icons.search,
-                      size: 20, color: AppColors.textMuted),
+                  prefixIcon: const Icon(
+                    Icons.search,
+                    size: 20,
+                    color: AppColors.textMuted,
+                  ),
                   border: InputBorder.none,
                   contentPadding: const EdgeInsets.symmetric(vertical: 14),
                 ),
@@ -212,8 +220,10 @@ class _SearchBar extends StatelessWidget {
           const SizedBox(width: 8),
           Badge(
             isLabelVisible: activeFilterCount > 0,
-            label: Text('$activeFilterCount',
-                style: const TextStyle(fontSize: 9, color: Colors.white)),
+            label: Text(
+              '$activeFilterCount',
+              style: const TextStyle(fontSize: 9, color: Colors.white),
+            ),
             backgroundColor: AppColors.primary,
             child: _IconBtn(
               icon: Icons.tune_rounded,
@@ -232,8 +242,11 @@ class _IconBtn extends StatelessWidget {
   final VoidCallback onTap;
   final String tooltip;
 
-  const _IconBtn(
-      {required this.icon, required this.onTap, required this.tooltip});
+  const _IconBtn({
+    required this.icon,
+    required this.onTap,
+    required this.tooltip,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -263,33 +276,43 @@ class _ActiveFilterChips extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final chips = <_ChipData>[];
     if (filters.minBedrooms != null)
-      chips.add(_ChipData(
-        '${filters.minBedrooms}+ bed',
-        () => ref.read(browseFiltersProvider.notifier).state =
-            filters.copyWith(clearMinBedrooms: true),
-      ));
+      chips.add(
+        _ChipData(
+          '${filters.minBedrooms}+ bed',
+          () => ref.read(browseFiltersProvider.notifier).state = filters
+              .copyWith(clearMinBedrooms: true),
+        ),
+      );
     if (filters.furnishing != null)
-      chips.add(_ChipData(
-        filters.furnishing!.replaceAll('_', ' ').toLowerCase(),
-        () => ref.read(browseFiltersProvider.notifier).state =
-            filters.copyWith(clearFurnishing: true),
-      ));
+      chips.add(
+        _ChipData(
+          filters.furnishing!.replaceAll('_', ' ').toLowerCase(),
+          () => ref.read(browseFiltersProvider.notifier).state = filters
+              .copyWith(clearFurnishing: true),
+        ),
+      );
     if (filters.availableNow == true)
-      chips.add(_ChipData(
-        'Available now',
-        () => ref.read(browseFiltersProvider.notifier).state =
-            filters.copyWith(clearAvailableNow: true),
-      ));
+      chips.add(
+        _ChipData(
+          'Available now',
+          () => ref.read(browseFiltersProvider.notifier).state = filters
+              .copyWith(clearAvailableNow: true),
+        ),
+      );
     if (filters.minRent != null || filters.maxRent != null) {
       final label = [
-        if (filters.minRent != null) 'AED ${(filters.minRent! / 1000).round()}k+',
-        if (filters.maxRent != null) '≤AED ${(filters.maxRent! / 1000).round()}k',
+        if (filters.minRent != null)
+          'AED ${(filters.minRent! / 1000).round()}k+',
+        if (filters.maxRent != null)
+          '≤AED ${(filters.maxRent! / 1000).round()}k',
       ].join(' ');
-      chips.add(_ChipData(
-        label,
-        () => ref.read(browseFiltersProvider.notifier).state =
-            filters.copyWith(clearRent: true),
-      ));
+      chips.add(
+        _ChipData(
+          label,
+          () => ref.read(browseFiltersProvider.notifier).state = filters
+              .copyWith(clearRent: true),
+        ),
+      );
     }
     if (chips.isEmpty) return const SizedBox.shrink();
 
@@ -350,23 +373,40 @@ class _FilterChip extends StatelessWidget {
 
 class _ListingListView extends StatelessWidget {
   final List<Map<String, dynamic>> listings;
-  const _ListingListView({required this.listings});
+  final bool truncated;
+  const _ListingListView({required this.listings, this.truncated = false});
 
   @override
   Widget build(BuildContext context) {
+    final count = listings.length + (truncated ? 1 : 0);
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
-      itemCount: listings.length,
-      itemBuilder: (_, i) => AnimatedListItem(
-        index: i,
-        child: Padding(
-          padding: const EdgeInsets.only(bottom: 16),
-          child: ListingCard(
-            listing: listings[i],
-            onTap: () => context.push('/browse/${listings[i]['slug']}'),
+      itemCount: count,
+      itemBuilder: (_, i) {
+        if (truncated && i == listings.length) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text(
+              'Showing first ${listings.length} results — refine filters to see more',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.josefinSans(
+                fontSize: 12,
+                color: AppColors.textMuted,
+              ),
+            ),
+          );
+        }
+        return AnimatedListItem(
+          index: i,
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: ListingCard(
+              listing: listings[i],
+              onTap: () => context.push('/browse/${listings[i]['slug']}'),
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
