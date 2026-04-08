@@ -172,6 +172,6 @@ class UnitListingServiceTest {
         assertThat(dto.isCover()).isTrue();
         verify(blobStorageService).upload(tenantId, listingId, file);
         verify(mediaRepository).save(any(UnitListingMedia.class));
-        verify(listingRepository, never()).delete(any());
+        verify(listingRepository, never()).delete(any(UnitListing.class));
     }
 }
