@@ -3,8 +3,8 @@ spring:
     name: RentAxis
   servlet:
     multipart:
-      max-file-size: 5MB
-      max-request-size: 10MB
+      max-file-size: 10MB
+      max-request-size: 12MB
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/rentaxis}
     username: ${SPRING_DATASOURCE_USERNAME:rentaxis}
@@ -40,3 +40,12 @@ rentaxis:
     storage-path: ./data/contracts
   encryption:
     key: ${RENTAXIS_ENCRYPTION_KEY:}
+  features:
+    listings-enabled: ${FEATURE_LISTINGS_ENABLED:false}
+  listings:
+    max-media-size-bytes: ${RENTAXIS_LISTINGS_MAX_MEDIA_SIZE_BYTES:10485760}
+
+azure:
+  storage:
+    connection-string: ${AZURE_STORAGE_CONNECTION_STRING:}
+    container: ${AZURE_STORAGE_CONTAINER:listings}

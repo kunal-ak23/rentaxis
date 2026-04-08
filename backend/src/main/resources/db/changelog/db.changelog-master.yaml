@@ -71,3 +71,13 @@ databaseChangeLog:
       file: db/changelog/changesets/35-penalties-and-settlements.yaml
   - include:
       file: db/changelog/changesets/36-import-jobs.yaml
+  - include:
+      file: db/changelog/changesets/37a-tenants-slug.yaml
+  - include:
+      file: db/changelog/changesets/37-unit-listings.yaml
+  - include:
+      file: db/changelog/changesets/37b-unit-listings-unique-unit.yaml
+  - include:
+      file: db/changelog/changesets/37c-property-geo-tenant-id.yaml
+  - include:
+      file: db/changelog/changesets/37d-unit-listing-media-blob-path.yaml

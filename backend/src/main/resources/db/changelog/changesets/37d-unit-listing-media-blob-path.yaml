@@ -1,0 +1,11 @@
+databaseChangeLog:
+  - changeSet:
+      id: 37d-unit-listing-media-blob-path
+      author: rentaxis
+      changes:
+        - addColumn:
+            tableName: unit_listing_media
+            columns:
+              - column:
+                  name: blob_path
+                  type: varchar(512)

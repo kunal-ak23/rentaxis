@@ -1,0 +1,9 @@
+databaseChangeLog:
+  - changeSet:
+      id: 37b-unit-listings-unique-unit
+      author: rentaxis
+      changes:
+        - addUniqueConstraint:
+            tableName: unit_listings
+            columnNames: unit_id
+            constraintName: uq_unit_listings_unit_id
