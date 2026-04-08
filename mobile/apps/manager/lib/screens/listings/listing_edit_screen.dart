@@ -330,6 +330,8 @@ class _ListingEditScreenState extends ConsumerState<ListingEditScreen>
   }
 
   Map<String, dynamic> _buildPayload() {
+    final annualRent = double.tryParse(_rentCtrl.text.trim());
+    final deposit = double.tryParse(_depositCtrl.text.trim());
     return {
       'titleEn': _titleEnCtrl.text.trim(),
       if (_titleArCtrl.text.isNotEmpty) 'titleAr': _titleArCtrl.text.trim(),
@@ -342,10 +344,8 @@ class _ListingEditScreenState extends ConsumerState<ListingEditScreen>
       if (_parkingSpaces != null) 'parkingSpaces': _parkingSpaces,
       if (_furnishing != null) 'furnishing': _furnishing,
       if (_viewType != null) 'viewType': _viewType,
-      if (_rentCtrl.text.isNotEmpty)
-        'annualRent': double.tryParse(_rentCtrl.text),
-      if (_depositCtrl.text.isNotEmpty)
-        'securityDeposit': double.tryParse(_depositCtrl.text),
+      if (annualRent != null) 'annualRent': annualRent,
+      if (deposit != null) 'securityDeposit': deposit,
       if (_minLeaseMonths != null) 'minLeaseMonths': _minLeaseMonths,
       if (_cheques != null) 'chequesAccepted': _cheques,
       'dewaIncluded': _dewaIncluded,
