@@ -91,3 +91,5 @@ databaseChangeLog:
       file: db/changelog/changesets/41-meetings.yaml
   - include:
       file: db/changelog/changesets/42-normalize-emirate-uppercase.yaml
+  - include:
+      file: db/changelog/changesets/43-settlement-deduction-category-nullable.yaml

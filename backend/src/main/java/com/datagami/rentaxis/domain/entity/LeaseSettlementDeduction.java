@@ -25,7 +25,7 @@ public class LeaseSettlementDeduction extends BaseTenantEntity {
     private UUID settlementId;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 50)
+    @Column(nullable = true, length = 50)
     private DeductionCategory category;
 
     @Column(columnDefinition = "text")
