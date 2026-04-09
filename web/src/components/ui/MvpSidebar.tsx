@@ -31,6 +31,7 @@ import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { useSession } from "next-auth/react";
 import { hasPermission, canConfigureGateway, type UserRole } from "@/lib/rbac";
+import { useTenantFeatures } from "@/hooks/useTenantFeatures";
 import { SidebarTooltip } from "./SidebarTooltip";
 
 const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || '0.6.0.dev';
@@ -52,6 +53,7 @@ export default function MvpSidebar() {
     });
     const { data: session } = useSession();
     const userRole = session?.user?.role as UserRole | undefined;
+    const { isEnabled } = useTenantFeatures();
 
     useEffect(() => {
         localStorage.setItem('sidebar_collapsed', String(isCollapsed));
@@ -64,9 +66,9 @@ export default function MvpSidebar() {
                 { name: t("properties"), href: "/dashboard/properties", icon: LayoutDashboard, tourId: 'sidebar-properties' },
                 { name: t("renters"), href: "/dashboard/renters", icon: Contact, tourId: 'sidebar-renters' },
                 { name: t("leases"), href: "/dashboard/leases", icon: FileText, tourId: 'sidebar-leases' },
-                { name: "Listings", href: "/dashboard/listings", icon: Building2, tourId: 'sidebar-listings' },
+                ...(isEnabled('LISTINGS') ? [{ name: "Listings", href: "/dashboard/listings", icon: Building2, tourId: 'sidebar-listings' }] : []),
                 { name: "Tickets", href: "/dashboard/tickets", icon: Wrench, tourId: 'sidebar-tickets' },
-                { name: "Meetings", href: "/dashboard/meetings", icon: CalendarDays, tourId: 'sidebar-meetings' },
+                ...(isEnabled('MEETINGS') ? [{ name: "Meetings", href: "/dashboard/meetings", icon: CalendarDays, tourId: 'sidebar-meetings' }] : []),
             ]
             : []),
         ...(hasPermission(userRole, 'canManageTenants')
@@ -106,7 +108,7 @@ export default function MvpSidebar() {
         { name: "My Leases", href: "/dashboard/renter-portal", icon: FileText, tourId: 'sidebar-my-leases' },
         { name: tOnlinePayments("myPayments"), href: "/dashboard/renter-portal/payments", icon: CreditCard, tourId: 'sidebar-my-payments' },
         { name: "My Tickets", href: "/dashboard/tickets", icon: Wrench, tourId: 'sidebar-my-tickets' },
-        { name: "Meetings", href: "/dashboard/meetings", icon: CalendarDays, tourId: 'sidebar-meetings' },
+        ...(isEnabled('MEETINGS') ? [{ name: "Meetings", href: "/dashboard/meetings", icon: CalendarDays, tourId: 'sidebar-meetings' }] : []),
     ] : [];
 
     const allItems = menuItems.length > 0 ? menuItems : renterItems.length > 0 ? renterItems : tenantUserItems;
