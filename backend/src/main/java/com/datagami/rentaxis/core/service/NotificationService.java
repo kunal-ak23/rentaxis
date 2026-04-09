@@ -130,6 +130,7 @@ public class NotificationService {
                     case "TICKET" -> portalUrl + "/en/dashboard/tickets/" + referenceId;
                     case "LEASE" -> portalUrl + "/en/dashboard/leases/" + referenceId;
                     case "PAYMENT" -> portalUrl + "/en/dashboard/finance/payments";
+                    case "MEETING" -> portalUrl + "/en/dashboard/meetings/" + referenceId;
                     default -> portalUrl + "/en/dashboard";
                 };
                 String buttonLabel = switch (type) {
@@ -139,6 +140,8 @@ public class NotificationService {
                     case "PAYMENT_CLEARED", "PAYMENT_COLLECTED" -> "View Payment";
                     case "PAYMENT_DUE", "PAYMENT_OVERDUE", "PAYMENT_FAILED", "PAYMENT_BOUNCED" -> "Make Payment";
                     case "LEASE_EXPIRING" -> "View Lease";
+                    case "MEETING_REQUESTED" -> "View Meeting Request";
+                    case "MEETING_APPROVED", "MEETING_CANCELLED", "MEETING_COMPLETED", "MEETING_NO_SHOW" -> "View Meeting";
                     default -> "Open RentAxis";
                 };
                 actionButton = "<table cellpadding=\"0\" cellspacing=\"0\" style=\"margin:16px 0;\"><tr><td>"
@@ -160,6 +163,11 @@ public class NotificationService {
                 case "PAYMENT_OVERDUE" -> "<p style=\"margin:0;color:#DC2626;font-size:12px;font-weight:600;\">Your rent payment is overdue. Please make the payment immediately.</p>";
                 case "LEASE_EXPIRING" -> "<p style=\"margin:0;color:#D97706;font-size:12px;\">A lease in your portfolio is expiring soon. Review and take action if renewal is needed.</p>";
                 case "TENANT_PROVISIONED" -> "<p style=\"margin:0;color:#475569;font-size:12px;\">A new organization has been created on the platform.</p>";
+                case "MEETING_REQUESTED" -> "<p style=\"margin:0;color:#475569;font-size:12px;\">A new meeting has been requested. Please review and approve or decline.</p>";
+                case "MEETING_APPROVED" -> "<p style=\"margin:0;color:#475569;font-size:12px;\">Your meeting request has been approved. See you there!</p>";
+                case "MEETING_CANCELLED" -> "<p style=\"margin:0;color:#D97706;font-size:12px;\">A meeting has been cancelled. Check the details for more information.</p>";
+                case "MEETING_COMPLETED" -> "<p style=\"margin:0;color:#475569;font-size:12px;\">Your meeting has been completed successfully.</p>";
+                case "MEETING_NO_SHOW" -> "<p style=\"margin:0;color:#DC2626;font-size:12px;\">You were marked as a no-show for a scheduled meeting.</p>";
                 default -> "<p style=\"margin:0;color:#475569;font-size:12px;\">Please log in to RentAxis for more details.</p>";
             };
 
