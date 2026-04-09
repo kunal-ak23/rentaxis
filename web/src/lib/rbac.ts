@@ -21,6 +21,8 @@ export const PERMISSIONS = {
     canViewRenterPortal: ['RENTER'] as UserRole[],
     canAcceptLeases: ['RENTER'] as UserRole[],
     canDownloadContracts: ['SUPER_ADMIN', 'TENANT_ADMIN', 'RENTER'] as UserRole[],
+    canManageMeetings: ['SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER'] as UserRole[],
+    canCreateMeetings: ['SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER', 'RENTER'] as UserRole[],
 } as const;
 
 export type Permission = keyof typeof PERMISSIONS;
