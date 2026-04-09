@@ -57,6 +57,11 @@ public class DeductionAttachmentService {
         LeaseSettlementDeduction deduction = deductionRepository.findById(deductionId)
                 .orElseThrow(() -> new NotFoundException("Deduction not found"));
 
+        UUID currentTenantId = TenantContextHolder.getTenantId();
+        if (currentTenantId != null && !currentTenantId.equals(deduction.getTenantId())) {
+            throw new NotFoundException("Deduction not found");
+        }
+
         settlementRepository.findById(deduction.getSettlementId())
                 .orElseThrow(() -> new NotFoundException("Settlement not found"));
 
@@ -69,9 +74,10 @@ public class DeductionAttachmentService {
             throw new IllegalStateException("File size exceeds maximum of 250MB");
         }
 
+        log.info("Uploading attachment for deduction {} - name: {}, size: {} bytes", deductionId, docName, file.getSize());
         byte[] bytes = file.getBytes();
         String ext = getExtension(file.getOriginalFilename());
-        String fileName = UUID.randomUUID().toString().substring(0, 8) + ext;
+        String fileName = UUID.randomUUID() + ext;
 
         String fileUrl;
         if (azureConnectionString != null && !azureConnectionString.isBlank()) {
@@ -98,7 +104,6 @@ public class DeductionAttachmentService {
                 .collect(Collectors.toList());
     }
 
-    @Transactional(readOnly = true)
     public byte[] downloadAttachment(UUID attachmentId) {
         SettlementDeductionAttachment attachment = attachmentRepository.findById(attachmentId)
                 .orElseThrow(() -> new NotFoundException("Attachment not found"));
@@ -120,6 +125,11 @@ public class DeductionAttachmentService {
     public void deleteAttachment(UUID attachmentId) {
         SettlementDeductionAttachment attachment = attachmentRepository.findById(attachmentId)
                 .orElseThrow(() -> new NotFoundException("Attachment not found"));
+
+        UUID currentTenantId = TenantContextHolder.getTenantId();
+        if (currentTenantId != null && !currentTenantId.equals(attachment.getTenantId())) {
+            throw new NotFoundException("Attachment not found");
+        }
 
         LeaseSettlementDeduction deduction = deductionRepository.findById(attachment.getDeductionId())
                 .orElseThrow(() -> new NotFoundException("Deduction not found"));

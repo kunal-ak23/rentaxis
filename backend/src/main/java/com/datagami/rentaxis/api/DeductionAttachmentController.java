@@ -4,6 +4,7 @@ import com.datagami.rentaxis.api.dto.DeductionAttachmentDTO;
 import com.datagami.rentaxis.core.service.DeductionAttachmentService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -27,7 +28,7 @@ public class DeductionAttachmentController {
             @PathVariable UUID deductionId,
             @RequestParam("name") String name,
             @RequestParam("file") MultipartFile file) throws IOException {
-        return ResponseEntity.ok(attachmentService.uploadAttachment(deductionId, name, file));
+        return ResponseEntity.status(HttpStatus.CREATED).body(attachmentService.uploadAttachment(deductionId, name, file));
     }
 
     @GetMapping("/deductions/{deductionId}/attachments")
@@ -50,6 +51,6 @@ public class DeductionAttachmentController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         attachmentService.deleteAttachment(id);
-        return ResponseEntity.ok().build();
+        return ResponseEntity.noContent().build();
     }
 }
