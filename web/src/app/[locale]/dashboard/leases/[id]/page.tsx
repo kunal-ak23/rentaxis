@@ -70,7 +70,7 @@ type Settlement = {
     settledByName?: string;
     settledAt: string;
     createdAt: string;
-    deductions: { id?: string; category: string; description: string; amount: number; autoCalculated: boolean; attachments: { id: string; name: string; fileUrl: string; fileType: string; fileSize: number; uploadedAt: string }[] }[];
+    deductions: { id?: string; category: string; description: string; amount: number; autoCalculated: boolean; attachments: { id: string; name: string; fileUrl: string; fileType: string | null; fileSize: number; uploadedAt: string }[] }[];
 };
 
 const DEDUCTION_CATEGORY_LABELS: Record<string, string> = {
@@ -702,7 +702,7 @@ export default function LeaseDetailPage() {
                                             <div className="ml-2 space-y-1">
                                                 {d.attachments.map((att) => (
                                                     <div key={att.id} className="flex items-center gap-2 bg-input rounded-lg px-2 py-1.5">
-                                                        {att.fileType.startsWith("image/") ? (
+                                                        {att.fileType?.startsWith("image/") ? (
                                                             <img src={att.fileUrl} className="w-12 h-10 rounded object-cover flex-shrink-0" alt={att.name} />
                                                         ) : (
                                                             <FileText size={14} className="text-muted flex-shrink-0" />
