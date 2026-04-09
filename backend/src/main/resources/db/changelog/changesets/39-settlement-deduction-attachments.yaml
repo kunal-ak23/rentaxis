@@ -62,13 +62,13 @@ databaseChangeLog:
                   defaultValueComputed: now()
         - createIndex:
             tableName: settlement_deduction_attachments
-            indexName: idx_sda_deduction_id
+            indexName: idx_settlement_deduction_attachments_deduction_id
             columns:
               - column:
                   name: deduction_id
         - createIndex:
             tableName: settlement_deduction_attachments
-            indexName: idx_sda_tenant_id
+            indexName: idx_settlement_deduction_attachments_tenant_id
             columns:
               - column:
                   name: tenant_id
