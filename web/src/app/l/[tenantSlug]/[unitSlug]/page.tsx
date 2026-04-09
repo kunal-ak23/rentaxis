@@ -1,12 +1,10 @@
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import { getTranslations } from 'next-intl/server'
-import dynamic from 'next/dynamic'
 import { MapPin, Bed, Bath, Building, LogIn } from 'lucide-react'
 import { fetchPublicListing } from '@/lib/api/listings'
 import ListingGallery from '@/components/ListingGallery'
-
-const ListingMap = dynamic(() => import('@/components/ListingMap'), { ssr: false })
+import ListingMapWrapper from '@/components/ListingMapWrapper'
 
 export const revalidate = 3600
 
@@ -225,7 +223,7 @@ export default async function PublicListingPage({
 
           {/* Map */}
           {listing.approxLat != null && listing.approxLng != null ? (
-            <ListingMap
+            <ListingMapWrapper
               lat={listing.approxLat}
               lng={listing.approxLng}
               label={[listing.buildingName, listing.area, listing.emirate].filter(Boolean).join(', ') || 'Location'}
