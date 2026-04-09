@@ -7,6 +7,7 @@ import com.datagami.rentaxis.core.service.LeaseService;
 import com.datagami.rentaxis.core.service.SettlementService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -83,13 +84,13 @@ public class LeaseController {
     }
 
     @GetMapping("/{id}/settlement/preview")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
     public ResponseEntity<SettlementPreviewDTO> getSettlementPreview(@PathVariable UUID id) {
         return ResponseEntity.ok(settlementService.getSettlementPreview(id));
     }
 
     @GetMapping("/{id}/settlement")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
     public ResponseEntity<SettlementResponseDTO> getSettlement(@PathVariable UUID id) {
         try {
             return ResponseEntity.ok(settlementService.buildSettlementResponse(id));
@@ -99,7 +100,7 @@ public class LeaseController {
     }
 
     @PostMapping("/{id}/settlement/draft")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
     public ResponseEntity<SettlementResponseDTO> saveSettlementDraft(
             @PathVariable UUID id,
             @Valid @RequestBody SaveSettlementDTO dto,
@@ -111,7 +112,8 @@ public class LeaseController {
     }
 
     @PostMapping("/{id}/settlement/finalize")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
+    @Transactional
     public ResponseEntity<LeaseDTO> finalizeSettlement(
             @PathVariable UUID id,
             HttpServletRequest request) {

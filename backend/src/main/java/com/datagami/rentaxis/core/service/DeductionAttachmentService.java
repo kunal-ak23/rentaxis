@@ -21,13 +21,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -42,6 +43,11 @@ public class DeductionAttachmentService {
 
     private static final int MAX_ATTACHMENTS_PER_DEDUCTION = 10;
     private static final long MAX_FILE_SIZE = 250L * 1024 * 1024; // 250MB
+    private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of(
+            "image/jpeg", "image/png", "image/heic", "image/heif", "image/webp",
+            "video/mp4", "video/quicktime",
+            "application/pdf"
+    );
 
     @Value("${AZURE_STORAGE_CONNECTION_STRING:}")
     private String azureConnectionString;
@@ -52,6 +58,10 @@ public class DeductionAttachmentService {
     @Value("${rentaxis.assets.storage-path:./data/assets}")
     private String localStoragePath;
 
+    /**
+     * Upload an attachment to a deduction. Intentionally allowed in both DRAFT and FINALIZED states:
+     * evidence may surface after settlement amounts are locked. Deletion is blocked on FINALIZED.
+     */
     @Transactional
     public DeductionAttachmentDTO uploadAttachment(UUID deductionId, String docName, MultipartFile file) throws IOException {
         LeaseSettlementDeduction deduction = deductionRepository.findById(deductionId)
@@ -74,16 +84,20 @@ public class DeductionAttachmentService {
             throw new IllegalStateException("File size exceeds maximum of 250MB");
         }
 
+        String contentType = file.getContentType();
+        if (contentType == null || !ALLOWED_CONTENT_TYPES.contains(contentType.toLowerCase())) {
+            throw new IllegalStateException("File type not allowed. Accepted: images (JPEG, PNG, HEIC), videos (MP4, MOV), and PDF");
+        }
+
         log.info("Uploading attachment for deduction {} - name: {}, size: {} bytes", deductionId, docName, file.getSize());
-        byte[] bytes = file.getBytes();
         String ext = getExtension(file.getOriginalFilename());
         String fileName = UUID.randomUUID() + ext;
 
         String fileUrl;
         if (azureConnectionString != null && !azureConnectionString.isBlank()) {
-            fileUrl = uploadToAzure(deductionId, fileName, bytes, file.getContentType());
+            fileUrl = uploadToAzure(deductionId, fileName, file.getInputStream(), file.getSize(), contentType);
         } else {
-            fileUrl = saveToLocal(deductionId, fileName, bytes);
+            fileUrl = saveToLocal(deductionId, fileName, file.getInputStream());
         }
 
         SettlementDeductionAttachment attachment = new SettlementDeductionAttachment();
@@ -110,6 +124,19 @@ public class DeductionAttachmentService {
         return attachmentRepository.findByDeductionIdOrderByUploadedAtAsc(deductionId).stream()
                 .map(this::mapToDTO)
                 .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public DeductionAttachmentDTO getAttachmentById(UUID attachmentId) {
+        SettlementDeductionAttachment attachment = attachmentRepository.findById(attachmentId)
+                .orElseThrow(() -> new NotFoundException("Attachment not found"));
+
+        UUID currentTenantId = TenantContextHolder.getTenantId();
+        if (currentTenantId != null && !currentTenantId.equals(attachment.getTenantId())) {
+            throw new NotFoundException("Attachment not found");
+        }
+
+        return mapToDTO(attachment);
     }
 
     public byte[] downloadAttachment(UUID attachmentId) {
@@ -156,6 +183,11 @@ public class DeductionAttachmentService {
         attachmentRepository.delete(attachment);
     }
 
+    @Transactional
+    public void deleteAllByDeductionId(UUID deductionId) {
+        attachmentRepository.deleteByDeductionId(deductionId);
+    }
+
     private byte[] downloadFromAzure(String blobUrl) {
         String marker = ".blob.core.windows.net/";
         int idx = blobUrl.indexOf(marker);
@@ -175,7 +207,7 @@ public class DeductionAttachmentService {
         return baos.toByteArray();
     }
 
-    private String uploadToAzure(UUID deductionId, String fileName, byte[] bytes, String contentType) {
+    private String uploadToAzure(UUID deductionId, String fileName, InputStream inputStream, long size, String contentType) {
         UUID tenantId = TenantContextHolder.getTenantId();
         if (tenantId == null) {
             throw new IllegalStateException("Cannot upload settlement attachment: tenant context is not set");
@@ -193,16 +225,16 @@ public class DeductionAttachmentService {
 
         String blobPath = "settlement-deductions/" + deductionId + "/" + fileName;
         BlobClient blobClient = containerClient.getBlobClient(blobPath);
-        blobClient.upload(new ByteArrayInputStream(bytes), bytes.length, true);
+        blobClient.upload(inputStream, size, true);
 
         return blobServiceClient.getAccountUrl() + "/" + containerName + "/" + blobPath;
     }
 
-    private String saveToLocal(UUID deductionId, String fileName, byte[] bytes) throws IOException {
+    private String saveToLocal(UUID deductionId, String fileName, InputStream inputStream) throws IOException {
         Path dirPath = Path.of(localStoragePath, "settlement-deductions", deductionId.toString());
         Files.createDirectories(dirPath);
         Path filePath = dirPath.resolve(fileName);
-        Files.write(filePath, bytes);
+        Files.copy(inputStream, filePath, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
         return "/api/v1/assets/serve/settlement-deductions/" + deductionId + "/" + fileName;
     }
 

@@ -9,4 +9,5 @@ import java.util.UUID;
 public interface SettlementDeductionAttachmentRepository extends JpaRepository<SettlementDeductionAttachment, UUID> {
     List<SettlementDeductionAttachment> findByDeductionIdOrderByUploadedAtAsc(UUID deductionId);
     long countByDeductionId(UUID deductionId);
+    void deleteByDeductionId(UUID deductionId);
 }

@@ -152,7 +152,7 @@ export default function SettlementPage() {
         try {
             const res = await fetch(`/api/proxy/v1/settlements/deductions/${deductionId}/attachments`);
             if (res.ok) return await res.json();
-        } catch {}
+        } catch (e) { console.error("Failed to fetch attachments:", e); }
         return [];
     }, []);
 
@@ -162,7 +162,7 @@ export default function SettlementPage() {
             if (res.ok) {
                 const data = await res.json();
                 const s: Settlement = {
-                    ...data.settlement,
+                    ...data,
                     deductions: (data.deductions || []).map((d: DeductionItem) => ({
                         ...d,
                         attachments: d.attachments || [],
@@ -178,7 +178,7 @@ export default function SettlementPage() {
                 setManualDeductions(manual);
                 return;
             }
-        } catch {}
+        } catch (e) { console.error("Failed to load settlement:", e); }
 
         // No existing settlement — load preview for suggestions
         try {
@@ -207,7 +207,7 @@ export default function SettlementPage() {
                 }
                 setAutoDeductions(auto);
             }
-        } catch {}
+        } catch (e) { console.error("Failed to load settlement preview:", e); }
     }, [leaseId]);
 
     useEffect(() => {
@@ -297,7 +297,7 @@ export default function SettlementPage() {
                     prev.map(d => d.id === deductionId ? { ...d, attachments: newAttachments } : d)
                 );
             }
-        } catch {} finally {
+        } catch (e) { console.error("Failed to upload file:", e); } finally {
             setUploadingDeductionId(null);
         }
     };
@@ -316,7 +316,7 @@ export default function SettlementPage() {
                     prev.map(d => d.id === deductionId ? { ...d, attachments: newAttachments } : d)
                 );
             }
-        } catch {}
+        } catch (e) { console.error("Failed to delete attachment:", e); }
     };
 
     if (loading) {

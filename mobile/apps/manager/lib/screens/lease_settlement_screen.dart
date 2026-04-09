@@ -1059,7 +1059,7 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
   }
 
   Widget _buildImageThumbnail(Map<String, dynamic> attachment) {
-    final url = attachment['url'] as String?;
+    final url = attachment['fileUrl'] as String?;
     if (url != null && url.isNotEmpty) {
       return Image.network(
         url,

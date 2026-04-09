@@ -40,10 +40,12 @@ public class DeductionAttachmentController {
     @GetMapping("/attachments/{id}/download")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
     public ResponseEntity<byte[]> download(@PathVariable UUID id) {
+        DeductionAttachmentDTO meta = attachmentService.getAttachmentById(id);
         byte[] content = attachmentService.downloadAttachment(id);
+        String contentType = meta.getFileType() != null ? meta.getFileType() : "application/octet-stream";
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=document")
-                .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + meta.getName() + "\"")
+                .contentType(MediaType.parseMediaType(contentType))
                 .body(content);
     }
 

@@ -73,3 +73,19 @@ databaseChangeLog:
               - column:
                   name: tenant_id
       comment: "Create settlement_deduction_attachments table for evidence files per deduction."
+
+  - changeSet:
+      id: 39-add-cascade-delete-on-deduction-fk
+      author: rentaxis
+      changes:
+        - dropForeignKeyConstraint:
+            baseTableName: settlement_deduction_attachments
+            constraintName: fk_sda_deduction
+        - addForeignKeyConstraint:
+            baseTableName: settlement_deduction_attachments
+            baseColumnNames: deduction_id
+            constraintName: fk_sda_deduction
+            referencedTableName: lease_settlement_deductions
+            referencedColumnNames: id
+            onDelete: CASCADE
+      comment: "Add ON DELETE CASCADE to deduction FK so deleting deductions cleans up attachments."

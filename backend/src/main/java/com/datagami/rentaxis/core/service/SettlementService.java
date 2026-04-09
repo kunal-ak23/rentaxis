@@ -121,6 +121,10 @@ public class SettlementService {
             }
             List<LeaseSettlementDeduction> oldDeductions =
                     leaseSettlementDeductionRepository.findBySettlementIdOrderByCreatedAtAsc(settlement.getId());
+            // Delete attachments before deductions to avoid FK constraint violation
+            for (LeaseSettlementDeduction d : oldDeductions) {
+                deductionAttachmentService.deleteAllByDeductionId(d.getId());
+            }
             leaseSettlementDeductionRepository.deleteAll(oldDeductions);
         } else {
             settlement = new LeaseSettlement();
