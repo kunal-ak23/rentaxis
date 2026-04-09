@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Link } from "@/i18n/routing";
 import { cn } from "@/lib/utils";
+import { formatCurrency } from "@/lib/format";
 import {
     ArrowLeft, Paperclip, Upload, Trash2, Image, Video, FileText, Plus,
     Loader2, CheckCircle2,
@@ -74,14 +75,6 @@ const STATUS_COLORS: Record<string, string> = {
     FINALIZED: "bg-success/10 text-success border-success/20",
 };
 
-function formatCurrency(amount: number): string {
-    return new Intl.NumberFormat("en-AE", {
-        style: "currency",
-        currency: "AED",
-        minimumFractionDigits: 0,
-    }).format(amount);
-}
-
 function AttachmentThumbnail({
     attachment,
     onDelete,
@@ -141,6 +134,8 @@ export default function SettlementPage() {
     const [finalizing, setFinalizing] = useState(false);
     const [showFinalizeConfirm, setShowFinalizeConfirm] = useState(false);
     const [uploadingDeductionId, setUploadingDeductionId] = useState<string | null>(null);
+    const [saveDraftError, setSaveDraftError] = useState<string | null>(null);
+    const [finalizeError, setFinalizeError] = useState<string | null>(null);
     const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
     const isFinalized = settlement?.status === "FINALIZED";
@@ -238,6 +233,7 @@ export default function SettlementPage() {
 
     const handleSaveDraft = async () => {
         setSavingDraft(true);
+        setSaveDraftError(null);
         try {
             const res = await fetch(`/api/proxy/v1/leases/${leaseId}/settlement/draft`, {
                 method: "POST",
@@ -247,28 +243,37 @@ export default function SettlementPage() {
                     deductions: buildDeductionPayload(),
                 }),
             });
-            if (res.ok) {
-                await loadSettlement();
+            if (!res.ok) {
+                setSaveDraftError("Failed to save draft. Please try again.");
+                return;
             }
-        } catch {} finally {
+            await loadSettlement();
+        } catch {
+            setSaveDraftError("Failed to save draft. Please try again.");
+        } finally {
             setSavingDraft(false);
         }
     };
 
     const handleFinalize = async () => {
         setFinalizing(true);
+        setFinalizeError(null);
         try {
             const res = await fetch(`/api/proxy/v1/leases/${leaseId}/settlement/finalize`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({}),
             });
-            if (res.ok) {
-                router.push(`/${locale}/dashboard/leases/${leaseId}`);
+            if (!res.ok) {
+                setFinalizeError("Failed to finalize settlement. Please try again.");
+                return;
             }
-        } catch {} finally {
-            setFinalizing(false);
             setShowFinalizeConfirm(false);
+            router.push(`/${locale}/dashboard/leases/${leaseId}`);
+        } catch {
+            setFinalizeError("Failed to finalize settlement. Please try again.");
+        } finally {
+            setFinalizing(false);
         }
     };
 
@@ -363,7 +368,7 @@ export default function SettlementPage() {
                         </div>
                         <div className="p-4 space-y-3">
                             {autoDeductions.map((d, i) => (
-                                <div key={i} className="bg-input/30 rounded-lg border border-border p-3 space-y-3">
+                                <div key={d.id ?? i} className="bg-input/30 rounded-lg border border-border p-3 space-y-3">
                                     <div className="flex items-center gap-3">
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-center gap-2">
@@ -469,7 +474,7 @@ export default function SettlementPage() {
                         {manualDeductions.length > 0 ? (
                             <div className="space-y-3">
                                 {manualDeductions.map((d, i) => (
-                                    <div key={i} className="bg-input/30 rounded-lg border border-border p-3 space-y-3">
+                                    <div key={d.id ?? i} className="bg-input/30 rounded-lg border border-border p-3 space-y-3">
                                         {/* Category, Amount, Delete */}
                                         <div className="flex items-center gap-2">
                                             <select
@@ -632,7 +637,11 @@ export default function SettlementPage() {
 
                 {/* Action Buttons */}
                 {!isFinalized && (
-                    <div className="flex items-center justify-end gap-3 pb-8">
+                    <div className="space-y-2 pb-8">
+                        {saveDraftError && (
+                            <p className="text-xs text-error text-end">{saveDraftError}</p>
+                        )}
+                    <div className="flex items-center justify-end gap-3">
                         <button
                             onClick={handleSaveDraft}
                             disabled={savingDraft}
@@ -660,6 +669,7 @@ export default function SettlementPage() {
                             Finalize &amp; Terminate
                         </button>
                     </div>
+                    </div>
                 )}
 
                 {/* Finalized info */}
@@ -685,15 +695,18 @@ export default function SettlementPage() {
                         <div className="px-5 py-4 border-b border-border">
                             <h3 className="text-sm font-bold text-foreground">Finalize Settlement?</h3>
                         </div>
-                        <div className="px-5 py-4">
+                        <div className="px-5 py-4 space-y-3">
                             <p className="text-xs text-muted leading-relaxed">
                                 This will terminate the lease and lock the settlement amounts.
                                 Attachments can still be added after. Continue?
                             </p>
+                            {finalizeError && (
+                                <p className="text-xs text-error">{finalizeError}</p>
+                            )}
                         </div>
                         <div className="px-5 py-3.5 border-t border-border flex items-center justify-end gap-3">
                             <button
-                                onClick={() => setShowFinalizeConfirm(false)}
+                                onClick={() => { setShowFinalizeConfirm(false); setFinalizeError(null); }}
                                 className="px-3 py-1.5 rounded-lg text-xs font-semibold text-muted hover:text-foreground border border-border hover:bg-input transition-colors cursor-pointer"
                             >
                                 Cancel
