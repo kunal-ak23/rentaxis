@@ -10,7 +10,10 @@ import {
   MapPin, Star
 } from "lucide-react";
 import { Link } from "@/i18n/routing";
+import dynamic from "next/dynamic";
 import { cn } from "@/lib/utils";
+
+const LocationPicker = dynamic(() => import("@/components/LocationPicker"), { ssr: false });
 import {
   fetchListing,
   createListing,
@@ -1039,9 +1042,20 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
       {activeTab === 'location' && (
         <div className="bg-surface rounded-xl border border-border">
           <div className="px-5 py-4 border-b border-border">
-            <p className="text-[10px] font-semibold text-muted uppercase tracking-wider">{t('coordinates')}</p>
+            <p className="text-[10px] font-semibold text-muted uppercase tracking-wider">Location</p>
+            <p className="text-[10px] text-muted mt-0.5">Click on the map to drop a pin, or drag the marker to adjust.</p>
           </div>
           <div className="p-5 space-y-4">
+            <div className="rounded-xl overflow-hidden border border-border">
+              <LocationPicker
+                lat={form.lat && !isNaN(Number(form.lat)) ? Number(form.lat) : null}
+                lng={form.lng && !isNaN(Number(form.lng)) ? Number(form.lng) : null}
+                onLocationChange={(lat, lng) => {
+                  setField('lat', lat.toFixed(6));
+                  setField('lng', lng.toFixed(6));
+                }}
+              />
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-semibold text-muted mb-1.5">Latitude</label>
@@ -1066,23 +1080,6 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
                 />
               </div>
             </div>
-            {form.lat && form.lng && !isNaN(Number(form.lat)) && !isNaN(Number(form.lng)) && (
-              <div className="rounded-xl overflow-hidden border border-border">
-                <iframe
-                  width="100%"
-                  height="300"
-                  style={{ border: 0 }}
-                  loading="lazy"
-                  src={`https://www.openstreetmap.org/export/embed.html?bbox=${Number(form.lng)-0.01},${Number(form.lat)-0.01},${Number(form.lng)+0.01},${Number(form.lat)+0.01}&layer=mapnik&marker=${form.lat},${form.lng}`}
-                />
-              </div>
-            )}
-            {(!form.lat || !form.lng) && (
-              <div className="bg-input/30 rounded-xl border border-dashed border-border p-8 flex flex-col items-center gap-3">
-                <MapPin size={24} className="text-muted/40" />
-                <p className="text-xs text-muted text-center">Enter coordinates to preview the map location.</p>
-              </div>
-            )}
           </div>
         </div>
       )}
