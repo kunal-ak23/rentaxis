@@ -70,6 +70,7 @@ public class TenantFeatureService {
     private String toLabel(TenantFeature feature) {
         return switch (feature) {
             case LISTINGS -> "Listings (Marketplace)";
+            case MEETINGS -> "Meetings & Scheduling";
         };
     }
 }
