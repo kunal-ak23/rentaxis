@@ -20,6 +20,14 @@ public interface MeetingRepository extends JpaRepository<Meeting, UUID> {
 
     Page<Meeting> findByRequesterUserId(UUID requesterUserId, Pageable pageable);
 
+    Page<Meeting> findByTenantId(UUID tenantId, Pageable pageable);
+
+    @Query("SELECT m FROM Meeting m WHERE m.tenantId = :tenantId AND m.slotStart >= :rangeStart AND m.slotStart < :rangeEnd")
+    Page<Meeting> findByTenantIdAndDateRange(@Param("tenantId") UUID tenantId,
+                                              @Param("rangeStart") Instant rangeStart,
+                                              @Param("rangeEnd") Instant rangeEnd,
+                                              Pageable pageable);
+
     @Query("SELECT m FROM Meeting m WHERE m.hostUserId = :hostUserId " +
            "AND m.slotStart >= :dayStart AND m.slotStart < :dayEnd " +
            "AND m.status NOT IN :excluded")

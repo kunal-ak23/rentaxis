@@ -7,8 +7,10 @@ import com.datagami.rentaxis.api.dto.SlotDTO;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.api.exception.SlotConflictException;
+import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Meeting;
 import com.datagami.rentaxis.domain.entity.MeetingDetail;
+import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.enums.MeetingPurpose;
 import com.datagami.rentaxis.domain.entity.enums.MeetingStatus;
 import com.datagami.rentaxis.domain.repository.*;
@@ -167,16 +169,14 @@ public class MeetingService {
         meeting.setStatus(MeetingStatus.CANCELLED);
         Meeting saved = meetingRepository.save(meeting);
 
-        // Notify the other party (whoever didn't cancel)
+        // Notify both parties
         try {
-            UUID notifyUser = cancelledByUserId.equals(saved.getHostUserId())
-                    ? saved.getRequesterUserId()
-                    : saved.getHostUserId();
-            notificationService.notify(
-                    saved.getTenantId(), notifyUser,
-                    "MEETING_CANCELLED", "Meeting Cancelled",
-                    "A meeting scheduled for " + saved.getSlotStart() + " has been cancelled.",
-                    "MEETING", saved.getId());
+            String cancellerName = userRepository.findById(cancelledByUserId).map(User::getName).orElse("Someone");
+            String msg = cancellerName + " cancelled the meeting: " + (saved.getTitle() != null ? saved.getTitle() : saved.getPurpose().name());
+            notificationService.notify(saved.getTenantId(), saved.getHostUserId(),
+                    "MEETING_CANCELLED", "Meeting Cancelled", msg, "MEETING", saved.getId());
+            notificationService.notify(saved.getTenantId(), saved.getRequesterUserId(),
+                    "MEETING_CANCELLED", "Meeting Cancelled", msg, "MEETING", saved.getId());
         } catch (Exception e) {
             log.warn("Failed to send MEETING_CANCELLED notification for meeting {}", meetingId, e);
         }
@@ -256,7 +256,7 @@ public class MeetingService {
 
     @Transactional(readOnly = true)
     public Page<MeetingDTO> listMeetings(Pageable pageable) {
-        return meetingRepository.findAll(pageable).map(this::mapToDTO);
+        return meetingRepository.findByTenantId(TenantContextHolder.getTenantId(), pageable).map(this::mapToDTO);
     }
 
     @Transactional(readOnly = true)
@@ -269,7 +269,7 @@ public class MeetingService {
 
     @Transactional(readOnly = true)
     public Page<MeetingDTO> getCalendarMeetings(Instant rangeStart, Instant rangeEnd, Pageable pageable) {
-        return meetingRepository.findByDateRange(rangeStart, rangeEnd, pageable).map(this::mapToDTO);
+        return meetingRepository.findByTenantIdAndDateRange(TenantContextHolder.getTenantId(), rangeStart, rangeEnd, pageable).map(this::mapToDTO);
     }
 
     // ---- Slot availability ----
@@ -300,42 +300,24 @@ public class MeetingService {
 
     // ---- Find next available slot ----
 
+    @Transactional(readOnly = true)
     public Instant findNextAvailableSlot(UUID hostUserId, Instant fromInstant) {
         ZonedDateTime from = fromInstant.atZone(UAE_ZONE);
-        ZonedDateTime scanStart = from.plusMinutes(SLOT_DURATION_MINUTES);
+        java.time.LocalDate date = from.toLocalDate();
 
-        // Try slots within the same day first, then scan up to MAX_SCAN_DAYS
-        Instant rangeEnd = scanStart.toInstant().plus(MAX_SCAN_DAYS, ChronoUnit.DAYS);
-        List<Meeting> booked = meetingRepository.findByHostAndRange(
-                hostUserId, scanStart.toInstant(), rangeEnd, INACTIVE_STATUSES);
-
-        ZonedDateTime cursor = scanStart;
-        for (int day = 0; day < MAX_SCAN_DAYS; day++) {
-            java.time.LocalDate checkDate = cursor.toLocalDate();
-            ZonedDateTime dayStart = checkDate.atTime(DAY_START_HOUR, 0).atZone(UAE_ZONE);
-            ZonedDateTime dayEnd = checkDate.atTime(DAY_END_HOUR, 0).atZone(UAE_ZONE);
-
-            // Adjust cursor to at least dayStart
-            if (cursor.isBefore(dayStart)) {
-                cursor = dayStart;
-            }
-
-            while (cursor.toInstant().isBefore(dayEnd.toInstant())) {
-                Instant slotCandidate = cursor.toInstant();
-                boolean taken = booked.stream()
-                        .anyMatch(m -> m.getSlotStart().equals(slotCandidate));
-                if (!taken) {
-                    return slotCandidate;
+        for (int dayOffset = 0; dayOffset <= 14; dayOffset++) {
+            java.time.LocalDate checkDate = date.plusDays(dayOffset);
+            List<SlotDTO> slots = getAvailableSlots(hostUserId, checkDate);
+            for (SlotDTO slot : slots) {
+                if (slot.isAvailable()) {
+                    // For same day, only suggest future slots; for future days, any slot works
+                    if (dayOffset == 0 && !slot.getStart().isAfter(from.toInstant())) continue;
+                    return slot.getStart();
                 }
-                cursor = cursor.plusMinutes(SLOT_DURATION_MINUTES);
             }
-
-            // Move to next day's start
-            cursor = checkDate.plusDays(1).atTime(DAY_START_HOUR, 0).atZone(UAE_ZONE);
         }
 
-        // Fallback: return start of first available day after scan window
-        return scanStart.toInstant().plus(MAX_SCAN_DAYS, ChronoUnit.DAYS);
+        return null; // No slots available within 14 days
     }
 
     // ---- Mapping ----
