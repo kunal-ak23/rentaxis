@@ -242,7 +242,7 @@ export default function MeetingsPage() {
                             right: "dayGridMonth,timeGridWeek,timeGridDay",
                         }}
                         events={calendarEvents}
-                        eventClick={(info) => {
+                        eventClick={(info: { event: { id: string } }) => {
                             router.push(`/dashboard/meetings/${info.event.id}`);
                         }}
                         height="auto"
