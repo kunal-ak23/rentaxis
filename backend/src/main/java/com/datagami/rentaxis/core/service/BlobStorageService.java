@@ -2,6 +2,7 @@ package com.datagami.rentaxis.core.service;
 
 import com.azure.storage.blob.BlobClient;
 import com.azure.storage.blob.BlobContainerClient;
+import com.azure.storage.blob.BlobServiceClient;
 import com.azure.storage.blob.BlobServiceClientBuilder;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -14,8 +15,10 @@ import java.util.UUID;
 
 /**
  * Service for uploading and deleting marketplace listing media in Azure Blob Storage.
+ * Uses per-tenant containers ({@code tenant-{tenantId}}) matching the pattern used
+ * by LeaseAttachmentService and DeductionAttachmentService.
  *
- * <p>The {@link BlobContainerClient} is built lazily on first use so the bean still
+ * <p>The {@link BlobServiceClient} is built lazily on first use so the bean still
  * loads when the {@code AZURE_STORAGE_CONNECTION_STRING} env var is absent in dev.
  */
 @Service
@@ -25,10 +28,10 @@ public class BlobStorageService {
     @Value("${azure.storage.connection-string:}")
     private String connectionString;
 
-    @Value("${azure.storage.container:listings}")
-    private String containerName;
+    @Value("${AZURE_STORAGE_CONTAINER_PREFIX:tenant-}")
+    private String containerPrefix;
 
-    private volatile BlobContainerClient containerClient;
+    private volatile BlobServiceClient serviceClient;
 
     /**
      * Result of an upload — both the public URL and the container-relative
@@ -39,7 +42,7 @@ public class BlobStorageService {
     }
 
     /**
-     * Uploads {@code file} to {@code listings/{tenantId}/{listingId}/{uuid}.{ext}}
+     * Uploads {@code file} to {@code tenant-{tenantId}/listings/{listingId}/{uuid}.{ext}}
      * and returns both the blob's public URL and its container-relative path.
      */
     public UploadResult upload(UUID tenantId, UUID listingId, MultipartFile file) {
@@ -47,10 +50,11 @@ public class BlobStorageService {
             throw new BlobStorageException("tenantId, listingId, and file are required");
         }
         String ext = extractExtension(file.getOriginalFilename());
-        String blobPath = String.format("listings/%s/%s/%s%s",
-                tenantId, listingId, UUID.randomUUID(), ext);
+        String blobPath = String.format("listings/%s/%s%s",
+                listingId, UUID.randomUUID(), ext);
         try (InputStream in = file.getInputStream()) {
-            BlobClient blobClient = getContainerClient().getBlobClient(blobPath);
+            BlobContainerClient containerClient = getContainerClient(tenantId);
+            BlobClient blobClient = containerClient.getBlobClient(blobPath);
             blobClient.upload(in, file.getSize(), true);
             return new UploadResult(blobClient.getBlobUrl(), blobPath);
         } catch (IOException e) {
@@ -61,15 +65,15 @@ public class BlobStorageService {
     }
 
     /**
-     * Deletes a blob by its path within the container. Idempotent: silently
-     * succeeds if the blob does not exist.
+     * Deletes a blob by its container-relative path within a tenant's container.
+     * Idempotent: silently succeeds if the blob does not exist.
      */
-    public void delete(String blobPath) {
+    public void delete(UUID tenantId, String blobPath) {
         if (blobPath == null || blobPath.isBlank()) {
             return;
         }
         try {
-            boolean deleted = getContainerClient().getBlobClient(blobPath).deleteIfExists();
+            boolean deleted = getContainerClient(tenantId).getBlobClient(blobPath).deleteIfExists();
             if (!deleted) {
                 log.debug("Blob not found, nothing to delete: {}", blobPath);
             }
@@ -79,27 +83,35 @@ public class BlobStorageService {
     }
 
     /**
-     * Lazily builds the container client. Override in tests to inject a mock.
+     * Returns the per-tenant container client, creating the container if it doesn't exist.
      */
-    protected BlobContainerClient buildContainerClient() {
-        if (connectionString == null || connectionString.isBlank()) {
-            throw new BlobStorageException(
-                    "AZURE_STORAGE_CONNECTION_STRING is not configured");
+    private BlobContainerClient getContainerClient(UUID tenantId) {
+        String containerName = containerPrefix + tenantId;
+        BlobContainerClient containerClient = getServiceClient().getBlobContainerClient(containerName);
+        if (!containerClient.exists()) {
+            containerClient.create();
+            log.info("Created blob container: {}", containerName);
         }
-        return new BlobServiceClientBuilder()
-                .connectionString(connectionString)
-                .buildClient()
-                .getBlobContainerClient(containerName);
+        return containerClient;
     }
 
-    private BlobContainerClient getContainerClient() {
-        BlobContainerClient local = this.containerClient;
+    /**
+     * Lazily builds the service client.
+     */
+    private BlobServiceClient getServiceClient() {
+        BlobServiceClient local = this.serviceClient;
         if (local == null) {
             synchronized (this) {
-                local = this.containerClient;
+                local = this.serviceClient;
                 if (local == null) {
-                    local = buildContainerClient();
-                    this.containerClient = local;
+                    if (connectionString == null || connectionString.isBlank()) {
+                        throw new BlobStorageException(
+                                "AZURE_STORAGE_CONNECTION_STRING is not configured");
+                    }
+                    local = new BlobServiceClientBuilder()
+                            .connectionString(connectionString)
+                            .buildClient();
+                    this.serviceClient = local;
                 }
             }
         }

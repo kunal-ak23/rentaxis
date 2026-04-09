@@ -220,16 +220,12 @@ public class UnitListingService {
         if (!Objects.equals(media.getListingId(), listingId)) {
             throw new NotFoundException("Media not found");
         }
-        // Prefer the persisted blob_path; fall back to URL parsing for legacy
-        // rows uploaded before the column was added.
-        // TODO: remove the URL fallback after one migration cycle (when no
-        // unit_listing_media row has a null blob_path).
         String blobPath = media.getBlobPath();
         if (blobPath == null) {
             blobPath = extractBlobPath(media.getUrl());
         }
         if (blobPath != null) {
-            blobStorageService.delete(blobPath);
+            blobStorageService.delete(tenantId, blobPath);
         }
         mediaRepository.delete(media);
     }
@@ -351,8 +347,9 @@ public class UnitListingService {
     }
 
     /**
-     * Extracts blob path from the full URL. Path is everything after the container name.
-     * E.g. https://acct.blob.core.windows.net/listings/tenant/listing/file.jpg -> listings/tenant/listing/file.jpg
+     * Extracts the container-relative blob path from the full URL.
+     * E.g. https://acct.blob.core.windows.net/tenant-{id}/listings/{listingId}/file.jpg
+     *   -> listings/{listingId}/file.jpg
      */
     static String extractBlobPath(String url) {
         if (url == null) return null;
