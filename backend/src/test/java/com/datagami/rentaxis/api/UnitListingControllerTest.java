@@ -8,6 +8,7 @@ import com.datagami.rentaxis.core.service.UnitListingService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.UnitListing;
 import com.datagami.rentaxis.domain.entity.enums.ListingStatus;
+import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -22,12 +23,14 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -40,6 +43,9 @@ class UnitListingControllerTest {
     @Mock
     FeatureFlags featureFlags;
 
+    @Mock
+    LandlordOrgRepository landlordOrgRepository;
+
     @InjectMocks
     UnitListingController controller;
 
@@ -49,6 +55,7 @@ class UnitListingControllerTest {
     void setUp() {
         TenantContextHolder.setTenantId(tenantId);
         when(featureFlags.isListingsEnabled()).thenReturn(true);
+        lenient().when(landlordOrgRepository.findById(any(UUID.class))).thenReturn(Optional.empty());
     }
 
     @AfterEach
