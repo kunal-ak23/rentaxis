@@ -5,6 +5,8 @@ import com.datagami.rentaxis.api.dto.SettlementPreviewDTO;
 import com.datagami.rentaxis.api.dto.SettlementResponseDTO;
 import com.datagami.rentaxis.api.dto.TerminateWithSettlementDTO;
 import com.datagami.rentaxis.api.exception.NotFoundException;
+import com.datagami.rentaxis.domain.entity.enums.AdditionCategory;
+import com.datagami.rentaxis.domain.entity.enums.LineItemType;
 import com.datagami.rentaxis.domain.entity.enums.SettlementStatus;
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.LeaseSettlement;
@@ -89,6 +91,8 @@ public class SettlementService {
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
         }
         settlement.setTotalDeductions(totalDeductions);
+        settlement.setTotalAdditions(BigDecimal.ZERO);
+        // Legacy direct-terminate path: all items treated as DEDUCTIONS. Use saveDraft + finalizeSettlement for additions support.
         settlement.setRefundAmount(depositAmount.subtract(totalDeductions));
 
         LeaseSettlement savedSettlement = leaseSettlementRepository.save(settlement);
@@ -132,13 +136,19 @@ public class SettlementService {
         settlement.setNotes(dto.getNotes());
 
         BigDecimal totalDeductions = BigDecimal.ZERO;
+        BigDecimal totalAdditions = BigDecimal.ZERO;
         if (dto.getDeductions() != null) {
-            totalDeductions = dto.getDeductions().stream()
-                    .map(SaveSettlementDTO.DeductionItemDTO::getAmount)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            for (SaveSettlementDTO.DeductionItemDTO item : dto.getDeductions()) {
+                if (item.getType() == LineItemType.ADDITION) {
+                    totalAdditions = totalAdditions.add(item.getAmount());
+                } else {
+                    totalDeductions = totalDeductions.add(item.getAmount());
+                }
+            }
         }
         settlement.setTotalDeductions(totalDeductions);
-        settlement.setRefundAmount(depositAmount.subtract(totalDeductions));
+        settlement.setTotalAdditions(totalAdditions);
+        settlement.setRefundAmount(depositAmount.subtract(totalDeductions).add(totalAdditions));
 
         LeaseSettlement savedSettlement = leaseSettlementRepository.save(settlement);
 
@@ -158,6 +168,19 @@ public class SettlementService {
                     existing.setDescription(item.getDescription());
                     existing.setAmount(item.getAmount());
                     existing.setAutoCalculated(item.isAutoCalculated());
+                    // Set type and additionCategory
+                    LineItemType lineItemType = item.getType() != null ? item.getType() : LineItemType.DEDUCTION;
+                    existing.setType(lineItemType);
+                    if (lineItemType == LineItemType.ADDITION && item.getAdditionCategory() != null) {
+                        try {
+                            existing.setAdditionCategory(AdditionCategory.valueOf(item.getAdditionCategory()));
+                        } catch (IllegalArgumentException e) {
+                            throw new IllegalArgumentException("Invalid additionCategory: " + item.getAdditionCategory());
+                        }
+                        existing.setCategory(null);
+                    } else {
+                        existing.setAdditionCategory(null);
+                    }
                     leaseSettlementDeductionRepository.save(existing);
                     incomingIds.add(item.getId());
                 } else {
@@ -168,6 +191,19 @@ public class SettlementService {
                     deduction.setDescription(item.getDescription());
                     deduction.setAmount(item.getAmount());
                     deduction.setAutoCalculated(item.isAutoCalculated());
+                    // Set type and additionCategory
+                    LineItemType lineItemType = item.getType() != null ? item.getType() : LineItemType.DEDUCTION;
+                    deduction.setType(lineItemType);
+                    if (lineItemType == LineItemType.ADDITION && item.getAdditionCategory() != null) {
+                        try {
+                            deduction.setAdditionCategory(AdditionCategory.valueOf(item.getAdditionCategory()));
+                        } catch (IllegalArgumentException e) {
+                            throw new IllegalArgumentException("Invalid additionCategory: " + item.getAdditionCategory());
+                        }
+                        deduction.setCategory(null);
+                    } else {
+                        deduction.setAdditionCategory(null);
+                    }
                     leaseSettlementDeductionRepository.save(deduction);
                 }
             }
@@ -186,6 +222,7 @@ public class SettlementService {
 
     @Transactional
     public LeaseSettlement finalizeSettlement(UUID leaseId, UUID settledBy) {
+        findLeaseWithTenantCheck(leaseId);
         LeaseSettlement settlement = leaseSettlementRepository.findByLeaseId(leaseId)
                 .orElseThrow(() -> new NotFoundException("No settlement found for this lease"));
 
@@ -223,6 +260,7 @@ public class SettlementService {
         response.setLeaseId(settlement.getLeaseId());
         response.setDepositAmount(settlement.getDepositAmount());
         response.setTotalDeductions(settlement.getTotalDeductions());
+        response.setTotalAdditions(settlement.getTotalAdditions());
         response.setRefundAmount(settlement.getRefundAmount());
         response.setNotes(settlement.getNotes());
         response.setStatus(settlement.getStatus().name());
@@ -233,10 +271,12 @@ public class SettlementService {
         List<SettlementResponseDTO.DeductionDTO> deductionDTOs = deductions.stream().map(d -> {
             SettlementResponseDTO.DeductionDTO dto = new SettlementResponseDTO.DeductionDTO();
             dto.setId(d.getId());
-            dto.setCategory(d.getCategory().name());
+            dto.setCategory(d.getCategory() != null ? d.getCategory().name() : null);
             dto.setDescription(d.getDescription());
             dto.setAmount(d.getAmount());
             dto.setAutoCalculated(d.isAutoCalculated());
+            dto.setType(d.getType().name());
+            dto.setAdditionCategory(d.getAdditionCategory() != null ? d.getAdditionCategory().name() : null);
             dto.setAttachments(deductionAttachmentService.getAttachments(d.getId()));
             return dto;
         }).collect(Collectors.toList());

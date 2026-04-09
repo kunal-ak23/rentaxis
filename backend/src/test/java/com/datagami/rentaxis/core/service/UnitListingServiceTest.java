@@ -157,8 +157,8 @@ class UnitListingServiceTest {
         existing.setTenantId(tenantId);
         when(listingRepository.findById(listingId)).thenReturn(Optional.of(existing));
         when(mediaRepository.findByListingIdOrderBySortOrderAsc(listingId)).thenReturn(List.of());
-        String fakeUrl = "https://acct.blob.core.windows.net/listings/" + tenantId + "/" + listingId + "/abc.jpg";
-        String fakePath = "listings/" + tenantId + "/" + listingId + "/abc.jpg";
+        String fakeUrl = "https://acct.blob.core.windows.net/tenant-" + tenantId + "/listings/" + listingId + "/abc.jpg";
+        String fakePath = "listings/" + listingId + "/abc.jpg";
         when(blobStorageService.upload(any(), any(), any()))
                 .thenReturn(new BlobStorageService.UploadResult(fakeUrl, fakePath));
         when(mediaRepository.save(any(UnitListingMedia.class))).thenAnswer(inv -> {

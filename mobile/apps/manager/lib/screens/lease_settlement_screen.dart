@@ -33,10 +33,12 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
   String? _error;
   Map<String, dynamic>? _settlement;
   List<Map<String, dynamic>> _deductions = [];
+  List<Map<String, dynamic>> _additions = [];
   String _notes = '';
   bool _saving = false;
   final Map<String, bool> _uploadingForDeduction = {};
   final Map<int, TextEditingController> _amountControllers = {};
+  final Map<int, TextEditingController> _additionAmountControllers = {};
 
   final _notesController = TextEditingController();
 
@@ -46,6 +48,14 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
     {'value': 'CLEANING', 'label': 'Cleaning'},
     {'value': 'UTILITY_ARREARS', 'label': 'Utility Arrears'},
     {'value': 'KEY_REPLACEMENT', 'label': 'Key Replacement'},
+    {'value': 'OTHER', 'label': 'Other'},
+  ];
+
+  static const _additionCategories = [
+    {'value': 'PREPAID_RENT', 'label': 'Prepaid Rent'},
+    {'value': 'UTILITY_OVERPAYMENT', 'label': 'Utility Overpayment'},
+    {'value': 'DEPOSIT_INTEREST', 'label': 'Deposit Interest'},
+    {'value': 'LANDLORD_COMPENSATION', 'label': 'Landlord Compensation'},
     {'value': 'OTHER', 'label': 'Other'},
   ];
 
@@ -59,6 +69,9 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
   void dispose() {
     _notesController.dispose();
     for (final ctrl in _amountControllers.values) {
+      ctrl.dispose();
+    }
+    for (final ctrl in _additionAmountControllers.values) {
       ctrl.dispose();
     }
     super.dispose();
@@ -78,7 +91,23 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
     return labels[category] ?? category;
   }
 
+  String _additionCategoryLabel(String category) {
+    const labels = {
+      'PREPAID_RENT': 'Prepaid Rent',
+      'UTILITY_OVERPAYMENT': 'Utility Overpayment',
+      'DEPOSIT_INTEREST': 'Deposit Interest',
+      'LANDLORD_COMPENSATION': 'Landlord Compensation',
+      'OTHER': 'Other',
+    };
+    return labels[category] ?? category;
+  }
+
   double get _totalDeductions => _deductions.fold(
+      0.0,
+      (sum, d) =>
+          sum + (double.tryParse(d['amount']?.toString() ?? '0') ?? 0.0));
+
+  double get _totalAdditions => _additions.fold(
       0.0,
       (sum, d) =>
           sum + (double.tryParse(d['amount']?.toString() ?? '0') ?? 0.0));
@@ -86,7 +115,7 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
   double get _depositAmount =>
       (_settlement?['depositAmount'] as num?)?.toDouble() ?? 0.0;
 
-  double get _refundAmount => _depositAmount - _totalDeductions;
+  double get _refundAmount => _depositAmount - _totalDeductions + _totalAdditions;
 
   bool get _isFinalized =>
       (_settlement?['status'] as String?)?.toUpperCase() == 'FINALIZED';
@@ -109,15 +138,34 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
             'description': d['description'] ?? '',
             'amount': d['amount']?.toString() ?? '0',
             'autoCalculated': d['autoCalculated'] ?? false,
+            'type': d['type'] ?? 'DEDUCTION',
             'attachments':
                 List<Map<String, dynamic>>.from(d['attachments'] ?? []),
           };
         }).toList();
 
+        final rawAdditions = (settlement['deductions'] as List? ?? [])
+            .where((d) => d['type'] == 'ADDITION')
+            .map((d) => <String, dynamic>{
+                  'id': d['id'],
+                  'additionCategory': d['additionCategory'] ?? 'OTHER',
+                  'description': d['description'] ?? '',
+                  'amount': d['amount']?.toString() ?? '0',
+                  'autoCalculated': false,
+                  'type': 'ADDITION',
+                  'attachments': List<Map<String, dynamic>>.from(d['attachments'] ?? []),
+                })
+            .toList();
+
+        final filteredDeductions = rawDeductions
+            .where((d) => d['type'] != 'ADDITION')
+            .toList();
+
         if (mounted) {
           setState(() {
             _settlement = settlement;
-            _deductions = rawDeductions;
+            _deductions = filteredDeductions;
+            _additions = rawAdditions;
             _notes = settlement['notes'] ?? '';
             _notesController.text = _notes;
             _loading = false;
@@ -170,26 +218,39 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
       final service = ref.read(_settlementServiceProvider);
       final data = {
         'notes': _notes,
-        'deductions': _deductions
-            .map((d) => {
-                  'id': d['id'],
-                  'category': d['category'],
-                  'description': d['description'],
-                  'amount':
-                      double.tryParse(d['amount']?.toString() ?? '0') ?? 0.0,
-                  'autoCalculated': d['autoCalculated'],
-                })
-            .toList(),
+        'deductions': [
+          ..._deductions.map((d) => {
+                'id': d['id'],
+                'category': d['category'],
+                'description': d['description'],
+                'amount':
+                    double.tryParse(d['amount']?.toString() ?? '0') ?? 0.0,
+                'autoCalculated': d['autoCalculated'],
+                'type': 'DEDUCTION',
+              }),
+          ..._additions.map((d) => {
+                'id': d['id'],
+                'additionCategory': d['additionCategory'],
+                'description': d['description'],
+                'amount':
+                    double.tryParse(d['amount']?.toString() ?? '0') ?? 0.0,
+                'autoCalculated': false,
+                'type': 'ADDITION',
+              }),
+        ],
       };
       final result = await service.saveDraft(widget.leaseId, data);
       final savedDeductions = result['deductions'] as List? ?? [];
       if (mounted) {
         setState(() {
           _settlement = result;
+          final savedDeductionsList = savedDeductions
+              .where((d) => d['type'] != 'ADDITION')
+              .toList();
           for (int i = 0;
-              i < _deductions.length && i < savedDeductions.length;
+              i < _deductions.length && i < savedDeductionsList.length;
               i++) {
-            _deductions[i]['id'] = savedDeductions[i]['id'];
+            _deductions[i]['id'] = savedDeductionsList[i]['id'];
           }
           // Sync amount controllers for auto-deductions with server-returned values
           for (int i = 0; i < _deductions.length; i++) {
@@ -198,6 +259,15 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
               _amountControllers[i]!.text =
                   _deductions[i]['amount']?.toString() ?? '0';
             }
+          }
+          final savedAdditions = result['deductions'] as List? ?? [];
+          final savedAdditionsList = savedAdditions
+              .where((d) => d['type'] == 'ADDITION')
+              .toList();
+          for (int i = 0;
+              i < _additions.length && i < savedAdditionsList.length;
+              i++) {
+            _additions[i]['id'] = savedAdditionsList[i]['id'];
           }
         });
         ScaffoldMessenger.of(context).showSnackBar(
@@ -387,6 +457,134 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
     }
   }
 
+  Future<void> _uploadAttachmentForAddition(
+      String additionId, int additionIndex) async {
+    final source = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt_outlined),
+              title: const Text('Camera'),
+              onTap: () => Navigator.pop(ctx, 'camera'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Gallery'),
+              onTap: () => Navigator.pop(ctx, 'gallery'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.attach_file),
+              title: const Text('File'),
+              onTap: () => Navigator.pop(ctx, 'file'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source == null) return;
+
+    String? filePath;
+    String fileName = 'attachment';
+
+    if (source == 'camera' || source == 'gallery') {
+      final picker = ImagePicker();
+      final image = await picker.pickImage(
+        source:
+            source == 'camera' ? ImageSource.camera : ImageSource.gallery,
+        imageQuality: 85,
+      );
+      if (image == null) return;
+      filePath = image.path;
+      fileName = image.name;
+    } else {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: [
+          'pdf',
+          'mp4',
+          'mov',
+          'avi',
+          'jpg',
+          'jpeg',
+          'png',
+          'heic'
+        ],
+      );
+      if (result == null || result.files.isEmpty) return;
+      filePath = result.files.first.path;
+      fileName = result.files.first.name;
+    }
+
+    if (filePath == null) return;
+
+    setState(() => _uploadingForDeduction[additionId] = true);
+    try {
+      final service = ref.read(_settlementServiceProvider);
+      await service.uploadDeductionAttachment(additionId, filePath, fileName);
+      final attachments = await service.getDeductionAttachments(additionId);
+      if (mounted) {
+        setState(() {
+          _additions[additionIndex]['attachments'] =
+              List<Map<String, dynamic>>.from(attachments);
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Upload failed: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _uploadingForDeduction[additionId] = false);
+      }
+    }
+  }
+
+  Future<void> _deleteAttachmentForAddition(
+      String attachmentId, int additionIndex) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Attachment'),
+        content: const Text('Remove this attachment?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.danger),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      final service = ref.read(_settlementServiceProvider);
+      await service.deleteDeductionAttachment(attachmentId);
+      if (mounted) {
+        setState(() {
+          final attachments =
+              _additions[additionIndex]['attachments'] as List;
+          attachments.removeWhere((a) => a['id'] == attachmentId);
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to delete: $e')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -478,6 +676,70 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
             _buildManualDeductionsSection(readOnly: true),
             const SizedBox(height: 20),
           ],
+          if (_additions.isNotEmpty) ...[
+            _buildSectionHeader(Icons.add_circle_outline, 'Additions (Repayments)'),
+            const SizedBox(height: 12),
+            ...List.generate(
+              _additions.length,
+              (i) {
+                final addition = _additions[i];
+                final additionId = addition['id'] as String?;
+                final attachments = List<Map<String, dynamic>>.from(
+                    addition['attachments'] ?? []);
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppColors.success.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                        color: AppColors.success.withValues(alpha: 0.3)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              _additionCategoryLabel(
+                                  addition['additionCategory'] as String? ??
+                                      'OTHER'),
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w600, fontSize: 14),
+                            ),
+                          ),
+                          Text(
+                            '+ ${Formatters.currency(double.tryParse(addition['amount']?.toString() ?? '0') ?? 0)}',
+                            style: const TextStyle(
+                              color: AppColors.success,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                      if ((addition['description'] as String?)?.isNotEmpty ==
+                          true) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          addition['description'] as String,
+                          style: const TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textSecondary),
+                        ),
+                      ],
+                      if (attachments.isNotEmpty && additionId != null) ...[
+                        const SizedBox(height: 8),
+                        _buildAttachmentGrid(attachments, i, true),
+                      ],
+                    ],
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 20),
+          ],
           _buildNotesField(readOnly: true),
           const SizedBox(height: 20),
           _buildSummaryCard(),
@@ -543,6 +805,53 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
           const SizedBox(height: 20),
           _buildManualDeductionsSection(readOnly: false),
           const SizedBox(height: 20),
+          // Additions section
+          _buildSectionHeader(Icons.add_circle_outline, 'Additions (Repayments)'),
+          const SizedBox(height: 8),
+          if (_additions.isEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppColors.success.withValues(alpha: 0.04),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: AppColors.success.withValues(alpha: 0.2),
+                  style: BorderStyle.solid,
+                ),
+              ),
+              child: const Text(
+                'No additions. Tap "Add Repayment" to add repayments owed to the renter.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    fontSize: 12, color: AppColors.textMuted),
+              ),
+            )
+          else
+            ...List.generate(_additions.length,
+                (i) => _buildAdditionCard(i, _additions[i])),
+          const SizedBox(height: 4),
+          if (_isDraftOrNew)
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: () => setState(() => _additions.add({
+                      'id': null,
+                      'additionCategory': 'PREPAID_RENT',
+                      'description': '',
+                      'amount': '0',
+                      'autoCalculated': false,
+                      'type': 'ADDITION',
+                      'attachments': <Map<String, dynamic>>[],
+                    })),
+                icon: Icon(Icons.add,
+                    size: 16, color: AppColors.success),
+                label: Text('Add Repayment',
+                    style: TextStyle(
+                        color: AppColors.success, fontSize: 13)),
+              ),
+            ),
+          const SizedBox(height: 16),
           _buildNotesField(readOnly: false),
           const SizedBox(height: 20),
           _buildSummaryCard(),
@@ -1135,6 +1444,14 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
             '- ${Formatters.currency(total)}',
             valueColor: total > 0 ? AppColors.warning : Colors.white,
           ),
+          if (_totalAdditions > 0) ...[
+            const SizedBox(height: 12),
+            _buildSummaryRow(
+              'Total Additions',
+              '+ ${Formatters.currency(_totalAdditions)}',
+              valueColor: AppColors.success,
+            ),
+          ],
           const Divider(color: Colors.white24, height: 24),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1198,6 +1515,277 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  // ─── ADDITION CARD ─────────────────────────────────────────────────────────
+
+  Widget _buildAdditionCard(int index, Map<String, dynamic> addition) {
+    final isEditable = _isDraftOrNew;
+    final amountCtrl = _additionAmountControllers.putIfAbsent(
+        index,
+        () => TextEditingController(
+            text: addition['amount']?.toString() ?? '0'));
+    final attachments =
+        List<Map<String, dynamic>>.from(addition['attachments'] ?? []);
+    final additionId = addition['id'] as String?;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.success.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: AppColors.success.withValues(alpha: 0.3),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  value: addition['additionCategory'] as String? ?? 'OTHER',
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Category',
+                    isDense: true,
+                  ),
+                  items: _additionCategories
+                      .map((c) => DropdownMenuItem<String>(
+                            value: c['value'],
+                            child: Text(c['label']!,
+                                style: const TextStyle(fontSize: 13)),
+                          ))
+                      .toList(),
+                  onChanged: isEditable
+                      ? (val) {
+                          if (val != null) {
+                            setState(() =>
+                                _additions[index]['additionCategory'] = val);
+                          }
+                        }
+                      : null,
+                ),
+              ),
+              const SizedBox(width: 10),
+              SizedBox(
+                width: 110,
+                child: TextFormField(
+                  controller: amountCtrl,
+                  enabled: isEditable,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  textAlign: TextAlign.end,
+                  decoration: InputDecoration(
+                    labelText: 'Amount',
+                    prefixText: '+ ',
+                    prefixStyle: TextStyle(
+                        color: AppColors.success,
+                        fontWeight: FontWeight.w600),
+                    isDense: true,
+                  ),
+                  onChanged: (v) {
+                    _additions[index]['amount'] = v;
+                  },
+                ),
+              ),
+              if (isEditable)
+                IconButton(
+                  icon: const Icon(Icons.delete_outline,
+                      color: AppColors.danger, size: 20),
+                  onPressed: () => setState(() {
+                    _additions.removeAt(index);
+                    // Clear controllers so they're rebuilt from correct indices
+                    for (final ctrl in _additionAmountControllers.values) {
+                      ctrl.dispose();
+                    }
+                    _additionAmountControllers.clear();
+                  }),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          TextFormField(
+            initialValue: addition['description'] as String? ?? '',
+            enabled: isEditable,
+            decoration: const InputDecoration(
+              labelText: 'Description (optional)',
+              isDense: true,
+            ),
+            onChanged: (v) => _additions[index]['description'] = v,
+          ),
+          if (additionId != null) ...[
+            const SizedBox(height: 10),
+            // Inline attachment section — updates _additions[index], not _deductions
+            Row(
+              children: [
+                const Icon(Icons.attach_file,
+                    size: 16, color: AppColors.textSecondary),
+                const SizedBox(width: 6),
+                const Text(
+                  'Attachments',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '${attachments.length}/10',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                if (isEditable && attachments.length < 10)
+                  (_uploadingForDeduction[additionId] == true)
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppColors.primary,
+                          ),
+                        )
+                      : TextButton.icon(
+                          onPressed: () =>
+                              _uploadAttachmentForAddition(additionId, index),
+                          icon: const Icon(Icons.add, size: 16),
+                          label: const Text('Add',
+                              style: TextStyle(fontSize: 12)),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 4),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                        ),
+              ],
+            ),
+            if (attachments.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate:
+                    const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  crossAxisSpacing: 8,
+                  mainAxisSpacing: 8,
+                  childAspectRatio: 1.4,
+                ),
+                itemCount: attachments.length,
+                itemBuilder: (context, i) {
+                  final attachment = attachments[i];
+                  final name = (attachment['name'] ??
+                      attachment['fileName'] ?? '') as String;
+                  final isImage = _isImageFile(name);
+                  final isVideo = _isVideoFile(name);
+                  final attachmentId = attachment['id'] as String?;
+
+                  return GestureDetector(
+                    onLongPress: (!isEditable || attachmentId == null)
+                        ? null
+                        : () => _deleteAttachmentForAddition(
+                            attachmentId, index),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: AppColors.background,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            if (isImage)
+                              _buildImageThumbnail(attachment)
+                            else
+                              Center(
+                                child: Column(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      isVideo
+                                          ? Icons.videocam_outlined
+                                          : Icons.picture_as_pdf_outlined,
+                                      size: 28,
+                                      color: isVideo
+                                          ? AppColors.primary
+                                          : AppColors.danger,
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      name.length > 14
+                                          ? '${name.substring(0, 12)}…'
+                                          : name,
+                                      style: const TextStyle(
+                                          fontSize: 10,
+                                          color: AppColors.textSecondary),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            if (isEditable && attachmentId != null)
+                              Positioned(
+                                top: 4,
+                                right: 4,
+                                child: GestureDetector(
+                                  onTap: () =>
+                                      _deleteAttachmentForAddition(
+                                          attachmentId, index),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black54,
+                                      borderRadius:
+                                          BorderRadius.circular(4),
+                                    ),
+                                    child: const Icon(Icons.close,
+                                        size: 12, color: Colors.white),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ] else if (isEditable)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                'Save draft to enable attachments',
+                style: TextStyle(
+                    fontSize: 11,
+                    color: AppColors.textMuted,
+                    fontStyle: FontStyle.italic),
+              ),
+            ),
+        ],
+      ),
     );
   }
 

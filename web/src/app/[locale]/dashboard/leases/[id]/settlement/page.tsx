@@ -26,6 +26,8 @@ type DeductionItem = {
     amount: number;
     autoCalculated: boolean;
     attachments: AttachmentItem[];
+    type?: string;          // "DEDUCTION" or "ADDITION"
+    additionCategory?: string;
 };
 
 type Settlement = {
@@ -33,6 +35,7 @@ type Settlement = {
     leaseId: string;
     depositAmount: number;
     totalDeductions: number;
+    totalAdditions: number;
     refundAmount: number;
     notes: string;
     status: string;
@@ -73,6 +76,22 @@ const DEDUCTION_CATEGORY_LABELS: Record<string, string> = {
 const STATUS_COLORS: Record<string, string> = {
     DRAFT: "bg-input text-muted border-border",
     FINALIZED: "bg-success/10 text-success border-success/20",
+};
+
+const ADDITION_CATEGORIES = [
+    { value: "PREPAID_RENT", label: "Prepaid Rent" },
+    { value: "UTILITY_OVERPAYMENT", label: "Utility Overpayment" },
+    { value: "DEPOSIT_INTEREST", label: "Deposit Interest" },
+    { value: "LANDLORD_COMPENSATION", label: "Landlord Compensation" },
+    { value: "OTHER", label: "Other" },
+];
+
+const ADDITION_CATEGORY_LABELS: Record<string, string> = {
+    PREPAID_RENT: "Prepaid Rent",
+    UTILITY_OVERPAYMENT: "Utility Overpayment",
+    DEPOSIT_INTEREST: "Deposit Interest",
+    LANDLORD_COMPENSATION: "Landlord Compensation",
+    OTHER: "Other",
 };
 
 function AttachmentThumbnail({
@@ -129,6 +148,7 @@ export default function SettlementPage() {
     const [depositAmount, setDepositAmount] = useState(0);
     const [autoDeductions, setAutoDeductions] = useState<DeductionItem[]>([]);
     const [manualDeductions, setManualDeductions] = useState<DeductionItem[]>([]);
+    const [additions, setAdditions] = useState<DeductionItem[]>([]);
     const [notes, setNotes] = useState("");
     const [savingDraft, setSavingDraft] = useState(false);
     const [finalizing, setFinalizing] = useState(false);
@@ -146,7 +166,8 @@ export default function SettlementPage() {
         ...autoDeductions,
         ...manualDeductions,
     ].reduce((sum, d) => sum + (d.amount || 0), 0);
-    const refundAmount = depositAmount - totalDeductions;
+    const totalAdditions = additions.reduce((sum, d) => sum + (d.amount || 0), 0);
+    const refundAmount = depositAmount - totalDeductions + totalAdditions;
 
     const fetchAttachmentsForDeduction = useCallback(async (deductionId: string): Promise<AttachmentItem[]> => {
         try {
@@ -173,9 +194,11 @@ export default function SettlementPage() {
                 setNotes(s.notes || "");
 
                 const auto = s.deductions.filter((d: DeductionItem) => d.autoCalculated);
-                const manual = s.deductions.filter((d: DeductionItem) => !d.autoCalculated);
+                const manual = s.deductions.filter((d: DeductionItem) => !d.autoCalculated && d.type !== "ADDITION");
+                const additionItems = s.deductions.filter((d: DeductionItem) => d.type === "ADDITION");
                 setAutoDeductions(auto);
                 setManualDeductions(manual);
+                setAdditions(additionItems);
                 return;
             }
         } catch (e) { console.error("Failed to load settlement:", e); }
@@ -222,6 +245,7 @@ export default function SettlementPage() {
                 description: d.description,
                 amount: d.amount,
                 autoCalculated: true,
+                type: "DEDUCTION",
             })),
             ...manualDeductions.map(d => ({
                 id: d.id || undefined,
@@ -229,6 +253,15 @@ export default function SettlementPage() {
                 description: d.description,
                 amount: d.amount,
                 autoCalculated: false,
+                type: "DEDUCTION",
+            })),
+            ...additions.map(d => ({
+                id: d.id || undefined,
+                additionCategory: d.additionCategory || d.category,
+                description: d.description,
+                amount: d.amount,
+                autoCalculated: false,
+                type: "ADDITION",
             })),
         ].filter(d => d.amount > 0);
     };
@@ -298,6 +331,9 @@ export default function SettlementPage() {
                 setManualDeductions(prev =>
                     prev.map(d => d.id === deductionId ? { ...d, attachments: newAttachments } : d)
                 );
+                setAdditions(prev =>
+                    prev.map(d => d.id === deductionId ? { ...d, attachments: newAttachments } : d)
+                );
             }
         } catch (e) { console.error("Failed to upload file:", e); } finally {
             setUploadingDeductionId(null);
@@ -315,6 +351,9 @@ export default function SettlementPage() {
                     prev.map(d => d.id === deductionId ? { ...d, attachments: newAttachments } : d)
                 );
                 setManualDeductions(prev =>
+                    prev.map(d => d.id === deductionId ? { ...d, attachments: newAttachments } : d)
+                );
+                setAdditions(prev =>
                     prev.map(d => d.id === deductionId ? { ...d, attachments: newAttachments } : d)
                 );
             }
@@ -592,6 +631,142 @@ export default function SettlementPage() {
                     </div>
                 </div>
 
+                {/* Additions (Repayments to Renter) */}
+                <div className="bg-surface rounded-xl border border-success/30">
+                    <div className="px-5 py-3.5 border-b border-success/20 flex items-center justify-between">
+                        <p className="text-[10px] font-semibold text-success uppercase tracking-wider">Additions (Repayments)</p>
+                        {!isFinalized && (
+                            <button
+                                onClick={() => setAdditions(prev => [
+                                    ...prev,
+                                    { category: "PREPAID_RENT", additionCategory: "PREPAID_RENT", description: "", amount: 0, autoCalculated: false, attachments: [], type: "ADDITION" },
+                                ])}
+                                className="flex items-center gap-1 text-[10px] font-semibold text-success hover:text-success/80 cursor-pointer"
+                            >
+                                <Plus size={12} /> Add Repayment
+                            </button>
+                        )}
+                    </div>
+                    <div className="p-4">
+                        {additions.length > 0 ? (
+                            <div className="space-y-3">
+                                {additions.map((d, i) => (
+                                    <div key={d.id ?? `add-${i}`} className="bg-success/5 rounded-lg border border-success/20 p-3 space-y-3">
+                                        {/* Category, Amount, Delete */}
+                                        <div className="flex items-center gap-2">
+                                            <select
+                                                value={d.additionCategory || d.category}
+                                                disabled={isFinalized}
+                                                onChange={(e) => setAdditions(prev =>
+                                                    prev.map((dd, ii) => ii === i ? { ...dd, additionCategory: e.target.value, category: e.target.value } : dd)
+                                                )}
+                                                className="flex-1 border border-success/30 rounded-lg bg-surface px-2 py-1.5 text-xs text-foreground focus:ring-2 focus:ring-success/20 focus:border-success focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
+                                            >
+                                                {ADDITION_CATEGORIES.map(c => (
+                                                    <option key={c.value} value={c.value}>{c.label}</option>
+                                                ))}
+                                            </select>
+                                            <div className="flex items-center gap-1.5 shrink-0">
+                                                <span className="text-[10px] text-success font-semibold">+ AED</span>
+                                                <input
+                                                    type="number"
+                                                    value={d.amount}
+                                                    min={0}
+                                                    step={0.01}
+                                                    placeholder="0"
+                                                    disabled={isFinalized}
+                                                    onChange={(e) => {
+                                                        const val = parseFloat(e.target.value) || 0;
+                                                        setAdditions(prev =>
+                                                            prev.map((dd, ii) => ii === i ? { ...dd, amount: val } : dd)
+                                                        );
+                                                    }}
+                                                    className="w-24 border border-success/30 rounded-lg bg-surface px-3 py-1.5 text-xs text-foreground text-end tabular-nums focus:ring-2 focus:ring-success/20 focus:border-success focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
+                                                />
+                                            </div>
+                                            {!isFinalized && (
+                                                <button
+                                                    onClick={() => setAdditions(prev => prev.filter((_, ii) => ii !== i))}
+                                                    className="p-1 text-error hover:text-error/80 cursor-pointer shrink-0"
+                                                >
+                                                    <Trash2 size={13} />
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        {/* Description */}
+                                        <input
+                                            type="text"
+                                            value={d.description}
+                                            placeholder="Description (optional)"
+                                            disabled={isFinalized}
+                                            onChange={(e) => setAdditions(prev =>
+                                                prev.map((dd, ii) => ii === i ? { ...dd, description: e.target.value } : dd)
+                                            )}
+                                            className="w-full border border-success/20 rounded-lg bg-surface px-3 py-1.5 text-xs text-foreground placeholder:text-muted/50 focus:ring-2 focus:ring-success/20 focus:border-success focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
+                                        />
+
+                                        {/* Attachments — same pattern as deductions */}
+                                        <div>
+                                            <div className="flex items-center justify-between mb-2">
+                                                <p className="text-[10px] font-semibold text-muted uppercase tracking-wider flex items-center gap-1">
+                                                    <Paperclip size={9} /> Attachments ({d.attachments.length}/10)
+                                                </p>
+                                                {d.id ? (
+                                                    d.attachments.length < 10 && (
+                                                        <label className={cn(
+                                                            "flex items-center gap-1 px-2 py-1 rounded-lg text-[9px] font-semibold transition-colors cursor-pointer",
+                                                            uploadingDeductionId === d.id
+                                                                ? "bg-input text-muted cursor-not-allowed"
+                                                                : "bg-success/10 text-success hover:bg-success/20"
+                                                        )}>
+                                                            {uploadingDeductionId === d.id
+                                                                ? <Loader2 size={9} className="animate-spin" />
+                                                                : <Upload size={9} />
+                                                            }
+                                                            Add Files
+                                                            <input
+                                                                ref={el => { fileInputRefs.current[d.id!] = el; }}
+                                                                type="file"
+                                                                accept="image/*,video/*,.pdf"
+                                                                className="hidden"
+                                                                disabled={uploadingDeductionId === d.id}
+                                                                onChange={(e) => {
+                                                                    const file = e.target.files?.[0];
+                                                                    if (file && d.id) handleFileUpload(d.id, file);
+                                                                    if (e.target) e.target.value = "";
+                                                                }}
+                                                            />
+                                                        </label>
+                                                    )
+                                                ) : (
+                                                    <p className="text-[9px] text-muted italic">Save draft to enable file attachments</p>
+                                                )}
+                                            </div>
+                                            {d.attachments.length > 0 && (
+                                                <div className="flex flex-wrap gap-2">
+                                                    {d.attachments.map(att => (
+                                                        <AttachmentThumbnail
+                                                            key={att.id}
+                                                            attachment={att}
+                                                            onDelete={(id) => d.id && handleDeleteAttachment(id, d.id)}
+                                                            isDraft={isDraft}
+                                                        />
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <p className="text-xs text-muted text-center py-4 bg-success/5 rounded-lg border border-dashed border-success/20">
+                                No additions. Add repayments owed to the renter.
+                            </p>
+                        )}
+                    </div>
+                </div>
+
                 {/* Notes */}
                 <div className="bg-surface rounded-xl border border-border">
                     <div className="px-5 py-3.5 border-b border-border">
@@ -625,6 +800,14 @@ export default function SettlementPage() {
                                 {totalDeductions > 0 ? `- ${formatCurrency(totalDeductions)}` : formatCurrency(0)}
                             </span>
                         </div>
+                        {totalAdditions > 0 && (
+                            <div className="flex justify-between items-center">
+                                <span className="text-xs text-muted">Total Additions</span>
+                                <span className="text-xs font-semibold text-success tabular-nums">
+                                    + {formatCurrency(totalAdditions)}
+                                </span>
+                            </div>
+                        )}
                         <div className="border-t-2 border-border pt-3 flex justify-between items-center">
                             <span className="text-sm font-bold text-foreground">Refund to Renter</span>
                             <span className={cn(

@@ -28,6 +28,9 @@ public class LeaseSettlement extends BaseTenantEntity {
     @Column(name = "total_deductions", nullable = false)
     private BigDecimal totalDeductions;
 
+    @Column(name = "total_additions", nullable = false)
+    private BigDecimal totalAdditions = BigDecimal.ZERO;
+
     @Column(name = "refund_amount", nullable = false)
     private BigDecimal refundAmount;
 

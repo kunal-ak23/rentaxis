@@ -1,0 +1,35 @@
+databaseChangeLog:
+  - changeSet:
+      id: 40-add-type-to-deductions
+      author: rentaxis
+      changes:
+        - addColumn:
+            tableName: lease_settlement_deductions
+            columns:
+              - column:
+                  name: type
+                  type: varchar(20)
+                  defaultValue: DEDUCTION
+                  constraints:
+                    nullable: false
+              - column:
+                  name: addition_category
+                  type: varchar(50)
+                  constraints:
+                    nullable: true
+      comment: "Add type discriminator (DEDUCTION/ADDITION) and addition_category to settlement line items."
+
+  - changeSet:
+      id: 40-add-total-additions-to-settlements
+      author: rentaxis
+      changes:
+        - addColumn:
+            tableName: lease_settlements
+            columns:
+              - column:
+                  name: total_additions
+                  type: decimal(15,2)
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+      comment: "Add total_additions column to lease_settlements for refund calculation."
