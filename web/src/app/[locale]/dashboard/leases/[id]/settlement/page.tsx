@@ -217,12 +217,14 @@ export default function SettlementPage() {
     const buildDeductionPayload = () => {
         return [
             ...autoDeductions.map(d => ({
+                id: d.id || undefined,
                 category: d.category,
                 description: d.description,
                 amount: d.amount,
                 autoCalculated: true,
             })),
             ...manualDeductions.map(d => ({
+                id: d.id || undefined,
                 category: d.category,
                 description: d.description,
                 amount: d.amount,

@@ -22,8 +22,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -119,13 +122,6 @@ public class SettlementService {
             if (settlement.getStatus() == SettlementStatus.FINALIZED) {
                 throw new IllegalStateException("Settlement is already finalized");
             }
-            List<LeaseSettlementDeduction> oldDeductions =
-                    leaseSettlementDeductionRepository.findBySettlementIdOrderByCreatedAtAsc(settlement.getId());
-            // Delete attachments before deductions to avoid FK constraint violation
-            for (LeaseSettlementDeduction d : oldDeductions) {
-                deductionAttachmentService.deleteAllByDeductionId(d.getId());
-            }
-            leaseSettlementDeductionRepository.deleteAll(oldDeductions);
         } else {
             settlement = new LeaseSettlement();
             settlement.setLeaseId(leaseId);
@@ -146,15 +142,42 @@ public class SettlementService {
 
         LeaseSettlement savedSettlement = leaseSettlementRepository.save(settlement);
 
+        // Reconcile deductions: update existing (preserving attachments), create new, delete removed
+        List<LeaseSettlementDeduction> oldDeductions =
+                leaseSettlementDeductionRepository.findBySettlementIdOrderByCreatedAtAsc(savedSettlement.getId());
+        Map<UUID, LeaseSettlementDeduction> oldById = oldDeductions.stream()
+                .collect(Collectors.toMap(LeaseSettlementDeduction::getId, d -> d));
+
+        Set<UUID> incomingIds = new HashSet<>();
         if (dto.getDeductions() != null) {
             for (SaveSettlementDTO.DeductionItemDTO item : dto.getDeductions()) {
-                LeaseSettlementDeduction deduction = new LeaseSettlementDeduction();
-                deduction.setSettlementId(savedSettlement.getId());
-                deduction.setCategory(item.getCategory());
-                deduction.setDescription(item.getDescription());
-                deduction.setAmount(item.getAmount());
-                deduction.setAutoCalculated(item.isAutoCalculated());
-                leaseSettlementDeductionRepository.save(deduction);
+                if (item.getId() != null && oldById.containsKey(item.getId())) {
+                    // Update existing deduction in-place (preserves attachments)
+                    LeaseSettlementDeduction existing = oldById.get(item.getId());
+                    existing.setCategory(item.getCategory());
+                    existing.setDescription(item.getDescription());
+                    existing.setAmount(item.getAmount());
+                    existing.setAutoCalculated(item.isAutoCalculated());
+                    leaseSettlementDeductionRepository.save(existing);
+                    incomingIds.add(item.getId());
+                } else {
+                    // New deduction
+                    LeaseSettlementDeduction deduction = new LeaseSettlementDeduction();
+                    deduction.setSettlementId(savedSettlement.getId());
+                    deduction.setCategory(item.getCategory());
+                    deduction.setDescription(item.getDescription());
+                    deduction.setAmount(item.getAmount());
+                    deduction.setAutoCalculated(item.isAutoCalculated());
+                    leaseSettlementDeductionRepository.save(deduction);
+                }
+            }
+        }
+
+        // Delete only deductions that were removed (and their attachments via CASCADE)
+        for (LeaseSettlementDeduction old : oldDeductions) {
+            if (!incomingIds.contains(old.getId())) {
+                deductionAttachmentService.deleteAllByDeductionId(old.getId());
+                leaseSettlementDeductionRepository.delete(old);
             }
         }
 

@@ -7,6 +7,7 @@ import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.UUID;
 
 @Getter
 @Setter
@@ -17,6 +18,7 @@ public class SaveSettlementDTO {
     @Getter
     @Setter
     public static class DeductionItemDTO {
+        private UUID id; // optional — if set, updates existing deduction (preserving attachments)
         @NotNull
         private DeductionCategory category;
         private String description;

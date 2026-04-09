@@ -354,7 +354,7 @@ export default function LeaseDetailPage() {
                         <Download size={14} /> Download Contract
                     </button>
                 )}
-                {lease.status === "ACTIVE" && hasRole(userRole, ["SUPER_ADMIN", "TENANT_ADMIN"]) && (
+                {(lease.status === "ACTIVE" || lease.status === "NOTICE_GIVEN") && hasRole(userRole, ["SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER"]) && (
                     <Link
                         href={`/dashboard/leases/${leaseId}/settlement`}
                         className="flex items-center gap-2 bg-error text-white px-4 py-2 rounded-lg text-xs font-semibold hover:bg-error/90 transition-all"

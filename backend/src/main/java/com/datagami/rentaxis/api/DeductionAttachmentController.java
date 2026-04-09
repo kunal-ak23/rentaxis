@@ -45,8 +45,9 @@ public class DeductionAttachmentController {
         DeductionAttachmentDTO meta = attachmentService.getAttachmentById(id);
         InputStreamResource resource = new InputStreamResource(attachmentService.downloadAttachmentStream(id));
         String contentType = meta.getFileType() != null ? meta.getFileType() : "application/octet-stream";
+        String safeName = meta.getName().replaceAll("[\"\\r\\n\\\\/:*?<>|]", "_");
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + meta.getName() + "\"")
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + safeName + "\"")
                 .contentType(MediaType.parseMediaType(contentType))
                 .body(resource);
     }
