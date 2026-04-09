@@ -19,6 +19,7 @@ type OfficePurpose = "CHEQUE_REPLACEMENT" | "LEASE_RENEWAL" | "OTHER";
 
 type Lease = {
     id: string;
+    propertyId?: string;
     propertyName: string;
     unitIdentifier: string;
     propertyManagerId?: string;
@@ -136,6 +137,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
             setSelectedDate("");
             setSlots([]);
             setSelectedSlot(null);
+            setPmUsers([]);
             setSelectedPmId("");
             setNotes("");
             setChequeNotes("");
@@ -159,6 +161,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                 const active = arr.filter((l: any) => l.status === "ACTIVE");
                 setLeases(active.map((l: any) => ({
                     id: l.id,
+                    propertyId: l.propertyId,
                     propertyName: l.propertyName ?? "—",
                     unitIdentifier: l.unitIdentifier ?? l.unitNumber ?? "—",
                     propertyManagerId: l.propertyManagerId,
@@ -194,12 +197,12 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
         } catch { /* ignore */ }
     }, []);
 
-    const fetchPmUsers = useCallback(async () => {
+    const fetchPmUsers = useCallback(async (propertyId: string) => {
+        if (!propertyId) return;
         try {
-            const res = await fetch("/api/proxy/v1/users?role=PROPERTY_MANAGER");
+            const res = await fetch(`/api/proxy/v1/properties/${propertyId}/managers`);
             if (res.ok) {
-                const data = await res.json();
-                const arr = Array.isArray(data) ? data : data.content ?? [];
+                const arr: any[] = await res.json();
                 setPmUsers(arr.map((u: any) => ({
                     id: u.id,
                     fullName: u.fullName ?? `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim(),
@@ -237,6 +240,8 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
     useEffect(() => {
         if (selectedPropertyId) fetchUnits(selectedPropertyId);
         else setUnits([]);
+        setPmUsers([]);
+        setSelectedPmId("");
     }, [selectedPropertyId, fetchUnits]);
 
     // Derive hostUserId for slot fetching
@@ -267,10 +272,12 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
     }, [isRenter, meetingType, leases, selectedLeaseId, properties, selectedPropertyId]);
 
     useEffect(() => {
-        if (step === 3 && needsPmPicker() && pmUsers.length === 0) {
-            fetchPmUsers();
-        }
-    }, [step, needsPmPicker, pmUsers.length, fetchPmUsers]);
+        if (step !== 3 || !needsPmPicker()) return;
+        const propertyId = meetingType === "PROPERTY_VISIT"
+            ? selectedPropertyId
+            : leases.find(l => l.id === selectedLeaseId)?.propertyId ?? "";
+        if (propertyId) fetchPmUsers(propertyId);
+    }, [step, meetingType, selectedPropertyId, selectedLeaseId, leases, needsPmPicker, fetchPmUsers]);
 
     useEffect(() => {
         const hostId = deriveHostUserId();
