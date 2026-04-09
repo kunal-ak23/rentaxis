@@ -92,6 +92,7 @@ public class SettlementService {
         }
         settlement.setTotalDeductions(totalDeductions);
         settlement.setTotalAdditions(BigDecimal.ZERO);
+        // Legacy direct-terminate path: all items treated as DEDUCTIONS. Use saveDraft + finalizeSettlement for additions support.
         settlement.setRefundAmount(depositAmount.subtract(totalDeductions));
 
         LeaseSettlement savedSettlement = leaseSettlementRepository.save(settlement);
@@ -221,6 +222,7 @@ public class SettlementService {
 
     @Transactional
     public LeaseSettlement finalizeSettlement(UUID leaseId, UUID settledBy) {
+        findLeaseWithTenantCheck(leaseId);
         LeaseSettlement settlement = leaseSettlementRepository.findByLeaseId(leaseId)
                 .orElseThrow(() -> new NotFoundException("No settlement found for this lease"));
 
