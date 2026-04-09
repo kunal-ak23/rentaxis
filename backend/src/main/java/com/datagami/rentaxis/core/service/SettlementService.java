@@ -2,8 +2,10 @@ package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.dto.SaveSettlementDTO;
 import com.datagami.rentaxis.api.dto.SettlementPreviewDTO;
+import com.datagami.rentaxis.api.dto.SettlementResponseDTO;
 import com.datagami.rentaxis.api.dto.TerminateWithSettlementDTO;
 import com.datagami.rentaxis.api.exception.NotFoundException;
+import com.datagami.rentaxis.core.service.DeductionAttachmentService;
 import com.datagami.rentaxis.domain.entity.enums.SettlementStatus;
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.LeaseSettlement;
@@ -24,6 +26,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -34,6 +37,7 @@ public class SettlementService {
     private final LeaseRepository leaseRepository;
     private final PaymentScheduleRepository paymentScheduleRepository;
     private final PenaltyService penaltyService;
+    private final DeductionAttachmentService deductionAttachmentService;
 
     @Transactional(readOnly = true)
     public SettlementPreviewDTO getSettlementPreview(UUID leaseId) {
@@ -178,6 +182,41 @@ public class SettlementService {
     @Transactional(readOnly = true)
     public List<LeaseSettlementDeduction> getSettlementDeductions(UUID settlementId) {
         return leaseSettlementDeductionRepository.findBySettlementIdOrderByCreatedAtAsc(settlementId);
+    }
+
+    @Transactional(readOnly = true)
+    public SettlementResponseDTO buildSettlementResponse(UUID leaseId) {
+        LeaseSettlement settlement = leaseSettlementRepository.findByLeaseId(leaseId)
+                .orElseThrow(() -> new NotFoundException("Settlement not found"));
+
+        List<LeaseSettlementDeduction> deductions =
+                leaseSettlementDeductionRepository.findBySettlementIdOrderByCreatedAtAsc(settlement.getId());
+
+        SettlementResponseDTO response = new SettlementResponseDTO();
+        response.setId(settlement.getId());
+        response.setLeaseId(settlement.getLeaseId());
+        response.setDepositAmount(settlement.getDepositAmount());
+        response.setTotalDeductions(settlement.getTotalDeductions());
+        response.setRefundAmount(settlement.getRefundAmount());
+        response.setNotes(settlement.getNotes());
+        response.setStatus(settlement.getStatus().name());
+        response.setSettledBy(settlement.getSettledBy());
+        response.setSettledAt(settlement.getSettledAt());
+        response.setCreatedAt(settlement.getCreatedAt());
+
+        List<SettlementResponseDTO.DeductionDTO> deductionDTOs = deductions.stream().map(d -> {
+            SettlementResponseDTO.DeductionDTO dto = new SettlementResponseDTO.DeductionDTO();
+            dto.setId(d.getId());
+            dto.setCategory(d.getCategory().name());
+            dto.setDescription(d.getDescription());
+            dto.setAmount(d.getAmount());
+            dto.setAutoCalculated(d.isAutoCalculated());
+            dto.setAttachments(deductionAttachmentService.getAttachments(d.getId()));
+            return dto;
+        }).collect(Collectors.toList());
+
+        response.setDeductions(deductionDTOs);
+        return response;
     }
 
     private Lease findLeaseWithTenantCheck(UUID leaseId) {

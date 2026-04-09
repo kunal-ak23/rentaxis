@@ -1,6 +1,7 @@
 package com.datagami.rentaxis.api;
 
 import com.datagami.rentaxis.api.dto.*;
+import com.datagami.rentaxis.api.dto.SaveSettlementDTO;
 import com.datagami.rentaxis.core.service.ContractGenerationService;
 import com.datagami.rentaxis.core.service.LeaseService;
 import com.datagami.rentaxis.core.service.SettlementService;
@@ -91,11 +92,31 @@ public class LeaseController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
     public ResponseEntity<SettlementResponseDTO> getSettlement(@PathVariable UUID id) {
         return settlementService.getSettlement(id)
-                .map(settlement -> {
-                    var deductions = settlementService.getSettlementDeductions(settlement.getId());
-                    return ResponseEntity.ok(new SettlementResponseDTO(settlement, deductions));
-                })
+                .map(settlement -> ResponseEntity.ok(settlementService.buildSettlementResponse(id)))
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    @PostMapping("/{id}/settlement/draft")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
+    public ResponseEntity<SettlementResponseDTO> saveSettlementDraft(
+            @PathVariable UUID id,
+            @RequestBody SaveSettlementDTO dto,
+            HttpServletRequest request) {
+        String userIdStr = request.getHeader("X-User-Id");
+        UUID userId = userIdStr != null ? UUID.fromString(userIdStr) : null;
+        settlementService.saveDraft(id, dto, userId);
+        return ResponseEntity.ok(settlementService.buildSettlementResponse(id));
+    }
+
+    @PostMapping("/{id}/settlement/finalize")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
+    public ResponseEntity<LeaseDTO> finalizeSettlement(
+            @PathVariable UUID id,
+            HttpServletRequest request) {
+        String userIdStr = request.getHeader("X-User-Id");
+        UUID settledBy = userIdStr != null ? UUID.fromString(userIdStr) : null;
+        settlementService.finalizeSettlement(id, settledBy);
+        return ResponseEntity.ok(leaseService.terminateLease(id, null));
     }
 
     @GetMapping("/{id}/events")
