@@ -1,6 +1,7 @@
 package com.datagami.rentaxis.api.dto;
 
 import com.datagami.rentaxis.domain.entity.enums.DeductionCategory;
+import com.datagami.rentaxis.domain.entity.enums.LineItemType;
 import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.Setter;
@@ -24,7 +25,7 @@ public class SaveSettlementDTO {
         @NotNull
         private BigDecimal amount;
         private boolean autoCalculated;
-        private String type; // "DEDUCTION" (default) or "ADDITION"
+        private LineItemType type; // enum: DEDUCTION (default) or ADDITION
         private String additionCategory; // required when type = ADDITION
     }
 }
