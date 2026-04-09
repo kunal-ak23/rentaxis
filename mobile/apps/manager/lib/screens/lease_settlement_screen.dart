@@ -548,6 +548,70 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
             _buildManualDeductionsSection(readOnly: true),
             const SizedBox(height: 20),
           ],
+          if (_additions.isNotEmpty) ...[
+            _buildSectionHeader(Icons.add_circle_outline, 'Additions (Repayments)'),
+            const SizedBox(height: 12),
+            ...List.generate(
+              _additions.length,
+              (i) {
+                final addition = _additions[i];
+                final additionId = addition['id'] as String?;
+                final attachments = List<Map<String, dynamic>>.from(
+                    addition['attachments'] ?? []);
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppColors.success.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                        color: AppColors.success.withValues(alpha: 0.3)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              _additionCategoryLabel(
+                                  addition['additionCategory'] as String? ??
+                                      'OTHER'),
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w600, fontSize: 14),
+                            ),
+                          ),
+                          Text(
+                            '+ ${Formatters.currency(double.tryParse(addition['amount']?.toString() ?? '0') ?? 0)}',
+                            style: const TextStyle(
+                              color: AppColors.success,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                      if ((addition['description'] as String?)?.isNotEmpty ==
+                          true) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          addition['description'] as String,
+                          style: const TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textSecondary),
+                        ),
+                      ],
+                      if (attachments.isNotEmpty && additionId != null) ...[
+                        const SizedBox(height: 8),
+                        _buildAttachmentGrid(attachments, i, true),
+                      ],
+                    ],
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 20),
+          ],
           _buildNotesField(readOnly: true),
           const SizedBox(height: 20),
           _buildSummaryCard(),
@@ -613,6 +677,53 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
           const SizedBox(height: 20),
           _buildManualDeductionsSection(readOnly: false),
           const SizedBox(height: 20),
+          // Additions section
+          _buildSectionHeader(Icons.add_circle_outline, 'Additions (Repayments)'),
+          const SizedBox(height: 8),
+          if (_additions.isEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppColors.success.withValues(alpha: 0.04),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: AppColors.success.withValues(alpha: 0.2),
+                  style: BorderStyle.solid,
+                ),
+              ),
+              child: const Text(
+                'No additions. Tap "Add Repayment" to add repayments owed to the renter.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    fontSize: 12, color: AppColors.textMuted),
+              ),
+            )
+          else
+            ...List.generate(_additions.length,
+                (i) => _buildAdditionCard(i, _additions[i])),
+          const SizedBox(height: 4),
+          if (_isDraftOrNew)
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: () => setState(() => _additions.add({
+                      'id': null,
+                      'additionCategory': 'PREPAID_RENT',
+                      'description': '',
+                      'amount': '0',
+                      'autoCalculated': false,
+                      'type': 'ADDITION',
+                      'attachments': <Map<String, dynamic>>[],
+                    })),
+                icon: Icon(Icons.add,
+                    size: 16, color: AppColors.success),
+                label: Text('Add Repayment',
+                    style: TextStyle(
+                        color: AppColors.success, fontSize: 13)),
+              ),
+            ),
+          const SizedBox(height: 16),
           _buildNotesField(readOnly: false),
           const SizedBox(height: 20),
           _buildSummaryCard(),
@@ -1205,6 +1316,14 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
             '- ${Formatters.currency(total)}',
             valueColor: total > 0 ? AppColors.warning : Colors.white,
           ),
+          if (_totalAdditions > 0) ...[
+            const SizedBox(height: 12),
+            _buildSummaryRow(
+              'Total Additions',
+              '+ ${Formatters.currency(_totalAdditions)}',
+              valueColor: AppColors.success,
+            ),
+          ],
           const Divider(color: Colors.white24, height: 24),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1268,6 +1387,121 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  // ─── ADDITION CARD ─────────────────────────────────────────────────────────
+
+  Widget _buildAdditionCard(int index, Map<String, dynamic> addition) {
+    final isEditable = _isDraftOrNew;
+    final amountCtrl = _additionAmountControllers.putIfAbsent(
+        index,
+        () => TextEditingController(
+            text: addition['amount']?.toString() ?? '0'));
+    final attachments =
+        List<Map<String, dynamic>>.from(addition['attachments'] ?? []);
+    final additionId = addition['id'] as String?;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.success.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: AppColors.success.withValues(alpha: 0.3),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  value: addition['additionCategory'] as String? ?? 'OTHER',
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Category',
+                    isDense: true,
+                  ),
+                  items: _additionCategories
+                      .map((c) => DropdownMenuItem<String>(
+                            value: c['value'],
+                            child: Text(c['label']!,
+                                style: const TextStyle(fontSize: 13)),
+                          ))
+                      .toList(),
+                  onChanged: isEditable
+                      ? (val) {
+                          if (val != null) {
+                            setState(() =>
+                                _additions[index]['additionCategory'] = val);
+                          }
+                        }
+                      : null,
+                ),
+              ),
+              const SizedBox(width: 10),
+              SizedBox(
+                width: 110,
+                child: TextFormField(
+                  controller: amountCtrl,
+                  enabled: isEditable,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  textAlign: TextAlign.end,
+                  decoration: InputDecoration(
+                    labelText: 'Amount',
+                    prefixText: '+ ',
+                    prefixStyle: TextStyle(
+                        color: AppColors.success,
+                        fontWeight: FontWeight.w600),
+                    isDense: true,
+                  ),
+                  onChanged: (v) {
+                    _additions[index]['amount'] = v;
+                  },
+                ),
+              ),
+              if (isEditable)
+                IconButton(
+                  icon: const Icon(Icons.delete_outline,
+                      color: AppColors.danger, size: 20),
+                  onPressed: () =>
+                      setState(() => _additions.removeAt(index)),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          TextFormField(
+            initialValue: addition['description'] as String? ?? '',
+            enabled: isEditable,
+            decoration: const InputDecoration(
+              labelText: 'Description (optional)',
+              isDense: true,
+            ),
+            onChanged: (v) => _additions[index]['description'] = v,
+          ),
+          if (additionId != null) ...[
+            const SizedBox(height: 10),
+            _buildAttachmentGrid(
+                attachments, index, !isEditable),
+          ] else if (isEditable)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                'Save draft to enable attachments',
+                style: TextStyle(
+                    fontSize: 11,
+                    color: AppColors.textMuted,
+                    fontStyle: FontStyle.italic),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
