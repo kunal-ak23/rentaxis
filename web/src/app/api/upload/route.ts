@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
 export const runtime = "nodejs";
-export const maxDuration = 60; // seconds
+export const maxDuration = 300; // seconds — allow up to 5 min for large file uploads (up to 250MB)
 
 const backendUrl = process.env.BACKEND_URL || "http://localhost:8080";
 
