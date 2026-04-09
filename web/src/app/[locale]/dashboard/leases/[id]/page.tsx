@@ -63,6 +63,7 @@ type Settlement = {
     leaseId: string;
     depositAmount: number;
     totalDeductions: number;
+    totalAdditions?: number;
     refundAmount: number;
     notes: string;
     status: string;
@@ -728,6 +729,14 @@ export default function LeaseDetailPage() {
                                 <span className="text-xs font-semibold text-muted">Total Deductions</span>
                                 <span className="text-xs font-semibold text-error tabular-nums">- {formatCurrency(settlement.totalDeductions)}</span>
                             </div>
+                            {settlement.totalAdditions != null && settlement.totalAdditions > 0 && (
+                                <div className="flex justify-between items-center">
+                                    <span className="text-xs text-muted">Total Additions</span>
+                                    <span className="text-xs font-semibold text-success tabular-nums">
+                                        + {formatCurrency(settlement.totalAdditions)}
+                                    </span>
+                                </div>
+                            )}
                             <div className="border-t-2 border-border pt-3 flex justify-between items-center">
                                 <span className="text-sm font-bold text-foreground">Refund to Renter</span>
                                 <span className={cn("text-sm font-bold tabular-nums", settlement.refundAmount >= 0 ? "text-success" : "text-error")}>
