@@ -89,3 +89,5 @@ databaseChangeLog:
       file: db/changelog/changesets/40-settlement-additions.yaml
   - include:
       file: db/changelog/changesets/41-meetings.yaml
+  - include:
+      file: db/changelog/changesets/42-normalize-emirate-uppercase.yaml

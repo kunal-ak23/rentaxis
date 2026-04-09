@@ -1,0 +1,11 @@
+databaseChangeLog:
+  - changeSet:
+      id: 42-normalize-emirate-uppercase
+      author: system
+      comment: "Normalize emirate column values to uppercase to match enum constants"
+      changes:
+        - sql:
+            sql: >
+              UPDATE properties
+              SET emirate = UPPER(emirate)
+              WHERE emirate != UPPER(emirate);
