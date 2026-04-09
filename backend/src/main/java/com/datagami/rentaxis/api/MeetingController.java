@@ -70,8 +70,9 @@ public class MeetingController {
     @PutMapping("/{id}/cancel")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<MeetingDTO> cancelMeeting(@PathVariable UUID id,
-                                                     @RequestHeader("X-User-Id") UUID userId) {
-        return ResponseEntity.ok(meetingService.cancelMeeting(id, userId));
+                                                     @RequestHeader("X-User-Id") UUID userId,
+                                                     @RequestHeader("X-User-Role") String role) {
+        return ResponseEntity.ok(meetingService.cancelMeeting(id, userId, role));
     }
 
     @PutMapping("/{id}/complete")

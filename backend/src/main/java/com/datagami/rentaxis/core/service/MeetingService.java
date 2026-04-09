@@ -55,6 +55,19 @@ public class MeetingService {
 
     @Transactional
     public MeetingDTO createMeeting(CreateMeetingDTO dto, UUID requesterUserId) {
+        // Validate slot is in the future
+        if (dto.getSlotStart().isBefore(Instant.now())) {
+            throw new BusinessRuleViolationException("Cannot book a slot in the past");
+        }
+
+        // Validate slot is on a 30-minute boundary within 9AM-9PM UAE time
+        ZonedDateTime slotZoned = dto.getSlotStart().atZone(ZoneId.of("Asia/Dubai"));
+        int hour = slotZoned.getHour();
+        int minute = slotZoned.getMinute();
+        if (hour < DAY_START_HOUR || hour >= DAY_END_HOUR || (minute != 0 && minute != 30)) {
+            throw new BusinessRuleViolationException("Slot must be on a 30-minute boundary between 9:00 AM and 9:00 PM UAE time");
+        }
+
         // Validate host exists
         userRepository.findById(dto.getHostUserId())
                 .orElseThrow(() -> new NotFoundException("Host user not found"));
@@ -113,7 +126,7 @@ public class MeetingService {
             notificationService.notify(
                     saved.getTenantId(), saved.getHostUserId(),
                     "MEETING_REQUESTED", "New Meeting Requested",
-                    "A meeting has been requested for " + saved.getSlotStart(),
+                    "A meeting has been requested for " + formatSlotForDisplay(saved.getSlotStart()),
                     "MEETING", saved.getId());
         } catch (Exception e) {
             log.warn("Failed to send MEETING_REQUESTED notification for meeting {}", saved.getId(), e);
@@ -143,7 +156,7 @@ public class MeetingService {
             notificationService.notify(
                     saved.getTenantId(), saved.getRequesterUserId(),
                     "MEETING_APPROVED", "Meeting Approved",
-                    "Your meeting request has been approved for " + saved.getSlotStart(),
+                    "Your meeting request has been approved for " + formatSlotForDisplay(saved.getSlotStart()),
                     "MEETING", saved.getId());
         } catch (Exception e) {
             log.warn("Failed to send MEETING_APPROVED notification for meeting {}", meetingId, e);
@@ -156,9 +169,15 @@ public class MeetingService {
     // ---- Cancel ----
 
     @Transactional
-    public MeetingDTO cancelMeeting(UUID meetingId, UUID cancelledByUserId) {
+    public MeetingDTO cancelMeeting(UUID meetingId, UUID cancelledByUserId, String role) {
         Meeting meeting = meetingRepository.findById(meetingId)
                 .orElseThrow(() -> new NotFoundException("Meeting not found"));
+
+        boolean isManager = "PROPERTY_MANAGER".equals(role) || "TENANT_ADMIN".equals(role) || "SUPER_ADMIN".equals(role);
+        boolean isInvolved = meeting.getRequesterUserId().equals(cancelledByUserId) || meeting.getHostUserId().equals(cancelledByUserId);
+        if (!isManager && !isInvolved) {
+            throw new NotFoundException("Meeting not found");
+        }
 
         if (meeting.getStatus() != MeetingStatus.REQUESTED
                 && meeting.getStatus() != MeetingStatus.APPROVED) {
@@ -205,7 +224,7 @@ public class MeetingService {
             notificationService.notify(
                     saved.getTenantId(), saved.getRequesterUserId(),
                     "MEETING_COMPLETED", "Meeting Completed",
-                    "Your meeting on " + saved.getSlotStart() + " has been marked as completed.",
+                    "Your meeting on " + formatSlotForDisplay(saved.getSlotStart()) + " has been marked as completed.",
                     "MEETING", saved.getId());
         } catch (Exception e) {
             log.warn("Failed to send MEETING_COMPLETED notification for meeting {}", meetingId, e);
@@ -235,7 +254,7 @@ public class MeetingService {
             notificationService.notify(
                     saved.getTenantId(), saved.getRequesterUserId(),
                     "MEETING_NO_SHOW", "Meeting Marked No-Show",
-                    "Your meeting on " + saved.getSlotStart() + " was marked as no-show.",
+                    "Your meeting on " + formatSlotForDisplay(saved.getSlotStart()) + " was marked as no-show.",
                     "MEETING", saved.getId());
         } catch (Exception e) {
             log.warn("Failed to send MEETING_NO_SHOW notification for meeting {}", meetingId, e);
@@ -323,6 +342,11 @@ public class MeetingService {
         }
 
         return null; // No slots available within 14 days
+    }
+
+    private String formatSlotForDisplay(Instant slotStart) {
+        return slotStart.atZone(ZoneId.of("Asia/Dubai"))
+                .format(java.time.format.DateTimeFormatter.ofPattern("EEE, MMM d 'at' h:mm a"));
     }
 
     // ---- Mapping ----

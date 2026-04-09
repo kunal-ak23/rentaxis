@@ -57,8 +57,4 @@ public interface MeetingRepository extends JpaRepository<Meeting, UUID> {
                                      @Param("rangeEnd") Instant rangeEnd,
                                      @Param("excluded") List<MeetingStatus> excluded);
 
-    @Query("SELECT m FROM Meeting m WHERE m.slotStart >= :rangeStart AND m.slotStart < :rangeEnd")
-    Page<Meeting> findByDateRange(@Param("rangeStart") Instant rangeStart,
-                                   @Param("rangeEnd") Instant rangeEnd,
-                                   Pageable pageable);
 }
