@@ -13,6 +13,7 @@ import { Pagination } from "@/components/ui/Pagination";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
 import { Plus, Loader2, Eye, CalendarDays, List } from "lucide-react";
+import CreateMeetingModal from "./CreateMeetingModal";
 
 // Dynamic import to avoid SSR issues with FullCalendar
 const FullCalendar = dynamic(() => import("@fullcalendar/react"), { ssr: false });
@@ -337,26 +338,16 @@ export default function MeetingsPage() {
                 </div>
             )}
 
-            {/* Create Modal placeholder — implemented in Task 10 */}
-            {showCreateModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center">
-                    <div
-                        className="absolute inset-0 bg-black/40"
-                        onClick={() => setShowCreateModal(false)}
-                    />
-                    <div className="relative bg-surface rounded-xl border border-border shadow-xl w-full max-w-lg mx-4 px-6 py-8 text-center">
-                        <CalendarDays size={32} className="mx-auto mb-3 text-primary opacity-60" />
-                        <p className="text-sm font-semibold text-foreground mb-1">Create Meeting</p>
-                        <p className="text-xs text-muted">Meeting creation form coming in Task 10.</p>
-                        <button
-                            onClick={() => setShowCreateModal(false)}
-                            className="mt-4 px-4 py-2 rounded-lg text-xs font-semibold text-muted hover:text-foreground hover:bg-input transition-colors cursor-pointer"
-                        >
-                            Close
-                        </button>
-                    </div>
-                </div>
-            )}
+            {/* Create Meeting Modal */}
+            <CreateMeetingModal
+                isOpen={showCreateModal}
+                onClose={() => setShowCreateModal(false)}
+                onSuccess={() => {
+                    setShowCreateModal(false);
+                    fetchMeetings();
+                }}
+                session={session}
+            />
         </div>
     );
 }
