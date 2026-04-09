@@ -270,6 +270,17 @@ export default function LeaseDetailPage() {
         }
     };
 
+    const handleSettlementAttachmentDownload = async (attachmentId: string, fileName: string) => {
+        const res = await fetch(`/api/proxy/v1/settlements/attachments/${attachmentId}/download`);
+        if (res.ok) {
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a"); a.href = url; a.download = fileName;
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+    };
+
     const handleDownloadContract = async () => {
         if (!lease) return;
         const res = await fetch(`/api/proxy/v1/leases/${lease.id}/documents`);
@@ -651,51 +662,100 @@ export default function LeaseDetailPage() {
 
             {/* Settlement Summary for TERMINATED/CLOSED leases */}
             {(lease.status === "TERMINATED" || lease.status === "CLOSED") && settlement && (
-                <div className="mt-6 bg-surface rounded-xl border border-border">
-                    <div className="px-5 py-3.5 border-b border-border">
-                        <h2 className="text-xs font-semibold text-muted uppercase tracking-wider flex items-center gap-2">
-                            <DollarSign size={13} /> Settlement Summary
-                        </h2>
+                settlement.status === "DRAFT" ? (
+                    <div className="mt-6 bg-surface rounded-xl border border-border px-5 py-4 flex items-center justify-between">
+                        <div className="flex items-center gap-2 text-xs text-muted">
+                            <DollarSign size={13} />
+                            <span>Settlement in progress</span>
+                        </div>
+                        <Link
+                            href={`/dashboard/leases/${leaseId}/settlement`}
+                            className="text-xs font-semibold text-primary hover:underline"
+                        >
+                            Continue Settlement →
+                        </Link>
                     </div>
-                    <div className="px-5 py-4 space-y-3">
-                        <div className="flex justify-between items-center">
-                            <span className="text-xs text-muted">Security Deposit</span>
-                            <span className="text-xs font-semibold text-foreground tabular-nums">{formatCurrency(settlement.depositAmount)}</span>
+                ) : (
+                    <div className="mt-6 bg-surface rounded-xl border border-border">
+                        <div className="px-5 py-3.5 border-b border-border">
+                            <h2 className="text-xs font-semibold text-muted uppercase tracking-wider flex items-center gap-2">
+                                <DollarSign size={13} /> Settlement Summary
+                            </h2>
                         </div>
-                        <div className="border-t border-border pt-3 space-y-2">
-                            <p className="text-[10px] font-semibold text-muted uppercase tracking-wider">Deductions</p>
-                            {settlement.deductions.map((d, i) => (
-                                <div key={i} className="flex justify-between items-center">
-                                    <div>
-                                        <span className="text-xs text-foreground">{DEDUCTION_CATEGORY_LABELS[d.category] || d.category}</span>
-                                        {d.description && <span className="text-[10px] text-muted ml-2">({d.description})</span>}
-                                    </div>
-                                    <span className="text-xs font-medium text-error tabular-nums">- {formatCurrency(d.amount)}</span>
-                                </div>
-                            ))}
-                        </div>
-                        <div className="border-t border-border pt-3 flex justify-between items-center">
-                            <span className="text-xs font-semibold text-muted">Total Deductions</span>
-                            <span className="text-xs font-semibold text-error tabular-nums">- {formatCurrency(settlement.totalDeductions)}</span>
-                        </div>
-                        <div className="border-t-2 border-border pt-3 flex justify-between items-center">
-                            <span className="text-sm font-bold text-foreground">Refund to Renter</span>
-                            <span className={cn("text-sm font-bold tabular-nums", settlement.refundAmount >= 0 ? "text-success" : "text-error")}>
-                                {formatCurrency(settlement.refundAmount)}
-                            </span>
-                        </div>
-                        {settlement.notes && (
-                            <div className="border-t border-border pt-3">
-                                <p className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-1">Notes</p>
-                                <p className="text-xs text-foreground">{settlement.notes}</p>
+                        <div className="px-5 py-4 space-y-3">
+                            <div className="flex justify-between items-center">
+                                <span className="text-xs text-muted">Security Deposit</span>
+                                <span className="text-xs font-semibold text-foreground tabular-nums">{formatCurrency(settlement.depositAmount)}</span>
                             </div>
-                        )}
-                        <div className="border-t border-border pt-3 flex justify-between items-center text-[10px] text-muted">
-                            <span>Settled by: {settlement.settledByName || settlement.settledBy}</span>
-                            <span>{new Date(settlement.settledAt).toLocaleDateString()} {new Date(settlement.settledAt).toLocaleTimeString()}</span>
+                            <div className="border-t border-border pt-3 space-y-3">
+                                <p className="text-[10px] font-semibold text-muted uppercase tracking-wider">Deductions</p>
+                                {settlement.deductions.map((d, i) => (
+                                    <div key={i} className="space-y-1.5">
+                                        <div className="flex justify-between items-center">
+                                            <div>
+                                                <span className="text-xs text-foreground">{DEDUCTION_CATEGORY_LABELS[d.category] || d.category}</span>
+                                                {d.description && <span className="text-[10px] text-muted ml-2">({d.description})</span>}
+                                            </div>
+                                            <span className="text-xs font-medium text-error tabular-nums">- {formatCurrency(d.amount)}</span>
+                                        </div>
+                                        {d.attachments && d.attachments.length > 0 && (
+                                            <div className="ml-2 space-y-1">
+                                                {d.attachments.map((att) => (
+                                                    <div key={att.id} className="flex items-center gap-2 bg-input rounded-lg px-2 py-1.5">
+                                                        {att.fileType.startsWith("image/") ? (
+                                                            <img src={att.fileUrl} className="w-12 h-10 rounded object-cover flex-shrink-0" alt={att.name} />
+                                                        ) : (
+                                                            <FileText size={14} className="text-muted flex-shrink-0" />
+                                                        )}
+                                                        <div className="flex-1 min-w-0">
+                                                            <p className="text-[10px] font-medium text-foreground truncate">{att.name}</p>
+                                                            <p className="text-[10px] text-muted">{(att.fileSize / 1024).toFixed(0)} KB</p>
+                                                        </div>
+                                                        <button
+                                                            onClick={() => handleSettlementAttachmentDownload(att.id, att.name)}
+                                                            className="p-1 text-primary hover:text-primary/80 cursor-pointer flex-shrink-0"
+                                                            title="Download"
+                                                        >
+                                                            <Download size={12} />
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="border-t border-border pt-3 flex justify-between items-center">
+                                <span className="text-xs font-semibold text-muted">Total Deductions</span>
+                                <span className="text-xs font-semibold text-error tabular-nums">- {formatCurrency(settlement.totalDeductions)}</span>
+                            </div>
+                            <div className="border-t-2 border-border pt-3 flex justify-between items-center">
+                                <span className="text-sm font-bold text-foreground">Refund to Renter</span>
+                                <span className={cn("text-sm font-bold tabular-nums", settlement.refundAmount >= 0 ? "text-success" : "text-error")}>
+                                    {formatCurrency(settlement.refundAmount)}
+                                </span>
+                            </div>
+                            {settlement.notes && (
+                                <div className="border-t border-border pt-3">
+                                    <p className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-1">Notes</p>
+                                    <p className="text-xs text-foreground">{settlement.notes}</p>
+                                </div>
+                            )}
+                            <div className="border-t border-border pt-3 flex justify-between items-center text-[10px] text-muted">
+                                <span>Settled by: {settlement.settledByName || settlement.settledBy}</span>
+                                <span>{new Date(settlement.settledAt).toLocaleDateString()} {new Date(settlement.settledAt).toLocaleTimeString()}</span>
+                            </div>
+                            <div className="border-t border-border pt-3 flex justify-end">
+                                <Link
+                                    href={`/dashboard/leases/${leaseId}/settlement`}
+                                    className="text-[10px] font-semibold text-primary hover:underline"
+                                >
+                                    Manage attachments →
+                                </Link>
+                            </div>
                         </div>
                     </div>
-                </div>
+                )
             )}
 
         </div>
