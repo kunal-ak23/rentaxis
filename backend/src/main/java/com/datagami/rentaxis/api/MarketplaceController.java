@@ -89,7 +89,7 @@ public class MarketplaceController {
             @PathVariable String slug) {
         checkEnabled();
         UnitListing listing = marketplaceService.resolveByTenantSlugAndUnitSlug(tenantSlug, slug);
-        return ResponseEntity.ok(toDetail(listing));
+        return ResponseEntity.ok(toDetail(listing, tenantSlug));
     }
 
     @PostMapping("/listings/{id}/interest")
@@ -185,7 +185,7 @@ public class MarketplaceController {
         );
     }
 
-    private UnitListingDTO toDetail(UnitListing l) {
+    private UnitListingDTO toDetail(UnitListing l, String tenantSlug) {
         List<UnitListingMedia> media = mediaRepository.findByListingIdOrderBySortOrderAsc(l.getId());
         List<UnitListingAmenityEntry> amenityEntries = amenityRepository.findByListingId(l.getId());
 
@@ -206,7 +206,7 @@ public class MarketplaceController {
                 l.getAnnualRent(), l.getSecurityDeposit(), l.getMinLeaseMonths(),
                 l.getChequesAccepted(), l.getDewaIncluded(), l.getChillerIncluded(),
                 l.getUtilitiesEstimate(), l.getAvailableFrom(),
-                l.getSlug(), l.getSeoTitle(), l.getSeoDescription(), l.getSeoKeywords(), l.getOgImageUrl(),
+                tenantSlug, l.getSlug(), l.getSeoTitle(), l.getSeoDescription(), l.getSeoKeywords(), l.getOgImageUrl(),
                 l.getLat(), l.getLng(),
                 l.getPublishedAt(), l.getCreatedAt(), l.getUpdatedAt(),
                 amenities, mediaDtos

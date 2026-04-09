@@ -29,7 +29,7 @@ export interface UnitListingDTO {
   minLeaseMonths: number | null; chequesAccepted: number | null
   dewaIncluded: boolean | null; chillerIncluded: boolean | null
   utilitiesEstimate: number | null; availableFrom: string | null
-  slug: string; seoTitle: string | null; seoDescription: string | null
+  tenantSlug: string | null; slug: string; seoTitle: string | null; seoDescription: string | null
   seoKeywords: string | null; ogImageUrl: string | null
   lat: number | null; lng: number | null
   publishedAt: string | null; createdAt: string; updatedAt: string

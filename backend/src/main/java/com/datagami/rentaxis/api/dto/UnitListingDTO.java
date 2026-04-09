@@ -34,6 +34,7 @@ public record UnitListingDTO(
         Boolean chillerIncluded,
         BigDecimal utilitiesEstimate,
         LocalDate availableFrom,
+        String tenantSlug,
         String slug,
         String seoTitle,
         String seoDescription,

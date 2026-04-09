@@ -112,6 +112,7 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [slugCopied, setSlugCopied] = useState(false);
+  const [publicUrlCopied, setPublicUrlCopied] = useState(false);
 
   // Media upload
   const [uploadCaption, setUploadCaption] = useState('');
@@ -332,6 +333,15 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
     });
   }
 
+  function copyPublicUrl() {
+    if (!listing?.tenantSlug || !listing?.slug) return;
+    const url = `${window.location.origin}/l/${listing.tenantSlug}/${listing.slug}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setPublicUrlCopied(true);
+      setTimeout(() => setPublicUrlCopied(false), 2000);
+    });
+  }
+
   function toggleAmenity(amenity: ListingAmenity) {
     setAmenities(prev => {
       const next = new Map(prev);
@@ -415,6 +425,15 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          {!isNew && listing?.tenantSlug && listing?.slug && (currentStatus === 'PUBLISHED' || currentStatus === 'UPCOMING') && (
+            <button
+              onClick={copyPublicUrl}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-muted/30 text-muted hover:bg-muted/50 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent/30"
+            >
+              {publicUrlCopied ? <Check size={13} className="text-success" /> : <Copy size={13} />}
+              {publicUrlCopied ? 'Copied!' : 'Copy Public URL'}
+            </button>
+          )}
           {!isNew && listing && (
             <button
               onClick={() => setShowInterests(true)}

@@ -11,7 +11,9 @@ import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.config.FeatureFlags;
 import com.datagami.rentaxis.core.service.UnitListingService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
+import com.datagami.rentaxis.domain.entity.LandlordOrg;
 import com.datagami.rentaxis.domain.entity.UnitListing;
+import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
 import com.datagami.rentaxis.domain.entity.enums.ListingStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -33,10 +35,13 @@ public class UnitListingController {
 
     private final UnitListingService service;
     private final FeatureFlags featureFlags;
+    private final LandlordOrgRepository landlordOrgRepository;
 
-    public UnitListingController(UnitListingService service, FeatureFlags featureFlags) {
+    public UnitListingController(UnitListingService service, FeatureFlags featureFlags,
+                                 LandlordOrgRepository landlordOrgRepository) {
         this.service = service;
         this.featureFlags = featureFlags;
+        this.landlordOrgRepository = landlordOrgRepository;
     }
 
     @GetMapping
@@ -158,6 +163,9 @@ public class UnitListingController {
     }
 
     private UnitListingDTO toDetail(UnitListing l) {
+        String tenantSlug = landlordOrgRepository.findById(l.getTenantId())
+                .map(LandlordOrg::getSlug)
+                .orElse(null);
         return new UnitListingDTO(
                 l.getId(), l.getUnitId(), l.getStatus(),
                 l.getTitleEn(), l.getTitleAr(), l.getDescriptionEn(), l.getDescriptionAr(),
@@ -166,7 +174,7 @@ public class UnitListingController {
                 l.getAnnualRent(), l.getSecurityDeposit(), l.getMinLeaseMonths(),
                 l.getChequesAccepted(), l.getDewaIncluded(), l.getChillerIncluded(),
                 l.getUtilitiesEstimate(), l.getAvailableFrom(),
-                l.getSlug(), l.getSeoTitle(), l.getSeoDescription(), l.getSeoKeywords(), l.getOgImageUrl(),
+                tenantSlug, l.getSlug(), l.getSeoTitle(), l.getSeoDescription(), l.getSeoKeywords(), l.getOgImageUrl(),
                 l.getLat(), l.getLng(),
                 l.getPublishedAt(), l.getCreatedAt(), l.getUpdatedAt(),
                 List.of(), List.of()
