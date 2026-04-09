@@ -134,6 +134,8 @@ class PublicListingControllerTest {
     @Test
     void getPublicListing_returns404_whenFeatureDisabled() {
         when(tenantFeatureService.isEnabled(any(), eq(TenantFeature.LISTINGS))).thenReturn(false);
+        when(marketplaceService.resolveByTenantSlugAndUnitSlug("acme", "marina-2br"))
+                .thenReturn(listing);
 
         assertThatThrownBy(() -> controller.getPublicListing("acme", "marina-2br"))
                 .isInstanceOf(NotFoundException.class);

@@ -55,7 +55,7 @@ class UnitListingControllerTest {
     @BeforeEach
     void setUp() {
         TenantContextHolder.setTenantId(tenantId);
-        when(tenantFeatureService.isEnabled(any(), eq(TenantFeature.LISTINGS))).thenReturn(true);
+        lenient().when(tenantFeatureService.isEnabled(any(), eq(TenantFeature.LISTINGS))).thenReturn(true);
         lenient().when(landlordOrgRepository.findById(any(UUID.class))).thenReturn(Optional.empty());
     }
 
