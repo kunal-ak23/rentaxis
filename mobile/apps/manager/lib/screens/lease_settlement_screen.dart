@@ -457,6 +457,134 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
     }
   }
 
+  Future<void> _uploadAttachmentForAddition(
+      String additionId, int additionIndex) async {
+    final source = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt_outlined),
+              title: const Text('Camera'),
+              onTap: () => Navigator.pop(ctx, 'camera'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Gallery'),
+              onTap: () => Navigator.pop(ctx, 'gallery'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.attach_file),
+              title: const Text('File'),
+              onTap: () => Navigator.pop(ctx, 'file'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source == null) return;
+
+    String? filePath;
+    String fileName = 'attachment';
+
+    if (source == 'camera' || source == 'gallery') {
+      final picker = ImagePicker();
+      final image = await picker.pickImage(
+        source:
+            source == 'camera' ? ImageSource.camera : ImageSource.gallery,
+        imageQuality: 85,
+      );
+      if (image == null) return;
+      filePath = image.path;
+      fileName = image.name;
+    } else {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: [
+          'pdf',
+          'mp4',
+          'mov',
+          'avi',
+          'jpg',
+          'jpeg',
+          'png',
+          'heic'
+        ],
+      );
+      if (result == null || result.files.isEmpty) return;
+      filePath = result.files.first.path;
+      fileName = result.files.first.name;
+    }
+
+    if (filePath == null) return;
+
+    setState(() => _uploadingForDeduction[additionId] = true);
+    try {
+      final service = ref.read(_settlementServiceProvider);
+      await service.uploadDeductionAttachment(additionId, filePath, fileName);
+      final attachments = await service.getDeductionAttachments(additionId);
+      if (mounted) {
+        setState(() {
+          _additions[additionIndex]['attachments'] =
+              List<Map<String, dynamic>>.from(attachments);
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Upload failed: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _uploadingForDeduction[additionId] = false);
+      }
+    }
+  }
+
+  Future<void> _deleteAttachmentForAddition(
+      String attachmentId, int additionIndex) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Attachment'),
+        content: const Text('Remove this attachment?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.danger),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      final service = ref.read(_settlementServiceProvider);
+      await service.deleteDeductionAttachment(attachmentId);
+      if (mounted) {
+        setState(() {
+          final attachments =
+              _additions[additionIndex]['attachments'] as List;
+          attachments.removeWhere((a) => a['id'] == attachmentId);
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to delete: $e')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -1468,8 +1596,14 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
                 IconButton(
                   icon: const Icon(Icons.delete_outline,
                       color: AppColors.danger, size: 20),
-                  onPressed: () =>
-                      setState(() => _additions.removeAt(index)),
+                  onPressed: () => setState(() {
+                    _additions.removeAt(index);
+                    // Clear controllers so they're rebuilt from correct indices
+                    for (final ctrl in _additionAmountControllers.values) {
+                      ctrl.dispose();
+                    }
+                    _additionAmountControllers.clear();
+                  }),
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
                 ),
@@ -1487,8 +1621,158 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
           ),
           if (additionId != null) ...[
             const SizedBox(height: 10),
-            _buildAttachmentGrid(
-                attachments, index, !isEditable),
+            // Inline attachment section — updates _additions[index], not _deductions
+            Row(
+              children: [
+                const Icon(Icons.attach_file,
+                    size: 16, color: AppColors.textSecondary),
+                const SizedBox(width: 6),
+                const Text(
+                  'Attachments',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '${attachments.length}/10',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                if (isEditable && attachments.length < 10)
+                  (_uploadingForDeduction[additionId] == true)
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppColors.primary,
+                          ),
+                        )
+                      : TextButton.icon(
+                          onPressed: () =>
+                              _uploadAttachmentForAddition(additionId, index),
+                          icon: const Icon(Icons.add, size: 16),
+                          label: const Text('Add',
+                              style: TextStyle(fontSize: 12)),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 4),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                        ),
+              ],
+            ),
+            if (attachments.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate:
+                    const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  crossAxisSpacing: 8,
+                  mainAxisSpacing: 8,
+                  childAspectRatio: 1.4,
+                ),
+                itemCount: attachments.length,
+                itemBuilder: (context, i) {
+                  final attachment = attachments[i];
+                  final name = (attachment['name'] ??
+                      attachment['fileName'] ?? '') as String;
+                  final isImage = _isImageFile(name);
+                  final isVideo = _isVideoFile(name);
+                  final attachmentId = attachment['id'] as String?;
+
+                  return GestureDetector(
+                    onLongPress: (!isEditable || attachmentId == null)
+                        ? null
+                        : () => _deleteAttachmentForAddition(
+                            attachmentId, index),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: AppColors.background,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            if (isImage)
+                              _buildImageThumbnail(attachment)
+                            else
+                              Center(
+                                child: Column(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      isVideo
+                                          ? Icons.videocam_outlined
+                                          : Icons.picture_as_pdf_outlined,
+                                      size: 28,
+                                      color: isVideo
+                                          ? AppColors.primary
+                                          : AppColors.danger,
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      name.length > 14
+                                          ? '${name.substring(0, 12)}…'
+                                          : name,
+                                      style: const TextStyle(
+                                          fontSize: 10,
+                                          color: AppColors.textSecondary),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            if (isEditable && attachmentId != null)
+                              Positioned(
+                                top: 4,
+                                right: 4,
+                                child: GestureDetector(
+                                  onTap: () =>
+                                      _deleteAttachmentForAddition(
+                                          attachmentId, index),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black54,
+                                      borderRadius:
+                                          BorderRadius.circular(4),
+                                    ),
+                                    child: const Icon(Icons.close,
+                                        size: 12, color: Colors.white),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ],
           ] else if (isEditable)
             Padding(
               padding: const EdgeInsets.only(top: 8),
