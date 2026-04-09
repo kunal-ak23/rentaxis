@@ -28,6 +28,6 @@ public class TenantFeatureEntity {
     @Column(name = "enabled", nullable = false)
     private boolean enabled;
 
-    @Column(name = "updated_at", nullable = false)
-    private Instant updatedAt = Instant.now();
+    @Column(name = "updated_at", nullable = false, insertable = false, updatable = false)
+    private Instant updatedAt;
 }

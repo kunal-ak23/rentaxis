@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useTranslations } from "next-intl";
 import { Plus, X, Building2, Hash, Settings2, ShieldCheck, Loader2, Search, Pencil, Copy, Check, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -88,6 +88,16 @@ export default function SuperAdminTenantsPage() {
         setEditingTenant(null);
         setFormData({ name: "", address: "", trn: "", status: "ACTIVE", logoUrl: "", ticketOtpRequired: true });
     };
+
+    const closeFeaturesDrawer = useCallback(() => setFeaturesDrawerTenant(null), []);
+
+    useEffect(() => {
+        const handleEscape = (e: KeyboardEvent) => { if (e.key === "Escape") closeFeaturesDrawer(); };
+        if (featuresDrawerTenant) {
+            document.addEventListener("keydown", handleEscape);
+            return () => document.removeEventListener("keydown", handleEscape);
+        }
+    }, [featuresDrawerTenant, closeFeaturesDrawer]);
 
     const openFeaturesDrawer = async (tenant: Tenant) => {
         setFeaturesDrawerTenant(tenant);
@@ -373,15 +383,15 @@ export default function SuperAdminTenantsPage() {
 
             {/* Features Drawer */}
             {featuresDrawerTenant && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-                <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4">
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={closeFeaturesDrawer}>
+                <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4" onClick={e => e.stopPropagation()}>
                   <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-100">
                     <div>
-                      <h2 className="font-semibold text-neutral-900 text-sm">Feature Toggles</h2>
+                      <h2 className="font-semibold text-neutral-900 text-sm">{t("featureToggles")}</h2>
                       <p className="text-xs text-neutral-500 mt-0.5">{featuresDrawerTenant.name}</p>
                     </div>
                     <button
-                      onClick={() => setFeaturesDrawerTenant(null)}
+                      onClick={closeFeaturesDrawer}
                       className="p-1.5 rounded hover:bg-neutral-100 text-neutral-500 cursor-pointer"
                     >
                       <X size={16} />
@@ -390,10 +400,10 @@ export default function SuperAdminTenantsPage() {
                   <div className="p-5">
                     {featuresLoading ? (
                       <div className="flex items-center justify-center py-8 text-neutral-400">
-                        <Loader2 size={20} className="animate-spin mr-2" /> Loading…
+                        <Loader2 size={20} className="animate-spin mr-2" /> {t("loading")}
                       </div>
                     ) : features.length === 0 ? (
-                      <p className="text-sm text-neutral-500 text-center py-6">No features available.</p>
+                      <p className="text-sm text-neutral-500 text-center py-6">{t("noFeaturesAvailable")}</p>
                     ) : (
                       <div className="space-y-4">
                         {features.map(f => (
@@ -401,7 +411,7 @@ export default function SuperAdminTenantsPage() {
                             <div>
                               <p className="text-sm font-medium text-neutral-800">{f.label}</p>
                               <p className="text-xs text-neutral-400 mt-0.5">
-                                Default: {f.defaultEnabled ? "On" : "Off"}
+                                {t("default")}: {f.defaultEnabled ? t("on") : t("off")}
                               </p>
                             </div>
                             <button

@@ -73,6 +73,9 @@ public class LandlordOrgController {
 
     @GetMapping("/{id}/features")
     public ResponseEntity<List<FeatureToggleDTO>> getFeatures(@PathVariable UUID id) {
+        if (service.findById(id).isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
         return ResponseEntity.ok(tenantFeatureService.getAll(id));
     }
 
@@ -81,6 +84,9 @@ public class LandlordOrgController {
             @PathVariable UUID id,
             @PathVariable TenantFeature feature,
             @RequestBody Map<String, Boolean> body) {
+        if (service.findById(id).isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
         Boolean enabled = body.get("enabled");
         if (enabled == null) {
             return ResponseEntity.badRequest().build();

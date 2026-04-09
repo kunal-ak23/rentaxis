@@ -1,7 +1,13 @@
 {
   "Index": {
     "title": "Welcome to RentAxis",
-    "portal": "Landlord Portal"
+    "portal": "Landlord Portal",
+    "featureToggles": "Feature Toggles",
+    "noFeaturesAvailable": "No features available.",
+    "loading": "Loading…",
+    "default": "Default",
+    "on": "On",
+    "off": "Off"
   },
   "MasterData": {
     "projects": "Projects",

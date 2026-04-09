@@ -1,7 +1,13 @@
 {
   "Index": {
     "title": "مرحباً بك في رينت أكسس",
-    "portal": "بوابة المالك"
+    "portal": "بوابة المالك",
+    "featureToggles": "إدارة الميزات",
+    "noFeaturesAvailable": "لا توجد ميزات متاحة.",
+    "loading": "جاري التحميل…",
+    "default": "الافتراضي",
+    "on": "مفعّل",
+    "off": "معطّل"
   },
   "MasterData": {
     "projects": "المشاريع",

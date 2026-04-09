@@ -117,6 +117,10 @@ public class MarketplaceController {
 
     @GetMapping("/me/wishlist")
     public ResponseEntity<List<UnitListingSummaryDTO>> wishlist() {
+        // No checkEnabled() here: wishlist is intentionally cross-tenant (a renter may
+        // have wishlisted listings from multiple landlords). A per-tenant feature gate
+        // cannot meaningfully apply. Hiding the wishlist after disabling LISTINGS would
+        // confuse renters who already expressed interest.
         UUID renterUserId = currentUserId();
         List<UnitListingInterest> interests = interestService.wishlistForRenter(renterUserId);
         if (interests.isEmpty()) {
