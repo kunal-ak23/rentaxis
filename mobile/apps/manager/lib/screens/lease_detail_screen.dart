@@ -102,66 +102,6 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
     }
   }
 
-  Future<void> _terminateLease() async {
-    final notesCtrl = TextEditingController();
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Terminate Lease'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('This action cannot be undone. Add termination notes:'),
-            const SizedBox(height: 12),
-            TextField(
-              controller: notesCtrl,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                hintText: 'Termination reason...',
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.danger,
-            ),
-            child: const Text('Terminate'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-
-    setState(() => _isActioning = true);
-    try {
-      await ref.read(_leaseServiceProvider).terminateLease(
-            widget.leaseId,
-            notes: notesCtrl.text.isNotEmpty ? notesCtrl.text : null,
-          );
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Lease terminated')),
-        );
-        _loadData();
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to terminate lease')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isActioning = false);
-    }
-  }
-
   Future<bool> _confirmAction(String title, String message) async {
     final result = await showDialog<bool>(
       context: context,
@@ -299,7 +239,7 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
           if (status == 'ACTIVE')
             PopupMenuButton<String>(
               onSelected: (v) {
-                if (v == 'terminate') _terminateLease();
+                if (v == 'terminate') context.push('/leases/${widget.leaseId}/settlement');
               },
               itemBuilder: (_) => [
                 const PopupMenuItem(
@@ -673,9 +613,15 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
 
   Widget _buildSettlementLink() {
     final status = _lease?['status'] ?? '';
-    if (status != 'ACTIVE' && status != 'TERMINATED' && status != 'NOTICE_GIVEN') {
+    // Show settlement link for ACTIVE, NOTICE_GIVEN, TERMINATED, CLOSED
+    final showSettlementLink = ['ACTIVE', 'NOTICE_GIVEN', 'TERMINATED', 'CLOSED']
+        .contains(status);
+    if (!showSettlementLink) {
       return const SizedBox.shrink();
     }
+    final settlementSubtitle = status == 'ACTIVE'
+        ? 'Manage settlement draft'
+        : 'View settlement preview or details';
     return InkWell(
       onTap: () => context.push('/leases/${widget.leaseId}/settlement'),
       borderRadius: BorderRadius.circular(12),
@@ -698,13 +644,13 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
               child: const Icon(Icons.handshake_outlined, color: AppColors.accent, size: 22),
             ),
             const SizedBox(width: 14),
-            const Expanded(
+            Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Settlement', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
-                  SizedBox(height: 2),
-                  Text('View settlement preview or details', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                  const Text('Settlement', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+                  const SizedBox(height: 2),
+                  Text(settlementSubtitle, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                 ],
               ),
             ),
