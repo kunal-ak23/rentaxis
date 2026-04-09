@@ -168,11 +168,14 @@ public class SettlementService {
                     existing.setAmount(item.getAmount());
                     existing.setAutoCalculated(item.isAutoCalculated());
                     // Set type and additionCategory
-                    LineItemType lineItemType = item.getType() == LineItemType.ADDITION
-                            ? LineItemType.ADDITION : LineItemType.DEDUCTION;
+                    LineItemType lineItemType = item.getType() != null ? item.getType() : LineItemType.DEDUCTION;
                     existing.setType(lineItemType);
                     if (lineItemType == LineItemType.ADDITION && item.getAdditionCategory() != null) {
-                        existing.setAdditionCategory(AdditionCategory.valueOf(item.getAdditionCategory()));
+                        try {
+                            existing.setAdditionCategory(AdditionCategory.valueOf(item.getAdditionCategory()));
+                        } catch (IllegalArgumentException e) {
+                            throw new IllegalArgumentException("Invalid additionCategory: " + item.getAdditionCategory());
+                        }
                         existing.setCategory(null);
                     } else {
                         existing.setAdditionCategory(null);
@@ -188,11 +191,14 @@ public class SettlementService {
                     deduction.setAmount(item.getAmount());
                     deduction.setAutoCalculated(item.isAutoCalculated());
                     // Set type and additionCategory
-                    LineItemType lineItemType = item.getType() == LineItemType.ADDITION
-                            ? LineItemType.ADDITION : LineItemType.DEDUCTION;
+                    LineItemType lineItemType = item.getType() != null ? item.getType() : LineItemType.DEDUCTION;
                     deduction.setType(lineItemType);
                     if (lineItemType == LineItemType.ADDITION && item.getAdditionCategory() != null) {
-                        deduction.setAdditionCategory(AdditionCategory.valueOf(item.getAdditionCategory()));
+                        try {
+                            deduction.setAdditionCategory(AdditionCategory.valueOf(item.getAdditionCategory()));
+                        } catch (IllegalArgumentException e) {
+                            throw new IllegalArgumentException("Invalid additionCategory: " + item.getAdditionCategory());
+                        }
                         deduction.setCategory(null);
                     } else {
                         deduction.setAdditionCategory(null);
