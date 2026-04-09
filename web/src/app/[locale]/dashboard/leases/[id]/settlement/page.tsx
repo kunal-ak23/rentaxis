@@ -26,6 +26,8 @@ type DeductionItem = {
     amount: number;
     autoCalculated: boolean;
     attachments: AttachmentItem[];
+    type?: string;          // "DEDUCTION" or "ADDITION"
+    additionCategory?: string;
 };
 
 type Settlement = {
@@ -33,6 +35,7 @@ type Settlement = {
     leaseId: string;
     depositAmount: number;
     totalDeductions: number;
+    totalAdditions: number;
     refundAmount: number;
     notes: string;
     status: string;
@@ -73,6 +76,22 @@ const DEDUCTION_CATEGORY_LABELS: Record<string, string> = {
 const STATUS_COLORS: Record<string, string> = {
     DRAFT: "bg-input text-muted border-border",
     FINALIZED: "bg-success/10 text-success border-success/20",
+};
+
+const ADDITION_CATEGORIES = [
+    { value: "PREPAID_RENT", label: "Prepaid Rent" },
+    { value: "UTILITY_OVERPAYMENT", label: "Utility Overpayment" },
+    { value: "DEPOSIT_INTEREST", label: "Deposit Interest" },
+    { value: "LANDLORD_COMPENSATION", label: "Landlord Compensation" },
+    { value: "OTHER", label: "Other" },
+];
+
+const ADDITION_CATEGORY_LABELS: Record<string, string> = {
+    PREPAID_RENT: "Prepaid Rent",
+    UTILITY_OVERPAYMENT: "Utility Overpayment",
+    DEPOSIT_INTEREST: "Deposit Interest",
+    LANDLORD_COMPENSATION: "Landlord Compensation",
+    OTHER: "Other",
 };
 
 function AttachmentThumbnail({
@@ -129,6 +148,7 @@ export default function SettlementPage() {
     const [depositAmount, setDepositAmount] = useState(0);
     const [autoDeductions, setAutoDeductions] = useState<DeductionItem[]>([]);
     const [manualDeductions, setManualDeductions] = useState<DeductionItem[]>([]);
+    const [additions, setAdditions] = useState<DeductionItem[]>([]);
     const [notes, setNotes] = useState("");
     const [savingDraft, setSavingDraft] = useState(false);
     const [finalizing, setFinalizing] = useState(false);
@@ -146,7 +166,8 @@ export default function SettlementPage() {
         ...autoDeductions,
         ...manualDeductions,
     ].reduce((sum, d) => sum + (d.amount || 0), 0);
-    const refundAmount = depositAmount - totalDeductions;
+    const totalAdditions = additions.reduce((sum, d) => sum + (d.amount || 0), 0);
+    const refundAmount = depositAmount - totalDeductions + totalAdditions;
 
     const fetchAttachmentsForDeduction = useCallback(async (deductionId: string): Promise<AttachmentItem[]> => {
         try {
@@ -173,9 +194,11 @@ export default function SettlementPage() {
                 setNotes(s.notes || "");
 
                 const auto = s.deductions.filter((d: DeductionItem) => d.autoCalculated);
-                const manual = s.deductions.filter((d: DeductionItem) => !d.autoCalculated);
+                const manual = s.deductions.filter((d: DeductionItem) => !d.autoCalculated && d.type !== "ADDITION");
+                const additionItems = s.deductions.filter((d: DeductionItem) => d.type === "ADDITION");
                 setAutoDeductions(auto);
                 setManualDeductions(manual);
+                setAdditions(additionItems);
                 return;
             }
         } catch (e) { console.error("Failed to load settlement:", e); }
@@ -222,6 +245,7 @@ export default function SettlementPage() {
                 description: d.description,
                 amount: d.amount,
                 autoCalculated: true,
+                type: "DEDUCTION",
             })),
             ...manualDeductions.map(d => ({
                 id: d.id || undefined,
@@ -229,6 +253,15 @@ export default function SettlementPage() {
                 description: d.description,
                 amount: d.amount,
                 autoCalculated: false,
+                type: "DEDUCTION",
+            })),
+            ...additions.map(d => ({
+                id: d.id || undefined,
+                additionCategory: d.additionCategory || d.category,
+                description: d.description,
+                amount: d.amount,
+                autoCalculated: false,
+                type: "ADDITION",
             })),
         ].filter(d => d.amount > 0);
     };
@@ -298,6 +331,9 @@ export default function SettlementPage() {
                 setManualDeductions(prev =>
                     prev.map(d => d.id === deductionId ? { ...d, attachments: newAttachments } : d)
                 );
+                setAdditions(prev =>
+                    prev.map(d => d.id === deductionId ? { ...d, attachments: newAttachments } : d)
+                );
             }
         } catch (e) { console.error("Failed to upload file:", e); } finally {
             setUploadingDeductionId(null);
@@ -315,6 +351,9 @@ export default function SettlementPage() {
                     prev.map(d => d.id === deductionId ? { ...d, attachments: newAttachments } : d)
                 );
                 setManualDeductions(prev =>
+                    prev.map(d => d.id === deductionId ? { ...d, attachments: newAttachments } : d)
+                );
+                setAdditions(prev =>
                     prev.map(d => d.id === deductionId ? { ...d, attachments: newAttachments } : d)
                 );
             }
