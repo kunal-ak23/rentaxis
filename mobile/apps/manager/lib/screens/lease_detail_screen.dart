@@ -151,7 +151,7 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
     if (source == null) return;
 
     String? filePath;
-    String? fileName;
+    String fileName = 'attachment';
 
     if (source == 'camera' || source == 'gallery') {
       final picker = ImagePicker();
@@ -175,7 +175,7 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
     try {
       await ref
           .read(_leaseServiceProvider)
-          .uploadAttachment(widget.leaseId, filePath, fileName ?? 'attachment');
+          .uploadAttachment(widget.leaseId, filePath, fileName);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Attachment uploaded')),

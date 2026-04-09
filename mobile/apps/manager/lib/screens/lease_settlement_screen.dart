@@ -3,8 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:rentaxis_core/api/api_client.dart';
 import 'package:rentaxis_core/api/services/settlement_service.dart';
+import 'package:rentaxis_core/providers/auth_provider.dart';
 import 'package:rentaxis_core/theme/app_theme.dart';
 import 'package:rentaxis_core/utils/formatters.dart';
 
@@ -35,8 +35,8 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
   List<Map<String, dynamic>> _deductions = [];
   String _notes = '';
   bool _saving = false;
-  Map<String, bool> _uploadingForDeduction = {};
-  Map<int, TextEditingController> _amountControllers = {};
+  final Map<String, bool> _uploadingForDeduction = {};
+  final Map<int, TextEditingController> _amountControllers = {};
 
   final _notesController = TextEditingController();
 
@@ -284,7 +284,7 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
     if (source == null) return;
 
     String? filePath;
-    String? fileName;
+    String fileName = 'attachment';
 
     if (source == 'camera' || source == 'gallery') {
       final picker = ImagePicker();
@@ -324,7 +324,7 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
       // may need to be increased. Consider passing Options(receiveTimeout: Duration(minutes: 5))
       // to the upload call if timeouts are observed in production.
       await service.uploadDeductionAttachment(
-          deductionId, filePath, fileName ?? 'attachment');
+          deductionId, filePath, fileName);
       final attachments = await service.getDeductionAttachments(deductionId);
       if (mounted) {
         setState(() {
