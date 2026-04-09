@@ -5,8 +5,10 @@ import com.datagami.rentaxis.api.dto.UnitListingDTO;
 import com.datagami.rentaxis.api.dto.UnitListingMediaDTO;
 import com.datagami.rentaxis.api.dto.UnitListingSummaryDTO;
 import com.datagami.rentaxis.api.exception.NotFoundException;
-import com.datagami.rentaxis.config.FeatureFlags;
 import com.datagami.rentaxis.core.service.InterestService;
+import com.datagami.rentaxis.core.service.TenantFeatureService;
+import com.datagami.rentaxis.core.tenant.TenantContextHolder;
+import com.datagami.rentaxis.domain.entity.enums.TenantFeature;
 import com.datagami.rentaxis.core.service.MarketplaceService;
 import com.datagami.rentaxis.domain.entity.UnitListing;
 import com.datagami.rentaxis.domain.entity.UnitListingAmenityEntry;
@@ -45,20 +47,20 @@ public class MarketplaceController {
     private final UnitListingMediaRepository mediaRepository;
     private final UnitListingAmenityRepository amenityRepository;
     private final UnitListingRepository listingRepository;
-    private final FeatureFlags featureFlags;
+    private final TenantFeatureService tenantFeatureService;
 
     public MarketplaceController(MarketplaceService marketplaceService,
                                   InterestService interestService,
                                   UnitListingMediaRepository mediaRepository,
                                   UnitListingAmenityRepository amenityRepository,
                                   UnitListingRepository listingRepository,
-                                  FeatureFlags featureFlags) {
+                                  TenantFeatureService tenantFeatureService) {
         this.marketplaceService = marketplaceService;
         this.interestService = interestService;
         this.mediaRepository = mediaRepository;
         this.amenityRepository = amenityRepository;
         this.listingRepository = listingRepository;
-        this.featureFlags = featureFlags;
+        this.tenantFeatureService = tenantFeatureService;
     }
 
     @GetMapping("/{tenantSlug}/listings")
@@ -153,7 +155,8 @@ public class MarketplaceController {
     // ---- Helpers ----
 
     private void checkEnabled() {
-        if (!featureFlags.isListingsEnabled()) {
+        UUID tenantId = TenantContextHolder.getTenantId();
+        if (!tenantFeatureService.isEnabled(tenantId, TenantFeature.LISTINGS)) {
             throw new NotFoundException("Listings feature is disabled");
         }
     }
