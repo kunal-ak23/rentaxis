@@ -21,6 +21,7 @@ import {
     Wrench,
     HelpCircle,
     Building2,
+    CalendarDays,
 } from 'lucide-react';
 import Image from "next/image";
 import { Link } from "@/i18n/routing";
@@ -64,7 +65,8 @@ export default function MvpSidebar() {
                 { name: t("renters"), href: "/dashboard/renters", icon: Contact, tourId: 'sidebar-renters' },
                 { name: t("leases"), href: "/dashboard/leases", icon: FileText, tourId: 'sidebar-leases' },
                 { name: "Listings", href: "/dashboard/listings", icon: Building2, tourId: 'sidebar-listings' },
-                { name: "Tickets", href: "/dashboard/tickets", icon: Wrench, tourId: 'sidebar-tickets' }
+                { name: "Tickets", href: "/dashboard/tickets", icon: Wrench, tourId: 'sidebar-tickets' },
+                { name: "Meetings", href: "/dashboard/meetings", icon: CalendarDays, tourId: 'sidebar-meetings' },
             ]
             : []),
         ...(hasPermission(userRole, 'canManageTenants')
@@ -104,6 +106,7 @@ export default function MvpSidebar() {
         { name: "My Leases", href: "/dashboard/renter-portal", icon: FileText, tourId: 'sidebar-my-leases' },
         { name: tOnlinePayments("myPayments"), href: "/dashboard/renter-portal/payments", icon: CreditCard, tourId: 'sidebar-my-payments' },
         { name: "My Tickets", href: "/dashboard/tickets", icon: Wrench, tourId: 'sidebar-my-tickets' },
+        { name: "Meetings", href: "/dashboard/meetings", icon: CalendarDays, tourId: 'sidebar-meetings' },
     ] : [];
 
     const allItems = menuItems.length > 0 ? menuItems : renterItems.length > 0 ? renterItems : tenantUserItems;
