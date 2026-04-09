@@ -5,7 +5,6 @@ import com.datagami.rentaxis.api.dto.SettlementPreviewDTO;
 import com.datagami.rentaxis.api.dto.SettlementResponseDTO;
 import com.datagami.rentaxis.api.dto.TerminateWithSettlementDTO;
 import com.datagami.rentaxis.api.exception.NotFoundException;
-import com.datagami.rentaxis.core.service.DeductionAttachmentService;
 import com.datagami.rentaxis.domain.entity.enums.SettlementStatus;
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.LeaseSettlement;

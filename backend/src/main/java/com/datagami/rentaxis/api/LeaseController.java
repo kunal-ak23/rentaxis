@@ -91,16 +91,18 @@ public class LeaseController {
     @GetMapping("/{id}/settlement")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
     public ResponseEntity<SettlementResponseDTO> getSettlement(@PathVariable UUID id) {
-        return settlementService.getSettlement(id)
-                .map(settlement -> ResponseEntity.ok(settlementService.buildSettlementResponse(id)))
-                .orElse(ResponseEntity.notFound().build());
+        try {
+            return ResponseEntity.ok(settlementService.buildSettlementResponse(id));
+        } catch (com.datagami.rentaxis.api.exception.NotFoundException e) {
+            return ResponseEntity.notFound().build();
+        }
     }
 
     @PostMapping("/{id}/settlement/draft")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
     public ResponseEntity<SettlementResponseDTO> saveSettlementDraft(
             @PathVariable UUID id,
-            @RequestBody SaveSettlementDTO dto,
+            @Valid @RequestBody SaveSettlementDTO dto,
             HttpServletRequest request) {
         String userIdStr = request.getHeader("X-User-Id");
         UUID userId = userIdStr != null ? UUID.fromString(userIdStr) : null;
