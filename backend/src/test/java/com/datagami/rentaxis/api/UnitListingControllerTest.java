@@ -3,11 +3,13 @@ package com.datagami.rentaxis.api;
 import com.datagami.rentaxis.api.dto.UnitListingCreateRequest;
 import com.datagami.rentaxis.api.dto.UnitListingUpdateRequest;
 import com.datagami.rentaxis.api.exception.NotFoundException;
-import com.datagami.rentaxis.config.FeatureFlags;
+import com.datagami.rentaxis.core.service.TenantFeatureService;
 import com.datagami.rentaxis.core.service.UnitListingService;
+import com.datagami.rentaxis.domain.entity.enums.TenantFeature;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.UnitListing;
 import com.datagami.rentaxis.domain.entity.enums.ListingStatus;
+import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -22,12 +24,14 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -38,7 +42,10 @@ class UnitListingControllerTest {
     UnitListingService service;
 
     @Mock
-    FeatureFlags featureFlags;
+    TenantFeatureService tenantFeatureService;
+
+    @Mock
+    LandlordOrgRepository landlordOrgRepository;
 
     @InjectMocks
     UnitListingController controller;
@@ -48,7 +55,8 @@ class UnitListingControllerTest {
     @BeforeEach
     void setUp() {
         TenantContextHolder.setTenantId(tenantId);
-        when(featureFlags.isListingsEnabled()).thenReturn(true);
+        lenient().when(tenantFeatureService.isEnabled(any(), eq(TenantFeature.LISTINGS))).thenReturn(true);
+        lenient().when(landlordOrgRepository.findById(any(UUID.class))).thenReturn(Optional.empty());
     }
 
     @AfterEach
@@ -187,7 +195,7 @@ class UnitListingControllerTest {
 
     @Test
     void featureFlagOff_throwsNotFoundException() {
-        when(featureFlags.isListingsEnabled()).thenReturn(false);
+        when(tenantFeatureService.isEnabled(any(), eq(TenantFeature.LISTINGS))).thenReturn(false);
 
         assertThatThrownBy(() -> controller.list(null, null, null,
                 org.springframework.data.domain.PageRequest.of(0, 20)))

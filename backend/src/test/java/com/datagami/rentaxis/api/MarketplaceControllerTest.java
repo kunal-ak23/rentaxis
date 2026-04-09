@@ -1,9 +1,10 @@
 package com.datagami.rentaxis.api;
 
 import com.datagami.rentaxis.api.exception.NotFoundException;
-import com.datagami.rentaxis.config.FeatureFlags;
 import com.datagami.rentaxis.core.service.InterestService;
 import com.datagami.rentaxis.core.service.MarketplaceService;
+import com.datagami.rentaxis.core.service.TenantFeatureService;
+import com.datagami.rentaxis.domain.entity.enums.TenantFeature;
 import com.datagami.rentaxis.domain.entity.UnitListing;
 import com.datagami.rentaxis.domain.entity.UnitListingInterest;
 import com.datagami.rentaxis.domain.entity.enums.InterestStatus;
@@ -56,7 +57,7 @@ class MarketplaceControllerTest {
     @Mock
     UnitListingRepository listingRepository;
     @Mock
-    FeatureFlags featureFlags;
+    TenantFeatureService tenantFeatureService;
 
     @InjectMocks
     MarketplaceController controller;
@@ -66,7 +67,7 @@ class MarketplaceControllerTest {
 
     @BeforeEach
     void setUp() {
-        when(featureFlags.isListingsEnabled()).thenReturn(true);
+        when(tenantFeatureService.isEnabled(any(), eq(TenantFeature.LISTINGS))).thenReturn(true);
         // Set up SecurityContext with renter user
         UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
                 renterId.toString(), null,
@@ -166,7 +167,8 @@ class MarketplaceControllerTest {
 
     @Test
     void featureFlagOff_404() {
-        when(featureFlags.isListingsEnabled()).thenReturn(false);
+        when(marketplaceService.resolveTenantSlug("acme")).thenReturn(tenantId);
+        when(tenantFeatureService.isEnabled(any(), eq(TenantFeature.LISTINGS))).thenReturn(false);
 
         assertThatThrownBy(() -> controller.listListings(
                 "acme", null, null, null, null, null, null, null, null, null,

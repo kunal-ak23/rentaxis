@@ -8,8 +8,9 @@ import com.datagami.rentaxis.api.dto.UnitListingMediaUploadResponse;
 import com.datagami.rentaxis.api.dto.UnitListingSummaryDTO;
 import com.datagami.rentaxis.api.dto.UnitListingUpdateRequest;
 import com.datagami.rentaxis.api.exception.NotFoundException;
-import com.datagami.rentaxis.config.FeatureFlags;
+import com.datagami.rentaxis.core.service.TenantFeatureService;
 import com.datagami.rentaxis.core.service.UnitListingService;
+import com.datagami.rentaxis.domain.entity.enums.TenantFeature;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
 import com.datagami.rentaxis.domain.entity.UnitListing;
@@ -34,13 +35,13 @@ import java.util.UUID;
 public class UnitListingController {
 
     private final UnitListingService service;
-    private final FeatureFlags featureFlags;
+    private final TenantFeatureService tenantFeatureService;
     private final LandlordOrgRepository landlordOrgRepository;
 
-    public UnitListingController(UnitListingService service, FeatureFlags featureFlags,
+    public UnitListingController(UnitListingService service, TenantFeatureService tenantFeatureService,
                                  LandlordOrgRepository landlordOrgRepository) {
         this.service = service;
-        this.featureFlags = featureFlags;
+        this.tenantFeatureService = tenantFeatureService;
         this.landlordOrgRepository = landlordOrgRepository;
     }
 
@@ -140,7 +141,8 @@ public class UnitListingController {
     }
 
     private void checkEnabled() {
-        if (!featureFlags.isListingsEnabled()) {
+        UUID tenantId = TenantContextHolder.getTenantId();
+        if (!tenantFeatureService.isEnabled(tenantId, TenantFeature.LISTINGS)) {
             throw new NotFoundException("Listings feature is disabled");
         }
     }

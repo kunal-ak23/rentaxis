@@ -3,8 +3,9 @@ package com.datagami.rentaxis.api;
 import com.datagami.rentaxis.api.dto.MarketplaceSearchRequest;
 import com.datagami.rentaxis.api.dto.PublicListingDTO;
 import com.datagami.rentaxis.api.exception.NotFoundException;
-import com.datagami.rentaxis.config.FeatureFlags;
 import com.datagami.rentaxis.core.service.MarketplaceService;
+import com.datagami.rentaxis.core.service.TenantFeatureService;
+import com.datagami.rentaxis.domain.entity.enums.TenantFeature;
 import com.datagami.rentaxis.domain.entity.UnitListing;
 import com.datagami.rentaxis.domain.entity.UnitListingMedia;
 import com.datagami.rentaxis.domain.entity.enums.Furnishing;
@@ -42,16 +43,16 @@ public class PublicListingController {
     private final MarketplaceService marketplaceService;
     private final UnitListingMediaRepository mediaRepository;
     private final UnitListingRepository listingRepository;
-    private final FeatureFlags featureFlags;
+    private final TenantFeatureService tenantFeatureService;
 
     public PublicListingController(MarketplaceService marketplaceService,
                                     UnitListingMediaRepository mediaRepository,
                                     UnitListingRepository listingRepository,
-                                    FeatureFlags featureFlags) {
+                                    TenantFeatureService tenantFeatureService) {
         this.marketplaceService = marketplaceService;
         this.mediaRepository = mediaRepository;
         this.listingRepository = listingRepository;
-        this.featureFlags = featureFlags;
+        this.tenantFeatureService = tenantFeatureService;
     }
 
     @GetMapping("/{tenantSlug}")
@@ -63,8 +64,8 @@ public class PublicListingController {
             @RequestParam(required = false) Furnishing furnishing,
             @RequestParam(required = false) Boolean availableNow,
             @PageableDefault(size = 12, sort = "createdAt") Pageable pageable) {
-        checkEnabled();
         UUID tenantId = marketplaceService.resolveTenantSlug(tenantSlug);
+        checkEnabled(tenantId);
         MarketplaceSearchRequest req = new MarketplaceSearchRequest(
                 minBedrooms, minRent, maxRent, furnishing, availableNow, null, null, null, null);
         Page<UnitListing> page = marketplaceService.search(tenantId, req, pageable);
@@ -75,15 +76,15 @@ public class PublicListingController {
     public ResponseEntity<PublicListingDTO> getPublicListing(
             @PathVariable String tenantSlug,
             @PathVariable String unitSlug) {
-        checkEnabled();
         UnitListing listing = marketplaceService.resolveByTenantSlugAndUnitSlug(tenantSlug, unitSlug);
+        checkEnabled(listing.getTenantId());
         return ResponseEntity.ok(toPublicDTO(listing, tenantSlug));
     }
 
     @GetMapping(value = "/{tenantSlug}/sitemap.xml", produces = MediaType.APPLICATION_XML_VALUE)
     public ResponseEntity<String> sitemap(@PathVariable String tenantSlug) {
-        checkEnabled();
         UUID tenantId = marketplaceService.resolveTenantSlug(tenantSlug);
+        checkEnabled(tenantId);
 
         Page<UnitListing> page = listingRepository.findByTenantIdAndStatus(
                 tenantId, ListingStatus.PUBLISHED, PageRequest.of(0, 1000));
@@ -190,8 +191,8 @@ public class PublicListingController {
         return new double[]{lat, lng};
     }
 
-    private void checkEnabled() {
-        if (!featureFlags.isListingsEnabled()) {
+    private void checkEnabled(UUID tenantId) {
+        if (!tenantFeatureService.isEnabled(tenantId, TenantFeature.LISTINGS)) {
             throw new NotFoundException("Listings feature is disabled");
         }
     }

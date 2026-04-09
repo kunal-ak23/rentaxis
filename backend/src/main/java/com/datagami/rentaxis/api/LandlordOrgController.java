@@ -1,13 +1,17 @@
 package com.datagami.rentaxis.api;
 
+import com.datagami.rentaxis.api.dto.FeatureToggleDTO;
 import com.datagami.rentaxis.core.service.LandlordOrgService;
+import com.datagami.rentaxis.core.service.TenantFeatureService;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
+import com.datagami.rentaxis.domain.entity.enums.TenantFeature;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/admin/tenants")
@@ -15,9 +19,11 @@ import java.util.Map;
 public class LandlordOrgController {
 
     private final LandlordOrgService service;
+    private final TenantFeatureService tenantFeatureService;
 
-    public LandlordOrgController(LandlordOrgService service) {
+    public LandlordOrgController(LandlordOrgService service, TenantFeatureService tenantFeatureService) {
         this.service = service;
+        this.tenantFeatureService = tenantFeatureService;
     }
 
     @PostMapping
@@ -37,7 +43,7 @@ public class LandlordOrgController {
 
     @PutMapping("/{id}")
     public ResponseEntity<LandlordOrg> updateTenant(
-            @PathVariable java.util.UUID id,
+            @PathVariable UUID id,
             @RequestBody Map<String, String> payload) {
         java.util.Optional<LandlordOrg> orgOpt = service.findById(id);
         if (orgOpt.isEmpty()) {
@@ -63,5 +69,29 @@ public class LandlordOrgController {
             org.setTicketOtpRequired(Boolean.parseBoolean(payload.get("ticketOtpRequired")));
         }
         return ResponseEntity.ok(service.save(org));
+    }
+
+    @GetMapping("/{id}/features")
+    public ResponseEntity<List<FeatureToggleDTO>> getFeatures(@PathVariable UUID id) {
+        if (service.findById(id).isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(tenantFeatureService.getAll(id));
+    }
+
+    @PutMapping("/{id}/features/{feature}")
+    public ResponseEntity<Void> setFeature(
+            @PathVariable UUID id,
+            @PathVariable TenantFeature feature,
+            @RequestBody Map<String, Boolean> body) {
+        if (service.findById(id).isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        Boolean enabled = body.get("enabled");
+        if (enabled == null) {
+            return ResponseEntity.badRequest().build();
+        }
+        tenantFeatureService.setEnabled(id, feature, enabled);
+        return ResponseEntity.ok().build();
     }
 }
