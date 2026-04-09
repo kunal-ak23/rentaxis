@@ -8,12 +8,9 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 public interface TenantFeatureRepository extends JpaRepository<TenantFeatureEntity, UUID> {
-
-    Optional<TenantFeatureEntity> findByTenantIdAndFeature(UUID tenantId, TenantFeature feature);
 
     List<TenantFeatureEntity> findByTenantId(UUID tenantId);
 

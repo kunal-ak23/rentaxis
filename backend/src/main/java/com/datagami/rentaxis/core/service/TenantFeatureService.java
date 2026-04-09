@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -35,6 +36,9 @@ public class TenantFeatureService {
         return flags.getOrDefault(feature, feature.isDefaultEnabled());
     }
 
+    // @Transactional is deliberately absent: cache.invalidate must run AFTER the DB commit,
+    // not inside the transaction. If the DB write succeeds and the JVM crashes before invalidate,
+    // the cache will serve stale data until TTL expiry (30 min) — acceptable for feature toggles.
     public void setEnabled(UUID tenantId, TenantFeature feature, boolean enabled) {
         repository.upsert(tenantId, feature.name(), enabled);
         cache.invalidate(tenantId);
@@ -60,7 +64,7 @@ public class TenantFeatureService {
                 map.put(row.getFeature(), row.isEnabled());
             }
         }
-        return map;
+        return Collections.unmodifiableMap(map);
     }
 
     private String toLabel(TenantFeature feature) {
