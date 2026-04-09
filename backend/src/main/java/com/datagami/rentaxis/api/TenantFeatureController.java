@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.api;
 
+import com.datagami.rentaxis.core.service.LandlordOrgService;
 import com.datagami.rentaxis.core.service.TenantFeatureService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.enums.TenantFeature;
@@ -15,20 +16,22 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 @RestController
-@RequestMapping("/api/v1/tenant/features")
+@RequestMapping("/api/v1/tenant")
 public class TenantFeatureController {
 
     private final TenantFeatureService tenantFeatureService;
+    private final LandlordOrgService landlordOrgService;
 
-    public TenantFeatureController(TenantFeatureService tenantFeatureService) {
+    public TenantFeatureController(TenantFeatureService tenantFeatureService, LandlordOrgService landlordOrgService) {
         this.tenantFeatureService = tenantFeatureService;
+        this.landlordOrgService = landlordOrgService;
     }
 
     /**
      * Returns a simple feature-name → enabled map for the current tenant.
      * Accessible to any authenticated user so the frontend can gate navigation items.
      */
-    @GetMapping
+    @GetMapping("/features")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<Map<String, Boolean>> getEnabledFeatures() {
         UUID tenantId = TenantContextHolder.getTenantId();
@@ -38,5 +41,21 @@ public class TenantFeatureController {
                         f -> tenantFeatureService.isEnabled(tenantId, f)
                 ));
         return ResponseEntity.ok(result);
+    }
+
+    /**
+     * Returns basic tenant info (slug, name) for the current tenant.
+     * Used by the frontend to build marketplace links for RENTER users.
+     */
+    @GetMapping("/info")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Map<String, String>> getTenantInfo() {
+        UUID tenantId = TenantContextHolder.getTenantId();
+        return landlordOrgService.findById(tenantId)
+                .map(org -> ResponseEntity.ok(Map.of(
+                        "slug", org.getSlug() != null ? org.getSlug() : "",
+                        "name", org.getName() != null ? org.getName() : ""
+                )))
+                .orElse(ResponseEntity.ok(Map.of("slug", "", "name", "")));
     }
 }

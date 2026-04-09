@@ -53,7 +53,7 @@ export default function MvpSidebar() {
     });
     const { data: session } = useSession();
     const userRole = session?.user?.role as UserRole | undefined;
-    const { isEnabled } = useTenantFeatures();
+    const { isEnabled, tenantSlug } = useTenantFeatures();
 
     useEffect(() => {
         localStorage.setItem('sidebar_collapsed', String(isCollapsed));
@@ -108,6 +108,7 @@ export default function MvpSidebar() {
         { name: "My Leases", href: "/dashboard/renter-portal", icon: FileText, tourId: 'sidebar-my-leases' },
         { name: tOnlinePayments("myPayments"), href: "/dashboard/renter-portal/payments", icon: CreditCard, tourId: 'sidebar-my-payments' },
         { name: "My Tickets", href: "/dashboard/tickets", icon: Wrench, tourId: 'sidebar-my-tickets' },
+        ...(isEnabled('LISTINGS') && tenantSlug ? [{ name: "Listings", href: `/marketplace/${tenantSlug}`, icon: Building2, tourId: 'sidebar-listings' }] : []),
         ...(isEnabled('MEETINGS') ? [{ name: "Meetings", href: "/dashboard/meetings", icon: CalendarDays, tourId: 'sidebar-meetings' }] : []),
     ] : [];
 
