@@ -85,3 +85,5 @@ databaseChangeLog:
       file: db/changelog/changesets/38-tenant-feature.yaml
   - include:
       file: db/changelog/changesets/39-settlement-deduction-attachments.yaml
+  - include:
+      file: db/changelog/changesets/40-settlement-additions.yaml
