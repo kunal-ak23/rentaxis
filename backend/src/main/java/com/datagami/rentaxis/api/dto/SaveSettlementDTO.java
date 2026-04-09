@@ -19,11 +19,12 @@ public class SaveSettlementDTO {
     @Setter
     public static class DeductionItemDTO {
         private UUID id; // optional — if set, updates existing deduction (preserving attachments)
-        @NotNull
-        private DeductionCategory category;
+        private DeductionCategory category; // nullable for additions
         private String description;
         @NotNull
         private BigDecimal amount;
         private boolean autoCalculated;
+        private String type; // "DEDUCTION" (default) or "ADDITION"
+        private String additionCategory; // required when type = ADDITION
     }
 }

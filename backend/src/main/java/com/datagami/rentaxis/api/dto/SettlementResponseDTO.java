@@ -15,6 +15,7 @@ public class SettlementResponseDTO {
     private UUID leaseId;
     private BigDecimal depositAmount;
     private BigDecimal totalDeductions;
+    private BigDecimal totalAdditions;
     private BigDecimal refundAmount;
     private String notes;
     private String status;
@@ -32,6 +33,8 @@ public class SettlementResponseDTO {
         private String description;
         private BigDecimal amount;
         private boolean autoCalculated;
+        private String type;
+        private String additionCategory;
         private List<DeductionAttachmentDTO> attachments;
     }
 }
