@@ -21,7 +21,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -139,7 +138,7 @@ public class DeductionAttachmentService {
         return mapToDTO(attachment);
     }
 
-    public byte[] downloadAttachment(UUID attachmentId) {
+    public InputStream downloadAttachmentStream(UUID attachmentId) throws IOException {
         SettlementDeductionAttachment attachment = attachmentRepository.findById(attachmentId)
                 .orElseThrow(() -> new NotFoundException("Attachment not found"));
 
@@ -150,15 +149,11 @@ public class DeductionAttachmentService {
 
         String url = attachment.getFileUrl();
         if (url.startsWith("https://") && url.contains(".blob.core.windows.net")) {
-            return downloadFromAzure(url);
+            return downloadStreamFromAzure(url);
         }
 
-        try {
-            return Files.readAllBytes(Path.of(localStoragePath).resolve(
-                    url.replace("/api/v1/assets/serve/", "")));
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to read attachment file", e);
-        }
+        return Files.newInputStream(Path.of(localStoragePath).resolve(
+                url.replace("/api/v1/assets/serve/", "")));
     }
 
     @Transactional
@@ -188,7 +183,7 @@ public class DeductionAttachmentService {
         attachmentRepository.deleteByDeductionId(deductionId);
     }
 
-    private byte[] downloadFromAzure(String blobUrl) {
+    private InputStream downloadStreamFromAzure(String blobUrl) {
         String marker = ".blob.core.windows.net/";
         int idx = blobUrl.indexOf(marker);
         String path = blobUrl.substring(idx + marker.length());
@@ -202,9 +197,7 @@ public class DeductionAttachmentService {
                 .getBlobContainerClient(container)
                 .getBlobClient(blobPath);
 
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        blobClient.downloadStream(baos);
-        return baos.toByteArray();
+        return blobClient.openInputStream();
     }
 
     private String uploadToAzure(UUID deductionId, String fileName, InputStream inputStream, long size, String contentType) {

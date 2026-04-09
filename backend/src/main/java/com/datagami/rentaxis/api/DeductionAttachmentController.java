@@ -3,6 +3,8 @@ package com.datagami.rentaxis.api;
 import com.datagami.rentaxis.api.dto.DeductionAttachmentDTO;
 import com.datagami.rentaxis.core.service.DeductionAttachmentService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -39,14 +41,14 @@ public class DeductionAttachmentController {
 
     @GetMapping("/attachments/{id}/download")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
-    public ResponseEntity<byte[]> download(@PathVariable UUID id) {
+    public ResponseEntity<Resource> download(@PathVariable UUID id) throws IOException {
         DeductionAttachmentDTO meta = attachmentService.getAttachmentById(id);
-        byte[] content = attachmentService.downloadAttachment(id);
+        InputStreamResource resource = new InputStreamResource(attachmentService.downloadAttachmentStream(id));
         String contentType = meta.getFileType() != null ? meta.getFileType() : "application/octet-stream";
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + meta.getName() + "\"")
                 .contentType(MediaType.parseMediaType(contentType))
-                .body(content);
+                .body(resource);
     }
 
     @DeleteMapping("/attachments/{id}")

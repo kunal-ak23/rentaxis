@@ -202,9 +202,8 @@ export default function LeaseDetailPage() {
             const res = await fetch(`/api/proxy/v1/leases/${leaseId}/settlement`);
             if (res.ok) {
                 const data = await res.json();
-                // Backend returns { settlement: {...}, deductions: [...] }
                 setSettlement({
-                    ...data.settlement,
+                    ...data,
                     deductions: data.deductions || [],
                 });
             }
