@@ -125,7 +125,9 @@ export default async function PublicListingPage({
       ? t('furnishedLabel.FULLY_FURNISHED')
       : null
 
-  const truncatedDesc = listing.seoDescription
+  const truncatedDesc = listing.description
+    ? listing.description
+    : listing.seoDescription
     ? listing.seoDescription.length > 200
       ? listing.seoDescription.slice(0, 200) + '\u2026'
       : listing.seoDescription
@@ -147,12 +149,22 @@ export default async function PublicListingPage({
           /* eslint-disable-next-line @next/next/no-img-element */
           <img
             src={listing.coverPhotoUrl}
-            alt={listing.title}
-            className="w-full max-h-64 object-cover"
+            alt={listing.title ?? ''}
+            className="w-full max-h-72 object-cover"
           />
         ) : (
-          <div className="w-full max-h-64 h-56 bg-gradient-to-br from-blue-100 to-indigo-200 flex items-center justify-center">
+          <div className="w-full max-h-72 h-56 bg-gradient-to-br from-blue-100 to-indigo-200 flex items-center justify-center">
             <Building size={48} className="text-indigo-400" />
+          </div>
+        )}
+
+        {/* Additional images */}
+        {listing.media && listing.media.length > 1 && (
+          <div className="max-w-2xl mx-auto px-4 pt-4 grid grid-cols-3 gap-2">
+            {listing.media.filter((m: any) => !m.isCover && m.mediaType === 'PHOTO').slice(0, 6).map((m: any, i: number) => (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img key={i} src={m.url} alt={m.caption ?? ''} className="w-full h-24 object-cover rounded-lg" />
+            ))}
           </div>
         )}
 
@@ -189,12 +201,12 @@ export default async function PublicListingPage({
           </div>
 
           {/* Availability chip */}
-          {listing.availableNow ? (
-            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-700">
-              {listing.availableLabel}
-            </span>
-          ) : (
-            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">
+          {listing.availableLabel && (
+            <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${
+              listing.availableLabel.toLowerCase().includes('now')
+                ? 'bg-green-100 text-green-700'
+                : 'bg-blue-100 text-blue-700'
+            }`}>
               {listing.availableLabel}
             </span>
           )}
@@ -220,9 +232,23 @@ export default async function PublicListingPage({
               : listing.area ?? listing.emirate ?? 'UAE'}
           </div>
 
-          {/* Truncated description */}
+          {/* Description */}
           {truncatedDesc && (
             <p className="text-sm text-neutral-600 leading-relaxed">{truncatedDesc}</p>
+          )}
+
+          {/* Amenities */}
+          {listing.amenities && listing.amenities.length > 0 && (
+            <div>
+              <h2 className="text-sm font-semibold text-neutral-800 mb-2">Amenities</h2>
+              <div className="flex flex-wrap gap-2">
+                {listing.amenities.map((a: string) => (
+                  <span key={a} className="px-3 py-1 rounded-full text-xs bg-neutral-100 text-neutral-700 border border-neutral-200">
+                    {a.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase())}
+                  </span>
+                ))}
+              </div>
+            </div>
           )}
 
           {/* Login CTA card */}

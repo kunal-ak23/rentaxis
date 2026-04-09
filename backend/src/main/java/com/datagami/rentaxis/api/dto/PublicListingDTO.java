@@ -1,10 +1,13 @@
 package com.datagami.rentaxis.api.dto;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 public record PublicListingDTO(
         String slug,
         String tenantSlug,
+        String title,
+        String description,
         String buildingName,
         String area,
         String emirate,
@@ -13,6 +16,8 @@ public record PublicListingDTO(
         String furnishing,
         String rentRangeLabel,
         String coverPhotoUrl,
+        List<MediaItem> media,
+        List<String> amenities,
         BigDecimal approxLat,
         BigDecimal approxLng,
         String seoTitle,
@@ -22,4 +27,5 @@ public record PublicListingDTO(
         String availableLabel,
         boolean loginRequired
 ) {
+    public record MediaItem(String url, String mediaType, String caption, boolean isCover) {}
 }

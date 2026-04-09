@@ -40,7 +40,7 @@ function ListingCard({ listing, tenantSlug }: { listing: PublicListingDTO; tenan
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={listing.coverPhotoUrl}
-            alt={listing.title}
+            alt={listing.title ?? ''}
             className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-300"
             onError={() => setImgErr(true)}
           />

@@ -76,6 +76,7 @@ interface FormState {
   dewaIncluded: boolean; chillerIncluded: boolean;
   utilitiesEstimate: string;
   seoTitle: string; seoDescription: string; seoKeywords: string; ogImageUrl: string;
+  lat: string; lng: string;
 }
 
 const DEFAULT_FORM: FormState = {
@@ -90,6 +91,7 @@ const DEFAULT_FORM: FormState = {
   dewaIncluded: false, chillerIncluded: false,
   utilitiesEstimate: '',
   seoTitle: '', seoDescription: '', seoKeywords: '', ogImageUrl: '',
+  lat: '', lng: '',
 };
 
 export default function ListingEditPage({ params }: { params: Promise<{ id: string }> }) {
@@ -173,6 +175,8 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
           seoDescription: data.seoDescription ?? '',
           seoKeywords: data.seoKeywords ?? '',
           ogImageUrl: data.ogImageUrl ?? '',
+          lat: data.lat != null ? String(data.lat) : '',
+          lng: data.lng != null ? String(data.lng) : '',
         });
         const amenityMap = new Map<ListingAmenity, string>();
         for (const a of data.amenities) {
@@ -220,6 +224,8 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
       seoDescription: form.seoDescription || undefined,
       seoKeywords: form.seoKeywords || undefined,
       ogImageUrl: form.ogImageUrl || undefined,
+      lat: numOr(form.lat),
+      lng: numOr(form.lng),
       amenities: amenitiesArr,
     };
   }
@@ -1031,11 +1037,53 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
 
       {/* ──────────────────── LOCATION TAB ──────────────────── */}
       {activeTab === 'location' && (
-        <div className="bg-surface rounded-xl border border-border p-12 flex flex-col items-center gap-4">
-          <div className="w-16 h-16 rounded-2xl bg-input flex items-center justify-center">
-            <MapPin size={28} className="text-muted/50" />
+        <div className="bg-surface rounded-xl border border-border">
+          <div className="px-5 py-4 border-b border-border">
+            <p className="text-[10px] font-semibold text-muted uppercase tracking-wider">{t('coordinates')}</p>
           </div>
-          <p className="text-sm text-muted font-medium text-center">{t('locationComingSoon')}</p>
+          <div className="p-5 space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-muted mb-1.5">Latitude</label>
+                <input
+                  type="number"
+                  step="any"
+                  value={form.lat}
+                  onChange={(e) => setField('lat', e.target.value)}
+                  placeholder="e.g. 25.2048"
+                  className="w-full border border-border rounded-lg bg-surface px-3 py-2 text-sm text-foreground placeholder:text-muted/50 focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-muted mb-1.5">Longitude</label>
+                <input
+                  type="number"
+                  step="any"
+                  value={form.lng}
+                  onChange={(e) => setField('lng', e.target.value)}
+                  placeholder="e.g. 55.2708"
+                  className="w-full border border-border rounded-lg bg-surface px-3 py-2 text-sm text-foreground placeholder:text-muted/50 focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none"
+                />
+              </div>
+            </div>
+            {form.lat && form.lng && (
+              <div className="rounded-xl overflow-hidden border border-border">
+                <iframe
+                  width="100%"
+                  height="300"
+                  style={{ border: 0 }}
+                  loading="lazy"
+                  src={`https://www.openstreetmap.org/export/embed.html?bbox=${Number(form.lng)-0.01},${Number(form.lat)-0.01},${Number(form.lng)+0.01},${Number(form.lat)+0.01}&layer=mapnik&marker=${form.lat},${form.lng}`}
+                />
+              </div>
+            )}
+            {(!form.lat || !form.lng) && (
+              <div className="bg-input/30 rounded-xl border border-dashed border-border p-8 flex flex-col items-center gap-3">
+                <MapPin size={24} className="text-muted/40" />
+                <p className="text-xs text-muted text-center">Enter coordinates to preview the map location.</p>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
