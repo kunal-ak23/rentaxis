@@ -2,12 +2,19 @@
 
 import { useState, useEffect } from "react";
 import { useTranslations } from "next-intl";
-import { Plus, X, Building2, Hash, Settings2, ShieldCheck, Loader2, Search, Pencil, Copy, Check } from "lucide-react";
+import { Plus, X, Building2, Hash, Settings2, ShieldCheck, Loader2, Search, Pencil, Copy, Check, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Pagination } from "@/components/ui/Pagination";
 import { FileUpload } from "@/components/ui/FileUpload";
 
 type Tenant = { id: string; name: string; status: string; address?: string; trn?: string; logoUrl?: string; ticketOtpRequired?: boolean; createdAt: string };
+
+type FeatureToggle = {
+  feature: string;
+  label: string;
+  defaultEnabled: boolean;
+  enabled: boolean;
+};
 
 export default function SuperAdminTenantsPage() {
     const t = useTranslations("Index");
@@ -21,6 +28,10 @@ export default function SuperAdminTenantsPage() {
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(25);
     const [copiedId, setCopiedId] = useState<string | null>(null);
+    const [featuresDrawerTenant, setFeaturesDrawerTenant] = useState<Tenant | null>(null);
+    const [features, setFeatures] = useState<FeatureToggle[]>([]);
+    const [featuresLoading, setFeaturesLoading] = useState(false);
+    const [featuresUpdating, setFeaturesUpdating] = useState<string | null>(null);
 
     useEffect(() => {
         fetchTenants();
@@ -76,6 +87,36 @@ export default function SuperAdminTenantsPage() {
         setShowForm(false);
         setEditingTenant(null);
         setFormData({ name: "", address: "", trn: "", status: "ACTIVE", logoUrl: "", ticketOtpRequired: true });
+    };
+
+    const openFeaturesDrawer = async (tenant: Tenant) => {
+        setFeaturesDrawerTenant(tenant);
+        setFeaturesLoading(true);
+        try {
+            const res = await fetch(`/api/proxy/admin/tenants/${tenant.id}/features`);
+            if (res.ok) setFeatures(await res.json());
+        } finally {
+            setFeaturesLoading(false);
+        }
+    };
+
+    const toggleFeature = async (feature: string, enabled: boolean) => {
+        if (!featuresDrawerTenant) return;
+        setFeatures(prev => prev.map(f => f.feature === feature ? { ...f, enabled } : f));
+        setFeaturesUpdating(feature);
+        try {
+            const res = await fetch(
+                `/api/proxy/admin/tenants/${featuresDrawerTenant.id}/features/${feature}`,
+                { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled }) }
+            );
+            if (!res.ok) {
+                setFeatures(prev => prev.map(f => f.feature === feature ? { ...f, enabled: !enabled } : f));
+            }
+        } catch {
+            setFeatures(prev => prev.map(f => f.feature === feature ? { ...f, enabled: !enabled } : f));
+        } finally {
+            setFeaturesUpdating(null);
+        }
     };
 
     const filteredTenants = searchQuery
@@ -285,13 +326,22 @@ export default function SuperAdminTenantsPage() {
                                     </span>
                                 </td>
                                 <td className="px-5 py-3.5 text-right">
-                                    <button
-                                        onClick={() => openEdit(tenant)}
-                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/10 rounded-lg transition-colors cursor-pointer"
-                                    >
-                                        <Pencil size={12} />
-                                        Edit
-                                    </button>
+                                    <div className="inline-flex items-center gap-1">
+                                        <button
+                                            onClick={() => openFeaturesDrawer(tenant)}
+                                            title="Feature Toggles"
+                                            className="p-1.5 rounded hover:bg-neutral-100 text-neutral-500 hover:text-blue-600 transition-colors cursor-pointer"
+                                        >
+                                            <Zap size={15} />
+                                        </button>
+                                        <button
+                                            onClick={() => openEdit(tenant)}
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/10 rounded-lg transition-colors cursor-pointer"
+                                        >
+                                            <Pencil size={12} />
+                                            Edit
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
                         ))}
@@ -319,6 +369,61 @@ export default function SuperAdminTenantsPage() {
                     </div>
                 )}
             </div>
+            )}
+
+            {/* Features Drawer */}
+            {featuresDrawerTenant && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+                <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4">
+                  <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-100">
+                    <div>
+                      <h2 className="font-semibold text-neutral-900 text-sm">Feature Toggles</h2>
+                      <p className="text-xs text-neutral-500 mt-0.5">{featuresDrawerTenant.name}</p>
+                    </div>
+                    <button
+                      onClick={() => setFeaturesDrawerTenant(null)}
+                      className="p-1.5 rounded hover:bg-neutral-100 text-neutral-500 cursor-pointer"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                  <div className="p-5">
+                    {featuresLoading ? (
+                      <div className="flex items-center justify-center py-8 text-neutral-400">
+                        <Loader2 size={20} className="animate-spin mr-2" /> Loading…
+                      </div>
+                    ) : features.length === 0 ? (
+                      <p className="text-sm text-neutral-500 text-center py-6">No features available.</p>
+                    ) : (
+                      <div className="space-y-4">
+                        {features.map(f => (
+                          <div key={f.feature} className="flex items-center justify-between gap-4">
+                            <div>
+                              <p className="text-sm font-medium text-neutral-800">{f.label}</p>
+                              <p className="text-xs text-neutral-400 mt-0.5">
+                                Default: {f.defaultEnabled ? "On" : "Off"}
+                              </p>
+                            </div>
+                            <button
+                              disabled={featuresUpdating === f.feature}
+                              onClick={() => toggleFeature(f.feature, !f.enabled)}
+                              className={cn(
+                                "relative w-11 h-6 rounded-full transition-colors cursor-pointer flex-shrink-0 disabled:opacity-60",
+                                f.enabled ? "bg-blue-600" : "bg-neutral-200"
+                              )}
+                            >
+                              <span className={cn(
+                                "absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform",
+                                f.enabled ? "translate-x-5" : "translate-x-0"
+                              )} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
             )}
         </div>
     );
