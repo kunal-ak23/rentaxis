@@ -86,14 +86,20 @@ databaseChangeLog:
                   name: version
                   type: bigint
                   defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
               - column:
                   name: created_at
                   type: timestamp with time zone
                   defaultValueComputed: now()
+                  constraints:
+                    nullable: false
               - column:
                   name: updated_at
                   type: timestamp with time zone
                   defaultValueComputed: now()
+                  constraints:
+                    nullable: false
 
         - createTable:
             tableName: meeting_details
