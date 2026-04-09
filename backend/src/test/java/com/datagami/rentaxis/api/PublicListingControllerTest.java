@@ -2,8 +2,9 @@ package com.datagami.rentaxis.api;
 
 import com.datagami.rentaxis.api.dto.PublicListingDTO;
 import com.datagami.rentaxis.api.exception.NotFoundException;
-import com.datagami.rentaxis.config.FeatureFlags;
 import com.datagami.rentaxis.core.service.MarketplaceService;
+import com.datagami.rentaxis.core.service.TenantFeatureService;
+import com.datagami.rentaxis.domain.entity.enums.TenantFeature;
 import com.datagami.rentaxis.domain.entity.UnitListing;
 import com.datagami.rentaxis.domain.entity.enums.ListingStatus;
 import com.datagami.rentaxis.domain.repository.UnitListingMediaRepository;
@@ -44,7 +45,7 @@ class PublicListingControllerTest {
     @Mock
     UnitListingRepository listingRepository;
     @Mock
-    FeatureFlags featureFlags;
+    TenantFeatureService tenantFeatureService;
 
     @InjectMocks
     PublicListingController controller;
@@ -67,7 +68,7 @@ class PublicListingControllerTest {
         listing.setLng(new BigDecimal("55.1367"));
         listing.setBedrooms(2);
 
-        when(featureFlags.isListingsEnabled()).thenReturn(true);
+        when(tenantFeatureService.isEnabled(any(), eq(TenantFeature.LISTINGS))).thenReturn(true);
         when(mediaRepository.findByListingIdOrderBySortOrderAsc(any())).thenReturn(Collections.emptyList());
     }
 
@@ -132,7 +133,7 @@ class PublicListingControllerTest {
 
     @Test
     void getPublicListing_returns404_whenFeatureDisabled() {
-        when(featureFlags.isListingsEnabled()).thenReturn(false);
+        when(tenantFeatureService.isEnabled(any(), eq(TenantFeature.LISTINGS))).thenReturn(false);
 
         assertThatThrownBy(() -> controller.getPublicListing("acme", "marina-2br"))
                 .isInstanceOf(NotFoundException.class);

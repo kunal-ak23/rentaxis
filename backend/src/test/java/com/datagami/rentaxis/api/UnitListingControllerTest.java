@@ -3,8 +3,9 @@ package com.datagami.rentaxis.api;
 import com.datagami.rentaxis.api.dto.UnitListingCreateRequest;
 import com.datagami.rentaxis.api.dto.UnitListingUpdateRequest;
 import com.datagami.rentaxis.api.exception.NotFoundException;
-import com.datagami.rentaxis.config.FeatureFlags;
+import com.datagami.rentaxis.core.service.TenantFeatureService;
 import com.datagami.rentaxis.core.service.UnitListingService;
+import com.datagami.rentaxis.domain.entity.enums.TenantFeature;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.UnitListing;
 import com.datagami.rentaxis.domain.entity.enums.ListingStatus;
@@ -41,7 +42,7 @@ class UnitListingControllerTest {
     UnitListingService service;
 
     @Mock
-    FeatureFlags featureFlags;
+    TenantFeatureService tenantFeatureService;
 
     @Mock
     LandlordOrgRepository landlordOrgRepository;
@@ -54,7 +55,7 @@ class UnitListingControllerTest {
     @BeforeEach
     void setUp() {
         TenantContextHolder.setTenantId(tenantId);
-        when(featureFlags.isListingsEnabled()).thenReturn(true);
+        when(tenantFeatureService.isEnabled(any(), eq(TenantFeature.LISTINGS))).thenReturn(true);
         lenient().when(landlordOrgRepository.findById(any(UUID.class))).thenReturn(Optional.empty());
     }
 
@@ -194,7 +195,7 @@ class UnitListingControllerTest {
 
     @Test
     void featureFlagOff_throwsNotFoundException() {
-        when(featureFlags.isListingsEnabled()).thenReturn(false);
+        when(tenantFeatureService.isEnabled(any(), eq(TenantFeature.LISTINGS))).thenReturn(false);
 
         assertThatThrownBy(() -> controller.list(null, null, null,
                 org.springframework.data.domain.PageRequest.of(0, 20)))

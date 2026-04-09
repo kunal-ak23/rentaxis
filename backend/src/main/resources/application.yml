@@ -40,8 +40,6 @@ rentaxis:
     storage-path: ./data/contracts
   encryption:
     key: ${RENTAXIS_ENCRYPTION_KEY:}
-  features:
-    listings-enabled: ${FEATURE_LISTINGS_ENABLED:false}
   listings:
     max-media-size-bytes: ${RENTAXIS_LISTINGS_MAX_MEDIA_SIZE_BYTES:10485760}
 
