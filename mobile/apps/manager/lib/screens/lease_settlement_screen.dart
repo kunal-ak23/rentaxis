@@ -35,8 +35,8 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
   List<Map<String, dynamic>> _deductions = [];
   String _notes = '';
   bool _saving = false;
-  bool _uploading = false;
   Map<String, bool> _uploadingForDeduction = {};
+  Map<int, TextEditingController> _amountControllers = {};
 
   final _notesController = TextEditingController();
 
@@ -58,6 +58,9 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
   @override
   void dispose() {
     _notesController.dispose();
+    for (final ctrl in _amountControllers.values) {
+      ctrl.dispose();
+    }
     super.dispose();
   }
 
@@ -169,6 +172,7 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
         'notes': _notes,
         'deductions': _deductions
             .map((d) => {
+                  'id': d['id'],
                   'category': d['category'],
                   'description': d['description'],
                   'amount':
@@ -186,6 +190,14 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
               i < _deductions.length && i < savedDeductions.length;
               i++) {
             _deductions[i]['id'] = savedDeductions[i]['id'];
+          }
+          // Sync amount controllers for auto-deductions with server-returned values
+          for (int i = 0; i < _deductions.length; i++) {
+            if (_deductions[i]['autoCalculated'] == true &&
+                _amountControllers.containsKey(i)) {
+              _amountControllers[i]!.text =
+                  _deductions[i]['amount']?.toString() ?? '0';
+            }
           }
         });
         ScaffoldMessenger.of(context).showSnackBar(
@@ -308,6 +320,9 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
     setState(() => _uploadingForDeduction[deductionId] = true);
     try {
       final service = ref.read(_settlementServiceProvider);
+      // Note: for large files (up to 250MB), the Dio client receiveTimeout (default 15s)
+      // may need to be increased. Consider passing Options(receiveTimeout: Duration(minutes: 5))
+      // to the upload call if timeouts are observed in production.
       await service.uploadDeductionAttachment(
           deductionId, filePath, fileName ?? 'attachment');
       final attachments = await service.getDeductionAttachments(deductionId);
@@ -624,8 +639,13 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
 
   Widget _buildAutoDeductionCard(
       Map<String, dynamic> deduction, int index, bool readOnly) {
-    final amountCtrl =
-        TextEditingController(text: deduction['amount']?.toString() ?? '0');
+    final amountCtrl = _amountControllers.putIfAbsent(
+      index,
+      () => TextEditingController(text: deduction['amount']?.toString() ?? '0'),
+    );
+    final deductionId = deduction['id'] as String?;
+    final attachments =
+        (deduction['attachments'] as List? ?? []).cast<Map<String, dynamic>>();
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -635,75 +655,85 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.border),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      _categoryLabel(deduction['category'] as String),
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: AppColors.info.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                            color:
-                                AppColors.info.withValues(alpha: 0.3)),
-                      ),
-                      child: const Text(
-                        'Auto',
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: AppColors.info,
-                          fontWeight: FontWeight.w600,
+                    Row(
+                      children: [
+                        Text(
+                          _categoryLabel(deduction['category'] as String),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                          ),
                         ),
-                      ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AppColors.info.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                                color:
+                                    AppColors.info.withValues(alpha: 0.3)),
+                          ),
+                          child: const Text(
+                            'Auto',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: AppColors.info,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
+                    if ((deduction['description'] as String?)?.isNotEmpty ==
+                        true) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        deduction['description'] as String,
+                        style: const TextStyle(
+                            fontSize: 12, color: AppColors.textSecondary),
+                      ),
+                    ],
                   ],
                 ),
-                if ((deduction['description'] as String?)?.isNotEmpty ==
-                    true) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    deduction['description'] as String,
-                    style: const TextStyle(
-                        fontSize: 12, color: AppColors.textSecondary),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          SizedBox(
-            width: 110,
-            child: TextFormField(
-              controller: amountCtrl,
-              enabled: !readOnly,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              textAlign: TextAlign.right,
-              style: const TextStyle(
-                  fontWeight: FontWeight.w600, fontSize: 14),
-              decoration: const InputDecoration(
-                contentPadding:
-                    EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               ),
-              onChanged: (v) {
-                _deductions[index]['amount'] = v;
-              },
-            ),
+              const SizedBox(width: 12),
+              SizedBox(
+                width: 110,
+                child: TextFormField(
+                  controller: amountCtrl,
+                  enabled: !readOnly,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  textAlign: TextAlign.right,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w600, fontSize: 14),
+                  decoration: const InputDecoration(
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  ),
+                  onChanged: (v) {
+                    _deductions[index]['amount'] = v;
+                  },
+                ),
+              ),
+            ],
           ),
+          // Show attachments if any (especially relevant in finalized view)
+          if (attachments.isNotEmpty || deductionId != null) ...[
+            const SizedBox(height: 8),
+            _buildAttachmentGrid(attachments, index, readOnly),
+          ],
         ],
       ),
     );
