@@ -1,19 +1,37 @@
 package com.datagami.rentaxis.api.dto;
 
-import com.datagami.rentaxis.domain.entity.LeaseSettlement;
-import com.datagami.rentaxis.domain.entity.LeaseSettlementDeduction;
-import lombok.AllArgsConstructor;
 import lombok.Getter;
-import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
 
 @Getter
 @Setter
-@NoArgsConstructor
-@AllArgsConstructor
 public class SettlementResponseDTO {
-    private LeaseSettlement settlement;
-    private List<LeaseSettlementDeduction> deductions;
+    private UUID id;
+    private UUID leaseId;
+    private BigDecimal depositAmount;
+    private BigDecimal totalDeductions;
+    private BigDecimal refundAmount;
+    private String notes;
+    private String status;
+    private UUID settledBy;
+    private String settledByName;
+    private LocalDateTime settledAt;
+    private LocalDateTime createdAt;
+    private List<DeductionDTO> deductions;
+
+    @Getter
+    @Setter
+    public static class DeductionDTO {
+        private UUID id;
+        private String category;
+        private String description;
+        private BigDecimal amount;
+        private boolean autoCalculated;
+        private List<DeductionAttachmentDTO> attachments;
+    }
 }
