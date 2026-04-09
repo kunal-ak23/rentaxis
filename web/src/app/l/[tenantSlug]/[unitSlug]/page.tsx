@@ -1,8 +1,12 @@
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import { getTranslations } from 'next-intl/server'
+import dynamic from 'next/dynamic'
 import { MapPin, Bed, Bath, Building, LogIn } from 'lucide-react'
 import { fetchPublicListing } from '@/lib/api/listings'
+import ListingGallery from '@/components/ListingGallery'
+
+const ListingMap = dynamic(() => import('@/components/ListingMap'), { ssr: false })
 
 export const revalidate = 3600
 
@@ -144,8 +148,13 @@ export default async function PublicListingPage({
       />
 
       <div className="min-h-screen bg-neutral-50">
-        {/* Hero image */}
-        {listing.coverPhotoUrl ? (
+        {/* Image Gallery */}
+        {listing.media && listing.media.length > 0 ? (
+          <ListingGallery
+            media={listing.media}
+            title={listing.title || listing.buildingName || 'Property'}
+          />
+        ) : listing.coverPhotoUrl ? (
           /* eslint-disable-next-line @next/next/no-img-element */
           <img
             src={listing.coverPhotoUrl}
@@ -153,18 +162,8 @@ export default async function PublicListingPage({
             className="w-full max-h-72 object-cover"
           />
         ) : (
-          <div className="w-full max-h-72 h-56 bg-gradient-to-br from-blue-100 to-indigo-200 flex items-center justify-center">
+          <div className="w-full h-56 bg-gradient-to-br from-blue-100 to-indigo-200 flex items-center justify-center">
             <Building size={48} className="text-indigo-400" />
-          </div>
-        )}
-
-        {/* Additional images */}
-        {listing.media && listing.media.length > 1 && (
-          <div className="max-w-2xl mx-auto px-4 pt-4 grid grid-cols-3 gap-2">
-            {listing.media.filter((m: any) => !m.isCover && m.mediaType === 'PHOTO').slice(0, 6).map((m: any, i: number) => (
-              /* eslint-disable-next-line @next/next/no-img-element */
-              <img key={i} src={m.url} alt={m.caption ?? ''} className="w-full h-24 object-cover rounded-lg" />
-            ))}
           </div>
         )}
 
@@ -224,13 +223,19 @@ export default async function PublicListingPage({
             </div>
           </div>
 
-          {/* Map placeholder */}
-          <div className="h-36 rounded-xl bg-neutral-200 border border-neutral-200 flex items-center justify-center text-neutral-500 text-sm gap-2">
-            <MapPin size={18} className="text-neutral-400" />
-            {listing.area && listing.emirate
-              ? `${listing.area}, ${listing.emirate}`
-              : listing.area ?? listing.emirate ?? 'UAE'}
-          </div>
+          {/* Map */}
+          {listing.approxLat != null && listing.approxLng != null ? (
+            <ListingMap
+              lat={listing.approxLat}
+              lng={listing.approxLng}
+              label={[listing.buildingName, listing.area, listing.emirate].filter(Boolean).join(', ') || 'Location'}
+            />
+          ) : (
+            <div className="h-36 rounded-xl bg-neutral-100 border border-neutral-200 flex items-center justify-center text-neutral-500 text-sm gap-2">
+              <MapPin size={18} className="text-neutral-400" />
+              {[listing.area, listing.emirate].filter(Boolean).join(', ') || 'UAE'}
+            </div>
+          )}
 
           {/* Description */}
           {truncatedDesc && (
