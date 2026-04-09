@@ -7,7 +7,6 @@ import com.datagami.rentaxis.api.dto.UnitListingSummaryDTO;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.service.InterestService;
 import com.datagami.rentaxis.core.service.TenantFeatureService;
-import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.enums.TenantFeature;
 import com.datagami.rentaxis.core.service.MarketplaceService;
 import com.datagami.rentaxis.domain.entity.UnitListing;
@@ -76,8 +75,8 @@ public class MarketplaceController {
             @RequestParam(required = false) Double nearLng,
             @RequestParam(required = false) Double radiusKm,
             @PageableDefault(sort = "createdAt", direction = Sort.Direction.ASC) Pageable pageable) {
-        checkEnabled();
         UUID tenantId = marketplaceService.resolveTenantSlug(tenantSlug);
+        checkEnabled(tenantId);
         MarketplaceSearchRequest req = new MarketplaceSearchRequest(
                 minBedrooms, minRent, maxRent, furnishing,
                 availableNow, availableByDate, nearLat, nearLng, radiusKm);
@@ -89,7 +88,8 @@ public class MarketplaceController {
     public ResponseEntity<UnitListingDTO> getBySlug(
             @PathVariable String tenantSlug,
             @PathVariable String slug) {
-        checkEnabled();
+        UUID tenantId = marketplaceService.resolveTenantSlug(tenantSlug);
+        checkEnabled(tenantId);
         UnitListing listing = marketplaceService.resolveByTenantSlugAndUnitSlug(tenantSlug, slug);
         return ResponseEntity.ok(toDetail(listing, tenantSlug));
     }
@@ -98,9 +98,9 @@ public class MarketplaceController {
     public ResponseEntity<Void> addInterest(
             @PathVariable UUID id,
             @RequestBody(required = false) NoteRequest body) {
-        checkEnabled();
-        UUID renterUserId = currentUserId();
         UnitListing listing = marketplaceService.getListingById(id);
+        checkEnabled(listing.getTenantId());
+        UUID renterUserId = currentUserId();
         interestService.addInterest(listing.getTenantId(), id, renterUserId,
                 body != null ? body.note() : null);
         return ResponseEntity.status(HttpStatus.CREATED).build();
@@ -108,16 +108,15 @@ public class MarketplaceController {
 
     @DeleteMapping("/listings/{id}/interest")
     public ResponseEntity<Void> withdrawInterest(@PathVariable UUID id) {
-        checkEnabled();
-        UUID renterUserId = currentUserId();
         UnitListing listing = marketplaceService.getListingById(id);
+        checkEnabled(listing.getTenantId());
+        UUID renterUserId = currentUserId();
         interestService.withdraw(listing.getTenantId(), id, renterUserId);
         return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/me/wishlist")
     public ResponseEntity<List<UnitListingSummaryDTO>> wishlist() {
-        checkEnabled();
         UUID renterUserId = currentUserId();
         List<UnitListingInterest> interests = interestService.wishlistForRenter(renterUserId);
         if (interests.isEmpty()) {
@@ -154,8 +153,7 @@ public class MarketplaceController {
 
     // ---- Helpers ----
 
-    private void checkEnabled() {
-        UUID tenantId = TenantContextHolder.getTenantId();
+    private void checkEnabled(UUID tenantId) {
         if (!tenantFeatureService.isEnabled(tenantId, TenantFeature.LISTINGS)) {
             throw new NotFoundException("Listings feature is disabled");
         }

@@ -167,6 +167,7 @@ class MarketplaceControllerTest {
 
     @Test
     void featureFlagOff_404() {
+        when(marketplaceService.resolveTenantSlug("acme")).thenReturn(tenantId);
         when(tenantFeatureService.isEnabled(any(), eq(TenantFeature.LISTINGS))).thenReturn(false);
 
         assertThatThrownBy(() -> controller.listListings(
