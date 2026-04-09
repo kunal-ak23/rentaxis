@@ -731,7 +731,7 @@ export default function LeaseDetailPage() {
                             </div>
                             {settlement.totalAdditions != null && settlement.totalAdditions > 0 && (
                                 <div className="flex justify-between items-center">
-                                    <span className="text-xs text-muted">Total Additions</span>
+                                    <span className="text-xs font-semibold text-muted">Total Additions</span>
                                     <span className="text-xs font-semibold text-success tabular-nums">
                                         + {formatCurrency(settlement.totalAdditions)}
                                     </span>
