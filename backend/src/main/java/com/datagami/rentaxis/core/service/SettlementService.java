@@ -1,8 +1,10 @@
 package com.datagami.rentaxis.core.service;
 
+import com.datagami.rentaxis.api.dto.SaveSettlementDTO;
 import com.datagami.rentaxis.api.dto.SettlementPreviewDTO;
 import com.datagami.rentaxis.api.dto.TerminateWithSettlementDTO;
 import com.datagami.rentaxis.api.exception.NotFoundException;
+import com.datagami.rentaxis.domain.entity.enums.SettlementStatus;
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.LeaseSettlement;
 import com.datagami.rentaxis.domain.entity.LeaseSettlementDeduction;
@@ -71,6 +73,7 @@ public class SettlementService {
         settlement.setNotes(dto.getNotes());
         settlement.setSettledBy(settledBy);
         settlement.setSettledAt(LocalDateTime.now());
+        settlement.setStatus(SettlementStatus.FINALIZED);
 
         // Calculate total deductions from provided items
         BigDecimal totalDeductions = BigDecimal.ZERO;
@@ -98,6 +101,73 @@ public class SettlementService {
         }
 
         return savedSettlement;
+    }
+
+    @Transactional
+    public LeaseSettlement saveDraft(UUID leaseId, SaveSettlementDTO dto, UUID userId) {
+        Lease lease = findLeaseWithTenantCheck(leaseId);
+        BigDecimal depositAmount = lease.getDepositAmount() != null ? lease.getDepositAmount() : BigDecimal.ZERO;
+
+        Optional<LeaseSettlement> existingOpt = leaseSettlementRepository.findByLeaseId(leaseId);
+        LeaseSettlement settlement;
+
+        if (existingOpt.isPresent()) {
+            settlement = existingOpt.get();
+            if (settlement.getStatus() == SettlementStatus.FINALIZED) {
+                throw new IllegalStateException("Settlement is already finalized");
+            }
+            List<LeaseSettlementDeduction> oldDeductions =
+                    leaseSettlementDeductionRepository.findBySettlementIdOrderByCreatedAtAsc(settlement.getId());
+            leaseSettlementDeductionRepository.deleteAll(oldDeductions);
+        } else {
+            settlement = new LeaseSettlement();
+            settlement.setLeaseId(leaseId);
+            settlement.setStatus(SettlementStatus.DRAFT);
+        }
+
+        settlement.setDepositAmount(depositAmount);
+        settlement.setNotes(dto.getNotes());
+
+        BigDecimal totalDeductions = BigDecimal.ZERO;
+        if (dto.getDeductions() != null) {
+            totalDeductions = dto.getDeductions().stream()
+                    .map(SaveSettlementDTO.DeductionItemDTO::getAmount)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+        }
+        settlement.setTotalDeductions(totalDeductions);
+        settlement.setRefundAmount(depositAmount.subtract(totalDeductions));
+
+        LeaseSettlement savedSettlement = leaseSettlementRepository.save(settlement);
+
+        if (dto.getDeductions() != null) {
+            for (SaveSettlementDTO.DeductionItemDTO item : dto.getDeductions()) {
+                LeaseSettlementDeduction deduction = new LeaseSettlementDeduction();
+                deduction.setSettlementId(savedSettlement.getId());
+                deduction.setCategory(item.getCategory());
+                deduction.setDescription(item.getDescription());
+                deduction.setAmount(item.getAmount());
+                deduction.setAutoCalculated(item.isAutoCalculated());
+                leaseSettlementDeductionRepository.save(deduction);
+            }
+        }
+
+        return savedSettlement;
+    }
+
+    @Transactional
+    public LeaseSettlement finalizeSettlement(UUID leaseId, UUID settledBy) {
+        LeaseSettlement settlement = leaseSettlementRepository.findByLeaseId(leaseId)
+                .orElseThrow(() -> new NotFoundException("No settlement found for this lease"));
+
+        if (settlement.getStatus() == SettlementStatus.FINALIZED) {
+            throw new IllegalStateException("Settlement is already finalized");
+        }
+
+        settlement.setStatus(SettlementStatus.FINALIZED);
+        settlement.setSettledBy(settledBy);
+        settlement.setSettledAt(LocalDateTime.now());
+
+        return leaseSettlementRepository.save(settlement);
     }
 
     @Transactional(readOnly = true)
