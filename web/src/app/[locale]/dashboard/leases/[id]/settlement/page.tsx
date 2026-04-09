@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/format";
 import {
     ArrowLeft, Paperclip, Upload, Trash2, Image, Video, FileText, Plus,
-    Loader2, CheckCircle2,
+    Loader2, CheckCircle2, Eye, Download, X,
 } from "lucide-react";
 
 type AttachmentItem = {
@@ -97,17 +97,21 @@ const ADDITION_CATEGORY_LABELS: Record<string, string> = {
 function AttachmentThumbnail({
     attachment,
     onDelete,
+    onPreview,
     isDraft,
 }: {
     attachment: AttachmentItem;
     onDelete: (id: string) => void;
+    onPreview: (attachment: AttachmentItem) => void;
     isDraft: boolean;
 }) {
     const isImage = attachment.fileType?.startsWith("image/");
     const isVideo = attachment.fileType?.startsWith("video/");
 
     return (
-        <div className="relative group w-16 h-16 rounded-lg border border-border bg-input/50 overflow-hidden flex items-center justify-center">
+        <div className="relative group w-16 h-16 rounded-lg border border-border bg-input/50 overflow-hidden flex items-center justify-center cursor-pointer"
+            onClick={() => onPreview(attachment)}
+        >
             {isImage ? (
                 <img
                     src={attachment.fileUrl}
@@ -119,10 +123,17 @@ function AttachmentThumbnail({
             ) : (
                 <FileText size={20} className="text-muted" />
             )}
-            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all flex items-center justify-center">
+            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all flex items-center justify-center gap-1">
+                <button
+                    onClick={(e) => { e.stopPropagation(); onPreview(attachment); }}
+                    className="opacity-0 group-hover:opacity-100 p-1 bg-white/90 text-neutral-700 rounded-full cursor-pointer transition-opacity"
+                    title="Preview"
+                >
+                    <Eye size={10} />
+                </button>
                 {isDraft && (
                     <button
-                        onClick={() => onDelete(attachment.id)}
+                        onClick={(e) => { e.stopPropagation(); onDelete(attachment.id); }}
                         className="opacity-0 group-hover:opacity-100 p-1 bg-error text-white rounded-full cursor-pointer transition-opacity"
                         title="Delete attachment"
                     >
@@ -133,6 +144,68 @@ function AttachmentThumbnail({
             <p className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[8px] truncate px-1 py-0.5 leading-tight">
                 {attachment.name}
             </p>
+        </div>
+    );
+}
+
+function AttachmentPreviewDialog({
+    attachment,
+    onClose,
+}: {
+    attachment: AttachmentItem | null;
+    onClose: () => void;
+}) {
+    if (!attachment) return null;
+    const isImage = attachment.fileType?.startsWith("image/");
+    const isPdf = attachment.fileType === "application/pdf";
+    const downloadUrl = `/api/proxy/v1/settlements/attachments/${attachment.id}/download`;
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+                {/* Header */}
+                <div className="flex items-center justify-between px-5 py-3 border-b border-border shrink-0">
+                    <div className="flex items-center gap-2 min-w-0">
+                        <FileText size={16} className="text-muted shrink-0" />
+                        <span className="text-sm font-semibold text-neutral-800 truncate">{attachment.name}</span>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0 ml-3">
+                        <a
+                            href={downloadUrl}
+                            download={attachment.name}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-semibold hover:opacity-90 transition-opacity"
+                            onClick={e => e.stopPropagation()}
+                        >
+                            <Download size={13} />
+                            Download
+                        </a>
+                        <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-neutral-100 transition-colors cursor-pointer">
+                            <X size={16} className="text-muted" />
+                        </button>
+                    </div>
+                </div>
+                {/* Body */}
+                <div className="flex-1 overflow-auto bg-neutral-50 flex items-center justify-center p-4">
+                    {isImage ? (
+                        <img src={attachment.fileUrl} alt={attachment.name} className="max-w-full max-h-[70vh] object-contain rounded-lg shadow" />
+                    ) : isPdf ? (
+                        <iframe src={attachment.fileUrl} title={attachment.name} className="w-full h-[70vh] rounded-lg border border-border" />
+                    ) : (
+                        <div className="flex flex-col items-center gap-4 py-12 text-neutral-500">
+                            <FileText size={48} className="text-neutral-300" />
+                            <p className="text-sm">{attachment.name}</p>
+                            <a
+                                href={downloadUrl}
+                                download={attachment.name}
+                                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white text-sm font-semibold hover:opacity-90 transition-opacity"
+                            >
+                                <Download size={15} />
+                                Download to view
+                            </a>
+                        </div>
+                    )}
+                </div>
+            </div>
         </div>
     );
 }
@@ -156,6 +229,7 @@ export default function SettlementPage() {
     const [uploadingDeductionId, setUploadingDeductionId] = useState<string | null>(null);
     const [saveDraftError, setSaveDraftError] = useState<string | null>(null);
     const [finalizeError, setFinalizeError] = useState<string | null>(null);
+    const [previewAttachment, setPreviewAttachment] = useState<AttachmentItem | null>(null);
     const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
     const isFinalized = settlement?.status === "FINALIZED";
@@ -483,6 +557,7 @@ export default function SettlementPage() {
                                                         key={att.id}
                                                         attachment={att}
                                                         onDelete={(id) => d.id && handleDeleteAttachment(id, d.id)}
+                                                        onPreview={setPreviewAttachment}
                                                         isDraft={isDraft}
                                                     />
                                                 ))}
@@ -913,6 +988,11 @@ export default function SettlementPage() {
                     </div>
                 </div>
             )}
+
+            <AttachmentPreviewDialog
+                attachment={previewAttachment}
+                onClose={() => setPreviewAttachment(null)}
+            />
         </div>
     );
 }
