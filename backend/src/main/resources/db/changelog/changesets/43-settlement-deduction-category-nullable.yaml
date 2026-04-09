@@ -1,0 +1,10 @@
+databaseChangeLog:
+  - changeSet:
+      id: 43-settlement-deduction-category-nullable
+      author: system
+      comment: "Make category nullable on lease_settlement_deductions — ADDITION type rows use addition_category instead"
+      changes:
+        - dropNotNullConstraint:
+            tableName: lease_settlement_deductions
+            columnName: category
+            columnDataType: varchar(50)
