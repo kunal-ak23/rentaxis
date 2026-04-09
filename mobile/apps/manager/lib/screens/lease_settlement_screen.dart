@@ -33,10 +33,12 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
   String? _error;
   Map<String, dynamic>? _settlement;
   List<Map<String, dynamic>> _deductions = [];
+  List<Map<String, dynamic>> _additions = [];
   String _notes = '';
   bool _saving = false;
   final Map<String, bool> _uploadingForDeduction = {};
   final Map<int, TextEditingController> _amountControllers = {};
+  final Map<int, TextEditingController> _additionAmountControllers = {};
 
   final _notesController = TextEditingController();
 
@@ -46,6 +48,14 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
     {'value': 'CLEANING', 'label': 'Cleaning'},
     {'value': 'UTILITY_ARREARS', 'label': 'Utility Arrears'},
     {'value': 'KEY_REPLACEMENT', 'label': 'Key Replacement'},
+    {'value': 'OTHER', 'label': 'Other'},
+  ];
+
+  static const _additionCategories = [
+    {'value': 'PREPAID_RENT', 'label': 'Prepaid Rent'},
+    {'value': 'UTILITY_OVERPAYMENT', 'label': 'Utility Overpayment'},
+    {'value': 'DEPOSIT_INTEREST', 'label': 'Deposit Interest'},
+    {'value': 'LANDLORD_COMPENSATION', 'label': 'Landlord Compensation'},
     {'value': 'OTHER', 'label': 'Other'},
   ];
 
@@ -59,6 +69,9 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
   void dispose() {
     _notesController.dispose();
     for (final ctrl in _amountControllers.values) {
+      ctrl.dispose();
+    }
+    for (final ctrl in _additionAmountControllers.values) {
       ctrl.dispose();
     }
     super.dispose();
@@ -78,7 +91,23 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
     return labels[category] ?? category;
   }
 
+  String _additionCategoryLabel(String category) {
+    const labels = {
+      'PREPAID_RENT': 'Prepaid Rent',
+      'UTILITY_OVERPAYMENT': 'Utility Overpayment',
+      'DEPOSIT_INTEREST': 'Deposit Interest',
+      'LANDLORD_COMPENSATION': 'Landlord Compensation',
+      'OTHER': 'Other',
+    };
+    return labels[category] ?? category;
+  }
+
   double get _totalDeductions => _deductions.fold(
+      0.0,
+      (sum, d) =>
+          sum + (double.tryParse(d['amount']?.toString() ?? '0') ?? 0.0));
+
+  double get _totalAdditions => _additions.fold(
       0.0,
       (sum, d) =>
           sum + (double.tryParse(d['amount']?.toString() ?? '0') ?? 0.0));
@@ -86,7 +115,7 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
   double get _depositAmount =>
       (_settlement?['depositAmount'] as num?)?.toDouble() ?? 0.0;
 
-  double get _refundAmount => _depositAmount - _totalDeductions;
+  double get _refundAmount => _depositAmount - _totalDeductions + _totalAdditions;
 
   bool get _isFinalized =>
       (_settlement?['status'] as String?)?.toUpperCase() == 'FINALIZED';
@@ -109,15 +138,34 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
             'description': d['description'] ?? '',
             'amount': d['amount']?.toString() ?? '0',
             'autoCalculated': d['autoCalculated'] ?? false,
+            'type': d['type'] ?? 'DEDUCTION',
             'attachments':
                 List<Map<String, dynamic>>.from(d['attachments'] ?? []),
           };
         }).toList();
 
+        final rawAdditions = (settlement['deductions'] as List? ?? [])
+            .where((d) => d['type'] == 'ADDITION')
+            .map((d) => <String, dynamic>{
+                  'id': d['id'],
+                  'additionCategory': d['additionCategory'] ?? 'OTHER',
+                  'description': d['description'] ?? '',
+                  'amount': d['amount']?.toString() ?? '0',
+                  'autoCalculated': false,
+                  'type': 'ADDITION',
+                  'attachments': List<Map<String, dynamic>>.from(d['attachments'] ?? []),
+                })
+            .toList();
+
+        final filteredDeductions = rawDeductions
+            .where((d) => d['type'] != 'ADDITION')
+            .toList();
+
         if (mounted) {
           setState(() {
             _settlement = settlement;
-            _deductions = rawDeductions;
+            _deductions = filteredDeductions;
+            _additions = rawAdditions;
             _notes = settlement['notes'] ?? '';
             _notesController.text = _notes;
             _loading = false;
@@ -170,26 +218,39 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
       final service = ref.read(_settlementServiceProvider);
       final data = {
         'notes': _notes,
-        'deductions': _deductions
-            .map((d) => {
-                  'id': d['id'],
-                  'category': d['category'],
-                  'description': d['description'],
-                  'amount':
-                      double.tryParse(d['amount']?.toString() ?? '0') ?? 0.0,
-                  'autoCalculated': d['autoCalculated'],
-                })
-            .toList(),
+        'deductions': [
+          ..._deductions.map((d) => {
+                'id': d['id'],
+                'category': d['category'],
+                'description': d['description'],
+                'amount':
+                    double.tryParse(d['amount']?.toString() ?? '0') ?? 0.0,
+                'autoCalculated': d['autoCalculated'],
+                'type': 'DEDUCTION',
+              }),
+          ..._additions.map((d) => {
+                'id': d['id'],
+                'additionCategory': d['additionCategory'],
+                'description': d['description'],
+                'amount':
+                    double.tryParse(d['amount']?.toString() ?? '0') ?? 0.0,
+                'autoCalculated': false,
+                'type': 'ADDITION',
+              }),
+        ],
       };
       final result = await service.saveDraft(widget.leaseId, data);
       final savedDeductions = result['deductions'] as List? ?? [];
       if (mounted) {
         setState(() {
           _settlement = result;
+          final savedDeductionsList = savedDeductions
+              .where((d) => d['type'] != 'ADDITION')
+              .toList();
           for (int i = 0;
-              i < _deductions.length && i < savedDeductions.length;
+              i < _deductions.length && i < savedDeductionsList.length;
               i++) {
-            _deductions[i]['id'] = savedDeductions[i]['id'];
+            _deductions[i]['id'] = savedDeductionsList[i]['id'];
           }
           // Sync amount controllers for auto-deductions with server-returned values
           for (int i = 0; i < _deductions.length; i++) {
@@ -198,6 +259,15 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
               _amountControllers[i]!.text =
                   _deductions[i]['amount']?.toString() ?? '0';
             }
+          }
+          final savedAdditions = result['deductions'] as List? ?? [];
+          final savedAdditionsList = savedAdditions
+              .where((d) => d['type'] == 'ADDITION')
+              .toList();
+          for (int i = 0;
+              i < _additions.length && i < savedAdditionsList.length;
+              i++) {
+            _additions[i]['id'] = savedAdditionsList[i]['id'];
           }
         });
         ScaffoldMessenger.of(context).showSnackBar(
