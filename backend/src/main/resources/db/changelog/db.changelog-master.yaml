@@ -83,3 +83,5 @@ databaseChangeLog:
       file: db/changelog/changesets/37d-unit-listing-media-blob-path.yaml
   - include:
       file: db/changelog/changesets/38-tenant-feature.yaml
+  - include:
+      file: db/changelog/changesets/39-settlement-deduction-attachments.yaml

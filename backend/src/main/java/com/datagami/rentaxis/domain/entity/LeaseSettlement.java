@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.domain.entity;
 
+import com.datagami.rentaxis.domain.entity.enums.SettlementStatus;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -38,6 +39,10 @@ public class LeaseSettlement extends BaseTenantEntity {
 
     @Column(name = "settled_at")
     private LocalDateTime settledAt;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private SettlementStatus status = SettlementStatus.DRAFT;
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;

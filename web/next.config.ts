@@ -17,7 +17,7 @@ const nextConfig: NextConfig = {
     NEXT_PUBLIC_APP_VERSION: `0.6.0.${gitHash}`,
   },
   experimental: {
-    proxyTimeout: 120000,
+    proxyTimeout: 300000, // 5 min — matches upload route maxDuration for large file uploads
   },
   async rewrites() {
     return [

@@ -1,11 +1,13 @@
 package com.datagami.rentaxis.api;
 
 import com.datagami.rentaxis.api.dto.*;
+import com.datagami.rentaxis.api.dto.SaveSettlementDTO;
 import com.datagami.rentaxis.core.service.ContractGenerationService;
 import com.datagami.rentaxis.core.service.LeaseService;
 import com.datagami.rentaxis.core.service.SettlementService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -82,20 +84,43 @@ public class LeaseController {
     }
 
     @GetMapping("/{id}/settlement/preview")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
     public ResponseEntity<SettlementPreviewDTO> getSettlementPreview(@PathVariable UUID id) {
         return ResponseEntity.ok(settlementService.getSettlementPreview(id));
     }
 
     @GetMapping("/{id}/settlement")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
     public ResponseEntity<SettlementResponseDTO> getSettlement(@PathVariable UUID id) {
-        return settlementService.getSettlement(id)
-                .map(settlement -> {
-                    var deductions = settlementService.getSettlementDeductions(settlement.getId());
-                    return ResponseEntity.ok(new SettlementResponseDTO(settlement, deductions));
-                })
-                .orElse(ResponseEntity.notFound().build());
+        try {
+            return ResponseEntity.ok(settlementService.buildSettlementResponse(id));
+        } catch (com.datagami.rentaxis.api.exception.NotFoundException e) {
+            return ResponseEntity.notFound().build();
+        }
+    }
+
+    @PostMapping("/{id}/settlement/draft")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
+    public ResponseEntity<SettlementResponseDTO> saveSettlementDraft(
+            @PathVariable UUID id,
+            @Valid @RequestBody SaveSettlementDTO dto,
+            HttpServletRequest request) {
+        String userIdStr = request.getHeader("X-User-Id");
+        UUID userId = userIdStr != null ? UUID.fromString(userIdStr) : null;
+        settlementService.saveDraft(id, dto, userId);
+        return ResponseEntity.ok(settlementService.buildSettlementResponse(id));
+    }
+
+    @PostMapping("/{id}/settlement/finalize")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
+    @Transactional
+    public ResponseEntity<LeaseDTO> finalizeSettlement(
+            @PathVariable UUID id,
+            HttpServletRequest request) {
+        String userIdStr = request.getHeader("X-User-Id");
+        UUID settledBy = userIdStr != null ? UUID.fromString(userIdStr) : null;
+        settlementService.finalizeSettlement(id, settledBy);
+        return ResponseEntity.ok(leaseService.terminateLease(id, null));
     }
 
     @GetMapping("/{id}/events")
