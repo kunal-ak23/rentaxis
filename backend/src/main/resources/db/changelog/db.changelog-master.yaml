@@ -81,3 +81,6 @@ databaseChangeLog:
       file: db/changelog/changesets/37c-property-geo-tenant-id.yaml
   - include:
       file: db/changelog/changesets/37d-unit-listing-media-blob-path.yaml
+  - include:
+      file: changesets/38-tenant-feature.yaml
+      relativeToChangelogFile: true

@@ -1,0 +1,53 @@
+databaseChangeLog:
+  - changeSet:
+      id: 38-create-tenant-feature
+      author: rentaxis
+      changes:
+        - createTable:
+            tableName: tenant_feature
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: tenant_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: feature
+                  type: varchar(100)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: enabled
+                  type: boolean
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamp
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: tenant_feature
+            baseColumnNames: tenant_id
+            constraintName: fk_tenant_feature_tenant_id
+            referencedTableName: landlord_org
+            referencedColumnNames: id
+            onDelete: CASCADE
+        - addUniqueConstraint:
+            tableName: tenant_feature
+            columnNames: tenant_id, feature
+            constraintName: uq_tenant_feature_tenant_feature
+        - createIndex:
+            indexName: idx_tenant_feature_tenant_id
+            tableName: tenant_feature
+            columns:
+              - column:
+                  name: tenant_id
