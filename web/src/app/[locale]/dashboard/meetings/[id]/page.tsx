@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { Link } from "@/i18n/routing";
 import { cn } from "@/lib/utils";
 import { useSession } from "next-auth/react";
+import { useTranslations } from "next-intl";
 import { hasPermission, hasRole, type UserRole } from "@/lib/rbac";
 import {
     ArrowLeft, Loader2, Calendar, Clock, User, Building2, Home,
@@ -71,6 +72,7 @@ export default function MeetingDetailPage() {
     const params = useParams();
     const meetingId = params.id as string;
     const { data: session } = useSession();
+    const t = useTranslations("Meetings");
     const userRole = session?.user?.role as UserRole | undefined;
     const userId = session?.user?.id as string | undefined;
 
@@ -121,7 +123,7 @@ export default function MeetingDetailPage() {
             <div className="text-center py-24">
                 <p className="text-sm text-muted">Meeting not found.</p>
                 <Link href="/dashboard/meetings" className="text-xs text-primary font-semibold mt-2 inline-block">
-                    Back to Meetings
+                    {t("backToMeetings")}
                 </Link>
             </div>
         );
@@ -167,7 +169,7 @@ export default function MeetingDetailPage() {
                 className="inline-flex items-center gap-1.5 text-xs text-muted hover:text-foreground transition-colors"
             >
                 <ArrowLeft size={14} />
-                Back to Meetings
+                {t("backToMeetings")}
             </Link>
 
             {/* Header */}
@@ -209,7 +211,7 @@ export default function MeetingDetailPage() {
                             {actionLoading === "approve"
                                 ? <Loader2 size={13} className="animate-spin" />
                                 : <CheckCircle size={13} />}
-                            Approve
+                            {t("approve")}
                         </button>
                     )}
                     {canComplete && (
@@ -221,7 +223,7 @@ export default function MeetingDetailPage() {
                             {actionLoading === "complete"
                                 ? <Loader2 size={13} className="animate-spin" />
                                 : <CheckCircle size={13} />}
-                            Complete
+                            {t("complete")}
                         </button>
                     )}
                     {canNoShow && (
@@ -233,7 +235,7 @@ export default function MeetingDetailPage() {
                             {actionLoading === "no-show"
                                 ? <Loader2 size={13} className="animate-spin" />
                                 : <AlertTriangle size={13} />}
-                            No Show
+                            {t("noShow")}
                         </button>
                     )}
                     {canCancel && (
@@ -245,7 +247,7 @@ export default function MeetingDetailPage() {
                             {actionLoading === "cancel"
                                 ? <Loader2 size={13} className="animate-spin" />
                                 : <X size={13} />}
-                            Cancel
+                            {t("cancel")}
                         </button>
                     )}
                 </div>

@@ -597,7 +597,9 @@
     "host": "المضيف",
     "requester": "الطالب",
     "slotConflict": "هذا الموعد محجوز بالفعل. الموعد التالي المتاح:",
-    "noSlotsAvailable": "لا توجد مواعيد متاحة في هذا اليوم"
+    "noSlotsAvailable": "لا توجد مواعيد متاحة في هذا اليوم",
+    "subtitle": "جدولة وإدارة اجتماعات العقارات",
+    "backToMeetings": "العودة إلى الاجتماعات"
   },
   "PublicListing": {
     "bedSingular": "غرفة",

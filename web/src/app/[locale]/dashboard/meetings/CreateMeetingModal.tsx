@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { X, Loader2, ChevronLeft, ChevronRight, CalendarDays, Building2, MapPin } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -82,6 +83,7 @@ function buildSlotGrid(slotsFromApi: Slot[]): Slot[] {
 // ── Main Component ─────────────────────────────────────────────────────────
 
 export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session }: Props) {
+    const t = useTranslations("Meetings");
     const isRenter = session?.user?.role === "RENTER";
 
     // Step
@@ -349,7 +351,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
 
             if (res.status === 409) {
                 const err = await res.json().catch(() => ({}));
-                setConflictMessage(err.message ?? "This slot is already booked.");
+                setConflictMessage(err.error ?? "This slot is already booked.");
                 setSuggestedSlot(err.nextAvailableSlot ?? null);
                 setSubmitting(false);
                 return;
@@ -396,7 +398,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                 {/* Header */}
                 <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
                     <div>
-                        <h2 className="text-sm font-bold text-foreground">New Meeting</h2>
+                        <h2 className="text-sm font-bold text-foreground">{t("newMeeting")}</h2>
                         <p className="text-[10px] text-muted mt-0.5">Step {step} of 5 — {STEP_LABELS[step - 1]}</p>
                     </div>
                     <button onClick={onClose} className="p-1 text-muted hover:text-foreground cursor-pointer">
@@ -427,8 +429,8 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                             <div className="grid grid-cols-2 gap-3">
                                 {(
                                     [
-                                        { value: "OFFICE_VISIT", label: "Office Visit", description: "Visit the management office", icon: Building2 },
-                                        { value: "PROPERTY_VISIT", label: "Property Visit", description: "Visit at the property/unit", icon: MapPin },
+                                        { value: "OFFICE_VISIT", label: t("officeVisit"), description: "Visit the management office", icon: Building2 },
+                                        { value: "PROPERTY_VISIT", label: t("propertyVisit"), description: "Visit at the property/unit", icon: MapPin },
                                     ] as const
                                 ).map(({ value, label, description, icon: Icon }) => (
                                     <button
@@ -461,9 +463,9 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                                     className="w-full border border-border rounded-lg bg-surface px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:outline-none cursor-pointer"
                                 >
                                     <option value="">Select purpose…</option>
-                                    <option value="CHEQUE_REPLACEMENT">Cheque Replacement</option>
-                                    <option value="LEASE_RENEWAL">Lease Renewal</option>
-                                    <option value="OTHER">Other</option>
+                                    <option value="CHEQUE_REPLACEMENT">{t("chequeReplacement")}</option>
+                                    <option value="LEASE_RENEWAL">{t("leaseRenewal")}</option>
+                                    <option value="OTHER">{t("other")}</option>
                                 </select>
                             </div>
                             <div>
@@ -663,7 +665,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                                 </div>
                             ) : (
                                 <div>
-                                    <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">Notes (optional)</label>
+                                    <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">{t("notes")} (optional)</label>
                                     <textarea
                                         value={notes}
                                         onChange={(e) => setNotes(e.target.value)}
@@ -682,13 +684,13 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                             <p className="text-xs font-semibold text-foreground mb-1">Review your meeting request</p>
 
                             <div className="bg-input/40 rounded-xl border border-border divide-y divide-border">
-                                <ReviewRow label="Type" value={meetingType === "OFFICE_VISIT" ? "Office Visit" : "Property Visit"} />
+                                <ReviewRow label="Type" value={meetingType === "OFFICE_VISIT" ? t("officeVisit") : t("propertyVisit")} />
                                 {meetingType === "OFFICE_VISIT" && (
                                     <>
                                         <ReviewRow label="Purpose" value={
-                                            officePurpose === "CHEQUE_REPLACEMENT" ? "Cheque Replacement"
-                                                : officePurpose === "LEASE_RENEWAL" ? "Lease Renewal"
-                                                    : "Other"
+                                            officePurpose === "CHEQUE_REPLACEMENT" ? t("chequeReplacement")
+                                                : officePurpose === "LEASE_RENEWAL" ? t("leaseRenewal")
+                                                    : t("other")
                                         } />
                                         <ReviewRow label="Lease" value={
                                             selectedLease
@@ -744,7 +746,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                         className="flex items-center gap-1 px-4 py-2 rounded-lg text-xs font-semibold text-muted hover:text-foreground hover:bg-input transition-colors cursor-pointer"
                     >
                         {step > 1 && <ChevronLeft size={14} />}
-                        {step === 1 ? "Cancel" : "Back"}
+                        {step === 1 ? t("cancel") : "Back"}
                     </button>
 
                     {step < 5 ? (
@@ -773,7 +775,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                         >
                             {submitting && <Loader2 size={12} className="animate-spin" />}
                             <CalendarDays size={13} />
-                            Confirm Meeting
+                            {t("submit")}
                         </button>
                     )}
                 </div>

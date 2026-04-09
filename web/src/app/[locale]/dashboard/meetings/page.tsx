@@ -73,6 +73,7 @@ export default function MeetingsPage() {
     // Filters
     const [statusFilter, setStatusFilter] = useState("ALL");
     const [typeFilter, setTypeFilter] = useState("ALL");
+    const [purposeFilter, setPurposeFilter] = useState("ALL");
 
     // Pagination
     const [currentPage, setCurrentPage] = useState(1);
@@ -116,6 +117,7 @@ export default function MeetingsPage() {
     const filtered = meetings.filter((m) => {
         if (statusFilter !== "ALL" && m.status !== statusFilter) return false;
         if (typeFilter !== "ALL" && m.type !== typeFilter) return false;
+        if (purposeFilter !== "ALL" && m.purpose !== purposeFilter) return false;
         return true;
     });
 
@@ -155,7 +157,7 @@ export default function MeetingsPage() {
                 <div>
                     <h1 className="text-lg font-bold text-foreground">{t("title")}</h1>
                     <p className="text-xs text-muted mt-0.5">
-                        Schedule and manage property meetings
+                        {t("subtitle")}
                     </p>
                 </div>
                 <div className="flex items-center gap-3">
@@ -222,6 +224,15 @@ export default function MeetingsPage() {
                         <option value="ALL">All Types</option>
                         <option value="OFFICE_VISIT">{t("officeVisit")}</option>
                         <option value="PROPERTY_VISIT">{t("propertyVisit")}</option>
+                    </select>
+
+                    {/* Purpose filter */}
+                    <select
+                        value={purposeFilter}
+                        onChange={(e) => { setPurposeFilter(e.target.value); setCurrentPage(1); }}
+                        className="border border-border rounded-lg bg-surface px-3 py-2 text-xs text-foreground focus:ring-2 focus:ring-primary/20 focus:outline-none cursor-pointer"
+                    >
+                        <option value="ALL">All Purposes</option>
                         <option value="CHEQUE_REPLACEMENT">{t("chequeReplacement")}</option>
                         <option value="LEASE_RENEWAL">{t("leaseRenewal")}</option>
                         <option value="PROPERTY_VIEWING">{t("propertyViewing")}</option>

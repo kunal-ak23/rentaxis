@@ -69,6 +69,7 @@ export default function RenterPortalPage() {
     const [meetings, setMeetings] = useState<Meeting[]>([]);
     const [meetingsLoading, setMeetingsLoading] = useState(true);
     const [meetingsPage, setMeetingsPage] = useState(1);
+    const [meetingsTotalPages, setMeetingsTotalPages] = useState(1);
     const [showCreateMeeting, setShowCreateMeeting] = useState(false);
 
     useEffect(() => {
@@ -79,18 +80,23 @@ export default function RenterPortalPage() {
     const fetchMyMeetings = useCallback(async () => {
         setMeetingsLoading(true);
         try {
-            const res = await fetch("/api/proxy/v1/meetings/my?page=0&size=100");
+            const res = await fetch(`/api/proxy/v1/meetings/my?page=${meetingsPage - 1}&size=${MEETINGS_PER_PAGE}`);
             if (res.ok) {
                 const data = await res.json();
-                if (Array.isArray(data)) setMeetings(data);
-                else if (data.content) setMeetings(data.content);
+                if (Array.isArray(data)) {
+                    setMeetings(data);
+                    setMeetingsTotalPages(1);
+                } else if (data.content) {
+                    setMeetings(data.content);
+                    setMeetingsTotalPages(data.totalPages ?? 1);
+                }
             }
         } catch (err) {
             console.error(err);
         } finally {
             setMeetingsLoading(false);
         }
-    }, []);
+    }, [meetingsPage]);
 
     useEffect(() => {
         fetchMyMeetings();
@@ -485,9 +491,7 @@ export default function RenterPortalPage() {
                                 <div className="col-span-1" />
                             </div>
                             {/* Table rows */}
-                            {meetings
-                                .slice((meetingsPage - 1) * MEETINGS_PER_PAGE, meetingsPage * MEETINGS_PER_PAGE)
-                                .map((meeting, idx) => (
+                            {meetings.map((meeting, idx) => (
                                     <div
                                         key={meeting.id}
                                         className={cn(
@@ -538,10 +542,10 @@ export default function RenterPortalPage() {
                         </div>
 
                         {/* Pagination */}
-                        {meetings.length > MEETINGS_PER_PAGE && (
+                        {meetingsTotalPages > 1 && (
                             <div className="flex items-center justify-between mt-3 px-1">
                                 <p className="text-[10px] text-muted">
-                                    Showing {((meetingsPage - 1) * MEETINGS_PER_PAGE) + 1}–{Math.min(meetingsPage * MEETINGS_PER_PAGE, meetings.length)} of {meetings.length}
+                                    Page {meetingsPage} of {meetingsTotalPages}
                                 </p>
                                 <div className="flex items-center gap-1">
                                     <button
@@ -552,11 +556,11 @@ export default function RenterPortalPage() {
                                         <ChevronLeft size={13} />
                                     </button>
                                     <span className="text-[10px] font-semibold text-foreground px-2">
-                                        {meetingsPage} / {Math.ceil(meetings.length / MEETINGS_PER_PAGE)}
+                                        {meetingsPage} / {meetingsTotalPages}
                                     </span>
                                     <button
-                                        onClick={() => setMeetingsPage(p => Math.min(Math.ceil(meetings.length / MEETINGS_PER_PAGE), p + 1))}
-                                        disabled={meetingsPage >= Math.ceil(meetings.length / MEETINGS_PER_PAGE)}
+                                        onClick={() => setMeetingsPage(p => Math.min(meetingsTotalPages, p + 1))}
+                                        disabled={meetingsPage >= meetingsTotalPages}
                                         className="w-7 h-7 flex items-center justify-center rounded-lg bg-surface border border-border text-muted hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                                     >
                                         <ChevronRight size={13} />

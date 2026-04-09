@@ -597,7 +597,9 @@
     "host": "Host",
     "requester": "Requester",
     "slotConflict": "This slot is already booked. Next available slot:",
-    "noSlotsAvailable": "No slots available on this date"
+    "noSlotsAvailable": "No slots available on this date",
+    "subtitle": "Schedule and manage property meetings",
+    "backToMeetings": "Back to Meetings"
   },
   "PublicListing": {
     "bedSingular": "bed",
