@@ -236,7 +236,7 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
       appBar: AppBar(
         title: const Text('Lease Details'),
         actions: [
-          if (status == 'ACTIVE')
+          if (status == 'ACTIVE' || status == 'NOTICE_GIVEN')
             PopupMenuButton<String>(
               onSelected: (v) {
                 if (v == 'terminate') context.push('/leases/${widget.leaseId}/settlement');
@@ -246,9 +246,9 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
                   value: 'terminate',
                   child: Row(
                     children: [
-                      Icon(Icons.cancel_outlined, color: AppColors.danger, size: 18),
+                      Icon(Icons.account_balance_wallet_outlined, color: AppColors.warning, size: 18),
                       SizedBox(width: 8),
-                      Text('Terminate Lease'),
+                      Text('Settle & Terminate'),
                     ],
                   ),
                 ),
