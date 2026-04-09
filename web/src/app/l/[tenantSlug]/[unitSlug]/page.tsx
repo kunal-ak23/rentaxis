@@ -135,7 +135,7 @@ export default async function PublicListingPage({
       : listing.seoDescription
     : null
 
-  const callbackUrl = encodeURIComponent(`/marketplace/${tenantSlug}/${unitSlug}`)
+  const callbackUrl = encodeURIComponent(`/l/${tenantSlug}/${unitSlug}`)
 
   return (
     <>
@@ -256,16 +256,17 @@ export default async function PublicListingPage({
 
           {/* Login CTA card */}
           {listing.loginRequired && (
-            <div className="rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 p-6 text-white shadow-lg">
-              <p className="text-base font-semibold mb-1">
+            <div className="rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 p-6 shadow-lg">
+              <p className="text-base font-semibold mb-1" style={{ color: '#ffffff' }}>
                 {t('ctaTitle')}
               </p>
-              <p className="text-blue-200 text-sm mb-4">
+              <p className="text-sm mb-4" style={{ color: '#bfdbfe' }}>
                 {t('ctaSubtitle')}
               </p>
               <a
-                href={`/auth/signin?callbackUrl=${callbackUrl}`}
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white text-indigo-700 font-semibold text-sm hover:bg-blue-50 transition-colors shadow"
+                href={`/en/auth/login?callbackUrl=${callbackUrl}`}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white font-semibold text-sm hover:bg-blue-50 transition-colors shadow"
+                style={{ color: '#4338ca' }}
               >
                 <LogIn size={16} />
                 {t('ctaButton')}
