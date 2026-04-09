@@ -1,6 +1,7 @@
 package com.datagami.rentaxis.api.dto;
 
-import jakarta.validation.constraints.NotBlank;
+import com.datagami.rentaxis.domain.entity.enums.MeetingType;
+import com.datagami.rentaxis.domain.entity.enums.MeetingPurpose;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
@@ -11,10 +12,10 @@ import java.util.UUID;
 
 @Data
 public class CreateMeetingDTO {
-    @NotBlank
-    private String type;
-    @NotBlank
-    private String purpose;
+    @NotNull
+    private MeetingType type;
+    @NotNull
+    private MeetingPurpose purpose;
     private String title;
     private String notes;
     @NotNull

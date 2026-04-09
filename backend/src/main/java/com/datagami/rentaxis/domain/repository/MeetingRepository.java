@@ -22,23 +22,26 @@ public interface MeetingRepository extends JpaRepository<Meeting, UUID> {
 
     @Query("SELECT m FROM Meeting m WHERE m.hostUserId = :hostUserId " +
            "AND m.slotStart >= :dayStart AND m.slotStart < :dayEnd " +
-           "AND m.status NOT IN ('CANCELLED', 'NO_SHOW')")
+           "AND m.status NOT IN :excluded")
     List<Meeting> findActiveByHostAndDay(@Param("hostUserId") UUID hostUserId,
                                          @Param("dayStart") Instant dayStart,
-                                         @Param("dayEnd") Instant dayEnd);
+                                         @Param("dayEnd") Instant dayEnd,
+                                         @Param("excluded") List<MeetingStatus> excluded);
 
     @Query("SELECT m FROM Meeting m WHERE m.hostUserId = :hostUserId " +
            "AND m.slotStart = :slotStart " +
-           "AND m.status NOT IN ('CANCELLED', 'NO_SHOW')")
+           "AND m.status NOT IN :excluded")
     List<Meeting> findConflicts(@Param("hostUserId") UUID hostUserId,
-                                @Param("slotStart") Instant slotStart);
+                                @Param("slotStart") Instant slotStart,
+                                @Param("excluded") List<MeetingStatus> excluded);
 
     @Query("SELECT m FROM Meeting m WHERE m.hostUserId = :hostUserId " +
            "AND m.slotStart >= :rangeStart AND m.slotStart < :rangeEnd " +
-           "AND m.status NOT IN ('CANCELLED', 'NO_SHOW')")
+           "AND m.status NOT IN :excluded")
     List<Meeting> findByHostAndRange(@Param("hostUserId") UUID hostUserId,
                                      @Param("rangeStart") Instant rangeStart,
-                                     @Param("rangeEnd") Instant rangeEnd);
+                                     @Param("rangeEnd") Instant rangeEnd,
+                                     @Param("excluded") List<MeetingStatus> excluded);
 
     @Query("SELECT m FROM Meeting m WHERE m.slotStart >= :rangeStart AND m.slotStart < :rangeEnd")
     Page<Meeting> findByDateRange(@Param("rangeStart") Instant rangeStart,

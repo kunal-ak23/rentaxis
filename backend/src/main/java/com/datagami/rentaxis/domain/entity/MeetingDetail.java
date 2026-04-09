@@ -1,6 +1,5 @@
 package com.datagami.rentaxis.domain.entity;
 
-import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -13,14 +12,11 @@ import java.util.UUID;
 @Table(name = "meeting_details")
 @Getter
 @Setter
-public class MeetingDetail {
+public class MeetingDetail extends BaseTenantEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
-
-    @Column(name = "tenant_id", nullable = false)
-    private UUID tenantId;
 
     @OneToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "meeting_id", nullable = false, unique = true)
@@ -43,11 +39,4 @@ public class MeetingDetail {
 
     @Column(columnDefinition = "text")
     private String notes;
-
-    @PrePersist
-    public void onPrePersist() {
-        if (this.tenantId == null) {
-            this.tenantId = TenantContextHolder.getTenantId();
-        }
-    }
 }
