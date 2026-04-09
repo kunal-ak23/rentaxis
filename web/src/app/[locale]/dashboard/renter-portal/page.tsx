@@ -1,13 +1,14 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useTranslations } from "next-intl";
-import { FileText, Calendar, DollarSign, Home, CheckCircle, XCircle, Download, Clock, AlertCircle, CreditCard } from "lucide-react";
+import { FileText, Calendar, DollarSign, Home, CheckCircle, XCircle, Download, Clock, AlertCircle, CreditCard, CalendarDays, Plus, Eye, ChevronLeft, ChevronRight } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import { formatCurrencyCompact } from "@/lib/format";
 import { Link } from "@/i18n/routing";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import CreateMeetingModal from "@/app/[locale]/dashboard/meetings/CreateMeetingModal";
 
 type Lease = {
     id: string;
@@ -26,6 +27,29 @@ type Lease = {
     hasContract: boolean;
 };
 
+type Meeting = {
+    id: string;
+    title: string | null;
+    purpose: string;
+    type: string;
+    status: string;
+    slotStart: string;
+    slotEnd: string;
+    hostName: string | null;
+    propertyName: string | null;
+    unitNumber: string | null;
+};
+
+const MEETING_STATUS_COLORS: Record<string, string> = {
+    REQUESTED: "bg-warning/10 text-warning border border-warning/20",
+    APPROVED: "bg-info/10 text-info border border-info/20",
+    COMPLETED: "bg-success/10 text-success border border-success/20",
+    CANCELLED: "bg-input text-muted border border-border",
+    NO_SHOW: "bg-error/10 text-error border border-error/20",
+};
+
+const MEETINGS_PER_PAGE = 5;
+
 export default function RenterPortalPage() {
     const t = useTranslations("MasterData");
     const tPayments = useTranslations("OnlinePayments");
@@ -41,10 +65,36 @@ export default function RenterPortalPage() {
     } | null>(null);
     const { data: session } = useSession();
 
+    // Meetings state
+    const [meetings, setMeetings] = useState<Meeting[]>([]);
+    const [meetingsLoading, setMeetingsLoading] = useState(true);
+    const [meetingsPage, setMeetingsPage] = useState(1);
+    const [showCreateMeeting, setShowCreateMeeting] = useState(false);
+
     useEffect(() => {
         fetchMyLeases();
         fetchPendingPayments();
     }, []);
+
+    const fetchMyMeetings = useCallback(async () => {
+        setMeetingsLoading(true);
+        try {
+            const res = await fetch("/api/proxy/v1/meetings/my?page=0&size=100");
+            if (res.ok) {
+                const data = await res.json();
+                if (Array.isArray(data)) setMeetings(data);
+                else if (data.content) setMeetings(data.content);
+            }
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setMeetingsLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        fetchMyMeetings();
+    }, [fetchMyMeetings]);
 
     const fetchMyLeases = async () => {
         try {
@@ -375,6 +425,160 @@ export default function RenterPortalPage() {
                         Your leases will appear here once your landlord creates them.
                     </p>
                 </div>
+            )}
+
+            {/* ── Meetings Section ─────────────────────────────────────── */}
+            <div className="mt-10">
+                <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center text-primary border border-primary/20">
+                            <CalendarDays size={16} />
+                        </div>
+                        <div>
+                            <h2 className="text-sm font-bold text-foreground tracking-tight">My Meetings</h2>
+                            <p className="text-[10px] text-muted font-medium">View and manage your scheduled meetings</p>
+                        </div>
+                    </div>
+                    <button
+                        onClick={() => setShowCreateMeeting(true)}
+                        className="flex items-center gap-2 bg-primary text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-primary/90 transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    >
+                        <Plus size={14} />
+                        Request Meeting
+                    </button>
+                </div>
+
+                {meetingsLoading ? (
+                    <div className="bg-surface rounded-xl border border-border overflow-hidden">
+                        {[1, 2, 3].map(i => (
+                            <div key={i} className="flex items-center gap-4 p-4 border-b border-border last:border-b-0 animate-pulse">
+                                <div className="h-4 w-32 bg-input rounded" />
+                                <div className="h-4 w-24 bg-input rounded" />
+                                <div className="h-5 w-20 bg-input rounded-full ml-auto" />
+                            </div>
+                        ))}
+                    </div>
+                ) : meetings.length === 0 ? (
+                    <div className="text-center py-12 bg-background border border-dashed border-border rounded-xl flex flex-col items-center">
+                        <div className="w-12 h-12 bg-surface rounded-xl flex items-center justify-center text-muted shadow-sm mb-4">
+                            <CalendarDays size={24} />
+                        </div>
+                        <p className="text-sm font-bold text-muted mb-1 uppercase tracking-widest">No meetings yet</p>
+                        <p className="text-xs text-muted mb-4">Request a meeting with your property manager.</p>
+                        <button
+                            onClick={() => setShowCreateMeeting(true)}
+                            className="flex items-center gap-2 bg-primary/10 text-primary px-4 py-2 rounded-xl text-xs font-bold hover:bg-primary/20 transition-all duration-200 cursor-pointer"
+                        >
+                            <Plus size={14} />
+                            Request Meeting
+                        </button>
+                    </div>
+                ) : (
+                    <>
+                        <div className="bg-surface rounded-xl border border-border overflow-hidden">
+                            {/* Table header */}
+                            <div className="grid grid-cols-12 gap-3 px-4 py-2.5 bg-input/40 border-b border-border">
+                                <div className="col-span-3 text-[9px] font-semibold text-muted uppercase tracking-[0.12em]">Date & Time</div>
+                                <div className="col-span-3 text-[9px] font-semibold text-muted uppercase tracking-[0.12em]">Purpose</div>
+                                <div className="col-span-3 text-[9px] font-semibold text-muted uppercase tracking-[0.12em]">Property</div>
+                                <div className="col-span-2 text-[9px] font-semibold text-muted uppercase tracking-[0.12em]">Status</div>
+                                <div className="col-span-1" />
+                            </div>
+                            {/* Table rows */}
+                            {meetings
+                                .slice((meetingsPage - 1) * MEETINGS_PER_PAGE, meetingsPage * MEETINGS_PER_PAGE)
+                                .map((meeting, idx) => (
+                                    <div
+                                        key={meeting.id}
+                                        className={cn(
+                                            "grid grid-cols-12 gap-3 px-4 py-3 items-center hover:bg-input/30 transition-colors",
+                                            idx !== 0 && "border-t border-border"
+                                        )}
+                                    >
+                                        <div className="col-span-3">
+                                            <p className="text-xs font-bold text-foreground tabular-nums">
+                                                {new Date(meeting.slotStart).toLocaleDateString()}
+                                            </p>
+                                            <p className="text-[10px] text-muted">
+                                                {new Date(meeting.slotStart).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                                                {" – "}
+                                                {new Date(meeting.slotEnd).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                                            </p>
+                                        </div>
+                                        <div className="col-span-3">
+                                            <p className="text-xs font-semibold text-foreground truncate">
+                                                {meeting.title || meeting.purpose.replace(/_/g, " ")}
+                                            </p>
+                                            <p className="text-[10px] text-muted">{meeting.type.replace(/_/g, " ")}</p>
+                                        </div>
+                                        <div className="col-span-3">
+                                            <p className="text-xs text-foreground truncate">{meeting.propertyName || "—"}</p>
+                                            {meeting.unitNumber && (
+                                                <p className="text-[10px] text-muted">Unit {meeting.unitNumber}</p>
+                                            )}
+                                        </div>
+                                        <div className="col-span-2">
+                                            <span className={cn(
+                                                "inline-flex items-center px-2 py-1 rounded-full text-[9px] font-bold uppercase tracking-widest",
+                                                MEETING_STATUS_COLORS[meeting.status] ?? "bg-input text-muted border border-border"
+                                            )}>
+                                                {meeting.status.replace(/_/g, " ")}
+                                            </span>
+                                        </div>
+                                        <div className="col-span-1 flex justify-end">
+                                            <Link
+                                                href={`/dashboard/meetings/${meeting.id}`}
+                                                className="w-7 h-7 flex items-center justify-center rounded-lg bg-input/60 hover:bg-input text-muted hover:text-foreground transition-colors"
+                                            >
+                                                <Eye size={13} />
+                                            </Link>
+                                        </div>
+                                    </div>
+                                ))}
+                        </div>
+
+                        {/* Pagination */}
+                        {meetings.length > MEETINGS_PER_PAGE && (
+                            <div className="flex items-center justify-between mt-3 px-1">
+                                <p className="text-[10px] text-muted">
+                                    Showing {((meetingsPage - 1) * MEETINGS_PER_PAGE) + 1}–{Math.min(meetingsPage * MEETINGS_PER_PAGE, meetings.length)} of {meetings.length}
+                                </p>
+                                <div className="flex items-center gap-1">
+                                    <button
+                                        onClick={() => setMeetingsPage(p => Math.max(1, p - 1))}
+                                        disabled={meetingsPage === 1}
+                                        className="w-7 h-7 flex items-center justify-center rounded-lg bg-surface border border-border text-muted hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                                    >
+                                        <ChevronLeft size={13} />
+                                    </button>
+                                    <span className="text-[10px] font-semibold text-foreground px-2">
+                                        {meetingsPage} / {Math.ceil(meetings.length / MEETINGS_PER_PAGE)}
+                                    </span>
+                                    <button
+                                        onClick={() => setMeetingsPage(p => Math.min(Math.ceil(meetings.length / MEETINGS_PER_PAGE), p + 1))}
+                                        disabled={meetingsPage >= Math.ceil(meetings.length / MEETINGS_PER_PAGE)}
+                                        className="w-7 h-7 flex items-center justify-center rounded-lg bg-surface border border-border text-muted hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                                    >
+                                        <ChevronRight size={13} />
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </>
+                )}
+            </div>
+
+            {/* Create Meeting Modal */}
+            {showCreateMeeting && (
+                <CreateMeetingModal
+                    isOpen={showCreateMeeting}
+                    onClose={() => setShowCreateMeeting(false)}
+                    onSuccess={() => {
+                        setShowCreateMeeting(false);
+                        fetchMyMeetings();
+                    }}
+                    session={session}
+                />
             )}
 
             <ConfirmDialog
