@@ -168,6 +168,13 @@ public class UnitListingController {
         String tenantSlug = landlordOrgRepository.findById(l.getTenantId())
                 .map(LandlordOrg::getSlug)
                 .orElse(null);
+
+        List<UnitListingDTO.AmenityEntry> amenities = service.listAmenities(l.getId()).stream()
+                .map(a -> new UnitListingDTO.AmenityEntry(a.getAmenity(), a.getCustomLabel()))
+                .toList();
+
+        List<UnitListingMediaDTO> media = service.listMedia(l.getId());
+
         return new UnitListingDTO(
                 l.getId(), l.getUnitId(), l.getStatus(),
                 l.getTitleEn(), l.getTitleAr(), l.getDescriptionEn(), l.getDescriptionAr(),
@@ -179,7 +186,7 @@ public class UnitListingController {
                 tenantSlug, l.getSlug(), l.getSeoTitle(), l.getSeoDescription(), l.getSeoKeywords(), l.getOgImageUrl(),
                 l.getLat(), l.getLng(),
                 l.getPublishedAt(), l.getCreatedAt(), l.getUpdatedAt(),
-                List.of(), List.of()
+                amenities, media
         );
     }
 }

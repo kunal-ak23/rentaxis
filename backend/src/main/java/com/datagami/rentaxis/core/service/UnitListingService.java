@@ -174,6 +174,18 @@ public class UnitListingService {
         });
     }
 
+    @Transactional(readOnly = true)
+    public List<UnitListingMediaDTO> listMedia(UUID listingId) {
+        return mediaRepository.findByListingIdOrderBySortOrderAsc(listingId).stream()
+                .map(this::toMediaDto)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<UnitListingAmenityEntry> listAmenities(UUID listingId) {
+        return amenityRepository.findByListingId(listingId);
+    }
+
     // ---- Media ----
 
     public UnitListingMediaDTO addMedia(UUID tenantId, UUID listingId, MultipartFile file,
