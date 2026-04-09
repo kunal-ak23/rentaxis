@@ -69,11 +69,19 @@ export interface PageResponse<T> {
 }
 
 // ─── Public (unauthenticated) preview DTO ─────────────────────────────────────
+export interface PublicListingMediaItem {
+  url: string
+  mediaType: string | null
+  caption: string | null
+  isCover: boolean
+}
+
 export interface PublicListingDTO {
   // Identity
   tenantSlug: string
   slug: string
-  title: string
+  title: string | null
+  description: string | null
   // Location (coarse — no exact address)
   buildingName: string | null
   area: string | null
@@ -88,9 +96,11 @@ export interface PublicListingDTO {
   rentRangeLabel: string  // e.g. "AED 80–90k / year"
   // Availability
   availableLabel: string  // "Available now" or "Available from Jan 2027"
-  availableNow: boolean
-  // Media (cover only)
+  // Media
   coverPhotoUrl: string | null
+  media: PublicListingMediaItem[] | null
+  // Amenities
+  amenities: string[] | null
   // SEO fields
   seoTitle: string | null
   seoDescription: string | null

@@ -5,13 +5,9 @@ import com.datagami.rentaxis.api.dto.PublicListingDTO;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.service.MarketplaceService;
 import com.datagami.rentaxis.core.service.TenantFeatureService;
-import com.datagami.rentaxis.domain.entity.enums.TenantFeature;
-import com.datagami.rentaxis.domain.entity.UnitListing;
-import com.datagami.rentaxis.domain.entity.UnitListingMedia;
-import com.datagami.rentaxis.domain.entity.enums.Furnishing;
-import com.datagami.rentaxis.domain.entity.enums.ListingStatus;
-import com.datagami.rentaxis.domain.repository.UnitListingMediaRepository;
-import com.datagami.rentaxis.domain.repository.UnitListingRepository;
+import com.datagami.rentaxis.domain.entity.*;
+import com.datagami.rentaxis.domain.entity.enums.*;
+import com.datagami.rentaxis.domain.repository.*;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -44,15 +40,21 @@ public class PublicListingController {
     private final UnitListingMediaRepository mediaRepository;
     private final UnitListingRepository listingRepository;
     private final TenantFeatureService tenantFeatureService;
+    private final UnitRepository unitRepository;
+    private final UnitListingAmenityRepository amenityRepository;
 
     public PublicListingController(MarketplaceService marketplaceService,
                                     UnitListingMediaRepository mediaRepository,
                                     UnitListingRepository listingRepository,
-                                    TenantFeatureService tenantFeatureService) {
+                                    TenantFeatureService tenantFeatureService,
+                                    UnitRepository unitRepository,
+                                    UnitListingAmenityRepository amenityRepository) {
         this.marketplaceService = marketplaceService;
         this.mediaRepository = mediaRepository;
         this.listingRepository = listingRepository;
         this.tenantFeatureService = tenantFeatureService;
+        this.unitRepository = unitRepository;
+        this.amenityRepository = amenityRepository;
     }
 
     @GetMapping("/{tenantSlug}")
@@ -118,6 +120,38 @@ public class PublicListingController {
                 .map(UnitListingMedia::getUrl)
                 .orElse(null);
 
+        // Media gallery
+        List<PublicListingDTO.MediaItem> mediaItems = media.stream()
+                .map(m -> new PublicListingDTO.MediaItem(
+                        m.getUrl(),
+                        m.getMediaType() != null ? m.getMediaType().name() : null,
+                        m.getCaption(),
+                        Boolean.TRUE.equals(m.getIsCover())
+                ))
+                .toList();
+
+        // Amenities
+        List<String> amenityList = amenityRepository.findByListingId(l.getId()).stream()
+                .map(a -> a.getAmenity().name())
+                .toList();
+
+        // Building / area / emirate via Unit -> Property/Building
+        String buildingName = null;
+        String area = null;
+        String emirateName = null;
+        Unit unit = unitRepository.findById(l.getUnitId()).orElse(null);
+        if (unit != null) {
+            if (unit.getBuilding() != null) {
+                buildingName = unit.getBuilding().getNameEn();
+            }
+            if (unit.getProperty() != null) {
+                area = unit.getProperty().getAddress();
+                emirateName = unit.getProperty().getEmirate() != null
+                        ? unit.getProperty().getEmirate().name().replace('_', ' ')
+                        : null;
+            }
+        }
+
         // Rent: round down to nearest 10k, format as "AED 80-90k"
         String rentLabel = buildRentLabel(l.getAnnualRent());
 
@@ -144,14 +178,18 @@ public class PublicListingController {
         return new PublicListingDTO(
                 l.getSlug(),
                 tenantSlug,
-                null,   // buildingName — not available without property join (v1)
-                null,   // area
-                null,   // emirate
+                l.getTitleEn(),
+                l.getDescriptionEn(),
+                buildingName,
+                area,
+                emirateName,
                 l.getBedrooms(),
                 l.getBathrooms(),
                 furnishing,
                 rentLabel,
                 coverUrl,
+                mediaItems,
+                amenityList,
                 approxLat,
                 approxLng,
                 seoTitle,
