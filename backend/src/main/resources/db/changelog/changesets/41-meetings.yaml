@@ -111,11 +111,16 @@ databaseChangeLog:
                   constraints:
                     primaryKey: true
               - column:
+                  name: tenant_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
                   name: meeting_id
                   type: uuid
                   constraints:
                     nullable: false
-                    foreignKeyName: fk_detail_meeting
+                    foreignKeyName: fk_meeting_detail_meeting
                     references: meetings(id)
               - column:
                   name: detail_type
@@ -176,6 +181,12 @@ databaseChangeLog:
             columns:
               - column:
                   name: property_id
+        - createIndex:
+            tableName: meeting_details
+            indexName: idx_meeting_details_tenant_id
+            columns:
+              - column:
+                  name: tenant_id
         - createIndex:
             tableName: meeting_details
             indexName: idx_meeting_details_meeting
