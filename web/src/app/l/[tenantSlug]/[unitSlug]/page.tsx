@@ -170,7 +170,7 @@ export default async function PublicListingPage({
 
         <div className="max-w-2xl mx-auto px-4 py-6 space-y-5">
           {/* Title */}
-          <h1 className="text-xl font-bold text-neutral-900">{listing.title}</h1>
+          <h1 className="text-xl font-bold text-neutral-900">{listing.title || listing.buildingName || 'Property Listing'}</h1>
 
           {/* Rent badge */}
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-indigo-600 text-white font-semibold text-sm shadow-sm">

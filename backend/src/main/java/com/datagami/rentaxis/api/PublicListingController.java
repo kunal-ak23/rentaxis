@@ -139,7 +139,9 @@ public class PublicListingController {
         String buildingName = null;
         String area = null;
         String emirateName = null;
-        Unit unit = unitRepository.findById(l.getUnitId()).orElse(null);
+        Unit unit = unitRepository.findById(l.getUnitId())
+                .filter(u -> u.getTenantId().equals(l.getTenantId()))
+                .orElse(null);
         if (unit != null) {
             if (unit.getBuilding() != null) {
                 buildingName = unit.getBuilding().getNameEn();

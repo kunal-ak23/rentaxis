@@ -1066,7 +1066,7 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
                 />
               </div>
             </div>
-            {form.lat && form.lng && (
+            {form.lat && form.lng && !isNaN(Number(form.lat)) && !isNaN(Number(form.lng)) && (
               <div className="rounded-xl overflow-hidden border border-border">
                 <iframe
                   width="100%"
