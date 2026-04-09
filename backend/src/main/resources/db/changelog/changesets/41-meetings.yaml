@@ -1,0 +1,179 @@
+databaseChangeLog:
+  - changeSet:
+      id: 41-meetings
+      author: system
+      comment: "Meetings and scheduling module"
+      changes:
+        - createTable:
+            tableName: meetings
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: tenant_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: type
+                  type: varchar(30)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: varchar(30)
+                  defaultValue: REQUESTED
+                  constraints:
+                    nullable: false
+              - column:
+                  name: purpose
+                  type: varchar(30)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: title
+                  type: varchar(255)
+              - column:
+                  name: notes
+                  type: text
+              - column:
+                  name: slot_start
+                  type: timestamp with time zone
+                  constraints:
+                    nullable: false
+              - column:
+                  name: slot_end
+                  type: timestamp with time zone
+                  constraints:
+                    nullable: false
+              - column:
+                  name: host_user_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_meeting_host_user
+                    references: users(id)
+              - column:
+                  name: requester_user_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_meeting_requester_user
+                    references: users(id)
+              - column:
+                  name: lease_id
+                  type: uuid
+                  constraints:
+                    foreignKeyName: fk_meeting_lease
+                    references: leases(id)
+              - column:
+                  name: property_id
+                  type: uuid
+                  constraints:
+                    foreignKeyName: fk_meeting_property
+                    references: properties(id)
+              - column:
+                  name: unit_id
+                  type: uuid
+                  constraints:
+                    foreignKeyName: fk_meeting_unit
+                    references: units(id)
+              - column:
+                  name: version
+                  type: bigint
+                  defaultValueNumeric: 0
+              - column:
+                  name: created_at
+                  type: timestamp with time zone
+                  defaultValueComputed: now()
+              - column:
+                  name: updated_at
+                  type: timestamp with time zone
+                  defaultValueComputed: now()
+
+        - createTable:
+            tableName: meeting_details
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: meeting_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_detail_meeting
+                    references: meetings(id)
+              - column:
+                  name: detail_type
+                  type: varchar(30)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: payment_schedule_ids
+                  type: uuid[]
+              - column:
+                  name: proposed_start_date
+                  type: date
+              - column:
+                  name: proposed_end_date
+                  type: date
+              - column:
+                  name: proposed_rent_amount
+                  type: decimal(15,2)
+              - column:
+                  name: notes
+                  type: text
+
+        - createIndex:
+            tableName: meetings
+            indexName: idx_meetings_tenant_id
+            columns:
+              - column:
+                  name: tenant_id
+        - createIndex:
+            tableName: meetings
+            indexName: idx_meetings_host_slot
+            columns:
+              - column:
+                  name: host_user_id
+              - column:
+                  name: slot_start
+        - createIndex:
+            tableName: meetings
+            indexName: idx_meetings_status
+            columns:
+              - column:
+                  name: status
+        - createIndex:
+            tableName: meetings
+            indexName: idx_meetings_requester
+            columns:
+              - column:
+                  name: requester_user_id
+        - createIndex:
+            tableName: meetings
+            indexName: idx_meetings_lease
+            columns:
+              - column:
+                  name: lease_id
+        - createIndex:
+            tableName: meetings
+            indexName: idx_meetings_property
+            columns:
+              - column:
+                  name: property_id
+        - createIndex:
+            tableName: meeting_details
+            indexName: idx_meeting_details_meeting
+            unique: true
+            columns:
+              - column:
+                  name: meeting_id
