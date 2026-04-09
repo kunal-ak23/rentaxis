@@ -1,21 +1,26 @@
 package com.datagami.rentaxis.api;
 
+import com.datagami.rentaxis.api.dto.MarketplaceSearchRequest;
 import com.datagami.rentaxis.api.dto.PublicListingDTO;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.config.FeatureFlags;
 import com.datagami.rentaxis.core.service.MarketplaceService;
 import com.datagami.rentaxis.domain.entity.UnitListing;
 import com.datagami.rentaxis.domain.entity.UnitListingMedia;
+import com.datagami.rentaxis.domain.entity.enums.Furnishing;
 import com.datagami.rentaxis.domain.entity.enums.ListingStatus;
 import com.datagami.rentaxis.domain.repository.UnitListingMediaRepository;
 import com.datagami.rentaxis.domain.repository.UnitListingRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
@@ -47,6 +52,23 @@ public class PublicListingController {
         this.mediaRepository = mediaRepository;
         this.listingRepository = listingRepository;
         this.featureFlags = featureFlags;
+    }
+
+    @GetMapping("/{tenantSlug}")
+    public ResponseEntity<Page<PublicListingDTO>> listPublicListings(
+            @PathVariable String tenantSlug,
+            @RequestParam(required = false) Integer minBedrooms,
+            @RequestParam(required = false) java.math.BigDecimal minRent,
+            @RequestParam(required = false) java.math.BigDecimal maxRent,
+            @RequestParam(required = false) Furnishing furnishing,
+            @RequestParam(required = false) Boolean availableNow,
+            @PageableDefault(size = 12, sort = "createdAt") Pageable pageable) {
+        checkEnabled();
+        UUID tenantId = marketplaceService.resolveTenantSlug(tenantSlug);
+        MarketplaceSearchRequest req = new MarketplaceSearchRequest(
+                minBedrooms, minRent, maxRent, furnishing, availableNow, null, null, null, null);
+        Page<UnitListing> page = marketplaceService.search(tenantId, req, pageable);
+        return ResponseEntity.ok(page.map(l -> toPublicDTO(l, tenantSlug)));
     }
 
     @GetMapping("/{tenantSlug}/{unitSlug}")
