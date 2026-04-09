@@ -61,7 +61,7 @@ public class MeetingService {
 
         // Check for conflicts
         List<Meeting> conflicts = meetingRepository.findConflicts(
-                dto.getHostUserId(), dto.getSlotStart(), INACTIVE_STATUSES);
+                dto.getHostUserId(), TenantContextHolder.getTenantId(), dto.getSlotStart(), INACTIVE_STATUSES);
         if (!conflicts.isEmpty()) {
             Instant nextSlot = findNextAvailableSlot(dto.getHostUserId(), dto.getSlotStart());
             throw new SlotConflictException(
@@ -248,9 +248,14 @@ public class MeetingService {
     // ---- Read operations ----
 
     @Transactional(readOnly = true)
-    public MeetingDTO getMeeting(UUID meetingId) {
+    public MeetingDTO getMeeting(UUID meetingId, UUID userId, String role) {
         Meeting meeting = meetingRepository.findById(meetingId)
                 .orElseThrow(() -> new NotFoundException("Meeting not found"));
+        boolean isManager = role.equals("PROPERTY_MANAGER") || role.equals("TENANT_ADMIN") || role.equals("SUPER_ADMIN");
+        boolean isInvolved = meeting.getRequesterUserId().equals(userId) || meeting.getHostUserId().equals(userId);
+        if (!isManager && !isInvolved) {
+            throw new NotFoundException("Meeting not found");
+        }
         return mapToDTO(meeting);
     }
 
@@ -283,7 +288,7 @@ public class MeetingService {
         Instant dayEnd = dayEndZdt.toInstant();
 
         List<Meeting> bookedMeetings = meetingRepository.findActiveByHostAndDay(
-                hostUserId, dayStart, dayEnd, INACTIVE_STATUSES);
+                hostUserId, TenantContextHolder.getTenantId(), dayStart, dayEnd, INACTIVE_STATUSES);
 
         List<SlotDTO> slots = new ArrayList<>();
         ZonedDateTime cursor = dayStartZdt;

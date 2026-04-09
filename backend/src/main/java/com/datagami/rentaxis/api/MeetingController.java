@@ -54,8 +54,10 @@ public class MeetingController {
 
     @GetMapping("/{id}")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<MeetingDTO> getMeeting(@PathVariable UUID id) {
-        return ResponseEntity.ok(meetingService.getMeeting(id));
+    public ResponseEntity<MeetingDTO> getMeeting(@PathVariable UUID id,
+                                                  @RequestHeader("X-User-Id") UUID userId,
+                                                  @RequestHeader("X-User-Role") String role) {
+        return ResponseEntity.ok(meetingService.getMeeting(id, userId, role));
     }
 
     @PutMapping("/{id}/approve")

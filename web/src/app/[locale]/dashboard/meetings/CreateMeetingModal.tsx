@@ -350,7 +350,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
             if (res.status === 409) {
                 const err = await res.json().catch(() => ({}));
                 setConflictMessage(err.message ?? "This slot is already booked.");
-                setSuggestedSlot(err.suggestedSlot ?? null);
+                setSuggestedSlot(err.nextAvailableSlot ?? null);
                 setSubmitting(false);
                 return;
             }

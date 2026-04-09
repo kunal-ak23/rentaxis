@@ -29,24 +29,30 @@ public interface MeetingRepository extends JpaRepository<Meeting, UUID> {
                                               Pageable pageable);
 
     @Query("SELECT m FROM Meeting m WHERE m.hostUserId = :hostUserId " +
+           "AND m.tenantId = :tenantId " +
            "AND m.slotStart >= :dayStart AND m.slotStart < :dayEnd " +
            "AND m.status NOT IN :excluded")
     List<Meeting> findActiveByHostAndDay(@Param("hostUserId") UUID hostUserId,
+                                         @Param("tenantId") UUID tenantId,
                                          @Param("dayStart") Instant dayStart,
                                          @Param("dayEnd") Instant dayEnd,
                                          @Param("excluded") List<MeetingStatus> excluded);
 
     @Query("SELECT m FROM Meeting m WHERE m.hostUserId = :hostUserId " +
+           "AND m.tenantId = :tenantId " +
            "AND m.slotStart = :slotStart " +
            "AND m.status NOT IN :excluded")
     List<Meeting> findConflicts(@Param("hostUserId") UUID hostUserId,
+                                @Param("tenantId") UUID tenantId,
                                 @Param("slotStart") Instant slotStart,
                                 @Param("excluded") List<MeetingStatus> excluded);
 
     @Query("SELECT m FROM Meeting m WHERE m.hostUserId = :hostUserId " +
+           "AND m.tenantId = :tenantId " +
            "AND m.slotStart >= :rangeStart AND m.slotStart < :rangeEnd " +
            "AND m.status NOT IN :excluded")
     List<Meeting> findByHostAndRange(@Param("hostUserId") UUID hostUserId,
+                                     @Param("tenantId") UUID tenantId,
                                      @Param("rangeStart") Instant rangeStart,
                                      @Param("rangeEnd") Instant rangeEnd,
                                      @Param("excluded") List<MeetingStatus> excluded);
