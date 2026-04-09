@@ -99,6 +99,14 @@ public class DeductionAttachmentService {
 
     @Transactional(readOnly = true)
     public List<DeductionAttachmentDTO> getAttachments(UUID deductionId) {
+        LeaseSettlementDeduction deduction = deductionRepository.findById(deductionId)
+                .orElseThrow(() -> new NotFoundException("Deduction not found"));
+
+        UUID currentTenantId = TenantContextHolder.getTenantId();
+        if (currentTenantId != null && !currentTenantId.equals(deduction.getTenantId())) {
+            throw new NotFoundException("Deduction not found");
+        }
+
         return attachmentRepository.findByDeductionIdOrderByUploadedAtAsc(deductionId).stream()
                 .map(this::mapToDTO)
                 .collect(Collectors.toList());
@@ -107,6 +115,11 @@ public class DeductionAttachmentService {
     public byte[] downloadAttachment(UUID attachmentId) {
         SettlementDeductionAttachment attachment = attachmentRepository.findById(attachmentId)
                 .orElseThrow(() -> new NotFoundException("Attachment not found"));
+
+        UUID currentTenantId = TenantContextHolder.getTenantId();
+        if (currentTenantId != null && !currentTenantId.equals(attachment.getTenantId())) {
+            throw new NotFoundException("Attachment not found");
+        }
 
         String url = attachment.getFileUrl();
         if (url.startsWith("https://") && url.contains(".blob.core.windows.net")) {
@@ -164,7 +177,10 @@ public class DeductionAttachmentService {
 
     private String uploadToAzure(UUID deductionId, String fileName, byte[] bytes, String contentType) {
         UUID tenantId = TenantContextHolder.getTenantId();
-        String containerName = tenantId != null ? containerPrefix + tenantId : "shared";
+        if (tenantId == null) {
+            throw new IllegalStateException("Cannot upload settlement attachment: tenant context is not set");
+        }
+        String containerName = containerPrefix + tenantId;
 
         BlobServiceClient blobServiceClient = new BlobServiceClientBuilder()
                 .connectionString(azureConnectionString)
