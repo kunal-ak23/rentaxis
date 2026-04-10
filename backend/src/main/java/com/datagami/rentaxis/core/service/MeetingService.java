@@ -133,6 +133,19 @@ public class MeetingService {
             log.warn("Failed to send MEETING_REQUESTED notification for meeting {}", saved.getId(), e);
         }
 
+        // Notify requester (confirmation)
+        if (!saved.getRequesterUserId().equals(saved.getHostUserId())) {
+            try {
+                notificationService.notify(
+                        saved.getTenantId(), saved.getRequesterUserId(),
+                        "MEETING_REQUESTED", "Meeting Request Submitted",
+                        "Your meeting request for " + formatSlotForDisplay(saved.getSlotStart()) + " has been submitted and is awaiting approval.",
+                        "MEETING", saved.getId());
+            } catch (Exception e) {
+                log.warn("Failed to send MEETING_REQUESTED confirmation for meeting {} to requester", saved.getId(), e);
+            }
+        }
+
         log.info("Created meeting {} for host {}", saved.getId(), dto.getHostUserId());
         return mapToDTO(saved);
     }
