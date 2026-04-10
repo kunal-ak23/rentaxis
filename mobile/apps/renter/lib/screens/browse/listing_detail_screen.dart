@@ -152,27 +152,32 @@ class _ListingDetailViewState extends ConsumerState<_ListingDetailView> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _wishlistLoading ? null : () => _toggleWishlist(_wishlisted),
-        backgroundColor: isUpcoming ? AppColors.accent : AppColors.primary,
-        icon: _wishlistLoading
-            ? const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
+      floatingActionButton: Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).padding.bottom + 84,
+        ),
+        child: FloatingActionButton.extended(
+          onPressed: _wishlistLoading ? null : () => _toggleWishlist(_wishlisted),
+          backgroundColor: isUpcoming ? AppColors.accent : AppColors.primary,
+          icon: _wishlistLoading
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    color: Colors.white,
+                    strokeWidth: 2,
+                  ),
+                )
+              : Icon(
+                  _wishlisted ? Icons.favorite : Icons.favorite_border,
                   color: Colors.white,
-                  strokeWidth: 2,
                 ),
-              )
-            : Icon(
-                _wishlisted ? Icons.favorite : Icons.favorite_border,
-                color: Colors.white,
-              ),
-        label: Text(
-          isUpcoming ? 'Notify me' : (_wishlisted ? 'Saved' : 'Save'),
-          style: GoogleFonts.josefinSans(
-            color: Colors.white,
-            fontWeight: FontWeight.w600,
+          label: Text(
+            isUpcoming ? 'Notify me' : (_wishlisted ? 'Saved' : 'Save'),
+            style: GoogleFonts.josefinSans(
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ),
       ),
