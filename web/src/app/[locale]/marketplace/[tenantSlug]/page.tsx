@@ -349,6 +349,7 @@ function MarketplaceContent({ tenantSlug }: { tenantSlug: string }) {
   const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
   const [filterOpen, setFilterOpen] = useState(false);
   const [wishlistedIds, setWishlistedIds] = useState<Set<string>>(new Set());
+  const [renterPropertyNames, setRenterPropertyNames] = useState<Set<string>>(new Set());
 
   // Geolocation
   const [userPos, setUserPos] = useState<{ lat: number; lng: number } | null>(null);
@@ -400,14 +401,22 @@ function MarketplaceContent({ tenantSlug }: { tenantSlug: string }) {
         return ext;
       });
 
-      setListings(enriched);
+      // Boost listings from properties the renter currently lives in to the top
+      const sorted = renterPropertyNames.size > 0
+        ? [...enriched].sort((a, b) => {
+            const aBoost = a.propertyName && renterPropertyNames.has(a.propertyName) ? 0 : 1;
+            const bBoost = b.propertyName && renterPropertyNames.has(b.propertyName) ? 0 : 1;
+            return aBoost - bBoost;
+          })
+        : enriched;
+      setListings(sorted);
       setTotalElements(data.totalElements);
     } catch {
       setError(t('errorLoad'));
     } finally {
       setLoading(false);
     }
-  }, [currentPage, bedroomsParam, minRentParam, maxRentParam, furnishingParam, availableNowParam, sortParam, tenantSlug, session, userPos, t]);
+  }, [currentPage, bedroomsParam, minRentParam, maxRentParam, furnishingParam, availableNowParam, sortParam, tenantSlug, session, userPos, t, renterPropertyNames]);
 
   useEffect(() => { loadListings(); }, [loadListings]);
 
@@ -417,6 +426,19 @@ function MarketplaceContent({ tenantSlug }: { tenantSlug: string }) {
     fetchWishlist('').then(items => {
       setWishlistedIds(new Set(items.map(i => i.id)));
     }).catch(() => {});
+
+    // Fetch renter's active leases to know which properties they live in (for boost)
+    fetch('/api/proxy/v1/leases/my-leases')
+      .then(r => r.ok ? r.json() : [])
+      .then((leases: { propertyName?: string; status?: string }[]) => {
+        const names = new Set(
+          leases
+            .filter(l => l.status === 'ACTIVE' && l.propertyName)
+            .map(l => l.propertyName as string)
+        );
+        setRenterPropertyNames(names);
+      })
+      .catch(() => {});
   }, [session]);
 
   function updateParams(updates: Record<string, string>) {

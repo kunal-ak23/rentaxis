@@ -17,6 +17,7 @@ import com.datagami.rentaxis.domain.entity.enums.Furnishing;
 import com.datagami.rentaxis.domain.repository.UnitListingAmenityRepository;
 import com.datagami.rentaxis.domain.repository.UnitListingMediaRepository;
 import com.datagami.rentaxis.domain.repository.UnitListingRepository;
+import com.datagami.rentaxis.domain.repository.UnitRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -47,19 +48,22 @@ public class MarketplaceController {
     private final UnitListingAmenityRepository amenityRepository;
     private final UnitListingRepository listingRepository;
     private final TenantFeatureService tenantFeatureService;
+    private final UnitRepository unitRepository;
 
     public MarketplaceController(MarketplaceService marketplaceService,
                                   InterestService interestService,
                                   UnitListingMediaRepository mediaRepository,
                                   UnitListingAmenityRepository amenityRepository,
                                   UnitListingRepository listingRepository,
-                                  TenantFeatureService tenantFeatureService) {
+                                  TenantFeatureService tenantFeatureService,
+                                  UnitRepository unitRepository) {
         this.marketplaceService = marketplaceService;
         this.interestService = interestService;
         this.mediaRepository = mediaRepository;
         this.amenityRepository = amenityRepository;
         this.listingRepository = listingRepository;
         this.tenantFeatureService = tenantFeatureService;
+        this.unitRepository = unitRepository;
     }
 
     @GetMapping("/{tenantSlug}/listings")
@@ -176,10 +180,14 @@ public class MarketplaceController {
                 .map(UnitListingMedia::getUrl)
                 .orElse(null);
 
+        String propertyName = unitRepository.findById(l.getUnitId())
+                .map(u -> u.getProperty() != null ? u.getProperty().getNameEn() : null)
+                .orElse(null);
+
         return new UnitListingSummaryDTO(
                 l.getId(),
                 l.getTitleEn(),
-                null,
+                propertyName,
                 l.getBedrooms(),
                 l.getAnnualRent(),
                 l.getStatus(),
