@@ -111,8 +111,8 @@ public class AuthController {
         List<TenantInfo> tenants = tenantIds.stream()
                 .map(tid -> orgService.findById(tid))
                 .filter(Optional::isPresent)
-                .map(Optional::get)
-                .map(org -> new TenantInfo(org.getId().toString(), org.getName()))
+                .map(opt -> (LandlordOrg) opt.get())
+                .map(org -> new TenantInfo(org.getId().toString(), org.getName(), org.getSlug()))
                 .toList();
 
         return ResponseEntity.ok(tenants);
