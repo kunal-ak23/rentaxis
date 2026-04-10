@@ -13,6 +13,7 @@ import com.datagami.rentaxis.domain.entity.MeetingDetail;
 import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.enums.MeetingPurpose;
 import com.datagami.rentaxis.domain.entity.enums.MeetingStatus;
+import com.datagami.rentaxis.domain.entity.enums.UserRole;
 import com.datagami.rentaxis.domain.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -294,6 +295,23 @@ public class MeetingService {
     @Transactional(readOnly = true)
     public Page<MeetingDTO> getCalendarMeetings(Instant rangeStart, Instant rangeEnd, Pageable pageable) {
         return meetingRepository.findByTenantIdAndDateRange(TenantContextHolder.getTenantId(), rangeStart, rangeEnd, pageable).map(this::mapToDTO);
+    }
+
+    // ---- Default host (for renters who cannot derive a PM) ----
+
+    @Transactional(readOnly = true)
+    public UUID getDefaultHostId() {
+        UUID tenantId = TenantContextHolder.getTenantId();
+        // Prefer TENANT_ADMIN, fall back to any user with PROPERTY_MANAGER role
+        List<User> admins = userRepository.findByTenantIdAndRole(tenantId, UserRole.TENANT_ADMIN);
+        if (!admins.isEmpty()) {
+            return admins.get(0).getId();
+        }
+        List<User> managers = userRepository.findByTenantIdAndRole(tenantId, UserRole.PROPERTY_MANAGER);
+        if (!managers.isEmpty()) {
+            return managers.get(0).getId();
+        }
+        throw new NotFoundException("No host user found for this tenant");
     }
 
     // ---- Slot availability ----

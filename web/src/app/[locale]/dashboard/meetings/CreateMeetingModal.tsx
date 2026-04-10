@@ -111,6 +111,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
     const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
     const [pmUsers, setPmUsers] = useState<PMUser[]>([]);
     const [selectedPmId, setSelectedPmId] = useState("");
+    const [defaultHostId, setDefaultHostId] = useState<string>("");
 
     // Step 4 — Details
     const [notes, setNotes] = useState("");
@@ -139,6 +140,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
             setSelectedSlot(null);
             setPmUsers([]);
             setSelectedPmId("");
+            setDefaultHostId("");
             setNotes("");
             setChequeNotes("");
             setRenewalStartDate("");
@@ -248,14 +250,14 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
     const deriveHostUserId = useCallback((): string => {
         if (meetingType === "OFFICE_VISIT") {
             const lease = leases.find((l) => l.id === selectedLeaseId);
-            return lease?.propertyManagerId ?? selectedPmId;
+            return lease?.propertyManagerId ?? selectedPmId ?? defaultHostId;
         }
         if (meetingType === "PROPERTY_VISIT") {
             const prop = properties.find((p) => p.id === selectedPropertyId);
-            return prop?.managerId ?? selectedPmId;
+            return prop?.managerId ?? selectedPmId ?? defaultHostId;
         }
-        return selectedPmId;
-    }, [meetingType, leases, selectedLeaseId, properties, selectedPropertyId, selectedPmId]);
+        return selectedPmId ?? defaultHostId;
+    }, [meetingType, leases, selectedLeaseId, properties, selectedPropertyId, selectedPmId, defaultHostId]);
 
     // Determine if we need to show PM picker (can't derive host)
     const needsPmPicker = useCallback((): boolean => {
@@ -278,6 +280,16 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
             : leases.find(l => l.id === selectedLeaseId)?.propertyId ?? "";
         if (propertyId) fetchPmUsers(propertyId);
     }, [step, meetingType, selectedPropertyId, selectedLeaseId, leases, needsPmPicker, fetchPmUsers]);
+
+    // For renters: fetch the default host when entering step 3 (no PM picker shown)
+    useEffect(() => {
+        if (step === 3 && isRenter && !defaultHostId) {
+            fetch("/api/proxy/v1/meetings/default-host")
+                .then(r => r.ok ? r.json() : null)
+                .then(data => { if (data?.userId) setDefaultHostId(data.userId); })
+                .catch(() => {});
+        }
+    }, [step, isRenter, defaultHostId]);
 
     useEffect(() => {
         const hostId = deriveHostUserId();

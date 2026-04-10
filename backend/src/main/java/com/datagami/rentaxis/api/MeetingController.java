@@ -89,6 +89,13 @@ public class MeetingController {
         return ResponseEntity.ok(meetingService.noShowMeeting(id, userId));
     }
 
+    @GetMapping("/default-host")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<java.util.Map<String, String>> getDefaultHost() {
+        java.util.UUID hostId = meetingService.getDefaultHostId();
+        return ResponseEntity.ok(java.util.Map.of("userId", hostId.toString()));
+    }
+
     @GetMapping("/slots")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<SlotDTO>> getAvailableSlots(

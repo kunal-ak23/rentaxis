@@ -10,7 +10,7 @@ import { formatCurrency, formatCurrencyCompact } from "@/lib/format";
 import {
     ArrowLeft, FileText, User, Building2, Calendar, DollarSign, CreditCard,
     Home, Download, Upload, Trash2, Loader2, CheckCircle, Clock, AlertTriangle,
-    Hash, Phone, Mail, MapPin, Wrench, X, Ban,
+    Hash, Phone, Mail, MapPin, Wrench, X, Ban, CalendarClock,
 } from "lucide-react";
 
 type Lease = {
@@ -140,6 +140,12 @@ export default function LeaseDetailPage() {
 
     // Settlement state
     const [settlement, setSettlement] = useState<Settlement | null>(null);
+
+    // Extend lease state
+    const [extendOpen, setExtendOpen] = useState(false);
+    const [extendDate, setExtendDate] = useState("");
+    const [extending, setExtending] = useState(false);
+    const [extendError, setExtendError] = useState<string | null>(null);
 
     const fetchLease = useCallback(async () => {
         try {
@@ -281,6 +287,32 @@ export default function LeaseDetailPage() {
         }
     };
 
+    const handleExtendLease = async () => {
+        if (!extendDate || !lease) return;
+        setExtending(true);
+        setExtendError(null);
+        try {
+            const res = await fetch(`/api/proxy/v1/leases/${leaseId}/extend`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ newEndDate: extendDate }),
+            });
+            if (res.ok) {
+                const updated = await res.json();
+                setLease(updated);
+                setExtendOpen(false);
+                setExtendDate("");
+            } else {
+                const err = await res.json().catch(() => ({}));
+                setExtendError(err.message || "Failed to extend lease");
+            }
+        } catch {
+            setExtendError("Failed to extend lease");
+        } finally {
+            setExtending(false);
+        }
+    };
+
     const handleDownloadContract = async () => {
         if (!lease) return;
         const res = await fetch(`/api/proxy/v1/leases/${lease.id}/documents`);
@@ -353,6 +385,14 @@ export default function LeaseDetailPage() {
                         className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-xs font-semibold hover:bg-primary/90 transition-all cursor-pointer"
                     >
                         <Download size={14} /> Download Contract
+                    </button>
+                )}
+                {lease.status === "ACTIVE" && hasRole(userRole, ["SUPER_ADMIN", "TENANT_ADMIN"]) && (
+                    <button
+                        onClick={() => { setExtendOpen(true); setExtendError(null); setExtendDate(""); }}
+                        className="flex items-center gap-2 bg-primary/10 text-primary border border-primary/20 px-4 py-2 rounded-lg text-xs font-semibold hover:bg-primary/20 transition-all cursor-pointer"
+                    >
+                        <CalendarClock size={14} /> Extend Lease
                     </button>
                 )}
                 {(lease.status === "ACTIVE" || lease.status === "NOTICE_GIVEN") && hasRole(userRole, ["SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER"]) && (
@@ -767,5 +807,55 @@ export default function LeaseDetailPage() {
             )}
 
         </div>
+
+        {/* Extend Lease Modal */}
+        {extendOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+                <div className="bg-surface rounded-2xl border border-border shadow-xl w-full max-w-sm p-6">
+                    <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                            <CalendarClock size={15} className="text-primary" /> Extend Lease
+                        </h3>
+                        <button onClick={() => setExtendOpen(false)} className="text-muted hover:text-foreground cursor-pointer">
+                            <X size={16} />
+                        </button>
+                    </div>
+                    <p className="text-xs text-muted mb-4">
+                        Current end date: <strong>{lease.endDate}</strong>. Enter a new end date after this date.
+                    </p>
+                    <div className="mb-4">
+                        <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">
+                            New End Date *
+                        </label>
+                        <input
+                            type="date"
+                            value={extendDate}
+                            min={lease.endDate}
+                            onChange={e => { setExtendDate(e.target.value); setExtendError(null); }}
+                            className="w-full border border-border rounded-lg px-3 py-2 text-sm text-foreground bg-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
+                        />
+                    </div>
+                    {extendError && (
+                        <p className="text-xs text-error mb-3">{extendError}</p>
+                    )}
+                    <div className="flex gap-2 justify-end">
+                        <button
+                            onClick={() => setExtendOpen(false)}
+                            className="px-4 py-2 rounded-lg text-xs font-semibold text-muted hover:bg-input transition-colors cursor-pointer"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            onClick={handleExtendLease}
+                            disabled={extending || !extendDate}
+                            className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer disabled:opacity-50"
+                        >
+                            {extending ? <Loader2 size={12} className="animate-spin" /> : <CalendarClock size={12} />}
+                            Extend Lease
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
     );
 }

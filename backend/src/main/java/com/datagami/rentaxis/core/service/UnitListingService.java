@@ -7,19 +7,23 @@ import com.datagami.rentaxis.api.dto.UnitListingUpdateRequest;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.event.ListingPublishedEvent;
 import com.datagami.rentaxis.core.event.ListingUnlistedEvent;
+import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.UnitListing;
 import com.datagami.rentaxis.domain.entity.UnitListingAmenityEntry;
 import com.datagami.rentaxis.domain.entity.UnitListingInterest;
 import com.datagami.rentaxis.domain.entity.UnitListingMedia;
 import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.enums.InterestStatus;
+import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.ListingMediaType;
 import com.datagami.rentaxis.domain.entity.enums.ListingStatus;
+import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.UnitListingAmenityRepository;
 import com.datagami.rentaxis.domain.repository.UnitListingInterestRepository;
 import com.datagami.rentaxis.domain.repository.UnitListingMediaRepository;
 import com.datagami.rentaxis.domain.repository.UnitListingRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
@@ -28,6 +32,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.LocalDate;
 import java.util.Set;
 
 import java.time.LocalDateTime;
@@ -38,6 +43,7 @@ import java.util.UUID;
 
 @Service
 @Transactional
+@Slf4j
 public class UnitListingService {
 
     private final UnitListingRepository listingRepository;
@@ -45,6 +51,8 @@ public class UnitListingService {
     private final UnitListingMediaRepository mediaRepository;
     private final UnitListingInterestRepository interestRepository;
     private final UserRepository userRepository;
+    private final LeaseRepository leaseRepository;
+    private final NotificationService notificationService;
     private final SlugService slugService;
     private final ApplicationEventPublisher eventPublisher;
     private final BlobStorageService blobStorageService;
@@ -61,6 +69,8 @@ public class UnitListingService {
             UnitListingMediaRepository mediaRepository,
             UnitListingInterestRepository interestRepository,
             UserRepository userRepository,
+            LeaseRepository leaseRepository,
+            NotificationService notificationService,
             SlugService slugService,
             ApplicationEventPublisher eventPublisher,
             BlobStorageService blobStorageService) {
@@ -69,6 +79,8 @@ public class UnitListingService {
         this.mediaRepository = mediaRepository;
         this.interestRepository = interestRepository;
         this.userRepository = userRepository;
+        this.leaseRepository = leaseRepository;
+        this.notificationService = notificationService;
         this.slugService = slugService;
         this.eventPublisher = eventPublisher;
         this.blobStorageService = blobStorageService;
@@ -99,6 +111,13 @@ public class UnitListingService {
         listing.setStatus(ListingStatus.DRAFT);
         applyCreate(listing, req);
 
+        // Auto-populate availableFrom from active lease end date if not provided
+        if (listing.getAvailableFrom() == null && req.unitId() != null) {
+            leaseRepository.findByUnitIdAndStatus(req.unitId(), LeaseStatus.ACTIVE).stream()
+                    .findFirst()
+                    .ifPresent(lease -> listing.setAvailableFrom(lease.getEndDate()));
+        }
+
         String base = slugService.slugify(req.titleEn() == null ? "listing" : req.titleEn());
         if (base.isEmpty()) {
             base = "listing";
@@ -110,6 +129,40 @@ public class UnitListingService {
         UnitListing saved = listingRepository.save(listing);
         replaceAmenities(saved.getId(), req.amenities());
         return saved;
+    }
+
+    /**
+     * Syncs the availableFrom date on the listing for the given unit, then notifies
+     * all renters who have shown active interest. Pass {@code null} to clear the date
+     * (unit available immediately, e.g. after termination).
+     */
+    public void syncAvailableFrom(UUID unitId, LocalDate date) {
+        listingRepository.findByUnitId(unitId).ifPresent(listing -> {
+            listing.setAvailableFrom(date);
+            listingRepository.save(listing);
+
+            // Notify active interest holders
+            List<UnitListingInterest> interests = interestRepository
+                    .findByListingIdAndStatus(listing.getId(), InterestStatus.ACTIVE);
+            for (UnitListingInterest interest : interests) {
+                try {
+                    String message = date == null
+                            ? "The unit you expressed interest in is now available."
+                            : "The lease on a unit you expressed interest in has been updated. It will be available from " + date + ".";
+                    notificationService.notify(
+                            listing.getTenantId(),
+                            interest.getRenterUserId(),
+                            date == null ? "LISTING_NOW_AVAILABLE" : "LISTING_AVAILABILITY_UPDATED",
+                            "Listing Availability Update",
+                            message,
+                            "LISTING",
+                            listing.getId());
+                } catch (Exception e) {
+                    log.warn("Failed to notify renter {} about listing availability change for listing {}",
+                            interest.getRenterUserId(), listing.getId(), e);
+                }
+            }
+        });
     }
 
     public UnitListing update(UUID tenantId, UUID id, UnitListingUpdateRequest req) {

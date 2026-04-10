@@ -1,6 +1,7 @@
 package com.datagami.rentaxis.api;
 
 import com.datagami.rentaxis.api.dto.*;
+import com.datagami.rentaxis.api.dto.ExtendLeaseDTO;
 import com.datagami.rentaxis.api.dto.SaveSettlementDTO;
 import com.datagami.rentaxis.core.service.ContractGenerationService;
 import com.datagami.rentaxis.core.service.LeaseService;
@@ -121,6 +122,14 @@ public class LeaseController {
         UUID settledBy = userIdStr != null ? UUID.fromString(userIdStr) : null;
         settlementService.finalizeSettlement(id, settledBy);
         return ResponseEntity.ok(leaseService.terminateLease(id, null));
+    }
+
+    @PostMapping("/{id}/extend")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
+    public ResponseEntity<LeaseDTO> extendLease(
+            @PathVariable UUID id,
+            @RequestBody ExtendLeaseDTO dto) {
+        return ResponseEntity.ok(leaseService.extendLease(id, dto.getNewEndDate()));
     }
 
     @GetMapping("/{id}/events")

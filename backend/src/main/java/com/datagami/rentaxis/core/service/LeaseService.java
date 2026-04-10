@@ -8,23 +8,23 @@ import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.*;
+import org.springframework.context.annotation.Lazy;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.PaymentMethod;
 import com.datagami.rentaxis.domain.entity.enums.PaymentStatus;
 import com.datagami.rentaxis.domain.entity.enums.UnitStatus;
 import com.datagami.rentaxis.domain.repository.*;
 import com.datagami.rentaxis.domain.repository.PaymentScheduleRepository;
-import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
-@RequiredArgsConstructor
 public class LeaseService {
 
     private final LeaseRepository leaseRepository;
@@ -35,6 +35,27 @@ public class LeaseService {
     private final PaymentScheduleService paymentScheduleService;
     private final PaymentScheduleRepository paymentScheduleRepository;
     private final SettlementService settlementService;
+    private final UnitListingService unitListingService;
+
+    public LeaseService(LeaseRepository leaseRepository,
+                        UnitRepository unitRepository,
+                        RenterRepository renterRepository,
+                        LeaseEventRepository leaseEventRepository,
+                        LeaseDocumentRepository leaseDocumentRepository,
+                        PaymentScheduleService paymentScheduleService,
+                        PaymentScheduleRepository paymentScheduleRepository,
+                        SettlementService settlementService,
+                        @Lazy UnitListingService unitListingService) {
+        this.leaseRepository = leaseRepository;
+        this.unitRepository = unitRepository;
+        this.renterRepository = renterRepository;
+        this.leaseEventRepository = leaseEventRepository;
+        this.leaseDocumentRepository = leaseDocumentRepository;
+        this.paymentScheduleService = paymentScheduleService;
+        this.paymentScheduleRepository = paymentScheduleRepository;
+        this.settlementService = settlementService;
+        this.unitListingService = unitListingService;
+    }
 
     @Transactional(readOnly = true)
     public List<LeaseDTO> getAllLeases() {
@@ -200,6 +221,40 @@ public class LeaseService {
         Lease savedLease = leaseRepository.save(lease);
         recordEvent(savedLease, previousStatus, LeaseStatus.TERMINATED,
                 notes != null ? notes : "Lease terminated early");
+
+        // Clear listing availability and notify interested renters
+        try {
+            unitListingService.syncAvailableFrom(unit.getId(), null);
+        } catch (Exception e) {
+            // Non-critical: listing sync failure should not block termination
+        }
+
+        return mapToDTO(savedLease);
+    }
+
+    @Transactional
+    public LeaseDTO extendLease(UUID leaseId, LocalDate newEndDate) {
+        Lease lease = findLeaseWithTenantCheck(leaseId);
+
+        if (lease.getStatus() != LeaseStatus.ACTIVE) {
+            throw new BusinessRuleViolationException("Only ACTIVE leases can be extended");
+        }
+        if (!newEndDate.isAfter(lease.getEndDate())) {
+            throw new BusinessRuleViolationException("New end date must be after the current end date");
+        }
+
+        LocalDate previousEndDate = lease.getEndDate();
+        lease.setEndDate(newEndDate);
+        Lease savedLease = leaseRepository.save(lease);
+        recordEvent(savedLease, LeaseStatus.ACTIVE, LeaseStatus.ACTIVE,
+                "Lease extended from " + previousEndDate + " to " + newEndDate);
+
+        // Update listing availability and notify interested renters
+        try {
+            unitListingService.syncAvailableFrom(lease.getUnit().getId(), newEndDate);
+        } catch (Exception e) {
+            // Non-critical
+        }
 
         return mapToDTO(savedLease);
     }
