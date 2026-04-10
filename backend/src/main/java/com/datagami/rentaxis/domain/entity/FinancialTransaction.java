@@ -7,6 +7,7 @@ import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 
 @Entity
@@ -75,6 +76,17 @@ public class FinancialTransaction extends BaseTenantEntity {
 
     @Column(columnDefinition = "text")
     private String notes;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "parent_transaction_id")
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    private FinancialTransaction parentTransaction;
+
+    @Column(name = "is_split_parent")
+    private boolean splitParent = false;
+
+    @OneToMany(mappedBy = "parentTransaction", fetch = FetchType.LAZY)
+    private List<FinancialTransaction> splitChildren;
 
     /**
      * Auto-populate denormalized fields from the linked Account entity,
