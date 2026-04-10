@@ -374,20 +374,25 @@ export default function MeetingDetailPage() {
                             <tbody>
                                 {meeting.details.proposedStartDate && (
                                     <tr className="border-b border-border">
-                                        <td className="py-2 text-muted w-1/2">Proposed Start Date</td>
+                                        <td className="py-2 text-muted w-1/2">Renewal Start</td>
                                         <td className="py-2 font-medium text-foreground text-end">
                                             {new Date(meeting.details.proposedStartDate).toLocaleDateString()}
                                         </td>
                                     </tr>
                                 )}
-                                {meeting.details.proposedEndDate && (
-                                    <tr className="border-b border-border">
-                                        <td className="py-2 text-muted">Proposed End Date</td>
-                                        <td className="py-2 font-medium text-foreground text-end">
-                                            {new Date(meeting.details.proposedEndDate).toLocaleDateString()}
-                                        </td>
-                                    </tr>
-                                )}
+                                {meeting.details.proposedStartDate && meeting.details.proposedEndDate && (() => {
+                                    const start = new Date(meeting.details.proposedStartDate!);
+                                    const end = new Date(meeting.details.proposedEndDate!);
+                                    const months = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+                                    return months > 0 ? (
+                                        <tr className="border-b border-border">
+                                            <td className="py-2 text-muted">Duration</td>
+                                            <td className="py-2 font-medium text-foreground text-end">
+                                                {months} month{months === 1 ? "" : "s"}
+                                            </td>
+                                        </tr>
+                                    ) : null;
+                                })()}
                                 {meeting.details.proposedRentAmount != null && (
                                     <tr>
                                         <td className="py-2 text-muted">Proposed Rent</td>

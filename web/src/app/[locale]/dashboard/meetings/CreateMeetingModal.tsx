@@ -24,6 +24,7 @@ type Lease = {
     unitIdentifier: string;
     propertyManagerId?: string;
     status: string;
+    endDate?: string;
 };
 
 type Property = {
@@ -116,8 +117,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
     // Step 4 — Details
     const [notes, setNotes] = useState("");
     const [chequeNotes, setChequeNotes] = useState("");
-    const [renewalStartDate, setRenewalStartDate] = useState("");
-    const [renewalEndDate, setRenewalEndDate] = useState("");
+    const [renewalMonths, setRenewalMonths] = useState("");
     const [renewalRent, setRenewalRent] = useState("");
 
     // Submit
@@ -143,8 +143,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
             setDefaultHostId("");
             setNotes("");
             setChequeNotes("");
-            setRenewalStartDate("");
-            setRenewalEndDate("");
+            setRenewalMonths("");
             setRenewalRent("");
             setConflictMessage(null);
             setSuggestedSlot(null);
@@ -168,6 +167,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                     unitIdentifier: l.unitIdentifier ?? l.unitNumber ?? "—",
                     propertyManagerId: l.propertyManagerId,
                     status: l.status,
+                    endDate: l.endDate,
                 })));
             }
         } catch { /* ignore */ }
@@ -356,8 +356,15 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
             body.detailNotes = chequeNotes;
         }
         if (officePurpose === "LEASE_RENEWAL") {
-            if (renewalStartDate) body.proposedStartDate = renewalStartDate;
-            if (renewalEndDate) body.proposedEndDate = renewalEndDate;
+            const lease = leases.find(l => l.id === selectedLeaseId);
+            if (lease?.endDate) {
+                body.proposedStartDate = lease.endDate;
+                if (renewalMonths) {
+                    const start = new Date(lease.endDate);
+                    start.setMonth(start.getMonth() + parseInt(renewalMonths, 10));
+                    body.proposedEndDate = start.toISOString().split("T")[0];
+                }
+            }
             if (renewalRent) body.proposedRentAmount = parseFloat(renewalRent);
         }
 
@@ -640,25 +647,25 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                                 </div>
                             ) : officePurpose === "LEASE_RENEWAL" ? (
                                 <div className="space-y-3">
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <div>
-                                            <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">Proposed Start Date</label>
-                                            <input
-                                                type="date"
-                                                value={renewalStartDate}
-                                                onChange={(e) => setRenewalStartDate(e.target.value)}
-                                                className="w-full border border-border rounded-lg bg-surface px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:outline-none"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">Proposed End Date</label>
-                                            <input
-                                                type="date"
-                                                value={renewalEndDate}
-                                                onChange={(e) => setRenewalEndDate(e.target.value)}
-                                                className="w-full border border-border rounded-lg bg-surface px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:outline-none"
-                                            />
-                                        </div>
+                                    {(() => {
+                                        const lease = leases.find(l => l.id === selectedLeaseId);
+                                        return lease?.endDate ? (
+                                            <div className="bg-input/40 rounded-lg px-3 py-2 text-xs text-muted">
+                                                Current lease ends: <span className="font-semibold text-foreground">{lease.endDate}</span>. Renewal starts from this date.
+                                            </div>
+                                        ) : null;
+                                    })()}
+                                    <div>
+                                        <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">Renewal Duration (months)</label>
+                                        <input
+                                            type="number"
+                                            value={renewalMonths}
+                                            onChange={(e) => setRenewalMonths(e.target.value)}
+                                            placeholder="e.g. 12"
+                                            min="1"
+                                            max="120"
+                                            className="w-full border border-border rounded-lg bg-surface px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:outline-none"
+                                        />
                                     </div>
                                     <div>
                                         <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">Proposed Rent Amount (AED)</label>
@@ -736,8 +743,11 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                                 )}
                                 {officePurpose === "LEASE_RENEWAL" && (
                                     <>
-                                        {renewalStartDate && <ReviewRow label="Proposed Start" value={renewalStartDate} />}
-                                        {renewalEndDate && <ReviewRow label="Proposed End" value={renewalEndDate} />}
+                                        {(() => {
+                                            const lease = leases.find(l => l.id === selectedLeaseId);
+                                            return lease?.endDate ? <ReviewRow label="Renewal Start" value={lease.endDate} /> : null;
+                                        })()}
+                                        {renewalMonths && <ReviewRow label="Duration" value={`${renewalMonths} month${renewalMonths === "1" ? "" : "s"}`} />}
                                         {renewalRent && <ReviewRow label="Proposed Rent" value={`AED ${renewalRent}`} />}
                                     </>
                                 )}
