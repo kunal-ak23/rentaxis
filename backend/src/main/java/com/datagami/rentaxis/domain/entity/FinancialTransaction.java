@@ -1,6 +1,7 @@
 package com.datagami.rentaxis.domain.entity;
 
 import com.datagami.rentaxis.domain.entity.enums.AccountType;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -77,14 +78,15 @@ public class FinancialTransaction extends BaseTenantEntity {
     @Column(columnDefinition = "text")
     private String notes;
 
+    @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "parent_transaction_id")
-    @com.fasterxml.jackson.annotation.JsonIgnore
     private FinancialTransaction parentTransaction;
 
     @Column(name = "is_split_parent")
     private boolean splitParent = false;
 
+    @JsonIgnore
     @OneToMany(mappedBy = "parentTransaction", fetch = FetchType.LAZY)
     private List<FinancialTransaction> splitChildren;
 
