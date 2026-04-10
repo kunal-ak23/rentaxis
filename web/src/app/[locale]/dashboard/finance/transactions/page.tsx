@@ -792,21 +792,37 @@ export default function TransactionsPage() {
                                                 {row.notes && <p className="text-[10px] text-muted mt-0.5">{row.notes}</p>}
                                             </td>
                                             <td className="px-5 py-3">
-                                                <div className="flex items-center gap-1.5">
-                                                    {row.property ? (
-                                                        <>
-                                                            <Building2 size={12} className="text-muted" />
-                                                            <span className="text-xs text-foreground font-medium">{row.property.nameEn}</span>
-                                                        </>
-                                                    ) : (
-                                                        <span className="text-[10px] text-muted font-bold uppercase">Org</span>
-                                                    )}
-                                                    {row.unit && (
-                                                        <span className="text-[9px] text-primary bg-primary/5 px-1.5 py-0.5 rounded font-bold ml-1">
-                                                            Unit {row.unit.unitNumber}
-                                                        </span>
-                                                    )}
-                                                </div>
+                                                {(() => {
+                                                    // For split parents, derive the property from children
+                                                    // if all children share the same property
+                                                    const displayProp = (() => {
+                                                        if (row.property) return row.property;
+                                                        if (row.splitParent && row.splitChildren && row.splitChildren.length > 0) {
+                                                            const first = row.splitChildren[0].property;
+                                                            if (first && row.splitChildren.every(c => c.property?.id === first.id)) {
+                                                                return first;
+                                                            }
+                                                        }
+                                                        return null;
+                                                    })();
+                                                    return (
+                                                        <div className="flex items-center gap-1.5">
+                                                            {displayProp ? (
+                                                                <>
+                                                                    <Building2 size={12} className="text-muted" />
+                                                                    <span className="text-xs text-foreground font-medium">{displayProp.nameEn}</span>
+                                                                </>
+                                                            ) : (
+                                                                <span className="text-[10px] text-muted font-bold uppercase">Org</span>
+                                                            )}
+                                                            {row.unit && (
+                                                                <span className="text-[9px] text-primary bg-primary/5 px-1.5 py-0.5 rounded font-bold ml-1">
+                                                                    Unit {row.unit.unitNumber}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })()}
                                             </td>
                                             <td className="px-5 py-3 text-right text-xs font-bold tabular-nums">
                                                 {row.moneyIn > 0 ? (
@@ -926,21 +942,35 @@ export default function TransactionsPage() {
                                                 <span className="text-[10px] text-muted ml-2">{txn.account?.name}</span>
                                             </td>
                                             <td className="px-5 py-3">
-                                                <div className="flex items-center gap-1.5">
-                                                    {txn.property ? (
-                                                        <>
-                                                            <Building2 size={12} className="text-muted" />
-                                                            <span className="text-xs text-foreground font-medium">{txn.property.nameEn}</span>
-                                                        </>
-                                                    ) : (
-                                                        <span className="text-[10px] text-muted font-bold uppercase">Org</span>
-                                                    )}
-                                                    {txn.unit && (
-                                                        <span className="text-[9px] text-primary bg-primary/5 px-1.5 py-0.5 rounded font-bold ml-1">
-                                                            Unit {txn.unit.unitNumber}
-                                                        </span>
-                                                    )}
-                                                </div>
+                                                {(() => {
+                                                    const displayProp = (() => {
+                                                        if (txn.property) return txn.property;
+                                                        if (txn.splitParent && txn.splitChildren && txn.splitChildren.length > 0) {
+                                                            const first = txn.splitChildren[0].property;
+                                                            if (first && txn.splitChildren.every(c => c.property?.id === first.id)) {
+                                                                return first;
+                                                            }
+                                                        }
+                                                        return null;
+                                                    })();
+                                                    return (
+                                                        <div className="flex items-center gap-1.5">
+                                                            {displayProp ? (
+                                                                <>
+                                                                    <Building2 size={12} className="text-muted" />
+                                                                    <span className="text-xs text-foreground font-medium">{displayProp.nameEn}</span>
+                                                                </>
+                                                            ) : (
+                                                                <span className="text-[10px] text-muted font-bold uppercase">Org</span>
+                                                            )}
+                                                            {txn.unit && (
+                                                                <span className="text-[9px] text-primary bg-primary/5 px-1.5 py-0.5 rounded font-bold ml-1">
+                                                                    Unit {txn.unit.unitNumber}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })()}
                                             </td>
                                             <td className="px-5 py-3 text-right text-xs font-bold tabular-nums text-foreground">
                                                 {txn.debit > 0 ? formatNumber(txn.debit) : "—"}
