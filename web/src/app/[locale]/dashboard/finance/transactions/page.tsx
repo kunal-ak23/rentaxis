@@ -91,6 +91,17 @@ export default function TransactionsPage() {
         notes: ""
     });
 
+    const [splitMode, setSplitMode] = useState(false);
+    const [splits, setSplits] = useState<Array<{
+        propertyId: string;
+        unitId: string;
+        amount: number;
+        units: UnitData[];
+    }>>([
+        { propertyId: "", unitId: "", amount: 0, units: [] },
+        { propertyId: "", unitId: "", amount: 0, units: [] },
+    ]);
+
     useEffect(() => {
         fetchTransactions();
         fetchAccounts();
@@ -149,50 +160,86 @@ export default function TransactionsPage() {
         }
     };
 
+    const resetForm = () => {
+        setFormData({
+            date: new Date().toISOString().split("T")[0],
+            description: "",
+            accountId: "",
+            debit: 0,
+            credit: 0,
+            propertyId: "",
+            unitId: "",
+            vatApplicable: false,
+            vatAmount: 0,
+            vatRate: 5,
+            grossAmount: 0,
+            netAmount: 0,
+            notes: ""
+        });
+        setUnits([]);
+        setSplitMode(false);
+        setSplits([
+            { propertyId: "", unitId: "", amount: 0, units: [] },
+            { propertyId: "", unitId: "", amount: 0, units: [] },
+        ]);
+    };
+
     const handleSubmit = async (ev: React.FormEvent) => {
         ev.preventDefault();
         setSubmitting(true);
         try {
-            const body: Record<string, unknown> = {
-                date: formData.date,
-                description: formData.description,
-                account: { id: formData.accountId },
-                debit: formData.debit,
-                credit: formData.credit,
-                vatApplicable: formData.vatApplicable,
-                vatAmount: formData.vatAmount,
-                vatRate: formData.vatApplicable ? formData.vatRate : 0,
-                netAmount: formData.vatApplicable ? formData.netAmount : 0,
-                grossAmount: formData.vatApplicable ? formData.grossAmount : 0,
-                notes: formData.notes
-            };
-            if (formData.propertyId) body.property = { id: formData.propertyId };
-            if (formData.unitId) body.unit = { id: formData.unitId };
-
-            const res = await fetch("/api/proxy/v1/finance/transactions", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(body)
-            });
-            if (res.ok) {
-                setShowForm(false);
-                fetchTransactions();
-                setFormData({
-                    date: new Date().toISOString().split("T")[0],
-                    description: "",
-                    accountId: "",
-                    debit: 0,
-                    credit: 0,
-                    propertyId: "",
-                    unitId: "",
-                    vatApplicable: false,
-                    vatAmount: 0,
-                    vatRate: 5,
-                    grossAmount: 0,
-                    netAmount: 0,
-                    notes: ""
+            if (splitMode) {
+                const body = {
+                    date: formData.date,
+                    description: formData.description,
+                    accountId: formData.accountId,
+                    debit: formData.debit || 0,
+                    credit: formData.credit || 0,
+                    vatApplicable: formData.vatApplicable,
+                    vatRate: formData.vatApplicable ? formData.vatRate : 0,
+                    notes: formData.notes,
+                    splits: splits.map(s => ({
+                        propertyId: s.propertyId || null,
+                        unitId: s.unitId || null,
+                        amount: s.amount,
+                    })),
+                };
+                const res = await fetch("/api/proxy/v1/finance/transactions/split", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(body),
                 });
-                setUnits([]);
+                if (res.ok) {
+                    setShowForm(false);
+                    fetchTransactions();
+                    resetForm();
+                }
+            } else {
+                const body: Record<string, unknown> = {
+                    date: formData.date,
+                    description: formData.description,
+                    account: { id: formData.accountId },
+                    debit: formData.debit,
+                    credit: formData.credit,
+                    vatApplicable: formData.vatApplicable,
+                    vatAmount: formData.vatAmount,
+                    vatRate: formData.vatApplicable ? formData.vatRate : 0,
+                    netAmount: formData.vatApplicable ? formData.netAmount : 0,
+                    grossAmount: formData.vatApplicable ? formData.grossAmount : 0,
+                    notes: formData.notes
+                };
+                if (formData.propertyId) body.property = { id: formData.propertyId };
+                if (formData.unitId) body.unit = { id: formData.unitId };
+                const res = await fetch("/api/proxy/v1/finance/transactions", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(body)
+                });
+                if (res.ok) {
+                    setShowForm(false);
+                    fetchTransactions();
+                    resetForm();
+                }
             }
         } catch (err) {
             console.error(err);
@@ -212,6 +259,68 @@ export default function TransactionsPage() {
         setFilters(empty);
         fetchTransactions(empty);
         setCurrentPage(1);
+    };
+
+    const transactionAmount = formData.debit || formData.credit || 0;
+    const splitTotal = splits.reduce((sum, s) => sum + (s.amount || 0), 0);
+    const splitBalanced = Math.abs(splitTotal - transactionAmount) < 0.01 && transactionAmount > 0;
+
+    const handleSplitToggle = (enabled: boolean) => {
+        setSplitMode(enabled);
+        if (enabled && transactionAmount > 0) {
+            const equalShare = Math.round((transactionAmount / 2) * 100) / 100;
+            setSplits([
+                { propertyId: "", unitId: "", amount: equalShare, units: [] },
+                { propertyId: "", unitId: "", amount: transactionAmount - equalShare, units: [] },
+            ]);
+        }
+    };
+
+    const addSplitRow = () => {
+        setSplits([...splits, { propertyId: "", unitId: "", amount: 0, units: [] }]);
+    };
+
+    const removeSplitRow = (index: number) => {
+        if (splits.length <= 2) return;
+        setSplits(splits.filter((_, i) => i !== index));
+    };
+
+    const updateSplitProperty = async (index: number, propertyId: string) => {
+        const updated = [...splits];
+        updated[index] = { ...updated[index], propertyId, unitId: "", units: [] };
+        if (propertyId) {
+            try {
+                const res = await fetch(`/api/proxy/v1/units/property/${propertyId}`);
+                if (res.ok) {
+                    updated[index].units = await res.json();
+                }
+            } catch (err) {
+                console.error(err);
+            }
+        }
+        setSplits(updated);
+    };
+
+    const updateSplitUnit = (index: number, unitId: string) => {
+        const updated = [...splits];
+        updated[index] = { ...updated[index], unitId };
+        setSplits(updated);
+    };
+
+    const updateSplitAmount = (index: number, amount: number) => {
+        const updated = [...splits];
+        updated[index] = { ...updated[index], amount };
+        setSplits(updated);
+    };
+
+    const distributeSplitsEqually = () => {
+        if (transactionAmount <= 0 || splits.length === 0) return;
+        const equalShare = Math.round((transactionAmount / splits.length) * 100) / 100;
+        const remainder = Math.round((transactionAmount - equalShare * splits.length) * 100) / 100;
+        setSplits(splits.map((s, i) => ({
+            ...s,
+            amount: i === 0 ? equalShare + remainder : equalShare,
+        })));
     };
 
     const totalDebit = transactions.reduce((s, t) => s + (t.debit || 0), 0);
@@ -393,32 +502,123 @@ export default function TransactionsPage() {
                                     setFormData({ ...formData, credit, netAmount: amount, vatAmount: vatAmt, grossAmount: amount + vatAmt });
                                 }} />
                             </div>
-                            <div className="col-span-1">
-                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("property")} (Project)</label>
-                                <select
-                                    className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
-                                    value={formData.propertyId}
-                                    onChange={ev => {
-                                        setFormData({ ...formData, propertyId: ev.target.value, unitId: "" });
-                                        fetchUnitsForProperty(ev.target.value);
-                                    }}
-                                >
-                                    <option value="">Organisation Level</option>
-                                    {properties.map(s => <option key={s.property.id} value={s.property.id}>{s.property.nameEn}</option>)}
-                                </select>
+                            {/* Split toggle */}
+                            <div className="col-span-2 flex items-center gap-3">
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        className="rounded border-border"
+                                        checked={splitMode}
+                                        onChange={ev => handleSplitToggle(ev.target.checked)}
+                                    />
+                                    <span className="text-xs font-bold text-muted">Split across multiple properties/units</span>
+                                </label>
                             </div>
-                            <div className="col-span-1">
-                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("unit")} (Property)</label>
-                                <select
-                                    className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
-                                    value={formData.unitId}
-                                    onChange={ev => setFormData({ ...formData, unitId: ev.target.value })}
-                                    disabled={!formData.propertyId}
-                                >
-                                    <option value="">Property Level (No Unit)</option>
-                                    {units.map(u => <option key={u.id} value={u.id}>{u.unitNumber}{u.currentTenantName ? ` — ${u.currentTenantName}` : ""}</option>)}
-                                </select>
-                            </div>
+
+                            {!splitMode ? (
+                                <>
+                                    <div className="col-span-1">
+                                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">Property (Project)</label>
+                                        <select
+                                            className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
+                                            value={formData.propertyId}
+                                            onChange={ev => {
+                                                setFormData({ ...formData, propertyId: ev.target.value, unitId: "" });
+                                                fetchUnitsForProperty(ev.target.value);
+                                            }}
+                                        >
+                                            <option value="">Organisation Level</option>
+                                            {properties.map(s => <option key={s.property.id} value={s.property.id}>{s.property.nameEn}</option>)}
+                                        </select>
+                                    </div>
+                                    <div className="col-span-1">
+                                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">Unit (Property)</label>
+                                        <select
+                                            className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
+                                            value={formData.unitId}
+                                            onChange={ev => setFormData({ ...formData, unitId: ev.target.value })}
+                                            disabled={!formData.propertyId}
+                                        >
+                                            <option value="">Property Level (No Unit)</option>
+                                            {units.map(u => <option key={u.id} value={u.id}>{u.unitNumber}{u.currentTenantName ? ` — ${u.currentTenantName}` : ""}</option>)}
+                                        </select>
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="col-span-2">
+                                    <div className="border border-border rounded-xl overflow-hidden">
+                                        {/* Header */}
+                                        <div className="flex items-center justify-between bg-input/50 px-4 py-2.5">
+                                            <span className="text-[10px] font-bold text-muted uppercase tracking-wider">Cost Centre Allocation</span>
+                                            <button type="button" onClick={distributeSplitsEqually} className="text-[10px] font-bold text-primary hover:underline cursor-pointer">
+                                                Distribute Equally
+                                            </button>
+                                        </div>
+                                        {/* Split rows */}
+                                        <div className="divide-y divide-border">
+                                            {splits.map((split, index) => (
+                                                <div key={index} className="flex items-center gap-3 px-4 py-3">
+                                                    <div className="flex-1">
+                                                        <select
+                                                            className="w-full border border-border rounded-lg bg-surface p-2.5 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
+                                                            value={split.propertyId}
+                                                            onChange={ev => updateSplitProperty(index, ev.target.value)}
+                                                        >
+                                                            <option value="">Select Property</option>
+                                                            {properties.map(s => <option key={s.property.id} value={s.property.id}>{s.property.nameEn}</option>)}
+                                                        </select>
+                                                    </div>
+                                                    <div className="flex-1">
+                                                        <select
+                                                            className="w-full border border-border rounded-lg bg-surface p-2.5 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
+                                                            value={split.unitId}
+                                                            onChange={ev => updateSplitUnit(index, ev.target.value)}
+                                                            disabled={!split.propertyId}
+                                                        >
+                                                            <option value="">Property Level</option>
+                                                            {split.units.map(u => <option key={u.id} value={u.id}>{u.unitNumber}{u.currentTenantName ? ` — ${u.currentTenantName}` : ""}</option>)}
+                                                        </select>
+                                                    </div>
+                                                    <div className="w-32">
+                                                        <input
+                                                            type="number"
+                                                            step="0.01"
+                                                            placeholder="0.00"
+                                                            className="w-full border border-border rounded-lg bg-surface p-2.5 text-xs text-right focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
+                                                            value={split.amount || ""}
+                                                            onChange={ev => updateSplitAmount(index, Number(ev.target.value))}
+                                                        />
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => removeSplitRow(index)}
+                                                        disabled={splits.length <= 2}
+                                                        className="p-1.5 text-muted hover:text-red-500 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-all"
+                                                    >
+                                                        <X size={14} />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        {/* Footer: add row + total */}
+                                        <div className="flex items-center justify-between bg-input/30 px-4 py-2.5 border-t border-border">
+                                            <button type="button" onClick={addSplitRow} className="text-xs font-bold text-primary hover:underline cursor-pointer flex items-center gap-1">
+                                                <Plus size={12} /> Add Row
+                                            </button>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-[10px] font-bold text-muted uppercase tracking-wider">Total:</span>
+                                                <span className={cn(
+                                                    "text-xs font-bold tabular-nums",
+                                                    splitBalanced ? "text-emerald-600" : "text-red-500"
+                                                )}>
+                                                    {formatNumber(splitTotal)} / {formatNumber(transactionAmount)}
+                                                </span>
+                                                {splitBalanced && <span className="text-emerald-600 text-xs">✓</span>}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                             <div className="col-span-1 flex items-center gap-3 pt-5">
                                 <label className="flex items-center gap-2 cursor-pointer">
                                     <input type="checkbox" className="rounded border-border" checked={formData.vatApplicable} onChange={ev => {
@@ -463,7 +663,7 @@ export default function TransactionsPage() {
                             </div>
                             <div className="col-span-2 flex justify-end gap-3 mt-2">
                                 <button type="button" onClick={() => setShowForm(false)} className="px-6 py-3 text-xs font-bold text-muted cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/20 focus:outline-none rounded-xl">{t("cancel")}</button>
-                                <button type="submit" disabled={submitting} className="px-8 py-3 bg-primary text-primary-foreground rounded-lg text-xs font-bold cursor-pointer transition-all duration-200 hover:bg-primary/90 focus:ring-2 focus:ring-primary/20 focus:outline-none disabled:opacity-50 flex items-center gap-2">
+                                <button type="submit" disabled={submitting || (splitMode && !splitBalanced)} className="px-8 py-3 bg-primary text-primary-foreground rounded-lg text-xs font-bold cursor-pointer transition-all duration-200 hover:bg-primary/90 focus:ring-2 focus:ring-primary/20 focus:outline-none disabled:opacity-50 flex items-center gap-2">
                                     {submitting && <Loader2 size={14} className="animate-spin" />}
                                     {t("create")}
                                 </button>
