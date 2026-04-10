@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useTranslations } from "next-intl";
 import {
     Receipt, Plus, X, Filter, Calendar, Building2, Home, ChevronDown, Loader2, LayoutList, BookOpen, ChevronLeft, ChevronRight
@@ -93,14 +93,16 @@ export default function TransactionsPage() {
 
     const [splitMode, setSplitMode] = useState(false);
     const [splits, setSplits] = useState<Array<{
+        id: number;
         propertyId: string;
         unitId: string;
         amount: number;
         units: UnitData[];
     }>>([
-        { propertyId: "", unitId: "", amount: 0, units: [] },
-        { propertyId: "", unitId: "", amount: 0, units: [] },
+        { id: 1, propertyId: "", unitId: "", amount: 0, units: [] },
+        { id: 2, propertyId: "", unitId: "", amount: 0, units: [] },
     ]);
+    const splitIdRef = useRef(3);
 
     useEffect(() => {
         fetchTransactions();
@@ -179,8 +181,8 @@ export default function TransactionsPage() {
         setUnits([]);
         setSplitMode(false);
         setSplits([
-            { propertyId: "", unitId: "", amount: 0, units: [] },
-            { propertyId: "", unitId: "", amount: 0, units: [] },
+            { id: 1, propertyId: "", unitId: "", amount: 0, units: [] },
+            { id: 2, propertyId: "", unitId: "", amount: 0, units: [] },
         ]);
     };
 
@@ -270,14 +272,14 @@ export default function TransactionsPage() {
         if (enabled && transactionAmount > 0) {
             const equalShare = Math.round((transactionAmount / 2) * 100) / 100;
             setSplits([
-                { propertyId: "", unitId: "", amount: equalShare, units: [] },
-                { propertyId: "", unitId: "", amount: transactionAmount - equalShare, units: [] },
+                { id: 1, propertyId: "", unitId: "", amount: equalShare, units: [] },
+                { id: 2, propertyId: "", unitId: "", amount: transactionAmount - equalShare, units: [] },
             ]);
         }
     };
 
     const addSplitRow = () => {
-        setSplits([...splits, { propertyId: "", unitId: "", amount: 0, units: [] }]);
+        setSplits(prev => [...prev, { id: splitIdRef.current++, propertyId: "", unitId: "", amount: 0, units: [] }]);
     };
 
     const removeSplitRow = (index: number) => {
@@ -286,19 +288,25 @@ export default function TransactionsPage() {
     };
 
     const updateSplitProperty = async (index: number, propertyId: string) => {
-        const updated = [...splits];
-        updated[index] = { ...updated[index], propertyId, unitId: "", units: [] };
-        if (propertyId) {
-            try {
-                const res = await fetch(`/api/proxy/v1/units/property/${propertyId}`);
-                if (res.ok) {
-                    updated[index].units = await res.json();
-                }
-            } catch (err) {
-                console.error(err);
+        setSplits(prev => {
+            const updated = [...prev];
+            updated[index] = { ...updated[index], propertyId, unitId: "", units: [] };
+            return updated;
+        });
+        if (!propertyId) return;
+        try {
+            const res = await fetch(`/api/proxy/v1/units/property/${propertyId}`);
+            if (res.ok) {
+                const fetchedUnits = await res.json();
+                setSplits(prev => {
+                    const updated = [...prev];
+                    updated[index] = { ...updated[index], units: fetchedUnits };
+                    return updated;
+                });
             }
+        } catch (err) {
+            console.error(err);
         }
-        setSplits(updated);
     };
 
     const updateSplitUnit = (index: number, unitId: string) => {
@@ -518,7 +526,7 @@ export default function TransactionsPage() {
                             {!splitMode ? (
                                 <>
                                     <div className="col-span-1">
-                                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">Property (Project)</label>
+                                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("property")} (Project)</label>
                                         <select
                                             className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
                                             value={formData.propertyId}
@@ -532,7 +540,7 @@ export default function TransactionsPage() {
                                         </select>
                                     </div>
                                     <div className="col-span-1">
-                                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">Unit (Property)</label>
+                                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("unit")} (Property)</label>
                                         <select
                                             className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
                                             value={formData.unitId}
@@ -557,7 +565,7 @@ export default function TransactionsPage() {
                                         {/* Split rows */}
                                         <div className="divide-y divide-border">
                                             {splits.map((split, index) => (
-                                                <div key={index} className="flex items-center gap-3 px-4 py-3">
+                                                <div key={split.id} className="flex items-center gap-3 px-4 py-3">
                                                     <div className="flex-1">
                                                         <select
                                                             className="w-full border border-border rounded-lg bg-surface p-2.5 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
