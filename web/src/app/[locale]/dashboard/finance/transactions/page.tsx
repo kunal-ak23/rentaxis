@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useTranslations } from "next-intl";
 import {
     Receipt, Plus, X, Filter, Calendar, Building2, Home, ChevronDown, Loader2, LayoutList, BookOpen, ChevronLeft, ChevronRight
@@ -44,6 +44,9 @@ type Transaction = {
     vatApplicable: boolean;
     vatAmount: number;
     notes: string;
+    splitParent: boolean;
+    splitChildren?: Transaction[];
+    parentTransaction?: { id: string } | null;
 };
 
 const TYPE_COLORS: Record<string, string> = {
@@ -66,6 +69,33 @@ export default function TransactionsPage() {
     const [submitting, setSubmitting] = useState(false);
     const [viewMode, setViewMode] = useState<"simple" | "accounting">("simple");
     const [currentPage, setCurrentPage] = useState(1);
+    const [expandedSplits, setExpandedSplits] = useState<Set<string>>(new Set());
+
+    const toggleSplitExpand = async (txnId: string) => {
+        const next = new Set(expandedSplits);
+        if (next.has(txnId)) {
+            next.delete(txnId);
+            setExpandedSplits(next);
+            return;
+        }
+        // Check if children already loaded
+        const txn = transactions.find(t => t.id === txnId);
+        if (txn && (!txn.splitChildren || txn.splitChildren.length === 0)) {
+            try {
+                const res = await fetch(`/api/proxy/v1/finance/transactions/${txnId}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    setTransactions(prev => prev.map(t =>
+                        t.id === txnId ? { ...t, splitChildren: data.splitChildren || [] } : t
+                    ));
+                }
+            } catch (err) {
+                console.error(err);
+            }
+        }
+        next.add(txnId);
+        setExpandedSplits(next);
+    };
     const pageSize = 25;
 
     const [filters, setFilters] = useState({
@@ -361,6 +391,8 @@ export default function TransactionsPage() {
                     moneyIn: isIncome ? (t.credit || t.debit || 0) : 0,
                     moneyOut: !isIncome ? (t.debit || t.credit || 0) : 0,
                     notes: t.notes,
+                    splitParent: t.splitParent || false,
+                    splitChildren: t.splitChildren,
                 };
             })
             .sort((a, b) => a.date.localeCompare(b.date));
@@ -728,43 +760,97 @@ export default function TransactionsPage() {
                             </thead>
                             <tbody className="divide-y divide-border">
                                 {paginatedSimple.map(row => (
-                                    <tr key={row.id} className="hover:bg-input/30 transition-colors">
-                                        <td className="px-5 py-3 text-xs text-foreground font-medium">{row.date}</td>
-                                        <td className="px-5 py-3">
-                                            <p className="text-xs font-bold text-foreground">{row.description}</p>
-                                            {row.notes && <p className="text-[10px] text-muted mt-0.5">{row.notes}</p>}
-                                        </td>
-                                        <td className="px-5 py-3">
-                                            <div className="flex items-center gap-1.5">
-                                                {row.property ? (
-                                                    <>
-                                                        <Building2 size={12} className="text-muted" />
-                                                        <span className="text-xs text-foreground font-medium">{row.property.nameEn}</span>
-                                                    </>
-                                                ) : (
-                                                    <span className="text-[10px] text-muted font-bold uppercase">Org</span>
-                                                )}
-                                                {row.unit && (
-                                                    <span className="text-[9px] text-primary bg-primary/5 px-1.5 py-0.5 rounded font-bold ml-1">
-                                                        Unit {row.unit.unitNumber}
-                                                    </span>
-                                                )}
-                                            </div>
-                                        </td>
-                                        <td className="px-5 py-3 text-right text-xs font-bold tabular-nums">
-                                            {row.moneyIn > 0 ? (
-                                                <span className="text-emerald-600">+{formatNumber(row.moneyIn)}</span>
-                                            ) : "—"}
-                                        </td>
-                                        <td className="px-5 py-3 text-right text-xs font-bold tabular-nums">
-                                            {row.moneyOut > 0 ? (
-                                                <span className="text-red-500">-{formatNumber(row.moneyOut)}</span>
-                                            ) : "—"}
-                                        </td>
-                                        <td className="px-5 py-3 text-right text-xs font-bold tabular-nums text-foreground">
-                                            {formatNumber(row.balance)}
-                                        </td>
-                                    </tr>
+                                    <React.Fragment key={row.id}>
+                                        <tr className="hover:bg-input/30 transition-colors">
+                                            <td className="px-5 py-3 text-xs text-foreground font-medium">
+                                                <div className="flex items-center gap-1.5">
+                                                    {row.splitParent && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => toggleSplitExpand(row.id)}
+                                                            className="cursor-pointer text-muted hover:text-foreground transition-all"
+                                                            aria-label={expandedSplits.has(row.id) ? "Collapse splits" : "Expand splits"}
+                                                        >
+                                                            <ChevronDown size={14} className={cn("transition-transform duration-200", expandedSplits.has(row.id) && "rotate-180")} />
+                                                        </button>
+                                                    )}
+                                                    {row.date}
+                                                </div>
+                                            </td>
+                                            <td className="px-5 py-3">
+                                                <div className="flex items-center gap-2">
+                                                    <p className="text-xs font-bold text-foreground">{row.description}</p>
+                                                    {row.splitParent && (
+                                                        <span className="text-[9px] font-bold uppercase tracking-wider bg-primary/10 text-primary px-1.5 py-0.5 rounded">Split</span>
+                                                    )}
+                                                </div>
+                                                {row.notes && <p className="text-[10px] text-muted mt-0.5">{row.notes}</p>}
+                                            </td>
+                                            <td className="px-5 py-3">
+                                                <div className="flex items-center gap-1.5">
+                                                    {row.property ? (
+                                                        <>
+                                                            <Building2 size={12} className="text-muted" />
+                                                            <span className="text-xs text-foreground font-medium">{row.property.nameEn}</span>
+                                                        </>
+                                                    ) : (
+                                                        <span className="text-[10px] text-muted font-bold uppercase">Org</span>
+                                                    )}
+                                                    {row.unit && (
+                                                        <span className="text-[9px] text-primary bg-primary/5 px-1.5 py-0.5 rounded font-bold ml-1">
+                                                            Unit {row.unit.unitNumber}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </td>
+                                            <td className="px-5 py-3 text-right text-xs font-bold tabular-nums">
+                                                {row.moneyIn > 0 ? (
+                                                    <span className="text-emerald-600">+{formatNumber(row.moneyIn)}</span>
+                                                ) : "—"}
+                                            </td>
+                                            <td className="px-5 py-3 text-right text-xs font-bold tabular-nums">
+                                                {row.moneyOut > 0 ? (
+                                                    <span className="text-red-500">-{formatNumber(row.moneyOut)}</span>
+                                                ) : "—"}
+                                            </td>
+                                            <td className="px-5 py-3 text-right text-xs font-bold tabular-nums text-foreground">
+                                                {formatNumber(row.balance)}
+                                            </td>
+                                        </tr>
+                                        {row.splitParent && expandedSplits.has(row.id) && row.splitChildren && row.splitChildren.map((child, idx) => (
+                                            <tr key={child.id} className="bg-input/10 border-b border-border/50">
+                                                <td className="px-5 py-2 text-xs text-muted pl-10">{/* indent */}</td>
+                                                <td className="px-5 py-2">
+                                                    <div className="flex items-center gap-1.5 pl-4">
+                                                        <span className="text-muted text-xs select-none">{idx < (row.splitChildren?.length ?? 0) - 1 ? "├" : "└"}</span>
+                                                        <div className="flex items-center gap-1.5">
+                                                            {child.property ? (
+                                                                <>
+                                                                    <Building2 size={11} className="text-muted" />
+                                                                    <span className="text-xs text-foreground font-medium">{child.property.nameEn}</span>
+                                                                </>
+                                                            ) : (
+                                                                <span className="text-[10px] text-muted">Org</span>
+                                                            )}
+                                                            {child.unit && (
+                                                                <span className="text-[9px] text-primary bg-primary/5 px-1.5 py-0.5 rounded font-bold ml-1">
+                                                                    Unit {child.unit.unitNumber}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                                <td className="px-5 py-2"></td>
+                                                <td className="px-5 py-2 text-right text-xs font-medium tabular-nums text-muted">
+                                                    {child.credit > 0 ? `+${formatNumber(child.credit)}` : "—"}
+                                                </td>
+                                                <td className="px-5 py-2 text-right text-xs font-medium tabular-nums text-muted">
+                                                    {child.debit > 0 ? `-${formatNumber(child.debit)}` : "—"}
+                                                </td>
+                                                <td className="px-5 py-2"></td>
+                                            </tr>
+                                        ))}
+                                    </React.Fragment>
                                 ))}
                             </tbody>
                             <tfoot>
@@ -809,42 +895,100 @@ export default function TransactionsPage() {
                             </thead>
                             <tbody className="divide-y divide-border">
                                 {paginatedTransactions.map(txn => (
-                                    <tr key={txn.id} className="hover:bg-input/30 transition-colors">
-                                        <td className="px-5 py-3 text-xs text-foreground font-medium">{txn.date}</td>
-                                        <td className="px-5 py-3">
-                                            <p className="text-xs font-bold text-foreground">{txn.description}</p>
-                                            {txn.notes && <p className="text-[10px] text-muted mt-0.5">{txn.notes}</p>}
-                                        </td>
-                                        <td className="px-5 py-3">
-                                            <span className={cn("text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-lg", TYPE_COLORS[txn.accountType] || "bg-input text-muted")}>
-                                                {txn.accountCode}
-                                            </span>
-                                            <span className="text-[10px] text-muted ml-2">{txn.account?.name}</span>
-                                        </td>
-                                        <td className="px-5 py-3">
-                                            <div className="flex items-center gap-1.5">
-                                                {txn.property ? (
-                                                    <>
-                                                        <Building2 size={12} className="text-muted" />
-                                                        <span className="text-xs text-foreground font-medium">{txn.property.nameEn}</span>
-                                                    </>
-                                                ) : (
-                                                    <span className="text-[10px] text-muted font-bold uppercase">Org</span>
-                                                )}
-                                                {txn.unit && (
-                                                    <span className="text-[9px] text-primary bg-primary/5 px-1.5 py-0.5 rounded font-bold ml-1">
-                                                        Unit {txn.unit.unitNumber}
+                                    <React.Fragment key={txn.id}>
+                                        <tr className="hover:bg-input/30 transition-colors">
+                                            <td className="px-5 py-3 text-xs text-foreground font-medium">
+                                                <div className="flex items-center gap-1.5">
+                                                    {txn.splitParent && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => toggleSplitExpand(txn.id)}
+                                                            className="cursor-pointer text-muted hover:text-foreground transition-all"
+                                                            aria-label={expandedSplits.has(txn.id) ? "Collapse splits" : "Expand splits"}
+                                                        >
+                                                            <ChevronDown size={14} className={cn("transition-transform duration-200", expandedSplits.has(txn.id) && "rotate-180")} />
+                                                        </button>
+                                                    )}
+                                                    {txn.date}
+                                                </div>
+                                            </td>
+                                            <td className="px-5 py-3">
+                                                <div className="flex items-center gap-2">
+                                                    <p className="text-xs font-bold text-foreground">{txn.description}</p>
+                                                    {txn.splitParent && (
+                                                        <span className="text-[9px] font-bold uppercase tracking-wider bg-primary/10 text-primary px-1.5 py-0.5 rounded">Split</span>
+                                                    )}
+                                                </div>
+                                                {txn.notes && <p className="text-[10px] text-muted mt-0.5">{txn.notes}</p>}
+                                            </td>
+                                            <td className="px-5 py-3">
+                                                <span className={cn("text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-lg", TYPE_COLORS[txn.accountType] || "bg-input text-muted")}>
+                                                    {txn.accountCode}
+                                                </span>
+                                                <span className="text-[10px] text-muted ml-2">{txn.account?.name}</span>
+                                            </td>
+                                            <td className="px-5 py-3">
+                                                <div className="flex items-center gap-1.5">
+                                                    {txn.property ? (
+                                                        <>
+                                                            <Building2 size={12} className="text-muted" />
+                                                            <span className="text-xs text-foreground font-medium">{txn.property.nameEn}</span>
+                                                        </>
+                                                    ) : (
+                                                        <span className="text-[10px] text-muted font-bold uppercase">Org</span>
+                                                    )}
+                                                    {txn.unit && (
+                                                        <span className="text-[9px] text-primary bg-primary/5 px-1.5 py-0.5 rounded font-bold ml-1">
+                                                            Unit {txn.unit.unitNumber}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </td>
+                                            <td className="px-5 py-3 text-right text-xs font-bold tabular-nums text-foreground">
+                                                {txn.debit > 0 ? formatNumber(txn.debit) : "—"}
+                                            </td>
+                                            <td className="px-5 py-3 text-right text-xs font-bold tabular-nums text-foreground">
+                                                {txn.credit > 0 ? formatNumber(txn.credit) : "—"}
+                                            </td>
+                                        </tr>
+                                        {txn.splitParent && expandedSplits.has(txn.id) && txn.splitChildren && txn.splitChildren.map((child, idx) => (
+                                            <tr key={child.id} className="bg-input/10 border-b border-border/50">
+                                                <td className="px-5 py-2 text-xs text-muted"></td>
+                                                <td className="px-5 py-2">
+                                                    <div className="flex items-center gap-1.5 pl-4">
+                                                        <span className="text-muted text-xs select-none">{idx < (txn.splitChildren?.length ?? 0) - 1 ? "├" : "└"}</span>
+                                                        <div className="flex items-center gap-1.5">
+                                                            {child.property ? (
+                                                                <>
+                                                                    <Building2 size={11} className="text-muted" />
+                                                                    <span className="text-xs text-foreground font-medium">{child.property.nameEn}</span>
+                                                                </>
+                                                            ) : (
+                                                                <span className="text-[10px] text-muted">Org</span>
+                                                            )}
+                                                            {child.unit && (
+                                                                <span className="text-[9px] text-primary bg-primary/5 px-1.5 py-0.5 rounded font-bold ml-1">
+                                                                    Unit {child.unit.unitNumber}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                                <td className="px-5 py-2">
+                                                    <span className={cn("text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-lg", TYPE_COLORS[child.accountType] || "bg-input text-muted")}>
+                                                        {child.accountCode}
                                                     </span>
-                                                )}
-                                            </div>
-                                        </td>
-                                        <td className="px-5 py-3 text-right text-xs font-bold tabular-nums text-foreground">
-                                            {txn.debit > 0 ? formatNumber(txn.debit) : "—"}
-                                        </td>
-                                        <td className="px-5 py-3 text-right text-xs font-bold tabular-nums text-foreground">
-                                            {txn.credit > 0 ? formatNumber(txn.credit) : "—"}
-                                        </td>
-                                    </tr>
+                                                </td>
+                                                <td className="px-5 py-2"></td>
+                                                <td className="px-5 py-2 text-right text-xs font-medium tabular-nums text-muted">
+                                                    {child.debit > 0 ? formatNumber(child.debit) : "—"}
+                                                </td>
+                                                <td className="px-5 py-2 text-right text-xs font-medium tabular-nums text-muted">
+                                                    {child.credit > 0 ? formatNumber(child.credit) : "—"}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </React.Fragment>
                                 ))}
                             </tbody>
                             <tfoot>
