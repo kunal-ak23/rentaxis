@@ -1,11 +1,13 @@
 package com.datagami.rentaxis.api;
 
+import com.datagami.rentaxis.api.dto.CreateSplitTransactionDTO;
 import com.datagami.rentaxis.api.dto.ReportDTO;
 import com.datagami.rentaxis.api.dto.TrialBalanceDTO;
 import com.datagami.rentaxis.api.dto.VatReturnDTO;
 import com.datagami.rentaxis.core.service.FinancialTransactionService;
 import com.datagami.rentaxis.domain.entity.FinancialTransaction;
 import com.datagami.rentaxis.domain.entity.enums.AccountType;
+import jakarta.validation.Valid;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -41,9 +43,14 @@ public class FinancialTransactionController {
         return ResponseEntity.ok(service.createTransaction(txn));
     }
 
+    @PostMapping("/transactions/split")
+    public ResponseEntity<FinancialTransaction> createSplitTransaction(@RequestBody @Valid CreateSplitTransactionDTO dto) {
+        return ResponseEntity.ok(service.createSplitTransaction(dto));
+    }
+
     @GetMapping("/transactions/{id}")
     public ResponseEntity<FinancialTransaction> getTransactionById(@PathVariable UUID id) {
-        return ResponseEntity.ok(service.getTransactionById(id));
+        return ResponseEntity.ok(service.getTransactionWithChildren(id));
     }
 
     @GetMapping("/reports/property/{propertyId}")
