@@ -7,14 +7,18 @@ import com.datagami.rentaxis.api.dto.UnitListingMediaDTO;
 import com.datagami.rentaxis.api.dto.UnitListingMediaUploadResponse;
 import com.datagami.rentaxis.api.dto.UnitListingSummaryDTO;
 import com.datagami.rentaxis.api.dto.UnitListingUpdateRequest;
+import com.datagami.rentaxis.api.exception.AccessDeniedException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.service.TenantFeatureService;
 import com.datagami.rentaxis.core.service.UnitListingService;
 import com.datagami.rentaxis.domain.entity.enums.TenantFeature;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
+import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.UnitListing;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
+import com.datagami.rentaxis.domain.repository.UnitRepository;
+import com.datagami.rentaxis.domain.repository.UserPropertyAssignmentRepository;
 import com.datagami.rentaxis.domain.entity.enums.ListingStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -23,6 +27,7 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -37,12 +42,18 @@ public class UnitListingController {
     private final UnitListingService service;
     private final TenantFeatureService tenantFeatureService;
     private final LandlordOrgRepository landlordOrgRepository;
+    private final UnitRepository unitRepository;
+    private final UserPropertyAssignmentRepository assignmentRepository;
 
     public UnitListingController(UnitListingService service, TenantFeatureService tenantFeatureService,
-                                 LandlordOrgRepository landlordOrgRepository) {
+                                 LandlordOrgRepository landlordOrgRepository,
+                                 UnitRepository unitRepository,
+                                 UserPropertyAssignmentRepository assignmentRepository) {
         this.service = service;
         this.tenantFeatureService = tenantFeatureService;
         this.landlordOrgRepository = landlordOrgRepository;
+        this.unitRepository = unitRepository;
+        this.assignmentRepository = assignmentRepository;
     }
 
     @GetMapping
@@ -68,6 +79,7 @@ public class UnitListingController {
     public ResponseEntity<UnitListingDTO> create(@RequestBody UnitListingCreateRequest req) {
         checkEnabled();
         UUID tenantId = TenantContextHolder.getTenantId();
+        checkPropertyManagerAccess(req.unitId());
         UnitListing created = service.create(tenantId, req);
         return ResponseEntity.status(HttpStatus.CREATED).body(toDetail(created));
     }
@@ -144,6 +156,29 @@ public class UnitListingController {
         UUID tenantId = TenantContextHolder.getTenantId();
         if (!tenantFeatureService.isEnabled(tenantId, TenantFeature.LISTINGS)) {
             throw new NotFoundException("Listings feature is disabled");
+        }
+    }
+
+    /**
+     * For PROPERTY_MANAGER callers, verifies the unit's property is assigned to them.
+     * SUPER_ADMIN and TENANT_ADMIN are unrestricted.
+     */
+    private void checkPropertyManagerAccess(UUID unitId) {
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        boolean isPm = auth.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_PROPERTY_MANAGER"));
+        if (!isPm) return;
+
+        if (unitId == null) {
+            throw new AccessDeniedException("Unit must be specified");
+        }
+        Unit unit = unitRepository.findById(unitId)
+                .orElseThrow(() -> new NotFoundException("Unit not found"));
+        UUID propertyId = unit.getProperty().getId();
+        UUID userId = UUID.fromString(auth.getName());
+
+        if (!assignmentRepository.existsByUserIdAndPropertyId(userId, propertyId)) {
+            throw new AccessDeniedException("You are not assigned to this property");
         }
     }
 
