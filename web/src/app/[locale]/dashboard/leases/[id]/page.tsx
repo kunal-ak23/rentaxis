@@ -364,6 +364,7 @@ export default function LeaseDetailPage() {
     const totalPaid = payments.filter(p => p.status === "CLEARED").reduce((sum, p) => sum + p.amount, 0);
 
     return (
+        <>
         <div>
             {/* Header */}
             <div className="flex items-center gap-4 mb-8">
@@ -857,5 +858,6 @@ export default function LeaseDetailPage() {
                 </div>
             </div>
         )}
+        </>
     );
 }
