@@ -150,6 +150,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ tenant
   const [wishlistLoading, setWishlistLoading] = useState(false);
   const [interestNote, setInterestNote] = useState('');
   const [userPos, setUserPos] = useState<{ lat: number; lng: number } | null>(null);
+  const [locationAddress, setLocationAddress] = useState<string | null>(null);
 
   // Geolocation
   useEffect(() => {
@@ -184,6 +185,20 @@ export default function ListingDetailPage({ params }: { params: Promise<{ tenant
   }, [tenantSlug, slug, session, t]);
 
   useEffect(() => { loadListing(); }, [loadListing]);
+
+  // Reverse-geocode coordinates to a human-readable address (Nominatim, no API key)
+  useEffect(() => {
+    if (!listing?.lat || !listing?.lng) return;
+    fetch(
+      `https://nominatim.openstreetmap.org/reverse?lat=${listing.lat}&lon=${listing.lng}&format=json`,
+      { headers: { 'Accept-Language': 'en' } }
+    )
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.display_name) setLocationAddress(data.display_name);
+      })
+      .catch(() => {});
+  }, [listing?.lat, listing?.lng]);
 
   async function handleWishlistToggle() {
     if (!session) {
@@ -428,7 +443,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ tenant
                   <MapPin size={16} className="text-neutral-400 mt-0.5 shrink-0" />
                   <div>
                     <p className="text-sm text-neutral-700">
-                      {listing.lat?.toFixed(5)}, {listing.lng?.toFixed(5)}
+                      {locationAddress ?? `${listing.lat?.toFixed(5)}, ${listing.lng?.toFixed(5)}`}
                     </p>
                     {distance !== null && (
                       <p className="text-xs text-neutral-500 mt-0.5">{t('distanceFromYou', { km: distance.toFixed(1) })}</p>
@@ -436,13 +451,19 @@ export default function ListingDetailPage({ params }: { params: Promise<{ tenant
                   </div>
                 </div>
 
-                {/* Map placeholder */}
-                <div className="h-40 rounded-xl bg-neutral-100 border border-neutral-200 flex items-center justify-center mb-4">
-                  <div className="flex flex-col items-center gap-2 text-neutral-400">
-                    <MapPin size={24} />
-                    <p className="text-xs">{t('mapComingSoon')}</p>
+                {/* Embedded OpenStreetMap */}
+                {listing.lat && listing.lng && (
+                  <div className="rounded-xl overflow-hidden border border-neutral-200 mb-4">
+                    <iframe
+                      title="Property location"
+                      width="100%"
+                      height="220"
+                      loading="lazy"
+                      src={`https://www.openstreetmap.org/export/embed.html?bbox=${listing.lng - 0.01},${listing.lat - 0.01},${listing.lng + 0.01},${listing.lat + 0.01}&layer=mapnik&marker=${listing.lat},${listing.lng}`}
+                      className="w-full"
+                    />
                   </div>
-                </div>
+                )}
 
                 {listing.lat && listing.lng && (
                   <a
