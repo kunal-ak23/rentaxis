@@ -41,22 +41,27 @@ class _ShellScreenState extends ConsumerState<ShellScreen> {
           fit: BoxFit.contain,
         ),
         actions: [
+          IconButton(
+            onPressed: () => context.push('/notifications'),
+            icon: Badge(
+              isLabelVisible: notifState.unreadCount > 0,
+              label: Text(
+                notifState.unreadCount > 9
+                    ? '9+'
+                    : '${notifState.unreadCount}',
+                style: const TextStyle(fontSize: 9, color: Colors.white),
+              ),
+              backgroundColor: AppColors.danger,
+              child: const Icon(Icons.notifications_outlined,
+                  color: AppColors.navyDark),
+            ),
+          ),
           Padding(
             padding: const EdgeInsets.only(right: 8),
             child: IconButton(
-              onPressed: () => context.push('/notifications'),
-              icon: Badge(
-                isLabelVisible: notifState.unreadCount > 0,
-                label: Text(
-                  notifState.unreadCount > 9
-                      ? '9+'
-                      : '${notifState.unreadCount}',
-                  style: const TextStyle(fontSize: 9, color: Colors.white),
-                ),
-                backgroundColor: AppColors.danger,
-                child: const Icon(Icons.notifications_outlined,
-                    color: AppColors.navyDark),
-              ),
+              onPressed: () => context.push('/profile'),
+              icon: const Icon(Icons.person_outline_rounded,
+                  color: AppColors.navyDark),
             ),
           ),
         ],
@@ -78,8 +83,6 @@ class _ShellScreenState extends ConsumerState<ShellScreen> {
               context.go('/payments');
             case 5:
               context.go('/tickets');
-            case 6:
-              context.go('/profile');
           }
         },
       ),
@@ -92,7 +95,6 @@ class _ShellScreenState extends ConsumerState<ShellScreen> {
     if (location.startsWith('/meetings')) return 3;
     if (location.startsWith('/payments')) return 4;
     if (location.startsWith('/tickets')) return 5;
-    if (location.startsWith('/profile')) return 6;
     return 0;
   }
 }
@@ -113,7 +115,6 @@ class _FrostedBottomNav extends StatelessWidget {
     (icon: Icons.event_outlined, activeIcon: Icons.event_rounded, label: 'Meetings'),
     (icon: Icons.payment_outlined, activeIcon: Icons.payment_rounded, label: 'Payments'),
     (icon: Icons.handyman_outlined, activeIcon: Icons.handyman_rounded, label: 'Tickets'),
-    (icon: Icons.person_outline_rounded, activeIcon: Icons.person_rounded, label: 'More'),
   ];
 
   @override
@@ -121,7 +122,7 @@ class _FrostedBottomNav extends StatelessWidget {
     return SafeArea(
       top: false,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(28),
           child: BackdropFilter(
@@ -189,7 +190,7 @@ class _NavItemWidget extends StatelessWidget {
         duration: const Duration(milliseconds: 250),
         curve: Curves.easeOutCubic,
         padding: EdgeInsets.symmetric(
-          horizontal: isSelected ? 10 : 6,
+          horizontal: isSelected ? 14 : 10,
           vertical: 8,
         ),
         decoration: BoxDecoration(
@@ -214,7 +215,7 @@ class _NavItemWidget extends StatelessWidget {
             Text(
               label,
               style: GoogleFonts.josefinSans(
-                fontSize: 10,
+                fontSize: 11,
                 fontWeight: isSelected ? FontWeight.w700 : FontWeight.w400,
                 color: isSelected ? AppColors.primary : AppColors.textMuted,
               ),
