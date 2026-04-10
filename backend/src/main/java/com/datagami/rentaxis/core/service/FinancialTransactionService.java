@@ -279,6 +279,8 @@ public class FinancialTransactionService {
             parentVatAmount = parentAmount.multiply(dto.getVatRate())
                     .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
             parentGrossAmount = parentAmount.add(parentVatAmount);
+        } else {
+            parentGrossAmount = parentAmount;
         }
 
         // Create parent transaction (org-level, no property/unit)
