@@ -10,6 +10,11 @@ import 'browse_map.dart';
 
 // ── Providers ────────────────────────────────────────────────────────────────
 
+final _listingApiProvider = Provider<ListingApiService>((ref) {
+  final client = ref.watch(apiClientProvider);
+  return ListingApiService(client.dio);
+});
+
 final browseFiltersProvider = StateProvider.autoDispose<BrowseFilters>(
   (ref) => const BrowseFilters(),
 );
@@ -402,10 +407,9 @@ class _FilterChip extends StatelessWidget {
 
 // ── List view ─────────────────────────────────────────────────────────────────
 
-class _ListingListView extends StatelessWidget {
+class _ListingListView extends ConsumerWidget {
   final List<Map<String, dynamic>> listings;
   final bool truncated;
-  // Server-side count before client search filtering, used for footer text.
   final int serverCount;
   const _ListingListView({
     required this.listings,
@@ -413,8 +417,31 @@ class _ListingListView extends StatelessWidget {
     this.serverCount = 0,
   });
 
+  Future<void> _toggleWishlist(
+      WidgetRef ref, String listingId, bool isWishlisted) async {
+    final notifier = ref.read(wishlistIdsProvider.notifier);
+    final service = ref.read(_listingApiProvider);
+    try {
+      if (isWishlisted) {
+        notifier.remove(listingId);
+        await service.removeInterest(listingId);
+      } else {
+        notifier.add(listingId);
+        await service.addInterest(listingId);
+      }
+    } catch (_) {
+      // Roll back
+      if (isWishlisted) {
+        notifier.add(listingId);
+      } else {
+        notifier.remove(listingId);
+      }
+    }
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final wishlistedIds = ref.watch(wishlistIdsProvider);
     final count = listings.length + (truncated ? 1 : 0);
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
@@ -433,13 +460,20 @@ class _ListingListView extends StatelessWidget {
             ),
           );
         }
+        final listing = listings[i];
+        final id = listing['id'] as String? ?? '';
+        final isWishlisted = wishlistedIds.contains(id);
         return AnimatedListItem(
           index: i,
           child: Padding(
             padding: const EdgeInsets.only(bottom: 16),
             child: ListingCard(
-              listing: listings[i],
-              onTap: () => context.push('/browse/${listings[i]['slug']}'),
+              listing: listing,
+              onTap: () => context.push('/browse/${listing['slug']}'),
+              isWishlisted: isWishlisted,
+              onWishlistToggle: id.isEmpty
+                  ? null
+                  : () => _toggleWishlist(ref, id, isWishlisted),
             ),
           ),
         );

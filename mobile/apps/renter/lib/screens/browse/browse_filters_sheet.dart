@@ -48,10 +48,13 @@ class _BrowseFiltersSheetState extends State<BrowseFiltersSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final bottom = MediaQuery.of(context).viewInsets.bottom;
+    final viewInsets = MediaQuery.of(context).viewInsets.bottom;
+    final safeBottom = MediaQuery.of(context).padding.bottom;
+    // 84 = frosted nav height (72) + gap (6) + extra (6)
+    final navOffset = safeBottom + 84.0;
     return Container(
-      margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-      padding: EdgeInsets.fromLTRB(20, 20, 20, 20 + bottom),
+      margin: EdgeInsets.fromLTRB(12, 0, 12, navOffset),
+      padding: EdgeInsets.fromLTRB(20, 20, 20, 20 + viewInsets),
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(24),
