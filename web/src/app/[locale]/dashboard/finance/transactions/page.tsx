@@ -180,6 +180,7 @@ export default function TransactionsPage() {
         });
         setUnits([]);
         setSplitMode(false);
+        splitIdRef.current = 3;
         setSplits([
             { id: 1, propertyId: "", unitId: "", amount: 0, units: [] },
             { id: 2, propertyId: "", unitId: "", amount: 0, units: [] },
@@ -271,6 +272,7 @@ export default function TransactionsPage() {
         setSplitMode(enabled);
         if (enabled && transactionAmount > 0) {
             const equalShare = Math.round((transactionAmount / 2) * 100) / 100;
+            splitIdRef.current = 3;
             setSplits([
                 { id: 1, propertyId: "", unitId: "", amount: equalShare, units: [] },
                 { id: 2, propertyId: "", unitId: "", amount: transactionAmount - equalShare, units: [] },
@@ -283,8 +285,10 @@ export default function TransactionsPage() {
     };
 
     const removeSplitRow = (index: number) => {
-        if (splits.length <= 2) return;
-        setSplits(splits.filter((_, i) => i !== index));
+        setSplits(prev => {
+            if (prev.length <= 2) return prev;
+            return prev.filter((_, i) => i !== index);
+        });
     };
 
     const updateSplitProperty = async (index: number, propertyId: string) => {
@@ -310,25 +314,32 @@ export default function TransactionsPage() {
     };
 
     const updateSplitUnit = (index: number, unitId: string) => {
-        const updated = [...splits];
-        updated[index] = { ...updated[index], unitId };
-        setSplits(updated);
+        setSplits(prev => {
+            const updated = [...prev];
+            updated[index] = { ...updated[index], unitId };
+            return updated;
+        });
     };
 
     const updateSplitAmount = (index: number, amount: number) => {
-        const updated = [...splits];
-        updated[index] = { ...updated[index], amount };
-        setSplits(updated);
+        setSplits(prev => {
+            const updated = [...prev];
+            updated[index] = { ...updated[index], amount };
+            return updated;
+        });
     };
 
     const distributeSplitsEqually = () => {
-        if (transactionAmount <= 0 || splits.length === 0) return;
-        const equalShare = Math.round((transactionAmount / splits.length) * 100) / 100;
-        const remainder = Math.round((transactionAmount - equalShare * splits.length) * 100) / 100;
-        setSplits(splits.map((s, i) => ({
-            ...s,
-            amount: i === 0 ? equalShare + remainder : equalShare,
-        })));
+        if (transactionAmount <= 0) return;
+        setSplits(prev => {
+            if (prev.length === 0) return prev;
+            const equalShare = Math.round((transactionAmount / prev.length) * 100) / 100;
+            const remainder = Math.round((transactionAmount - equalShare * prev.length) * 100) / 100;
+            return prev.map((s, i) => ({
+                ...s,
+                amount: i === 0 ? equalShare + remainder : equalShare,
+            }));
+        });
     };
 
     const totalDebit = transactions.reduce((s, t) => s + (t.debit || 0), 0);
