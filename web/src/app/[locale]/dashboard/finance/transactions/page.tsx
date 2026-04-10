@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useTranslations } from "next-intl";
 import {
     Receipt, Plus, X, Filter, Calendar, Building2, Home, ChevronDown, Loader2, LayoutList, BookOpen, ChevronLeft, ChevronRight
@@ -44,6 +44,9 @@ type Transaction = {
     vatApplicable: boolean;
     vatAmount: number;
     notes: string;
+    splitParent: boolean;
+    splitChildren?: Transaction[];
+    parentTransaction?: { id: string } | null;
 };
 
 const TYPE_COLORS: Record<string, string> = {
@@ -66,6 +69,37 @@ export default function TransactionsPage() {
     const [submitting, setSubmitting] = useState(false);
     const [viewMode, setViewMode] = useState<"simple" | "accounting">("simple");
     const [currentPage, setCurrentPage] = useState(1);
+    const [expandedSplits, setExpandedSplits] = useState<Set<string>>(new Set());
+    const [submitError, setSubmitError] = useState("");
+
+    const toggleSplitExpand = async (txnId: string) => {
+        const next = new Set(expandedSplits);
+        if (next.has(txnId)) {
+            next.delete(txnId);
+            setExpandedSplits(next);
+            return;
+        }
+        // Check if children already loaded
+        const txn = transactions.find(t => t.id === txnId);
+        if (txn && !txn.splitChildren) {
+            try {
+                const res = await fetch(`/api/proxy/v1/finance/transactions/${txnId}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    setTransactions(prev => prev.map(t =>
+                        t.id === txnId ? { ...t, splitChildren: data.splitChildren || [] } : t
+                    ));
+                }
+            } catch (err) {
+                console.error(err);
+            }
+        }
+        setExpandedSplits(prev => {
+            const s = new Set(prev);
+            s.add(txnId);
+            return s;
+        });
+    };
     const pageSize = 25;
 
     const [filters, setFilters] = useState({
@@ -90,6 +124,19 @@ export default function TransactionsPage() {
         netAmount: 0,
         notes: ""
     });
+
+    const [splitMode, setSplitMode] = useState(false);
+    const [splits, setSplits] = useState<Array<{
+        id: number;
+        propertyId: string;
+        unitId: string;
+        amount: number;
+        units: UnitData[];
+    }>>([
+        { id: 1, propertyId: "", unitId: "", amount: 0, units: [] },
+        { id: 2, propertyId: "", unitId: "", amount: 0, units: [] },
+    ]);
+    const splitIdRef = useRef(3);
 
     useEffect(() => {
         fetchTransactions();
@@ -149,50 +196,94 @@ export default function TransactionsPage() {
         }
     };
 
+    const resetForm = () => {
+        setFormData({
+            date: new Date().toISOString().split("T")[0],
+            description: "",
+            accountId: "",
+            debit: 0,
+            credit: 0,
+            propertyId: "",
+            unitId: "",
+            vatApplicable: false,
+            vatAmount: 0,
+            vatRate: 5,
+            grossAmount: 0,
+            netAmount: 0,
+            notes: ""
+        });
+        setUnits([]);
+        setSplitMode(false);
+        splitIdRef.current = 3;
+        setSplits([
+            { id: 1, propertyId: "", unitId: "", amount: 0, units: [] },
+            { id: 2, propertyId: "", unitId: "", amount: 0, units: [] },
+        ]);
+    };
+
     const handleSubmit = async (ev: React.FormEvent) => {
         ev.preventDefault();
+        setSubmitError("");
         setSubmitting(true);
         try {
-            const body: Record<string, unknown> = {
-                date: formData.date,
-                description: formData.description,
-                account: { id: formData.accountId },
-                debit: formData.debit,
-                credit: formData.credit,
-                vatApplicable: formData.vatApplicable,
-                vatAmount: formData.vatAmount,
-                vatRate: formData.vatApplicable ? formData.vatRate : 0,
-                netAmount: formData.vatApplicable ? formData.netAmount : 0,
-                grossAmount: formData.vatApplicable ? formData.grossAmount : 0,
-                notes: formData.notes
-            };
-            if (formData.propertyId) body.property = { id: formData.propertyId };
-            if (formData.unitId) body.unit = { id: formData.unitId };
-
-            const res = await fetch("/api/proxy/v1/finance/transactions", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(body)
-            });
-            if (res.ok) {
-                setShowForm(false);
-                fetchTransactions();
-                setFormData({
-                    date: new Date().toISOString().split("T")[0],
-                    description: "",
-                    accountId: "",
-                    debit: 0,
-                    credit: 0,
-                    propertyId: "",
-                    unitId: "",
-                    vatApplicable: false,
-                    vatAmount: 0,
-                    vatRate: 5,
-                    grossAmount: 0,
-                    netAmount: 0,
-                    notes: ""
+            if (splitMode) {
+                const body = {
+                    date: formData.date,
+                    description: formData.description,
+                    accountId: formData.accountId,
+                    debit: formData.debit || 0,
+                    credit: formData.credit || 0,
+                    vatApplicable: formData.vatApplicable,
+                    vatRate: formData.vatApplicable ? formData.vatRate : 0,
+                    notes: formData.notes,
+                    splits: splits.map(s => ({
+                        propertyId: s.propertyId || null,
+                        unitId: s.unitId || null,
+                        amount: s.amount,
+                    })),
+                };
+                const res = await fetch("/api/proxy/v1/finance/transactions/split", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(body),
                 });
-                setUnits([]);
+                if (res.ok) {
+                    setShowForm(false);
+                    fetchTransactions();
+                    resetForm();
+                } else {
+                    const errData = await res.json().catch(() => null);
+                    setSubmitError(errData?.message || "Failed to create split transaction");
+                }
+            } else {
+                const body: Record<string, unknown> = {
+                    date: formData.date,
+                    description: formData.description,
+                    account: { id: formData.accountId },
+                    debit: formData.debit,
+                    credit: formData.credit,
+                    vatApplicable: formData.vatApplicable,
+                    vatAmount: formData.vatAmount,
+                    vatRate: formData.vatApplicable ? formData.vatRate : 0,
+                    netAmount: formData.vatApplicable ? formData.netAmount : 0,
+                    grossAmount: formData.vatApplicable ? formData.grossAmount : 0,
+                    notes: formData.notes
+                };
+                if (formData.propertyId) body.property = { id: formData.propertyId };
+                if (formData.unitId) body.unit = { id: formData.unitId };
+                const res = await fetch("/api/proxy/v1/finance/transactions", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(body)
+                });
+                if (res.ok) {
+                    setShowForm(false);
+                    fetchTransactions();
+                    resetForm();
+                } else {
+                    const errData = await res.json().catch(() => null);
+                    setSubmitError(errData?.message || "Failed to create transaction");
+                }
             }
         } catch (err) {
             console.error(err);
@@ -214,6 +305,84 @@ export default function TransactionsPage() {
         setCurrentPage(1);
     };
 
+    const transactionAmount = formData.debit || formData.credit || 0;
+    const splitTotal = splits.reduce((sum, s) => sum + (s.amount || 0), 0);
+    const splitBalanced = Math.abs(splitTotal - transactionAmount) < 0.01 && transactionAmount > 0;
+
+    const handleSplitToggle = (enabled: boolean) => {
+        setSplitMode(enabled);
+        if (enabled && transactionAmount > 0) {
+            const equalShare = Math.round((transactionAmount / 2) * 100) / 100;
+            splitIdRef.current = 3;
+            setSplits([
+                { id: 1, propertyId: "", unitId: "", amount: equalShare, units: [] },
+                { id: 2, propertyId: "", unitId: "", amount: transactionAmount - equalShare, units: [] },
+            ]);
+        }
+    };
+
+    const addSplitRow = () => {
+        setSplits(prev => [...prev, { id: splitIdRef.current++, propertyId: "", unitId: "", amount: 0, units: [] }]);
+    };
+
+    const removeSplitRow = (index: number) => {
+        setSplits(prev => {
+            if (prev.length <= 2) return prev;
+            return prev.filter((_, i) => i !== index);
+        });
+    };
+
+    const updateSplitProperty = async (index: number, propertyId: string) => {
+        setSplits(prev => {
+            const updated = [...prev];
+            updated[index] = { ...updated[index], propertyId, unitId: "", units: [] };
+            return updated;
+        });
+        if (!propertyId) return;
+        try {
+            const res = await fetch(`/api/proxy/v1/units/property/${propertyId}`);
+            if (res.ok) {
+                const fetchedUnits = await res.json();
+                setSplits(prev => {
+                    const updated = [...prev];
+                    updated[index] = { ...updated[index], units: fetchedUnits };
+                    return updated;
+                });
+            }
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
+    const updateSplitUnit = (index: number, unitId: string) => {
+        setSplits(prev => {
+            const updated = [...prev];
+            updated[index] = { ...updated[index], unitId };
+            return updated;
+        });
+    };
+
+    const updateSplitAmount = (index: number, amount: number) => {
+        setSplits(prev => {
+            const updated = [...prev];
+            updated[index] = { ...updated[index], amount };
+            return updated;
+        });
+    };
+
+    const distributeSplitsEqually = () => {
+        if (transactionAmount <= 0) return;
+        setSplits(prev => {
+            if (prev.length === 0) return prev;
+            const equalShare = Math.round((transactionAmount / prev.length) * 100) / 100;
+            const remainder = Math.round((transactionAmount - equalShare * prev.length) * 100) / 100;
+            return prev.map((s, i) => ({
+                ...s,
+                amount: i === prev.length - 1 ? equalShare + remainder : equalShare,
+            }));
+        });
+    };
+
     const totalDebit = transactions.reduce((s, t) => s + (t.debit || 0), 0);
     const totalCredit = transactions.reduce((s, t) => s + (t.credit || 0), 0);
 
@@ -233,6 +402,8 @@ export default function TransactionsPage() {
                     moneyIn: isIncome ? (t.credit || t.debit || 0) : 0,
                     moneyOut: !isIncome ? (t.debit || t.credit || 0) : 0,
                     notes: t.notes,
+                    splitParent: t.splitParent || false,
+                    splitChildren: t.splitChildren,
                 };
             })
             .sort((a, b) => a.date.localeCompare(b.date));
@@ -393,32 +564,123 @@ export default function TransactionsPage() {
                                     setFormData({ ...formData, credit, netAmount: amount, vatAmount: vatAmt, grossAmount: amount + vatAmt });
                                 }} />
                             </div>
-                            <div className="col-span-1">
-                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("property")} (Project)</label>
-                                <select
-                                    className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
-                                    value={formData.propertyId}
-                                    onChange={ev => {
-                                        setFormData({ ...formData, propertyId: ev.target.value, unitId: "" });
-                                        fetchUnitsForProperty(ev.target.value);
-                                    }}
-                                >
-                                    <option value="">Organisation Level</option>
-                                    {properties.map(s => <option key={s.property.id} value={s.property.id}>{s.property.nameEn}</option>)}
-                                </select>
+                            {/* Split toggle */}
+                            <div className="col-span-2 flex items-center gap-3">
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        className="rounded border-border"
+                                        checked={splitMode}
+                                        onChange={ev => handleSplitToggle(ev.target.checked)}
+                                    />
+                                    <span className="text-xs font-bold text-muted">Split across multiple properties/units</span>
+                                </label>
                             </div>
-                            <div className="col-span-1">
-                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("unit")} (Property)</label>
-                                <select
-                                    className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
-                                    value={formData.unitId}
-                                    onChange={ev => setFormData({ ...formData, unitId: ev.target.value })}
-                                    disabled={!formData.propertyId}
-                                >
-                                    <option value="">Property Level (No Unit)</option>
-                                    {units.map(u => <option key={u.id} value={u.id}>{u.unitNumber}{u.currentTenantName ? ` — ${u.currentTenantName}` : ""}</option>)}
-                                </select>
-                            </div>
+
+                            {!splitMode ? (
+                                <>
+                                    <div className="col-span-1">
+                                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("property")} (Project)</label>
+                                        <select
+                                            className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
+                                            value={formData.propertyId}
+                                            onChange={ev => {
+                                                setFormData({ ...formData, propertyId: ev.target.value, unitId: "" });
+                                                fetchUnitsForProperty(ev.target.value);
+                                            }}
+                                        >
+                                            <option value="">Organisation Level</option>
+                                            {properties.map(s => <option key={s.property.id} value={s.property.id}>{s.property.nameEn}</option>)}
+                                        </select>
+                                    </div>
+                                    <div className="col-span-1">
+                                        <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("unit")} (Property)</label>
+                                        <select
+                                            className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
+                                            value={formData.unitId}
+                                            onChange={ev => setFormData({ ...formData, unitId: ev.target.value })}
+                                            disabled={!formData.propertyId}
+                                        >
+                                            <option value="">Property Level (No Unit)</option>
+                                            {units.map(u => <option key={u.id} value={u.id}>{u.unitNumber}{u.currentTenantName ? ` — ${u.currentTenantName}` : ""}</option>)}
+                                        </select>
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="col-span-2">
+                                    <div className="border border-border rounded-xl overflow-hidden">
+                                        {/* Header */}
+                                        <div className="flex items-center justify-between bg-input/50 px-4 py-2.5">
+                                            <span className="text-[10px] font-bold text-muted uppercase tracking-wider">Cost Centre Allocation</span>
+                                            <button type="button" onClick={distributeSplitsEqually} className="text-[10px] font-bold text-primary hover:underline cursor-pointer">
+                                                Distribute Equally
+                                            </button>
+                                        </div>
+                                        {/* Split rows */}
+                                        <div className="divide-y divide-border">
+                                            {splits.map((split, index) => (
+                                                <div key={split.id} className="flex items-center gap-3 px-4 py-3">
+                                                    <div className="flex-1">
+                                                        <select
+                                                            className="w-full border border-border rounded-lg bg-surface p-2.5 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
+                                                            value={split.propertyId}
+                                                            onChange={ev => updateSplitProperty(index, ev.target.value)}
+                                                        >
+                                                            <option value="">Organisation Level</option>
+                                                            {properties.map(s => <option key={s.property.id} value={s.property.id}>{s.property.nameEn}</option>)}
+                                                        </select>
+                                                    </div>
+                                                    <div className="flex-1">
+                                                        <select
+                                                            className="w-full border border-border rounded-lg bg-surface p-2.5 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
+                                                            value={split.unitId}
+                                                            onChange={ev => updateSplitUnit(index, ev.target.value)}
+                                                            disabled={!split.propertyId}
+                                                        >
+                                                            <option value="">Property Level (No Unit)</option>
+                                                            {split.units.map(u => <option key={u.id} value={u.id}>{u.unitNumber}{u.currentTenantName ? ` — ${u.currentTenantName}` : ""}</option>)}
+                                                        </select>
+                                                    </div>
+                                                    <div className="w-32">
+                                                        <input
+                                                            type="number"
+                                                            step="0.01"
+                                                            placeholder="0.00"
+                                                            className="w-full border border-border rounded-lg bg-surface p-2.5 text-xs text-right focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
+                                                            value={split.amount || ""}
+                                                            onChange={ev => updateSplitAmount(index, Number(ev.target.value))}
+                                                        />
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => removeSplitRow(index)}
+                                                        disabled={splits.length <= 2}
+                                                        className="p-1.5 text-muted hover:text-red-500 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-all"
+                                                    >
+                                                        <X size={14} />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        {/* Footer: add row + total */}
+                                        <div className="flex items-center justify-between bg-input/30 px-4 py-2.5 border-t border-border">
+                                            <button type="button" onClick={addSplitRow} className="text-xs font-bold text-primary hover:underline cursor-pointer flex items-center gap-1">
+                                                <Plus size={12} /> Add Row
+                                            </button>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-[10px] font-bold text-muted uppercase tracking-wider">Total:</span>
+                                                <span className={cn(
+                                                    "text-xs font-bold tabular-nums",
+                                                    splitBalanced ? "text-emerald-600" : "text-red-500"
+                                                )}>
+                                                    {formatNumber(splitTotal)} / {formatNumber(transactionAmount)}
+                                                </span>
+                                                {splitBalanced && <span className="text-emerald-600 text-xs">✓</span>}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                             <div className="col-span-1 flex items-center gap-3 pt-5">
                                 <label className="flex items-center gap-2 cursor-pointer">
                                     <input type="checkbox" className="rounded border-border" checked={formData.vatApplicable} onChange={ev => {
@@ -461,9 +723,14 @@ export default function TransactionsPage() {
                                 <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("notes")}</label>
                                 <textarea placeholder="Optional notes" className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200 h-16 resize-none" value={formData.notes} onChange={ev => setFormData({ ...formData, notes: ev.target.value })} />
                             </div>
+                            {submitError && (
+                                <div className="col-span-2 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-xs text-red-700 font-medium">
+                                    {submitError}
+                                </div>
+                            )}
                             <div className="col-span-2 flex justify-end gap-3 mt-2">
                                 <button type="button" onClick={() => setShowForm(false)} className="px-6 py-3 text-xs font-bold text-muted cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/20 focus:outline-none rounded-xl">{t("cancel")}</button>
-                                <button type="submit" disabled={submitting} className="px-8 py-3 bg-primary text-primary-foreground rounded-lg text-xs font-bold cursor-pointer transition-all duration-200 hover:bg-primary/90 focus:ring-2 focus:ring-primary/20 focus:outline-none disabled:opacity-50 flex items-center gap-2">
+                                <button type="submit" disabled={submitting || (splitMode && !splitBalanced)} className="px-8 py-3 bg-primary text-primary-foreground rounded-lg text-xs font-bold cursor-pointer transition-all duration-200 hover:bg-primary/90 focus:ring-2 focus:ring-primary/20 focus:outline-none disabled:opacity-50 flex items-center gap-2">
                                     {submitting && <Loader2 size={14} className="animate-spin" />}
                                     {t("create")}
                                 </button>
@@ -509,43 +776,97 @@ export default function TransactionsPage() {
                             </thead>
                             <tbody className="divide-y divide-border">
                                 {paginatedSimple.map(row => (
-                                    <tr key={row.id} className="hover:bg-input/30 transition-colors">
-                                        <td className="px-5 py-3 text-xs text-foreground font-medium">{row.date}</td>
-                                        <td className="px-5 py-3">
-                                            <p className="text-xs font-bold text-foreground">{row.description}</p>
-                                            {row.notes && <p className="text-[10px] text-muted mt-0.5">{row.notes}</p>}
-                                        </td>
-                                        <td className="px-5 py-3">
-                                            <div className="flex items-center gap-1.5">
-                                                {row.property ? (
-                                                    <>
-                                                        <Building2 size={12} className="text-muted" />
-                                                        <span className="text-xs text-foreground font-medium">{row.property.nameEn}</span>
-                                                    </>
-                                                ) : (
-                                                    <span className="text-[10px] text-muted font-bold uppercase">Org</span>
-                                                )}
-                                                {row.unit && (
-                                                    <span className="text-[9px] text-primary bg-primary/5 px-1.5 py-0.5 rounded font-bold ml-1">
-                                                        Unit {row.unit.unitNumber}
-                                                    </span>
-                                                )}
-                                            </div>
-                                        </td>
-                                        <td className="px-5 py-3 text-right text-xs font-bold tabular-nums">
-                                            {row.moneyIn > 0 ? (
-                                                <span className="text-emerald-600">+{formatNumber(row.moneyIn)}</span>
-                                            ) : "—"}
-                                        </td>
-                                        <td className="px-5 py-3 text-right text-xs font-bold tabular-nums">
-                                            {row.moneyOut > 0 ? (
-                                                <span className="text-red-500">-{formatNumber(row.moneyOut)}</span>
-                                            ) : "—"}
-                                        </td>
-                                        <td className="px-5 py-3 text-right text-xs font-bold tabular-nums text-foreground">
-                                            {formatNumber(row.balance)}
-                                        </td>
-                                    </tr>
+                                    <React.Fragment key={row.id}>
+                                        <tr className="hover:bg-input/30 transition-colors">
+                                            <td className="px-5 py-3 text-xs text-foreground font-medium">
+                                                <div className="flex items-center gap-1.5">
+                                                    {row.splitParent && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => toggleSplitExpand(row.id)}
+                                                            className="cursor-pointer text-muted hover:text-foreground transition-all"
+                                                            aria-label={expandedSplits.has(row.id) ? "Collapse splits" : "Expand splits"}
+                                                        >
+                                                            <ChevronDown size={14} className={cn("transition-transform duration-200", expandedSplits.has(row.id) && "rotate-180")} />
+                                                        </button>
+                                                    )}
+                                                    {row.date}
+                                                </div>
+                                            </td>
+                                            <td className="px-5 py-3">
+                                                <div className="flex items-center gap-2">
+                                                    <p className="text-xs font-bold text-foreground">{row.description}</p>
+                                                    {row.splitParent && (
+                                                        <span className="text-[9px] font-bold uppercase tracking-wider bg-primary/10 text-primary px-1.5 py-0.5 rounded">Split</span>
+                                                    )}
+                                                </div>
+                                                {row.notes && <p className="text-[10px] text-muted mt-0.5">{row.notes}</p>}
+                                            </td>
+                                            <td className="px-5 py-3">
+                                                <div className="flex items-center gap-1.5">
+                                                    {row.property ? (
+                                                        <>
+                                                            <Building2 size={12} className="text-muted" />
+                                                            <span className="text-xs text-foreground font-medium">{row.property.nameEn}</span>
+                                                        </>
+                                                    ) : (
+                                                        <span className="text-[10px] text-muted font-bold uppercase">Org</span>
+                                                    )}
+                                                    {row.unit && (
+                                                        <span className="text-[9px] text-primary bg-primary/5 px-1.5 py-0.5 rounded font-bold ml-1">
+                                                            Unit {row.unit.unitNumber}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </td>
+                                            <td className="px-5 py-3 text-right text-xs font-bold tabular-nums">
+                                                {row.moneyIn > 0 ? (
+                                                    <span className="text-emerald-600">+{formatNumber(row.moneyIn)}</span>
+                                                ) : "—"}
+                                            </td>
+                                            <td className="px-5 py-3 text-right text-xs font-bold tabular-nums">
+                                                {row.moneyOut > 0 ? (
+                                                    <span className="text-red-500">-{formatNumber(row.moneyOut)}</span>
+                                                ) : "—"}
+                                            </td>
+                                            <td className="px-5 py-3 text-right text-xs font-bold tabular-nums text-foreground">
+                                                {formatNumber(row.balance)}
+                                            </td>
+                                        </tr>
+                                        {row.splitParent && expandedSplits.has(row.id) && row.splitChildren && row.splitChildren.map((child, idx) => (
+                                            <tr key={child.id} className="bg-input/10 border-b border-border/50">
+                                                <td className="px-5 py-2 text-xs text-muted pl-10">{/* indent */}</td>
+                                                <td className="px-5 py-2">
+                                                    <div className="flex items-center gap-1.5 pl-4">
+                                                        <span className="text-muted text-xs select-none">{idx < (row.splitChildren?.length ?? 0) - 1 ? "├" : "└"}</span>
+                                                        <div className="flex items-center gap-1.5">
+                                                            {child.property ? (
+                                                                <>
+                                                                    <Building2 size={11} className="text-muted" />
+                                                                    <span className="text-xs text-foreground font-medium">{child.property.nameEn}</span>
+                                                                </>
+                                                            ) : (
+                                                                <span className="text-[10px] text-muted">Org</span>
+                                                            )}
+                                                            {child.unit && (
+                                                                <span className="text-[9px] text-primary bg-primary/5 px-1.5 py-0.5 rounded font-bold ml-1">
+                                                                    Unit {child.unit.unitNumber}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                                <td className="px-5 py-2"></td>
+                                                <td className="px-5 py-2 text-right text-xs font-medium tabular-nums text-muted">
+                                                    {child.credit > 0 ? `+${formatNumber(child.credit)}` : "—"}
+                                                </td>
+                                                <td className="px-5 py-2 text-right text-xs font-medium tabular-nums text-muted">
+                                                    {child.debit > 0 ? `-${formatNumber(child.debit)}` : "—"}
+                                                </td>
+                                                <td className="px-5 py-2"></td>
+                                            </tr>
+                                        ))}
+                                    </React.Fragment>
                                 ))}
                             </tbody>
                             <tfoot>
@@ -590,42 +911,100 @@ export default function TransactionsPage() {
                             </thead>
                             <tbody className="divide-y divide-border">
                                 {paginatedTransactions.map(txn => (
-                                    <tr key={txn.id} className="hover:bg-input/30 transition-colors">
-                                        <td className="px-5 py-3 text-xs text-foreground font-medium">{txn.date}</td>
-                                        <td className="px-5 py-3">
-                                            <p className="text-xs font-bold text-foreground">{txn.description}</p>
-                                            {txn.notes && <p className="text-[10px] text-muted mt-0.5">{txn.notes}</p>}
-                                        </td>
-                                        <td className="px-5 py-3">
-                                            <span className={cn("text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-lg", TYPE_COLORS[txn.accountType] || "bg-input text-muted")}>
-                                                {txn.accountCode}
-                                            </span>
-                                            <span className="text-[10px] text-muted ml-2">{txn.account?.name}</span>
-                                        </td>
-                                        <td className="px-5 py-3">
-                                            <div className="flex items-center gap-1.5">
-                                                {txn.property ? (
-                                                    <>
-                                                        <Building2 size={12} className="text-muted" />
-                                                        <span className="text-xs text-foreground font-medium">{txn.property.nameEn}</span>
-                                                    </>
-                                                ) : (
-                                                    <span className="text-[10px] text-muted font-bold uppercase">Org</span>
-                                                )}
-                                                {txn.unit && (
-                                                    <span className="text-[9px] text-primary bg-primary/5 px-1.5 py-0.5 rounded font-bold ml-1">
-                                                        Unit {txn.unit.unitNumber}
+                                    <React.Fragment key={txn.id}>
+                                        <tr className="hover:bg-input/30 transition-colors">
+                                            <td className="px-5 py-3 text-xs text-foreground font-medium">
+                                                <div className="flex items-center gap-1.5">
+                                                    {txn.splitParent && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => toggleSplitExpand(txn.id)}
+                                                            className="cursor-pointer text-muted hover:text-foreground transition-all"
+                                                            aria-label={expandedSplits.has(txn.id) ? "Collapse splits" : "Expand splits"}
+                                                        >
+                                                            <ChevronDown size={14} className={cn("transition-transform duration-200", expandedSplits.has(txn.id) && "rotate-180")} />
+                                                        </button>
+                                                    )}
+                                                    {txn.date}
+                                                </div>
+                                            </td>
+                                            <td className="px-5 py-3">
+                                                <div className="flex items-center gap-2">
+                                                    <p className="text-xs font-bold text-foreground">{txn.description}</p>
+                                                    {txn.splitParent && (
+                                                        <span className="text-[9px] font-bold uppercase tracking-wider bg-primary/10 text-primary px-1.5 py-0.5 rounded">Split</span>
+                                                    )}
+                                                </div>
+                                                {txn.notes && <p className="text-[10px] text-muted mt-0.5">{txn.notes}</p>}
+                                            </td>
+                                            <td className="px-5 py-3">
+                                                <span className={cn("text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-lg", TYPE_COLORS[txn.accountType] || "bg-input text-muted")}>
+                                                    {txn.accountCode}
+                                                </span>
+                                                <span className="text-[10px] text-muted ml-2">{txn.account?.name}</span>
+                                            </td>
+                                            <td className="px-5 py-3">
+                                                <div className="flex items-center gap-1.5">
+                                                    {txn.property ? (
+                                                        <>
+                                                            <Building2 size={12} className="text-muted" />
+                                                            <span className="text-xs text-foreground font-medium">{txn.property.nameEn}</span>
+                                                        </>
+                                                    ) : (
+                                                        <span className="text-[10px] text-muted font-bold uppercase">Org</span>
+                                                    )}
+                                                    {txn.unit && (
+                                                        <span className="text-[9px] text-primary bg-primary/5 px-1.5 py-0.5 rounded font-bold ml-1">
+                                                            Unit {txn.unit.unitNumber}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </td>
+                                            <td className="px-5 py-3 text-right text-xs font-bold tabular-nums text-foreground">
+                                                {txn.debit > 0 ? formatNumber(txn.debit) : "—"}
+                                            </td>
+                                            <td className="px-5 py-3 text-right text-xs font-bold tabular-nums text-foreground">
+                                                {txn.credit > 0 ? formatNumber(txn.credit) : "—"}
+                                            </td>
+                                        </tr>
+                                        {txn.splitParent && expandedSplits.has(txn.id) && txn.splitChildren && txn.splitChildren.map((child, idx) => (
+                                            <tr key={child.id} className="bg-input/10 border-b border-border/50">
+                                                <td className="px-5 py-2 text-xs text-muted"></td>
+                                                <td className="px-5 py-2">
+                                                    <div className="flex items-center gap-1.5 pl-4">
+                                                        <span className="text-muted text-xs select-none">{idx < (txn.splitChildren?.length ?? 0) - 1 ? "├" : "└"}</span>
+                                                        <div className="flex items-center gap-1.5">
+                                                            {child.property ? (
+                                                                <>
+                                                                    <Building2 size={11} className="text-muted" />
+                                                                    <span className="text-xs text-foreground font-medium">{child.property.nameEn}</span>
+                                                                </>
+                                                            ) : (
+                                                                <span className="text-[10px] text-muted">Org</span>
+                                                            )}
+                                                            {child.unit && (
+                                                                <span className="text-[9px] text-primary bg-primary/5 px-1.5 py-0.5 rounded font-bold ml-1">
+                                                                    Unit {child.unit.unitNumber}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                                <td className="px-5 py-2">
+                                                    <span className={cn("text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-lg", TYPE_COLORS[child.accountType] || "bg-input text-muted")}>
+                                                        {child.accountCode}
                                                     </span>
-                                                )}
-                                            </div>
-                                        </td>
-                                        <td className="px-5 py-3 text-right text-xs font-bold tabular-nums text-foreground">
-                                            {txn.debit > 0 ? formatNumber(txn.debit) : "—"}
-                                        </td>
-                                        <td className="px-5 py-3 text-right text-xs font-bold tabular-nums text-foreground">
-                                            {txn.credit > 0 ? formatNumber(txn.credit) : "—"}
-                                        </td>
-                                    </tr>
+                                                </td>
+                                                <td className="px-5 py-2"></td>
+                                                <td className="px-5 py-2 text-right text-xs font-medium tabular-nums text-muted">
+                                                    {child.debit > 0 ? formatNumber(child.debit) : "—"}
+                                                </td>
+                                                <td className="px-5 py-2 text-right text-xs font-medium tabular-nums text-muted">
+                                                    {child.credit > 0 ? formatNumber(child.credit) : "—"}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </React.Fragment>
                                 ))}
                             </tbody>
                             <tfoot>

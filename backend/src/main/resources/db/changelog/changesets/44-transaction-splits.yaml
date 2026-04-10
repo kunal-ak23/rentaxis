@@ -1,0 +1,39 @@
+databaseChangeLog:
+  - changeSet:
+      id: 44-transaction-splits
+      author: system
+      comment: "Add parent-child split support to financial_transactions"
+      changes:
+        - addColumn:
+            tableName: financial_transactions
+            columns:
+              - column:
+                  name: parent_transaction_id
+                  type: uuid
+                  constraints:
+                    nullable: true
+              - column:
+                  name: is_split_parent
+                  type: boolean
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: financial_transactions
+            baseColumnNames: parent_transaction_id
+            referencedTableName: financial_transactions
+            referencedColumnNames: id
+            constraintName: fk_fin_txn_parent
+            onDelete: CASCADE
+        - createIndex:
+            tableName: financial_transactions
+            indexName: idx_fin_txn_parent_id
+            columns:
+              - column:
+                  name: parent_transaction_id
+        - createIndex:
+            tableName: financial_transactions
+            indexName: idx_fin_txn_is_split_parent
+            columns:
+              - column:
+                  name: is_split_parent
