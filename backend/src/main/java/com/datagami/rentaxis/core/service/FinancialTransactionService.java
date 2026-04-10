@@ -85,21 +85,21 @@ public class FinancialTransactionService {
             return repository.findByUnitIdAndDateBetween(unitId, startDate, endDate);
         }
         if (propertyId != null && startDate != null && endDate != null) {
-            return repository.findByParentTransactionIsNullAndPropertyIdAndDateBetweenOrderByDateAsc(propertyId, startDate, endDate);
+            return repository.findByParentTransactionIsNullAndPropertyIdAndDateBetweenOrderByDateDesc(propertyId, startDate, endDate);
         }
         if (unitId != null) {
             return repository.findByUnitId(unitId);
         }
         if (propertyId != null) {
-            return repository.findByParentTransactionIsNullAndPropertyIdOrderByDateAsc(propertyId);
+            return repository.findByParentTransactionIsNullAndPropertyIdOrderByDateDesc(propertyId);
         }
         if (accountType != null) {
-            return repository.findByParentTransactionIsNullAndAccountTypeOrderByDateAsc(accountType);
+            return repository.findByParentTransactionIsNullAndAccountTypeOrderByDateDesc(accountType);
         }
         if (startDate != null && endDate != null) {
-            return repository.findByParentTransactionIsNullAndDateBetweenOrderByDateAsc(startDate, endDate);
+            return repository.findByParentTransactionIsNullAndDateBetweenOrderByDateDesc(startDate, endDate);
         }
-        return repository.findByParentTransactionIsNullOrderByDateAsc();
+        return repository.findByParentTransactionIsNullOrderByDateDesc();
     }
 
     @Transactional(readOnly = true)
@@ -151,9 +151,9 @@ public class FinancialTransactionService {
     public ReportDTO getOrganisationReport(LocalDate startDate, LocalDate endDate) {
         List<FinancialTransaction> transactions;
         if (startDate != null && endDate != null) {
-            transactions = repository.findBySplitParentFalseAndDateBetweenOrderByDateAsc(startDate, endDate);
+            transactions = repository.findBySplitParentFalseAndDateBetweenOrderByDateDesc(startDate, endDate);
         } else {
-            transactions = repository.findBySplitParentFalseOrderByDateAsc();
+            transactions = repository.findBySplitParentFalseOrderByDateDesc();
         }
         ReportDTO report = buildReport(transactions);
         report.setReportType("ORGANISATION");
@@ -166,9 +166,9 @@ public class FinancialTransactionService {
     public TrialBalanceDTO getTrialBalance(LocalDate startDate, LocalDate endDate) {
         List<FinancialTransaction> transactions;
         if (startDate != null && endDate != null) {
-            transactions = repository.findBySplitParentFalseAndDateBetweenOrderByDateAsc(startDate, endDate);
+            transactions = repository.findBySplitParentFalseAndDateBetweenOrderByDateDesc(startDate, endDate);
         } else {
-            transactions = repository.findBySplitParentFalseOrderByDateAsc();
+            transactions = repository.findBySplitParentFalseOrderByDateDesc();
         }
 
         Map<String, TrialBalanceDTO.TrialBalanceLine> lineMap = new LinkedHashMap<>();
@@ -203,9 +203,9 @@ public class FinancialTransactionService {
     public VatReturnDTO getVatReturn(LocalDate startDate, LocalDate endDate) {
         List<FinancialTransaction> transactions;
         if (startDate != null && endDate != null) {
-            transactions = repository.findBySplitParentFalseAndDateBetweenOrderByDateAsc(startDate, endDate);
+            transactions = repository.findBySplitParentFalseAndDateBetweenOrderByDateDesc(startDate, endDate);
         } else {
-            transactions = repository.findBySplitParentFalseOrderByDateAsc();
+            transactions = repository.findBySplitParentFalseOrderByDateDesc();
         }
 
         List<FinancialTransaction> vatTransactions = transactions.stream()

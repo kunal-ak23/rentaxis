@@ -20,9 +20,9 @@ public interface FinancialTransactionRepository extends JpaRepository<FinancialT
 
     List<FinancialTransaction> findByDateBetween(LocalDate startDate, LocalDate endDate);
 
-    List<FinancialTransaction> findAllByOrderByDateAsc();
+    List<FinancialTransaction> findAllByOrderByDateDesc();
 
-    List<FinancialTransaction> findByDateBetweenOrderByDateAsc(LocalDate startDate, LocalDate endDate);
+    List<FinancialTransaction> findByDateBetweenOrderByDateDesc(LocalDate startDate, LocalDate endDate);
 
     List<FinancialTransaction> findByPropertyIdAndDateBetween(UUID propertyId, LocalDate startDate, LocalDate endDate);
 
@@ -41,21 +41,21 @@ public interface FinancialTransactionRepository extends JpaRepository<FinancialT
     List<FinancialTransaction> findByStaffId(UUID staffId);
 
     // Split transaction queries: exclude child transactions (parent_transaction_id IS NULL)
-    List<FinancialTransaction> findByParentTransactionIsNullOrderByDateAsc();
+    List<FinancialTransaction> findByParentTransactionIsNullOrderByDateDesc();
 
-    List<FinancialTransaction> findByParentTransactionIsNullAndPropertyIdOrderByDateAsc(UUID propertyId);
+    List<FinancialTransaction> findByParentTransactionIsNullAndPropertyIdOrderByDateDesc(UUID propertyId);
 
-    List<FinancialTransaction> findByParentTransactionIsNullAndAccountTypeOrderByDateAsc(AccountType accountType);
+    List<FinancialTransaction> findByParentTransactionIsNullAndAccountTypeOrderByDateDesc(AccountType accountType);
 
-    List<FinancialTransaction> findByParentTransactionIsNullAndDateBetweenOrderByDateAsc(LocalDate startDate, LocalDate endDate);
+    List<FinancialTransaction> findByParentTransactionIsNullAndDateBetweenOrderByDateDesc(LocalDate startDate, LocalDate endDate);
 
-    List<FinancialTransaction> findByParentTransactionIsNullAndPropertyIdAndDateBetweenOrderByDateAsc(UUID propertyId, LocalDate startDate, LocalDate endDate);
+    List<FinancialTransaction> findByParentTransactionIsNullAndPropertyIdAndDateBetweenOrderByDateDesc(UUID propertyId, LocalDate startDate, LocalDate endDate);
 
     // Fetch children for a specific parent
     List<FinancialTransaction> findByParentTransaction_Id(UUID parentTransactionId);
 
     // Aggregate report queries: exclude split parents (is_split_parent = true) to avoid double-counting
-    List<FinancialTransaction> findBySplitParentFalseOrderByDateAsc();
+    List<FinancialTransaction> findBySplitParentFalseOrderByDateDesc();
 
-    List<FinancialTransaction> findBySplitParentFalseAndDateBetweenOrderByDateAsc(LocalDate startDate, LocalDate endDate);
+    List<FinancialTransaction> findBySplitParentFalseAndDateBetweenOrderByDateDesc(LocalDate startDate, LocalDate endDate);
 }

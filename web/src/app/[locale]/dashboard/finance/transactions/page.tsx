@@ -387,34 +387,24 @@ export default function TransactionsPage() {
     const totalCredit = transactions.reduce((s, t) => s + (t.credit || 0), 0);
 
     // Simple ledger: group paired double-entry rows into single "money in / money out" rows
-    const simpleLedger = (() => {
-        // Only show INCOME (money in) and EXPENSE (money out) entries, skip ASSET/LIABILITY pairs
-        const rows = transactions
-            .filter(t => t.accountType === "INCOME" || t.accountType === "EXPENSE")
-            .map(t => {
-                const isIncome = t.accountType === "INCOME";
-                return {
-                    id: t.id,
-                    date: t.date,
-                    description: t.description,
-                    property: t.property,
-                    unit: t.unit,
-                    moneyIn: isIncome ? (t.credit || t.debit || 0) : 0,
-                    moneyOut: !isIncome ? (t.debit || t.credit || 0) : 0,
-                    notes: t.notes,
-                    splitParent: t.splitParent || false,
-                    splitChildren: t.splitChildren,
-                };
-            })
-            .sort((a, b) => a.date.localeCompare(b.date));
-
-        // Compute running balance
-        let balance = 0;
-        return rows.map(r => {
-            balance += r.moneyIn - r.moneyOut;
-            return { ...r, balance };
-        });
-    })();
+    const simpleLedger = transactions
+        .filter(t => t.accountType === "INCOME" || t.accountType === "EXPENSE")
+        .map(t => {
+            const isIncome = t.accountType === "INCOME";
+            return {
+                id: t.id,
+                date: t.date,
+                description: t.description,
+                property: t.property,
+                unit: t.unit,
+                moneyIn: isIncome ? (t.credit || t.debit || 0) : 0,
+                moneyOut: !isIncome ? (t.debit || t.credit || 0) : 0,
+                notes: t.notes,
+                splitParent: t.splitParent || false,
+                splitChildren: t.splitChildren,
+            };
+        })
+        .sort((a, b) => b.date.localeCompare(a.date));
 
     const simpleTotalIn = simpleLedger.reduce((s, r) => s + r.moneyIn, 0);
     const simpleTotalOut = simpleLedger.reduce((s, r) => s + r.moneyOut, 0);
@@ -771,7 +761,6 @@ export default function TransactionsPage() {
                                     <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">{t("property")}</th>
                                     <th className="text-right px-5 py-3.5 text-[10px] font-bold text-emerald-500 uppercase tracking-wider">Money In</th>
                                     <th className="text-right px-5 py-3.5 text-[10px] font-bold text-red-400 uppercase tracking-wider">Money Out</th>
-                                    <th className="text-right px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">Balance</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-border">
@@ -829,9 +818,6 @@ export default function TransactionsPage() {
                                                     <span className="text-red-500">-{formatNumber(row.moneyOut)}</span>
                                                 ) : "—"}
                                             </td>
-                                            <td className="px-5 py-3 text-right text-xs font-bold tabular-nums text-foreground">
-                                                {formatNumber(row.balance)}
-                                            </td>
                                         </tr>
                                         {row.splitParent && expandedSplits.has(row.id) && row.splitChildren && row.splitChildren.map((child, idx) => (
                                             <tr key={child.id} className="bg-input/10 border-b border-border/50">
@@ -863,7 +849,6 @@ export default function TransactionsPage() {
                                                 <td className="px-5 py-2 text-right text-xs font-medium tabular-nums text-muted">
                                                     {child.debit > 0 ? `-${formatNumber(child.debit)}` : "—"}
                                                 </td>
-                                                <td className="px-5 py-2"></td>
                                             </tr>
                                         ))}
                                     </React.Fragment>
@@ -877,9 +862,6 @@ export default function TransactionsPage() {
                                     </td>
                                     <td className="px-5 py-3 text-right text-xs font-bold tabular-nums text-red-500">
                                         {simpleTotalOut > 0 ? `-${formatNumber(simpleTotalOut)}` : "—"}
-                                    </td>
-                                    <td className="px-5 py-3 text-right text-xs font-bold tabular-nums text-foreground">
-                                        {formatNumber(simpleTotalIn - simpleTotalOut)}
                                     </td>
                                 </tr>
                             </tfoot>
