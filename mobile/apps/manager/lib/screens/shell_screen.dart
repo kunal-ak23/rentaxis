@@ -31,11 +31,8 @@ class _ShellScreenState extends ConsumerState<ShellScreen> {
   int _calculateIndex(String location) {
     if (location.startsWith('/properties')) return 1;
     if (location.startsWith('/tickets')) return 2;
-    if (location.startsWith('/payments')) return 3;
-    if (location.startsWith('/more') ||
-        location.startsWith('/renters') ||
-        location.startsWith('/finance') ||
-        location.startsWith('/profile')) return 4;
+    if (location.startsWith('/meetings')) return 3;
+    if (location.startsWith('/payments')) return 4;
     return 0;
   }
 
@@ -57,22 +54,27 @@ class _ShellScreenState extends ConsumerState<ShellScreen> {
           fit: BoxFit.contain,
         ),
         actions: [
+          IconButton(
+            onPressed: () => context.push('/notifications'),
+            icon: Badge(
+              isLabelVisible: notifState.unreadCount > 0,
+              label: Text(
+                notifState.unreadCount > 9
+                    ? '9+'
+                    : '${notifState.unreadCount}',
+                style: const TextStyle(fontSize: 9, color: Colors.white),
+              ),
+              backgroundColor: AppColors.danger,
+              child: const Icon(Icons.notifications_outlined,
+                  color: AppColors.navyDark),
+            ),
+          ),
           Padding(
             padding: const EdgeInsets.only(right: 8),
             child: IconButton(
-              onPressed: () => context.push('/notifications'),
-              icon: Badge(
-                isLabelVisible: notifState.unreadCount > 0,
-                label: Text(
-                  notifState.unreadCount > 9
-                      ? '9+'
-                      : '${notifState.unreadCount}',
-                  style: const TextStyle(fontSize: 9, color: Colors.white),
-                ),
-                backgroundColor: AppColors.danger,
-                child: const Icon(Icons.notifications_outlined,
-                    color: AppColors.navyDark),
-              ),
+              onPressed: () => context.push('/more'),
+              icon: const Icon(Icons.person_outline_rounded,
+                  color: AppColors.navyDark),
             ),
           ),
         ],
@@ -89,9 +91,9 @@ class _ShellScreenState extends ConsumerState<ShellScreen> {
             case 2:
               context.go('/tickets');
             case 3:
-              context.go('/payments');
+              context.go('/meetings');
             case 4:
-              context.go('/more');
+              context.go('/payments');
           }
         },
       ),
@@ -112,8 +114,8 @@ class _FrostedBottomNav extends StatelessWidget {
     (icon: Icons.dashboard_outlined, activeIcon: Icons.dashboard_rounded, label: 'Dashboard'),
     (icon: Icons.apartment_outlined, activeIcon: Icons.apartment_rounded, label: 'Properties'),
     (icon: Icons.confirmation_number_outlined, activeIcon: Icons.confirmation_number_rounded, label: 'Tickets'),
+    (icon: Icons.event_outlined, activeIcon: Icons.event_rounded, label: 'Meetings'),
     (icon: Icons.payment_outlined, activeIcon: Icons.payment_rounded, label: 'Payments'),
-    (icon: Icons.more_horiz, activeIcon: Icons.more_horiz_rounded, label: 'More'),
   ];
 
   @override

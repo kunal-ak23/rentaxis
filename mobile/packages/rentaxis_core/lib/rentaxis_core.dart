@@ -27,6 +27,7 @@ export 'api/services/report_service.dart';
 export 'api/services/property_contact_service.dart';
 export 'api/services/listing_api_service.dart';
 export 'api/services/location_service.dart';
+export 'api/services/meeting_service.dart';
 
 // Models
 export 'models/auth_response.dart';

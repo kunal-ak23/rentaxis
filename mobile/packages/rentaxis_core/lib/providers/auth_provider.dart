@@ -30,8 +30,7 @@ final locationServiceProvider = Provider<LocationService>(
 /// must handle the null case rather than falling back to the wrong tenant.
 String? resolveTenantSlug(AuthState auth) {
   if (auth.tenants.isEmpty || auth.tenantId == null) return null;
-  final matches =
-      auth.tenants.where((t) => t['tenantId'] == auth.tenantId);
+  final matches = auth.tenants.where((t) => t['id'] == auth.tenantId);
   if (matches.isEmpty) return null;
   return matches.first['slug'] as String?;
 }

@@ -84,4 +84,11 @@ class LeaseService {
   Future<void> deleteAttachment(String attachmentId) async {
     await _dio.delete('/v1/leases/attachments/$attachmentId');
   }
+
+  Future<Map<String, dynamic>> extendLease(
+      String leaseId, String newEndDate) async {
+    final response = await _dio.post('/v1/leases/$leaseId/extend',
+        data: {'newEndDate': newEndDate});
+    return response.data;
+  }
 }

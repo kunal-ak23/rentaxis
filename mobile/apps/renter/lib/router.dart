@@ -14,6 +14,9 @@ import 'screens/shell_screen.dart';
 import 'screens/browse/browse_screen.dart';
 import 'screens/browse/listing_detail_screen.dart';
 import 'screens/wishlist/wishlist_screen.dart';
+import 'screens/meetings_screen.dart';
+import 'screens/meeting_detail_screen.dart';
+import 'screens/create_meeting_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authProvider);
@@ -100,6 +103,22 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/wishlist',
             builder: (context, state) => const WishlistScreen(),
+          ),
+          GoRoute(
+            path: '/meetings',
+            builder: (context, state) => const MeetingsScreen(),
+            routes: [
+              GoRoute(
+                path: 'create',
+                builder: (context, state) => const CreateMeetingScreen(),
+              ),
+              GoRoute(
+                path: ':id',
+                builder: (context, state) => MeetingDetailScreen(
+                  meetingId: state.pathParameters['id']!,
+                ),
+              ),
+            ],
           ),
         ],
       ),

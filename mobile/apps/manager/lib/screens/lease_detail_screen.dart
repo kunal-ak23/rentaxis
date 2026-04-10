@@ -35,6 +35,9 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
   bool _isActioning = false;
   String? _error;
 
+  DateTime? _extendDate;
+  bool _isExtending = false;
+
   @override
   void initState() {
     super.initState();
@@ -210,6 +213,105 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
     }
   }
 
+  Future<void> _showExtendDialog() async {
+    final lease = _lease!;
+    final currentEnd = DateTime.tryParse(lease['endDate'] ?? '') ?? DateTime.now();
+    DateTime picked = currentEnd.add(const Duration(days: 365));
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Extend Lease'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Current end date: ${lease['endDate'] ?? '-'}',
+                  style: const TextStyle(color: AppColors.textMuted, fontSize: 13)),
+              const SizedBox(height: 16),
+              const Text('New end date:',
+                  style: TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              InkWell(
+                onTap: () async {
+                  final d = await showDatePicker(
+                    context: ctx,
+                    initialDate: picked,
+                    firstDate: currentEnd.add(const Duration(days: 1)),
+                    lastDate: DateTime.now().add(const Duration(days: 3650)),
+                  );
+                  if (d != null) setDialogState(() => picked = d);
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: AppColors.border),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.calendar_today_outlined, size: 18, color: AppColors.primary),
+                      const SizedBox(width: 8),
+                      Text(
+                        '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: _isExtending
+                  ? null
+                  : () async {
+                      setDialogState(() => _isExtending = true);
+                      try {
+                        final newEndDate =
+                            '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
+                        await ref
+                            .read(_leaseServiceProvider)
+                            .extendLease(widget.leaseId, newEndDate);
+                        if (mounted) {
+                          Navigator.pop(ctx);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content: Text('Lease extended successfully')),
+                          );
+                          _loadData();
+                        }
+                      } catch (e) {
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content: Text('Failed to extend lease')),
+                          );
+                        }
+                      } finally {
+                        if (mounted) setDialogState(() => _isExtending = false);
+                      }
+                    },
+              child: _isExtending
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Text('Extend'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -240,8 +342,20 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
             PopupMenuButton<String>(
               onSelected: (v) {
                 if (v == 'terminate') context.push('/leases/${widget.leaseId}/settlement');
+                if (v == 'extend') _showExtendDialog();
               },
               itemBuilder: (_) => [
+                if (status == 'ACTIVE')
+                  const PopupMenuItem(
+                    value: 'extend',
+                    child: Row(
+                      children: [
+                        Icon(Icons.calendar_month_outlined, color: AppColors.primary, size: 18),
+                        SizedBox(width: 8),
+                        Text('Extend Lease'),
+                      ],
+                    ),
+                  ),
                 const PopupMenuItem(
                   value: 'terminate',
                   child: Row(

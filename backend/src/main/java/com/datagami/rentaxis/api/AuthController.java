@@ -101,7 +101,7 @@ public class AuthController {
         // SUPER_ADMIN sees all tenants
         if (user.getRole() == UserRole.SUPER_ADMIN) {
             List<TenantInfo> allTenants = orgService.listAllTenants().stream()
-                    .map(org -> new TenantInfo(org.getId().toString(), org.getName()))
+                    .map(org -> new TenantInfo(org.getId().toString(), org.getName(), org.getSlug()))
                     .toList();
             return ResponseEntity.ok(allTenants);
         }
@@ -118,7 +118,7 @@ public class AuthController {
         return ResponseEntity.ok(tenants);
     }
 
-    public record TenantInfo(String id, String name) {
+    public record TenantInfo(String id, String name, String slug) {
     }
 
     // --- Self-Service Profile ---
