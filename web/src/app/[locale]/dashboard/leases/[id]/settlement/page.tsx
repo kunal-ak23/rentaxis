@@ -689,6 +689,7 @@ export default function SettlementPage() {
                                                             key={att.id}
                                                             attachment={att}
                                                             onDelete={(id) => d.id && handleDeleteAttachment(id, d.id)}
+                                                            onPreview={setPreviewAttachment}
                                                             isDraft={isDraft}
                                                         />
                                                     ))}
@@ -825,6 +826,7 @@ export default function SettlementPage() {
                                                             key={att.id}
                                                             attachment={att}
                                                             onDelete={(id) => d.id && handleDeleteAttachment(id, d.id)}
+                                                            onPreview={setPreviewAttachment}
                                                             isDraft={isDraft}
                                                         />
                                                     ))}
