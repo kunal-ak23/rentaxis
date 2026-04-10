@@ -250,16 +250,21 @@ public class FinancialTransactionService {
         boolean hasDebit = debit.compareTo(BigDecimal.ZERO) > 0;
         boolean hasCredit = credit.compareTo(BigDecimal.ZERO) > 0;
         if (hasDebit == hasCredit) {
-            throw new RuntimeException("Exactly one of debit or credit must be positive for a split transaction");
+            throw new IllegalArgumentException("Exactly one of debit or credit must be positive for a split transaction");
         }
         BigDecimal parentAmount = hasDebit ? debit : credit;
+
+        // Null guard and minimum split check
+        if (dto.getSplits() == null || dto.getSplits().size() < 2) {
+            throw new IllegalArgumentException("At least 2 split allocations are required");
+        }
 
         // Validate splits sum
         BigDecimal splitTotal = dto.getSplits().stream()
                 .map(CreateSplitTransactionDTO.SplitAllocation::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         if (splitTotal.compareTo(parentAmount) != 0) {
-            throw new RuntimeException("Split amounts (" + splitTotal + ") must equal transaction amount (" + parentAmount + ")");
+            throw new IllegalArgumentException("Split amounts (" + splitTotal + ") must equal transaction amount (" + parentAmount + ")");
         }
 
         // Resolve account
@@ -308,6 +313,10 @@ public class FinancialTransactionService {
         parent = repository.save(parent);
 
         // Create child transactions
+        BigDecimal accumulatedChildVat = BigDecimal.ZERO;
+        int splitIndex = 0;
+        int lastIndex = dto.getSplits().size() - 1;
+
         for (CreateSplitTransactionDTO.SplitAllocation split : dto.getSplits()) {
             FinancialTransaction child = new FinancialTransaction();
             child.setParentTransaction(parent);
@@ -325,10 +334,17 @@ public class FinancialTransactionService {
                 child.setDebit(BigDecimal.ZERO);
             }
 
-            // Pro-rate VAT
+            // Pro-rate VAT — last child absorbs rounding remainder
             if (dto.isVatApplicable() && parentAmount.compareTo(BigDecimal.ZERO) > 0 && parentVatAmount.compareTo(BigDecimal.ZERO) > 0) {
-                BigDecimal ratio = split.getAmount().divide(parentAmount, 10, RoundingMode.HALF_UP);
-                BigDecimal childVat = parentVatAmount.multiply(ratio).setScale(2, RoundingMode.HALF_UP);
+                BigDecimal childVat;
+                if (splitIndex == lastIndex) {
+                    // Last child absorbs rounding remainder
+                    childVat = parentVatAmount.subtract(accumulatedChildVat);
+                } else {
+                    BigDecimal ratio = split.getAmount().divide(parentAmount, 10, RoundingMode.HALF_UP);
+                    childVat = parentVatAmount.multiply(ratio).setScale(2, RoundingMode.HALF_UP);
+                    accumulatedChildVat = accumulatedChildVat.add(childVat);
+                }
                 child.setVatApplicable(true);
                 child.setVatRate(dto.getVatRate());
                 child.setVatAmount(childVat);
@@ -337,8 +353,8 @@ public class FinancialTransactionService {
             } else {
                 child.setVatApplicable(false);
                 child.setVatAmount(BigDecimal.ZERO);
-                child.setNetAmount(BigDecimal.ZERO);
-                child.setGrossAmount(BigDecimal.ZERO);
+                child.setNetAmount(split.getAmount());
+                child.setGrossAmount(split.getAmount());
             }
 
             // Resolve property/unit — prefer unit (property auto-derives from it)
@@ -355,6 +371,7 @@ public class FinancialTransactionService {
 
             child.setNotes(dto.getNotes());
             repository.save(child);
+            splitIndex++;
         }
 
         return repository.findById(parent.getId()).orElse(parent);
