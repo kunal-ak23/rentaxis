@@ -267,6 +267,12 @@ public class FinancialTransactionService {
             throw new IllegalArgumentException("Split amounts (" + splitTotal + ") must equal transaction amount (" + parentAmount + ")");
         }
 
+        for (CreateSplitTransactionDTO.SplitAllocation split : dto.getSplits()) {
+            if (split.getPropertyId() == null && split.getUnitId() == null) {
+                throw new IllegalArgumentException("Each split must specify a property or unit");
+            }
+        }
+
         // Resolve account
         Account account = accountRepository.findById(dto.getAccountId())
                 .orElseThrow(() -> new RuntimeException("Account not found: " + dto.getAccountId()));

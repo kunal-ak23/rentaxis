@@ -70,6 +70,7 @@ export default function TransactionsPage() {
     const [viewMode, setViewMode] = useState<"simple" | "accounting">("simple");
     const [currentPage, setCurrentPage] = useState(1);
     const [expandedSplits, setExpandedSplits] = useState<Set<string>>(new Set());
+    const [submitError, setSubmitError] = useState("");
 
     const toggleSplitExpand = async (txnId: string) => {
         const next = new Set(expandedSplits);
@@ -222,6 +223,7 @@ export default function TransactionsPage() {
 
     const handleSubmit = async (ev: React.FormEvent) => {
         ev.preventDefault();
+        setSubmitError("");
         setSubmitting(true);
         try {
             if (splitMode) {
@@ -249,6 +251,9 @@ export default function TransactionsPage() {
                     setShowForm(false);
                     fetchTransactions();
                     resetForm();
+                } else {
+                    const errData = await res.json().catch(() => null);
+                    setSubmitError(errData?.message || "Failed to create split transaction");
                 }
             } else {
                 const body: Record<string, unknown> = {
@@ -275,6 +280,9 @@ export default function TransactionsPage() {
                     setShowForm(false);
                     fetchTransactions();
                     resetForm();
+                } else {
+                    const errData = await res.json().catch(() => null);
+                    setSubmitError(errData?.message || "Failed to create transaction");
                 }
             }
         } catch (err) {
@@ -370,7 +378,7 @@ export default function TransactionsPage() {
             const remainder = Math.round((transactionAmount - equalShare * prev.length) * 100) / 100;
             return prev.map((s, i) => ({
                 ...s,
-                amount: i === 0 ? equalShare + remainder : equalShare,
+                amount: i === prev.length - 1 ? equalShare + remainder : equalShare,
             }));
         });
     };
@@ -618,7 +626,7 @@ export default function TransactionsPage() {
                                                             value={split.propertyId}
                                                             onChange={ev => updateSplitProperty(index, ev.target.value)}
                                                         >
-                                                            <option value="">Select Property</option>
+                                                            <option value="">Organisation Level</option>
                                                             {properties.map(s => <option key={s.property.id} value={s.property.id}>{s.property.nameEn}</option>)}
                                                         </select>
                                                     </div>
@@ -629,7 +637,7 @@ export default function TransactionsPage() {
                                                             onChange={ev => updateSplitUnit(index, ev.target.value)}
                                                             disabled={!split.propertyId}
                                                         >
-                                                            <option value="">Property Level</option>
+                                                            <option value="">Property Level (No Unit)</option>
                                                             {split.units.map(u => <option key={u.id} value={u.id}>{u.unitNumber}{u.currentTenantName ? ` — ${u.currentTenantName}` : ""}</option>)}
                                                         </select>
                                                     </div>
@@ -715,6 +723,11 @@ export default function TransactionsPage() {
                                 <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("notes")}</label>
                                 <textarea placeholder="Optional notes" className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200 h-16 resize-none" value={formData.notes} onChange={ev => setFormData({ ...formData, notes: ev.target.value })} />
                             </div>
+                            {submitError && (
+                                <div className="col-span-2 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-xs text-red-700 font-medium">
+                                    {submitError}
+                                </div>
+                            )}
                             <div className="col-span-2 flex justify-end gap-3 mt-2">
                                 <button type="button" onClick={() => setShowForm(false)} className="px-6 py-3 text-xs font-bold text-muted cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-primary/20 focus:outline-none rounded-xl">{t("cancel")}</button>
                                 <button type="submit" disabled={submitting || (splitMode && !splitBalanced)} className="px-8 py-3 bg-primary text-primary-foreground rounded-lg text-xs font-bold cursor-pointer transition-all duration-200 hover:bg-primary/90 focus:ring-2 focus:ring-primary/20 focus:outline-none disabled:opacity-50 flex items-center gap-2">
