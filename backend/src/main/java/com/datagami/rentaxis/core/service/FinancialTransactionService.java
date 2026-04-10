@@ -1,21 +1,27 @@
 package com.datagami.rentaxis.core.service;
 
+import com.datagami.rentaxis.api.dto.CreateSplitTransactionDTO;
 import com.datagami.rentaxis.api.dto.ReportDTO;
 import com.datagami.rentaxis.api.dto.TrialBalanceDTO;
 import com.datagami.rentaxis.api.dto.VatReturnDTO;
 import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.entity.FinancialTransaction;
 import com.datagami.rentaxis.domain.entity.Property;
+import com.datagami.rentaxis.domain.entity.Staff;
 import com.datagami.rentaxis.domain.entity.Unit;
+import com.datagami.rentaxis.domain.entity.Vendor;
 import com.datagami.rentaxis.domain.entity.enums.AccountType;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.FinancialTransactionRepository;
 import com.datagami.rentaxis.domain.repository.PropertyRepository;
+import com.datagami.rentaxis.domain.repository.StaffRepository;
 import com.datagami.rentaxis.domain.repository.UnitRepository;
+import com.datagami.rentaxis.domain.repository.VendorRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -27,15 +33,21 @@ public class FinancialTransactionService {
     private final AccountRepository accountRepository;
     private final UnitRepository unitRepository;
     private final PropertyRepository propertyRepository;
+    private final VendorRepository vendorRepository;
+    private final StaffRepository staffRepository;
 
     public FinancialTransactionService(FinancialTransactionRepository repository,
             AccountRepository accountRepository,
             UnitRepository unitRepository,
-            PropertyRepository propertyRepository) {
+            PropertyRepository propertyRepository,
+            VendorRepository vendorRepository,
+            StaffRepository staffRepository) {
         this.repository = repository;
         this.accountRepository = accountRepository;
         this.unitRepository = unitRepository;
         this.propertyRepository = propertyRepository;
+        this.vendorRepository = vendorRepository;
+        this.staffRepository = staffRepository;
     }
 
     @Transactional
@@ -73,21 +85,21 @@ public class FinancialTransactionService {
             return repository.findByUnitIdAndDateBetween(unitId, startDate, endDate);
         }
         if (propertyId != null && startDate != null && endDate != null) {
-            return repository.findByPropertyIdAndDateBetween(propertyId, startDate, endDate);
+            return repository.findByParentTransactionIsNullAndPropertyIdAndDateBetweenOrderByDateAsc(propertyId, startDate, endDate);
         }
         if (unitId != null) {
             return repository.findByUnitId(unitId);
         }
         if (propertyId != null) {
-            return repository.findByPropertyId(propertyId);
+            return repository.findByParentTransactionIsNullAndPropertyIdOrderByDateAsc(propertyId);
         }
         if (accountType != null) {
-            return repository.findByAccountType(accountType);
+            return repository.findByParentTransactionIsNullAndAccountTypeOrderByDateAsc(accountType);
         }
         if (startDate != null && endDate != null) {
-            return repository.findByDateBetweenOrderByDateAsc(startDate, endDate);
+            return repository.findByParentTransactionIsNullAndDateBetweenOrderByDateAsc(startDate, endDate);
         }
-        return repository.findAllByOrderByDateAsc();
+        return repository.findByParentTransactionIsNullOrderByDateAsc();
     }
 
     @Transactional(readOnly = true)
@@ -228,6 +240,134 @@ public class FinancialTransactionService {
         dto.setPurchaseLines(purchaseLines);
         dto.setNetVatPayable(dto.getTotalOutputVat().subtract(dto.getTotalInputVat()));
         return dto;
+    }
+
+    @Transactional
+    public FinancialTransaction createSplitTransaction(CreateSplitTransactionDTO dto) {
+        // Validate that exactly one of debit/credit is positive
+        BigDecimal debit = dto.getDebit() != null ? dto.getDebit() : BigDecimal.ZERO;
+        BigDecimal credit = dto.getCredit() != null ? dto.getCredit() : BigDecimal.ZERO;
+        boolean hasDebit = debit.compareTo(BigDecimal.ZERO) > 0;
+        boolean hasCredit = credit.compareTo(BigDecimal.ZERO) > 0;
+        if (hasDebit == hasCredit) {
+            throw new RuntimeException("Exactly one of debit or credit must be positive for a split transaction");
+        }
+        BigDecimal parentAmount = hasDebit ? debit : credit;
+
+        // Validate splits sum
+        BigDecimal splitTotal = dto.getSplits().stream()
+                .map(CreateSplitTransactionDTO.SplitAllocation::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (splitTotal.compareTo(parentAmount) != 0) {
+            throw new RuntimeException("Split amounts (" + splitTotal + ") must equal transaction amount (" + parentAmount + ")");
+        }
+
+        // Resolve account
+        Account account = accountRepository.findById(dto.getAccountId())
+                .orElseThrow(() -> new RuntimeException("Account not found: " + dto.getAccountId()));
+
+        // Compute parent VAT
+        BigDecimal parentVatAmount = BigDecimal.ZERO;
+        BigDecimal parentGrossAmount = BigDecimal.ZERO;
+        BigDecimal parentNetAmount = parentAmount;
+        if (dto.isVatApplicable() && dto.getVatRate() != null) {
+            parentVatAmount = parentAmount.multiply(dto.getVatRate())
+                    .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+            parentGrossAmount = parentAmount.add(parentVatAmount);
+        }
+
+        // Create parent transaction (org-level, no property/unit)
+        FinancialTransaction parent = new FinancialTransaction();
+        parent.setDate(dto.getDate());
+        parent.setDescription(dto.getDescription());
+        parent.setAccount(account);
+        parent.setAccountCode(account.getCode());
+        parent.setAccountType(account.getAccountType());
+        parent.setDebit(debit);
+        parent.setCredit(credit);
+        parent.setVatApplicable(dto.isVatApplicable());
+        parent.setVatRate(dto.isVatApplicable() && dto.getVatRate() != null ? dto.getVatRate() : BigDecimal.ZERO);
+        parent.setVatAmount(parentVatAmount);
+        parent.setNetAmount(parentNetAmount);
+        parent.setGrossAmount(parentGrossAmount);
+        parent.setNotes(dto.getNotes());
+        parent.setSplitParent(true);
+
+        // Optional vendor/staff on parent
+        if (dto.getVendorId() != null) {
+            Vendor vendor = vendorRepository.findById(dto.getVendorId())
+                    .orElseThrow(() -> new RuntimeException("Vendor not found: " + dto.getVendorId()));
+            parent.setVendor(vendor);
+        }
+        if (dto.getStaffId() != null) {
+            Staff staff = staffRepository.findById(dto.getStaffId())
+                    .orElseThrow(() -> new RuntimeException("Staff not found: " + dto.getStaffId()));
+            parent.setStaff(staff);
+        }
+
+        parent = repository.save(parent);
+
+        // Create child transactions
+        for (CreateSplitTransactionDTO.SplitAllocation split : dto.getSplits()) {
+            FinancialTransaction child = new FinancialTransaction();
+            child.setParentTransaction(parent);
+            child.setDate(dto.getDate());
+            child.setDescription(dto.getDescription());
+            child.setAccount(account);
+            child.setAccountCode(account.getCode());
+            child.setAccountType(account.getAccountType());
+
+            if (hasDebit) {
+                child.setDebit(split.getAmount());
+                child.setCredit(BigDecimal.ZERO);
+            } else {
+                child.setCredit(split.getAmount());
+                child.setDebit(BigDecimal.ZERO);
+            }
+
+            // Pro-rate VAT
+            if (dto.isVatApplicable() && parentAmount.compareTo(BigDecimal.ZERO) > 0 && parentVatAmount.compareTo(BigDecimal.ZERO) > 0) {
+                BigDecimal ratio = split.getAmount().divide(parentAmount, 10, RoundingMode.HALF_UP);
+                BigDecimal childVat = parentVatAmount.multiply(ratio).setScale(2, RoundingMode.HALF_UP);
+                child.setVatApplicable(true);
+                child.setVatRate(dto.getVatRate());
+                child.setVatAmount(childVat);
+                child.setNetAmount(split.getAmount());
+                child.setGrossAmount(split.getAmount().add(childVat));
+            } else {
+                child.setVatApplicable(false);
+                child.setVatAmount(BigDecimal.ZERO);
+                child.setNetAmount(BigDecimal.ZERO);
+                child.setGrossAmount(BigDecimal.ZERO);
+            }
+
+            // Resolve property/unit — prefer unit (property auto-derives from it)
+            if (split.getUnitId() != null) {
+                Unit unit = unitRepository.findById(split.getUnitId())
+                        .orElseThrow(() -> new RuntimeException("Unit not found: " + split.getUnitId()));
+                child.setUnit(unit);
+                child.setProperty(unit.getProperty());
+            } else if (split.getPropertyId() != null) {
+                Property property = propertyRepository.findById(split.getPropertyId())
+                        .orElseThrow(() -> new RuntimeException("Property not found: " + split.getPropertyId()));
+                child.setProperty(property);
+            }
+
+            child.setNotes(dto.getNotes());
+            repository.save(child);
+        }
+
+        return repository.findById(parent.getId()).orElse(parent);
+    }
+
+    @Transactional(readOnly = true)
+    public FinancialTransaction getTransactionWithChildren(UUID id) {
+        FinancialTransaction txn = repository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Transaction not found: " + id));
+        if (txn.isSplitParent()) {
+            txn.setSplitChildren(repository.findByParentTransaction_Id(id));
+        }
+        return txn;
     }
 
     @Transactional(readOnly = true)
