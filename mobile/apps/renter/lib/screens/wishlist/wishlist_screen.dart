@@ -9,8 +9,8 @@ import 'package:rentaxis_core/rentaxis_core.dart';
 final _wishlistProvider =
     FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
       final service = ref.watch(listingApiServiceProvider);
-      final data = await service.getWishlist(size: 100);
-      return (data['content'] as List? ?? []).cast<Map<String, dynamic>>();
+      final items = await service.getWishlist();
+      return items.cast<Map<String, dynamic>>();
     });
 
 // ── Screen ────────────────────────────────────────────────────────────────────

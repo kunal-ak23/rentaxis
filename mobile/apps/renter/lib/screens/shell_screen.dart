@@ -71,12 +71,14 @@ class _ShellScreenState extends ConsumerState<ShellScreen> {
             case 1:
               context.go('/browse');
             case 2:
-              context.go('/meetings');
+              context.go('/wishlist');
             case 3:
-              context.go('/payments');
+              context.go('/meetings');
             case 4:
-              context.go('/tickets');
+              context.go('/payments');
             case 5:
+              context.go('/tickets');
+            case 6:
               context.go('/profile');
           }
         },
@@ -86,10 +88,11 @@ class _ShellScreenState extends ConsumerState<ShellScreen> {
 
   int _calculateIndex(String location) {
     if (location.startsWith('/browse')) return 1;
-    if (location.startsWith('/meetings')) return 2;
-    if (location.startsWith('/payments')) return 3;
-    if (location.startsWith('/tickets')) return 4;
-    if (location.startsWith('/profile')) return 5;
+    if (location.startsWith('/wishlist')) return 2;
+    if (location.startsWith('/meetings')) return 3;
+    if (location.startsWith('/payments')) return 4;
+    if (location.startsWith('/tickets')) return 5;
+    if (location.startsWith('/profile')) return 6;
     return 0;
   }
 }
@@ -106,6 +109,7 @@ class _FrostedBottomNav extends StatelessWidget {
   static const _items = [
     (icon: Icons.home_outlined, activeIcon: Icons.home_rounded, label: 'Home'),
     (icon: Icons.search_outlined, activeIcon: Icons.search_rounded, label: 'Browse'),
+    (icon: Icons.favorite_border, activeIcon: Icons.favorite, label: 'Saved'),
     (icon: Icons.event_outlined, activeIcon: Icons.event_rounded, label: 'Meetings'),
     (icon: Icons.payment_outlined, activeIcon: Icons.payment_rounded, label: 'Payments'),
     (icon: Icons.handyman_outlined, activeIcon: Icons.handyman_rounded, label: 'Tickets'),
@@ -117,7 +121,7 @@ class _FrostedBottomNav extends StatelessWidget {
     return SafeArea(
       top: false,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+        padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(28),
           child: BackdropFilter(
@@ -185,7 +189,7 @@ class _NavItemWidget extends StatelessWidget {
         duration: const Duration(milliseconds: 250),
         curve: Curves.easeOutCubic,
         padding: EdgeInsets.symmetric(
-          horizontal: isSelected ? 18 : 14,
+          horizontal: isSelected ? 10 : 6,
           vertical: 8,
         ),
         decoration: BoxDecoration(
@@ -202,7 +206,7 @@ class _NavItemWidget extends StatelessWidget {
               child: Icon(
                 isSelected ? activeIcon : icon,
                 key: ValueKey(isSelected),
-                size: 24,
+                size: 22,
                 color: isSelected ? AppColors.primary : AppColors.textMuted,
               ),
             ),
@@ -210,7 +214,7 @@ class _NavItemWidget extends StatelessWidget {
             Text(
               label,
               style: GoogleFonts.josefinSans(
-                fontSize: 11,
+                fontSize: 10,
                 fontWeight: isSelected ? FontWeight.w700 : FontWeight.w400,
                 color: isSelected ? AppColors.primary : AppColors.textMuted,
               ),

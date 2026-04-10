@@ -19,8 +19,8 @@ class WishlistIdsNotifier extends StateNotifier<Set<String>> {
 
   Future<void> _load() async {
     try {
-      final data = await _service.getWishlist(size: 200);
-      final ids = (data['content'] as List? ?? [])
+      final items = await _service.getWishlist();
+      final ids = items
           .cast<Map<String, dynamic>>()
           .map((l) => l['id'] as String? ?? '')
           .where((id) => id.isNotEmpty)

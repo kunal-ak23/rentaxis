@@ -59,15 +59,9 @@ class ListingApiService {
     await _dio.delete('/marketplace/listings/$listingId/interest');
   }
 
-  Future<Map<String, dynamic>> getWishlist({
-    int page = 0,
-    int size = 20,
-  }) async {
-    final response = await _dio.get(
-      '/marketplace/me/wishlist',
-      queryParameters: {'page': page, 'size': size},
-    );
-    return response.data as Map<String, dynamic>;
+  Future<List<dynamic>> getWishlist() async {
+    final response = await _dio.get('/marketplace/me/wishlist');
+    return response.data as List<dynamic>;
   }
 
   // ── Landlord / Manager API ───────────────────────────────────────────────
