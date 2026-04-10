@@ -39,4 +39,18 @@ public interface FinancialTransactionRepository extends JpaRepository<FinancialT
     List<FinancialTransaction> findByVendorIdAndDateBetween(UUID vendorId, LocalDate start, LocalDate end);
 
     List<FinancialTransaction> findByStaffId(UUID staffId);
+
+    // Split transaction queries: exclude child transactions (parent_transaction_id IS NULL)
+    List<FinancialTransaction> findByParentTransactionIsNullOrderByDateAsc();
+
+    List<FinancialTransaction> findByParentTransactionIsNullAndPropertyIdOrderByDateAsc(UUID propertyId);
+
+    List<FinancialTransaction> findByParentTransactionIsNullAndAccountTypeOrderByDateAsc(AccountType accountType);
+
+    List<FinancialTransaction> findByParentTransactionIsNullAndDateBetweenOrderByDateAsc(LocalDate startDate, LocalDate endDate);
+
+    List<FinancialTransaction> findByParentTransactionIsNullAndPropertyIdAndDateBetweenOrderByDateAsc(UUID propertyId, LocalDate startDate, LocalDate endDate);
+
+    // Fetch children for a specific parent
+    List<FinancialTransaction> findByParentTransactionId(UUID parentTransactionId);
 }
