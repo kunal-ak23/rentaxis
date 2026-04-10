@@ -353,17 +353,19 @@ export default function MeetingDetailPage() {
                     </h2>
 
                     {meeting.details.detailType === "CHEQUE_REPLACEMENT" && (
-                        <div className="flex items-center gap-2.5">
-                            <Hash size={14} className="text-muted flex-shrink-0" />
-                            <p className="text-xs text-foreground">
-                                <span className="font-semibold">
-                                    {meeting.details.paymentScheduleIds?.length ?? 0}
-                                </span>{" "}
-                                {(meeting.details.paymentScheduleIds?.length ?? 0) === 1
-                                    ? "cheque"
-                                    : "cheques"}{" "}
-                                to be replaced
-                            </p>
+                        <div className="space-y-2">
+                            {(meeting.details.paymentScheduleIds?.length ?? 0) > 0 && (
+                                <div className="flex items-center gap-2.5">
+                                    <Hash size={14} className="text-muted flex-shrink-0" />
+                                    <p className="text-xs text-foreground">
+                                        <span className="font-semibold">
+                                            {meeting.details.paymentScheduleIds!.length}
+                                        </span>{" "}
+                                        {meeting.details.paymentScheduleIds!.length === 1 ? "cheque" : "cheques"}{" "}
+                                        to be replaced
+                                    </p>
+                                </div>
+                            )}
                         </div>
                     )}
 

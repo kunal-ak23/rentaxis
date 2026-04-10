@@ -353,7 +353,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
 
         // Details step extras
         if (officePurpose === "CHEQUE_REPLACEMENT" && chequeNotes) {
-            body.notes = chequeNotes;
+            body.detailNotes = chequeNotes;
         }
         if (officePurpose === "LEASE_RENEWAL") {
             if (renewalStartDate) body.proposedStartDate = renewalStartDate;
