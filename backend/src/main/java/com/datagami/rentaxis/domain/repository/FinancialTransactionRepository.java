@@ -52,5 +52,5 @@ public interface FinancialTransactionRepository extends JpaRepository<FinancialT
     List<FinancialTransaction> findByParentTransactionIsNullAndPropertyIdAndDateBetweenOrderByDateAsc(UUID propertyId, LocalDate startDate, LocalDate endDate);
 
     // Fetch children for a specific parent
-    List<FinancialTransaction> findByParentTransactionId(UUID parentTransactionId);
+    List<FinancialTransaction> findByParentTransaction_Id(UUID parentTransactionId);
 }
