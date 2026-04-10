@@ -53,4 +53,9 @@ public interface FinancialTransactionRepository extends JpaRepository<FinancialT
 
     // Fetch children for a specific parent
     List<FinancialTransaction> findByParentTransaction_Id(UUID parentTransactionId);
+
+    // Aggregate report queries: exclude split parents (is_split_parent = true) to avoid double-counting
+    List<FinancialTransaction> findBySplitParentFalseOrderByDateAsc();
+
+    List<FinancialTransaction> findBySplitParentFalseAndDateBetweenOrderByDateAsc(LocalDate startDate, LocalDate endDate);
 }

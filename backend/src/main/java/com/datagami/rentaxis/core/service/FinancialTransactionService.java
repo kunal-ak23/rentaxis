@@ -151,9 +151,9 @@ public class FinancialTransactionService {
     public ReportDTO getOrganisationReport(LocalDate startDate, LocalDate endDate) {
         List<FinancialTransaction> transactions;
         if (startDate != null && endDate != null) {
-            transactions = repository.findByDateBetweenOrderByDateAsc(startDate, endDate);
+            transactions = repository.findBySplitParentFalseAndDateBetweenOrderByDateAsc(startDate, endDate);
         } else {
-            transactions = repository.findAllByOrderByDateAsc();
+            transactions = repository.findBySplitParentFalseOrderByDateAsc();
         }
         ReportDTO report = buildReport(transactions);
         report.setReportType("ORGANISATION");
@@ -166,9 +166,9 @@ public class FinancialTransactionService {
     public TrialBalanceDTO getTrialBalance(LocalDate startDate, LocalDate endDate) {
         List<FinancialTransaction> transactions;
         if (startDate != null && endDate != null) {
-            transactions = repository.findByDateBetween(startDate, endDate);
+            transactions = repository.findBySplitParentFalseAndDateBetweenOrderByDateAsc(startDate, endDate);
         } else {
-            transactions = repository.findAll();
+            transactions = repository.findBySplitParentFalseOrderByDateAsc();
         }
 
         Map<String, TrialBalanceDTO.TrialBalanceLine> lineMap = new LinkedHashMap<>();
@@ -203,9 +203,9 @@ public class FinancialTransactionService {
     public VatReturnDTO getVatReturn(LocalDate startDate, LocalDate endDate) {
         List<FinancialTransaction> transactions;
         if (startDate != null && endDate != null) {
-            transactions = repository.findByDateBetween(startDate, endDate);
+            transactions = repository.findBySplitParentFalseAndDateBetweenOrderByDateAsc(startDate, endDate);
         } else {
-            transactions = repository.findAll();
+            transactions = repository.findBySplitParentFalseOrderByDateAsc();
         }
 
         List<FinancialTransaction> vatTransactions = transactions.stream()
