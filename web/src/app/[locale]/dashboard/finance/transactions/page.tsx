@@ -80,7 +80,7 @@ export default function TransactionsPage() {
         }
         // Check if children already loaded
         const txn = transactions.find(t => t.id === txnId);
-        if (txn && (!txn.splitChildren || txn.splitChildren.length === 0)) {
+        if (txn && !txn.splitChildren) {
             try {
                 const res = await fetch(`/api/proxy/v1/finance/transactions/${txnId}`);
                 if (res.ok) {
@@ -93,8 +93,11 @@ export default function TransactionsPage() {
                 console.error(err);
             }
         }
-        next.add(txnId);
-        setExpandedSplits(next);
+        setExpandedSplits(prev => {
+            const s = new Set(prev);
+            s.add(txnId);
+            return s;
+        });
     };
     const pageSize = 25;
 
