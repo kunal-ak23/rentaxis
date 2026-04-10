@@ -250,13 +250,13 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
     const deriveHostUserId = useCallback((): string => {
         if (meetingType === "OFFICE_VISIT") {
             const lease = leases.find((l) => l.id === selectedLeaseId);
-            return lease?.propertyManagerId ?? selectedPmId ?? defaultHostId;
+            return lease?.propertyManagerId || selectedPmId || defaultHostId;
         }
         if (meetingType === "PROPERTY_VISIT") {
             const prop = properties.find((p) => p.id === selectedPropertyId);
-            return prop?.managerId ?? selectedPmId ?? defaultHostId;
+            return prop?.managerId || selectedPmId || defaultHostId;
         }
-        return selectedPmId ?? defaultHostId;
+        return selectedPmId || defaultHostId;
     }, [meetingType, leases, selectedLeaseId, properties, selectedPropertyId, selectedPmId, defaultHostId]);
 
     // Determine if we need to show PM picker (can't derive host)
@@ -614,7 +614,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                                             })}
                                         </div>
                                     )}
-                                    {!deriveHostUserId() && !showPmPicker && (
+                                    {!deriveHostUserId() && !showPmPicker && !(isRenter && !defaultHostId) && (
                                         <p className="text-[10px] text-warning mt-2">
                                             Could not determine host. Please go back and verify your selection.
                                         </p>
