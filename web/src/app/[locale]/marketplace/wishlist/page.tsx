@@ -208,9 +208,9 @@ export default function WishlistPage() {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchWishlist(token, currentPage - 1);
-      setItems(data.content as WishlistItem[]);
-      setTotalElements(data.totalElements);
+      const data = await fetchWishlist(token);
+      setItems(data as WishlistItem[]);
+      setTotalElements(data.length);
     } catch {
       setError(t('errorLoad'));
     } finally {

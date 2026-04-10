@@ -103,13 +103,9 @@ export async function removeInterest(listingId: string, token: string): Promise<
   if (!res.ok) throw new Error(`Failed to remove interest: ${res.status}`)
 }
 
-export async function fetchWishlist(
-  token: string,
-  page = 0
-): Promise<PageResponse<UnitListingSummaryDTO>> {
+export async function fetchWishlist(token: string): Promise<UnitListingSummaryDTO[]> {
   const headers: HeadersInit = { 'Authorization': `Bearer ${token}` }
-  const q = new URLSearchParams({ page: String(page), size: '20' })
-  const res = await fetch(`${MARKET_BASE}/me/wishlist?${q}`, { headers })
+  const res = await fetch(`${MARKET_BASE}/me/wishlist`, { headers })
   if (!res.ok) throw new Error(`Failed to fetch wishlist: ${res.status}`)
   return res.json()
 }

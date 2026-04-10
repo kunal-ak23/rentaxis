@@ -14,6 +14,7 @@ import { Pagination } from "@/components/ui/Pagination";
 import { formatCurrencyCompact } from "@/lib/format";
 import {
   fetchMarketplaceListings,
+  fetchWishlist,
   addInterest,
   removeInterest,
 } from "@/lib/api/listings";
@@ -409,6 +410,14 @@ function MarketplaceContent({ tenantSlug }: { tenantSlug: string }) {
   }, [currentPage, bedroomsParam, minRentParam, maxRentParam, furnishingParam, availableNowParam, sortParam, tenantSlug, session, userPos, t]);
 
   useEffect(() => { loadListings(); }, [loadListings]);
+
+  // Load existing wishlist state once on session load so hearts reflect reality
+  useEffect(() => {
+    if (!session) return;
+    fetchWishlist('').then(items => {
+      setWishlistedIds(new Set(items.map(i => i.id)));
+    }).catch(() => {});
+  }, [session]);
 
   function updateParams(updates: Record<string, string>) {
     const p = new URLSearchParams(searchParams.toString());

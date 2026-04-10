@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { formatCurrencyCompact, formatCurrency } from "@/lib/format";
 import {
   fetchMarketplaceListing,
+  fetchWishlist,
   addInterest,
   removeInterest,
 } from "@/lib/api/listings";
@@ -168,6 +169,13 @@ export default function ListingDetailPage({ params }: { params: Promise<{ tenant
       const token = (session?.user as { accessToken?: string })?.accessToken;
       const data = await fetchMarketplaceListing(tenantSlug, slug, token);
       setListing(data);
+      // If authenticated, check whether this listing is already wishlisted
+      if (session) {
+        try {
+          const wishlist = await fetchWishlist('');
+          setWishlisted(wishlist.some(item => item.id === data.id));
+        } catch {}
+      }
     } catch {
       setError(t('errorLoad'));
     } finally {
