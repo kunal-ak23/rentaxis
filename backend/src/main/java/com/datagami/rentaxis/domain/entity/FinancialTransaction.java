@@ -86,8 +86,8 @@ public class FinancialTransaction extends BaseTenantEntity {
     @Column(name = "is_split_parent")
     private boolean splitParent = false;
 
-    @JsonIgnore
-    @OneToMany(mappedBy = "parentTransaction", fetch = FetchType.LAZY)
+    @Transient
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
     private List<FinancialTransaction> splitChildren;
 
     /**
