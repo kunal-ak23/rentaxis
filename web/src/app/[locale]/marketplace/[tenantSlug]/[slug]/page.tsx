@@ -263,11 +263,20 @@ export default function ListingDetailPage({ params }: { params: Promise<{ tenant
     <div className="min-h-screen bg-neutral-50 pb-32 lg:pb-0">
       {/* Back nav */}
       <div className="bg-white border-b border-neutral-100 sticky top-0 z-20">
-        <div className="max-w-screen-xl mx-auto px-4 py-3 flex items-center gap-3">
+        <div className="max-w-screen-xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
           <Link href={`/marketplace/${tenantSlug}`} className="flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-900 transition-colors cursor-pointer">
             <ArrowLeft size={15} />
             {t('backToListings')}
           </Link>
+          {session && (
+            <Link
+              href="/dashboard/renter-portal"
+              className="flex items-center gap-1.5 text-xs text-neutral-500 hover:text-neutral-900 transition-colors cursor-pointer"
+            >
+              <ChevronLeft size={14} />
+              Dashboard
+            </Link>
+          )}
         </div>
       </div>
 

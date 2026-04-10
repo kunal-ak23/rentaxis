@@ -6,7 +6,7 @@ import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
   Heart, MapPin, Bed, Bath, Maximize2, List, Map as MapIcon,
-  SlidersHorizontal, X, AlertCircle, RefreshCw, Loader2, Image as ImageIcon,
+  SlidersHorizontal, X, AlertCircle, RefreshCw, Loader2, Image as ImageIcon, ChevronLeft,
 } from "lucide-react";
 import { Link } from "@/i18n/routing";
 import { cn } from "@/lib/utils";
@@ -469,11 +469,22 @@ function MarketplaceContent({ tenantSlug }: { tenantSlug: string }) {
       {/* Top bar */}
       <div className="bg-white border-b border-neutral-100 sticky top-0 z-30">
         <div className="max-w-screen-xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
-          <div>
-            <h1 className="text-base font-bold text-neutral-900">{t('title')}</h1>
-            {totalElements > 0 && !loading && (
-              <p className="text-xs text-neutral-400">{totalElements} properties</p>
+          <div className="flex items-center gap-3">
+            {session && (
+              <Link
+                href="/dashboard/renter-portal"
+                className="flex items-center gap-1.5 text-xs text-neutral-500 hover:text-neutral-900 transition-colors cursor-pointer"
+              >
+                <ChevronLeft size={15} />
+                Dashboard
+              </Link>
             )}
+            <div>
+              <h1 className="text-base font-bold text-neutral-900">{t('title')}</h1>
+              {totalElements > 0 && !loading && (
+                <p className="text-xs text-neutral-400">{totalElements} properties</p>
+              )}
+            </div>
           </div>
 
           <div className="flex items-center gap-2">
