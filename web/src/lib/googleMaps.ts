@@ -1,13 +1,12 @@
-import { Loader } from "@googlemaps/js-api-loader";
+import { setOptions } from "@googlemaps/js-api-loader";
 
-let loader: Loader | null = null;
+let configured = false;
 
-export function getGoogleMapsLoader(): Loader {
-  if (!loader) {
-    loader = new Loader({
-      apiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY!,
-      version: "weekly",
-    });
-  }
-  return loader;
+export function ensureGoogleMapsConfigured(): void {
+  if (configured) return;
+  setOptions({
+    key: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY!,
+    v: "weekly",
+  });
+  configured = true;
 }

@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { getGoogleMapsLoader } from "@/lib/googleMaps";
+import { importLibrary } from "@googlemaps/js-api-loader";
+import { ensureGoogleMapsConfigured } from "@/lib/googleMaps";
 
 interface LocationPickerProps {
   lat: number | null;
@@ -15,50 +16,52 @@ export default function LocationPicker({ lat, lng, onLocationChange }: LocationP
   const markerRef = useRef<google.maps.Marker | null>(null);
 
   useEffect(() => {
-    getGoogleMapsLoader()
-      .importLibrary("maps")
-      .then(({ Map }) => {
-        if (!containerRef.current || mapRef.current) return;
+    ensureGoogleMapsConfigured();
 
-        const center = { lat: lat ?? 25.2048, lng: lng ?? 55.2708 };
-        const map = new Map(containerRef.current, {
-          center,
-          zoom: lat && lng ? 15 : 11,
-          mapTypeControl: false,
-          streetViewControl: false,
-          fullscreenControl: false,
-        });
-        mapRef.current = map;
+    Promise.all([
+      importLibrary("maps"),
+      importLibrary("marker"),
+    ]).then(([{ Map }, { Marker }]) => {
+      if (!containerRef.current || mapRef.current) return;
 
-        getGoogleMapsLoader()
-          .importLibrary("marker")
-          .then(({ Marker }) => {
-            const attachDragEnd = (m: google.maps.Marker) => {
-              m.addListener("dragend", () => {
-                const pos = m.getPosition();
-                if (pos) onLocationChange(pos.lat(), pos.lng());
-              });
-            };
-
-            if (lat && lng) {
-              const m = new Marker({ position: center, map, draggable: true });
-              attachDragEnd(m);
-              markerRef.current = m;
-            }
-
-            map.addListener("click", (e: google.maps.MapMouseEvent) => {
-              if (!e.latLng) return;
-              if (markerRef.current) {
-                markerRef.current.setPosition(e.latLng);
-              } else {
-                const m = new Marker({ position: e.latLng, map, draggable: true });
-                attachDragEnd(m);
-                markerRef.current = m;
-              }
-              onLocationChange(e.latLng.lat(), e.latLng.lng());
-            });
-          });
+      const center = { lat: lat ?? 25.2048, lng: lng ?? 55.2708 };
+      const map = new Map(containerRef.current, {
+        center,
+        zoom: lat && lng ? 15 : 11,
+        mapTypeControl: false,
+        streetViewControl: false,
+        fullscreenControl: false,
       });
+      mapRef.current = map;
+
+      const attachDragEnd = (m: google.maps.Marker) => {
+        m.addListener("dragend", () => {
+          const pos = m.getPosition();
+          if (pos) onLocationChange(pos.lat(), pos.lng());
+        });
+      };
+
+      if (lat && lng) {
+        const m = new Marker({ position: center, map, draggable: true });
+        attachDragEnd(m);
+        markerRef.current = m;
+      }
+
+      map.addListener("click", (e: google.maps.MapMouseEvent) => {
+        if (!e.latLng) return;
+        if (markerRef.current) {
+          markerRef.current.setPosition(e.latLng);
+        } else {
+          importLibrary("marker").then(({ Marker: M }) => {
+            if (!mapRef.current) return;
+            const m = new M({ position: e.latLng!, map: mapRef.current, draggable: true });
+            attachDragEnd(m);
+            markerRef.current = m;
+          });
+        }
+        onLocationChange(e.latLng.lat(), e.latLng.lng());
+      });
+    });
 
     return () => {
       markerRef.current?.setMap(null);
@@ -75,17 +78,16 @@ export default function LocationPicker({ lat, lng, onLocationChange }: LocationP
     if (markerRef.current) {
       markerRef.current.setPosition(pos);
     } else {
-      getGoogleMapsLoader()
-        .importLibrary("marker")
-        .then(({ Marker }) => {
-          if (!mapRef.current) return;
-          const m = new Marker({ position: pos, map: mapRef.current, draggable: true });
-          m.addListener("dragend", () => {
-            const p = m.getPosition();
-            if (p) onLocationChange(p.lat(), p.lng());
-          });
-          markerRef.current = m;
+      ensureGoogleMapsConfigured();
+      importLibrary("marker").then(({ Marker }) => {
+        if (!mapRef.current) return;
+        const m = new Marker({ position: pos, map: mapRef.current, draggable: true });
+        m.addListener("dragend", () => {
+          const p = m.getPosition();
+          if (p) onLocationChange(p.lat(), p.lng());
         });
+        markerRef.current = m;
+      });
     }
     mapRef.current.setCenter(pos);
   }, [lat, lng, onLocationChange]);

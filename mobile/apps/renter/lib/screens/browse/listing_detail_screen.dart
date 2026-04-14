@@ -115,71 +115,74 @@ class _ListingDetailViewState extends ConsumerState<_ListingDetailView> {
           ),
         ),
       ),
-      body: CustomScrollView(
-        slivers: [
-          SliverToBoxAdapter(
-            child: _HeroCarousel(photos: _photos, listing: l),
-          ),
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 20, 16, 120),
-            sliver: SliverList(
-              delegate: SliverChildListDelegate([
-                _QuickFacts(listing: l),
-                const SizedBox(height: 20),
-                if (l['descriptionEn'] != null) ...[
-                  _SectionTitle('Description'),
-                  const SizedBox(height: 8),
-                  Text(
-                    l['descriptionEn'] as String,
-                    style: GoogleFonts.josefinSans(
-                      fontSize: 14,
-                      color: AppColors.textSecondary,
-                      height: 1.6,
+      body: Stack(
+        children: [
+          CustomScrollView(
+            slivers: [
+              SliverToBoxAdapter(
+                child: _HeroCarousel(photos: _photos, listing: l),
+              ),
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 20, 16, 120),
+                sliver: SliverList(
+                  delegate: SliverChildListDelegate([
+                    _QuickFacts(listing: l),
+                    const SizedBox(height: 20),
+                    if (l['descriptionEn'] != null) ...[
+                      _SectionTitle('Description'),
+                      const SizedBox(height: 8),
+                      Text(
+                        l['descriptionEn'] as String,
+                        style: GoogleFonts.josefinSans(
+                          fontSize: 14,
+                          color: AppColors.textSecondary,
+                          height: 1.6,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                    ],
+                    _AmenitiesGrid(
+                      amenities: (l['amenities'] as List? ?? [])
+                          .cast<Map<String, dynamic>>(),
                     ),
-                  ),
-                  const SizedBox(height: 20),
-                ],
-                _AmenitiesGrid(
-                  amenities: (l['amenities'] as List? ?? [])
-                      .cast<Map<String, dynamic>>(),
+                    const SizedBox(height: 20),
+                    _MapCard(listing: l),
+                    const SizedBox(height: 16),
+                    _ScheduleVisitButton(),
+                    const SizedBox(height: 20),
+                    _MediaLinks(listing: l),
+                  ]),
                 ),
-                const SizedBox(height: 20),
-                _MapCard(listing: l),
-                const SizedBox(height: 20),
-                _MediaLinks(listing: l),
-              ]),
+              ),
+            ],
+          ),
+          // Save / Notify me FAB — positioned directly to avoid Scaffold FAB
+          // placement issues when nested inside a ShellRoute with extendBody:true
+          Positioned(
+            right: 16,
+            bottom: MediaQuery.of(context).viewPadding.bottom + 120,
+            child: FloatingActionButton(
+              onPressed: _wishlistLoading ? null : () => _toggleWishlist(_wishlisted),
+              backgroundColor: isUpcoming ? AppColors.accent : AppColors.primary,
+              elevation: 4,
+              child: _wishlistLoading
+                  ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2.5,
+                      ),
+                    )
+                  : Icon(
+                      isUpcoming
+                          ? Icons.notifications_outlined
+                          : (_wishlisted ? Icons.favorite : Icons.favorite_border),
+                      color: Colors.white,
+                    ),
             ),
           ),
         ],
-      ),
-      floatingActionButton: Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewPadding.bottom + 84,
-        ),
-        child: FloatingActionButton.extended(
-          onPressed: _wishlistLoading ? null : () => _toggleWishlist(_wishlisted),
-          backgroundColor: isUpcoming ? AppColors.accent : AppColors.primary,
-          icon: _wishlistLoading
-              ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    color: Colors.white,
-                    strokeWidth: 2,
-                  ),
-                )
-              : Icon(
-                  _wishlisted ? Icons.favorite : Icons.favorite_border,
-                  color: Colors.white,
-                ),
-          label: Text(
-            isUpcoming ? 'Notify me' : (_wishlisted ? 'Saved' : 'Save'),
-            style: GoogleFonts.josefinSans(
-              color: Colors.white,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
       ),
     );
   }
@@ -723,6 +726,39 @@ class _MediaBtn extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Schedule Visit Button ─────────────────────────────────────────────────────
+
+class _ScheduleVisitButton extends StatelessWidget {
+  const _ScheduleVisitButton();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton.icon(
+        onPressed: () => context.push('/meetings/create'),
+        icon: const Icon(Icons.calendar_month_outlined, color: Colors.white, size: 18),
+        label: Text(
+          'Schedule a Visit',
+          style: GoogleFonts.josefinSans(
+            color: Colors.white,
+            fontWeight: FontWeight.w600,
+            fontSize: 15,
+          ),
+        ),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppColors.primary,
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
         ),
       ),
     );
