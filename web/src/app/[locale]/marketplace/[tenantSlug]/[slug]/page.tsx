@@ -186,16 +186,17 @@ export default function ListingDetailPage({ params }: { params: Promise<{ tenant
 
   useEffect(() => { loadListing(); }, [loadListing]);
 
-  // Reverse-geocode coordinates to a human-readable address (Nominatim, no API key)
+  // Reverse-geocode coordinates to a human-readable address (Google Geocoding API)
   useEffect(() => {
     if (!listing?.lat || !listing?.lng) return;
+    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
     fetch(
-      `https://nominatim.openstreetmap.org/reverse?lat=${listing.lat}&lon=${listing.lng}&format=json`,
-      { headers: { 'Accept-Language': 'en' } }
+      `https://maps.googleapis.com/maps/api/geocode/json?latlng=${listing.lat},${listing.lng}&key=${apiKey}`
     )
       .then(r => r.ok ? r.json() : null)
       .then(data => {
-        if (data?.display_name) setLocationAddress(data.display_name);
+        const address = data?.results?.[0]?.formatted_address;
+        if (address) setLocationAddress(address);
       })
       .catch(() => {});
   }, [listing?.lat, listing?.lng]);
@@ -460,7 +461,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ tenant
                   </div>
                 </div>
 
-                {/* Embedded OpenStreetMap */}
+                {/* Google Maps embed */}
                 {listing.lat && listing.lng && (
                   <div className="rounded-xl overflow-hidden border border-neutral-200 mb-4">
                     <iframe
@@ -468,8 +469,10 @@ export default function ListingDetailPage({ params }: { params: Promise<{ tenant
                       width="100%"
                       height="220"
                       loading="lazy"
-                      src={`https://www.openstreetmap.org/export/embed.html?bbox=${listing.lng - 0.01},${listing.lat - 0.01},${listing.lng + 0.01},${listing.lat + 0.01}&layer=mapnik&marker=${listing.lat},${listing.lng}`}
-                      className="w-full"
+                      className="border-0 w-full"
+                      allowFullScreen
+                      referrerPolicy="no-referrer-when-downgrade"
+                      src={`https://www.google.com/maps/embed/v1/place?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&q=${listing.lat},${listing.lng}&zoom=15`}
                     />
                   </div>
                 )}

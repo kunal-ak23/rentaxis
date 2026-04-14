@@ -154,7 +154,7 @@ class _ListingDetailViewState extends ConsumerState<_ListingDetailView> {
       ),
       floatingActionButton: Padding(
         padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).padding.bottom + 84,
+          bottom: MediaQuery.of(context).viewPadding.bottom + 84,
         ),
         child: FloatingActionButton.extended(
           onPressed: _wishlistLoading ? null : () => _toggleWishlist(_wishlisted),
