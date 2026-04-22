@@ -84,7 +84,9 @@ export default function LeasesPage() {
     const [viewMode, setViewMode] = useState<'table' | 'cards' | 'board'>('table');
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(25);
+    const [totalItems, setTotalItems] = useState(0);
     const [searchQuery, setSearchQuery] = useState("");
+    const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
     const [paymentStatsMap, setPaymentStatsMap] = useState<Record<string, PaymentStats>>({});
     const [paymentStatsLoading, setPaymentStatsLoading] = useState(false);
     const [loading, setLoading] = useState(true);
@@ -133,10 +135,24 @@ export default function LeasesPage() {
     });
 
     useEffect(() => {
-        fetchLeases();
         fetchUnits();
         fetchRenters();
     }, []);
+
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedSearchQuery(searchQuery.trim());
+        }, 350);
+        return () => clearTimeout(timer);
+    }, [searchQuery]);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [debouncedSearchQuery, itemsPerPage]);
+
+    useEffect(() => {
+        fetchLeases();
+    }, [currentPage, itemsPerPage, debouncedSearchQuery]);
 
     useEffect(() => {
         if (leases.length > 0) {
@@ -187,8 +203,22 @@ export default function LeasesPage() {
     const fetchLeases = async () => {
         setLoading(true);
         try {
-            const res = await fetch("/api/proxy/v1/leases");
-            if (res.ok) setLeases(await res.json());
+            const params = new URLSearchParams();
+            params.set("page", String(Math.max(currentPage - 1, 0)));
+            params.set("size", String(itemsPerPage));
+            if (debouncedSearchQuery) params.set("search", debouncedSearchQuery);
+
+            const res = await fetch(`/api/proxy/v1/leases/paged?${params.toString()}`);
+            if (res.ok) {
+                const data = await res.json();
+                if (Array.isArray(data)) {
+                    setLeases(data);
+                    setTotalItems(data.length);
+                } else {
+                    setLeases(data.content ?? []);
+                    setTotalItems(data.totalElements ?? 0);
+                }
+            }
         } catch (err) {
             console.error(err);
         } finally {
@@ -663,17 +693,7 @@ export default function LeasesPage() {
         </div>
     );
 
-    const filteredLeases = leases.filter(l => {
-        if (!searchQuery) return true;
-        const q = searchQuery.toLowerCase();
-        return (
-            l.unitIdentifier?.toLowerCase().includes(q) ||
-            l.renterName?.toLowerCase().includes(q) ||
-            l.propertyName?.toLowerCase().includes(q) ||
-            l.status?.toLowerCase().includes(q) ||
-            l.ejariNumber?.toLowerCase().includes(q)
-        );
-    });
+    const filteredLeases = leases;
 
     return (
         <div>
@@ -693,7 +713,7 @@ export default function LeasesPage() {
                             type="text"
                             placeholder="Search..."
                             value={searchQuery}
-                            onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+                            onChange={(e) => setSearchQuery(e.target.value)}
                             className="pl-9 pr-4 py-2 bg-surface border border-border rounded-lg text-sm text-foreground placeholder:text-muted/50 focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none w-64 transition-all"
                         />
                     </div>
@@ -954,7 +974,6 @@ export default function LeasesPage() {
 
             {/* Table View */}
             {!loading && viewMode === 'table' && leases.length > 0 && (() => {
-                const paginatedLeases = filteredLeases.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
                 return (
                     <>
                         <div className="bg-surface rounded-xl border border-border overflow-hidden">
@@ -972,7 +991,7 @@ export default function LeasesPage() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {paginatedLeases.map(lease => {
+                                    {filteredLeases.map(lease => {
                                         const monthlyRent = lease.monthlyRent || lease.rentAmount;
                                         return (
                                             <tr key={lease.id} className="border-b border-border hover:bg-input/30 transition-colors">
@@ -1053,7 +1072,7 @@ export default function LeasesPage() {
                         </div>
                         <Pagination
                             currentPage={currentPage}
-                            totalItems={filteredLeases.length}
+                            totalItems={totalItems}
                             itemsPerPage={itemsPerPage}
                             onPageChange={setCurrentPage}
                             onItemsPerPageChange={(n) => { setItemsPerPage(n); setCurrentPage(1); }}
@@ -1064,15 +1083,14 @@ export default function LeasesPage() {
 
             {/* Cards View */}
             {!loading && viewMode === 'cards' && leases.length > 0 && (() => {
-                const paginatedLeases = filteredLeases.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
                 return (
                     <>
                         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                            {paginatedLeases.map(lease => renderLeaseCard(lease))}
+                            {filteredLeases.map(lease => renderLeaseCard(lease))}
                         </div>
                         <Pagination
                             currentPage={currentPage}
-                            totalItems={filteredLeases.length}
+                            totalItems={totalItems}
                             itemsPerPage={itemsPerPage}
                             onPageChange={setCurrentPage}
                             onItemsPerPageChange={(n) => { setItemsPerPage(n); setCurrentPage(1); }}
@@ -1083,28 +1101,37 @@ export default function LeasesPage() {
 
             {/* Board View */}
             {!loading && viewMode === 'board' && (
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 pb-4">
-                    {BOARD_COLUMNS.map(col => {
-                        const columnLeases = filteredLeases.filter(l => col.statuses.includes(l.status));
-                        return (
-                            <div key={col.key} className="min-w-0">
-                                <div className="flex items-center gap-2 mb-4 px-2">
-                                    <div className={cn("w-2.5 h-2.5 rounded-full", col.color)} />
-                                    <h3 className="text-xs font-bold text-foreground uppercase tracking-widest">{col.label}</h3>
-                                    <span className="ml-auto text-[10px] font-bold text-muted bg-input px-2 py-0.5 rounded-full">{columnLeases.length}</span>
+                <>
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 pb-4">
+                        {BOARD_COLUMNS.map(col => {
+                            const columnLeases = filteredLeases.filter(l => col.statuses.includes(l.status));
+                            return (
+                                <div key={col.key} className="min-w-0">
+                                    <div className="flex items-center gap-2 mb-4 px-2">
+                                        <div className={cn("w-2.5 h-2.5 rounded-full", col.color)} />
+                                        <h3 className="text-xs font-bold text-foreground uppercase tracking-widest">{col.label}</h3>
+                                        <span className="ml-auto text-[10px] font-bold text-muted bg-input px-2 py-0.5 rounded-full">{columnLeases.length}</span>
+                                    </div>
+                                    <div className="space-y-3 min-h-[200px] bg-background rounded-xl p-3 border border-border">
+                                        {columnLeases.map(lease => renderLeaseCard(lease, true))}
+                                        {columnLeases.length === 0 && (
+                                            <div className="text-center py-8 text-[10px] text-muted font-bold uppercase tracking-widest">
+                                                No leases
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
-                                <div className="space-y-3 min-h-[200px] bg-background rounded-xl p-3 border border-border">
-                                    {columnLeases.map(lease => renderLeaseCard(lease, true))}
-                                    {columnLeases.length === 0 && (
-                                        <div className="text-center py-8 text-[10px] text-muted font-bold uppercase tracking-widest">
-                                            No leases
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
+                            );
+                        })}
+                    </div>
+                    <Pagination
+                        currentPage={currentPage}
+                        totalItems={totalItems}
+                        itemsPerPage={itemsPerPage}
+                        onPageChange={setCurrentPage}
+                        onItemsPerPageChange={(n) => { setItemsPerPage(n); setCurrentPage(1); }}
+                    />
+                </>
             )}
 
             {!loading && leases.length === 0 && !showForm && (

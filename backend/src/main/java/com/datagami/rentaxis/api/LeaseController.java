@@ -10,6 +10,10 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -33,6 +37,14 @@ public class LeaseController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
     public ResponseEntity<List<LeaseDTO>> getAllLeases() {
         return ResponseEntity.ok(leaseService.getAllLeases());
+    }
+
+    @GetMapping("/paged")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
+    public ResponseEntity<Page<LeaseDTO>> getLeasesPaged(
+            @RequestParam(required = false) String search,
+            @PageableDefault(size = 25, sort = "startDate", direction = Sort.Direction.DESC) Pageable pageable) {
+        return ResponseEntity.ok(leaseService.getAllLeasesPaged(search, pageable));
     }
 
     @GetMapping("/property/{propertyId}")

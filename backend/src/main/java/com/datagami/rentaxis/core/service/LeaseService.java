@@ -15,12 +15,16 @@ import com.datagami.rentaxis.domain.entity.enums.PaymentStatus;
 import com.datagami.rentaxis.domain.entity.enums.UnitStatus;
 import com.datagami.rentaxis.domain.repository.*;
 import com.datagami.rentaxis.domain.repository.PaymentScheduleRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -63,6 +67,31 @@ public class LeaseService {
         return leaseRepository.findByTenantId(tenantId).stream()
                 .map(this::mapToDTO)
                 .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public Page<LeaseDTO> getAllLeasesPaged(String search, Pageable pageable) {
+        UUID tenantId = TenantContextHolder.getTenantId();
+        String normalizedSearch = search == null ? null : search.trim();
+
+        if (normalizedSearch == null || normalizedSearch.isEmpty()) {
+            return leaseRepository.findByTenantId(tenantId, pageable).map(this::mapToDTO);
+        }
+
+        String token = normalizedSearch.toLowerCase(Locale.ROOT);
+        List<LeaseDTO> filtered = leaseRepository.findByTenantId(tenantId).stream()
+                .map(this::mapToDTO)
+                .filter(l -> containsIgnoreCase(l.getUnitIdentifier(), token)
+                        || containsIgnoreCase(l.getRenterName(), token)
+                        || containsIgnoreCase(l.getPropertyName(), token)
+                        || containsIgnoreCase(l.getEjariNumber(), token)
+                        || (l.getStatus() != null && l.getStatus().name().toLowerCase(Locale.ROOT).contains(token)))
+                .collect(Collectors.toList());
+
+        int start = (int) pageable.getOffset();
+        int end = Math.min(start + pageable.getPageSize(), filtered.size());
+        List<LeaseDTO> pageContent = start >= filtered.size() ? List.of() : filtered.subList(start, end);
+        return new PageImpl<>(pageContent, pageable, filtered.size());
     }
 
     @Transactional(readOnly = true)
@@ -381,5 +410,9 @@ public class LeaseService {
         dto.setCreatedAt(event.getCreatedAt());
         dto.setCreatedBy(event.getCreatedBy());
         return dto;
+    }
+
+    private boolean containsIgnoreCase(String value, String token) {
+        return value != null && value.toLowerCase(Locale.ROOT).contains(token);
     }
 }
