@@ -36,7 +36,7 @@ public interface PaymentScheduleRepository extends JpaRepository<PaymentSchedule
         LEFT JOIN l.renter r
         WHERE (:propertyId IS NULL OR ps.property.id = :propertyId)
           AND (:status IS NULL OR ps.status = :status)
-          AND (:renterName IS NULL OR LOWER(COALESCE(r.nameEn, '')) LIKE LOWER(CONCAT('%', :renterName, '%')))
+          AND (:renterName IS NULL OR LOWER(COALESCE(CAST(r.nameEn AS string), '')) LIKE LOWER(CONCAT('%', :renterName, '%')))
         """)
     Page<PaymentSchedule> findFiltered(
             @Param("propertyId") UUID propertyId,
