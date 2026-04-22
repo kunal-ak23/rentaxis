@@ -32,15 +32,22 @@ public interface PaymentScheduleRepository extends JpaRepository<PaymentSchedule
     @Query("""
         SELECT ps
         FROM PaymentSchedule ps
-        LEFT JOIN ps.lease l
-        LEFT JOIN l.renter r
         WHERE (:propertyId IS NULL OR ps.property.id = :propertyId)
           AND (:status IS NULL OR ps.status = :status)
-          AND (:renterName IS NULL OR LOWER(COALESCE(CAST(r.nameEn AS string), '')) LIKE LOWER(CONCAT('%', :renterName, '%')))
         """)
     Page<PaymentSchedule> findFiltered(
             @Param("propertyId") UUID propertyId,
             @Param("status") PaymentStatus status,
-            @Param("renterName") String renterName,
             Pageable pageable);
+
+    @Query("""
+        SELECT ps
+        FROM PaymentSchedule ps
+        WHERE (:propertyId IS NULL OR ps.property.id = :propertyId)
+          AND (:status IS NULL OR ps.status = :status)
+        ORDER BY ps.dueDate DESC
+        """)
+    List<PaymentSchedule> findForRenterSearch(
+            @Param("propertyId") UUID propertyId,
+            @Param("status") PaymentStatus status);
 }

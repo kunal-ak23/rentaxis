@@ -19,6 +19,7 @@ import com.datagami.rentaxis.domain.repository.RentCollectionSettingsRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,6 +30,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -94,8 +96,22 @@ public class PaymentScheduleService {
     @Transactional(readOnly = true)
     public Page<PaymentScheduleDTO> getPaymentsForProperty(UUID propertyId, PaymentStatus status, String renterName, Pageable pageable) {
         String normalizedRenterName = (renterName == null || renterName.trim().isEmpty()) ? null : renterName.trim();
-        Page<PaymentSchedule> payments = paymentScheduleRepository.findFiltered(propertyId, status, normalizedRenterName, pageable);
-        return payments.map(this::mapToDTO);
+        if (normalizedRenterName == null) {
+            Page<PaymentSchedule> payments = paymentScheduleRepository.findFiltered(propertyId, status, pageable);
+            return payments.map(this::mapToDTO);
+        }
+
+        // Avoid DB text operations on renter names because some prod datasets store this value in binary-compatible columns.
+        String searchToken = normalizedRenterName.toLowerCase(Locale.ROOT);
+        List<PaymentScheduleDTO> filtered = paymentScheduleRepository.findForRenterSearch(propertyId, status).stream()
+                .map(this::mapToDTO)
+                .filter(dto -> dto.getRenterName() != null && dto.getRenterName().toLowerCase(Locale.ROOT).contains(searchToken))
+                .collect(Collectors.toList());
+
+        int start = (int) pageable.getOffset();
+        int end = Math.min(start + pageable.getPageSize(), filtered.size());
+        List<PaymentScheduleDTO> pageContent = start >= filtered.size() ? List.of() : filtered.subList(start, end);
+        return new PageImpl<>(pageContent, pageable, filtered.size());
     }
 
     @Transactional(readOnly = true)
