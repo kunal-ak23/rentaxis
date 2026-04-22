@@ -11,7 +11,7 @@ import {
     CheckCircle,
     XCircle,
     ArrowRightCircle,
-    RefreshCw,
+    Search,
     Building2,
     X,
     Loader2,
@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import { formatCurrency, formatCurrencyCompact, formatNumber } from "@/lib/format";
 import { canViewPayments, canManagePayments } from "@/lib/rbac";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Pagination } from "@/components/ui/Pagination";
 import type { UserRole } from "@/lib/rbac";
 
 type Payment = {
@@ -83,6 +84,11 @@ export default function PaymentsPage() {
 
     const [selectedProperty, setSelectedProperty] = useState("");
     const [selectedStatus, setSelectedStatus] = useState("");
+    const [searchRenterName, setSearchRenterName] = useState("");
+    const [debouncedSearchRenterName, setDebouncedSearchRenterName] = useState("");
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage, setItemsPerPage] = useState(25);
+    const [totalItems, setTotalItems] = useState(0);
 
     // Cheque collection modal state
     const [showChequeModal, setShowChequeModal] = useState(false);
@@ -109,20 +115,44 @@ export default function PaymentsPage() {
     }, []);
 
     useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedSearchRenterName(searchRenterName.trim());
+        }, 350);
+        return () => clearTimeout(timer);
+    }, [searchRenterName]);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [selectedProperty, selectedStatus, debouncedSearchRenterName, itemsPerPage]);
+
+    useEffect(() => {
         fetchPayments();
+    }, [selectedProperty, selectedStatus, debouncedSearchRenterName, currentPage, itemsPerPage]);
+
+    useEffect(() => {
         fetchSummary();
-    }, [selectedProperty, selectedStatus]);
+    }, [selectedProperty]);
 
     const fetchPayments = async () => {
+        setLoading(true);
         try {
             const params = new URLSearchParams();
             if (selectedProperty) params.set("propertyId", selectedProperty);
             if (selectedStatus) params.set("status", selectedStatus);
+            if (debouncedSearchRenterName) params.set("renterName", debouncedSearchRenterName);
+            params.set("page", String(Math.max(currentPage - 1, 0)));
+            params.set("size", String(itemsPerPage));
 
             const res = await fetch(`/api/proxy/v1/payments?${params.toString()}`);
             if (res.ok) {
                 const data = await res.json();
-                setPayments(data);
+                if (Array.isArray(data)) {
+                    setPayments(data);
+                    setTotalItems(data.length);
+                } else {
+                    setPayments(data.content ?? []);
+                    setTotalItems(data.totalElements ?? 0);
+                }
             }
         } catch (err) {
             console.error(err);
@@ -366,6 +396,16 @@ export default function PaymentsPage() {
 
             {/* Filters */}
             <div className="flex flex-col sm:flex-row gap-3 mb-6">
+                <div className="relative w-full sm:max-w-xs">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+                    <input
+                        type="text"
+                        value={searchRenterName}
+                        onChange={(ev) => setSearchRenterName(ev.target.value)}
+                        placeholder="Search renter name"
+                        className="w-full bg-surface border border-border pl-9 pr-3 py-2.5 rounded-lg text-xs font-medium focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
+                    />
+                </div>
                 <div className="relative">
                     <select
                         className="appearance-none bg-surface border border-border px-4 py-2.5 rounded-lg text-xs font-bold pr-8 cursor-pointer focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
@@ -562,6 +602,15 @@ export default function PaymentsPage() {
                             ))}
                         </tbody>
                     </table>
+                </div>
+                <div className="px-5 pb-4">
+                    <Pagination
+                        currentPage={currentPage}
+                        totalItems={totalItems}
+                        itemsPerPage={itemsPerPage}
+                        onPageChange={setCurrentPage}
+                        onItemsPerPageChange={setItemsPerPage}
+                    />
                 </div>
             </div>}
 

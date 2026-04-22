@@ -10,6 +10,10 @@ import com.datagami.rentaxis.core.service.PaymentScheduleService;
 import com.datagami.rentaxis.core.service.RentReceiptService;
 import com.datagami.rentaxis.domain.entity.enums.PaymentStatus;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -32,10 +36,12 @@ public class PaymentScheduleController {
 
     @GetMapping
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
-    public ResponseEntity<List<PaymentScheduleDTO>> getPayments(
+    public ResponseEntity<Page<PaymentScheduleDTO>> getPayments(
             @RequestParam(required = false) UUID propertyId,
-            @RequestParam(required = false) PaymentStatus status) {
-        return ResponseEntity.ok(paymentScheduleService.getPaymentsForProperty(propertyId, status));
+            @RequestParam(required = false) PaymentStatus status,
+            @RequestParam(required = false) String renterName,
+            @PageableDefault(size = 25, sort = "dueDate", direction = Sort.Direction.DESC) Pageable pageable) {
+        return ResponseEntity.ok(paymentScheduleService.getPaymentsForProperty(propertyId, status, renterName, pageable));
     }
 
     @GetMapping("/lease/{leaseId}")

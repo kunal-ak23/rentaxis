@@ -18,6 +18,8 @@ import com.datagami.rentaxis.domain.repository.PaymentScheduleRepository;
 import com.datagami.rentaxis.domain.repository.RentCollectionSettingsRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -90,20 +92,10 @@ public class PaymentScheduleService {
     }
 
     @Transactional(readOnly = true)
-    public List<PaymentScheduleDTO> getPaymentsForProperty(UUID propertyId, PaymentStatus status) {
-        List<PaymentSchedule> payments;
-        if (propertyId != null && status != null) {
-            payments = paymentScheduleRepository.findByPropertyIdAndStatusIn(propertyId, List.of(status));
-        } else if (propertyId != null) {
-            payments = paymentScheduleRepository.findByPropertyId(propertyId);
-        } else if (status != null) {
-            payments = paymentScheduleRepository.findByStatus(status);
-        } else {
-            payments = paymentScheduleRepository.findAll();
-        }
-        return payments.stream()
-                .map(this::mapToDTO)
-                .collect(Collectors.toList());
+    public Page<PaymentScheduleDTO> getPaymentsForProperty(UUID propertyId, PaymentStatus status, String renterName, Pageable pageable) {
+        String normalizedRenterName = (renterName == null || renterName.trim().isEmpty()) ? null : renterName.trim();
+        Page<PaymentSchedule> payments = paymentScheduleRepository.findFiltered(propertyId, status, normalizedRenterName, pageable);
+        return payments.map(this::mapToDTO);
     }
 
     @Transactional(readOnly = true)
