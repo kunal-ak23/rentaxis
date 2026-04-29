@@ -1,12 +1,19 @@
 {$DOMAIN} {
-    # NextAuth session endpoint — must go to Next.js
-    handle /api/auth/session* {
-        reverse_proxy web:3000
+    # Backend auth endpoints (mobile apps + Next.js credentials provider)
+    handle /api/auth/login {
+        reverse_proxy backend:8080
+    }
+    handle /api/auth/register {
+        reverse_proxy backend:8080
+    }
+    handle /api/auth/me* {
+        reverse_proxy backend:8080
     }
 
-    # Backend auth endpoints (login, register, me, tenants)
+    # All other /api/auth/* → Next.js NextAuth handler
+    # (csrf, signin, signout, callback/*, providers, session, error, verify-request, _log)
     handle /api/auth/* {
-        reverse_proxy backend:8080
+        reverse_proxy web:3000
     }
 
     # Frontend API proxy requests go to Next.js
