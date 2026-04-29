@@ -160,7 +160,7 @@ class _ListingDetailViewState extends ConsumerState<_ListingDetailView> {
           // placement issues when nested inside a ShellRoute with extendBody:true
           Positioned(
             right: 16,
-            bottom: MediaQuery.of(context).viewPadding.bottom + 120,
+            bottom: MediaQuery.of(context).viewPadding.bottom + 160,
             child: FloatingActionButton(
               onPressed: _wishlistLoading ? null : () => _toggleWishlist(_wishlisted),
               backgroundColor: isUpcoming ? AppColors.accent : AppColors.primary,
