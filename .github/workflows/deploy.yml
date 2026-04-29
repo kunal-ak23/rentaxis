@@ -64,6 +64,23 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H ${{ env.VM_IP }} >> ~/.ssh/known_hosts 2>/dev/null
 
+      - name: Detect Caddyfile changes
+        id: caddy_diff
+        run: |
+          SSH_OPTS="-i ~/.ssh/deploy_key -o ConnectTimeout=10"
+          SSH_TARGET="${{ env.VM_USER }}@${{ env.VM_IP }}"
+
+          LOCAL_HASH=$(sha256sum infra/caddy/Caddyfile.template | awk '{print $1}')
+          REMOTE_HASH=$(ssh $SSH_OPTS $SSH_TARGET "sha256sum ${{ env.REMOTE_DIR }}/Caddyfile 2>/dev/null | awk '{print \$1}'" || echo "missing")
+
+          if [ "$LOCAL_HASH" != "$REMOTE_HASH" ]; then
+            echo "Caddyfile changed (was: $REMOTE_HASH, now: $LOCAL_HASH) — reload required"
+            echo "changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "Caddyfile unchanged — no reload needed"
+            echo "changed=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Create .env file
         run: |
           cat > /tmp/rentaxis.env <<EOF
@@ -123,6 +140,17 @@ jobs:
           echo "Pruning unused images..."
           docker image prune -f
           REMOTE_DEPLOY
+
+      - name: Reload Caddy (graceful, picks up Caddyfile changes)
+        if: steps.caddy_diff.outputs.changed == 'true'
+        run: |
+          SSH_OPTS="-i ~/.ssh/deploy_key -o ConnectTimeout=10"
+          SSH_TARGET="${{ env.VM_USER }}@${{ env.VM_IP }}"
+
+          # `docker compose up -d` does NOT recreate caddy when only the
+          # bind-mounted Caddyfile content changes. Trigger a graceful reload
+          # so the running caddy picks up the new routing rules.
+          ssh $SSH_OPTS $SSH_TARGET "cd ${{ env.REMOTE_DIR }} && docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile"
 
       - name: Verify deployment
         run: |
