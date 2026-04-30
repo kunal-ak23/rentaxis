@@ -95,3 +95,5 @@ databaseChangeLog:
       file: db/changelog/changesets/43-settlement-deduction-category-nullable.yaml
   - include:
       file: db/changelog/changesets/44-transaction-splits.yaml
+  - include:
+      file: db/changelog/changesets/45-lease-agreement-fields.yaml
