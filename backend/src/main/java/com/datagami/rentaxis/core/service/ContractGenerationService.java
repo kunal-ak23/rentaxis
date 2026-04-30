@@ -8,8 +8,10 @@ import com.datagami.rentaxis.domain.entity.*;
 import com.datagami.rentaxis.domain.entity.enums.DocumentType;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.PaymentMethod;
+import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
 import com.datagami.rentaxis.domain.repository.LeaseDocumentRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
+import com.datagami.rentaxis.domain.repository.PaymentScheduleRepository;
 import com.azure.storage.blob.BlobClient;
 import com.azure.storage.blob.BlobContainerClient;
 import com.azure.storage.blob.BlobServiceClient;
@@ -22,13 +24,17 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.*;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Instant;
+import java.text.DecimalFormat;
+import java.text.DecimalFormatSymbols;
 import java.io.UncheckedIOException;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -36,8 +42,12 @@ import java.util.stream.Collectors;
 @Slf4j
 public class ContractGenerationService {
 
+    private static final BigDecimal VAT_RATE = new BigDecimal("0.05");
+
     private final LeaseRepository leaseRepository;
     private final LeaseDocumentRepository leaseDocumentRepository;
+    private final LandlordOrgRepository landlordOrgRepository;
+    private final PaymentScheduleRepository paymentScheduleRepository;
 
     @Value("${rentaxis.contracts.storage-path:./data/contracts}")
     private String storagePath;
@@ -49,9 +59,13 @@ public class ContractGenerationService {
     private String containerPrefix;
 
     public ContractGenerationService(LeaseRepository leaseRepository,
-                                     LeaseDocumentRepository leaseDocumentRepository) {
+                                     LeaseDocumentRepository leaseDocumentRepository,
+                                     LandlordOrgRepository landlordOrgRepository,
+                                     PaymentScheduleRepository paymentScheduleRepository) {
         this.leaseRepository = leaseRepository;
         this.leaseDocumentRepository = leaseDocumentRepository;
+        this.landlordOrgRepository = landlordOrgRepository;
+        this.paymentScheduleRepository = paymentScheduleRepository;
     }
 
     private boolean useAzureStorage() {
@@ -141,6 +155,64 @@ public class ContractGenerationService {
         log.info("Contract generated for lease {} at {}", leaseId, documentUrl);
 
         return mapToDTO(savedDoc);
+    }
+
+    /**
+     * Build the rows for Section 3 (Property Information). Hides rows where the
+     * amount is null or zero. Each row renders S No, Particulars, Amount,
+     * VAT %, VAT Amount, Amount With VAT.
+     */
+    public String buildSection3Rows(Lease lease) {
+        StringBuilder sb = new StringBuilder();
+        int sNo = 1;
+
+        sNo = appendSection3Row(sb, sNo, "Rent", lease.getRentAmount(), lease.isRentVatApplicable());
+        sNo = appendSection3Row(sb, sNo, "Admin Fee", lease.getAdminFee(), lease.isAdminFeeVatApplicable());
+        sNo = appendSection3Row(sb, sNo, "Security Deposit", lease.getDepositAmount(), lease.isSecurityDepositVatApplicable());
+        sNo = appendSection3Row(sb, sNo, "Parking Remote", lease.getParkingRemoteFee(), lease.isParkingRemoteVatApplicable());
+
+        return sb.toString();
+    }
+
+    private int appendSection3Row(StringBuilder sb, int sNo, String label, BigDecimal amount, boolean vatApplicable) {
+        BigDecimal amt = nz(amount);
+        if (amt.compareTo(BigDecimal.ZERO) == 0) {
+            return sNo;
+        }
+        BigDecimal vatAmount;
+        String vatPctDisplay;
+        if (vatApplicable) {
+            vatAmount = amt.multiply(VAT_RATE).setScale(2, RoundingMode.HALF_UP);
+            vatPctDisplay = "5%";
+        } else {
+            vatAmount = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+            vatPctDisplay = "Exempt";
+        }
+        BigDecimal amtWithVat = amt.add(vatAmount);
+
+        sb.append("<tr>")
+                .append("<td class=\"center\">").append(sNo).append("</td>")
+                .append("<td>").append(safe(label)).append("</td>")
+                .append("<td class=\"num\">").append(formatAmount(amt)).append("</td>")
+                .append("<td class=\"center\">").append(vatPctDisplay).append("</td>")
+                .append("<td class=\"num\">").append(formatAmount(vatAmount)).append("</td>")
+                .append("<td class=\"num\">").append(formatAmount(amtWithVat)).append("</td>")
+                .append("</tr>");
+        return sNo + 1;
+    }
+
+    String formatAmount(BigDecimal amount) {
+        BigDecimal v = nz(amount).setScale(2, RoundingMode.HALF_UP);
+        DecimalFormat df = new DecimalFormat("#,##0.00", DecimalFormatSymbols.getInstance(Locale.ENGLISH));
+        return df.format(v);
+    }
+
+    private static String safe(String s) {
+        return s == null ? "" : s;
+    }
+
+    private static BigDecimal nz(BigDecimal v) {
+        return v == null ? BigDecimal.ZERO : v;
     }
 
     private byte[] renderPdf(String html) {
