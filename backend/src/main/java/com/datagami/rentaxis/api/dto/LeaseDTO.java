@@ -29,4 +29,12 @@ public class LeaseDTO {
     private UUID propertyId;
     private String propertyName;
     private boolean hasContract;
+    private Long contractNumber;
+    private LocalDate agreementDate;
+    private BigDecimal adminFee;
+    private BigDecimal parkingRemoteFee;
+    private Boolean rentVatApplicable;
+    private Boolean adminFeeVatApplicable;
+    private Boolean securityDepositVatApplicable;
+    private Boolean parkingRemoteVatApplicable;
 }

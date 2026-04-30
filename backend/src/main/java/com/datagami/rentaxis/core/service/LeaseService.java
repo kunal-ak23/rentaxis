@@ -397,6 +397,14 @@ public class LeaseService {
         dto.setPropertyId(lease.getUnit().getProperty().getId());
         dto.setPropertyName(lease.getUnit().getProperty().getNameEn());
         dto.setHasContract(!leaseDocumentRepository.findByLeaseId(lease.getId()).isEmpty());
+        dto.setContractNumber(lease.getContractNumber());
+        dto.setAgreementDate(lease.getAgreementDate());
+        dto.setAdminFee(lease.getAdminFee());
+        dto.setParkingRemoteFee(lease.getParkingRemoteFee());
+        dto.setRentVatApplicable(lease.isRentVatApplicable());
+        dto.setAdminFeeVatApplicable(lease.isAdminFeeVatApplicable());
+        dto.setSecurityDepositVatApplicable(lease.isSecurityDepositVatApplicable());
+        dto.setParkingRemoteVatApplicable(lease.isParkingRemoteVatApplicable());
         return dto;
     }
 
