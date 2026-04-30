@@ -4,10 +4,10 @@ import com.datagami.rentaxis.api.dto.LeaseDocumentDTO;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
+import com.datagami.rentaxis.core.util.AmountInWordsUtil;
 import com.datagami.rentaxis.domain.entity.*;
 import com.datagami.rentaxis.domain.entity.enums.DocumentType;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
-import com.datagami.rentaxis.domain.entity.enums.PaymentMethod;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
 import com.datagami.rentaxis.domain.repository.LeaseDocumentRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
@@ -97,45 +97,19 @@ public class ContractGenerationService {
             log.info("Removed {} old documents for lease {} before regeneration", oldDocs.size(), leaseId);
         }
 
-        // Load template
-        String template;
-        try {
-            ClassPathResource resource = new ClassPathResource("templates/contract-template.html");
-            template = new String(resource.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to load contract template", e);
+        // Assign contract number + agreement date if not set
+        assignContractNumberIfNull(lease);
+        if (lease.getAgreementDate() == null) {
+            lease.setAgreementDate(LocalDate.now());
         }
+        leaseRepository.save(lease);
 
-        // Populate template
-        Unit unit = lease.getUnit();
-        Property property = unit.getProperty();
-        Renter renter = lease.getRenter();
-
-        String contractNumber = "RA-" + lease.getId().toString().substring(0, 8).toUpperCase();
-
-        String html = template
-                .replace("{{CONTRACT_NUMBER}}", contractNumber)
-                .replace("{{LANDLORD_NAME}}", property.getNameEn())
-                .replace("{{RENTER_NAME_EN}}", renter.getNameEn())
-                .replace("{{RENTER_NAME_AR}}", renter.getNameAr() != null ? renter.getNameAr() : "")
-                .replace("{{RENTER_EMAIL}}", renter.getEmail() != null ? renter.getEmail() : "N/A")
-                .replace("{{RENTER_PHONE}}", renter.getPhone() != null ? renter.getPhone() : "N/A")
-                .replace("{{PROPERTY_NAME}}", property.getNameEn())
-                .replace("{{UNIT_NUMBER}}", unit.getUnitNumber())
-                .replace("{{EMIRATE}}", property.getEmirate() != null ? property.getEmirate().name().replace('_', ' ') : "")
-                .replace("{{ADDRESS}}", property.getAddress() != null ? property.getAddress() : "")
-                .replace("{{RENT_AMOUNT}}", lease.getRentAmount().toPlainString())
-                .replace("{{DEPOSIT_AMOUNT}}", lease.getDepositAmount().toPlainString())
-                .replace("{{PAYMENT_TERMS}}", String.valueOf(lease.getPaymentTerms() != null ? lease.getPaymentTerms() : 1))
-                .replace("{{PAYMENT_METHOD}}", formatPaymentMethod(lease.getPaymentMethod()))
-                .replace("{{DEPOSIT_PAYMENT_METHOD}}", formatPaymentMethod(lease.getDepositPaymentMethod()))
-                .replace("{{PAYMENT_REFERENCE}}", lease.getPaymentReferenceNumber() != null ? lease.getPaymentReferenceNumber() : "N/A")
-                .replace("{{EJARI_NUMBER}}", lease.getEjariNumber() != null ? lease.getEjariNumber() : "N/A")
-                .replace("{{START_DATE}}", lease.getStartDate().toString())
-                .replace("{{END_DATE}}", lease.getEndDate().toString());
+        String contractNumberDisplay = String.valueOf(lease.getContractNumber());
+        String html = renderContractHtml(lease, contractNumberDisplay);
 
         // Generate PDF to byte array
-        String fileName = contractNumber + "-" + System.currentTimeMillis() + ".pdf";
+        String fileNameStem = "RA-" + contractNumberDisplay;
+        String fileName = fileNameStem + "-" + System.currentTimeMillis() + ".pdf";
         byte[] pdfBytes = renderPdf(html);
 
         // Store PDF
@@ -154,12 +128,123 @@ public class ContractGenerationService {
         LeaseDocument savedDoc = leaseDocumentRepository.save(doc);
 
         // Transition lease to PENDING_SIGNATURE
-        lease.setStatus(LeaseStatus.PENDING_SIGNATURE);
-        leaseRepository.save(lease);
+        if (lease.getStatus() != LeaseStatus.PENDING_SIGNATURE) {
+            lease.setStatus(LeaseStatus.PENDING_SIGNATURE);
+            leaseRepository.save(lease);
+        }
 
         log.info("Contract generated for lease {} at {}", leaseId, documentUrl);
 
         return mapToDTO(savedDoc);
+    }
+
+    private String renderContractHtml(Lease lease, String contractNumberDisplay) {
+        // Load landlord org for this tenant
+        LandlordOrg org = landlordOrgRepository.findById(lease.getTenantId())
+                .orElseThrow(() -> new NotFoundException("Landlord organization not found for tenant"));
+
+        // Load payment schedules
+        List<PaymentSchedule> schedules = paymentScheduleRepository.findByLeaseId(lease.getId());
+
+        // Load template + terms partials
+        String template = loadResource("templates/contract-template.html");
+        String termsEn = loadResource("templates/contract-terms-en.html");
+        String termsAr = loadResource("templates/contract-terms-ar.html");
+
+        Unit unit = lease.getUnit();
+        Property property = unit.getProperty();
+        Renter renter = lease.getRenter();
+
+        // Build dynamic sections
+        String section3Rows = buildSection3Rows(lease);
+        String section3Total = buildSection3Total(lease);
+        String section4Rows = buildSection4Rows(schedules);
+
+        // Grand total = rent + admin + deposit + parking
+        BigDecimal grandTotal = nz(lease.getRentAmount())
+                .add(nz(lease.getAdminFee()))
+                .add(nz(lease.getDepositAmount()))
+                .add(nz(lease.getParkingRemoteFee()));
+
+        String amountInWords = AmountInWordsUtil.toEnglishWords(grandTotal, "AED");
+
+        // Stamp HTML
+        String stampHtml;
+        String stampUrl = org.getStampImageUrl();
+        if (stampUrl != null && !stampUrl.isBlank()) {
+            stampHtml = "<img src=\"" + safe(stampUrl) + "\" style=\"max-width:120px; max-height:120px;\"/>";
+        } else {
+            stampHtml = "<div style=\"width:120px;height:120px;border:1px dashed #ccc;\"></div>";
+        }
+
+        // Agreement date display (defaults to today only at generation time; preview uses what is stored)
+        LocalDate agreementDate = lease.getAgreementDate() != null ? lease.getAgreementDate() : LocalDate.now();
+
+        return template
+                .replace("{{LANDLORD_NAME}}", safe(org.getName()))
+                .replace("{{LANDLORD_ADDRESS}}", safe(org.getAddress()))
+                .replace("{{LANDLORD_PHONE}}", safe(org.getPhone()))
+                .replace("{{CONTRACT_NUMBER}}", safe(contractNumberDisplay))
+                .replace("{{AGREEMENT_DATE}}", formatDate(agreementDate))
+                .replace("{{BUILDING_NAME}}", safe(property.getNameEn()))
+                .replace("{{TENANT_NAME}}", safe(renter.getNameEn()))
+                .replace("{{TENANT_EMAIL}}", safe(renter.getEmail()))
+                .replace("{{TENANT_PHONE}}", safe(renter.getPhone()))
+                .replace("{{LEASE_START_DATE}}", formatDate(lease.getStartDate()))
+                .replace("{{LEASE_END_DATE}}", formatDate(lease.getEndDate()))
+                .replace("{{FLAT_NUMBER}}", safe(unit.getUnitNumber()))
+                .replace("{{SECTION_3_ROWS}}", section3Rows)
+                .replace("{{SECTION_3_TOTAL}}", section3Total)
+                .replace("{{SECTION_4_ROWS}}", section4Rows)
+                .replace("{{AMOUNT_IN_WORDS}}", safe(amountInWords))
+                .replace("{{GRAND_TOTAL}}", formatAmount(grandTotal))
+                .replace("{{STAMP_IMG_OR_BLANK}}", stampHtml)
+                .replace("{{TERMS_EN}}", termsEn)
+                .replace("{{TERMS_AR}}", termsAr);
+    }
+
+    /**
+     * Build the totals row for Section 3. Sums non-zero rows of amount, VAT amount,
+     * and amount-with-VAT. Renders blank VAT % cell.
+     */
+    private String buildSection3Total(Lease lease) {
+        BigDecimal totalAmount = BigDecimal.ZERO;
+        BigDecimal totalVat = BigDecimal.ZERO;
+        BigDecimal totalWithVat = BigDecimal.ZERO;
+
+        Object[][] rows = new Object[][]{
+                {nz(lease.getRentAmount()), lease.isRentVatApplicable()},
+                {nz(lease.getAdminFee()), lease.isAdminFeeVatApplicable()},
+                {nz(lease.getDepositAmount()), lease.isSecurityDepositVatApplicable()},
+                {nz(lease.getParkingRemoteFee()), lease.isParkingRemoteVatApplicable()}
+        };
+        for (Object[] r : rows) {
+            BigDecimal amt = (BigDecimal) r[0];
+            boolean vat = (Boolean) r[1];
+            if (amt.compareTo(BigDecimal.ZERO) == 0) continue;
+            BigDecimal vatAmount = vat ? amt.multiply(VAT_RATE).setScale(2, RoundingMode.HALF_UP)
+                                       : BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+            totalAmount = totalAmount.add(amt);
+            totalVat = totalVat.add(vatAmount);
+            totalWithVat = totalWithVat.add(amt.add(vatAmount));
+        }
+
+        return "<tr>"
+                + "<td class=\"center\"></td>"
+                + "<td style=\"font-weight:bold;\">TOTAL</td>"
+                + "<td class=\"num\" style=\"font-weight:bold;\">" + formatAmount(totalAmount) + "</td>"
+                + "<td class=\"center\"></td>"
+                + "<td class=\"num\" style=\"font-weight:bold;\">" + formatAmount(totalVat) + "</td>"
+                + "<td class=\"num\" style=\"font-weight:bold;\">" + formatAmount(totalWithVat) + "</td>"
+                + "</tr>";
+    }
+
+    private String loadResource(String classpathPath) {
+        try {
+            return new String(new ClassPathResource(classpathPath).getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to load " + classpathPath, e);
+        }
     }
 
     /**
@@ -449,14 +534,6 @@ public class ContractGenerationService {
         }
         // Decode URL-encoded path (getBlobUrl() may return %2F for slashes)
         return URLDecoder.decode(path.substring(firstSlash + 1), StandardCharsets.UTF_8);
-    }
-
-    private String formatPaymentMethod(PaymentMethod method) {
-        if (method == null) return "Cheque";
-        return switch (method) {
-            case CHEQUE -> "Cheque";
-            case ONLINE -> "Online Payment";
-        };
     }
 
     private LeaseDocumentDTO mapToDTO(LeaseDocument doc) {
