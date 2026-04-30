@@ -37,7 +37,7 @@ type Unit = {
     id: string;
     unitNumber: string;
     status: string;
-    property?: { id: string; nameEn?: string; nameAr?: string };
+    property?: { id: string; nameEn?: string; nameAr?: string; type?: string };
 };
 
 type Renter = {
@@ -131,7 +131,24 @@ export default function LeasesPage() {
         paymentTerms: 1,
         paymentMethod: "CHEQUE",
         depositPaymentMethod: "CHEQUE",
-        paymentReferenceNumber: ""
+        paymentReferenceNumber: "",
+        // New fields for M11
+        agreementDate: "",
+        adminFee: 0,
+        parkingRemoteFee: 0,
+        rentVatApplicable: false,
+        adminFeeVatApplicable: false,
+        securityDepositVatApplicable: false,
+        parkingRemoteVatApplicable: false,
+    });
+
+    // Booking deposit section (collapsed by default)
+    const [bookingDepositOpen, setBookingDepositOpen] = useState(false);
+    const [bookingDeposit, setBookingDeposit] = useState({
+        amount: 0,
+        chequeNumber: "",
+        chequeDate: "",
+        bankName: "",
     });
 
     useEffect(() => {
@@ -281,6 +298,8 @@ export default function LeasesPage() {
 
         setEditingLeaseId(lease.id);
         fetchAttachments(lease.id);
+        setBookingDepositOpen(false);
+        setBookingDeposit({ amount: 0, chequeNumber: "", chequeDate: "", bankName: "" });
         setFormData({
             unitId: lease.unitId,
             renterId: lease.renterId,
@@ -292,7 +311,14 @@ export default function LeasesPage() {
             paymentTerms: lease.paymentTerms || 1,
             paymentMethod: lease.paymentMethod || "CHEQUE",
             depositPaymentMethod: lease.depositPaymentMethod || "CHEQUE",
-            paymentReferenceNumber: lease.paymentReferenceNumber || ""
+            paymentReferenceNumber: lease.paymentReferenceNumber || "",
+            agreementDate: "",
+            adminFee: 0,
+            parkingRemoteFee: 0,
+            rentVatApplicable: false,
+            adminFeeVatApplicable: false,
+            securityDepositVatApplicable: false,
+            parkingRemoteVatApplicable: false,
         });
         setShowForm(true);
     };
@@ -302,11 +328,23 @@ export default function LeasesPage() {
         setSubmitting(true);
         try {
             // Send both total rent (from preview) and monthly rent to backend
-            const submitData = {
+            const submitData: Record<string, unknown> = {
                 ...formData,
                 monthlyRent: formData.rentAmount,
                 rentAmount: paymentPreview ? paymentPreview.totalAmount : formData.rentAmount,
+                agreementDate: formData.agreementDate || null,
+                adminFee: formData.adminFee || 0,
+                parkingRemoteFee: formData.parkingRemoteFee || 0,
             };
+            // Include bookingDeposit if amount > 0
+            if (bookingDeposit.amount > 0) {
+                submitData.bookingDeposit = {
+                    amount: bookingDeposit.amount,
+                    chequeNumber: bookingDeposit.chequeNumber || null,
+                    chequeDate: bookingDeposit.chequeDate || null,
+                    bankName: bookingDeposit.bankName || null,
+                };
+            }
             const url = editingLeaseId
                 ? `/api/proxy/v1/leases/${editingLeaseId}`
                 : "/api/proxy/v1/leases";
@@ -324,8 +362,13 @@ export default function LeasesPage() {
                 setFormData({
                     unitId: "", renterId: "", startDate: "", endDate: "",
                     rentAmount: 0, depositAmount: 0, ejariNumber: "", paymentTerms: 1,
-                    paymentMethod: "CHEQUE", depositPaymentMethod: "CHEQUE", paymentReferenceNumber: ""
+                    paymentMethod: "CHEQUE", depositPaymentMethod: "CHEQUE", paymentReferenceNumber: "",
+                    agreementDate: "", adminFee: 0, parkingRemoteFee: 0,
+                    rentVatApplicable: false, adminFeeVatApplicable: false,
+                    securityDepositVatApplicable: false, parkingRemoteVatApplicable: false,
                 });
+                setBookingDeposit({ amount: 0, chequeNumber: "", chequeDate: "", bankName: "" });
+                setBookingDepositOpen(false);
             }
         } catch (err) {
             console.error(err);
@@ -386,6 +429,20 @@ export default function LeasesPage() {
             }
         });
         setConfirmOpen(true);
+    };
+
+    const handleUnitChange = (unitId: string) => {
+        const selectedUnit = units.find(u => u.id === unitId);
+        // Auto-set VAT toggles if property is COMMERCIAL
+        const isCommercial = selectedUnit?.property?.type === "COMMERCIAL";
+        setFormData(prev => ({
+            ...prev,
+            unitId,
+            rentVatApplicable: isCommercial,
+            adminFeeVatApplicable: isCommercial,
+            securityDepositVatApplicable: isCommercial,
+            parkingRemoteVatApplicable: isCommercial,
+        }));
     };
 
     const handleGenerateContract = async (id: string) => {
@@ -772,7 +829,7 @@ export default function LeasesPage() {
                         <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-5">
                             <div className="col-span-1">
                                 <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("selectUnit")}</label>
-                                <select required className="w-full bg-input border border-border p-3 rounded-xl text-xs cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.unitId} onChange={ev => setFormData({ ...formData, unitId: ev.target.value })}>
+                                <select required className="w-full bg-input border border-border p-3 rounded-xl text-xs cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.unitId} onChange={ev => handleUnitChange(ev.target.value)}>
                                     <option value="">{t("chooseVacantUnit")}</option>
                                     {units.map(u => <option key={u.id} value={u.id}>{u.property?.nameEn ? `${u.property.nameEn} — ` : ""}{t("unit")} {u.unitNumber}</option>)}
                                 </select>
@@ -794,11 +851,23 @@ export default function LeasesPage() {
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">Monthly Rent (AED)</label>
-                                <input required type="number" min="0" placeholder="5000" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.rentAmount || ''} onChange={ev => setFormData({ ...formData, rentAmount: Number(ev.target.value) })} />
+                                <div className="flex items-center gap-2">
+                                    <input required type="number" min="0" placeholder="5000" className="flex-1 bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.rentAmount || ''} onChange={ev => setFormData({ ...formData, rentAmount: Number(ev.target.value) })} />
+                                    <label className="flex items-center gap-1.5 cursor-pointer shrink-0">
+                                        <input type="checkbox" className="rounded" checked={formData.rentVatApplicable} onChange={ev => setFormData({ ...formData, rentVatApplicable: ev.target.checked })} />
+                                        <span className="text-[10px] font-semibold text-muted whitespace-nowrap">{t("vatApplicable")}</span>
+                                    </label>
+                                </div>
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("securityDeposit")}</label>
-                                <input required type="number" min="0" placeholder="2500" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.depositAmount || ''} onChange={ev => setFormData({ ...formData, depositAmount: Number(ev.target.value) })} />
+                                <div className="flex items-center gap-2">
+                                    <input required type="number" min="0" placeholder="2500" className="flex-1 bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.depositAmount || ''} onChange={ev => setFormData({ ...formData, depositAmount: Number(ev.target.value) })} />
+                                    <label className="flex items-center gap-1.5 cursor-pointer shrink-0">
+                                        <input type="checkbox" className="rounded" checked={formData.securityDepositVatApplicable} onChange={ev => setFormData({ ...formData, securityDepositVatApplicable: ev.target.checked })} />
+                                        <span className="text-[10px] font-semibold text-muted whitespace-nowrap">{t("vatApplicable")}</span>
+                                    </label>
+                                </div>
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("ejariNumber")}</label>
@@ -827,6 +896,65 @@ export default function LeasesPage() {
                             <div className="col-span-1">
                                 <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("paymentReference")}</label>
                                 <input placeholder="REF-12345" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.paymentReferenceNumber} onChange={ev => setFormData({ ...formData, paymentReferenceNumber: ev.target.value })} />
+                            </div>
+                            {/* Agreement Date */}
+                            <div className="col-span-1">
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("agreementDate")}</label>
+                                <input type="date" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.agreementDate} onChange={ev => setFormData({ ...formData, agreementDate: ev.target.value })} />
+                            </div>
+                            {/* Admin Fee */}
+                            <div className="col-span-1">
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("adminFee")} (AED)</label>
+                                <div className="flex items-center gap-2">
+                                    <input type="number" min="0" placeholder="0" className="flex-1 bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.adminFee || ''} onChange={ev => setFormData({ ...formData, adminFee: Number(ev.target.value) })} />
+                                    <label className="flex items-center gap-1.5 cursor-pointer shrink-0">
+                                        <input type="checkbox" className="rounded" checked={formData.adminFeeVatApplicable} onChange={ev => setFormData({ ...formData, adminFeeVatApplicable: ev.target.checked })} />
+                                        <span className="text-[10px] font-semibold text-muted whitespace-nowrap">{t("vatApplicable")}</span>
+                                    </label>
+                                </div>
+                            </div>
+                            {/* Parking Remote Fee */}
+                            <div className="col-span-1">
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("parkingRemoteFee")} (AED)</label>
+                                <div className="flex items-center gap-2">
+                                    <input type="number" min="0" placeholder="0" className="flex-1 bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.parkingRemoteFee || ''} onChange={ev => setFormData({ ...formData, parkingRemoteFee: Number(ev.target.value) })} />
+                                    <label className="flex items-center gap-1.5 cursor-pointer shrink-0">
+                                        <input type="checkbox" className="rounded" checked={formData.parkingRemoteVatApplicable} onChange={ev => setFormData({ ...formData, parkingRemoteVatApplicable: ev.target.checked })} />
+                                        <span className="text-[10px] font-semibold text-muted whitespace-nowrap">{t("vatApplicable")}</span>
+                                    </label>
+                                </div>
+                            </div>
+                            {/* Booking Deposit (collapsible) */}
+                            <div className="col-span-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setBookingDepositOpen(o => !o)}
+                                    className="flex items-center gap-2 text-[10px] font-semibold text-muted uppercase tracking-[0.15em] hover:text-foreground transition-colors cursor-pointer"
+                                >
+                                    <span className={cn("transition-transform", bookingDepositOpen ? "rotate-90" : "rotate-0")}>▶</span>
+                                    {t("bookingDeposit")}
+                                    {bookingDeposit.amount > 0 && <span className="text-primary font-bold ml-1">({bookingDeposit.amount} AED)</span>}
+                                </button>
+                                {bookingDepositOpen && (
+                                    <div className="mt-3 grid grid-cols-2 gap-3 border border-border rounded-xl p-4 bg-input/20">
+                                        <div className="col-span-1">
+                                            <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1">Amount (AED)</label>
+                                            <input type="number" min="0" placeholder="0" className="w-full bg-input border border-border p-2.5 rounded-lg text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={bookingDeposit.amount || ''} onChange={ev => setBookingDeposit(b => ({ ...b, amount: Number(ev.target.value) }))} />
+                                        </div>
+                                        <div className="col-span-1">
+                                            <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1">Cheque Number</label>
+                                            <input placeholder="CH-001" className="w-full bg-input border border-border p-2.5 rounded-lg text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={bookingDeposit.chequeNumber} onChange={ev => setBookingDeposit(b => ({ ...b, chequeNumber: ev.target.value }))} />
+                                        </div>
+                                        <div className="col-span-1">
+                                            <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1">Cheque Date</label>
+                                            <input type="date" className="w-full bg-input border border-border p-2.5 rounded-lg text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={bookingDeposit.chequeDate} onChange={ev => setBookingDeposit(b => ({ ...b, chequeDate: ev.target.value }))} />
+                                        </div>
+                                        <div className="col-span-1">
+                                            <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1">Bank Name</label>
+                                            <input placeholder="e.g. Emirates NBD" className="w-full bg-input border border-border p-2.5 rounded-lg text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={bookingDeposit.bankName} onChange={ev => setBookingDeposit(b => ({ ...b, bankName: ev.target.value }))} />
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                             {/* Payment Schedule Preview */}
                             {paymentPreview && paymentPreview.lines.length > 0 && (
