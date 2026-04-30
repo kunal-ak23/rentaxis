@@ -163,9 +163,53 @@ public class LeaseService {
         lease.setStatus(LeaseStatus.DRAFT);
 
         Lease savedLease = leaseRepository.save(lease);
+
+        if (dto.getBookingDeposit() != null && dto.getBookingDeposit().getAmount() != null
+                && dto.getBookingDeposit().getAmount().signum() > 0) {
+            CreateLeaseDTO.BookingDepositDTO bd = dto.getBookingDeposit();
+            // We can't call the public addBookingDeposit (which calls findLeaseWithTenantCheck) here because
+            // we already have the saved lease in scope. Inline the booking-row creation:
+            PaymentSchedule booking = new PaymentSchedule();
+            booking.setLease(savedLease);
+            booking.setUnit(savedLease.getUnit());
+            booking.setProperty(savedLease.getUnit().getProperty());
+            booking.setInstallmentNumber(0);
+            booking.setDueDate(bd.getChequeDate() != null ? bd.getChequeDate() : LocalDate.now());
+            booking.setChequeDate(bd.getChequeDate());
+            booking.setChequeNumber(bd.getChequeNumber());
+            booking.setBankName(bd.getBankName());
+            booking.setAmount(bd.getAmount());
+            booking.setStatus(PaymentStatus.PENDING);
+            booking.setPaymentMethod(savedLease.getPaymentMethod() != null ? savedLease.getPaymentMethod().name() : "CHEQUE");
+            booking.setPurposeLabel("BOOKING RECEIVED");
+            booking.setBookingDeposit(true);
+            paymentScheduleRepository.save(booking);
+        }
+
         recordEvent(savedLease, null, LeaseStatus.DRAFT, "Lease drafted");
 
         return mapToDTO(savedLease);
+    }
+
+    @Transactional
+    public PaymentSchedule addBookingDeposit(UUID leaseId, BigDecimal amount,
+                                              String chequeNumber, LocalDate chequeDate, String bankName) {
+        Lease lease = findLeaseWithTenantCheck(leaseId);
+        PaymentSchedule ps = new PaymentSchedule();
+        ps.setLease(lease);
+        ps.setUnit(lease.getUnit());
+        ps.setProperty(lease.getUnit().getProperty());
+        ps.setInstallmentNumber(0);
+        ps.setDueDate(chequeDate != null ? chequeDate : LocalDate.now());
+        ps.setChequeDate(chequeDate);
+        ps.setChequeNumber(chequeNumber);
+        ps.setBankName(bankName);
+        ps.setAmount(amount);
+        ps.setStatus(PaymentStatus.PENDING);
+        ps.setPaymentMethod(lease.getPaymentMethod() != null ? lease.getPaymentMethod().name() : "CHEQUE");
+        ps.setPurposeLabel("BOOKING RECEIVED");
+        ps.setBookingDeposit(true);
+        return paymentScheduleRepository.save(ps);
     }
 
     @Transactional
