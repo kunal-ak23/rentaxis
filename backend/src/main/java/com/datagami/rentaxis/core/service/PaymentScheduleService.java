@@ -79,6 +79,17 @@ public class PaymentScheduleService {
             ps.setDueDate(line.getDueDate());
             ps.setAmount(line.getAmount());
             ps.setStatus(PaymentStatus.PENDING);
+            int n = line.getInstallmentNumber();
+            String label = "RENT - " + ordinalOf(n) + " INSTALLMENT";
+            if (n == 1) {
+                boolean hasBundledCharges = lease.getAdminFee().signum() > 0
+                        || lease.getDepositAmount().signum() > 0
+                        || lease.getParkingRemoteFee().signum() > 0;
+                if (hasBundledCharges) {
+                    label += "/ADMIN/SD/REMOTE";
+                }
+            }
+            ps.setPurposeLabel(label);
             ps.setPaymentMethod(lease.getPaymentMethod() != null ? lease.getPaymentMethod().name() : "CHEQUE");
             schedules.add(ps);
         }
@@ -600,6 +611,16 @@ public class PaymentScheduleService {
         dto.setDueDayOfMonth(dueDay);
         dto.setDefaultPaymentMethod(onlineEnabled ? "ONLINE" : "CHEQUE");
         return dto;
+    }
+
+    private static String ordinalOf(int n) {
+        if (n % 100 >= 11 && n % 100 <= 13) return n + "TH";
+        return switch (n % 10) {
+            case 1 -> n + "ST";
+            case 2 -> n + "ND";
+            case 3 -> n + "RD";
+            default -> n + "TH";
+        };
     }
 
     private PaymentScheduleDTO mapToDTO(PaymentSchedule ps) {
