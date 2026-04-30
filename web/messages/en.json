@@ -98,7 +98,20 @@
     "welcomeRenter": "Welcome to your Renter Portal",
     "renterPortalDesc": "View your leases, download contracts, and manage your tenancy.",
     "paymentsProgress": "payments cleared",
-    "overduePayments": "overdue"
+    "overduePayments": "overdue",
+    "adminFee": "Admin Fee",
+    "parkingRemoteFee": "Parking Remote",
+    "vatApplicable": "VAT 5%",
+    "bookingDeposit": "Booking Deposit",
+    "contractNumber": "Contract No.",
+    "agreementDate": "Agreement Date",
+    "generatePreview": "Preview Contract",
+    "confirmAndSave": "Confirm & Save",
+    "purposeLabel": "In Favour Of"
+  },
+  "LandlordOrg": {
+    "phone": "Phone",
+    "stamp": "Stamp / Seal"
   },
   "Payments": {
     "title": "Payment Schedule",

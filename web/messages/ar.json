@@ -98,7 +98,20 @@
     "welcomeRenter": "مرحباً بك في بوابة المستأجر",
     "renterPortalDesc": "عرض عقودك وتحميل العقود وإدارة إيجارك.",
     "paymentsProgress": "دفعات تمت تسويتها",
-    "overduePayments": "متأخر"
+    "overduePayments": "متأخر",
+    "adminFee": "رسوم إدارية",
+    "parkingRemoteFee": "جهاز التحكم بالموقف",
+    "vatApplicable": "ضريبة القيمة المضافة 5%",
+    "bookingDeposit": "وديعة الحجز",
+    "contractNumber": "رقم العقد",
+    "agreementDate": "تاريخ الاتفاقية",
+    "generatePreview": "معاينة العقد",
+    "confirmAndSave": "تأكيد وحفظ",
+    "purposeLabel": "لصالح"
+  },
+  "LandlordOrg": {
+    "phone": "الهاتف",
+    "stamp": "ختم / طابع"
   },
   "Payments": {
     "title": "جدول الدفعات",
