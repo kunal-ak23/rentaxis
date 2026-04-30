@@ -444,6 +444,24 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
               StatusBadge(label: status, color: statusColor),
             ],
           ),
+          if (lease['contractNumber'] != null) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppColors.primary,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                'Contract No. ${lease['contractNumber']}',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
           _HeaderInfo(
             icon: Icons.apartment_outlined,
@@ -456,6 +474,13 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
             text:
                 '${Formatters.date(lease['startDate'])} - ${Formatters.date(lease['endDate'])}',
           ),
+          if (lease['agreementDate'] != null) ...[
+            const SizedBox(height: 6),
+            _HeaderInfo(
+              icon: Icons.assignment_outlined,
+              text: 'Agreement: ${Formatters.date(lease['agreementDate'])}',
+            ),
+          ],
           const Divider(color: Colors.white24, height: 24),
           Row(
             children: [
@@ -478,6 +503,26 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
               ),
             ],
           ),
+          if ((lease['adminFee'] != null && (lease['adminFee'] as num) > 0) ||
+              (lease['parkingRemoteFee'] != null && (lease['parkingRemoteFee'] as num) > 0)) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                if (lease['adminFee'] != null && (lease['adminFee'] as num) > 0) ...[
+                  _AmountItem(
+                    label: 'Admin Fee',
+                    value: Formatters.currency((lease['adminFee'] as num).toDouble()),
+                  ),
+                  const SizedBox(width: 24),
+                ],
+                if (lease['parkingRemoteFee'] != null && (lease['parkingRemoteFee'] as num) > 0)
+                  _AmountItem(
+                    label: 'Parking Remote',
+                    value: Formatters.currency((lease['parkingRemoteFee'] as num).toDouble()),
+                  ),
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -580,6 +625,16 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
                             color: AppColors.textSecondary,
                           ),
                         ),
+                        if (payment['purposeLabel'] != null) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            payment['purposeLabel'] as String,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: AppColors.textMuted,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
