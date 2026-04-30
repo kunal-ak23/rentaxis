@@ -158,6 +158,16 @@ public class LeaseController {
         return ResponseEntity.ok(contractGenerationService.generateContract(id));
     }
 
+    @PostMapping("/{id}/generate-contract/preview")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
+    public ResponseEntity<byte[]> previewContract(@PathVariable UUID id) {
+        byte[] pdf = contractGenerationService.previewContract(id);
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_PDF)
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"lease-preview.pdf\"")
+                .body(pdf);
+    }
+
     @GetMapping("/{id}/documents")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'RENTER')")
     public ResponseEntity<List<LeaseDocumentDTO>> getDocuments(@PathVariable UUID id) {

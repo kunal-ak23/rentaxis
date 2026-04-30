@@ -138,6 +138,23 @@ public class ContractGenerationService {
         return mapToDTO(savedDoc);
     }
 
+    @Transactional(readOnly = true)
+    public byte[] previewContract(UUID leaseId) {
+        Lease lease = leaseRepository.findById(leaseId)
+                .orElseThrow(() -> new NotFoundException("Lease not found"));
+        UUID tenantId = TenantContextHolder.getTenantId();
+        if (tenantId != null && !tenantId.equals(lease.getTenantId())) {
+            throw new NotFoundException("Lease not found");
+        }
+
+        // Use placeholder for contract number when none assigned yet; do not assign / mutate / save.
+        String contractNumberDisplay = lease.getContractNumber() != null
+                ? String.valueOf(lease.getContractNumber())
+                : "DRAFT";
+        String html = renderContractHtml(lease, contractNumberDisplay);
+        return renderPdf(html);
+    }
+
     private String renderContractHtml(Lease lease, String contractNumberDisplay) {
         // Load landlord org for this tenant
         LandlordOrg org = landlordOrgRepository.findById(lease.getTenantId())
