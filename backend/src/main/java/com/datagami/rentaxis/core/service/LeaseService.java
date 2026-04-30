@@ -12,6 +12,7 @@ import org.springframework.context.annotation.Lazy;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.PaymentMethod;
 import com.datagami.rentaxis.domain.entity.enums.PaymentStatus;
+import com.datagami.rentaxis.domain.entity.enums.PropertyType;
 import com.datagami.rentaxis.domain.entity.enums.UnitStatus;
 import com.datagami.rentaxis.domain.repository.*;
 import com.datagami.rentaxis.domain.repository.PaymentScheduleRepository;
@@ -21,6 +22,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -146,6 +148,18 @@ public class LeaseService {
             lease.setDepositPaymentMethod(PaymentMethod.valueOf(dto.getDepositPaymentMethod()));
         }
         lease.setPaymentReferenceNumber(dto.getPaymentReferenceNumber());
+
+        // Lease agreement: charges, agreement date, per-component VAT flags
+        lease.setAgreementDate(dto.getAgreementDate()); // null is OK; ContractGenerationService defaults to today on contract generation
+        lease.setAdminFee(dto.getAdminFee() != null ? dto.getAdminFee() : BigDecimal.ZERO);
+        lease.setParkingRemoteFee(dto.getParkingRemoteFee() != null ? dto.getParkingRemoteFee() : BigDecimal.ZERO);
+
+        boolean commercialDefault = isCommercialProperty(unit);
+        lease.setRentVatApplicable(dto.getRentVatApplicable() != null ? dto.getRentVatApplicable() : commercialDefault);
+        lease.setAdminFeeVatApplicable(dto.getAdminFeeVatApplicable() != null ? dto.getAdminFeeVatApplicable() : commercialDefault);
+        lease.setSecurityDepositVatApplicable(dto.getSecurityDepositVatApplicable() != null ? dto.getSecurityDepositVatApplicable() : commercialDefault);
+        lease.setParkingRemoteVatApplicable(dto.getParkingRemoteVatApplicable() != null ? dto.getParkingRemoteVatApplicable() : commercialDefault);
+
         lease.setStatus(LeaseStatus.DRAFT);
 
         Lease savedLease = leaseRepository.save(lease);
@@ -193,6 +207,15 @@ public class LeaseService {
             lease.setDepositPaymentMethod(PaymentMethod.valueOf(dto.getDepositPaymentMethod()));
         }
         lease.setPaymentReferenceNumber(dto.getPaymentReferenceNumber());
+
+        // Lease agreement fields (allow update; null on Boolean toggles means "no change", null on amounts means "no change")
+        if (dto.getAgreementDate() != null) lease.setAgreementDate(dto.getAgreementDate());
+        if (dto.getAdminFee() != null) lease.setAdminFee(dto.getAdminFee());
+        if (dto.getParkingRemoteFee() != null) lease.setParkingRemoteFee(dto.getParkingRemoteFee());
+        if (dto.getRentVatApplicable() != null) lease.setRentVatApplicable(dto.getRentVatApplicable());
+        if (dto.getAdminFeeVatApplicable() != null) lease.setAdminFeeVatApplicable(dto.getAdminFeeVatApplicable());
+        if (dto.getSecurityDepositVatApplicable() != null) lease.setSecurityDepositVatApplicable(dto.getSecurityDepositVatApplicable());
+        if (dto.getParkingRemoteVatApplicable() != null) lease.setParkingRemoteVatApplicable(dto.getParkingRemoteVatApplicable());
 
         Lease savedLease = leaseRepository.save(lease);
         recordEvent(savedLease, LeaseStatus.DRAFT, LeaseStatus.DRAFT, "Lease updated");
@@ -422,5 +445,10 @@ public class LeaseService {
 
     private boolean containsIgnoreCase(String value, String token) {
         return value != null && value.toLowerCase(Locale.ROOT).contains(token);
+    }
+
+    private static boolean isCommercialProperty(Unit unit) {
+        PropertyType type = unit.getProperty().getType();
+        return type == PropertyType.COMMERCIAL;
     }
 }
