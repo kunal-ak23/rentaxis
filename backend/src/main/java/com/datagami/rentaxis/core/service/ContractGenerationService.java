@@ -32,7 +32,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.io.UncheckedIOException;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -43,6 +47,7 @@ import java.util.stream.Collectors;
 public class ContractGenerationService {
 
     private static final BigDecimal VAT_RATE = new BigDecimal("0.05");
+    private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("dd MMM yyyy", Locale.ENGLISH);
 
     private final LeaseRepository leaseRepository;
     private final LeaseDocumentRepository leaseDocumentRepository;
@@ -205,6 +210,54 @@ public class ContractGenerationService {
         BigDecimal v = nz(amount).setScale(2, RoundingMode.HALF_UP);
         DecimalFormat df = new DecimalFormat("#,##0.00", DecimalFormatSymbols.getInstance(Locale.ENGLISH));
         return df.format(v);
+    }
+
+    String formatDate(LocalDate date) {
+        return date != null ? DATE_FORMAT.format(date) : "";
+    }
+
+    /**
+     * Build the rows for Section 4 (Payment Details). Sorts non-booking
+     * installments by chequeDate ASC and appends booking-deposit rows last.
+     */
+    public String buildSection4Rows(List<PaymentSchedule> schedules) {
+        if (schedules == null || schedules.isEmpty()) return "";
+
+        List<PaymentSchedule> regular = new ArrayList<>();
+        List<PaymentSchedule> booking = new ArrayList<>();
+        for (PaymentSchedule p : schedules) {
+            if (p.isBookingDeposit()) {
+                booking.add(p);
+            } else {
+                regular.add(p);
+            }
+        }
+        Comparator<PaymentSchedule> byChequeDate = Comparator.comparing(
+                PaymentSchedule::getChequeDate,
+                Comparator.nullsLast(Comparator.naturalOrder()));
+        regular.sort(byChequeDate);
+        booking.sort(byChequeDate);
+
+        StringBuilder sb = new StringBuilder();
+        int sNo = 1;
+        for (PaymentSchedule p : regular) {
+            appendSection4Row(sb, sNo++, p);
+        }
+        for (PaymentSchedule p : booking) {
+            appendSection4Row(sb, sNo++, p);
+        }
+        return sb.toString();
+    }
+
+    private void appendSection4Row(StringBuilder sb, int sNo, PaymentSchedule p) {
+        sb.append("<tr>")
+                .append("<td class=\"center\">").append(sNo).append("</td>")
+                .append("<td>").append(safe(p.getChequeNumber())).append("</td>")
+                .append("<td>").append(p.getChequeDate() != null ? formatDate(p.getChequeDate()) : "").append("</td>")
+                .append("<td>").append(safe(p.getPurposeLabel())).append("</td>")
+                .append("<td>").append(safe(p.getBankName())).append("</td>")
+                .append("<td class=\"num\">").append(formatAmount(nz(p.getAmount()))).append("</td>")
+                .append("</tr>");
     }
 
     private static String safe(String s) {
