@@ -10,8 +10,9 @@ import { formatCurrency, formatCurrencyCompact } from "@/lib/format";
 import {
     ArrowLeft, FileText, User, Building2, Calendar, DollarSign, CreditCard,
     Home, Download, Upload, Trash2, Loader2, CheckCircle, Clock, AlertTriangle,
-    Hash, Phone, Mail, MapPin, Wrench, X, Ban, CalendarClock,
+    Hash, Phone, Mail, MapPin, Wrench, X, Ban, CalendarClock, Sparkles,
 } from "lucide-react";
+import { useTranslations } from "next-intl";
 
 type Lease = {
     id: string; unitId: string; renterId: string; unitIdentifier: string;
@@ -20,6 +21,7 @@ type Lease = {
     ejariNumber: string; paymentTerms: number; paymentMethod: string;
     depositPaymentMethod: string; paymentReferenceNumber: string;
     propertyId: string; propertyName: string; hasContract: boolean;
+    contractNumber?: string | null;
 };
 
 type Payment = {
@@ -124,6 +126,7 @@ export default function LeaseDetailPage() {
     const { data: session } = useSession();
     const userRole = session?.user?.role as UserRole | undefined;
     const isAdmin = hasRole(userRole, ["SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER"]);
+    const t = useTranslations("MasterData");
 
     const [lease, setLease] = useState<Lease | null>(null);
     const [renter, setRenter] = useState<Renter | null>(null);
@@ -146,6 +149,12 @@ export default function LeaseDetailPage() {
     const [extendDate, setExtendDate] = useState("");
     const [extending, setExtending] = useState(false);
     const [extendError, setExtendError] = useState<string | null>(null);
+
+    // Generate contract preview modal state
+    const [previewOpen, setPreviewOpen] = useState(false);
+    const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
+    const [previewLoading, setPreviewLoading] = useState(false);
+    const [confirmSaving, setConfirmSaving] = useState(false);
 
     const fetchLease = useCallback(async () => {
         try {
@@ -313,6 +322,48 @@ export default function LeaseDetailPage() {
         }
     };
 
+    const handlePreviewContract = async () => {
+        if (!lease) return;
+        setPreviewLoading(true);
+        try {
+            const res = await fetch(`/api/proxy/v1/leases/${lease.id}/generate-contract/preview`, { method: "POST" });
+            if (res.ok) {
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                setPreviewBlobUrl(url);
+                setPreviewOpen(true);
+            }
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setPreviewLoading(false);
+        }
+    };
+
+    const handleClosePreview = () => {
+        setPreviewOpen(false);
+        if (previewBlobUrl) {
+            URL.revokeObjectURL(previewBlobUrl);
+            setPreviewBlobUrl(null);
+        }
+    };
+
+    const handleConfirmAndSave = async () => {
+        if (!lease) return;
+        setConfirmSaving(true);
+        try {
+            const res = await fetch(`/api/proxy/v1/leases/${lease.id}/generate-contract`, { method: "POST" });
+            if (res.ok) {
+                handleClosePreview();
+                fetchLease();
+            }
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setConfirmSaving(false);
+        }
+    };
+
     const handleDownloadContract = async () => {
         if (!lease) return;
         const res = await fetch(`/api/proxy/v1/leases/${lease.id}/documents`);
@@ -377,9 +428,24 @@ export default function LeaseDetailPage() {
                         <span className={cn("px-2.5 py-1 rounded-lg text-[10px] font-semibold border", STATUS_COLORS[lease.status] || "bg-input text-muted border-border")}>
                             {lease.status.replace("_", " ")}
                         </span>
+                        {lease.contractNumber && (
+                            <span className="px-2.5 py-1 rounded-lg text-[10px] font-semibold bg-primary/10 text-primary border border-primary/20">
+                                {t("contractNumber")} {lease.contractNumber}
+                            </span>
+                        )}
                     </div>
                     <p className="text-sm text-muted">{lease.propertyName} &bull; {lease.renterName}</p>
                 </div>
+                {isAdmin && (
+                    <button
+                        onClick={handlePreviewContract}
+                        disabled={previewLoading}
+                        className="flex items-center gap-2 bg-blue-50 text-blue-700 border border-blue-200 px-4 py-2 rounded-lg text-xs font-semibold hover:bg-blue-100 transition-all cursor-pointer disabled:opacity-50"
+                    >
+                        {previewLoading ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                        {t("generatePreview")}
+                    </button>
+                )}
                 {lease.hasContract && (
                     <button
                         onClick={handleDownloadContract}
@@ -808,6 +874,43 @@ export default function LeaseDetailPage() {
             )}
 
         </div>
+
+        {/* Generate Contract Preview Modal */}
+        {previewOpen && previewBlobUrl && (
+            <div className="fixed inset-0 z-50 flex flex-col bg-black/70">
+                <div className="flex items-center justify-between bg-surface border-b border-border px-5 py-3 shrink-0">
+                    <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                        <Sparkles size={15} className="text-primary" /> Contract Preview
+                    </h3>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={handleClosePreview}
+                            className="px-4 py-2 rounded-lg text-xs font-semibold text-muted hover:bg-input border border-border transition-colors cursor-pointer"
+                        >
+                            {t("cancel")}
+                        </button>
+                        <button
+                            onClick={handleConfirmAndSave}
+                            disabled={confirmSaving}
+                            className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer disabled:opacity-50"
+                        >
+                            {confirmSaving ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle size={12} />}
+                            {t("confirmAndSave")}
+                        </button>
+                        <button onClick={handleClosePreview} className="p-1.5 text-muted hover:text-foreground cursor-pointer ml-1">
+                            <X size={16} />
+                        </button>
+                    </div>
+                </div>
+                <div className="flex-1 overflow-hidden">
+                    <iframe
+                        src={previewBlobUrl}
+                        className="w-full h-full border-0"
+                        title="Contract Preview"
+                    />
+                </div>
+            </div>
+        )}
 
         {/* Extend Lease Modal */}
         {extendOpen && (
