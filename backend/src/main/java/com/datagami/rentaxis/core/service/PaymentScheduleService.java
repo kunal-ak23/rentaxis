@@ -297,6 +297,30 @@ public class PaymentScheduleService {
         creditTxn.setCredit(payment.getAmount());
         creditTxn.setProperty(payment.getProperty());
         creditTxn.setUnit(payment.getUnit());
+
+        // Stamp VAT fields based on the lease's rent VAT toggle (UAE 5% standard rate).
+        // The cheque amount is gross (face value); we extract VAT as gross * 5/105.
+        // Only the credit (rental-income) leg is stamped — VAT is tracked on income lines,
+        // not on the bank/cash debit leg.
+        // Note: bundled first cheques (admin fee / SD / parking remote rolled into installment 1)
+        // are treated as rent here. A future enhancement could split them per-component using
+        // lease.isAdminFeeVatApplicable / isSecurityDepositVatApplicable / isParkingRemoteVatApplicable.
+        boolean rentVatApplicable = payment.getLease().isRentVatApplicable();
+        if (rentVatApplicable) {
+            BigDecimal gross = payment.getAmount();
+            BigDecimal vatAmount = gross
+                    .multiply(new BigDecimal("5"))
+                    .divide(new BigDecimal("105"), 2, RoundingMode.HALF_UP);
+            BigDecimal netAmount = gross.subtract(vatAmount);
+            creditTxn.setVatApplicable(true);
+            creditTxn.setVatRate(new BigDecimal("5.00"));
+            creditTxn.setVatAmount(vatAmount);
+            creditTxn.setGrossAmount(gross);
+            creditTxn.setNetAmount(netAmount);
+        }
+        // else: leave defaults (vatApplicable=false, vatRate=0, vatAmount=0,
+        // grossAmount=0, netAmount=0) matching pre-M9 behavior for residential leases.
+
         financialTransactionService.createTransaction(creditTxn);
 
         // Notify renter that payment has been cleared
