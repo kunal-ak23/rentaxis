@@ -206,6 +206,17 @@ public class ContractGenerationService {
         return sNo + 1;
     }
 
+    /**
+     * Assigns the next sequential per-tenant contract number to the lease if its
+     * current contract number is null. Idempotent for already-assigned leases.
+     */
+    public void assignContractNumberIfNull(Lease lease) {
+        if (lease.getContractNumber() != null) return;
+        Long max = leaseRepository.findMaxContractNumberForTenant(lease.getTenantId());
+        long base = max == null ? 0L : max;
+        lease.setContractNumber(base + 1L);
+    }
+
     String formatAmount(BigDecimal amount) {
         BigDecimal v = nz(amount).setScale(2, RoundingMode.HALF_UP);
         DecimalFormat df = new DecimalFormat("#,##0.00", DecimalFormatSymbols.getInstance(Locale.ENGLISH));

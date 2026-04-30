@@ -39,4 +39,7 @@ public interface LeaseRepository extends JpaRepository<Lease, UUID> {
     List<Lease> findByUnitPropertyId(@Param("propertyId") UUID propertyId);
 
     List<Lease> findByStatus(LeaseStatus status);
+
+    @Query("SELECT COALESCE(MAX(l.contractNumber), 0) FROM Lease l WHERE l.tenantId = :tenantId")
+    Long findMaxContractNumberForTenant(@Param("tenantId") UUID tenantId);
 }

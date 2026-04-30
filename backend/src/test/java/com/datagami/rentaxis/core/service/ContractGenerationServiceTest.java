@@ -12,9 +12,11 @@ import org.junit.jupiter.api.Test;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class ContractGenerationServiceTest {
 
@@ -121,5 +123,30 @@ class ContractGenerationServiceTest {
                 "RENT - 1ST INSTALLMENT", false);
         String html = service.buildSection4Rows(List.of(p));
         assertThat(html).contains("18 Apr 2026");
+    }
+
+    @Test
+    void assignsNextContractNumberWhenNull() {
+        Lease lease = new Lease();
+        lease.setTenantId(UUID.randomUUID());
+        // Default new lease has contractNumber == null
+
+        // Re-create service with controllable mock
+        LeaseRepository leaseRepo = mock(LeaseRepository.class);
+        when(leaseRepo.findMaxContractNumberForTenant(lease.getTenantId())).thenReturn(1750L);
+        ContractGenerationService svc = new ContractGenerationService(
+                leaseRepo, mock(LeaseDocumentRepository.class), mock(LandlordOrgRepository.class), mock(PaymentScheduleRepository.class));
+
+        svc.assignContractNumberIfNull(lease);
+        assertThat(lease.getContractNumber()).isEqualTo(1751L);
+    }
+
+    @Test
+    void doesNotReassignExistingContractNumber() {
+        Lease lease = new Lease();
+        lease.setTenantId(UUID.randomUUID());
+        lease.setContractNumber(42L);
+        service.assignContractNumberIfNull(lease);
+        assertThat(lease.getContractNumber()).isEqualTo(42L);
     }
 }
