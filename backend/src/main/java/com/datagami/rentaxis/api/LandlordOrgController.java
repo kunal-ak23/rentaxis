@@ -65,6 +65,12 @@ public class LandlordOrgController {
         if (payload.containsKey("logoUrl")) {
             org.setLogoUrl(payload.get("logoUrl"));
         }
+        if (payload.containsKey("phone")) {
+            org.setPhone(payload.get("phone"));
+        }
+        if (payload.containsKey("stampImageUrl")) {
+            org.setStampImageUrl(payload.get("stampImageUrl"));
+        }
         if (payload.containsKey("ticketOtpRequired")) {
             org.setTicketOtpRequired(Boolean.parseBoolean(payload.get("ticketOtpRequired")));
         }
