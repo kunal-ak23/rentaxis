@@ -69,4 +69,10 @@ public class PaymentSchedule extends BaseTenantEntity {
 
     @Column(name = "payment_method", length = 20)
     private String paymentMethod = "CHEQUE";
+
+    @Column(name = "purpose_label", length = 120)
+    private String purposeLabel;
+
+    @Column(name = "is_booking_deposit", nullable = false)
+    private boolean isBookingDeposit = false;
 }
