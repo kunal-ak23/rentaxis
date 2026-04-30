@@ -28,4 +28,6 @@ public class PaymentScheduleDTO {
     private Instant statusChangedAt;
     private String notes;
     private UUID replacedById;
+    private String purposeLabel;
+    private Boolean isBookingDeposit;
 }
