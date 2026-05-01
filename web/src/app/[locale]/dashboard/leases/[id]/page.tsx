@@ -126,6 +126,10 @@ export default function LeaseDetailPage() {
     const { data: session } = useSession();
     const userRole = session?.user?.role as UserRole | undefined;
     const isAdmin = hasRole(userRole, ["SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER"]);
+    // Contract generation is restricted to SUPER_ADMIN and TENANT_ADMIN on the
+    // backend; matching the gate here so PROPERTY_MANAGER doesn't see a button
+    // that 403s when clicked.
+    const canGenerateContract = hasRole(userRole, ["SUPER_ADMIN", "TENANT_ADMIN"]);
     const t = useTranslations("MasterData");
 
     const [lease, setLease] = useState<Lease | null>(null);
@@ -155,6 +159,7 @@ export default function LeaseDetailPage() {
     const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
     const [previewLoading, setPreviewLoading] = useState(false);
     const [confirmSaving, setConfirmSaving] = useState(false);
+    const [contractError, setContractError] = useState<string | null>(null);
 
     const fetchLease = useCallback(async () => {
         try {
@@ -325,6 +330,7 @@ export default function LeaseDetailPage() {
     const handlePreviewContract = async () => {
         if (!lease) return;
         setPreviewLoading(true);
+        setContractError(null);
         try {
             const res = await fetch(`/api/proxy/v1/leases/${lease.id}/generate-contract/preview`, { method: "POST" });
             if (res.ok) {
@@ -332,9 +338,19 @@ export default function LeaseDetailPage() {
                 const url = URL.createObjectURL(blob);
                 setPreviewBlobUrl(url);
                 setPreviewOpen(true);
+            } else if (res.status === 403) {
+                setContractError("You don't have permission to generate a contract for this lease.");
+            } else {
+                let detail: string | null = null;
+                try {
+                    const body = await res.json();
+                    detail = body?.message || body?.error || null;
+                } catch {}
+                setContractError(detail || "Failed to generate contract preview. Please try again.");
             }
         } catch (err) {
             console.error(err);
+            setContractError("Network error while generating preview. Check your connection and try again.");
         } finally {
             setPreviewLoading(false);
         }
@@ -351,14 +367,25 @@ export default function LeaseDetailPage() {
     const handleConfirmAndSave = async () => {
         if (!lease) return;
         setConfirmSaving(true);
+        setContractError(null);
         try {
             const res = await fetch(`/api/proxy/v1/leases/${lease.id}/generate-contract`, { method: "POST" });
             if (res.ok) {
                 handleClosePreview();
                 fetchLease();
+            } else if (res.status === 403) {
+                setContractError("You don't have permission to save this contract.");
+            } else {
+                let detail: string | null = null;
+                try {
+                    const body = await res.json();
+                    detail = body?.message || body?.error || null;
+                } catch {}
+                setContractError(detail || "Failed to save contract. Please try again.");
             }
         } catch (err) {
             console.error(err);
+            setContractError("Network error while saving contract. Check your connection and try again.");
         } finally {
             setConfirmSaving(false);
         }
@@ -436,15 +463,20 @@ export default function LeaseDetailPage() {
                     </div>
                     <p className="text-sm text-muted">{lease.propertyName} &bull; {lease.renterName}</p>
                 </div>
-                {isAdmin && (
-                    <button
-                        onClick={handlePreviewContract}
-                        disabled={previewLoading}
-                        className="flex items-center gap-2 bg-blue-50 text-blue-700 border border-blue-200 px-4 py-2 rounded-lg text-xs font-semibold hover:bg-blue-100 transition-all cursor-pointer disabled:opacity-50"
-                    >
-                        {previewLoading ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                        {t("generatePreview")}
-                    </button>
+                {canGenerateContract && (
+                    <div className="flex flex-col items-end gap-1">
+                        <button
+                            onClick={handlePreviewContract}
+                            disabled={previewLoading}
+                            className="flex items-center gap-2 bg-blue-50 text-blue-700 border border-blue-200 px-4 py-2 rounded-lg text-xs font-semibold hover:bg-blue-100 transition-all cursor-pointer disabled:opacity-50"
+                        >
+                            {previewLoading ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                            {t("generatePreview")}
+                        </button>
+                        {contractError && !previewOpen && (
+                            <p className="text-xs text-error max-w-xs text-right">{contractError}</p>
+                        )}
+                    </div>
                 )}
                 {lease.hasContract && (
                     <button
@@ -902,6 +934,11 @@ export default function LeaseDetailPage() {
                         </button>
                     </div>
                 </div>
+                {contractError && (
+                    <div className="bg-error/10 border-b border-error/20 px-5 py-2 shrink-0">
+                        <p className="text-xs text-error">{contractError}</p>
+                    </div>
+                )}
                 <div className="flex-1 overflow-hidden">
                     <iframe
                         src={previewBlobUrl}
