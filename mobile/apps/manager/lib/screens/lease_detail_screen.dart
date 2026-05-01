@@ -455,7 +455,7 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
               children: [
                 _buildHeader(lease, status, statusColor),
                 const SizedBox(height: 20),
-                if (status == 'DRAFT') ...[
+                if (status == 'DRAFT' || status == 'PENDING_SIGNATURE') ...[
                   SizedBox(
                     width: double.infinity,
                     child: OutlinedButton.icon(
