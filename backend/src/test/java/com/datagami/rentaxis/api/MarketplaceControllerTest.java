@@ -12,6 +12,7 @@ import com.datagami.rentaxis.domain.entity.enums.ListingStatus;
 import com.datagami.rentaxis.domain.repository.UnitListingAmenityRepository;
 import com.datagami.rentaxis.domain.repository.UnitListingMediaRepository;
 import com.datagami.rentaxis.domain.repository.UnitListingRepository;
+import com.datagami.rentaxis.domain.repository.UnitRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -58,6 +59,8 @@ class MarketplaceControllerTest {
     UnitListingRepository listingRepository;
     @Mock
     TenantFeatureService tenantFeatureService;
+    @Mock
+    UnitRepository unitRepository;
 
     @InjectMocks
     MarketplaceController controller;
