@@ -79,6 +79,13 @@ public class LeaseController {
         return ResponseEntity.ok(leaseService.updateDraftLease(id, dto));
     }
 
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
+    public ResponseEntity<Void> deleteDraftLease(@PathVariable UUID id) {
+        leaseService.deleteDraftLease(id);
+        return ResponseEntity.noContent().build();
+    }
+
     @PutMapping("/{id}/activate")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
     public ResponseEntity<LeaseDTO> activateLease(@PathVariable UUID id) {

@@ -38,6 +38,7 @@ public class LeaseService {
     private final RenterRepository renterRepository;
     private final LeaseEventRepository leaseEventRepository;
     private final LeaseDocumentRepository leaseDocumentRepository;
+    private final LeaseAttachmentRepository leaseAttachmentRepository;
     private final PaymentScheduleService paymentScheduleService;
     private final PaymentScheduleRepository paymentScheduleRepository;
     private final SettlementService settlementService;
@@ -48,6 +49,7 @@ public class LeaseService {
                         RenterRepository renterRepository,
                         LeaseEventRepository leaseEventRepository,
                         LeaseDocumentRepository leaseDocumentRepository,
+                        LeaseAttachmentRepository leaseAttachmentRepository,
                         PaymentScheduleService paymentScheduleService,
                         PaymentScheduleRepository paymentScheduleRepository,
                         SettlementService settlementService,
@@ -57,6 +59,7 @@ public class LeaseService {
         this.renterRepository = renterRepository;
         this.leaseEventRepository = leaseEventRepository;
         this.leaseDocumentRepository = leaseDocumentRepository;
+        this.leaseAttachmentRepository = leaseAttachmentRepository;
         this.paymentScheduleService = paymentScheduleService;
         this.paymentScheduleRepository = paymentScheduleRepository;
         this.settlementService = settlementService;
@@ -289,6 +292,27 @@ public class LeaseService {
         recordEvent(savedLease, LeaseStatus.DRAFT, LeaseStatus.DRAFT, "Lease updated");
 
         return mapToDTO(savedLease);
+    }
+
+    /**
+     * Hard-delete a DRAFT lease and all rows that hang off it (payment
+     * schedule, lease events, attachments). Only DRAFT is supported — once a
+     * lease has gone to PENDING_SIGNATURE / ACTIVE / TERMINATED there are
+     * downstream financial entries that should not be silently removed.
+     */
+    @Transactional
+    public void deleteDraftLease(UUID leaseId) {
+        Lease lease = findLeaseWithTenantCheck(leaseId);
+        if (lease.getStatus() != LeaseStatus.DRAFT) {
+            throw new BusinessRuleViolationException("Only DRAFT leases can be deleted");
+        }
+        // Defensive: a DRAFT lease shouldn't have any contract documents, but
+        // if a previous flow left one behind, drop the row(s) too.
+        leaseDocumentRepository.deleteAll(leaseDocumentRepository.findByLeaseId(leaseId));
+        leaseAttachmentRepository.deleteAll(leaseAttachmentRepository.findByLeaseId(leaseId));
+        paymentScheduleRepository.deleteAll(paymentScheduleRepository.findByLeaseId(leaseId));
+        leaseEventRepository.deleteAll(leaseEventRepository.findByLeaseIdOrderByCreatedAtDesc(leaseId));
+        leaseRepository.delete(lease);
     }
 
     @Transactional

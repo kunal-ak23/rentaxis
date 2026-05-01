@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useTranslations, useLocale } from "next-intl";
-import { Plus, X, FileText, Calendar, DollarSign, Home, CheckCircle, Ban, AlertCircle, LayoutGrid, Columns3, Download, Sparkles, Loader2, RefreshCw, Pencil, List, Eye, Search, Upload } from "lucide-react";
+import { Plus, X, FileText, Calendar, DollarSign, Home, CheckCircle, Ban, AlertCircle, LayoutGrid, Columns3, Download, Sparkles, Loader2, RefreshCw, Pencil, List, Eye, Search, Upload, Trash2 } from "lucide-react";
 import { Link, useRouter } from "@/i18n/routing";
 import { Pagination } from "@/components/ui/Pagination";
 import { useSession } from "next-auth/react";
@@ -385,6 +385,40 @@ export default function LeasesPage() {
         }
     };
 
+    const handleDeleteDraft = (id: string) => {
+        setConfirmConfig({
+            title: "Delete draft lease?",
+            description: "This will permanently remove the draft lease, its payment schedule, attachments, and history. This action cannot be undone.",
+            confirmText: "Delete",
+            isDestructive: true,
+            onConfirm: async () => {
+                setActionLoading(`delete-${id}`);
+                try {
+                    const res = await fetch(`/api/proxy/v1/leases/${id}`, { method: "DELETE" });
+                    if (res.ok) {
+                        fetchLeases();
+                    } else if (res.status === 403) {
+                        alert("You don't have permission to delete this lease.");
+                    } else {
+                        let detail: string | null = null;
+                        try {
+                            const body = await res.json();
+                            detail = body?.message || body?.error || null;
+                        } catch {}
+                        alert(detail || "Failed to delete the draft. Please try again.");
+                    }
+                } catch (err) {
+                    console.error(err);
+                    alert("Network error while deleting the draft. Check your connection and try again.");
+                } finally {
+                    setActionLoading(null);
+                    setConfirmOpen(false);
+                }
+            }
+        });
+        setConfirmOpen(true);
+    };
+
     const handleActivate = (id: string) => {
         setConfirmConfig({
             title: t("activateLease"),
@@ -701,6 +735,16 @@ export default function LeasesPage() {
                         >
                             <Pencil size={14} />
                             {t("edit")}
+                        </button>
+                    )}
+                    {lease.status === 'DRAFT' && (
+                        <button
+                            onClick={() => handleDeleteDraft(lease.id)}
+                            disabled={actionLoading === `delete-${lease.id}`}
+                            title="Delete draft"
+                            className="flex items-center justify-center gap-2 bg-error/10 text-error hover:bg-error/20 py-2.5 px-3 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-error/30 focus:outline-none disabled:opacity-50"
+                        >
+                            {actionLoading === `delete-${lease.id}` ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
                         </button>
                     )}
                     {lease.status === 'DRAFT' && !lease.hasContract && (
@@ -1162,6 +1206,16 @@ export default function LeasesPage() {
                                                                 className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium bg-input text-foreground hover:bg-input/80 transition-colors cursor-pointer"
                                                             >
                                                                 <Pencil size={11} /> Edit
+                                                            </button>
+                                                        )}
+                                                        {lease.status === 'DRAFT' && canManageLeases && (
+                                                            <button
+                                                                onClick={() => handleDeleteDraft(lease.id)}
+                                                                disabled={actionLoading === `delete-${lease.id}`}
+                                                                title="Delete draft"
+                                                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium bg-error/10 text-error hover:bg-error/20 transition-colors cursor-pointer disabled:opacity-50"
+                                                            >
+                                                                {actionLoading === `delete-${lease.id}` ? <Loader2 size={11} className="animate-spin" /> : <Trash2 size={11} />}
                                                             </button>
                                                         )}
                                                         {lease.status === 'DRAFT' && !lease.hasContract && canManageLeases && (
