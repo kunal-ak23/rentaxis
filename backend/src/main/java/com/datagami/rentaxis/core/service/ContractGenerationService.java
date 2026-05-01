@@ -59,6 +59,7 @@ public class ContractGenerationService {
     private final LeaseDocumentRepository leaseDocumentRepository;
     private final LandlordOrgRepository landlordOrgRepository;
     private final PaymentScheduleRepository paymentScheduleRepository;
+    private final PaymentScheduleService paymentScheduleService;
 
     @Value("${rentaxis.contracts.storage-path:./data/contracts}")
     private String storagePath;
@@ -72,11 +73,28 @@ public class ContractGenerationService {
     public ContractGenerationService(LeaseRepository leaseRepository,
                                      LeaseDocumentRepository leaseDocumentRepository,
                                      LandlordOrgRepository landlordOrgRepository,
-                                     PaymentScheduleRepository paymentScheduleRepository) {
+                                     PaymentScheduleRepository paymentScheduleRepository,
+                                     PaymentScheduleService paymentScheduleService) {
         this.leaseRepository = leaseRepository;
         this.leaseDocumentRepository = leaseDocumentRepository;
         this.landlordOrgRepository = landlordOrgRepository;
         this.paymentScheduleRepository = paymentScheduleRepository;
+        this.paymentScheduleService = paymentScheduleService;
+    }
+
+    /**
+     * Make sure the lease has its rent installment schedule before the contract
+     * is rendered. New drafts created via LeaseService.createDraftLease already
+     * have a schedule, but pre-existing drafts (or drafts created before draft-time
+     * generation was added) won't — fix that on the fly so Section 4 of the
+     * contract is never empty.
+     */
+    private void ensureScheduleExists(Lease lease) {
+        boolean hasInstallments = paymentScheduleRepository.findByLeaseId(lease.getId())
+                .stream().anyMatch(p -> !p.isBookingDeposit());
+        if (!hasInstallments) {
+            paymentScheduleService.generateScheduleForLease(lease);
+        }
     }
 
     private boolean useAzureStorage() {
@@ -95,6 +113,10 @@ public class ContractGenerationService {
         if (lease.getStatus() != LeaseStatus.DRAFT && lease.getStatus() != LeaseStatus.PENDING_SIGNATURE) {
             throw new BusinessRuleViolationException("Contract can only be generated for DRAFT or PENDING_SIGNATURE leases");
         }
+
+        // Backfill the installment schedule for legacy drafts that predate
+        // draft-time generation, so Section 4 is never empty on the contract.
+        ensureScheduleExists(lease);
 
         // Remove old documents if regenerating — delete both the DB rows and
         // the underlying blob/file so the storage backend doesn't accumulate
@@ -158,7 +180,7 @@ public class ContractGenerationService {
         return mapToDTO(savedDoc);
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public byte[] previewContract(UUID leaseId) {
         Lease lease = leaseRepository.findById(leaseId)
                 .orElseThrow(() -> new NotFoundException("Lease not found"));
@@ -167,7 +189,14 @@ public class ContractGenerationService {
             throw new NotFoundException("Lease not found");
         }
 
-        // Use placeholder for contract number when none assigned yet; do not assign / mutate / save.
+        // Backfill the installment schedule on the fly for legacy drafts that
+        // predate draft-time generation. Persisting these rows is intentional —
+        // they're needed regardless of whether the user later confirms-and-saves
+        // the contract.
+        ensureScheduleExists(lease);
+
+        // Use placeholder for contract number when none assigned yet; do not
+        // assign / mutate the lease's contract number on the preview path.
         String contractNumberDisplay = lease.getContractNumber() != null
                 ? String.valueOf(lease.getContractNumber())
                 : "DRAFT";

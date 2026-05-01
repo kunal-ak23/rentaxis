@@ -49,7 +49,8 @@ class ContractGenerationServiceTest {
                 mock(LeaseRepository.class),
                 mock(LeaseDocumentRepository.class),
                 mock(LandlordOrgRepository.class),
-                mock(PaymentScheduleRepository.class));
+                mock(PaymentScheduleRepository.class),
+                mock(PaymentScheduleService.class));
     }
 
     private Lease leaseWith(BigDecimal rent, BigDecimal admin, BigDecimal deposit, BigDecimal parking,
@@ -156,7 +157,8 @@ class ContractGenerationServiceTest {
         LeaseRepository leaseRepo = mock(LeaseRepository.class);
         when(leaseRepo.findMaxContractNumberForTenant(lease.getTenantId())).thenReturn(1750L);
         ContractGenerationService svc = new ContractGenerationService(
-                leaseRepo, mock(LeaseDocumentRepository.class), mock(LandlordOrgRepository.class), mock(PaymentScheduleRepository.class));
+                leaseRepo, mock(LeaseDocumentRepository.class), mock(LandlordOrgRepository.class),
+                mock(PaymentScheduleRepository.class), mock(PaymentScheduleService.class));
 
         svc.assignContractNumberIfNull(lease);
         assertThat(lease.getContractNumber()).isEqualTo(1751L);
@@ -274,7 +276,8 @@ class ContractGenerationServiceTest {
             return d;
         });
 
-        ContractGenerationService realSvc = new ContractGenerationService(leaseRepo, docRepo, orgRepo, scheduleRepo);
+        ContractGenerationService realSvc = new ContractGenerationService(
+                leaseRepo, docRepo, orgRepo, scheduleRepo, mock(PaymentScheduleService.class));
         // Inject the temp storage path (since @Value isn't processed in plain unit tests).
         Field storagePathField = ContractGenerationService.class.getDeclaredField("storagePath");
         storagePathField.setAccessible(true);
