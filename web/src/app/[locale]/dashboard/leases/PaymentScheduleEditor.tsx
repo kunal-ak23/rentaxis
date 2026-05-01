@@ -35,6 +35,9 @@ type Props = {
     canManage: boolean;         // RBAC gate
     onSaved?: () => void;       // called after a successful save
     className?: string;
+    /** Bump this number from the parent to force a re-fetch (e.g. after the
+     *  metadata editor regenerates the schedule). */
+    refreshKey?: number;
 };
 
 const METHOD_OPTIONS: { value: PaymentMethod; label: string }[] = [
@@ -66,7 +69,7 @@ function clientValidate(rows: ScheduleRow[]): { ok: boolean; firstError?: string
     return { ok: true };
 }
 
-export default function PaymentScheduleEditor({ leaseId, leaseStatus, canManage, onSaved, className }: Props) {
+export default function PaymentScheduleEditor({ leaseId, leaseStatus, canManage, onSaved, className, refreshKey }: Props) {
     const [rows, setRows] = useState<ScheduleRow[]>([]);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -107,7 +110,7 @@ export default function PaymentScheduleEditor({ leaseId, leaseStatus, canManage,
     useEffect(() => {
         fetchRows();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [leaseId]);
+    }, [leaseId, refreshKey]);
 
     const updateRow = (id: string, patch: Partial<ScheduleRow>) => {
         setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));

@@ -132,6 +132,7 @@ export default function LeaseMetadataEditor({ lease, onSaved, className }: Props
     const [form, setForm] = useState<FormShape>(() => leaseToForm(lease));
     const [bookingOpen, setBookingOpen] = useState(false);
     const [bookingDeposit, setBookingDeposit] = useState<BookingDepositShape>({ amount: 0, chequeNumber: "", chequeDate: "", bankName: "" });
+    const [hasExistingBookingDeposit, setHasExistingBookingDeposit] = useState(false);
     const [collapsed, setCollapsed] = useState(true);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -145,19 +146,26 @@ export default function LeaseMetadataEditor({ lease, onSaved, className }: Props
         let cancelled = false;
         (async () => {
             try {
-                const [uRes, rRes] = await Promise.all([
+                const [uRes, rRes, sRes] = await Promise.all([
                     fetch("/api/proxy/v1/units"),
                     fetch("/api/proxy/v1/renters"),
+                    fetch(`/api/proxy/v1/payments?leaseId=${lease.id}`),
                 ]);
                 if (cancelled) return;
                 if (uRes.ok) setUnits(await uRes.json());
                 if (rRes.ok) setRenters(await rRes.json());
+                if (sRes.ok) {
+                    const list = await sRes.json();
+                    const rows = Array.isArray(list) ? list : (list.content ?? []);
+                    setHasExistingBookingDeposit(rows.some((p: { leaseId: string; isBookingDeposit?: boolean }) =>
+                        p.leaseId === lease.id && p.isBookingDeposit === true));
+                }
             } catch (e) {
                 console.error(e);
             }
         })();
         return () => { cancelled = true; };
-    }, []);
+    }, [lease.id]);
 
     useEffect(() => {
         // Re-seed the form whenever the lease prop changes (e.g. after parent
@@ -272,6 +280,14 @@ export default function LeaseMetadataEditor({ lease, onSaved, className }: Props
             </button>
             {!collapsed && (
                 <div className="px-5 py-5 space-y-5">
+                    <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-[11px] text-amber-800 flex items-start gap-2">
+                        <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                        <div>
+                            <strong>Heads up:</strong> Saving changes here will <strong>regenerate the payment schedule</strong>.
+                            Any pending installment edits below (cheque numbers, dates, banks, custom amounts) will be replaced
+                            with freshly-distributed values. Already-collected rows and any booking deposit you've added stay untouched.
+                        </div>
+                    </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <Field label="Unit *">
                             <select required value={form.unitId} onChange={(e) => onPickUnit(e.target.value)} className="w-full bg-input border border-border p-3 rounded-xl text-xs">
@@ -344,36 +360,41 @@ export default function LeaseMetadataEditor({ lease, onSaved, className }: Props
                         </Field>
                     </div>
 
-                    <div className="border border-border rounded-xl p-4 bg-input/20">
-                        <button
-                            type="button"
-                            onClick={() => setBookingOpen((o) => !o)}
-                            className="flex items-center gap-2 text-[11px] font-semibold text-muted uppercase tracking-wider hover:text-foreground cursor-pointer"
-                        >
-                            <ChevronRight size={11} className={cn("transition-transform", bookingOpen && "rotate-90")} />
-                            Add booking deposit
-                            {bookingDeposit.amount > 0 && <span className="text-primary font-bold ml-1">({bookingDeposit.amount} AED)</span>}
-                        </button>
-                        {bookingOpen && (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
-                                <Field label="Amount (AED)">
-                                    <input type="number" min={0} step={0.01} value={bookingDeposit.amount || ""} onChange={(e) => setBookingDeposit((b) => ({ ...b, amount: Number(e.target.value) }))} className="w-full bg-surface border border-border p-2.5 rounded-lg text-xs" />
-                                </Field>
-                                <Field label="Cheque number">
-                                    <input value={bookingDeposit.chequeNumber} onChange={(e) => setBookingDeposit((b) => ({ ...b, chequeNumber: e.target.value }))} className="w-full bg-surface border border-border p-2.5 rounded-lg text-xs" />
-                                </Field>
-                                <Field label="Cheque date">
-                                    <input type="date" value={bookingDeposit.chequeDate} onChange={(e) => setBookingDeposit((b) => ({ ...b, chequeDate: e.target.value }))} className="w-full bg-surface border border-border p-2.5 rounded-lg text-xs" />
-                                </Field>
-                                <Field label="Bank">
-                                    <input value={bookingDeposit.bankName} onChange={(e) => setBookingDeposit((b) => ({ ...b, bankName: e.target.value }))} className="w-full bg-surface border border-border p-2.5 rounded-lg text-xs" />
-                                </Field>
-                                <p className="md:col-span-2 text-[10px] text-muted">
-                                    Existing booking deposit rows can be edited row-by-row in the schedule editor below. Use this section only to add a brand new booking deposit to a draft that doesn't have one yet.
-                                </p>
-                            </div>
-                        )}
-                    </div>
+                    {hasExistingBookingDeposit ? (
+                        <div className="border border-border rounded-xl p-4 bg-input/20 text-[11px] text-muted">
+                            <strong className="text-foreground">Booking deposit:</strong> already recorded. Edit its
+                            cheque number, date, bank, and amount in the <em>Payment Schedule</em> table below
+                            (the row tagged <span className="px-1 py-0.5 rounded bg-input text-foreground font-mono">B</span>).
+                        </div>
+                    ) : (
+                        <div className="border border-border rounded-xl p-4 bg-input/20">
+                            <button
+                                type="button"
+                                onClick={() => setBookingOpen((o) => !o)}
+                                className="flex items-center gap-2 text-[11px] font-semibold text-muted uppercase tracking-wider hover:text-foreground cursor-pointer"
+                            >
+                                <ChevronRight size={11} className={cn("transition-transform", bookingOpen && "rotate-90")} />
+                                Add booking deposit
+                                {bookingDeposit.amount > 0 && <span className="text-primary font-bold ml-1">({bookingDeposit.amount} AED)</span>}
+                            </button>
+                            {bookingOpen && (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+                                    <Field label="Amount (AED)">
+                                        <input type="number" min={0} step={0.01} value={bookingDeposit.amount || ""} onChange={(e) => setBookingDeposit((b) => ({ ...b, amount: Number(e.target.value) }))} className="w-full bg-surface border border-border p-2.5 rounded-lg text-xs" />
+                                    </Field>
+                                    <Field label="Cheque number">
+                                        <input value={bookingDeposit.chequeNumber} onChange={(e) => setBookingDeposit((b) => ({ ...b, chequeNumber: e.target.value }))} className="w-full bg-surface border border-border p-2.5 rounded-lg text-xs" />
+                                    </Field>
+                                    <Field label="Cheque date">
+                                        <input type="date" value={bookingDeposit.chequeDate} onChange={(e) => setBookingDeposit((b) => ({ ...b, chequeDate: e.target.value }))} className="w-full bg-surface border border-border p-2.5 rounded-lg text-xs" />
+                                    </Field>
+                                    <Field label="Bank">
+                                        <input value={bookingDeposit.bankName} onChange={(e) => setBookingDeposit((b) => ({ ...b, bankName: e.target.value }))} className="w-full bg-surface border border-border p-2.5 rounded-lg text-xs" />
+                                    </Field>
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     <div className="flex items-center gap-2">
                         <button

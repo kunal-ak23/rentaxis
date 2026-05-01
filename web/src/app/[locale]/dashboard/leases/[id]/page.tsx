@@ -164,6 +164,7 @@ export default function LeaseDetailPage() {
     const [previewLoading, setPreviewLoading] = useState(false);
     const [confirmSaving, setConfirmSaving] = useState(false);
     const [contractError, setContractError] = useState<string | null>(null);
+    const [scheduleRefreshKey, setScheduleRefreshKey] = useState(0);
 
     const fetchLease = useCallback(async () => {
         try {
@@ -750,7 +751,14 @@ export default function LeaseDetailPage() {
                     {lease && lease.status === "DRAFT" && canGenerateContract && (
                         <LeaseMetadataEditor
                             lease={lease as unknown as React.ComponentProps<typeof LeaseMetadataEditor>["lease"]}
-                            onSaved={() => { fetchLease(); fetchPayments(); }}
+                            onSaved={() => {
+                                fetchLease();
+                                fetchPayments();
+                                // Force the schedule editor to re-fetch its rows — the
+                                // backend regenerates pending installments on every
+                                // updateDraftLease call.
+                                setScheduleRefreshKey((k) => k + 1);
+                            }}
                         />
                     )}
 
@@ -772,6 +780,7 @@ export default function LeaseDetailPage() {
                                     leaseStatus={lease.status}
                                     canManage={canGenerateContract}
                                     onSaved={fetchPayments}
+                                    refreshKey={scheduleRefreshKey}
                                 />
                             </div>
                         </div>
