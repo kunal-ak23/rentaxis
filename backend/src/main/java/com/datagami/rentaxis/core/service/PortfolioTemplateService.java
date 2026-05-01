@@ -19,6 +19,7 @@ public class PortfolioTemplateService {
             createUnitsSheet(workbook, headerStyle);
             createRentersSheet(workbook, headerStyle);
             createLeasesSheet(workbook, headerStyle);
+            createChequesSheet(workbook, headerStyle);
 
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             workbook.write(out);
@@ -116,6 +117,32 @@ public class PortfolioTemplateService {
                 "", "", "", "",
                 "BANK_TRANSFER", "2026-02-15", "DRAFT",
                 "10000", "BD-001", "2026-02-15", "Emirates NBD");
+
+        autoSizeColumns(sheet, headers.length);
+    }
+
+    private void createChequesSheet(XSSFWorkbook workbook, CellStyle headerStyle) {
+        XSSFSheet sheet = workbook.createSheet("Cheques");
+        String[] headers = {
+                "PropertyName", "UnitNumber", "RenterEmail",
+                "InstallmentNo", "DueDate", "ChequeOrPaymentDate",
+                "UniqueId", "Bank", "Amount", "Method"
+        };
+        createHeaderRow(sheet, headers, headerStyle);
+
+        // Dropdown: Method (column J / index 9)
+        String[] methods = {"CHEQUE", "BANK_TRANSFER", "ONLINE", "CASH"};
+        addDropdown(sheet, 1, 1000, 9, 9, methods);
+
+        // Example rows tied to the second Leases example row (sara@email.com, 4 cheques over 12 months).
+        addRow(sheet, 1, "Marina Heights", "102", "sara@email.com",
+                "1", "2026-03-01", "2026-03-01", "CHQ-1001", "Emirates NBD", "21250", "CHEQUE");
+        addRow(sheet, 2, "Marina Heights", "102", "sara@email.com",
+                "2", "2026-06-01", "2026-06-01", "CHQ-1002", "Emirates NBD", "21250", "CHEQUE");
+        addRow(sheet, 3, "Marina Heights", "102", "sara@email.com",
+                "3", "2026-09-01", "2026-09-01", "CHQ-1003", "Emirates NBD", "21250", "CHEQUE");
+        addRow(sheet, 4, "Marina Heights", "102", "sara@email.com",
+                "4", "2026-12-01", "2026-12-01", "CHQ-1004", "Emirates NBD", "21250", "CHEQUE");
 
         autoSizeColumns(sheet, headers.length);
     }
