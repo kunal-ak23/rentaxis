@@ -31,6 +31,14 @@ type Lease = {
     propertyId: string;
     propertyName: string;
     hasContract: boolean;
+    contractNumber?: number | null;
+    agreementDate?: string | null;
+    adminFee?: number | null;
+    parkingRemoteFee?: number | null;
+    rentVatApplicable?: boolean | null;
+    adminFeeVatApplicable?: boolean | null;
+    securityDepositVatApplicable?: boolean | null;
+    parkingRemoteVatApplicable?: boolean | null;
 };
 
 type Unit = {
@@ -312,13 +320,13 @@ export default function LeasesPage() {
             paymentMethod: lease.paymentMethod || "CHEQUE",
             depositPaymentMethod: lease.depositPaymentMethod || "CHEQUE",
             paymentReferenceNumber: lease.paymentReferenceNumber || "",
-            agreementDate: "",
-            adminFee: 0,
-            parkingRemoteFee: 0,
-            rentVatApplicable: false,
-            adminFeeVatApplicable: false,
-            securityDepositVatApplicable: false,
-            parkingRemoteVatApplicable: false,
+            agreementDate: lease.agreementDate ?? "",
+            adminFee: lease.adminFee ?? 0,
+            parkingRemoteFee: lease.parkingRemoteFee ?? 0,
+            rentVatApplicable: lease.rentVatApplicable ?? false,
+            adminFeeVatApplicable: lease.adminFeeVatApplicable ?? false,
+            securityDepositVatApplicable: lease.securityDepositVatApplicable ?? false,
+            parkingRemoteVatApplicable: lease.parkingRemoteVatApplicable ?? false,
         });
         setShowForm(true);
     };
@@ -449,9 +457,21 @@ export default function LeasesPage() {
         setActionLoading(`generate-${id}`);
         try {
             const res = await fetch(`/api/proxy/v1/leases/${id}/generate-contract`, { method: "POST" });
-            if (res.ok) fetchLeases();
+            if (res.ok) {
+                fetchLeases();
+            } else if (res.status === 403) {
+                alert("You don't have permission to generate a contract for this lease.");
+            } else {
+                let detail: string | null = null;
+                try {
+                    const body = await res.json();
+                    detail = body?.message || body?.error || null;
+                } catch {}
+                alert(detail || "Failed to generate contract. Please try again.");
+            }
         } catch (err) {
             console.error(err);
+            alert("Network error while generating contract. Check your connection and try again.");
         } finally {
             setActionLoading(null);
         }
