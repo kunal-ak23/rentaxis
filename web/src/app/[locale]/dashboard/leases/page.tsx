@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { Plus, X, FileText, Calendar, DollarSign, Home, CheckCircle, Ban, AlertCircle, LayoutGrid, Columns3, Download, Sparkles, Loader2, RefreshCw, Pencil, List, Eye, Search, Upload, Trash2 } from "lucide-react";
+import LeaseWizard from "./LeaseWizard";
 import { Link, useRouter } from "@/i18n/routing";
 import { Pagination } from "@/components/ui/Pagination";
 import { useSession } from "next-auth/react";
@@ -89,6 +90,7 @@ export default function LeasesPage() {
     const [units, setUnits] = useState<Unit[]>([]);
     const [renters, setRenters] = useState<Renter[]>([]);
     const [showForm, setShowForm] = useState(false);
+    const [wizardOpen, setWizardOpen] = useState(false);
     const [viewMode, setViewMode] = useState<'table' | 'cards' | 'board'>('table');
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(25);
@@ -873,7 +875,7 @@ export default function LeasesPage() {
                     </div>
                     {canManageLeases && (
                         <button
-                            onClick={() => setShowForm(true)}
+                            onClick={() => { setEditingLeaseId(null); setWizardOpen(true); }}
                             className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-xs font-semibold hover:opacity-90 transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                         >
                             <Plus size={14} />
@@ -883,6 +885,16 @@ export default function LeasesPage() {
                     </div>
                 </div>
             </div>
+
+            {wizardOpen && (
+                <LeaseWizard
+                    open={wizardOpen}
+                    units={units}
+                    renters={renters}
+                    onClose={() => setWizardOpen(false)}
+                    onCreated={() => { fetchLeases(); fetchUnits(); }}
+                />
+            )}
 
             {showForm && (
                 <div className="fixed inset-0 bg-foreground/40 backdrop-blur-sm flex items-center justify-center p-4 z-[100] overflow-y-auto">
@@ -1349,7 +1361,7 @@ export default function LeasesPage() {
                         {t("noLeasesFound")}
                     </p>
                     {canManageLeases && (
-                        <button onClick={() => setShowForm(true)} className="text-xs font-bold text-foreground border-b-2 border-primary pb-0.5 hover:text-primary transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none">
+                        <button onClick={() => { setEditingLeaseId(null); setWizardOpen(true); }} className="text-xs font-bold text-foreground border-b-2 border-primary pb-0.5 hover:text-primary transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none">
                             {t("draftALease")}
                         </button>
                     )}

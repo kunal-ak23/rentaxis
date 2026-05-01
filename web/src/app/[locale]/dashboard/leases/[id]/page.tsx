@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Link } from "@/i18n/routing";
 import { cn } from "@/lib/utils";
@@ -123,6 +123,7 @@ const PAYMENT_STATUS_COLORS: Record<string, string> = {
 
 export default function LeaseDetailPage() {
     const params = useParams();
+    const searchParams = useSearchParams();
     const leaseId = params.id as string;
     const { data: session } = useSession();
     const userRole = session?.user?.role as UserRole | undefined;
@@ -258,6 +259,16 @@ export default function LeaseDetailPage() {
             fetchSettlement();
         }
     }, [lease?.status, fetchSettlement]);
+
+    // Auto-trigger contract preview when arriving with ?action=generate-contract
+    // (used by the lease wizard's "Generate contract" CTA after Save Draft).
+    useEffect(() => {
+        const action = searchParams?.get("action");
+        if (action === "generate-contract" && lease && canGenerateContract && !previewOpen && !previewLoading) {
+            handlePreviewContract();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [searchParams, lease, canGenerateContract]);
 
     const handleDocUpload = async (file: File) => {
         if (!docName.trim()) return;
