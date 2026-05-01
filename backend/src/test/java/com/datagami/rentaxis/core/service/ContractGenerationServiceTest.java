@@ -500,12 +500,13 @@ class ContractGenerationServiceTest {
         verify(svc).renderPdf(htmlCaptor.capture());
         String html = htmlCaptor.getValue();
 
-        // Match any '&' NOT followed by a valid entity reference pattern
-        //   - named entity:   &word;          (e.g. &nbsp; &amp; &copy;)
-        //   - hex entity:     &#x[0-9A-Fa-f]+;
-        //   - decimal entity: &#[0-9]+;
+        // Match any '&' NOT followed by an entity reference OpenHtmlToPdf accepts.
+        // Its XML parser only knows the five built-in XML entities; any other
+        // named entity (e.g. &nbsp;, &copy;) fails with "entity NAME was
+        // referenced, but not declared". Numeric refs (decimal &#NNN;, hex
+        // &#xHHHH;) are always valid and the safe choice in templates.
         java.util.regex.Pattern bareAmp = java.util.regex.Pattern.compile(
-                "&(?!(?:[A-Za-z][A-Za-z0-9]*|#[0-9]+|#x[0-9A-Fa-f]+);)");
+                "&(?!(?:amp|lt|gt|quot|apos|#[0-9]+|#x[0-9A-Fa-f]+);)");
         java.util.regex.Matcher m = bareAmp.matcher(html);
         if (m.find()) {
             int line = 1, col = 1;
