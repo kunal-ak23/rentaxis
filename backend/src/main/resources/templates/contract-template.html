@@ -13,7 +13,7 @@
         ------------------------------------------------------- */
         @page {
             size: A4;
-            margin: 1.8cm 1.5cm 3.4cm 1.5cm;
+            margin: 1.8cm 1.5cm 3.8cm 1.5cm;
             @bottom-center {
                 content: element(page-footer);
                 vertical-align: bottom;
@@ -40,6 +40,16 @@
             margin: 0 auto 3pt auto;
             width: 140pt;
             height: 26pt;
+        }
+        .page-footer .footer-divider {
+            border: none;
+            border-top: 1px solid #333;
+            margin: 6pt 0 4pt 0;
+        }
+        .page-footer .print-stamp {
+            font-size: 9pt;
+            text-align: left;
+            padding: 0;
         }
 
         body {
@@ -287,8 +297,9 @@
 <body>
 
 <!-- Per-page footer rendered in the @page @bottom-center margin box.
-     Signature lines repeat on every page; the stamp area between them
-     stays empty for the physical wet stamp applied after printing. -->
+     Signature lines + print stamp repeat on every page; the stamp area
+     between the signatures stays empty for the physical wet stamp
+     applied after printing. -->
 <div class="page-footer">
     <table class="sig-row">
         <tr>
@@ -303,6 +314,8 @@
             </td>
         </tr>
     </table>
+    <hr class="footer-divider"/>
+    <div class="print-stamp">Print Date &amp; Time : {{PRINT_DATETIME}}</div>
 </div>
 
 <!-- ============================================================
@@ -423,11 +436,9 @@
     </tr>
 </table>
 
-<!-- Page-1 print date & time. Signatures themselves come from the
-     per-page footer in the @bottom-center margin box. -->
-<div style="font-size:9pt; margin-top:18pt;">
-    Print Date &amp; Time : {{PRINT_DATETIME}}
-</div>
+<!-- Signatures + print stamp render via the per-page footer in the
+     @bottom-center margin box (see <div class="page-footer"> above). -->
+
 
 
 <!-- ============================================================
