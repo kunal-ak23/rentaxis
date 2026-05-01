@@ -650,6 +650,11 @@ public class PaymentScheduleService {
         };
     }
 
+    /** Public alias for {@link #mapToDTO} so other services / controllers can map without re-implementing. */
+    public PaymentScheduleDTO toDTO(PaymentSchedule ps) {
+        return mapToDTO(ps);
+    }
+
     private PaymentScheduleDTO mapToDTO(PaymentSchedule ps) {
         PaymentScheduleDTO dto = new PaymentScheduleDTO();
         dto.setId(ps.getId());

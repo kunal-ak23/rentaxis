@@ -2,5 +2,7 @@ package com.datagami.rentaxis.domain.entity.enums;
 
 public enum PaymentMethod {
     CHEQUE,
-    ONLINE
+    ONLINE,
+    BANK_TRANSFER,
+    CASH
 }

@@ -295,6 +295,86 @@ public class LeaseService {
     }
 
     /**
+     * Bulk-update the editable fields on a lease's payment schedule. Allowed
+     * only on DRAFT or PENDING_SIGNATURE leases; once the lease is activated,
+     * the schedule is locked.
+     * <p>
+     * Per-row payment method drives which fields are required:
+     * <ul>
+     *     <li>CHEQUE: chequeNumber, chequeDate, bankName all required</li>
+     *     <li>BANK_TRANSFER / ONLINE: bankName + chequeDate (= transfer date) required</li>
+     *     <li>CASH: just amount + dueDate; chequeDate optional (= receipt date)</li>
+     * </ul>
+     */
+    @Transactional
+    public List<PaymentSchedule> updatePaymentSchedule(UUID leaseId, com.datagami.rentaxis.api.dto.UpdatePaymentScheduleDTO dto) {
+        Lease lease = findLeaseWithTenantCheck(leaseId);
+        if (lease.getStatus() != LeaseStatus.DRAFT && lease.getStatus() != LeaseStatus.PENDING_SIGNATURE) {
+            throw new BusinessRuleViolationException(
+                    "Payment schedule can only be edited while the lease is DRAFT or PENDING_SIGNATURE");
+        }
+        if (dto.getRows() == null || dto.getRows().isEmpty()) {
+            return paymentScheduleRepository.findByLeaseId(leaseId);
+        }
+        java.util.Map<UUID, PaymentSchedule> existing = paymentScheduleRepository.findByLeaseId(leaseId).stream()
+                .collect(java.util.stream.Collectors.toMap(PaymentSchedule::getId, p -> p));
+
+        for (com.datagami.rentaxis.api.dto.UpdatePaymentScheduleDTO.Row row : dto.getRows()) {
+            PaymentSchedule ps = existing.get(row.getScheduleId());
+            if (ps == null) {
+                throw new NotFoundException("Payment schedule row " + row.getScheduleId() + " does not belong to lease " + leaseId);
+            }
+            // Don't allow editing rows that have already been collected.
+            if (ps.getStatus() != PaymentStatus.PENDING) {
+                throw new BusinessRuleViolationException(
+                        "Cannot edit payment schedule row " + ps.getInstallmentNumber()
+                                + " — it is already in status " + ps.getStatus());
+            }
+            String methodRaw = row.getPaymentMethod() == null ? "" : row.getPaymentMethod().trim().toUpperCase();
+            switch (methodRaw) {
+                case "CHEQUE" -> {
+                    if (isBlank(row.getChequeNumber()) || row.getChequeDate() == null || isBlank(row.getBankName())) {
+                        throw new BusinessRuleViolationException(
+                                "CHEQUE rows require chequeNumber, chequeDate and bankName");
+                    }
+                }
+                case "BANK_TRANSFER", "ONLINE" -> {
+                    if (isBlank(row.getBankName()) || row.getChequeDate() == null) {
+                        throw new BusinessRuleViolationException(
+                                row.getPaymentMethod() + " rows require bankName and a transfer date");
+                    }
+                }
+                case "CASH" -> {
+                    // Only amount + dueDate required; nothing else mandatory.
+                }
+                default -> throw new BusinessRuleViolationException(
+                        "Unsupported payment method: " + row.getPaymentMethod());
+            }
+
+            ps.setDueDate(row.getDueDate());
+            ps.setAmount(row.getAmount());
+            ps.setPaymentMethod(methodRaw);
+            ps.setChequeNumber(emptyToNull(row.getChequeNumber()));
+            ps.setChequeDate(row.getChequeDate());
+            ps.setBankName(emptyToNull(row.getBankName()));
+        }
+        return paymentScheduleRepository.saveAll(existing.values().stream()
+                // Return rows in installment order so the UI can render them deterministically.
+                .sorted(java.util.Comparator
+                        .comparing(PaymentSchedule::isBookingDeposit)
+                        .thenComparingInt(PaymentSchedule::getInstallmentNumber))
+                .toList());
+    }
+
+    private static boolean isBlank(String s) {
+        return s == null || s.trim().isEmpty();
+    }
+
+    private static String emptyToNull(String s) {
+        return isBlank(s) ? null : s.trim();
+    }
+
+    /**
      * Hard-delete a DRAFT lease and all rows that hang off it (payment
      * schedule, lease events, attachments). Only DRAFT is supported — once a
      * lease has gone to PENDING_SIGNATURE / ACTIVE / TERMINATED there are

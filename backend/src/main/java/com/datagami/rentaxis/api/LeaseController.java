@@ -32,6 +32,7 @@ public class LeaseController {
     private final LeaseService leaseService;
     private final ContractGenerationService contractGenerationService;
     private final SettlementService settlementService;
+    private final com.datagami.rentaxis.core.service.PaymentScheduleService paymentScheduleService;
 
     @GetMapping
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
@@ -90,6 +91,16 @@ public class LeaseController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
     public ResponseEntity<LeaseDTO> activateLease(@PathVariable UUID id) {
         return ResponseEntity.ok(leaseService.activateLease(id));
+    }
+
+    @PutMapping("/{id}/payment-schedule")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
+    public ResponseEntity<java.util.List<com.datagami.rentaxis.api.dto.PaymentScheduleDTO>> updatePaymentSchedule(
+            @PathVariable UUID id,
+            @Valid @RequestBody com.datagami.rentaxis.api.dto.UpdatePaymentScheduleDTO dto) {
+        var saved = leaseService.updatePaymentSchedule(id, dto);
+        var response = saved.stream().map(paymentScheduleService::toDTO).toList();
+        return ResponseEntity.ok(response);
     }
 
     @PostMapping("/{id}/terminate")

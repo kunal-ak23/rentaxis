@@ -941,7 +941,9 @@ export default function LeasesPage() {
                                 <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("paymentMethod")}</label>
                                 <select className="w-full bg-input border border-border p-3 rounded-xl text-xs cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.paymentMethod} onChange={ev => setFormData({ ...formData, paymentMethod: ev.target.value })}>
                                     <option value="CHEQUE">Cheque</option>
+                                    <option value="BANK_TRANSFER">Bank Transfer</option>
                                     <option value="ONLINE">Online Payment</option>
+                                    <option value="CASH">Cash</option>
                                 </select>
                             </div>
                             <div className="col-span-1">
@@ -954,7 +956,9 @@ export default function LeasesPage() {
                                 <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("depositPaymentMethod")}</label>
                                 <select className="w-full bg-input border border-border p-3 rounded-xl text-xs cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none" value={formData.depositPaymentMethod} onChange={ev => setFormData({ ...formData, depositPaymentMethod: ev.target.value })}>
                                     <option value="CHEQUE">Cheque</option>
+                                    <option value="BANK_TRANSFER">Bank Transfer</option>
                                     <option value="ONLINE">Online Payment</option>
+                                    <option value="CASH">Cash</option>
                                 </select>
                             </div>
                             <div className="col-span-1">

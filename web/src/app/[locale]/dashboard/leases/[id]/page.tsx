@@ -13,6 +13,7 @@ import {
     Hash, Phone, Mail, MapPin, Wrench, X, Ban, CalendarClock, Sparkles, RefreshCw,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
+import PaymentScheduleEditor from "../PaymentScheduleEditor";
 
 type Lease = {
     id: string; unitId: string; renterId: string; unitIdentifier: string;
@@ -698,7 +699,33 @@ export default function LeaseDetailPage() {
                         );
                     })()}
 
-                    <div className="bg-surface rounded-xl border border-border">
+                    {/* Editable schedule for DRAFT / PENDING_SIGNATURE — admin can adjust dates,
+                        cheque/bank/method per row before contract finalization. */}
+                    {lease && (lease.status === "DRAFT" || lease.status === "PENDING_SIGNATURE") && (
+                        <div className="bg-surface rounded-xl border border-border">
+                            <div className="px-5 py-3.5 border-b border-border">
+                                <h2 className="text-xs font-semibold text-muted uppercase tracking-wider flex items-center gap-2">
+                                    <CreditCard size={13} /> Payment Schedule
+                                    <span className="ml-2 px-2 py-0.5 rounded-full text-[9px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                                        Editable while {lease.status.replace("_", " ")}
+                                    </span>
+                                </h2>
+                            </div>
+                            <div className="px-5 py-4">
+                                <PaymentScheduleEditor
+                                    leaseId={lease.id}
+                                    leaseStatus={lease.status}
+                                    canManage={canGenerateContract}
+                                    onSaved={fetchPayments}
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    <div className={cn(
+                        "bg-surface rounded-xl border border-border",
+                        lease && (lease.status === "DRAFT" || lease.status === "PENDING_SIGNATURE") && "hidden"
+                    )}>
                         <div className="px-5 py-3.5 border-b border-border">
                             <h2 className="text-xs font-semibold text-muted uppercase tracking-wider flex items-center gap-2"><CreditCard size={13} /> Payment Schedule</h2>
                         </div>
