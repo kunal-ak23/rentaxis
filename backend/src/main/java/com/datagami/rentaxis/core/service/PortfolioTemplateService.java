@@ -80,19 +80,42 @@ public class PortfolioTemplateService {
 
     private void createLeasesSheet(XSSFWorkbook workbook, CellStyle headerStyle) {
         XSSFSheet sheet = workbook.createSheet("Leases");
-        String[] headers = {"PropertyName", "BuildingName", "UnitNumber", "RenterEmail", "StartDate", "EndDate",
-                "RentAmount", "DepositAmount", "PaymentTerms", "PaymentMethod", "EjariNumber"};
+        String[] headers = {
+                "PropertyName", "BuildingName", "UnitNumber", "RenterEmail",
+                "StartDate", "EndDate",
+                "RentAmount", "DepositAmount", "PaymentTerms", "PaymentMethod", "EjariNumber",
+                // Lease-agreement fields (added 2026-05-02):
+                "MonthlyRent",
+                "AdminFee", "ParkingRemoteFee",
+                "RentVatApplicable", "AdminFeeVatApplicable",
+                "SecurityDepositVatApplicable", "ParkingRemoteVatApplicable",
+                "DepositPaymentMethod", "AgreementDate", "Status",
+                "BookingDeposit_Amount", "BookingDeposit_Number", "BookingDeposit_Date", "BookingDeposit_Bank"
+        };
         createHeaderRow(sheet, headers, headerStyle);
 
-        // Dropdown: PaymentMethod (column J)
-        String[] methods = {"CHEQUE", "ONLINE"};
-        addDropdown(sheet, 1, 100, 9, 9, methods);
+        // Dropdown: PaymentMethod (column J / index 9), DepositPaymentMethod (column S / index 18)
+        String[] methods = {"CHEQUE", "BANK_TRANSFER", "ONLINE", "CASH"};
+        addDropdown(sheet, 1, 1000, 9, 9, methods);
+        addDropdown(sheet, 1, 1000, 18, 18, methods);
+
+        // Dropdown: Status (column U / index 20)
+        String[] statuses = {"ACTIVE", "DRAFT"};
+        addDropdown(sheet, 1, 1000, 20, 20, statuses);
 
         // Example rows
         addRow(sheet, 1, "Marina Heights", "Tower A", "101", "ahmed@email.com", "2026-01-01", "2026-12-31",
-                "60000", "5000", "12", "CHEQUE", "EJ-2026-001");
+                "60000", "5000", "12", "CHEQUE", "EJ-2026-001",
+                "", "0", "0",
+                "", "", "", "",
+                "", "", "ACTIVE",
+                "", "", "", "");
         addRow(sheet, 2, "Marina Heights", "Tower A", "102", "sara@email.com", "2026-03-01", "2027-02-28",
-                "85000", "7000", "12", "CHEQUE", "EJ-2026-002");
+                "", "10000", "4", "CHEQUE", "EJ-2026-002",
+                "7000", "500", "100",
+                "", "", "", "",
+                "BANK_TRANSFER", "2026-02-15", "DRAFT",
+                "10000", "BD-001", "2026-02-15", "Emirates NBD");
 
         autoSizeColumns(sheet, headers.length);
     }
