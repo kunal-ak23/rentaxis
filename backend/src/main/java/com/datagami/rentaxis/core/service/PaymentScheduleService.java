@@ -83,6 +83,20 @@ public class PaymentScheduleService {
         BigDecimal totalRent = monthlyRent.multiply(BigDecimal.valueOf(totalMonths));
         BigDecimal perInstallment = totalRent.divide(BigDecimal.valueOf(n), 2, RoundingMode.HALF_UP);
 
+        // Honor the property-level RentCollectionSettings.dueDayOfMonth so every
+        // cheque lands on the conventional payment day for the property (e.g.
+        // "always due on the 1st"). When unset, fall back to the start date's
+        // day-of-month. The dueDayOfMonth column is constrained to 1..28 in
+        // RentCollectionSettings; we additionally clamp to the target month's
+        // length to handle February + 31-day setups gracefully.
+        Integer settingsDueDay = rentCollectionSettingsRepository
+                .findByPropertyId(lease.getUnit().getProperty().getId())
+                .map(s -> s.getDueDayOfMonth())
+                .orElse(null);
+        Integer dueDay = (settingsDueDay != null && settingsDueDay >= 1 && settingsDueDay <= 31)
+                ? settingsDueDay
+                : null;
+
         // Even spacing: due date i = startDate + floor(i * months / n) months.
         // For 12 months / 4 cheques → offsets [0, 3, 6, 9].
         // For 13 months / 4 cheques → offsets [0, 3, 6, 9] (last covers 4 months).
@@ -91,6 +105,10 @@ public class PaymentScheduleService {
         for (int i = 0; i < n; i++) {
             long monthOffset = (long) Math.floor((double) i * totalMonths / n);
             LocalDate dueDate = lease.getStartDate().plusMonths(monthOffset);
+            if (dueDay != null) {
+                int clamped = Math.min(dueDay, dueDate.lengthOfMonth());
+                dueDate = dueDate.withDayOfMonth(clamped);
+            }
 
             // Last installment carries the rounding remainder so the sum equals totalRent exactly.
             BigDecimal amount = (i == n - 1) ? totalRent.subtract(accumulated) : perInstallment;
