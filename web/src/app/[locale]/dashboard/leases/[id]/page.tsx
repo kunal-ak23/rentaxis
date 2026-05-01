@@ -334,8 +334,12 @@ export default function LeaseDetailPage() {
         try {
             const res = await fetch(`/api/proxy/v1/leases/${lease.id}/generate-contract/preview`, { method: "POST" });
             if (res.ok) {
-                const blob = await res.blob();
-                const url = URL.createObjectURL(blob);
+                // Wrap the response bytes in an explicit application/pdf blob so
+                // the browser's built-in PDF viewer renders it inline in the
+                // <object> tag instead of treating it as a generic download.
+                const buf = await res.arrayBuffer();
+                const pdfBlob = new Blob([buf], { type: "application/pdf" });
+                const url = URL.createObjectURL(pdfBlob);
                 setPreviewBlobUrl(url);
                 setPreviewOpen(true);
             } else if (res.status === 403) {
@@ -935,6 +939,15 @@ export default function LeaseDetailPage() {
                         <Sparkles size={15} className="text-primary" /> Contract Preview
                     </h3>
                     <div className="flex items-center gap-2">
+                        <a
+                            href={previewBlobUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="px-4 py-2 rounded-lg text-xs font-semibold text-primary hover:bg-input border border-primary/30 transition-colors cursor-pointer flex items-center gap-1.5"
+                            title="Open the preview PDF in a new tab"
+                        >
+                            <FileText size={12} /> Open in new tab
+                        </a>
                         <button
                             onClick={handleClosePreview}
                             className="px-4 py-2 rounded-lg text-xs font-semibold text-muted hover:bg-input border border-border transition-colors cursor-pointer"
@@ -959,12 +972,31 @@ export default function LeaseDetailPage() {
                         <p className="text-xs text-error">{contractError}</p>
                     </div>
                 )}
-                <div className="flex-1 overflow-hidden">
-                    <iframe
-                        src={previewBlobUrl}
-                        className="w-full h-full border-0"
-                        title="Contract Preview"
-                    />
+                <div className="flex-1 overflow-hidden bg-input flex items-center justify-center">
+                    {/* <object> renders the PDF inline using the browser's built-in
+                        viewer. If the browser has no plugin (or the PDF MIME type
+                        is suppressed), the fallback content shows an obvious
+                        "Open in new tab" link rather than a blank iframe. */}
+                    <object
+                        data={previewBlobUrl}
+                        type="application/pdf"
+                        className="w-full h-full"
+                        aria-label="Contract Preview"
+                    >
+                        <div className="text-center p-8">
+                            <p className="text-sm text-muted mb-3">
+                                Your browser couldn&apos;t render the PDF inline.
+                            </p>
+                            <a
+                                href={previewBlobUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+                            >
+                                <FileText size={14} /> Open preview in a new tab
+                            </a>
+                        </div>
+                    </object>
                 </div>
             </div>
         )}
