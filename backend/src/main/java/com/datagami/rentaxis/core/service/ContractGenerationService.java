@@ -269,10 +269,14 @@ public class ContractGenerationService {
         for (Integer n : keys) {
             String enContent = en.getOrDefault(n, "");
             String arContent = ar.getOrDefault(n, "");
+            // EN cell: "N." (digit then period). AR cell: ".N" (period then
+            // digit) — proper RTL Arabic-style numbering, with the marker
+            // sitting at the logical start of the line, which renders on the
+            // visual right inside an RTL cell.
             sb.append("<tr>")
                     .append("<td class=\"en\"><span class=\"num\">").append(n).append(".</span> ")
                     .append(enContent).append("</td>")
-                    .append("<td class=\"ar\"><span class=\"num\">").append(n).append(".</span> ")
+                    .append("<td class=\"ar\"><span class=\"num\">.").append(n).append("</span> ")
                     .append(arContent).append("</td>")
                     .append("</tr>");
         }

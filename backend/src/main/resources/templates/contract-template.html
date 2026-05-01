@@ -252,27 +252,26 @@
         }
         /* Terms table: each clause is one row with EN cell on the left
            and AR cell on the right, so clause N stays aligned across
-           both languages even when one language's text is much longer. */
+           both languages even when one language's text is much longer.
+           Visible cell borders match the client reference layout. */
         .terms-rows {
             width: 100%;
             border-collapse: collapse;
             table-layout: fixed;
         }
         .terms-rows td {
-            border: none;
-            padding: 3pt 0;
+            border: 1px solid #333;
+            padding: 5pt 6pt;
             vertical-align: top;
             font-size: 9pt;
             line-height: 1.4;
         }
         .terms-rows td.en {
             width: 50%;
-            padding-right: 10pt;
             text-align: left;
         }
         .terms-rows td.ar {
             width: 50%;
-            padding-left: 10pt;
             direction: rtl;
             text-align: right;
             font-family: 'Noto Sans Arabic', 'Noto Sans', sans-serif;
