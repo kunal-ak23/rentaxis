@@ -11,6 +11,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.ArgumentMatchers;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -25,6 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -218,6 +220,99 @@ class PortfolioImportPersistServiceTest {
     }
 
     @Test
+    void persist_chequesSheet_overridesPaymentTermsAndPersistsRowsDirectly() {
+        Workbook wb = buildWorkbookWithOneLease(b -> b.paymentTerms("4"));
+        addChequesSheet(wb,
+                cheque("Marina Heights", "101", "ahmed@email.com",
+                        "1", "2026-01-01", "2026-01-01", "C-1", "Emirates NBD", "12000", "CHEQUE"),
+                cheque("Marina Heights", "101", "ahmed@email.com",
+                        "2", "2026-04-01", "2026-04-01", "C-2", "Emirates NBD", "12000", "CHEQUE"),
+                cheque("Marina Heights", "101", "ahmed@email.com",
+                        "3", "2026-07-01", "2026-07-01", "C-3", "Emirates NBD", "12000", "CHEQUE"),
+                cheque("Marina Heights", "101", "ahmed@email.com",
+                        "4", "2026-10-01", "2026-10-01", "C-4", "Emirates NBD", "12000", "CHEQUE"),
+                cheque("Marina Heights", "101", "ahmed@email.com",
+                        "5", "2026-12-01", "2026-12-01", "C-5", "Emirates NBD", "12000", "CHEQUE"));
+
+        service.persistWorkbook(wb, newJob());
+
+        // generateScheduleForLease must NOT run when cheque rows exist.
+        verify(paymentScheduleService, never()).generateScheduleForLease(any(Lease.class));
+
+        // 5 schedule rows (no booking deposit in this fixture).
+        ArgumentCaptor<PaymentSchedule> cap = ArgumentCaptor.forClass(PaymentSchedule.class);
+        verify(paymentScheduleRepository, atLeastOnce()).save(cap.capture());
+        List<PaymentSchedule> rows = cap.getAllValues().stream()
+                .filter(p -> !p.isBookingDeposit())
+                .toList();
+        assertThat(rows).hasSize(5);
+        assertThat(rows).extracting(PaymentSchedule::getInstallmentNumber)
+                .containsExactlyInAnyOrder(1, 2, 3, 4, 5);
+
+        // Lease.paymentTerms overridden to match cheque count (5, not the workbook's 4).
+        ArgumentCaptor<Lease> leaseCap = ArgumentCaptor.forClass(Lease.class);
+        verify(leaseRepository, atLeastOnce()).save(leaseCap.capture());
+        Lease lastSaved = leaseCap.getAllValues().get(leaseCap.getAllValues().size() - 1);
+        assertThat(lastSaved.getPaymentTerms()).isEqualTo(5);
+    }
+
+    @Test
+    void persist_chequesSheet_perRowMethodAndChequeDetailsPreserved() {
+        Workbook wb = buildWorkbookWithOneLease(b -> b
+                .paymentTerms("3")
+                .startDate("2026-01-01").endDate("2026-12-31"));
+        addChequesSheet(wb,
+                cheque("Marina Heights", "101", "ahmed@email.com",
+                        "1", "2026-01-01", "2026-01-01", "C-1", "Emirates NBD", "20000", "CHEQUE"),
+                cheque("Marina Heights", "101", "ahmed@email.com",
+                        "2", "2026-05-01", "", "", "", "20000", "CASH"),
+                cheque("Marina Heights", "101", "ahmed@email.com",
+                        "3", "2026-09-01", "2026-09-01", "TXN-99", "Mashreq", "20000", "BANK_TRANSFER"));
+
+        service.persistWorkbook(wb, newJob());
+
+        ArgumentCaptor<PaymentSchedule> cap = ArgumentCaptor.forClass(PaymentSchedule.class);
+        verify(paymentScheduleRepository, atLeastOnce()).save(cap.capture());
+        List<PaymentSchedule> rows = cap.getAllValues().stream()
+                .filter(p -> !p.isBookingDeposit())
+                .sorted((a, b) -> Integer.compare(a.getInstallmentNumber(), b.getInstallmentNumber()))
+                .toList();
+        assertThat(rows).hasSize(3);
+        assertThat(rows.get(0).getPaymentMethod()).isEqualTo("CHEQUE");
+        assertThat(rows.get(0).getChequeNumber()).isEqualTo("C-1");
+        assertThat(rows.get(1).getPaymentMethod()).isEqualTo("CASH");
+        assertThat(rows.get(2).getPaymentMethod()).isEqualTo("BANK_TRANSFER");
+        assertThat(rows.get(2).getChequeNumber()).isEqualTo("TXN-99");
+        assertThat(rows.get(2).getBankName()).isEqualTo("Mashreq");
+    }
+
+    @Test
+    void persist_chequesSheet_firstInstallmentLabelHasBundleSuffixWhenChargesPresent() {
+        Workbook wb = buildWorkbookWithOneLease(b -> b
+                .adminFee("500"));
+        addChequesSheet(wb,
+                cheque("Marina Heights", "101", "ahmed@email.com",
+                        "1", "2026-01-01", "2026-01-01", "C-1", "Emirates NBD", "30000", "CHEQUE"),
+                cheque("Marina Heights", "101", "ahmed@email.com",
+                        "2", "2026-07-01", "2026-07-01", "C-2", "Emirates NBD", "30000", "CHEQUE"));
+
+        service.persistWorkbook(wb, newJob());
+
+        ArgumentCaptor<PaymentSchedule> cap = ArgumentCaptor.forClass(PaymentSchedule.class);
+        verify(paymentScheduleRepository, atLeastOnce()).save(cap.capture());
+        PaymentSchedule first = cap.getAllValues().stream()
+                .filter(p -> !p.isBookingDeposit())
+                .filter(p -> p.getInstallmentNumber() == 1)
+                .findFirst().orElseThrow();
+        PaymentSchedule second = cap.getAllValues().stream()
+                .filter(p -> !p.isBookingDeposit())
+                .filter(p -> p.getInstallmentNumber() == 2)
+                .findFirst().orElseThrow();
+        assertThat(first.getPurposeLabel()).isEqualTo("RENT - 1ST INSTALLMENT/ADMIN/SD/REMOTE");
+        assertThat(second.getPurposeLabel()).isEqualTo("RENT - 2ND INSTALLMENT");
+    }
+
+    @Test
     void persist_legacyTenColumnWorkbook_persistsActiveLeaseUnchanged() {
         // Regression: verify the legacy 10-column path still produces an ACTIVE lease.
         Workbook wb = buildLegacyOneLeaseWorkbook();
@@ -374,6 +469,33 @@ class PortfolioImportPersistServiceTest {
         Row row = sheet.createRow(rowIdx);
         for (int i = 0; i < values.length; i++) {
             row.createCell(i).setCellValue(values[i] == null ? "" : values[i]);
+        }
+    }
+
+    /** Compact cheque-row tuple for test fixtures. */
+    record ChequeRow(String propertyName, String unitNumber, String renterEmail,
+                     String installmentNo, String dueDate, String chequeOrPaymentDate,
+                     String uniqueId, String bank, String amount, String method) {}
+
+    static ChequeRow cheque(String propertyName, String unitNumber, String renterEmail,
+                            String installmentNo, String dueDate, String chequeOrPaymentDate,
+                            String uniqueId, String bank, String amount, String method) {
+        return new ChequeRow(propertyName, unitNumber, renterEmail, installmentNo, dueDate,
+                chequeOrPaymentDate, uniqueId, bank, amount, method);
+    }
+
+    static void addChequesSheet(Workbook wb, ChequeRow... rows) {
+        Sheet sheet = wb.createSheet("Cheques");
+        writeRow(sheet, 0,
+                "PropertyName", "UnitNumber", "RenterEmail",
+                "InstallmentNo", "DueDate", "ChequeOrPaymentDate",
+                "UniqueId", "Bank", "Amount", "Method");
+        for (int i = 0; i < rows.length; i++) {
+            ChequeRow r = rows[i];
+            writeRow(sheet, i + 1,
+                    r.propertyName, r.unitNumber, r.renterEmail,
+                    r.installmentNo, r.dueDate, r.chequeOrPaymentDate,
+                    r.uniqueId, r.bank, r.amount, r.method);
         }
     }
 }

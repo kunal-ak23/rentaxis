@@ -135,7 +135,10 @@ public class PortfolioImportPersistService {
         }
         job.setRentersCreated(renterMap.size());
 
-        // 5. Create Leases + Payment Schedules
+        // 5. Pre-read the optional Cheques sheet, keyed by lease.
+        Map<String, List<ChequeRow>> chequesByLeaseKey = readChequesSheet(workbook);
+
+        // 6. Create Leases + Payment Schedules
         HeaderIndex leaseHi = new HeaderIndex(leasesSheet);
         int leasesCreated = 0;
         int schedulesCreated = 0;
@@ -268,14 +271,114 @@ public class PortfolioImportPersistService {
             }
             // DRAFT → unit stays VACANT, no further change.
 
-            // Auto-generate payment schedules
-            var schedules = paymentScheduleService.generateScheduleForLease(savedLease);
-            schedulesCreated += schedules.size();
+            // Schedule generation: Cheques-sheet rows win if present; otherwise
+            // delegate to PaymentScheduleService for auto-distribution.
+            String chequesKey = leaseKey(propertyName, unitNumber, renterEmail);
+            List<ChequeRow> chequeRows = chequesByLeaseKey.getOrDefault(chequesKey, List.of());
+            if (chequeRows.isEmpty()) {
+                var schedules = paymentScheduleService.generateScheduleForLease(savedLease);
+                schedulesCreated += schedules.size();
+            } else {
+                chequeRows.sort(Comparator.comparingInt(ChequeRow::installmentNo));
+                savedLease.setPaymentTerms(chequeRows.size());
+                savedLease = leaseRepository.save(savedLease);
+
+                boolean bundled = nz(savedLease.getAdminFee()).signum() > 0
+                        || nz(savedLease.getDepositAmount()).signum() > 0
+                        || nz(savedLease.getParkingRemoteFee()).signum() > 0;
+
+                for (ChequeRow ch : chequeRows) {
+                    PaymentSchedule ps = new PaymentSchedule();
+                    ps.setLease(savedLease);
+                    ps.setUnit(unit);
+                    ps.setProperty(unit.getProperty());
+                    ps.setInstallmentNumber(ch.installmentNo());
+                    ps.setDueDate(ch.dueDate());
+                    if (ch.chequeOrPaymentDate() != null) ps.setChequeDate(ch.chequeOrPaymentDate());
+                    ps.setChequeNumber(ch.uniqueId());
+                    ps.setBankName(ch.bank());
+                    ps.setAmount(ch.amount());
+                    ps.setStatus(PaymentStatus.PENDING);
+                    String chMethod = ch.method() != null ? ch.method()
+                            : (savedLease.getPaymentMethod() != null
+                                    ? savedLease.getPaymentMethod().name() : "CHEQUE");
+                    ps.setPaymentMethod(chMethod);
+                    String label = "RENT - " + ordinalOf(ch.installmentNo()) + " INSTALLMENT";
+                    if (ch.installmentNo() == 1 && bundled) {
+                        label += "/ADMIN/SD/REMOTE";
+                    }
+                    ps.setPurposeLabel(label);
+                    paymentScheduleRepository.save(ps);
+                }
+                schedulesCreated += chequeRows.size();
+            }
         }
 
         job.setLeasesCreated(leasesCreated);
         job.setSchedulesCreated(schedulesCreated);
         importJobRepository.save(job);
+    }
+
+    private Map<String, List<ChequeRow>> readChequesSheet(Workbook workbook) {
+        Sheet sheet = workbook.getSheet("Cheques");
+        if (sheet == null) return Collections.emptyMap();
+        HeaderIndex hi = new HeaderIndex(sheet);
+        Map<String, List<ChequeRow>> byKey = new HashMap<>();
+        for (int r = 1; r <= sheet.getLastRowNum(); r++) {
+            Row row = sheet.getRow(r);
+            if (row == null || isRowEmpty(row)) continue;
+            String pname = cell(row, hi, "PropertyName");
+            String unum = cell(row, hi, "UnitNumber");
+            String email = cell(row, hi, "RenterEmail");
+            int installmentNo;
+            try { installmentNo = Integer.parseInt(cell(row, hi, "InstallmentNo")); }
+            catch (NumberFormatException e) { continue; /* validator already flagged */ }
+            LocalDate dueDate;
+            try { dueDate = LocalDate.parse(cell(row, hi, "DueDate")); }
+            catch (DateTimeParseException e) { continue; }
+            String chequeOrPaymentDateStr = cell(row, hi, "ChequeOrPaymentDate");
+            LocalDate chequeOrPaymentDate = null;
+            if (!chequeOrPaymentDateStr.isEmpty()) {
+                try { chequeOrPaymentDate = LocalDate.parse(chequeOrPaymentDateStr); }
+                catch (DateTimeParseException ignored) { /* validator flagged */ }
+            }
+            String uniqueId = cell(row, hi, "UniqueId");
+            String bank = cell(row, hi, "Bank");
+            BigDecimal amount;
+            try { amount = new BigDecimal(cell(row, hi, "Amount")); }
+            catch (NumberFormatException e) { continue; }
+            String method = cell(row, hi, "Method").toUpperCase();
+            ChequeRow ch = new ChequeRow(installmentNo, dueDate, chequeOrPaymentDate,
+                    uniqueId.isEmpty() ? null : uniqueId,
+                    bank.isEmpty() ? null : bank,
+                    amount,
+                    method.isEmpty() ? null : method);
+            byKey.computeIfAbsent(leaseKey(pname, unum, email), k -> new ArrayList<>()).add(ch);
+        }
+        return byKey;
+    }
+
+    private static String leaseKey(String propertyName, String unitNumber, String renterEmail) {
+        return propertyName.trim().toLowerCase(Locale.ROOT)
+                + "|" + unitNumber.trim().toLowerCase(Locale.ROOT)
+                + "|" + renterEmail.trim().toLowerCase(Locale.ROOT);
+    }
+
+    /** Cheques-sheet row, with the lease's PaymentMethod already substituted in when blank. */
+    private record ChequeRow(int installmentNo, LocalDate dueDate, LocalDate chequeOrPaymentDate,
+                             String uniqueId, String bank, BigDecimal amount, String method) {}
+
+    private static BigDecimal nz(BigDecimal v) { return v == null ? BigDecimal.ZERO : v; }
+
+    /** Mirrors PaymentScheduleService.ordinalOf; duplicated locally to avoid widening visibility. */
+    private static String ordinalOf(int n) {
+        if (n % 100 >= 11 && n % 100 <= 13) return n + "TH";
+        return switch (n % 10) {
+            case 1 -> n + "ST";
+            case 2 -> n + "ND";
+            case 3 -> n + "RD";
+            default -> n + "TH";
+        };
     }
 
     private static BigDecimal parseDecimalOrZero(String s) {
