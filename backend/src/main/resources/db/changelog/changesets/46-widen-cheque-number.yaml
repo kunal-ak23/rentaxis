@@ -1,0 +1,10 @@
+databaseChangeLog:
+  - changeSet:
+      id: 46-widen-cheque-number
+      author: rentaxis
+      changes:
+        - modifyDataType:
+            tableName: payment_schedules
+            columnName: cheque_number
+            newDataType: varchar(255)
+      comment: "Widen cheque_number to 255 chars so it can carry free-form notes for CASH rows (e.g., 'handed to <person> on <date>') and longer transfer reference IDs."

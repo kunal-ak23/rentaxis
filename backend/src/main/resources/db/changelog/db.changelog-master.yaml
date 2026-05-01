@@ -97,3 +97,5 @@ databaseChangeLog:
       file: db/changelog/changesets/44-transaction-splits.yaml
   - include:
       file: db/changelog/changesets/45-lease-agreement-fields.yaml
+  - include:
+      file: db/changelog/changesets/46-widen-cheque-number.yaml

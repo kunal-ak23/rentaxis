@@ -200,7 +200,7 @@ export default function PaymentScheduleEditor({ leaseId, leaseStatus, canManage,
                             <th className="px-3 py-2 font-semibold">Due Date</th>
                             <th className="px-3 py-2 font-semibold">Cheque / Payment Date</th>
                             <th className="px-3 py-2 font-semibold">Method</th>
-                            <th className="px-3 py-2 font-semibold">Cheque #</th>
+                            <th className="px-3 py-2 font-semibold">Unique ID</th>
                             <th className="px-3 py-2 font-semibold">Bank</th>
                             <th className="px-3 py-2 font-semibold text-right">Amount</th>
                             <th className="px-3 py-2 font-semibold">Status</th>
@@ -260,14 +260,33 @@ export default function PaymentScheduleEditor({ leaseId, leaseStatus, canManage,
                                         </select>
                                     </td>
                                     <td className="px-3 py-2">
-                                        <input
-                                            type="text"
-                                            value={r.chequeNumber || ""}
-                                            onChange={(e) => updateRow(r.id, { chequeNumber: e.target.value })}
-                                            disabled={rowDisabled || !chequeRequired}
-                                            placeholder={chequeRequired ? "—" : "n/a"}
-                                            className="border border-border rounded px-2 py-1 text-xs bg-surface w-28 disabled:bg-input/40 disabled:cursor-not-allowed"
-                                        />
+                                        {(() => {
+                                            const isCash = m === "CASH";
+                                            const placeholder = m === "CHEQUE" ? "Cheque number"
+                                                : m === "BANK_TRANSFER" ? "Transfer reference"
+                                                : m === "ONLINE" ? "Payment reference"
+                                                : "Notes (e.g., handed to ___ on ___)";
+                                            const subLabel = m === "CHEQUE" ? "cheque #"
+                                                : m === "BANK_TRANSFER" ? "ref no"
+                                                : m === "ONLINE" ? "ref no"
+                                                : "notes";
+                                            return (
+                                                <>
+                                                    <input
+                                                        type="text"
+                                                        value={r.chequeNumber || ""}
+                                                        onChange={(e) => updateRow(r.id, { chequeNumber: e.target.value })}
+                                                        disabled={rowDisabled}
+                                                        placeholder={placeholder}
+                                                        className={cn(
+                                                            "border border-border rounded px-2 py-1 text-xs bg-surface disabled:bg-input/40 disabled:cursor-not-allowed",
+                                                            isCash ? "w-64" : "w-44"
+                                                        )}
+                                                    />
+                                                    <div className="text-[10px] text-muted mt-0.5">{subLabel}{chequeRequired ? " *" : ""}</div>
+                                                </>
+                                            );
+                                        })()}
                                     </td>
                                     <td className="px-3 py-2">
                                         <input
