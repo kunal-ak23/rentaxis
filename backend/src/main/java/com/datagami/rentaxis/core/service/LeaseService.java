@@ -186,6 +186,14 @@ public class LeaseService {
             paymentScheduleRepository.save(booking);
         }
 
+        // Generate the rent installment schedule eagerly so the contract PDF's
+        // Section 4 (Payment Details) is populated before the lease is
+        // activated. The /ADMIN/SD/REMOTE bundling on installment 1 already
+        // covers the security deposit per the client reference.
+        // Booking-deposit rows already saved above are preserved by the
+        // !isBookingDeposit() filter inside generateScheduleForLease.
+        paymentScheduleService.generateScheduleForLease(savedLease);
+
         recordEvent(savedLease, null, LeaseStatus.DRAFT, "Lease drafted");
 
         return mapToDTO(savedLease);
@@ -262,6 +270,22 @@ public class LeaseService {
         if (dto.getParkingRemoteVatApplicable() != null) lease.setParkingRemoteVatApplicable(dto.getParkingRemoteVatApplicable());
 
         Lease savedLease = leaseRepository.save(lease);
+
+        // The lease parameters (rent / dates / terms / fees / VAT) feed into the
+        // installment schedule that Section 4 of the contract renders. After an
+        // edit, drop the previously-generated installments (only the PENDING
+        // ones — never touch booking deposits or anything already collected)
+        // and regenerate so the next contract preview reflects the new numbers.
+        List<PaymentSchedule> regenTargets = paymentScheduleRepository.findByLeaseId(savedLease.getId()).stream()
+                .filter(p -> !p.isBookingDeposit())
+                .filter(p -> p.getStatus() == PaymentStatus.PENDING)
+                .toList();
+        if (!regenTargets.isEmpty()) {
+            paymentScheduleRepository.deleteAll(regenTargets);
+            paymentScheduleRepository.flush();
+        }
+        paymentScheduleService.generateScheduleForLease(savedLease);
+
         recordEvent(savedLease, LeaseStatus.DRAFT, LeaseStatus.DRAFT, "Lease updated");
 
         return mapToDTO(savedLease);
