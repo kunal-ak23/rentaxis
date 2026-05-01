@@ -250,12 +250,21 @@ public class PortfolioImportService {
                 errors.add(new ImportErrorDTO("Leases", rowNum, "EndDate", "End date must be after start date"));
             }
 
-            // Rent amount
-            if (rentAmountStr.isEmpty()) {
-                errors.add(new ImportErrorDTO("Leases", rowNum, "RentAmount", "Rent amount is required"));
-            } else {
+            // Rent xor: exactly one of RentAmount or MonthlyRent must be set.
+            String monthlyRentStr = cell(row, hi, "MonthlyRent");
+            if (!rentAmountStr.isEmpty() && !monthlyRentStr.isEmpty()) {
+                errors.add(new ImportErrorDTO("Leases", rowNum, "RentAmount",
+                        "Exactly one of RentAmount or MonthlyRent must be set, not both"));
+            } else if (rentAmountStr.isEmpty() && monthlyRentStr.isEmpty()) {
+                errors.add(new ImportErrorDTO("Leases", rowNum, "RentAmount",
+                        "Exactly one of RentAmount or MonthlyRent must be set"));
+            } else if (!rentAmountStr.isEmpty()) {
                 try { Double.parseDouble(rentAmountStr); } catch (NumberFormatException e) {
                     errors.add(new ImportErrorDTO("Leases", rowNum, "RentAmount", "Rent amount must be numeric"));
+                }
+            } else {
+                try { Double.parseDouble(monthlyRentStr); } catch (NumberFormatException e) {
+                    errors.add(new ImportErrorDTO("Leases", rowNum, "MonthlyRent", "Monthly rent must be numeric"));
                 }
             }
 
@@ -277,8 +286,89 @@ public class PortfolioImportService {
             if (!paymentMethod.isEmpty() && !validPaymentMethods.contains(paymentMethod.toUpperCase())) {
                 errors.add(new ImportErrorDTO("Leases", rowNum, "PaymentMethod", "Invalid payment method: " + paymentMethod + ". Valid: " + validPaymentMethods));
             }
+
+            // ---- Lease-agreement extension columns (added 2026-05-02) ----
+
+            String depositPaymentMethod = cell(row, hi, "DepositPaymentMethod");
+            if (!depositPaymentMethod.isEmpty() && !validPaymentMethods.contains(depositPaymentMethod.toUpperCase())) {
+                errors.add(new ImportErrorDTO("Leases", rowNum, "DepositPaymentMethod",
+                        "Invalid deposit payment method: " + depositPaymentMethod + ". Valid: " + validPaymentMethods));
+            }
+
+            // Status
+            String status = cell(row, hi, "Status").toUpperCase();
+            if (!status.isEmpty() && !"ACTIVE".equals(status) && !"DRAFT".equals(status)) {
+                errors.add(new ImportErrorDTO("Leases", rowNum, "Status", "Status must be ACTIVE or DRAFT"));
+            }
+
+            // VAT toggles
+            for (String h : VAT_TOGGLE_HEADERS) {
+                String v = cell(row, hi, h).toLowerCase();
+                if (!v.isEmpty() && !VALID_BOOLS.contains(v)) {
+                    errors.add(new ImportErrorDTO("Leases", rowNum, h, "Must be true/false/yes/no/1/0 or blank"));
+                }
+            }
+
+            // Numeric ≥ 0 charges
+            for (String h : new String[]{"AdminFee", "ParkingRemoteFee"}) {
+                String v = cell(row, hi, h);
+                if (v.isEmpty()) continue;
+                try {
+                    BigDecimal n = new BigDecimal(v);
+                    if (n.signum() < 0) {
+                        errors.add(new ImportErrorDTO("Leases", rowNum, h, h + " cannot be negative"));
+                    }
+                } catch (NumberFormatException e) {
+                    errors.add(new ImportErrorDTO("Leases", rowNum, h, h + " must be a number"));
+                }
+            }
+
+            // AgreementDate
+            String agreementDate = cell(row, hi, "AgreementDate");
+            if (!agreementDate.isEmpty()) {
+                try { LocalDate.parse(agreementDate); }
+                catch (DateTimeParseException e) {
+                    errors.add(new ImportErrorDTO("Leases", rowNum, "AgreementDate", "AgreementDate must be ISO format (YYYY-MM-DD)"));
+                }
+            }
+
+            // BookingDeposit_* — all-or-nothing; amount > 0 if any set.
+            String bdAmt = cell(row, hi, "BookingDeposit_Amount");
+            String bdNum = cell(row, hi, "BookingDeposit_Number");
+            String bdDate = cell(row, hi, "BookingDeposit_Date");
+            String bdBank = cell(row, hi, "BookingDeposit_Bank");
+            boolean anyBd = !(bdAmt.isEmpty() && bdNum.isEmpty() && bdDate.isEmpty() && bdBank.isEmpty());
+            boolean allBd = !bdAmt.isEmpty() && !bdNum.isEmpty() && !bdDate.isEmpty() && !bdBank.isEmpty();
+            if (anyBd && !allBd) {
+                errors.add(new ImportErrorDTO("Leases", rowNum, "BookingDeposit_Amount",
+                        "All four BookingDeposit_* columns must be set together"));
+            }
+            if (!bdAmt.isEmpty()) {
+                try {
+                    BigDecimal n = new BigDecimal(bdAmt);
+                    if (n.signum() <= 0) {
+                        errors.add(new ImportErrorDTO("Leases", rowNum, "BookingDeposit_Amount",
+                                "BookingDeposit_Amount must be > 0"));
+                    }
+                } catch (NumberFormatException e) {
+                    errors.add(new ImportErrorDTO("Leases", rowNum, "BookingDeposit_Amount",
+                            "BookingDeposit_Amount must be a number"));
+                }
+            }
+            if (!bdDate.isEmpty()) {
+                try { LocalDate.parse(bdDate); }
+                catch (DateTimeParseException e) {
+                    errors.add(new ImportErrorDTO("Leases", rowNum, "BookingDeposit_Date",
+                            "BookingDeposit_Date must be ISO format (YYYY-MM-DD)"));
+                }
+            }
         }
     }
+
+    private static final Set<String> VALID_BOOLS = Set.of("true", "false", "yes", "no", "1", "0");
+    private static final List<String> VAT_TOGGLE_HEADERS = List.of(
+            "RentVatApplicable", "AdminFeeVatApplicable",
+            "SecurityDepositVatApplicable", "ParkingRemoteVatApplicable");
 
     private void validateDbConflicts(Set<String> propertyNames, Set<String> renterEmails, List<ImportErrorDTO> errors) {
         // Check existing properties by name

@@ -57,6 +57,192 @@ class PortfolioImportServiceTest {
                         "BookingDeposit_Date", "BookingDeposit_Bank");
     }
 
+    @Test
+    void rentXor_bothSet_isError() {
+        Workbook wb = buildLegacyWorkbook();
+        setCell(wb, "Leases", 1, "MonthlyRent", "5000");
+
+        List<ImportErrorDTO> errors = service.validateWorkbook(wb);
+
+        assertThat(errors).anySatisfy(e -> {
+            assertThat(e.getSheet()).isEqualTo("Leases");
+            assertThat(e.getField()).isIn("RentAmount", "MonthlyRent");
+            assertThat(e.getMessage()).containsIgnoringCase("exactly one");
+        });
+    }
+
+    @Test
+    void rentXor_neitherSet_isError() {
+        Workbook wb = buildLegacyWorkbook();
+        clearCell(wb, "Leases", 1, "RentAmount");
+
+        List<ImportErrorDTO> errors = service.validateWorkbook(wb);
+
+        assertThat(errors).anySatisfy(e -> {
+            assertThat(e.getSheet()).isEqualTo("Leases");
+            assertThat(e.getField()).isIn("RentAmount", "MonthlyRent");
+            assertThat(e.getMessage()).containsIgnoringCase("exactly one");
+        });
+    }
+
+    @Test
+    void status_invalidValue_isError() {
+        Workbook wb = buildLegacyWorkbook();
+        setCell(wb, "Leases", 1, "Status", "PENDING");
+
+        List<ImportErrorDTO> errors = service.validateWorkbook(wb);
+
+        assertThat(errors).anySatisfy(e -> {
+            assertThat(e.getSheet()).isEqualTo("Leases");
+            assertThat(e.getField()).isEqualTo("Status");
+        });
+    }
+
+    @Test
+    void status_blankDefaultsToActive_noError() {
+        Workbook wb = buildLegacyWorkbook();
+        setCell(wb, "Leases", 1, "Status", "");
+
+        List<ImportErrorDTO> errors = service.validateWorkbook(wb);
+
+        assertThat(errors).extracting(ImportErrorDTO::getField).doesNotContain("Status");
+    }
+
+    @Test
+    void status_acceptsActiveAndDraft() {
+        for (String value : new String[]{"ACTIVE", "DRAFT", "active", "draft"}) {
+            Workbook wb = buildLegacyWorkbook();
+            setCell(wb, "Leases", 1, "Status", value);
+            List<ImportErrorDTO> errors = service.validateWorkbook(wb);
+            assertThat(errors).extracting(ImportErrorDTO::getField).doesNotContain("Status");
+        }
+    }
+
+    @Test
+    void paymentMethod_acceptsBankTransferAndCash() {
+        for (String method : new String[]{"BANK_TRANSFER", "CASH", "CHEQUE", "ONLINE"}) {
+            Workbook wb = buildLegacyWorkbook();
+            setCell(wb, "Leases", 1, "PaymentMethod", method);
+            List<ImportErrorDTO> errors = service.validateWorkbook(wb);
+            assertThat(errors).extracting(ImportErrorDTO::getField).doesNotContain("PaymentMethod");
+        }
+    }
+
+    @Test
+    void depositPaymentMethod_invalidValue_isError() {
+        Workbook wb = buildLegacyWorkbook();
+        setCell(wb, "Leases", 1, "DepositPaymentMethod", "BITCOIN");
+
+        List<ImportErrorDTO> errors = service.validateWorkbook(wb);
+
+        assertThat(errors).anySatisfy(e -> {
+            assertThat(e.getSheet()).isEqualTo("Leases");
+            assertThat(e.getField()).isEqualTo("DepositPaymentMethod");
+        });
+    }
+
+    @Test
+    void bookingDeposit_partialFill_isError() {
+        Workbook wb = buildLegacyWorkbook();
+        setCell(wb, "Leases", 1, "BookingDeposit_Amount", "10000");
+        setCell(wb, "Leases", 1, "BookingDeposit_Number", "BD-1");
+        setCell(wb, "Leases", 1, "BookingDeposit_Date", "2026-02-15");
+        // Bank intentionally left blank.
+
+        List<ImportErrorDTO> errors = service.validateWorkbook(wb);
+
+        assertThat(errors).anySatisfy(e -> {
+            assertThat(e.getSheet()).isEqualTo("Leases");
+            assertThat(e.getField()).isEqualTo("BookingDeposit_Amount");
+            assertThat(e.getMessage()).containsIgnoringCase("together");
+        });
+    }
+
+    @Test
+    void bookingDeposit_zeroAmount_isError() {
+        Workbook wb = buildLegacyWorkbook();
+        setCell(wb, "Leases", 1, "BookingDeposit_Amount", "0");
+        setCell(wb, "Leases", 1, "BookingDeposit_Number", "BD-1");
+        setCell(wb, "Leases", 1, "BookingDeposit_Date", "2026-02-15");
+        setCell(wb, "Leases", 1, "BookingDeposit_Bank", "Emirates NBD");
+
+        List<ImportErrorDTO> errors = service.validateWorkbook(wb);
+
+        assertThat(errors).anySatisfy(e -> {
+            assertThat(e.getField()).isEqualTo("BookingDeposit_Amount");
+            assertThat(e.getMessage()).containsIgnoringCase("> 0");
+        });
+    }
+
+    @Test
+    void agreementDate_unparseable_isError() {
+        Workbook wb = buildLegacyWorkbook();
+        setCell(wb, "Leases", 1, "AgreementDate", "not-a-date");
+
+        List<ImportErrorDTO> errors = service.validateWorkbook(wb);
+
+        assertThat(errors).anySatisfy(e -> {
+            assertThat(e.getField()).isEqualTo("AgreementDate");
+        });
+    }
+
+    @Test
+    void adminFee_negative_isError() {
+        Workbook wb = buildLegacyWorkbook();
+        setCell(wb, "Leases", 1, "AdminFee", "-100");
+
+        List<ImportErrorDTO> errors = service.validateWorkbook(wb);
+
+        assertThat(errors).anySatisfy(e -> {
+            assertThat(e.getField()).isEqualTo("AdminFee");
+            assertThat(e.getMessage()).containsIgnoringCase("negative");
+        });
+    }
+
+    @Test
+    void parkingRemoteFee_nonNumeric_isError() {
+        Workbook wb = buildLegacyWorkbook();
+        setCell(wb, "Leases", 1, "ParkingRemoteFee", "free");
+
+        List<ImportErrorDTO> errors = service.validateWorkbook(wb);
+
+        assertThat(errors).anySatisfy(e -> assertThat(e.getField()).isEqualTo("ParkingRemoteFee"));
+    }
+
+    @Test
+    void vatToggle_invalidBool_isError() {
+        Workbook wb = buildLegacyWorkbook();
+        setCell(wb, "Leases", 1, "RentVatApplicable", "maybe");
+
+        List<ImportErrorDTO> errors = service.validateWorkbook(wb);
+
+        assertThat(errors).anySatisfy(e -> assertThat(e.getField()).isEqualTo("RentVatApplicable"));
+    }
+
+    @Test
+    void vatToggle_acceptsTrueFalseYesNo10() {
+        for (String value : new String[]{"true", "false", "yes", "no", "1", "0", "TRUE", ""}) {
+            Workbook wb = buildLegacyWorkbook();
+            setCell(wb, "Leases", 1, "RentVatApplicable", value);
+            List<ImportErrorDTO> errors = service.validateWorkbook(wb);
+            assertThat(errors)
+                    .as("VAT toggle should accept '%s'", value)
+                    .extracting(ImportErrorDTO::getField)
+                    .doesNotContain("RentVatApplicable");
+        }
+    }
+
+    @Test
+    void monthlyRentOnly_isFine() {
+        Workbook wb = buildLegacyWorkbook();
+        clearCell(wb, "Leases", 1, "RentAmount");
+        setCell(wb, "Leases", 1, "MonthlyRent", "5000");
+
+        List<ImportErrorDTO> errors = service.validateWorkbook(wb);
+
+        assertThat(errors).extracting(ImportErrorDTO::getField).doesNotContain("RentAmount", "MonthlyRent");
+    }
+
     // ----- Test helpers -----
 
     /** Builds the original 4-sheet, 10-column Leases workbook (no new columns, no Cheques sheet). */
