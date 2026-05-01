@@ -1,8 +1,11 @@
 package com.datagami.rentaxis.core.service;
 
+import com.datagami.rentaxis.api.dto.PortfolioImportJobDetailsDTO;
 import com.datagami.rentaxis.domain.entity.*;
 import com.datagami.rentaxis.domain.entity.enums.*;
 import com.datagami.rentaxis.domain.repository.*;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
@@ -142,6 +145,8 @@ public class PortfolioImportPersistService {
         HeaderIndex leaseHi = new HeaderIndex(leasesSheet);
         int leasesCreated = 0;
         int schedulesCreated = 0;
+        int chequesFromSheet = 0;
+        int bookingDepositsCreated = 0;
         for (int i = 1; i <= leasesSheet.getLastRowNum(); i++) {
             Row row = leasesSheet.getRow(i);
             if (row == null || isRowEmpty(row)) continue;
@@ -260,6 +265,7 @@ public class PortfolioImportPersistService {
                 booking.setPurposeLabel("BOOKING RECEIVED");
                 booking.setBookingDeposit(true);
                 paymentScheduleRepository.save(booking);
+                bookingDepositsCreated++;
             }
 
             // Apply lease-status-driven side effects.
@@ -311,13 +317,31 @@ public class PortfolioImportPersistService {
                     paymentScheduleRepository.save(ps);
                 }
                 schedulesCreated += chequeRows.size();
+                chequesFromSheet += chequeRows.size();
             }
         }
 
         job.setLeasesCreated(leasesCreated);
         job.setSchedulesCreated(schedulesCreated);
+
+        // Persist the new counters via the existing JSONB `errors` column using the
+        // PortfolioImportJobDetailsDTO wrapper. Avoids a DB migration; the controller
+        // reads either the legacy array form (validation-failed jobs) or this wrapper.
+        if (chequesFromSheet > 0 || bookingDepositsCreated > 0) {
+            try {
+                PortfolioImportJobDetailsDTO details = new PortfolioImportJobDetailsDTO();
+                details.setChequesFromSheet(chequesFromSheet);
+                details.setBookingDepositsCreated(bookingDepositsCreated);
+                job.setErrors(JOB_DETAILS_MAPPER.writeValueAsString(details));
+            } catch (JsonProcessingException e) {
+                log.warn("Failed to serialize bulk-import counters into job.errors", e);
+            }
+        }
+
         importJobRepository.save(job);
     }
+
+    private static final ObjectMapper JOB_DETAILS_MAPPER = new ObjectMapper();
 
     private Map<String, List<ChequeRow>> readChequesSheet(Workbook workbook) {
         Sheet sheet = workbook.getSheet("Cheques");

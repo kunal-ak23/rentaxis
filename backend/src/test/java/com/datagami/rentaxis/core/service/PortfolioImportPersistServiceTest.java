@@ -313,6 +313,28 @@ class PortfolioImportPersistServiceTest {
     }
 
     @Test
+    void persist_writesCountersIntoJobErrorsColumnAsWrapperJson() throws Exception {
+        Workbook wb = buildWorkbookWithOneLease(b -> b
+                .bookingDeposit("10000", "BD-001", "2026-02-15", "Emirates NBD"));
+        addChequesSheet(wb,
+                cheque("Marina Heights", "101", "ahmed@email.com",
+                        "1", "2026-01-01", "2026-01-01", "C-1", "Emirates NBD", "60000", "CHEQUE"));
+
+        ImportJob job = newJob();
+        service.persistWorkbook(wb, job);
+
+        assertThat(job.getErrors())
+                .as("counters must be persisted into the JSONB errors column as a wrapper object")
+                .isNotNull()
+                .startsWith("{");
+        var details = new com.fasterxml.jackson.databind.ObjectMapper()
+                .readValue(job.getErrors(),
+                        com.datagami.rentaxis.api.dto.PortfolioImportJobDetailsDTO.class);
+        assertThat(details.getChequesFromSheet()).isEqualTo(1);
+        assertThat(details.getBookingDepositsCreated()).isEqualTo(1);
+    }
+
+    @Test
     void persist_legacyTenColumnWorkbook_persistsActiveLeaseUnchanged() {
         // Regression: verify the legacy 10-column path still produces an ACTIVE lease.
         Workbook wb = buildLegacyOneLeaseWorkbook();

@@ -15,6 +15,8 @@ public class PortfolioImportResultDTO {
     private int rentersCreated;
     private int leasesCreated;
     private int paymentSchedulesCreated;
+    private int chequesFromSheet;
+    private int bookingDepositsCreated;
     private List<ImportErrorDTO> errors;
     private List<ImportErrorDTO> warnings;
 }
