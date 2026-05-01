@@ -155,7 +155,8 @@ public class ContractGenerationService {
         return renderPdf(html);
     }
 
-    private String renderContractHtml(Lease lease, String contractNumberDisplay) {
+    // Package-private for tests: lets us assert on the substituted HTML without rendering PDF.
+    String renderContractHtml(Lease lease, String contractNumberDisplay) {
         // Load landlord org for this tenant
         LandlordOrg org = landlordOrgRepository.findById(lease.getTenantId())
                 .orElseThrow(() -> new NotFoundException("Landlord organization not found for tenant"));
@@ -381,7 +382,8 @@ public class ContractGenerationService {
         return v == null ? BigDecimal.ZERO : v;
     }
 
-    private byte[] renderPdf(String html) {
+    // Package-private for tests: lets us stub PDF rendering via Mockito spy.
+    byte[] renderPdf(String html) {
         try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
             PdfRendererBuilder builder = new PdfRendererBuilder();
             builder.useFastMode();
