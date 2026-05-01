@@ -245,4 +245,46 @@ public class PortfolioImportPersistService {
         }
         return true;
     }
+
+    /** Reads a cell by header name. Returns "" when the header is absent. */
+    private String cell(Row row, HeaderIndex hi, String header) {
+        int c = hi.col(header);
+        return c < 0 ? "" : getCellString(row, c);
+    }
+
+    /**
+     * Maps header names (case-insensitive, trimmed) to column indexes for a sheet.
+     * Mirrors {@code PortfolioImportService.HeaderIndex} — kept duplicated rather than
+     * extracted because the two services are independent and the helper is small.
+     */
+    static final class HeaderIndex {
+        private final Map<String, Integer> byName;
+
+        HeaderIndex(Sheet sheet) {
+            Map<String, Integer> m = new HashMap<>();
+            Row header = sheet.getRow(sheet.getFirstRowNum());
+            if (header == null) header = sheet.getRow(0);
+            if (header != null) {
+                for (int c = 0; c < header.getLastCellNum(); c++) {
+                    Cell cell = header.getCell(c);
+                    if (cell == null) continue;
+                    String v = cell.getCellType() == CellType.STRING
+                            ? cell.getStringCellValue().trim()
+                            : "";
+                    if (!v.isEmpty()) m.put(v.toLowerCase(Locale.ROOT), c);
+                }
+            }
+            this.byName = m;
+        }
+
+        /** -1 when the header isn't present (old template). */
+        int col(String name) {
+            Integer v = byName.get(name.toLowerCase(Locale.ROOT));
+            return v == null ? -1 : v;
+        }
+
+        boolean has(String name) {
+            return byName.containsKey(name.toLowerCase(Locale.ROOT));
+        }
+    }
 }
