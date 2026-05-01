@@ -208,6 +208,16 @@ class PortfolioImportPersistServiceTest {
     }
 
     @Test
+    void persist_noChequesSheet_delegatesToPaymentScheduleService() {
+        Workbook wb = buildWorkbookWithOneLease(b -> b.paymentTerms("4"));
+
+        service.persistWorkbook(wb, newJob());
+
+        // Auto-distribution is delegated; we verify the contract (call), not the math.
+        verify(paymentScheduleService).generateScheduleForLease(any(Lease.class));
+    }
+
+    @Test
     void persist_legacyTenColumnWorkbook_persistsActiveLeaseUnchanged() {
         // Regression: verify the legacy 10-column path still produces an ACTIVE lease.
         Workbook wb = buildLegacyOneLeaseWorkbook();
