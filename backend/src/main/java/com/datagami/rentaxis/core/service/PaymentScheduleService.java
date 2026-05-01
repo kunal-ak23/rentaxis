@@ -791,6 +791,7 @@ public class PaymentScheduleService {
         dto.setReplacedById(ps.getReplacedBy() != null ? ps.getReplacedBy().getId() : null);
         dto.setPurposeLabel(ps.getPurposeLabel());
         dto.setIsBookingDeposit(ps.isBookingDeposit());
+        dto.setPaymentMethod(ps.getPaymentMethod());
         return dto;
     }
 }
