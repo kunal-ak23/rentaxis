@@ -194,12 +194,22 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
         setSubmitting(true);
         setError(null);
         try {
+            // rentAmount = total rent across the whole lease tenure (monthly × months),
+            // not monthly × paymentTerms. paymentTerms is the cheque count and is
+            // independent of the rent total — the backend splits the total rent
+            // evenly across paymentTerms installments distributed over the tenure.
+            const monthsBetween = (() => {
+                const s = new Date(data.startDate);
+                const e = new Date(data.endDate);
+                const months = (e.getFullYear() - s.getFullYear()) * 12 + (e.getMonth() - s.getMonth());
+                return Math.max(months, 1);
+            })();
             const body: Record<string, unknown> = {
                 unitId: data.unitId,
                 renterId: data.renterId,
                 startDate: data.startDate,
                 endDate: data.endDate,
-                rentAmount: data.rentAmount * data.paymentTerms,  // total rent for the plan; backend treats monthlyRent separately
+                rentAmount: data.rentAmount * monthsBetween,
                 monthlyRent: data.rentAmount,
                 depositAmount: data.depositAmount,
                 ejariNumber: data.ejariNumber || null,

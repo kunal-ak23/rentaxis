@@ -56,38 +56,60 @@ public class PaymentScheduleService {
             return existing;
         }
 
-        // Use stored monthly rent; fall back to total / months for legacy leases
+        long totalMonths = java.time.temporal.ChronoUnit.MONTHS.between(lease.getStartDate(), lease.getEndDate());
+        if (totalMonths < 1) totalMonths = 1;
+
         BigDecimal monthlyRent;
         if (lease.getMonthlyRent() != null && lease.getMonthlyRent().compareTo(BigDecimal.ZERO) > 0) {
             monthlyRent = lease.getMonthlyRent();
+        } else if (lease.getRentAmount() != null && lease.getRentAmount().compareTo(BigDecimal.ZERO) > 0) {
+            monthlyRent = lease.getRentAmount().divide(BigDecimal.valueOf(totalMonths), 2, RoundingMode.HALF_UP);
         } else {
-            long months = java.time.temporal.ChronoUnit.MONTHS.between(lease.getStartDate(), lease.getEndDate());
-            if (months < 1) months = 1;
-            monthlyRent = lease.getRentAmount().divide(BigDecimal.valueOf(months), 2, RoundingMode.HALF_UP);
+            monthlyRent = BigDecimal.ZERO;
         }
 
-        PaymentPreviewDTO preview = previewSchedule(
-                lease.getUnit().getProperty().getId(),
-                lease.getStartDate(),
-                lease.getEndDate(),
-                monthlyRent);
+        // Honor lease.paymentTerms — N installments distributed across the lease
+        // tenure, not one cheque per month. paymentTerms == months falls back to
+        // the previous monthly cadence; missing/<=0 also defaults to monthly.
+        int n;
+        if (lease.getPaymentTerms() != null && lease.getPaymentTerms() > 0) {
+            n = lease.getPaymentTerms();
+        } else {
+            n = (int) totalMonths;
+        }
+        if (n > totalMonths) n = (int) totalMonths;
+        if (n < 1) n = 1;
 
+        BigDecimal totalRent = monthlyRent.multiply(BigDecimal.valueOf(totalMonths));
+        BigDecimal perInstallment = totalRent.divide(BigDecimal.valueOf(n), 2, RoundingMode.HALF_UP);
+
+        // Even spacing: due date i = startDate + floor(i * months / n) months.
+        // For 12 months / 4 cheques → offsets [0, 3, 6, 9].
+        // For 13 months / 4 cheques → offsets [0, 3, 6, 9] (last covers 4 months).
         List<PaymentSchedule> schedules = new ArrayList<>();
-        for (PaymentPreviewDTO.PaymentPreviewLine line : preview.getLines()) {
+        BigDecimal accumulated = BigDecimal.ZERO;
+        for (int i = 0; i < n; i++) {
+            long monthOffset = (long) Math.floor((double) i * totalMonths / n);
+            LocalDate dueDate = lease.getStartDate().plusMonths(monthOffset);
+
+            // Last installment carries the rounding remainder so the sum equals totalRent exactly.
+            BigDecimal amount = (i == n - 1) ? totalRent.subtract(accumulated) : perInstallment;
+            accumulated = accumulated.add(amount);
+
             PaymentSchedule ps = new PaymentSchedule();
             ps.setLease(lease);
             ps.setUnit(lease.getUnit());
             ps.setProperty(lease.getUnit().getProperty());
-            ps.setInstallmentNumber(line.getInstallmentNumber());
-            ps.setDueDate(line.getDueDate());
-            ps.setAmount(line.getAmount());
+            ps.setInstallmentNumber(i + 1);
+            ps.setDueDate(dueDate);
+            ps.setAmount(amount);
             ps.setStatus(PaymentStatus.PENDING);
-            int n = line.getInstallmentNumber();
-            String label = "RENT - " + ordinalOf(n) + " INSTALLMENT";
-            if (n == 1) {
-                boolean hasBundledCharges = lease.getAdminFee().signum() > 0
-                        || lease.getDepositAmount().signum() > 0
-                        || lease.getParkingRemoteFee().signum() > 0;
+
+            String label = "RENT - " + ordinalOf(i + 1) + " INSTALLMENT";
+            if (i == 0) {
+                boolean hasBundledCharges = nz(lease.getAdminFee()).signum() > 0
+                        || nz(lease.getDepositAmount()).signum() > 0
+                        || nz(lease.getParkingRemoteFee()).signum() > 0;
                 if (hasBundledCharges) {
                     label += "/ADMIN/SD/REMOTE";
                 }
@@ -99,6 +121,8 @@ public class PaymentScheduleService {
 
         return paymentScheduleRepository.saveAll(schedules);
     }
+
+    private static BigDecimal nz(BigDecimal v) { return v == null ? BigDecimal.ZERO : v; }
 
     @Transactional(readOnly = true)
     public List<PaymentScheduleDTO> getPaymentsForLease(UUID leaseId) {
