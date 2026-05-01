@@ -16,4 +16,5 @@ public class PortfolioImportResultDTO {
     private int leasesCreated;
     private int paymentSchedulesCreated;
     private List<ImportErrorDTO> errors;
+    private List<ImportErrorDTO> warnings;
 }

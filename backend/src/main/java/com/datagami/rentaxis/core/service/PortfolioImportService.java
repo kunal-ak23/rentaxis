@@ -18,6 +18,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -36,7 +37,15 @@ public class PortfolioImportService {
     // --- Validation Phase (no DB writes) ---
 
     public List<ImportErrorDTO> validateWorkbook(Workbook workbook) {
+        return validateAll(workbook).errors();
+    }
+
+    /**
+     * Full validation pass. Returns hard errors (block import) and warnings (informational only).
+     */
+    public ValidationOutcome validateAll(Workbook workbook) {
         List<ImportErrorDTO> errors = new ArrayList<>();
+        List<ImportErrorDTO> warnings = new ArrayList<>();
 
         Sheet propertiesSheet = workbook.getSheet("Properties");
         Sheet unitsSheet = workbook.getSheet("Units");
@@ -48,12 +57,13 @@ public class PortfolioImportService {
         if (rentersSheet == null) errors.add(new ImportErrorDTO("Renters", 0, "", "Sheet 'Renters' is missing"));
         if (leasesSheet == null) errors.add(new ImportErrorDTO("Leases", 0, "", "Sheet 'Leases' is missing"));
 
-        if (!errors.isEmpty()) return errors;
+        if (!errors.isEmpty()) return new ValidationOutcome(errors, warnings);
 
         // Collect data for cross-sheet validation
         Set<String> propertyNames = new HashSet<>();
         Map<String, Set<String>> unitsByProperty = new HashMap<>(); // propertyName -> set of "buildingName|unitNumber" composite keys
         Set<String> renterEmails = new HashSet<>();
+        Map<String, LeaseRowSummary> leaseIndex = new LinkedHashMap<>();
 
         // Validate Properties sheet
         validatePropertiesSheet(propertiesSheet, errors, propertyNames);
@@ -65,13 +75,25 @@ public class PortfolioImportService {
         validateRentersSheet(rentersSheet, errors, renterEmails);
 
         // Validate Leases sheet (cross-sheet refs)
-        validateLeasesSheet(leasesSheet, errors, propertyNames, unitsByProperty, renterEmails);
+        validateLeasesSheet(leasesSheet, errors, propertyNames, unitsByProperty, renterEmails, leaseIndex);
+
+        // Validate optional Cheques sheet against the lease index
+        Sheet chequesSheet = workbook.getSheet("Cheques");
+        if (chequesSheet != null) {
+            validateChequesSheet(chequesSheet, leaseIndex, errors, warnings);
+        }
 
         // Check DB conflicts
         validateDbConflicts(propertyNames, renterEmails, errors);
 
-        return errors;
+        return new ValidationOutcome(errors, warnings);
     }
+
+    public record ValidationOutcome(List<ImportErrorDTO> errors, List<ImportErrorDTO> warnings) {}
+
+    /** Summary of a Leases row, captured during validation, used by the Cheques-sheet checks. */
+    record LeaseRowSummary(String paymentMethod, BigDecimal totalRent,
+                           LocalDate startDate, LocalDate endDate) {}
 
     private void validatePropertiesSheet(Sheet sheet, List<ImportErrorDTO> errors, Set<String> propertyNames) {
         Set<String> validEmirates = Arrays.stream(Emirate.values()).map(Enum::name).collect(Collectors.toSet());
@@ -182,7 +204,8 @@ public class PortfolioImportService {
 
     private void validateLeasesSheet(Sheet sheet, List<ImportErrorDTO> errors,
                                      Set<String> propertyNames, Map<String, Set<String>> unitsByProperty,
-                                     Set<String> renterEmails) {
+                                     Set<String> renterEmails,
+                                     Map<String, LeaseRowSummary> leaseIndex) {
         Set<String> validPaymentMethods = Arrays.stream(PaymentMethod.values()).map(Enum::name).collect(Collectors.toSet());
         HeaderIndex hi = new HeaderIndex(sheet);
 
@@ -362,13 +385,179 @@ public class PortfolioImportService {
                             "BookingDeposit_Date must be ISO format (YYYY-MM-DD)"));
                 }
             }
+
+            // Populate leaseIndex for downstream Cheques-sheet validation when this row
+            // has parseable dates and at least one rent value. Rows that are too broken
+            // to summarize will already have errors logged above.
+            if (startDate != null && endDate != null && endDate.isAfter(startDate)) {
+                BigDecimal totalRent = computeTotalRentOrNull(rentAmountStr, monthlyRentStr, startDate, endDate);
+                if (totalRent != null) {
+                    String key = leaseKey(propertyName, unitNumber, renterEmail);
+                    String method = paymentMethod.isEmpty() ? "CHEQUE" : paymentMethod.toUpperCase();
+                    leaseIndex.put(key, new LeaseRowSummary(method, totalRent, startDate, endDate));
+                }
+            }
         }
+    }
+
+    private static BigDecimal computeTotalRentOrNull(String rentAmount, String monthlyRent,
+                                                     LocalDate startDate, LocalDate endDate) {
+        try {
+            if (!monthlyRent.isEmpty()) {
+                BigDecimal mr = new BigDecimal(monthlyRent);
+                long months = Math.max(ChronoUnit.MONTHS.between(startDate, endDate), 1);
+                return mr.multiply(BigDecimal.valueOf(months));
+            }
+            if (!rentAmount.isEmpty()) {
+                return new BigDecimal(rentAmount);
+            }
+        } catch (NumberFormatException ignored) {
+            // Fall through; row already flagged as numeric-error.
+        }
+        return null;
+    }
+
+    static String leaseKey(String propertyName, String unitNumber, String renterEmail) {
+        return propertyName.trim().toLowerCase(Locale.ROOT)
+                + "|" + unitNumber.trim().toLowerCase(Locale.ROOT)
+                + "|" + renterEmail.trim().toLowerCase(Locale.ROOT);
     }
 
     private static final Set<String> VALID_BOOLS = Set.of("true", "false", "yes", "no", "1", "0");
     private static final List<String> VAT_TOGGLE_HEADERS = List.of(
             "RentVatApplicable", "AdminFeeVatApplicable",
             "SecurityDepositVatApplicable", "ParkingRemoteVatApplicable");
+
+    private void validateChequesSheet(Sheet sheet,
+                                       Map<String, LeaseRowSummary> leaseIndex,
+                                       List<ImportErrorDTO> errors,
+                                       List<ImportErrorDTO> warnings) {
+        HeaderIndex hi = new HeaderIndex(sheet);
+        Set<String> validMethods = Set.of("CHEQUE", "BANK_TRANSFER", "ONLINE", "CASH");
+
+        // Per-lease state: installments seen (for dup detection) and running sum (for total check).
+        Map<String, Set<Integer>> seenInstallments = new HashMap<>();
+        Map<String, BigDecimal> sumByLease = new HashMap<>();
+        Set<String> chequedLeases = new LinkedHashSet<>();
+
+        for (int r = 1; r <= sheet.getLastRowNum(); r++) {
+            Row row = sheet.getRow(r);
+            if (row == null || isRowEmpty(row)) continue;
+            int rowNum = r + 1;
+
+            String pname = cell(row, hi, "PropertyName");
+            String unum = cell(row, hi, "UnitNumber");
+            String email = cell(row, hi, "RenterEmail");
+            String key = leaseKey(pname, unum, email);
+            LeaseRowSummary lease = leaseIndex.get(key);
+            if (lease == null) {
+                errors.add(new ImportErrorDTO("Cheques", rowNum, "PropertyName",
+                        "No Leases row matches " + pname + " / " + unum + " / " + email));
+                continue;
+            }
+            chequedLeases.add(key);
+
+            // InstallmentNo: positive int, unique per lease.
+            String inoStr = cell(row, hi, "InstallmentNo");
+            int ino;
+            try {
+                ino = Integer.parseInt(inoStr);
+                if (ino < 1) throw new NumberFormatException();
+            } catch (NumberFormatException e) {
+                errors.add(new ImportErrorDTO("Cheques", rowNum, "InstallmentNo",
+                        "InstallmentNo must be a positive integer"));
+                continue;
+            }
+            Set<Integer> seen = seenInstallments.computeIfAbsent(key, k -> new HashSet<>());
+            if (!seen.add(ino)) {
+                errors.add(new ImportErrorDTO("Cheques", rowNum, "InstallmentNo",
+                        "Duplicate InstallmentNo " + ino + " for this lease"));
+            }
+
+            // Method (defaults to lease's PaymentMethod).
+            String method = cell(row, hi, "Method").toUpperCase();
+            if (method.isEmpty()) method = lease.paymentMethod();
+            if (!validMethods.contains(method)) {
+                errors.add(new ImportErrorDTO("Cheques", rowNum, "Method",
+                        "Method must be one of " + validMethods));
+                continue;
+            }
+
+            // Method-driven required fields.
+            String uniqueId = cell(row, hi, "UniqueId");
+            String bank = cell(row, hi, "Bank");
+            String chequeOrPaymentDate = cell(row, hi, "ChequeOrPaymentDate");
+            String dueDate = cell(row, hi, "DueDate");
+            if (dueDate.isEmpty()) {
+                errors.add(new ImportErrorDTO("Cheques", rowNum, "DueDate", "DueDate is required"));
+            }
+            switch (method) {
+                case "CHEQUE":
+                    if (uniqueId.isEmpty() || chequeOrPaymentDate.isEmpty() || bank.isEmpty()) {
+                        errors.add(new ImportErrorDTO("Cheques", rowNum, "UniqueId",
+                                "CHEQUE rows require UniqueId, ChequeOrPaymentDate, and Bank"));
+                    }
+                    break;
+                case "BANK_TRANSFER":
+                case "ONLINE":
+                    if (bank.isEmpty() || chequeOrPaymentDate.isEmpty()) {
+                        errors.add(new ImportErrorDTO("Cheques", rowNum, "Bank",
+                                method + " rows require Bank and ChequeOrPaymentDate"));
+                    }
+                    break;
+                case "CASH":
+                    // amount + due date only; nothing else required.
+                    break;
+            }
+
+            // Amount.
+            String amtStr = cell(row, hi, "Amount");
+            BigDecimal amt = null;
+            if (amtStr.isEmpty()) {
+                errors.add(new ImportErrorDTO("Cheques", rowNum, "Amount", "Amount is required"));
+            } else {
+                try {
+                    amt = new BigDecimal(amtStr);
+                    if (amt.signum() < 0) {
+                        errors.add(new ImportErrorDTO("Cheques", rowNum, "Amount", "Amount cannot be negative"));
+                        amt = null;
+                    }
+                } catch (NumberFormatException e) {
+                    errors.add(new ImportErrorDTO("Cheques", rowNum, "Amount", "Amount must be a number"));
+                }
+            }
+            if (amt != null) {
+                sumByLease.merge(key, amt, BigDecimal::add);
+            }
+
+            // DueDate parse + outside-lease window warning.
+            if (!dueDate.isEmpty()) {
+                try {
+                    LocalDate dd = LocalDate.parse(dueDate);
+                    if (dd.isBefore(lease.startDate()) || dd.isAfter(lease.endDate())) {
+                        warnings.add(new ImportErrorDTO("Cheques", rowNum, "DueDate",
+                                "DueDate " + dd + " is outside lease period "
+                                        + lease.startDate() + ".." + lease.endDate()));
+                    }
+                } catch (DateTimeParseException e) {
+                    errors.add(new ImportErrorDTO("Cheques", rowNum, "DueDate",
+                            "DueDate must be ISO format (YYYY-MM-DD)"));
+                }
+            }
+        }
+
+        // Sum-vs-totalRent check, evaluated once per lease that had cheque rows.
+        BigDecimal tolerance = new BigDecimal("1.00");
+        for (String key : chequedLeases) {
+            BigDecimal sum = sumByLease.getOrDefault(key, BigDecimal.ZERO);
+            BigDecimal totalRent = leaseIndex.get(key).totalRent();
+            if (sum.subtract(totalRent).abs().compareTo(tolerance) > 0) {
+                errors.add(new ImportErrorDTO("Cheques", 0, "Amount",
+                        "Sum of cheques (" + sum + ") does not match lease total rent ("
+                                + totalRent + ") for " + key));
+            }
+        }
+    }
 
     private void validateDbConflicts(Set<String> propertyNames, Set<String> renterEmails, List<ImportErrorDTO> errors) {
         // Check existing properties by name

@@ -233,6 +233,129 @@ class PortfolioImportServiceTest {
     }
 
     @Test
+    void chequesSheet_absent_isFine() {
+        // Legacy workbook has no Cheques sheet — must validate cleanly.
+        Workbook wb = buildLegacyWorkbook();
+        List<ImportErrorDTO> errors = service.validateWorkbook(wb);
+        assertThat(errors).extracting(ImportErrorDTO::getSheet).doesNotContain("Cheques");
+    }
+
+    @Test
+    void chequesSheet_referencingMissingLease_isError() {
+        Workbook wb = buildLegacyWorkbook();
+        addChequesSheet(wb);
+        addChequeRow(wb, 1, "Marina Heights", "999", "ahmed@email.com",
+                "1", "2026-01-01", "2026-01-01", "C-1", "Emirates NBD", "5000", "CHEQUE");
+
+        List<ImportErrorDTO> errors = service.validateWorkbook(wb);
+
+        assertThat(errors).anySatisfy(e -> {
+            assertThat(e.getSheet()).isEqualTo("Cheques");
+            assertThat(e.getField()).isEqualTo("PropertyName");
+            assertThat(e.getMessage()).containsIgnoringCase("no leases row matches");
+        });
+    }
+
+    @Test
+    void chequesSheet_duplicateInstallmentNo_isError() {
+        Workbook wb = buildLegacyWorkbook();
+        addChequesSheet(wb);
+        addChequeRow(wb, 1, "Marina Heights", "101", "ahmed@email.com",
+                "1", "2026-01-01", "2026-01-01", "C-1", "Emirates NBD", "30000", "CHEQUE");
+        addChequeRow(wb, 2, "Marina Heights", "101", "ahmed@email.com",
+                "1", "2026-04-01", "2026-04-01", "C-2", "Emirates NBD", "30000", "CHEQUE");
+
+        List<ImportErrorDTO> errors = service.validateWorkbook(wb);
+
+        assertThat(errors).anySatisfy(e -> {
+            assertThat(e.getSheet()).isEqualTo("Cheques");
+            assertThat(e.getField()).isEqualTo("InstallmentNo");
+            assertThat(e.getMessage()).containsIgnoringCase("duplicate");
+        });
+    }
+
+    @Test
+    void chequesSheet_sumNotEqualTotalRent_isError() {
+        Workbook wb = buildLegacyWorkbook();
+        addChequesSheet(wb);
+        // legacy lease has RentAmount=60000 → expect cheques to sum to 60000.
+        addChequeRow(wb, 1, "Marina Heights", "101", "ahmed@email.com",
+                "1", "2026-01-01", "2026-01-01", "C-1", "Emirates NBD", "20000", "CHEQUE");
+        addChequeRow(wb, 2, "Marina Heights", "101", "ahmed@email.com",
+                "2", "2026-07-01", "2026-07-01", "C-2", "Emirates NBD", "20000", "CHEQUE");
+
+        List<ImportErrorDTO> errors = service.validateWorkbook(wb);
+
+        assertThat(errors).anySatisfy(e -> {
+            assertThat(e.getSheet()).isEqualTo("Cheques");
+            assertThat(e.getField()).isEqualTo("Amount");
+            assertThat(e.getMessage()).containsIgnoringCase("does not match");
+        });
+    }
+
+    @Test
+    void chequesSheet_chequeRowMissingChequeNumber_isError_whenMethodIsCheque() {
+        Workbook wb = buildLegacyWorkbook();
+        addChequesSheet(wb);
+        addChequeRow(wb, 1, "Marina Heights", "101", "ahmed@email.com",
+                "1", "2026-01-01", "2026-01-01", "", "Emirates NBD", "60000", "CHEQUE");
+
+        List<ImportErrorDTO> errors = service.validateWorkbook(wb);
+
+        assertThat(errors).anySatisfy(e -> {
+            assertThat(e.getSheet()).isEqualTo("Cheques");
+            assertThat(e.getField()).isEqualTo("UniqueId");
+        });
+    }
+
+    @Test
+    void chequesSheet_cashRowOmitsBank_isFine() {
+        Workbook wb = buildLegacyWorkbook();
+        addChequesSheet(wb);
+        addChequeRow(wb, 1, "Marina Heights", "101", "ahmed@email.com",
+                "1", "2026-01-01", "", "", "", "60000", "CASH");
+
+        List<ImportErrorDTO> errors = service.validateWorkbook(wb);
+
+        assertThat(errors).filteredOn(e -> "Cheques".equals(e.getSheet())).isEmpty();
+    }
+
+    @Test
+    void chequesSheet_dueDateOutsideLease_isWarningNotError() {
+        Workbook wb = buildLegacyWorkbook();
+        addChequesSheet(wb);
+        // single cheque covers the whole 60000 totalRent, due BEFORE startDate (2026-01-01).
+        addChequeRow(wb, 1, "Marina Heights", "101", "ahmed@email.com",
+                "1", "2025-12-15", "2025-12-15", "C-1", "Emirates NBD", "60000", "CHEQUE");
+
+        PortfolioImportService.ValidationOutcome outcome = service.validateAll(wb);
+
+        assertThat(outcome.errors())
+                .extracting(ImportErrorDTO::getField)
+                .as("DueDate-outside-lease must not be a hard error")
+                .doesNotContain("DueDate");
+        assertThat(outcome.warnings()).anySatisfy(w -> {
+            assertThat(w.getSheet()).isEqualTo("Cheques");
+            assertThat(w.getField()).isEqualTo("DueDate");
+        });
+    }
+
+    @Test
+    void chequesSheet_invalidInstallmentNo_isError() {
+        Workbook wb = buildLegacyWorkbook();
+        addChequesSheet(wb);
+        addChequeRow(wb, 1, "Marina Heights", "101", "ahmed@email.com",
+                "abc", "2026-01-01", "2026-01-01", "C-1", "Emirates NBD", "60000", "CHEQUE");
+
+        List<ImportErrorDTO> errors = service.validateWorkbook(wb);
+
+        assertThat(errors).anySatisfy(e -> {
+            assertThat(e.getSheet()).isEqualTo("Cheques");
+            assertThat(e.getField()).isEqualTo("InstallmentNo");
+        });
+    }
+
+    @Test
     void monthlyRentOnly_isFine() {
         Workbook wb = buildLegacyWorkbook();
         clearCell(wb, "Leases", 1, "RentAmount");
@@ -305,5 +428,25 @@ class PortfolioImportServiceTest {
     /** Clear a named cell in a data row by writing an empty string. */
     static void clearCell(Workbook wb, String sheetName, int rowIdx, String header) {
         setCell(wb, sheetName, rowIdx, header, "");
+    }
+
+    /** Adds an empty Cheques sheet with the standard header to an in-memory workbook. */
+    static void addChequesSheet(Workbook wb) {
+        Sheet sheet = wb.createSheet("Cheques");
+        writeRow(sheet, 0,
+                "PropertyName", "UnitNumber", "RenterEmail",
+                "InstallmentNo", "DueDate", "ChequeOrPaymentDate",
+                "UniqueId", "Bank", "Amount", "Method");
+    }
+
+    static void addChequeRow(Workbook wb, int rowIdx,
+                             String propertyName, String unitNumber, String renterEmail,
+                             String installmentNo, String dueDate, String chequeOrPaymentDate,
+                             String uniqueId, String bank, String amount, String method) {
+        Sheet sheet = wb.getSheet("Cheques");
+        writeRow(sheet, rowIdx,
+                propertyName, unitNumber, renterEmail,
+                installmentNo, dueDate, chequeOrPaymentDate,
+                uniqueId, bank, amount, method);
     }
 }
