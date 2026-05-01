@@ -10,7 +10,7 @@ import { formatCurrency, formatCurrencyCompact } from "@/lib/format";
 import {
     ArrowLeft, FileText, User, Building2, Calendar, DollarSign, CreditCard,
     Home, Download, Upload, Trash2, Loader2, CheckCircle, Clock, AlertTriangle,
-    Hash, Phone, Mail, MapPin, Wrench, X, Ban, CalendarClock, Sparkles,
+    Hash, Phone, Mail, MapPin, Wrench, X, Ban, CalendarClock, Sparkles, RefreshCw,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 
@@ -397,7 +397,17 @@ export default function LeaseDetailPage() {
         if (res.ok) {
             const docs = await res.json();
             if (docs.length > 0) {
-                const pdfRes = await fetch(`/api/proxy/v1/leases/documents/${docs[0].id}/download`);
+                // Pick the most recently created CONTRACT document so a
+                // download after regeneration always returns the latest PDF
+                // (defensive: backend deletes old contract docs on regen, but
+                // ordering of getDocuments isn't guaranteed otherwise).
+                const sorted = [...docs].sort((a, b) => {
+                    const at = new Date(a.createdAt || 0).getTime();
+                    const bt = new Date(b.createdAt || 0).getTime();
+                    return bt - at; // newest first
+                });
+                const latest = sorted.find((d) => (d.type || "CONTRACT") === "CONTRACT") || sorted[0];
+                const pdfRes = await fetch(`/api/proxy/v1/leases/documents/${latest.id}/download`);
                 if (pdfRes.ok) {
                     const blob = await pdfRes.blob();
                     const url = URL.createObjectURL(blob);
@@ -468,10 +478,20 @@ export default function LeaseDetailPage() {
                         <button
                             onClick={handlePreviewContract}
                             disabled={previewLoading}
-                            className="flex items-center gap-2 bg-blue-50 text-blue-700 border border-blue-200 px-4 py-2 rounded-lg text-xs font-semibold hover:bg-blue-100 transition-all cursor-pointer disabled:opacity-50"
+                            className={cn(
+                                "flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer disabled:opacity-50",
+                                lease.hasContract
+                                    ? "bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100"
+                                    : "bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100"
+                            )}
+                            title={lease.hasContract
+                                ? "Generate a fresh contract PDF and replace the saved one (the previous PDF is deleted from storage)"
+                                : "Generate a contract preview PDF"}
                         >
-                            {previewLoading ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                            {t("generatePreview")}
+                            {previewLoading
+                                ? <Loader2 size={14} className="animate-spin" />
+                                : (lease.hasContract ? <RefreshCw size={14} /> : <Sparkles size={14} />)}
+                            {lease.hasContract ? "Regenerate Contract" : t("generatePreview")}
                         </button>
                         {contractError && !previewOpen && (
                             <p className="text-xs text-error max-w-xs text-right">{contractError}</p>

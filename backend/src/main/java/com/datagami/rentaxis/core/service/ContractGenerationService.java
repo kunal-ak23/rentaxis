@@ -96,11 +96,17 @@ public class ContractGenerationService {
             throw new BusinessRuleViolationException("Contract can only be generated for DRAFT or PENDING_SIGNATURE leases");
         }
 
-        // Remove old documents if regenerating
+        // Remove old documents if regenerating — delete both the DB rows and
+        // the underlying blob/file so the storage backend doesn't accumulate
+        // stale PDFs forever.
         if (lease.getStatus() == LeaseStatus.PENDING_SIGNATURE) {
             List<LeaseDocument> oldDocs = leaseDocumentRepository.findByLeaseId(leaseId);
+            for (LeaseDocument oldDoc : oldDocs) {
+                deleteStoredFile(oldDoc.getDocumentUrl());
+            }
             leaseDocumentRepository.deleteAll(oldDocs);
-            log.info("Removed {} old documents for lease {} before regeneration", oldDocs.size(), leaseId);
+            log.info("Removed {} old documents (DB + storage) for lease {} before regeneration",
+                    oldDocs.size(), leaseId);
         }
 
         // Assign contract number + agreement date if not set. Flush eagerly so a
@@ -549,6 +555,53 @@ public class ContractGenerationService {
             return filePath.toString();
         } catch (IOException e) {
             throw new RuntimeException("Failed to save contract to disk", e);
+        }
+    }
+
+    /**
+     * Best-effort delete of a stored contract PDF. Used during regeneration
+     * to avoid accumulating stale blobs/files.
+     * <p>
+     * Errors are logged and swallowed: if the underlying file is already
+     * missing or unreachable, the regeneration should still proceed.
+     */
+    private void deleteStoredFile(String documentUrl) {
+        if (documentUrl == null || documentUrl.isBlank()) return;
+        try {
+            if (documentUrl.startsWith("https://") && documentUrl.contains(".blob.core.windows.net")) {
+                if (!useAzureStorage()) {
+                    log.warn("Cannot delete Azure blob {} — Azure storage not configured", documentUrl);
+                    return;
+                }
+                java.net.URI uri = java.net.URI.create(documentUrl);
+                String accountUrl = uri.getScheme() + "://" + uri.getHost();
+                String[] segments = uri.getPath().substring(1).split("/", 2);
+                if (segments.length < 2) {
+                    log.warn("Unparseable Azure blob URL, skipping delete: {}", documentUrl);
+                    return;
+                }
+                String containerName = segments[0];
+                String blobPath = java.net.URLDecoder.decode(segments[1], StandardCharsets.UTF_8);
+                BlobServiceClient client = new BlobServiceClientBuilder()
+                        .endpoint(accountUrl)
+                        .connectionString(azureConnectionString)
+                        .buildClient();
+                BlobContainerClient container = client.getBlobContainerClient(containerName);
+                BlobClient blob = container.getBlobClient(blobPath);
+                blob.deleteIfExists();
+                log.info("Deleted Azure blob {}/{}", containerName, blobPath);
+            } else {
+                Path p = Path.of(documentUrl);
+                boolean removed = Files.deleteIfExists(p);
+                if (removed) {
+                    log.info("Deleted local contract file {}", p);
+                } else {
+                    log.warn("Local contract file did not exist (already removed?): {}", p);
+                }
+            }
+        } catch (Exception ex) {
+            log.warn("Failed to delete stored contract file {} — continuing regeneration: {}",
+                    documentUrl, ex.getMessage());
         }
     }
 
