@@ -32,6 +32,7 @@ public class LeaseController {
     private final LeaseService leaseService;
     private final ContractGenerationService contractGenerationService;
     private final SettlementService settlementService;
+    private final com.datagami.rentaxis.core.service.PaymentScheduleService paymentScheduleService;
 
     @GetMapping
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
@@ -79,10 +80,27 @@ public class LeaseController {
         return ResponseEntity.ok(leaseService.updateDraftLease(id, dto));
     }
 
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
+    public ResponseEntity<Void> deleteDraftLease(@PathVariable UUID id) {
+        leaseService.deleteDraftLease(id);
+        return ResponseEntity.noContent().build();
+    }
+
     @PutMapping("/{id}/activate")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
     public ResponseEntity<LeaseDTO> activateLease(@PathVariable UUID id) {
         return ResponseEntity.ok(leaseService.activateLease(id));
+    }
+
+    @PutMapping("/{id}/payment-schedule")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
+    public ResponseEntity<java.util.List<com.datagami.rentaxis.api.dto.PaymentScheduleDTO>> updatePaymentSchedule(
+            @PathVariable UUID id,
+            @Valid @RequestBody com.datagami.rentaxis.api.dto.UpdatePaymentScheduleDTO dto) {
+        var saved = leaseService.updatePaymentSchedule(id, dto);
+        var response = saved.stream().map(paymentScheduleService::toDTO).toList();
+        return ResponseEntity.ok(response);
     }
 
     @PostMapping("/{id}/terminate")
@@ -156,6 +174,16 @@ public class LeaseController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
     public ResponseEntity<LeaseDocumentDTO> generateContract(@PathVariable UUID id) {
         return ResponseEntity.ok(contractGenerationService.generateContract(id));
+    }
+
+    @PostMapping("/{id}/generate-contract/preview")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
+    public ResponseEntity<byte[]> previewContract(@PathVariable UUID id) {
+        byte[] pdf = contractGenerationService.previewContract(id);
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_PDF)
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"lease-preview.pdf\"")
+                .body(pdf);
     }
 
     @GetMapping("/{id}/documents")

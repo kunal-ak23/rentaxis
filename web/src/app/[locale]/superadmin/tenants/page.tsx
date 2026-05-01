@@ -2,12 +2,12 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useTranslations } from "next-intl";
-import { Plus, X, Building2, Hash, Settings2, ShieldCheck, Loader2, Search, Pencil, Copy, Check, Zap } from "lucide-react";
+import { Plus, X, Building2, Hash, Settings2, ShieldCheck, Loader2, Search, Pencil, Copy, Check, Zap, Phone } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Pagination } from "@/components/ui/Pagination";
 import { FileUpload } from "@/components/ui/FileUpload";
 
-type Tenant = { id: string; name: string; status: string; address?: string; trn?: string; logoUrl?: string; ticketOtpRequired?: boolean; createdAt: string };
+type Tenant = { id: string; name: string; status: string; address?: string; trn?: string; logoUrl?: string; ticketOtpRequired?: boolean; phone?: string; createdAt: string };
 
 type FeatureToggle = {
   feature: string;
@@ -23,7 +23,7 @@ export default function SuperAdminTenantsPage() {
     const [submitting, setSubmitting] = useState(false);
     const [showForm, setShowForm] = useState(false);
     const [editingTenant, setEditingTenant] = useState<Tenant | null>(null);
-    const [formData, setFormData] = useState({ name: "", address: "", trn: "", status: "ACTIVE", logoUrl: "", ticketOtpRequired: true });
+    const [formData, setFormData] = useState({ name: "", address: "", trn: "", status: "ACTIVE", logoUrl: "", ticketOtpRequired: true, phone: "" });
     const [searchQuery, setSearchQuery] = useState("");
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(25);
@@ -79,14 +79,14 @@ export default function SuperAdminTenantsPage() {
 
     const openEdit = (tenant: Tenant) => {
         setEditingTenant(tenant);
-        setFormData({ name: tenant.name, address: tenant.address || "", trn: tenant.trn || "", status: tenant.status || "ACTIVE", logoUrl: tenant.logoUrl || "", ticketOtpRequired: tenant.ticketOtpRequired !== false });
+        setFormData({ name: tenant.name, address: tenant.address || "", trn: tenant.trn || "", status: tenant.status || "ACTIVE", logoUrl: tenant.logoUrl || "", ticketOtpRequired: tenant.ticketOtpRequired !== false, phone: tenant.phone || "" });
         setShowForm(true);
     };
 
     const resetForm = () => {
         setShowForm(false);
         setEditingTenant(null);
-        setFormData({ name: "", address: "", trn: "", status: "ACTIVE", logoUrl: "", ticketOtpRequired: true });
+        setFormData({ name: "", address: "", trn: "", status: "ACTIVE", logoUrl: "", ticketOtpRequired: true, phone: "" });
     };
 
     const closeFeaturesDrawer = useCallback(() => setFeaturesDrawerTenant(null), []);
@@ -226,6 +226,18 @@ export default function SuperAdminTenantsPage() {
                                     className="w-full border border-border rounded-lg bg-surface p-3 text-xs text-foreground placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
                                     value={formData.trn}
                                     onChange={(e) => setFormData({ ...formData, trn: e.target.value })}
+                                />
+                            </div>
+                            {/* Phone */}
+                            <div>
+                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1 flex items-center gap-1"><Phone size={10} /> Phone</label>
+                                <input
+                                    type="tel"
+                                    placeholder="+971 50 123 4567"
+                                    maxLength={40}
+                                    className="w-full border border-border rounded-lg bg-surface p-3 text-xs text-foreground placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                                    value={formData.phone}
+                                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                                 />
                             </div>
                             {editingTenant && (

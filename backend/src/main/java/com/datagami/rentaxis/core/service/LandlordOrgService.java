@@ -1,7 +1,6 @@
 package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
-import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
@@ -64,4 +63,5 @@ public class LandlordOrgService {
     public LandlordOrg save(LandlordOrg org) {
         return repository.save(org);
     }
+
 }

@@ -45,7 +45,7 @@ public class PaymentSchedule extends BaseTenantEntity {
     @Column(nullable = false, length = 20)
     private PaymentStatus status = PaymentStatus.PENDING;
 
-    @Column(name = "cheque_number", length = 50)
+    @Column(name = "cheque_number", length = 255)
     private String chequeNumber;
 
     @Column(name = "bank_name", length = 100)
@@ -69,4 +69,10 @@ public class PaymentSchedule extends BaseTenantEntity {
 
     @Column(name = "payment_method", length = 20)
     private String paymentMethod = "CHEQUE";
+
+    @Column(name = "purpose_label", length = 120)
+    private String purposeLabel;
+
+    @Column(name = "is_booking_deposit", nullable = false)
+    private boolean isBookingDeposit = false;
 }

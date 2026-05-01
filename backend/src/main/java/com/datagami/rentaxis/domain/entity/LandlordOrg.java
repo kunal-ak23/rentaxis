@@ -33,6 +33,12 @@ public class LandlordOrg {
     @Column(name = "logo_url", columnDefinition = "text")
     private String logoUrl;
 
+    @Column(name = "phone", length = 40)
+    private String phone;
+
+    @Column(name = "stamp_image_url", columnDefinition = "text")
+    private String stampImageUrl;
+
     @Column(name = "ticket_otp_required")
     private Boolean ticketOtpRequired = true;
 
@@ -112,6 +118,22 @@ public class LandlordOrg {
 
     public void setLogoUrl(String logoUrl) {
         this.logoUrl = logoUrl;
+    }
+
+    public String getPhone() {
+        return phone;
+    }
+
+    public void setPhone(String phone) {
+        this.phone = phone;
+    }
+
+    public String getStampImageUrl() {
+        return stampImageUrl;
+    }
+
+    public void setStampImageUrl(String stampImageUrl) {
+        this.stampImageUrl = stampImageUrl;
     }
 
     public Boolean getTicketOtpRequired() { return ticketOtpRequired; }

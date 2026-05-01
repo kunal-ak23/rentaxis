@@ -43,4 +43,32 @@ public class CreateLeaseDTO {
     private String depositPaymentMethod; // CHEQUE or ONLINE
 
     private String paymentReferenceNumber;
+
+    private LocalDate agreementDate;
+
+    @Min(0)
+    private BigDecimal adminFee;
+
+    @Min(0)
+    private BigDecimal parkingRemoteFee;
+
+    private Boolean rentVatApplicable;
+
+    private Boolean adminFeeVatApplicable;
+
+    private Boolean securityDepositVatApplicable;
+
+    private Boolean parkingRemoteVatApplicable;
+
+    private BookingDepositDTO bookingDeposit;
+
+    @lombok.Data
+    public static class BookingDepositDTO {
+        @NotNull
+        @Min(0)
+        private BigDecimal amount;
+        private String chequeNumber;
+        private LocalDate chequeDate;
+        private String bankName;
+    }
 }

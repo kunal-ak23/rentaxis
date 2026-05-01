@@ -1,0 +1,109 @@
+databaseChangeLog:
+  - changeSet:
+      id: 45-lease-agreement-fields
+      author: rentaxis
+      changes:
+        - addColumn:
+            tableName: leases
+            columns:
+              - column:
+                  name: contract_number
+                  type: bigint
+                  constraints:
+                    nullable: true
+              - column:
+                  name: agreement_date
+                  type: date
+                  constraints:
+                    nullable: true
+              - column:
+                  name: admin_fee
+                  type: decimal(12,2)
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: parking_remote_fee
+                  type: decimal(12,2)
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: rent_vat_applicable
+                  type: boolean
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+              - column:
+                  name: admin_fee_vat_applicable
+                  type: boolean
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+              - column:
+                  name: security_deposit_vat_applicable
+                  type: boolean
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+              - column:
+                  name: parking_remote_vat_applicable
+                  type: boolean
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+      comment: "Add contract metadata, charge fields, and per-component VAT flags to leases."
+
+  - changeSet:
+      id: 45-lease-contract-number-unique
+      author: rentaxis
+      changes:
+        - createIndex:
+            indexName: uq_lease_contract_number_per_org
+            tableName: leases
+            unique: true
+            columns:
+              - column:
+                  name: tenant_id
+              - column:
+                  name: contract_number
+      comment: "Ensure contract_number is unique per tenant_id (which equals landlord_org_id in this multi-tenant model)."
+
+  - changeSet:
+      id: 45-payment-schedule-purpose-and-booking
+      author: rentaxis
+      changes:
+        - addColumn:
+            tableName: payment_schedules
+            columns:
+              - column:
+                  name: purpose_label
+                  type: varchar(120)
+                  constraints:
+                    nullable: true
+              - column:
+                  name: is_booking_deposit
+                  type: boolean
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+      comment: "Add purpose_label and is_booking_deposit to payment_schedules for lease agreement Section 4."
+
+  - changeSet:
+      id: 45-landlord-org-phone-and-stamp
+      author: rentaxis
+      changes:
+        - addColumn:
+            tableName: landlord_org
+            columns:
+              - column:
+                  name: phone
+                  type: varchar(40)
+                  constraints:
+                    nullable: true
+              - column:
+                  name: stamp_image_url
+                  type: text
+                  constraints:
+                    nullable: true
+      comment: "Add phone and stamp_image_url to landlord_org for lease agreement header and signature stamp."

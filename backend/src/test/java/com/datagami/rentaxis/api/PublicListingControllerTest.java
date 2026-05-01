@@ -7,8 +7,10 @@ import com.datagami.rentaxis.core.service.TenantFeatureService;
 import com.datagami.rentaxis.domain.entity.enums.TenantFeature;
 import com.datagami.rentaxis.domain.entity.UnitListing;
 import com.datagami.rentaxis.domain.entity.enums.ListingStatus;
+import com.datagami.rentaxis.domain.repository.UnitListingAmenityRepository;
 import com.datagami.rentaxis.domain.repository.UnitListingMediaRepository;
 import com.datagami.rentaxis.domain.repository.UnitListingRepository;
+import com.datagami.rentaxis.domain.repository.UnitRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -46,6 +48,10 @@ class PublicListingControllerTest {
     UnitListingRepository listingRepository;
     @Mock
     TenantFeatureService tenantFeatureService;
+    @Mock
+    UnitRepository unitRepository;
+    @Mock
+    UnitListingAmenityRepository amenityRepository;
 
     @InjectMocks
     PublicListingController controller;

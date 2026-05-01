@@ -1,17 +1,20 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { Link } from "@/i18n/routing";
+import { Link, useRouter } from "@/i18n/routing";
 import { cn } from "@/lib/utils";
 import { hasRole, type UserRole } from "@/lib/rbac";
 import { formatCurrency, formatCurrencyCompact } from "@/lib/format";
 import {
     ArrowLeft, FileText, User, Building2, Calendar, DollarSign, CreditCard,
     Home, Download, Upload, Trash2, Loader2, CheckCircle, Clock, AlertTriangle,
-    Hash, Phone, Mail, MapPin, Wrench, X, Ban, CalendarClock,
+    Hash, Phone, Mail, MapPin, Wrench, X, Ban, CalendarClock, Sparkles, RefreshCw,
 } from "lucide-react";
+import { useTranslations } from "next-intl";
+import PaymentScheduleEditor from "../PaymentScheduleEditor";
+import LeaseMetadataEditor from "../LeaseMetadataEditor";
 
 type Lease = {
     id: string; unitId: string; renterId: string; unitIdentifier: string;
@@ -20,6 +23,7 @@ type Lease = {
     ejariNumber: string; paymentTerms: number; paymentMethod: string;
     depositPaymentMethod: string; paymentReferenceNumber: string;
     propertyId: string; propertyName: string; hasContract: boolean;
+    contractNumber?: string | null;
 };
 
 type Payment = {
@@ -120,10 +124,17 @@ const PAYMENT_STATUS_COLORS: Record<string, string> = {
 
 export default function LeaseDetailPage() {
     const params = useParams();
+    const searchParams = useSearchParams();
+    const router = useRouter();
     const leaseId = params.id as string;
     const { data: session } = useSession();
     const userRole = session?.user?.role as UserRole | undefined;
     const isAdmin = hasRole(userRole, ["SUPER_ADMIN", "TENANT_ADMIN", "PROPERTY_MANAGER"]);
+    // Contract generation is restricted to SUPER_ADMIN and TENANT_ADMIN on the
+    // backend; matching the gate here so PROPERTY_MANAGER doesn't see a button
+    // that 403s when clicked.
+    const canGenerateContract = hasRole(userRole, ["SUPER_ADMIN", "TENANT_ADMIN"]);
+    const t = useTranslations("MasterData");
 
     const [lease, setLease] = useState<Lease | null>(null);
     const [renter, setRenter] = useState<Renter | null>(null);
@@ -146,6 +157,14 @@ export default function LeaseDetailPage() {
     const [extendDate, setExtendDate] = useState("");
     const [extending, setExtending] = useState(false);
     const [extendError, setExtendError] = useState<string | null>(null);
+
+    // Generate contract preview modal state
+    const [previewOpen, setPreviewOpen] = useState(false);
+    const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
+    const [previewLoading, setPreviewLoading] = useState(false);
+    const [confirmSaving, setConfirmSaving] = useState(false);
+    const [contractError, setContractError] = useState<string | null>(null);
+    const [scheduleRefreshKey, setScheduleRefreshKey] = useState(0);
 
     const fetchLease = useCallback(async () => {
         try {
@@ -244,6 +263,16 @@ export default function LeaseDetailPage() {
         }
     }, [lease?.status, fetchSettlement]);
 
+    // Auto-trigger contract preview when arriving with ?action=generate-contract
+    // (used by the lease wizard's "Generate contract" CTA after Save Draft).
+    useEffect(() => {
+        const action = searchParams?.get("action");
+        if (action === "generate-contract" && lease && canGenerateContract && !previewOpen && !previewLoading) {
+            handlePreviewContract();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [searchParams, lease, canGenerateContract]);
+
     const handleDocUpload = async (file: File) => {
         if (!docName.trim()) return;
         setUploadingDoc(true);
@@ -313,13 +342,115 @@ export default function LeaseDetailPage() {
         }
     };
 
+    const handlePreviewContract = async () => {
+        if (!lease) return;
+        setPreviewLoading(true);
+        setContractError(null);
+        try {
+            const res = await fetch(`/api/proxy/v1/leases/${lease.id}/generate-contract/preview`, { method: "POST" });
+            if (res.ok) {
+                // Wrap the response bytes in an explicit application/pdf blob so
+                // the browser's built-in PDF viewer renders it inline in the
+                // <object> tag instead of treating it as a generic download.
+                const buf = await res.arrayBuffer();
+                const pdfBlob = new Blob([buf], { type: "application/pdf" });
+                const url = URL.createObjectURL(pdfBlob);
+                setPreviewBlobUrl(url);
+                setPreviewOpen(true);
+            } else if (res.status === 403) {
+                setContractError("You don't have permission to generate a contract for this lease.");
+            } else {
+                let detail: string | null = null;
+                try {
+                    const body = await res.json();
+                    detail = body?.message || body?.error || null;
+                } catch {}
+                setContractError(detail || "Failed to generate contract preview. Please try again.");
+            }
+        } catch (err) {
+            console.error(err);
+            setContractError("Network error while generating preview. Check your connection and try again.");
+        } finally {
+            setPreviewLoading(false);
+        }
+    };
+
+    const handleClosePreview = () => {
+        setPreviewOpen(false);
+        if (previewBlobUrl) {
+            URL.revokeObjectURL(previewBlobUrl);
+            setPreviewBlobUrl(null);
+        }
+    };
+
+    const handleConfirmAndSave = async () => {
+        if (!lease) return;
+        setConfirmSaving(true);
+        setContractError(null);
+        try {
+            const res = await fetch(`/api/proxy/v1/leases/${lease.id}/generate-contract`, { method: "POST" });
+            if (res.ok) {
+                handleClosePreview();
+                fetchLease();
+            } else if (res.status === 403) {
+                setContractError("You don't have permission to save this contract.");
+            } else {
+                let detail: string | null = null;
+                try {
+                    const body = await res.json();
+                    detail = body?.message || body?.error || null;
+                } catch {}
+                setContractError(detail || "Failed to save contract. Please try again.");
+            }
+        } catch (err) {
+            console.error(err);
+            setContractError("Network error while saving contract. Check your connection and try again.");
+        } finally {
+            setConfirmSaving(false);
+        }
+    };
+
+    const handleDeleteDraft = async () => {
+        if (!lease) return;
+        if (lease.status !== "DRAFT") return;
+        const confirmed = window.confirm(
+            "Delete this draft lease?\n\nThis will permanently remove the lease, its payment schedule, attachments, and history. This action cannot be undone."
+        );
+        if (!confirmed) return;
+        try {
+            const res = await fetch(`/api/proxy/v1/leases/${lease.id}`, { method: "DELETE" });
+            if (res.ok) {
+                router.push("/dashboard/leases");
+            } else if (res.status === 403) {
+                alert("You don't have permission to delete this lease.");
+            } else {
+                let detail: string | null = null;
+                try { const body = await res.json(); detail = body?.message || body?.error || null; } catch {}
+                alert(detail || "Failed to delete the draft. Please try again.");
+            }
+        } catch (err) {
+            console.error(err);
+            alert("Network error while deleting the draft. Check your connection and try again.");
+        }
+    };
+
     const handleDownloadContract = async () => {
         if (!lease) return;
         const res = await fetch(`/api/proxy/v1/leases/${lease.id}/documents`);
         if (res.ok) {
             const docs = await res.json();
             if (docs.length > 0) {
-                const pdfRes = await fetch(`/api/proxy/v1/leases/documents/${docs[0].id}/download`);
+                // Pick the most recently created CONTRACT document so a
+                // download after regeneration always returns the latest PDF
+                // (defensive: backend deletes old contract docs on regen, but
+                // ordering of getDocuments isn't guaranteed otherwise).
+                const sorted = [...docs].sort((a, b) => {
+                    const at = new Date(a.createdAt || 0).getTime();
+                    const bt = new Date(b.createdAt || 0).getTime();
+                    return bt - at; // newest first
+                });
+                const latest = sorted.find((d) => (d.type || "CONTRACT") === "CONTRACT") || sorted[0];
+                const pdfRes = await fetch(`/api/proxy/v1/leases/documents/${latest.id}/download`);
                 if (pdfRes.ok) {
                     const blob = await pdfRes.blob();
                     const url = URL.createObjectURL(blob);
@@ -377,9 +508,48 @@ export default function LeaseDetailPage() {
                         <span className={cn("px-2.5 py-1 rounded-lg text-[10px] font-semibold border", STATUS_COLORS[lease.status] || "bg-input text-muted border-border")}>
                             {lease.status.replace("_", " ")}
                         </span>
+                        {lease.contractNumber && (
+                            <span className="px-2.5 py-1 rounded-lg text-[10px] font-semibold bg-primary/10 text-primary border border-primary/20">
+                                {t("contractNumber")} {lease.contractNumber}
+                            </span>
+                        )}
                     </div>
                     <p className="text-sm text-muted">{lease.propertyName} &bull; {lease.renterName}</p>
                 </div>
+                {canGenerateContract && lease.status === "DRAFT" && (
+                    <button
+                        onClick={handleDeleteDraft}
+                        title="Delete this draft lease"
+                        className="flex items-center gap-2 bg-error/10 text-error border border-error/30 px-4 py-2 rounded-lg text-xs font-semibold hover:bg-error/20 transition-all cursor-pointer"
+                    >
+                        <Trash2 size={14} /> Delete draft
+                    </button>
+                )}
+                {canGenerateContract && (
+                    <div className="flex flex-col items-end gap-1">
+                        <button
+                            onClick={handlePreviewContract}
+                            disabled={previewLoading}
+                            className={cn(
+                                "flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer disabled:opacity-50",
+                                lease.hasContract
+                                    ? "bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100"
+                                    : "bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100"
+                            )}
+                            title={lease.hasContract
+                                ? "Generate a fresh contract PDF and replace the saved one (the previous PDF is deleted from storage)"
+                                : "Generate a contract preview PDF"}
+                        >
+                            {previewLoading
+                                ? <Loader2 size={14} className="animate-spin" />
+                                : (lease.hasContract ? <RefreshCw size={14} /> : <Sparkles size={14} />)}
+                            {lease.hasContract ? "Regenerate Contract" : t("generatePreview")}
+                        </button>
+                        {contractError && !previewOpen && (
+                            <p className="text-xs text-error max-w-xs text-right">{contractError}</p>
+                        )}
+                    </div>
+                )}
                 {lease.hasContract && (
                     <button
                         onClick={handleDownloadContract}
@@ -576,7 +746,50 @@ export default function LeaseDetailPage() {
                         );
                     })()}
 
-                    <div className="bg-surface rounded-xl border border-border">
+                    {/* Inline metadata editor for DRAFT — replaces the modal "Edit Lease"
+                        form that used to live on the leases list page. */}
+                    {lease && lease.status === "DRAFT" && canGenerateContract && (
+                        <LeaseMetadataEditor
+                            lease={lease as unknown as React.ComponentProps<typeof LeaseMetadataEditor>["lease"]}
+                            onSaved={() => {
+                                fetchLease();
+                                fetchPayments();
+                                // Force the schedule editor to re-fetch its rows — the
+                                // backend regenerates pending installments on every
+                                // updateDraftLease call.
+                                setScheduleRefreshKey((k) => k + 1);
+                            }}
+                        />
+                    )}
+
+                    {/* Editable schedule for DRAFT / PENDING_SIGNATURE — admin can adjust dates,
+                        cheque/bank/method per row before contract finalization. */}
+                    {lease && (lease.status === "DRAFT" || lease.status === "PENDING_SIGNATURE") && (
+                        <div className="bg-surface rounded-xl border border-border">
+                            <div className="px-5 py-3.5 border-b border-border">
+                                <h2 className="text-xs font-semibold text-muted uppercase tracking-wider flex items-center gap-2">
+                                    <CreditCard size={13} /> Payment Schedule
+                                    <span className="ml-2 px-2 py-0.5 rounded-full text-[9px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                                        Editable while {lease.status.replace("_", " ")}
+                                    </span>
+                                </h2>
+                            </div>
+                            <div className="px-5 py-4">
+                                <PaymentScheduleEditor
+                                    leaseId={lease.id}
+                                    leaseStatus={lease.status}
+                                    canManage={canGenerateContract}
+                                    onSaved={fetchPayments}
+                                    refreshKey={scheduleRefreshKey}
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    <div className={cn(
+                        "bg-surface rounded-xl border border-border",
+                        lease && (lease.status === "DRAFT" || lease.status === "PENDING_SIGNATURE") && "hidden"
+                    )}>
                         <div className="px-5 py-3.5 border-b border-border">
                             <h2 className="text-xs font-semibold text-muted uppercase tracking-wider flex items-center gap-2"><CreditCard size={13} /> Payment Schedule</h2>
                         </div>
@@ -808,6 +1021,76 @@ export default function LeaseDetailPage() {
             )}
 
         </div>
+
+        {/* Generate Contract Preview Modal */}
+        {previewOpen && previewBlobUrl && (
+            <div className="fixed inset-0 z-50 flex flex-col bg-black/70">
+                <div className="flex items-center justify-between bg-surface border-b border-border px-5 py-3 shrink-0">
+                    <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                        <Sparkles size={15} className="text-primary" /> Contract Preview
+                    </h3>
+                    <div className="flex items-center gap-2">
+                        <a
+                            href={previewBlobUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="px-4 py-2 rounded-lg text-xs font-semibold text-primary hover:bg-input border border-primary/30 transition-colors cursor-pointer flex items-center gap-1.5"
+                            title="Open the preview PDF in a new tab"
+                        >
+                            <FileText size={12} /> Open in new tab
+                        </a>
+                        <button
+                            onClick={handleClosePreview}
+                            className="px-4 py-2 rounded-lg text-xs font-semibold text-muted hover:bg-input border border-border transition-colors cursor-pointer"
+                        >
+                            {t("cancel")}
+                        </button>
+                        <button
+                            onClick={handleConfirmAndSave}
+                            disabled={confirmSaving}
+                            className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer disabled:opacity-50"
+                        >
+                            {confirmSaving ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle size={12} />}
+                            {t("confirmAndSave")}
+                        </button>
+                        <button onClick={handleClosePreview} className="p-1.5 text-muted hover:text-foreground cursor-pointer ml-1">
+                            <X size={16} />
+                        </button>
+                    </div>
+                </div>
+                {contractError && (
+                    <div className="bg-error/10 border-b border-error/20 px-5 py-2 shrink-0">
+                        <p className="text-xs text-error">{contractError}</p>
+                    </div>
+                )}
+                <div className="flex-1 overflow-hidden bg-input flex items-center justify-center">
+                    {/* <object> renders the PDF inline using the browser's built-in
+                        viewer. If the browser has no plugin (or the PDF MIME type
+                        is suppressed), the fallback content shows an obvious
+                        "Open in new tab" link rather than a blank iframe. */}
+                    <object
+                        data={previewBlobUrl}
+                        type="application/pdf"
+                        className="w-full h-full"
+                        aria-label="Contract Preview"
+                    >
+                        <div className="text-center p-8">
+                            <p className="text-sm text-muted mb-3">
+                                Your browser couldn&apos;t render the PDF inline.
+                            </p>
+                            <a
+                                href={previewBlobUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+                            >
+                                <FileText size={14} /> Open preview in a new tab
+                            </a>
+                        </div>
+                    </object>
+                </div>
+            </div>
+        )}
 
         {/* Extend Lease Modal */}
         {extendOpen && (

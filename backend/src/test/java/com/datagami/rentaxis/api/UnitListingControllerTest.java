@@ -22,7 +22,11 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -57,11 +61,17 @@ class UnitListingControllerTest {
         TenantContextHolder.setTenantId(tenantId);
         lenient().when(tenantFeatureService.isEnabled(any(), eq(TenantFeature.LISTINGS))).thenReturn(true);
         lenient().when(landlordOrgRepository.findById(any(UUID.class))).thenReturn(Optional.empty());
+        // Auth context for endpoints that check authorities (e.g. checkPropertyManagerAccess)
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(
+                        "admin", null,
+                        Collections.singletonList(new SimpleGrantedAuthority("ROLE_TENANT_ADMIN"))));
     }
 
     @AfterEach
     void tearDown() {
         TenantContextHolder.clear();
+        SecurityContextHolder.clearContext();
     }
 
     private UnitListing sampleListing(UUID id) {

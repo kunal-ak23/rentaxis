@@ -8,6 +8,7 @@ import com.datagami.rentaxis.core.event.ListingUnlistedEvent;
 import com.datagami.rentaxis.domain.entity.UnitListing;
 import com.datagami.rentaxis.domain.entity.UnitListingMedia;
 import com.datagami.rentaxis.domain.entity.enums.ListingStatus;
+import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.UnitListingAmenityRepository;
 import com.datagami.rentaxis.domain.repository.UnitListingInterestRepository;
 import com.datagami.rentaxis.domain.repository.UnitListingMediaRepository;
@@ -37,6 +38,8 @@ class UnitListingServiceTest {
     private UnitListingMediaRepository mediaRepository;
     private UnitListingInterestRepository interestRepository;
     private UserRepository userRepository;
+    private LeaseRepository leaseRepository;
+    private NotificationService notificationService;
     private SlugService slugService;
     private ApplicationEventPublisher eventPublisher;
     private BlobStorageService blobStorageService;
@@ -49,12 +52,15 @@ class UnitListingServiceTest {
         mediaRepository = mock(UnitListingMediaRepository.class);
         interestRepository = mock(UnitListingInterestRepository.class);
         userRepository = mock(UserRepository.class);
+        leaseRepository = mock(LeaseRepository.class);
+        notificationService = mock(NotificationService.class);
         slugService = new SlugService();
         eventPublisher = mock(ApplicationEventPublisher.class);
         blobStorageService = mock(BlobStorageService.class);
         service = new UnitListingService(
                 listingRepository, amenityRepository, mediaRepository,
-                interestRepository, userRepository, slugService, eventPublisher, blobStorageService);
+                interestRepository, userRepository, leaseRepository, notificationService,
+                slugService, eventPublisher, blobStorageService);
 
         when(listingRepository.save(any(UnitListing.class))).thenAnswer(inv -> {
             UnitListing l = inv.getArgument(0);
