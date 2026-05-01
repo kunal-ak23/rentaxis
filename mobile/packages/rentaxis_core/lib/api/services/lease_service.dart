@@ -91,4 +91,19 @@ class LeaseService {
         data: {'newEndDate': newEndDate});
     return response.data;
   }
+
+  // Contract generation
+  Future<List<int>> previewContract(String leaseId) async {
+    final response = await _dio.post(
+      '/v1/leases/$leaseId/generate-contract/preview',
+      options: Options(responseType: ResponseType.bytes),
+    );
+    return response.data;
+  }
+
+  Future<Map<String, dynamic>> generateContract(String leaseId) async {
+    final response =
+        await _dio.post('/v1/leases/$leaseId/generate-contract');
+    return response.data;
+  }
 }

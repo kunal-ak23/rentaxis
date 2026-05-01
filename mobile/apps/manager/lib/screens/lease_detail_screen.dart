@@ -37,6 +37,7 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
 
   DateTime? _extendDate;
   bool _isExtending = false;
+  bool _isGeneratingContract = false;
 
   @override
   void initState() {
@@ -213,6 +214,77 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
     }
   }
 
+  Future<void> _generateContract() async {
+    setState(() => _isGeneratingContract = true);
+    try {
+      // 1) Fetch the preview PDF and open it in the system viewer.
+      final bytes =
+          await ref.read(_leaseServiceProvider).previewContract(widget.leaseId);
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/lease-preview-${widget.leaseId}.pdf');
+      await file.writeAsBytes(bytes);
+      await OpenFilex.open(file.path);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to generate preview')),
+        );
+        setState(() => _isGeneratingContract = false);
+      }
+      return;
+    }
+
+    if (!context.mounted) {
+      setState(() => _isGeneratingContract = false);
+      return;
+    }
+
+    // 2) Confirm save after the user has reviewed the preview.
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Save Contract?'),
+        content: const Text(
+          'Once saved, this contract will be assigned a contract number '
+          'and stored on the lease. Continue?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Confirm & Save'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) {
+      if (mounted) setState(() => _isGeneratingContract = false);
+      return;
+    }
+
+    try {
+      await ref.read(_leaseServiceProvider).generateContract(widget.leaseId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Contract generated')),
+        );
+        await _loadData();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to save contract')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isGeneratingContract = false);
+    }
+  }
+
   Future<void> _showExtendDialog() async {
     final lease = _lease!;
     final currentEnd = DateTime.tryParse(lease['endDate'] ?? '') ?? DateTime.now();
@@ -384,6 +456,28 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
                 _buildHeader(lease, status, statusColor),
                 const SizedBox(height: 20),
                 if (status == 'DRAFT') ...[
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: _isGeneratingContract ? null : _generateContract,
+                      icon: _isGeneratingContract
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.description_outlined),
+                      label: Text(lease['contractNumber'] != null
+                          ? 'Re-generate Contract'
+                          : 'Generate Contract'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.primary,
+                        side: const BorderSide(color: AppColors.primary),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
