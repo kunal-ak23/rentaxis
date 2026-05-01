@@ -197,7 +197,8 @@ export default function PaymentScheduleEditor({ leaseId, leaseStatus, canManage,
                         <tr className="text-left">
                             <th className="px-3 py-2 font-semibold">#</th>
                             <th className="px-3 py-2 font-semibold">Purpose</th>
-                            <th className="px-3 py-2 font-semibold">Due / Cheque date</th>
+                            <th className="px-3 py-2 font-semibold">Due Date</th>
+                            <th className="px-3 py-2 font-semibold">Cheque / Payment Date</th>
                             <th className="px-3 py-2 font-semibold">Method</th>
                             <th className="px-3 py-2 font-semibold">Cheque #</th>
                             <th className="px-3 py-2 font-semibold">Bank</th>
@@ -210,33 +211,41 @@ export default function PaymentScheduleEditor({ leaseId, leaseStatus, canManage,
                             const m = normalizeMethod(r.paymentMethod);
                             const chequeRequired = m === "CHEQUE";
                             const bankRequired = m === "CHEQUE" || m === "BANK_TRANSFER" || m === "ONLINE";
-                            const dateRequired = m !== "CASH";
+                            const paymentDateRequired = m !== "CASH";
+                            const paymentDateLabel = m === "CHEQUE" ? "Cheque date"
+                                : m === "BANK_TRANSFER" ? "Transfer date"
+                                : m === "ONLINE" ? "Online payment date"
+                                : "Receipt date (optional)";
                             const rowDisabled = !editable || r.status !== "PENDING";
                             return (
                                 <tr key={r.id} className="border-t border-border align-top">
                                     <td className="px-3 py-2 tabular-nums">{r.isBookingDeposit ? "B" : r.installmentNumber}</td>
                                     <td className="px-3 py-2 text-muted">{r.purposeLabel || (r.isBookingDeposit ? "Booking Deposit" : "")}</td>
                                     <td className="px-3 py-2">
-                                        <div className="flex flex-col gap-1">
-                                            <input
-                                                type="date"
-                                                value={r.dueDate?.substring(0, 10) || ""}
-                                                onChange={(e) => updateRow(r.id, { dueDate: e.target.value })}
-                                                disabled={rowDisabled}
-                                                className="border border-border rounded px-2 py-1 text-xs bg-surface disabled:bg-input/40 disabled:cursor-not-allowed"
-                                            />
-                                            {dateRequired && (
-                                                <input
-                                                    type="date"
-                                                    value={r.chequeDate?.substring(0, 10) || ""}
-                                                    onChange={(e) => updateRow(r.id, { chequeDate: e.target.value })}
-                                                    disabled={rowDisabled}
-                                                    placeholder="Cheque/transfer date"
-                                                    className="border border-border rounded px-2 py-1 text-xs bg-surface disabled:bg-input/40 disabled:cursor-not-allowed"
-                                                    title={m === "CHEQUE" ? "Cheque date" : m === "ONLINE" ? "Online payment date" : "Transfer date"}
-                                                />
+                                        <input
+                                            type="date"
+                                            value={r.dueDate?.substring(0, 10) || ""}
+                                            onChange={(e) => updateRow(r.id, { dueDate: e.target.value })}
+                                            disabled={rowDisabled}
+                                            title="Due date — when this installment is owed by the tenant"
+                                            className="border border-border rounded px-2 py-1 text-xs bg-surface disabled:bg-input/40 disabled:cursor-not-allowed"
+                                        />
+                                    </td>
+                                    <td className="px-3 py-2">
+                                        <input
+                                            type="date"
+                                            value={r.chequeDate?.substring(0, 10) || ""}
+                                            onChange={(e) => updateRow(r.id, { chequeDate: e.target.value })}
+                                            disabled={rowDisabled}
+                                            title={paymentDateLabel}
+                                            className={cn(
+                                                "border border-border rounded px-2 py-1 text-xs bg-surface disabled:bg-input/40 disabled:cursor-not-allowed",
+                                                m === "CASH" && "opacity-60"
                                             )}
-                                        </div>
+                                        />
+                                        {paymentDateRequired
+                                            ? <div className="text-[10px] text-muted mt-0.5">{paymentDateLabel.replace(" date", "")}</div>
+                                            : <div className="text-[10px] text-muted mt-0.5 italic">optional for cash</div>}
                                     </td>
                                     <td className="px-3 py-2">
                                         <select
