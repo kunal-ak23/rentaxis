@@ -475,15 +475,29 @@ class ContractGenerationServiceTest {
     }
 
     @Test
-    void renderedHtml_hasNoBareAmpersandsThatBreakOpenHtmlToPdf() throws Exception {
-        // OpenHtmlToPdf parses the input as XML. A bare '&' not part of an
-        // entity reference (named, hex, or decimal) causes:
-        //   "The entity name must immediately follow the '&' in the entity reference"
-        // Regression: previously the template had bare '&' in CSS/HTML comments
-        // ("Section 1 & lease period", "Section 3 & 4 charge tables", etc.).
+    void renderedHtml_isWellFormedForOpenHtmlToPdfXmlParser() throws Exception {
+        // OpenHtmlToPdf 1.1.37 parses input HTML through a TRaX (Xalan) XSLT
+        // identity transform, which uses the JDK's standard XML SAX parser
+        // configured to NOT load external DTDs. That config rejects:
+        //   - bare '&' not followed by a valid entity reference
+        //   - any named entity reference other than amp/lt/gt/quot/apos
+        //     (e.g. &nbsp; → "entity 'nbsp' was referenced, but not declared")
+        //   - the substring "--" inside an XML <!-- comment -->
+        //   - unclosed/mismatched tags, missing attribute quotes, etc.
+        //
+        // Every one of those failure modes silently breaks PDF generation in
+        // production. Parse the rendered HTML with the same parser config as
+        // OpenHtmlToPdf so any of these issues surfaces as a unit-test failure.
+        //
+        // Regression history captured by this test:
+        //   1. bare '&' in CSS comment "Section 1 & lease period"
+        //   2. bare '&' in HTML comment "Contract number & agreement date"
+        //   3. &nbsp; named entity (replaced with &#160;)
+        //   4. "----" inside <!-- ---- Section 1 ---- -->
         UUID tenantId = UUID.randomUUID();
         LandlordOrg org = buildLandlordOrg(tenantId);
-        // Address with HTML special chars to ensure the user-text path also escapes correctly.
+        // Address + name with HTML special chars to ensure the user-text path
+        // is also XML-safe through escapeUserText.
         org.setAddress("PO Box 366, Dubai & UAE <main>");
         Property property = buildProperty(tenantId, PropertyType.RESIDENTIAL);
         Unit unit = buildUnit(tenantId, property);
@@ -500,24 +514,39 @@ class ContractGenerationServiceTest {
         verify(svc).renderPdf(htmlCaptor.capture());
         String html = htmlCaptor.getValue();
 
-        // Match any '&' NOT followed by an entity reference OpenHtmlToPdf accepts.
-        // Its XML parser only knows the five built-in XML entities; any other
-        // named entity (e.g. &nbsp;, &copy;) fails with "entity NAME was
-        // referenced, but not declared". Numeric refs (decimal &#NNN;, hex
-        // &#xHHHH;) are always valid and the safe choice in templates.
-        java.util.regex.Pattern bareAmp = java.util.regex.Pattern.compile(
-                "&(?!(?:amp|lt|gt|quot|apos|#[0-9]+|#x[0-9A-Fa-f]+);)");
-        java.util.regex.Matcher m = bareAmp.matcher(html);
-        if (m.find()) {
-            int line = 1, col = 1;
-            for (int i = 0; i < m.start(); i++) {
-                if (html.charAt(i) == '\n') { line++; col = 1; } else { col++; }
+        // Replicate openhtmltopdf's parser config: no external DTD, no entity
+        // resolution beyond the five built-ins.
+        javax.xml.parsers.SAXParserFactory spf = javax.xml.parsers.SAXParserFactory.newInstance();
+        spf.setNamespaceAware(false);
+        spf.setValidating(false);
+        spf.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
+        spf.setFeature("http://xml.org/sax/features/external-general-entities", false);
+        spf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+        javax.xml.parsers.SAXParser parser = spf.newSAXParser();
+        try {
+            parser.parse(
+                    new java.io.ByteArrayInputStream(html.getBytes(java.nio.charset.StandardCharsets.UTF_8)),
+                    new org.xml.sax.helpers.DefaultHandler());
+        } catch (org.xml.sax.SAXParseException ex) {
+            int ctxStart = 0, ctxEnd = Math.min(html.length(), 200);
+            int lineNum = ex.getLineNumber();
+            if (lineNum > 0) {
+                int idx = -1;
+                for (int i = 0, line = 1; i < html.length() && line <= lineNum; i++) {
+                    if (line == lineNum) { idx = i; break; }
+                    if (html.charAt(i) == '\n') line++;
+                }
+                if (idx > 0) {
+                    ctxStart = Math.max(0, idx - 40);
+                    ctxEnd = Math.min(html.length(), idx + 120);
+                }
             }
-            int ctxStart = Math.max(0, m.start() - 30);
-            int ctxEnd = Math.min(html.length(), m.start() + 50);
-            throw new AssertionError("Bare '&' at line " + line + " col " + col
-                    + " (would break OpenHtmlToPdf XML parser). Context: "
-                    + html.substring(ctxStart, ctxEnd).replace("\n", "\\n"));
+            throw new AssertionError(
+                    "Rendered contract HTML is not well-formed XML at line "
+                            + ex.getLineNumber() + " col " + ex.getColumnNumber()
+                            + ": " + ex.getMessage()
+                            + "\nContext: " + html.substring(ctxStart, ctxEnd).replace("\n", "\\n"),
+                    ex);
         }
     }
 
