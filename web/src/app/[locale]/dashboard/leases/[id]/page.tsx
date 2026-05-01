@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { Link } from "@/i18n/routing";
+import { Link, useRouter } from "@/i18n/routing";
 import { cn } from "@/lib/utils";
 import { hasRole, type UserRole } from "@/lib/rbac";
 import { formatCurrency, formatCurrencyCompact } from "@/lib/format";
@@ -124,6 +124,7 @@ const PAYMENT_STATUS_COLORS: Record<string, string> = {
 export default function LeaseDetailPage() {
     const params = useParams();
     const searchParams = useSearchParams();
+    const router = useRouter();
     const leaseId = params.id as string;
     const { data: session } = useSession();
     const userRole = session?.user?.role as UserRole | undefined;
@@ -407,6 +408,30 @@ export default function LeaseDetailPage() {
         }
     };
 
+    const handleDeleteDraft = async () => {
+        if (!lease) return;
+        if (lease.status !== "DRAFT") return;
+        const confirmed = window.confirm(
+            "Delete this draft lease?\n\nThis will permanently remove the lease, its payment schedule, attachments, and history. This action cannot be undone."
+        );
+        if (!confirmed) return;
+        try {
+            const res = await fetch(`/api/proxy/v1/leases/${lease.id}`, { method: "DELETE" });
+            if (res.ok) {
+                router.push("/dashboard/leases");
+            } else if (res.status === 403) {
+                alert("You don't have permission to delete this lease.");
+            } else {
+                let detail: string | null = null;
+                try { const body = await res.json(); detail = body?.message || body?.error || null; } catch {}
+                alert(detail || "Failed to delete the draft. Please try again.");
+            }
+        } catch (err) {
+            console.error(err);
+            alert("Network error while deleting the draft. Check your connection and try again.");
+        }
+    };
+
     const handleDownloadContract = async () => {
         if (!lease) return;
         const res = await fetch(`/api/proxy/v1/leases/${lease.id}/documents`);
@@ -489,6 +514,15 @@ export default function LeaseDetailPage() {
                     </div>
                     <p className="text-sm text-muted">{lease.propertyName} &bull; {lease.renterName}</p>
                 </div>
+                {canGenerateContract && lease.status === "DRAFT" && (
+                    <button
+                        onClick={handleDeleteDraft}
+                        title="Delete this draft lease"
+                        className="flex items-center gap-2 bg-error/10 text-error border border-error/30 px-4 py-2 rounded-lg text-xs font-semibold hover:bg-error/20 transition-all cursor-pointer"
+                    >
+                        <Trash2 size={14} /> Delete draft
+                    </button>
+                )}
                 {canGenerateContract && (
                     <div className="flex flex-col items-end gap-1">
                         <button
