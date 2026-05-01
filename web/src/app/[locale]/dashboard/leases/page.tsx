@@ -206,6 +206,12 @@ export default function LeasesPage() {
                 endDate: formData.endDate,
                 monthlyRent: String(formData.rentAmount),
             });
+            // Honor the cheque count the admin picked. Without paymentTerms the
+            // backend falls back to monthly cadence with pro-rata, which is
+            // never what we want once the admin has explicitly chosen N.
+            if (formData.paymentTerms && formData.paymentTerms > 0) {
+                params.set("paymentTerms", String(formData.paymentTerms));
+            }
 
             setPreviewLoading(true);
             fetch(`/api/proxy/v1/payments/preview?${params}`)
@@ -215,8 +221,13 @@ export default function LeasesPage() {
                     if (data) {
                         setFormData(prev => ({
                             ...prev,
-                            paymentMethod: data.defaultPaymentMethod || 'CHEQUE',
-                            paymentTerms: data.totalPayments || prev.paymentTerms,
+                            paymentMethod: prev.paymentMethod || data.defaultPaymentMethod || 'CHEQUE',
+                            // Don't overwrite a paymentTerms the admin explicitly set; only
+                            // adopt the preview's totalPayments when paymentTerms hasn't
+                            // been chosen yet (== 0/undefined).
+                            paymentTerms: prev.paymentTerms && prev.paymentTerms > 0
+                                ? prev.paymentTerms
+                                : (data.totalPayments || prev.paymentTerms),
                         }));
                     }
                 })
@@ -225,7 +236,7 @@ export default function LeasesPage() {
         }, 500);
 
         return () => clearTimeout(timer);
-    }, [formData.startDate, formData.endDate, formData.rentAmount, formData.unitId, units]);
+    }, [formData.startDate, formData.endDate, formData.rentAmount, formData.unitId, formData.paymentTerms, units]);
 
     const fetchLeases = async () => {
         setLoading(true);
@@ -960,9 +971,17 @@ export default function LeasesPage() {
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("paymentTerms")}</label>
-                                <div className="w-full bg-input border border-border p-3 rounded-xl text-xs text-muted font-medium">
-                                    {paymentPreview ? `${paymentPreview.totalPayments} ${formData.paymentMethod === 'CHEQUE' ? 'Cheques' : 'Payments'}` : 'Select dates & rent amount'}
-                                </div>
+                                <input
+                                    type="number"
+                                    min={1}
+                                    max={36}
+                                    value={formData.paymentTerms || 1}
+                                    onChange={(ev) => setFormData({ ...formData, paymentTerms: Math.max(1, Number(ev.target.value) || 1) })}
+                                    className="w-full bg-input border border-border p-3 rounded-xl text-xs cursor-text focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                                />
+                                <p className="text-[10px] text-muted mt-1 ml-1">
+                                    Splits the total rent equally across this many {formData.paymentMethod === 'CHEQUE' ? 'cheques' : 'payments'}.
+                                </p>
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-[10px] font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("depositPaymentMethod")}</label>

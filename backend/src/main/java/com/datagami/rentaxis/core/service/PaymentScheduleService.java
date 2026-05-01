@@ -564,6 +564,78 @@ public class PaymentScheduleService {
     }
 
     @Transactional(readOnly = true)
+    /**
+     * Overload that honors paymentTerms. When paymentTerms is null / <= 0 it
+     * falls through to the original monthly-with-pro-rata cadence; when it's
+     * set, the preview mirrors what {@link #generateScheduleForLease} will
+     * produce — N installments evenly distributed across the lease tenure,
+     * snapped to the property's RentCollectionSettings.dueDayOfMonth.
+     */
+    public PaymentPreviewDTO previewSchedule(UUID propertyId, LocalDate startDate, LocalDate endDate, BigDecimal monthlyRent, Integer paymentTerms) {
+        if (paymentTerms == null || paymentTerms <= 0) {
+            return previewSchedule(propertyId, startDate, endDate, monthlyRent);
+        }
+        if (!endDate.isAfter(startDate)) throw new RuntimeException("End date must be after start date");
+        if (monthlyRent == null || monthlyRent.compareTo(BigDecimal.ZERO) <= 0) throw new RuntimeException("Monthly rent must be greater than zero");
+
+        long totalMonths = java.time.temporal.ChronoUnit.MONTHS.between(startDate, endDate);
+        if (totalMonths < 1) totalMonths = 1;
+
+        int n = paymentTerms;
+        if (n > totalMonths) n = (int) totalMonths;
+
+        // Apply property due day if configured (matches generateScheduleForLease).
+        Integer settingsDueDay = rentCollectionSettingsRepository.findByPropertyId(propertyId)
+                .map(s -> s.getDueDayOfMonth()).orElse(null);
+        Integer dueDay = (settingsDueDay != null && settingsDueDay >= 1 && settingsDueDay <= 31) ? settingsDueDay : null;
+
+        BigDecimal totalRent = monthlyRent.multiply(BigDecimal.valueOf(totalMonths));
+        BigDecimal perInstallment = totalRent.divide(BigDecimal.valueOf(n), 2, RoundingMode.HALF_UP);
+
+        List<PaymentPreviewDTO.PaymentPreviewLine> lines = new ArrayList<>();
+        BigDecimal accumulated = BigDecimal.ZERO;
+        for (int i = 0; i < n; i++) {
+            long monthOffset = (long) Math.floor((double) i * totalMonths / n);
+            LocalDate dueDate = startDate.plusMonths(monthOffset);
+            if (dueDay != null) {
+                dueDate = dueDate.withDayOfMonth(Math.min(dueDay, dueDate.lengthOfMonth()));
+            }
+            // Period covers from this installment's due date until the next
+            // installment's due date (or lease end on the last one).
+            LocalDate periodEnd;
+            if (i == n - 1) {
+                periodEnd = endDate;
+            } else {
+                long nextOffset = (long) Math.floor((double) (i + 1) * totalMonths / n);
+                LocalDate nextDue = startDate.plusMonths(nextOffset);
+                if (dueDay != null) nextDue = nextDue.withDayOfMonth(Math.min(dueDay, nextDue.lengthOfMonth()));
+                periodEnd = nextDue.minusDays(1);
+            }
+            BigDecimal amount = (i == n - 1) ? totalRent.subtract(accumulated) : perInstallment;
+            accumulated = accumulated.add(amount);
+
+            PaymentPreviewDTO.PaymentPreviewLine line = new PaymentPreviewDTO.PaymentPreviewLine();
+            line.setInstallmentNumber(i + 1);
+            line.setDueDate(dueDate);
+            line.setPeriodStart(dueDate);
+            line.setPeriodEnd(periodEnd);
+            line.setAmount(amount);
+            line.setProRata(false);
+            lines.add(line);
+        }
+
+        PaymentPreviewDTO dto = new PaymentPreviewDTO();
+        dto.setLines(lines);
+        dto.setTotalAmount(totalRent);
+        dto.setTotalPayments(n);
+        dto.setDueDayOfMonth(dueDay != null ? dueDay : startDate.getDayOfMonth());
+        // Default payment method comes from the property settings — same as the monthly preview.
+        var settings = rentCollectionSettingsRepository.findByPropertyId(propertyId).orElse(null);
+        boolean onlineEnabled = settings != null && Boolean.TRUE.equals(settings.getOnlinePaymentEnabled());
+        dto.setDefaultPaymentMethod(onlineEnabled ? "ONLINE" : "CHEQUE");
+        return dto;
+    }
+
     public PaymentPreviewDTO previewSchedule(UUID propertyId, LocalDate startDate, LocalDate endDate, BigDecimal monthlyRent) {
         // Look up property settings
         var settings = rentCollectionSettingsRepository.findByPropertyId(propertyId).orElse(null);
