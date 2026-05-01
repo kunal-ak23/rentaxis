@@ -13,13 +13,34 @@
         ------------------------------------------------------- */
         @page {
             size: A4;
-            margin: 1.8cm 1.5cm;
+            margin: 1.8cm 1.5cm 3.4cm 1.5cm;
+            @bottom-center {
+                content: element(page-footer);
+                vertical-align: bottom;
+            }
         }
-
-        /* NOTE: @top-center / @bottom-center margin boxes are not
-           reliably supported by OpenHtmlToPdf / Flying Saucer.
-           The landlord header is rendered inline on page 1 only.
-           Per-page repetition is a follow-up enhancement. */
+        .page-footer {
+            position: running(page-footer);
+            width: 100%;
+        }
+        .page-footer .sig-row {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+        }
+        .page-footer .sig-row td {
+            width: 33.33%;
+            text-align: center;
+            vertical-align: bottom;
+            font-size: 9pt;
+            padding: 0;
+        }
+        .page-footer .sig-line {
+            border-top: 1px solid #333;
+            margin: 0 auto 3pt auto;
+            width: 140pt;
+            height: 26pt;
+        }
 
         body {
             font-family: 'Noto Sans', sans-serif;
@@ -219,44 +240,40 @@
             direction: rtl;
             font-family: 'Noto Sans Arabic', 'Noto Sans', sans-serif;
         }
-        .terms-cols {
+        /* Terms table: each clause is one row with EN cell on the left
+           and AR cell on the right, so clause N stays aligned across
+           both languages even when one language's text is much longer. */
+        .terms-rows {
             width: 100%;
             border-collapse: collapse;
-            vertical-align: top;
+            table-layout: fixed;
         }
-        .terms-cols td {
+        .terms-rows td {
             border: none;
-            padding: 0;
+            padding: 3pt 0;
             vertical-align: top;
-            font-size: 9.5pt;
-        }
-        .terms-en {
-            width: 50%;
-            padding-right: 10pt;
-            vertical-align: top;
-        }
-        .terms-ar {
-            width: 50%;
-            padding-left: 10pt;
-            vertical-align: top;
-            direction: rtl;
-            font-family: 'Noto Sans Arabic', 'Noto Sans', sans-serif;
-            text-align: right;
-        }
-        .terms-en ol,
-        .terms-ar ol {
-            padding-left: 16pt;
-            margin: 0;
-        }
-        .terms-ar ol {
-            padding-left: 0;
-            padding-right: 16pt;
-        }
-        .terms-en li,
-        .terms-ar li {
-            margin-bottom: 3pt;
             font-size: 9pt;
             line-height: 1.4;
+        }
+        .terms-rows td.en {
+            width: 50%;
+            padding-right: 10pt;
+            text-align: left;
+        }
+        .terms-rows td.ar {
+            width: 50%;
+            padding-left: 10pt;
+            direction: rtl;
+            text-align: right;
+            font-family: 'Noto Sans Arabic', 'Noto Sans', sans-serif;
+        }
+        .terms-rows td .num {
+            font-weight: bold;
+            margin-right: 4pt;
+        }
+        .terms-rows td.ar .num {
+            margin-right: 0;
+            margin-left: 4pt;
         }
         .terms-section-title {
             font-size: 11pt;
@@ -268,6 +285,25 @@
     </style>
 </head>
 <body>
+
+<!-- Per-page footer rendered in the @page @bottom-center margin box.
+     Signature lines repeat on every page; the stamp area between them
+     stays empty for the physical wet stamp applied after printing. -->
+<div class="page-footer">
+    <table class="sig-row">
+        <tr>
+            <td>
+                <div class="sig-line"></div>
+                Tenant Signature
+            </td>
+            <td>&#160;</td>
+            <td>
+                <div class="sig-line"></div>
+                Landlord Signature
+            </td>
+        </tr>
+    </table>
+</div>
 
 <!-- ============================================================
      PAGE 1 — COVER
@@ -387,30 +423,20 @@
     </tr>
 </table>
 
-<!-- Signature row (Page 1) -->
-<table class="sig-table">
-    <tr>
-        <td style="text-align:center; vertical-align:bottom; width:33%;">
-            <div class="sig-line"></div>
-            <div class="sig-label">Tenant Signature</div>
-        </td>
-        <td class="sig-stamp" style="width:34%; text-align:center; vertical-align:bottom;">
-            {{STAMP_IMG_OR_BLANK}}
-        </td>
-        <td style="text-align:center; vertical-align:bottom; width:33%;">
-            <div class="sig-line"></div>
-            <div class="sig-label">Landlord Signature</div>
-        </td>
-    </tr>
-</table>
+<!-- Page-1 print date & time. Signatures themselves come from the
+     per-page footer in the @bottom-center margin box. -->
+<div style="font-size:9pt; margin-top:18pt;">
+    Print Date &amp; Time : {{PRINT_DATETIME}}
+</div>
 
 
 <!-- ============================================================
-     PAGES 2–6 — ADDITIONAL TERMS AND CONDITIONS
-     Natural content overflow produces multiple pages.
-     Per-page signature footer is deferred: OpenHtmlToPdf does
-     not reliably support @page @bottom-center margin boxes, so
-     a single signature row appears at the end of this section.
+     PAGES 2+ — ADDITIONAL TERMS AND CONDITIONS
+     Each numbered clause is a single table row with EN cell and
+     AR cell side-by-side, so the same clause N stays vertically
+     aligned across both languages on every page.
+     Signature footer comes from the @page @bottom-center margin
+     box, automatically repeating on every page of this section.
      ============================================================ -->
 
 <div class="terms-page-break"></div>
@@ -427,34 +453,8 @@
     </tr>
 </table>
 
-<!-- Two-column terms layout: EN (LTR) | AR (RTL) -->
-<table class="terms-cols">
-    <tr>
-        <td class="terms-en">
-            {{TERMS_EN}}
-        </td>
-        <td class="terms-ar">
-            {{TERMS_AR}}
-        </td>
-    </tr>
-</table>
-
-<!-- Signature row at end of terms (load-bearing for terms pages) -->
-<table class="sig-table" style="margin-top:20pt;">
-    <tr>
-        <td style="text-align:center; vertical-align:bottom; width:33%;">
-            <div class="sig-line"></div>
-            <div class="sig-label">Tenant Signature</div>
-        </td>
-        <td class="sig-stamp" style="width:34%; text-align:center; vertical-align:bottom;">
-            &#160;
-        </td>
-        <td style="text-align:center; vertical-align:bottom; width:33%;">
-            <div class="sig-line"></div>
-            <div class="sig-label">Landlord Signature</div>
-        </td>
-    </tr>
-</table>
+<!-- Row-aligned terms: each clause is one row with EN | AR cells -->
+{{TERMS_TABLE}}
 
 </body>
 </html>

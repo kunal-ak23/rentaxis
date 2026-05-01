@@ -200,22 +200,16 @@ public class ContractGenerationService {
 
         String amountInWords = AmountInWordsUtil.toEnglishWords(grandTotal, "AED");
 
-        // Stamp HTML — escape the URL to prevent attribute injection via quotes/&
-        String stampHtml;
-        String stampUrl = org.getStampImageUrl();
-        if (stampUrl != null && !stampUrl.isBlank()) {
-            stampHtml = "<img src=\"" + HtmlUtils.htmlEscape(stampUrl) + "\" style=\"max-width:120px; max-height:120px;\"/>";
-        } else {
-            stampHtml = "<div style=\"width:120px;height:120px;border:1px dashed #ccc;\"></div>";
-        }
-
         // Agreement date display (defaults to today only at generation time; preview uses what is stored)
         LocalDate agreementDate = lease.getAgreementDate() != null ? lease.getAgreementDate() : LocalDate.now();
+
+        // Build the row-aligned terms table from the two partials.
+        String termsTable = buildTermsTable(termsEn, termsAr);
 
         // Substitute placeholders in a single pass so user-provided values can't
         // accidentally introduce new {{...}} tokens that the next replace picks up.
         // User-controlled text fields are HTML-escaped (escapeUserText); pre-built
-        // HTML fragments (sections, terms partials, stamp tag) are passed through raw.
+        // HTML fragments (sections, terms table) are passed through raw.
         Map<String, String> values = new HashMap<>();
         values.put("LANDLORD_NAME", escapeUserText(org.getName()));
         values.put("LANDLORD_ADDRESS", escapeUserText(org.getAddress()));
@@ -234,11 +228,71 @@ public class ContractGenerationService {
         values.put("SECTION_4_ROWS", section4Rows);
         values.put("AMOUNT_IN_WORDS", escapeUserText(amountInWords));
         values.put("GRAND_TOTAL", formatAmount(grandTotal));
-        values.put("STAMP_IMG_OR_BLANK", stampHtml);
-        values.put("TERMS_EN", termsEn);
-        values.put("TERMS_AR", termsAr);
+        values.put("PRINT_DATETIME", formatPrintDateTime(java.time.LocalDateTime.now()));
+        values.put("TERMS_TABLE", termsTable);
 
         return substituteAll(template, values);
+    }
+
+    private static final Pattern TERM_LI = Pattern.compile(
+            "<li[^>]*\\bvalue\\s*=\\s*\"(\\d+)\"[^>]*>(.*?)</li>",
+            Pattern.DOTALL | Pattern.CASE_INSENSITIVE);
+
+    /**
+     * Build a row-aligned terms table from the two language partials. Each
+     * <li value="N">CONTENT</li> pair is rendered as a single <tr> with the
+     * English cell on the left and the Arabic cell on the right, so clause N
+     * stays vertically aligned across both languages even when one language's
+     * text is much longer than the other.
+     *
+     * Falls back to a single row containing each partial as raw HTML if the
+     * &lt;li value="..."&gt; markers can't be parsed (no regression vs. the
+     * earlier two-column layout).
+     */
+    static String buildTermsTable(String termsEnHtml, String termsArHtml) {
+        java.util.LinkedHashMap<Integer, String> en = extractTerms(termsEnHtml);
+        java.util.LinkedHashMap<Integer, String> ar = extractTerms(termsArHtml);
+        if (en.isEmpty() && ar.isEmpty()) {
+            return "<table class=\"terms-rows\"><tr><td class=\"en\">" + termsEnHtml
+                    + "</td><td class=\"ar\">" + termsArHtml + "</td></tr></table>";
+        }
+        java.util.TreeSet<Integer> keys = new java.util.TreeSet<>();
+        keys.addAll(en.keySet());
+        keys.addAll(ar.keySet());
+        StringBuilder sb = new StringBuilder("<table class=\"terms-rows\">");
+        for (Integer n : keys) {
+            String enContent = en.getOrDefault(n, "");
+            String arContent = ar.getOrDefault(n, "");
+            sb.append("<tr>")
+                    .append("<td class=\"en\"><span class=\"num\">").append(n).append(".</span> ")
+                    .append(enContent).append("</td>")
+                    .append("<td class=\"ar\"><span class=\"num\">").append(n).append(".</span> ")
+                    .append(arContent).append("</td>")
+                    .append("</tr>");
+        }
+        sb.append("</table>");
+        return sb.toString();
+    }
+
+    private static java.util.LinkedHashMap<Integer, String> extractTerms(String html) {
+        java.util.LinkedHashMap<Integer, String> out = new java.util.LinkedHashMap<>();
+        if (html == null) return out;
+        Matcher m = TERM_LI.matcher(html);
+        while (m.find()) {
+            try {
+                out.put(Integer.parseInt(m.group(1)), m.group(2).trim());
+            } catch (NumberFormatException ignored) {
+                // skip
+            }
+        }
+        return out;
+    }
+
+    private static final DateTimeFormatter PRINT_DATETIME_FORMAT =
+            DateTimeFormatter.ofPattern("dd MMM yyyy   hh:mm a", Locale.ENGLISH);
+
+    private static String formatPrintDateTime(java.time.LocalDateTime ldt) {
+        return PRINT_DATETIME_FORMAT.format(ldt);
     }
 
     private static final Pattern PLACEHOLDER = Pattern.compile("\\{\\{([A-Z0-9_]+)}}");

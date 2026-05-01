@@ -2,12 +2,12 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useTranslations } from "next-intl";
-import { Plus, X, Building2, Hash, Settings2, ShieldCheck, Loader2, Search, Pencil, Copy, Check, Zap, Phone, Upload, Stamp } from "lucide-react";
+import { Plus, X, Building2, Hash, Settings2, ShieldCheck, Loader2, Search, Pencil, Copy, Check, Zap, Phone } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Pagination } from "@/components/ui/Pagination";
 import { FileUpload } from "@/components/ui/FileUpload";
 
-type Tenant = { id: string; name: string; status: string; address?: string; trn?: string; logoUrl?: string; ticketOtpRequired?: boolean; phone?: string; stampImageUrl?: string; createdAt: string };
+type Tenant = { id: string; name: string; status: string; address?: string; trn?: string; logoUrl?: string; ticketOtpRequired?: boolean; phone?: string; createdAt: string };
 
 type FeatureToggle = {
   feature: string;
@@ -23,8 +23,7 @@ export default function SuperAdminTenantsPage() {
     const [submitting, setSubmitting] = useState(false);
     const [showForm, setShowForm] = useState(false);
     const [editingTenant, setEditingTenant] = useState<Tenant | null>(null);
-    const [formData, setFormData] = useState({ name: "", address: "", trn: "", status: "ACTIVE", logoUrl: "", ticketOtpRequired: true, phone: "", stampImageUrl: "" });
-    const [uploadingStamp, setUploadingStamp] = useState(false);
+    const [formData, setFormData] = useState({ name: "", address: "", trn: "", status: "ACTIVE", logoUrl: "", ticketOtpRequired: true, phone: "" });
     const [searchQuery, setSearchQuery] = useState("");
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(25);
@@ -80,37 +79,14 @@ export default function SuperAdminTenantsPage() {
 
     const openEdit = (tenant: Tenant) => {
         setEditingTenant(tenant);
-        setFormData({ name: tenant.name, address: tenant.address || "", trn: tenant.trn || "", status: tenant.status || "ACTIVE", logoUrl: tenant.logoUrl || "", ticketOtpRequired: tenant.ticketOtpRequired !== false, phone: tenant.phone || "", stampImageUrl: tenant.stampImageUrl || "" });
+        setFormData({ name: tenant.name, address: tenant.address || "", trn: tenant.trn || "", status: tenant.status || "ACTIVE", logoUrl: tenant.logoUrl || "", ticketOtpRequired: tenant.ticketOtpRequired !== false, phone: tenant.phone || "" });
         setShowForm(true);
     };
 
     const resetForm = () => {
         setShowForm(false);
         setEditingTenant(null);
-        setFormData({ name: "", address: "", trn: "", status: "ACTIVE", logoUrl: "", ticketOtpRequired: true, phone: "", stampImageUrl: "" });
-    };
-
-    const handleStampUpload = async (file: File) => {
-        if (!editingTenant) return;
-        setUploadingStamp(true);
-        try {
-            const fd = new FormData();
-            fd.append("file", file);
-            const res = await fetch(`/api/proxy/admin/tenants/${editingTenant.id}/stamp`, {
-                method: "POST",
-                body: fd,
-            });
-            if (res.ok) {
-                const data = await res.json();
-                setFormData(prev => ({ ...prev, stampImageUrl: data.stampImageUrl || "" }));
-                // Refresh tenant list so table reflects new stamp
-                fetchTenants();
-            }
-        } catch (e) {
-            console.error(e);
-        } finally {
-            setUploadingStamp(false);
-        }
+        setFormData({ name: "", address: "", trn: "", status: "ACTIVE", logoUrl: "", ticketOtpRequired: true, phone: "" });
     };
 
     const closeFeaturesDrawer = useCallback(() => setFeaturesDrawerTenant(null), []);
@@ -263,34 +239,6 @@ export default function SuperAdminTenantsPage() {
                                     value={formData.phone}
                                     onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                                 />
-                            </div>
-                            {/* Stamp / Seal */}
-                            <div>
-                                <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1 flex items-center gap-1"><Stamp size={10} /> Stamp / Seal</label>
-                                {formData.stampImageUrl && (
-                                    <img src={formData.stampImageUrl} alt="Stamp" className="max-h-24 max-w-24 border border-border rounded-lg object-contain mb-2 bg-white p-1" />
-                                )}
-                                <label className={cn(
-                                    "flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold transition-colors",
-                                    uploadingStamp ? "bg-input text-muted cursor-not-allowed" : "bg-primary/10 text-primary hover:bg-primary/20 cursor-pointer"
-                                )}>
-                                    {uploadingStamp ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
-                                    {formData.stampImageUrl ? "Replace Stamp" : "Upload Stamp"}
-                                    <input
-                                        type="file"
-                                        accept="image/*"
-                                        className="hidden"
-                                        disabled={uploadingStamp || !editingTenant}
-                                        onChange={(e) => {
-                                            const f = e.target.files?.[0];
-                                            if (f) handleStampUpload(f);
-                                            if (e.target) e.target.value = "";
-                                        }}
-                                    />
-                                </label>
-                                {!editingTenant && (
-                                    <p className="text-[10px] text-muted mt-1">Save the organization first, then upload stamp.</p>
-                                )}
                             </div>
                             {editingTenant && (
                                 <div>

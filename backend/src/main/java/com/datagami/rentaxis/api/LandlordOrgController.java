@@ -5,13 +5,10 @@ import com.datagami.rentaxis.core.service.LandlordOrgService;
 import com.datagami.rentaxis.core.service.TenantFeatureService;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
 import com.datagami.rentaxis.domain.entity.enums.TenantFeature;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
 
-import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -71,21 +68,10 @@ public class LandlordOrgController {
         if (payload.containsKey("phone")) {
             org.setPhone(payload.get("phone"));
         }
-        if (payload.containsKey("stampImageUrl")) {
-            org.setStampImageUrl(payload.get("stampImageUrl"));
-        }
         if (payload.containsKey("ticketOtpRequired")) {
             org.setTicketOtpRequired(Boolean.parseBoolean(payload.get("ticketOtpRequired")));
         }
         return ResponseEntity.ok(service.save(org));
-    }
-
-    @PostMapping(value = "/{id}/stamp", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("hasRole('SUPER_ADMIN')")
-    public ResponseEntity<LandlordOrg> uploadStamp(
-            @PathVariable UUID id,
-            @RequestParam("file") MultipartFile file) throws IOException {
-        return ResponseEntity.ok(service.uploadStamp(id, file));
     }
 
     @GetMapping("/{id}/features")
