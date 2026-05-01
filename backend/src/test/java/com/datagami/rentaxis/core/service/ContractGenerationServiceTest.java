@@ -475,6 +475,52 @@ class ContractGenerationServiceTest {
     }
 
     @Test
+    void renderedHtml_hasNoBareAmpersandsThatBreakOpenHtmlToPdf() throws Exception {
+        // OpenHtmlToPdf parses the input as XML. A bare '&' not part of an
+        // entity reference (named, hex, or decimal) causes:
+        //   "The entity name must immediately follow the '&' in the entity reference"
+        // Regression: previously the template had bare '&' in CSS/HTML comments
+        // ("Section 1 & lease period", "Section 3 & 4 charge tables", etc.).
+        UUID tenantId = UUID.randomUUID();
+        LandlordOrg org = buildLandlordOrg(tenantId);
+        // Address with HTML special chars to ensure the user-text path also escapes correctly.
+        org.setAddress("PO Box 366, Dubai & UAE <main>");
+        Property property = buildProperty(tenantId, PropertyType.RESIDENTIAL);
+        Unit unit = buildUnit(tenantId, property);
+        Renter renter = buildRenter(tenantId);
+        renter.setNameEn("Jane & John Doe");
+        Lease lease = buildLease(tenantId, unit, renter, false, false, false, false);
+        lease.setContractNumber(1751L);
+
+        Path tmpStorage = Files.createTempDirectory("contract-test-");
+        ContractGenerationService svc = buildSpyForFullFlow(lease, org, buildSchedules(), 1750L, tmpStorage);
+
+        ArgumentCaptor<String> htmlCaptor = ArgumentCaptor.forClass(String.class);
+        svc.previewContract(lease.getId());
+        verify(svc).renderPdf(htmlCaptor.capture());
+        String html = htmlCaptor.getValue();
+
+        // Match any '&' NOT followed by a valid entity reference pattern
+        //   - named entity:   &word;          (e.g. &nbsp; &amp; &copy;)
+        //   - hex entity:     &#x[0-9A-Fa-f]+;
+        //   - decimal entity: &#[0-9]+;
+        java.util.regex.Pattern bareAmp = java.util.regex.Pattern.compile(
+                "&(?!(?:[A-Za-z][A-Za-z0-9]*|#[0-9]+|#x[0-9A-Fa-f]+);)");
+        java.util.regex.Matcher m = bareAmp.matcher(html);
+        if (m.find()) {
+            int line = 1, col = 1;
+            for (int i = 0; i < m.start(); i++) {
+                if (html.charAt(i) == '\n') { line++; col = 1; } else { col++; }
+            }
+            int ctxStart = Math.max(0, m.start() - 30);
+            int ctxEnd = Math.min(html.length(), m.start() + 50);
+            throw new AssertionError("Bare '&' at line " + line + " col " + col
+                    + " (would break OpenHtmlToPdf XML parser). Context: "
+                    + html.substring(ctxStart, ctxEnd).replace("\n", "\\n"));
+        }
+    }
+
+    @Test
     void renderContractHtml_escapesUserTextAndIgnoresInjectedPlaceholders() throws Exception {
         UUID tenantId = UUID.randomUUID();
         LandlordOrg org = buildLandlordOrg(tenantId);
