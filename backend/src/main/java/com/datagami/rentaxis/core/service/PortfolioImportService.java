@@ -184,22 +184,23 @@ public class PortfolioImportService {
                                      Set<String> propertyNames, Map<String, Set<String>> unitsByProperty,
                                      Set<String> renterEmails) {
         Set<String> validPaymentMethods = Arrays.stream(PaymentMethod.values()).map(Enum::name).collect(Collectors.toSet());
+        HeaderIndex hi = new HeaderIndex(sheet);
 
         for (int i = 1; i <= sheet.getLastRowNum(); i++) {
             Row row = sheet.getRow(i);
             if (row == null || isRowEmpty(row)) continue;
             int rowNum = i + 1;
 
-            String propertyName = getCellString(row, 0);
-            String buildingName = getCellString(row, 1);
-            String unitNumber = getCellString(row, 2);
-            String renterEmail = getCellString(row, 3);
-            String startDateStr = getCellString(row, 4);
-            String endDateStr = getCellString(row, 5);
-            String rentAmountStr = getCellString(row, 6);
-            String depositStr = getCellString(row, 7);
-            String paymentTermsStr = getCellString(row, 8);
-            String paymentMethod = getCellString(row, 9);
+            String propertyName = cell(row, hi, "PropertyName");
+            String buildingName = cell(row, hi, "BuildingName");
+            String unitNumber = cell(row, hi, "UnitNumber");
+            String renterEmail = cell(row, hi, "RenterEmail");
+            String startDateStr = cell(row, hi, "StartDate");
+            String endDateStr = cell(row, hi, "EndDate");
+            String rentAmountStr = cell(row, hi, "RentAmount");
+            String depositStr = cell(row, hi, "DepositAmount");
+            String paymentTermsStr = cell(row, hi, "PaymentTerms");
+            String paymentMethod = cell(row, hi, "PaymentMethod");
 
             // Cross-sheet: property+unit
             if (propertyName.isEmpty()) {
