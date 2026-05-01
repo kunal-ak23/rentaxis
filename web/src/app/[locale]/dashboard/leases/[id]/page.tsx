@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import PaymentScheduleEditor from "../PaymentScheduleEditor";
+import LeaseMetadataEditor from "../LeaseMetadataEditor";
 
 type Lease = {
     id: string; unitId: string; renterId: string; unitIdentifier: string;
@@ -743,6 +744,15 @@ export default function LeaseDetailPage() {
                             </div>
                         );
                     })()}
+
+                    {/* Inline metadata editor for DRAFT — replaces the modal "Edit Lease"
+                        form that used to live on the leases list page. */}
+                    {lease && lease.status === "DRAFT" && canGenerateContract && (
+                        <LeaseMetadataEditor
+                            lease={lease as unknown as React.ComponentProps<typeof LeaseMetadataEditor>["lease"]}
+                            onSaved={() => { fetchLease(); fetchPayments(); }}
+                        />
+                    )}
 
                     {/* Editable schedule for DRAFT / PENDING_SIGNATURE — admin can adjust dates,
                         cheque/bank/method per row before contract finalization. */}
