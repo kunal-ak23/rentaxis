@@ -20,8 +20,10 @@ import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.util.HtmlUtils;
 
 import java.io.*;
 import java.math.BigDecimal;
@@ -37,9 +39,13 @@ import java.time.format.DateTimeFormatter;
 import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Service
@@ -97,12 +103,20 @@ public class ContractGenerationService {
             log.info("Removed {} old documents for lease {} before regeneration", oldDocs.size(), leaseId);
         }
 
-        // Assign contract number + agreement date if not set
+        // Assign contract number + agreement date if not set. Flush eagerly so a
+        // concurrent generation against the same tenant surfaces the unique-index
+        // conflict here (where we can translate it to a friendly error) rather
+        // than at transaction commit (after the PDF was already generated).
         assignContractNumberIfNull(lease);
         if (lease.getAgreementDate() == null) {
             lease.setAgreementDate(LocalDate.now());
         }
-        leaseRepository.save(lease);
+        try {
+            leaseRepository.saveAndFlush(lease);
+        } catch (DataIntegrityViolationException ex) {
+            throw new BusinessRuleViolationException(
+                    "Another contract was generated at the same moment. Please try again.");
+        }
 
         String contractNumberDisplay = String.valueOf(lease.getContractNumber());
         String html = renderContractHtml(lease, contractNumberDisplay);
@@ -186,11 +200,11 @@ public class ContractGenerationService {
 
         String amountInWords = AmountInWordsUtil.toEnglishWords(grandTotal, "AED");
 
-        // Stamp HTML
+        // Stamp HTML — escape the URL to prevent attribute injection via quotes/&
         String stampHtml;
         String stampUrl = org.getStampImageUrl();
         if (stampUrl != null && !stampUrl.isBlank()) {
-            stampHtml = "<img src=\"" + safe(stampUrl) + "\" style=\"max-width:120px; max-height:120px;\"/>";
+            stampHtml = "<img src=\"" + HtmlUtils.htmlEscape(stampUrl) + "\" style=\"max-width:120px; max-height:120px;\"/>";
         } else {
             stampHtml = "<div style=\"width:120px;height:120px;border:1px dashed #ccc;\"></div>";
         }
@@ -198,27 +212,52 @@ public class ContractGenerationService {
         // Agreement date display (defaults to today only at generation time; preview uses what is stored)
         LocalDate agreementDate = lease.getAgreementDate() != null ? lease.getAgreementDate() : LocalDate.now();
 
-        return template
-                .replace("{{LANDLORD_NAME}}", safe(org.getName()))
-                .replace("{{LANDLORD_ADDRESS}}", safe(org.getAddress()))
-                .replace("{{LANDLORD_PHONE}}", safe(org.getPhone()))
-                .replace("{{CONTRACT_NUMBER}}", safe(contractNumberDisplay))
-                .replace("{{AGREEMENT_DATE}}", formatDate(agreementDate))
-                .replace("{{BUILDING_NAME}}", safe(property.getNameEn()))
-                .replace("{{TENANT_NAME}}", safe(renter.getNameEn()))
-                .replace("{{TENANT_EMAIL}}", safe(renter.getEmail()))
-                .replace("{{TENANT_PHONE}}", safe(renter.getPhone()))
-                .replace("{{LEASE_START_DATE}}", formatDate(lease.getStartDate()))
-                .replace("{{LEASE_END_DATE}}", formatDate(lease.getEndDate()))
-                .replace("{{FLAT_NUMBER}}", safe(unit.getUnitNumber()))
-                .replace("{{SECTION_3_ROWS}}", section3Rows)
-                .replace("{{SECTION_3_TOTAL}}", section3Total)
-                .replace("{{SECTION_4_ROWS}}", section4Rows)
-                .replace("{{AMOUNT_IN_WORDS}}", safe(amountInWords))
-                .replace("{{GRAND_TOTAL}}", formatAmount(grandTotal))
-                .replace("{{STAMP_IMG_OR_BLANK}}", stampHtml)
-                .replace("{{TERMS_EN}}", termsEn)
-                .replace("{{TERMS_AR}}", termsAr);
+        // Substitute placeholders in a single pass so user-provided values can't
+        // accidentally introduce new {{...}} tokens that the next replace picks up.
+        // User-controlled text fields are HTML-escaped (escapeUserText); pre-built
+        // HTML fragments (sections, terms partials, stamp tag) are passed through raw.
+        Map<String, String> values = new HashMap<>();
+        values.put("LANDLORD_NAME", escapeUserText(org.getName()));
+        values.put("LANDLORD_ADDRESS", escapeUserText(org.getAddress()));
+        values.put("LANDLORD_PHONE", escapeUserText(org.getPhone()));
+        values.put("CONTRACT_NUMBER", escapeUserText(contractNumberDisplay));
+        values.put("AGREEMENT_DATE", formatDate(agreementDate));
+        values.put("BUILDING_NAME", escapeUserText(property.getNameEn()));
+        values.put("TENANT_NAME", escapeUserText(renter.getNameEn()));
+        values.put("TENANT_EMAIL", escapeUserText(renter.getEmail()));
+        values.put("TENANT_PHONE", escapeUserText(renter.getPhone()));
+        values.put("LEASE_START_DATE", formatDate(lease.getStartDate()));
+        values.put("LEASE_END_DATE", formatDate(lease.getEndDate()));
+        values.put("FLAT_NUMBER", escapeUserText(unit.getUnitNumber()));
+        values.put("SECTION_3_ROWS", section3Rows);
+        values.put("SECTION_3_TOTAL", section3Total);
+        values.put("SECTION_4_ROWS", section4Rows);
+        values.put("AMOUNT_IN_WORDS", escapeUserText(amountInWords));
+        values.put("GRAND_TOTAL", formatAmount(grandTotal));
+        values.put("STAMP_IMG_OR_BLANK", stampHtml);
+        values.put("TERMS_EN", termsEn);
+        values.put("TERMS_AR", termsAr);
+
+        return substituteAll(template, values);
+    }
+
+    private static final Pattern PLACEHOLDER = Pattern.compile("\\{\\{([A-Z0-9_]+)}}");
+
+    /** Single-pass replacement of every {{KEY}} occurrence; missing keys are left as-is. */
+    static String substituteAll(String template, Map<String, String> values) {
+        Matcher m = PLACEHOLDER.matcher(template);
+        StringBuilder out = new StringBuilder(template.length());
+        while (m.find()) {
+            String key = m.group(1);
+            String replacement = values.get(key);
+            if (replacement == null) {
+                m.appendReplacement(out, Matcher.quoteReplacement(m.group(0)));
+            } else {
+                m.appendReplacement(out, Matcher.quoteReplacement(replacement));
+            }
+        }
+        m.appendTail(out);
+        return out.toString();
     }
 
     /**
@@ -366,16 +405,30 @@ public class ContractGenerationService {
     private void appendSection4Row(StringBuilder sb, int sNo, PaymentSchedule p) {
         sb.append("<tr>")
                 .append("<td class=\"center\">").append(sNo).append("</td>")
-                .append("<td>").append(safe(p.getChequeNumber())).append("</td>")
+                .append("<td>").append(escapeUserText(p.getChequeNumber())).append("</td>")
                 .append("<td>").append(p.getChequeDate() != null ? formatDate(p.getChequeDate()) : "").append("</td>")
-                .append("<td>").append(safe(p.getPurposeLabel())).append("</td>")
-                .append("<td>").append(safe(p.getBankName())).append("</td>")
+                .append("<td>").append(escapeUserText(p.getPurposeLabel())).append("</td>")
+                .append("<td>").append(escapeUserText(p.getBankName())).append("</td>")
                 .append("<td class=\"num\">").append(formatAmount(nz(p.getAmount()))).append("</td>")
                 .append("</tr>");
     }
 
+    /**
+     * Returns the empty string for null, otherwise the value as-is.
+     * NOT for HTML — use {@link #escapeUserText(String)} for any value
+     * coming from a user-controlled field.
+     */
     private static String safe(String s) {
         return s == null ? "" : s;
+    }
+
+    /**
+     * HTML-escape a user-provided string before it is embedded in the contract
+     * HTML template. Returns "" for null. Apply to every value that originated
+     * from user input (names, addresses, phone numbers, cheque numbers, etc.).
+     */
+    private static String escapeUserText(String s) {
+        return s == null ? "" : HtmlUtils.htmlEscape(s);
     }
 
     private static BigDecimal nz(BigDecimal v) {

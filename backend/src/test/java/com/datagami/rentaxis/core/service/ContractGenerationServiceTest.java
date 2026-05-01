@@ -474,6 +474,42 @@ class ContractGenerationServiceTest {
         assertThat(lease.getStatus()).isEqualTo(LeaseStatus.DRAFT);
     }
 
+    @Test
+    void renderContractHtml_escapesUserTextAndIgnoresInjectedPlaceholders() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        LandlordOrg org = buildLandlordOrg(tenantId);
+        // Address contains both a literal placeholder string and HTML-special chars.
+        // Single-pass substitution must NOT pick the embedded {{TENANT_PHONE}} up,
+        // and < / > must be escaped so the surrounding <td> doesn't break.
+        org.setAddress("P.O.Box 366, {{TENANT_PHONE}} <Dubai> & UAE");
+        Property property = buildProperty(tenantId, PropertyType.RESIDENTIAL);
+        Unit unit = buildUnit(tenantId, property);
+        Renter renter = buildRenter(tenantId);
+        renter.setNameEn("Bob & <script>alert(1)</script>");
+        Lease lease = buildLease(tenantId, unit, renter, false, false, false, false);
+        lease.setContractNumber(1751L);
+
+        Path tmpStorage = Files.createTempDirectory("contract-test-");
+        ContractGenerationService svc = buildSpyForFullFlow(lease, org, buildSchedules(), 1750L, tmpStorage);
+
+        ArgumentCaptor<String> htmlCaptor = ArgumentCaptor.forClass(String.class);
+        svc.previewContract(lease.getId());
+        verify(svc).renderPdf(htmlCaptor.capture());
+        String html = htmlCaptor.getValue();
+
+        // The literal {{TENANT_PHONE}} embedded in the address must not be substituted
+        // — it should appear escaped in the output.
+        assertThat(html).contains("{{TENANT_PHONE}}");
+        // No remaining real placeholders.
+        assertThat(html).doesNotContain("{{LANDLORD_NAME}}");
+        assertThat(html).doesNotContain("{{TENANT_NAME}}");
+        // HTML-escape the angle brackets and ampersand from user-controlled text.
+        assertThat(html).contains("&lt;Dubai&gt;");
+        assertThat(html).contains("Bob &amp; &lt;script&gt;alert(1)&lt;/script&gt;");
+        // The raw <script>...</script> from the renter name must not appear unescaped.
+        assertThat(html).doesNotContain("<script>alert(1)</script>");
+    }
+
     /** Reflectively read the LeaseDocumentRepository mock out of the spied service. */
     private LeaseDocumentRepository extractDocRepo(ContractGenerationService svc) throws Exception {
         Field f = ContractGenerationService.class.getDeclaredField("leaseDocumentRepository");
