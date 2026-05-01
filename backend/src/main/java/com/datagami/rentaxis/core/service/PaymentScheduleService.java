@@ -49,7 +49,10 @@ public class PaymentScheduleService {
     @Transactional
     public List<PaymentSchedule> generateScheduleForLease(Lease lease) {
         List<PaymentSchedule> existing = paymentScheduleRepository.findByLeaseId(lease.getId());
-        if (!existing.isEmpty()) {
+        // Booking-deposit rows are created up-front during draft creation and must
+        // not block normal installment generation on activation.
+        boolean hasInstallments = existing.stream().anyMatch(p -> !p.isBookingDeposit());
+        if (hasInstallments) {
             return existing;
         }
 
