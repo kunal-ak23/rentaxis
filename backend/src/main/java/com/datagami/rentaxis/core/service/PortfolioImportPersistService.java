@@ -12,6 +12,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 
 @Slf4j
@@ -25,7 +27,11 @@ public class PortfolioImportPersistService {
     private final RenterRepository renterRepository;
     private final LeaseRepository leaseRepository;
     private final PaymentScheduleService paymentScheduleService;
+    private final PaymentScheduleRepository paymentScheduleRepository;
     private final ImportJobRepository importJobRepository;
+
+    private static final Set<String> VALID_BOOLS_TRUE = Set.of("true", "yes", "1");
+    private static final Set<String> VALID_BOOLS_FALSE = Set.of("false", "no", "0");
 
     @Transactional
     public void persistWorkbook(Workbook workbook, ImportJob job) {
@@ -130,23 +136,25 @@ public class PortfolioImportPersistService {
         job.setRentersCreated(renterMap.size());
 
         // 5. Create Leases + Payment Schedules
+        HeaderIndex leaseHi = new HeaderIndex(leasesSheet);
         int leasesCreated = 0;
         int schedulesCreated = 0;
         for (int i = 1; i <= leasesSheet.getLastRowNum(); i++) {
             Row row = leasesSheet.getRow(i);
             if (row == null || isRowEmpty(row)) continue;
 
-            String propertyName = getCellString(row, 0);
-            String buildingName = getCellString(row, 1);
-            String unitNumber = getCellString(row, 2);
-            String renterEmail = getCellString(row, 3);
-            LocalDate startDate = parseDate(getCellString(row, 4));
-            LocalDate endDate = parseDate(getCellString(row, 5));
-            BigDecimal rentAmount = new BigDecimal(getCellString(row, 6));
-            String depositStr = getCellString(row, 7);
-            String paymentTermsStr = getCellString(row, 8);
-            String paymentMethodStr = getCellString(row, 9);
-            String ejariNumber = getCellString(row, 10);
+            String propertyName = cell(row, leaseHi, "PropertyName");
+            String buildingName = cell(row, leaseHi, "BuildingName");
+            String unitNumber = cell(row, leaseHi, "UnitNumber");
+            String renterEmail = cell(row, leaseHi, "RenterEmail");
+            LocalDate startDate = parseDate(cell(row, leaseHi, "StartDate"));
+            LocalDate endDate = parseDate(cell(row, leaseHi, "EndDate"));
+            String rentAmountStr = cell(row, leaseHi, "RentAmount");
+            String monthlyRentStr = cell(row, leaseHi, "MonthlyRent");
+            String depositStr = cell(row, leaseHi, "DepositAmount");
+            String paymentTermsStr = cell(row, leaseHi, "PaymentTerms");
+            String paymentMethodStr = cell(row, leaseHi, "PaymentMethod");
+            String ejariNumber = cell(row, leaseHi, "EjariNumber");
 
             Unit unit = unitMap.get(propertyName.toLowerCase() + "|" + buildingName.toLowerCase() + "|" + unitNumber.toLowerCase());
             Renter renter = renterMap.get(renterEmail.toLowerCase());
@@ -162,27 +170,34 @@ public class PortfolioImportPersistService {
                         " — this indicates a validation bug, please report it");
             }
 
+            // Compute monthlyRent + totalRent. Fixes the prior bug where monthlyRent
+            // was computed as totalRent / paymentTerms — that gave per-installment
+            // amount, not per-month rent, whenever paymentTerms != monthsBetween.
+            long monthsBetween = Math.max(ChronoUnit.MONTHS.between(startDate, endDate), 1);
+            BigDecimal monthlyRent;
+            BigDecimal totalRent;
+            if (!monthlyRentStr.isEmpty()) {
+                monthlyRent = new BigDecimal(monthlyRentStr);
+                totalRent = monthlyRent.multiply(BigDecimal.valueOf(monthsBetween));
+            } else {
+                totalRent = new BigDecimal(rentAmountStr);
+                monthlyRent = totalRent.divide(BigDecimal.valueOf(monthsBetween), 2, RoundingMode.HALF_UP);
+            }
+
             Lease lease = new Lease();
             lease.setUnit(unit);
             lease.setRenter(renter);
             lease.setStartDate(startDate);
             lease.setEndDate(endDate);
-            lease.setRentAmount(rentAmount);
-            lease.setStatus(LeaseStatus.ACTIVE);
+            lease.setRentAmount(totalRent);
+            lease.setMonthlyRent(monthlyRent);
 
             if (!depositStr.isEmpty()) {
                 lease.setDepositAmount(new BigDecimal(depositStr));
             }
-
-            int installments = 12;
             if (!paymentTermsStr.isEmpty()) {
-                installments = Integer.parseInt(paymentTermsStr);
-                lease.setPaymentTerms(installments);
+                lease.setPaymentTerms(Integer.parseInt(paymentTermsStr));
             }
-
-            // Calculate monthly rent using installments (payment terms) to avoid
-            // ChronoUnit.MONTHS off-by-one (e.g. Jan 1 - Dec 31 = 11 months, not 12)
-            lease.setMonthlyRent(rentAmount.divide(BigDecimal.valueOf(installments), 2, RoundingMode.HALF_UP));
             if (!paymentMethodStr.isEmpty()) {
                 lease.setPaymentMethod(PaymentMethod.valueOf(paymentMethodStr.toUpperCase()));
             }
@@ -190,14 +205,68 @@ public class PortfolioImportPersistService {
                 lease.setEjariNumber(ejariNumber);
             }
 
+            // ---- New lease-agreement fields (added 2026-05-02) ----
+            BigDecimal adminFee = parseDecimalOrZero(cell(row, leaseHi, "AdminFee"));
+            BigDecimal parkingRemoteFee = parseDecimalOrZero(cell(row, leaseHi, "ParkingRemoteFee"));
+            lease.setAdminFee(adminFee);
+            lease.setParkingRemoteFee(parkingRemoteFee);
+
+            boolean commercialDefault = unit.getProperty().getType() == PropertyType.COMMERCIAL;
+            lease.setRentVatApplicable(parseBoolOrDefault(cell(row, leaseHi, "RentVatApplicable"), commercialDefault));
+            lease.setAdminFeeVatApplicable(parseBoolOrDefault(cell(row, leaseHi, "AdminFeeVatApplicable"), commercialDefault));
+            lease.setSecurityDepositVatApplicable(parseBoolOrDefault(cell(row, leaseHi, "SecurityDepositVatApplicable"), commercialDefault));
+            lease.setParkingRemoteVatApplicable(parseBoolOrDefault(cell(row, leaseHi, "ParkingRemoteVatApplicable"), commercialDefault));
+
+            String depMethod = cell(row, leaseHi, "DepositPaymentMethod").toUpperCase();
+            if (!depMethod.isEmpty()) {
+                lease.setDepositPaymentMethod(PaymentMethod.valueOf(depMethod));
+            }
+
+            String agreementStr = cell(row, leaseHi, "AgreementDate");
+            if (!agreementStr.isEmpty()) {
+                try { lease.setAgreementDate(LocalDate.parse(agreementStr)); }
+                catch (DateTimeParseException ignored) { /* validator already flagged this */ }
+            }
+
+            String statusStr = cell(row, leaseHi, "Status").toUpperCase();
+            LeaseStatus leaseStatus = "DRAFT".equals(statusStr) ? LeaseStatus.DRAFT : LeaseStatus.ACTIVE;
+            lease.setStatus(leaseStatus);
+
             Lease savedLease = leaseRepository.save(lease);
             leasesCreated++;
 
-            // Update unit status to OCCUPIED
-            unit.setStatus(UnitStatus.OCCUPIED);
-            unit.setCurrentTenantName(renter.getNameEn());
-            unit.setActualRent(rentAmount);
-            unitRepository.save(unit);
+            // Booking deposit: persist a PaymentSchedule row mirroring LeaseService.createDraftLease.
+            String bdAmt = cell(row, leaseHi, "BookingDeposit_Amount");
+            if (!bdAmt.isEmpty()) {
+                PaymentSchedule booking = new PaymentSchedule();
+                booking.setLease(savedLease);
+                booking.setUnit(unit);
+                booking.setProperty(unit.getProperty());
+                booking.setInstallmentNumber(0);
+                booking.setAmount(new BigDecimal(bdAmt));
+                String bdNum = cell(row, leaseHi, "BookingDeposit_Number");
+                String bdBank = cell(row, leaseHi, "BookingDeposit_Bank");
+                LocalDate bdDate = parseDate(cell(row, leaseHi, "BookingDeposit_Date"));
+                booking.setChequeNumber(bdNum.isEmpty() ? null : bdNum);
+                booking.setBankName(bdBank.isEmpty() ? null : bdBank);
+                booking.setChequeDate(bdDate);
+                booking.setDueDate(bdDate);
+                booking.setStatus(PaymentStatus.PENDING);
+                booking.setPaymentMethod(savedLease.getPaymentMethod() != null
+                        ? savedLease.getPaymentMethod().name() : "CHEQUE");
+                booking.setPurposeLabel("BOOKING RECEIVED");
+                booking.setBookingDeposit(true);
+                paymentScheduleRepository.save(booking);
+            }
+
+            // Apply lease-status-driven side effects.
+            if (leaseStatus == LeaseStatus.ACTIVE) {
+                unit.setStatus(UnitStatus.OCCUPIED);
+                unit.setCurrentTenantName(renter.getNameEn());
+                unit.setActualRent(totalRent);
+                unitRepository.save(unit);
+            }
+            // DRAFT → unit stays VACANT, no further change.
 
             // Auto-generate payment schedules
             var schedules = paymentScheduleService.generateScheduleForLease(savedLease);
@@ -207,6 +276,21 @@ public class PortfolioImportPersistService {
         job.setLeasesCreated(leasesCreated);
         job.setSchedulesCreated(schedulesCreated);
         importJobRepository.save(job);
+    }
+
+    private static BigDecimal parseDecimalOrZero(String s) {
+        if (s == null || s.isEmpty()) return BigDecimal.ZERO;
+        try { return new BigDecimal(s); }
+        catch (NumberFormatException e) { return BigDecimal.ZERO; }
+    }
+
+    private static boolean parseBoolOrDefault(String s, boolean fallback) {
+        if (s == null) return fallback;
+        String v = s.trim().toLowerCase(Locale.ROOT);
+        if (v.isEmpty()) return fallback;
+        if (VALID_BOOLS_TRUE.contains(v)) return true;
+        if (VALID_BOOLS_FALSE.contains(v)) return false;
+        return fallback;
     }
 
     // --- Helpers ---
