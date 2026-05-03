@@ -39,6 +39,15 @@ public class PaymentPenalty extends BaseTenantEntity {
     @Column(name = "grace_period_days")
     private Integer gracePeriodDays;
 
+    @Column(name = "fine_grace_days")
+    private Integer fineGraceDays;
+
+    @Column(name = "fine_per_day_rate")
+    private BigDecimal finePerDayRate;
+
+    @Column(name = "cleared_at")
+    private LocalDateTime clearedAt;
+
     @Column(name = "waived", nullable = false)
     private boolean waived = false;
 
