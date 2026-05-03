@@ -78,12 +78,16 @@ public class AccountMappingService {
         UUID tenantId = TenantContextHolder.getTenantId();
 
         // Default mappings: transactionNature -> (debitAccountCode, creditAccountCode)
-        // A-02-02 = Bank Accounts, C-01-01 = Rental Income, B-01-02 = Security Deposits
+        // A-02-02 = Bank Accounts, C-01-01 = Rental Income, C-01-02 = Other Income,
+        // B-01-02 = Security Deposits
         Map<TransactionNature, String[]> defaults = Map.of(
             TransactionNature.RENT_PAYMENT_CLEARED,       new String[]{"A-02-02", "C-01-01"},
             TransactionNature.SECURITY_DEPOSIT_RECEIVED,   new String[]{"A-02-02", "B-01-02"},
             TransactionNature.SECURITY_DEPOSIT_REFUNDED,   new String[]{"B-01-02", "A-02-02"},
-            TransactionNature.CHEQUE_BOUNCED,              new String[]{"C-01-01", "A-02-02"}
+            TransactionNature.CHEQUE_BOUNCED,              new String[]{"C-01-01", "A-02-02"},
+            // Penalty receipts: bank received the money, other-income recognises the
+            // accrual (penalties are not direct rental income).
+            TransactionNature.PENALTY_INCOME,              new String[]{"A-02-02", "C-01-02"}
         );
 
         for (var entry : defaults.entrySet()) {

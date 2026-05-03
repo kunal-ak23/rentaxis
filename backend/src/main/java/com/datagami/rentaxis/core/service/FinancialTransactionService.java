@@ -8,7 +8,9 @@ import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.entity.AccountMapping;
 import com.datagami.rentaxis.domain.entity.FinancialTransaction;
+import com.datagami.rentaxis.domain.entity.PaymentPenalty;
 import com.datagami.rentaxis.domain.entity.PaymentSchedule;
+import com.datagami.rentaxis.domain.entity.PenaltyPayment;
 import com.datagami.rentaxis.domain.entity.Property;
 import com.datagami.rentaxis.domain.entity.Staff;
 import com.datagami.rentaxis.domain.entity.Unit;
@@ -18,6 +20,7 @@ import com.datagami.rentaxis.domain.entity.enums.TransactionNature;
 import com.datagami.rentaxis.domain.repository.AccountMappingRepository;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.FinancialTransactionRepository;
+import com.datagami.rentaxis.domain.repository.PaymentScheduleRepository;
 import com.datagami.rentaxis.domain.repository.PropertyRepository;
 import com.datagami.rentaxis.domain.repository.StaffRepository;
 import com.datagami.rentaxis.domain.repository.UnitRepository;
@@ -41,6 +44,7 @@ public class FinancialTransactionService {
     private final VendorRepository vendorRepository;
     private final StaffRepository staffRepository;
     private final AccountMappingRepository accountMappingRepository;
+    private final PaymentScheduleRepository paymentScheduleRepository;
 
     public FinancialTransactionService(FinancialTransactionRepository repository,
             AccountRepository accountRepository,
@@ -48,7 +52,8 @@ public class FinancialTransactionService {
             PropertyRepository propertyRepository,
             VendorRepository vendorRepository,
             StaffRepository staffRepository,
-            AccountMappingRepository accountMappingRepository) {
+            AccountMappingRepository accountMappingRepository,
+            PaymentScheduleRepository paymentScheduleRepository) {
         this.repository = repository;
         this.accountRepository = accountRepository;
         this.unitRepository = unitRepository;
@@ -56,6 +61,7 @@ public class FinancialTransactionService {
         this.vendorRepository = vendorRepository;
         this.staffRepository = staffRepository;
         this.accountMappingRepository = accountMappingRepository;
+        this.paymentScheduleRepository = paymentScheduleRepository;
     }
 
     /**
@@ -105,6 +111,84 @@ public class FinancialTransactionService {
         creditTxn.setProperty(payment.getProperty());
         creditTxn.setUnit(payment.getUnit());
         createTransaction(creditTxn);
+    }
+
+    /**
+     * Posts a balanced debit/credit pair for a penalty receipt: bank account
+     * (debit) ↔ other-income account (credit). Resolves the accounts from the
+     * configured AccountMapping for {@link TransactionNature#PENALTY_INCOME}; falls
+     * back to {@code A-02-02} (Bank Accounts) and {@code C-01-02} (Other Income)
+     * when no mapping has been seeded.
+     *
+     * <p>Property/unit context is loaded from the related {@link PaymentSchedule}
+     * — penalty rows do not yet carry property_id/unit_id directly. Both legs
+     * share the same date ({@code receipt.receivedAt}), property, and unit.
+     *
+     * @return the FT id of the credit (income) leg — this is the row stored on
+     *         {@link PenaltyPayment#financialTransactionId} so reports linking
+     *         a penalty payment back to the books land on the income line.
+     */
+    @Transactional
+    public UUID recordPenaltyIncome(PaymentPenalty penalty, PenaltyPayment receipt) {
+        AccountMapping mapping = accountMappingRepository
+                .findByTransactionNature(TransactionNature.PENALTY_INCOME)
+                .orElse(null);
+
+        Account debitAccount;
+        Account creditAccount;
+        if (mapping != null) {
+            debitAccount = mapping.getDebitAccount();
+            creditAccount = mapping.getCreditAccount();
+        } else {
+            UUID tenantId = TenantContextHolder.getTenantId();
+            debitAccount = accountRepository.findByCodeAndTenantId("A-02-02", tenantId)
+                    .orElseThrow(() -> new RuntimeException("Bank account (A-02-02) not found. Please configure account mappings."));
+            creditAccount = accountRepository.findByCodeAndTenantId("C-01-02", tenantId)
+                    .orElseThrow(() -> new RuntimeException("Other Income account (C-01-02) not found. Please configure account mappings."));
+        }
+
+        // Property + unit come from the related payment schedule — penalty rows
+        // do not store them directly. The schedule may not be present in some
+        // edge cases (e.g. legacy data); we tolerate a null schedule and fall
+        // back to org-level (no property/unit) so the books still balance.
+        Property property = null;
+        Unit unit = null;
+        if (penalty.getPaymentScheduleId() != null) {
+            PaymentSchedule schedule = paymentScheduleRepository
+                    .findById(penalty.getPaymentScheduleId())
+                    .orElse(null);
+            if (schedule != null) {
+                property = schedule.getProperty();
+                unit = schedule.getUnit();
+            }
+        }
+
+        LocalDate txDate = receipt.getReceivedAt() != null ? receipt.getReceivedAt() : LocalDate.now();
+        String description = "Penalty payment - " + receipt.getPaymentMethod() + " - " + penalty.getPenaltyType();
+
+        // Debit: bank received the money.
+        FinancialTransaction debitTxn = new FinancialTransaction();
+        debitTxn.setDate(txDate);
+        debitTxn.setDescription(description);
+        debitTxn.setAccount(debitAccount);
+        debitTxn.setDebit(receipt.getAmount());
+        debitTxn.setCredit(BigDecimal.ZERO);
+        debitTxn.setProperty(property);
+        debitTxn.setUnit(unit);
+        createTransaction(debitTxn);
+
+        // Credit: recognise the penalty income.
+        FinancialTransaction creditTxn = new FinancialTransaction();
+        creditTxn.setDate(txDate);
+        creditTxn.setDescription(description);
+        creditTxn.setAccount(creditAccount);
+        creditTxn.setDebit(BigDecimal.ZERO);
+        creditTxn.setCredit(receipt.getAmount());
+        creditTxn.setProperty(property);
+        creditTxn.setUnit(unit);
+        FinancialTransaction savedCredit = createTransaction(creditTxn);
+
+        return savedCredit.getId();
     }
 
     @Transactional
