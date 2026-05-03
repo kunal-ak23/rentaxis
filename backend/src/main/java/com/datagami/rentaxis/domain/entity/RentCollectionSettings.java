@@ -36,6 +36,21 @@ public class RentCollectionSettings extends BaseTenantEntity {
     @Column(name = "penalty_amount")
     private BigDecimal penaltyAmount;
 
+    @Column(name = "fine_bounce_amount")
+    private BigDecimal fineBounceAmount;
+
+    @Column(name = "fine_signature_mismatch_amount")
+    private BigDecimal fineSignatureMismatchAmount;
+
+    @Column(name = "fine_account_closed_amount")
+    private BigDecimal fineAccountClosedAmount;
+
+    @Column(name = "fine_grace_days")
+    private Integer fineGraceDays;
+
+    @Column(name = "fine_per_day_rate")
+    private BigDecimal finePerDayRate;
+
     @Column(name = "online_payment_enabled")
     private Boolean onlinePaymentEnabled;
 
