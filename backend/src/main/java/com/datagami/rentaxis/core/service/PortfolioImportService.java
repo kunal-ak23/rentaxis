@@ -36,10 +36,6 @@ public class PortfolioImportService {
 
     // --- Validation Phase (no DB writes) ---
 
-    public List<ImportErrorDTO> validateWorkbook(Workbook workbook) {
-        return validateAll(workbook).errors();
-    }
-
     /**
      * Full validation pass. Returns hard errors (block import) and warnings (informational only).
      */
@@ -206,7 +202,6 @@ public class PortfolioImportService {
                                      Set<String> propertyNames, Map<String, Set<String>> unitsByProperty,
                                      Set<String> renterEmails,
                                      Map<String, LeaseRowSummary> leaseIndex) {
-        Set<String> validPaymentMethods = Arrays.stream(PaymentMethod.values()).map(Enum::name).collect(Collectors.toSet());
         HeaderIndex hi = new HeaderIndex(sheet);
 
         for (int i = 1; i <= sheet.getLastRowNum(); i++) {
@@ -306,16 +301,16 @@ public class PortfolioImportService {
             }
 
             // Payment method
-            if (!paymentMethod.isEmpty() && !validPaymentMethods.contains(paymentMethod.toUpperCase())) {
-                errors.add(new ImportErrorDTO("Leases", rowNum, "PaymentMethod", "Invalid payment method: " + paymentMethod + ". Valid: " + validPaymentMethods));
+            if (!paymentMethod.isEmpty() && !VALID_PAYMENT_METHODS.contains(paymentMethod.toUpperCase())) {
+                errors.add(new ImportErrorDTO("Leases", rowNum, "PaymentMethod", "Invalid payment method: " + paymentMethod + ". Valid: " + VALID_PAYMENT_METHODS));
             }
 
             // ---- Lease-agreement extension columns (added 2026-05-02) ----
 
             String depositPaymentMethod = cell(row, hi, "DepositPaymentMethod");
-            if (!depositPaymentMethod.isEmpty() && !validPaymentMethods.contains(depositPaymentMethod.toUpperCase())) {
+            if (!depositPaymentMethod.isEmpty() && !VALID_PAYMENT_METHODS.contains(depositPaymentMethod.toUpperCase())) {
                 errors.add(new ImportErrorDTO("Leases", rowNum, "DepositPaymentMethod",
-                        "Invalid deposit payment method: " + depositPaymentMethod + ". Valid: " + validPaymentMethods));
+                        "Invalid deposit payment method: " + depositPaymentMethod + ". Valid: " + VALID_PAYMENT_METHODS));
             }
 
             // Status
@@ -405,7 +400,9 @@ public class PortfolioImportService {
         try {
             if (!monthlyRent.isEmpty()) {
                 BigDecimal mr = new BigDecimal(monthlyRent);
-                long months = Math.max(ChronoUnit.MONTHS.between(startDate, endDate), 1);
+                // Mirror PortfolioImportPersistService.monthsInclusive — end date is
+                // inclusive in our lease convention so Jan 1 → Dec 31 counts as 12.
+                long months = Math.max(ChronoUnit.MONTHS.between(startDate, endDate.plusDays(1)), 1);
                 return mr.multiply(BigDecimal.valueOf(months));
             }
             if (!rentAmount.isEmpty()) {
@@ -428,12 +425,15 @@ public class PortfolioImportService {
             "RentVatApplicable", "AdminFeeVatApplicable",
             "SecurityDepositVatApplicable", "ParkingRemoteVatApplicable");
 
+    /** Derived from the {@link PaymentMethod} enum so this allow-list cannot drift if the enum changes. */
+    private static final Set<String> VALID_PAYMENT_METHODS = Arrays.stream(PaymentMethod.values())
+            .map(Enum::name).collect(Collectors.toUnmodifiableSet());
+
     private void validateChequesSheet(Sheet sheet,
                                        Map<String, LeaseRowSummary> leaseIndex,
                                        List<ImportErrorDTO> errors,
                                        List<ImportErrorDTO> warnings) {
         HeaderIndex hi = new HeaderIndex(sheet);
-        Set<String> validMethods = Set.of("CHEQUE", "BANK_TRANSFER", "ONLINE", "CASH");
 
         // Per-lease state: installments seen (for dup detection) and running sum (for total check).
         Map<String, Set<Integer>> seenInstallments = new HashMap<>();
@@ -477,9 +477,9 @@ public class PortfolioImportService {
             // Method (defaults to lease's PaymentMethod).
             String method = cell(row, hi, "Method").toUpperCase();
             if (method.isEmpty()) method = lease.paymentMethod();
-            if (!validMethods.contains(method)) {
+            if (!VALID_PAYMENT_METHODS.contains(method)) {
                 errors.add(new ImportErrorDTO("Cheques", rowNum, "Method",
-                        "Method must be one of " + validMethods));
+                        "Method must be one of " + VALID_PAYMENT_METHODS));
                 continue;
             }
 

@@ -43,7 +43,7 @@ class PortfolioImportServiceTest {
     void oldTemplate_withoutNewColumns_parsesWithoutErrors() {
         Workbook wb = buildLegacyWorkbook();
 
-        List<ImportErrorDTO> errors = service.validateWorkbook(wb);
+        List<ImportErrorDTO> errors = service.validateAll(wb).errors();
 
         assertThat(errors)
                 .as("legacy 10-column Leases sheet must not surface errors about new headers")
@@ -62,7 +62,7 @@ class PortfolioImportServiceTest {
         Workbook wb = buildLegacyWorkbook();
         setCell(wb, "Leases", 1, "MonthlyRent", "5000");
 
-        List<ImportErrorDTO> errors = service.validateWorkbook(wb);
+        List<ImportErrorDTO> errors = service.validateAll(wb).errors();
 
         assertThat(errors).anySatisfy(e -> {
             assertThat(e.getSheet()).isEqualTo("Leases");
@@ -76,7 +76,7 @@ class PortfolioImportServiceTest {
         Workbook wb = buildLegacyWorkbook();
         clearCell(wb, "Leases", 1, "RentAmount");
 
-        List<ImportErrorDTO> errors = service.validateWorkbook(wb);
+        List<ImportErrorDTO> errors = service.validateAll(wb).errors();
 
         assertThat(errors).anySatisfy(e -> {
             assertThat(e.getSheet()).isEqualTo("Leases");
@@ -90,7 +90,7 @@ class PortfolioImportServiceTest {
         Workbook wb = buildLegacyWorkbook();
         setCell(wb, "Leases", 1, "Status", "PENDING");
 
-        List<ImportErrorDTO> errors = service.validateWorkbook(wb);
+        List<ImportErrorDTO> errors = service.validateAll(wb).errors();
 
         assertThat(errors).anySatisfy(e -> {
             assertThat(e.getSheet()).isEqualTo("Leases");
@@ -103,7 +103,7 @@ class PortfolioImportServiceTest {
         Workbook wb = buildLegacyWorkbook();
         setCell(wb, "Leases", 1, "Status", "");
 
-        List<ImportErrorDTO> errors = service.validateWorkbook(wb);
+        List<ImportErrorDTO> errors = service.validateAll(wb).errors();
 
         assertThat(errors).extracting(ImportErrorDTO::getField).doesNotContain("Status");
     }
@@ -113,7 +113,7 @@ class PortfolioImportServiceTest {
         for (String value : new String[]{"ACTIVE", "DRAFT", "active", "draft"}) {
             Workbook wb = buildLegacyWorkbook();
             setCell(wb, "Leases", 1, "Status", value);
-            List<ImportErrorDTO> errors = service.validateWorkbook(wb);
+            List<ImportErrorDTO> errors = service.validateAll(wb).errors();
             assertThat(errors).extracting(ImportErrorDTO::getField).doesNotContain("Status");
         }
     }
@@ -123,7 +123,7 @@ class PortfolioImportServiceTest {
         for (String method : new String[]{"BANK_TRANSFER", "CASH", "CHEQUE", "ONLINE"}) {
             Workbook wb = buildLegacyWorkbook();
             setCell(wb, "Leases", 1, "PaymentMethod", method);
-            List<ImportErrorDTO> errors = service.validateWorkbook(wb);
+            List<ImportErrorDTO> errors = service.validateAll(wb).errors();
             assertThat(errors).extracting(ImportErrorDTO::getField).doesNotContain("PaymentMethod");
         }
     }
@@ -133,7 +133,7 @@ class PortfolioImportServiceTest {
         Workbook wb = buildLegacyWorkbook();
         setCell(wb, "Leases", 1, "DepositPaymentMethod", "BITCOIN");
 
-        List<ImportErrorDTO> errors = service.validateWorkbook(wb);
+        List<ImportErrorDTO> errors = service.validateAll(wb).errors();
 
         assertThat(errors).anySatisfy(e -> {
             assertThat(e.getSheet()).isEqualTo("Leases");
@@ -149,7 +149,7 @@ class PortfolioImportServiceTest {
         setCell(wb, "Leases", 1, "BookingDeposit_Date", "2026-02-15");
         // Bank intentionally left blank.
 
-        List<ImportErrorDTO> errors = service.validateWorkbook(wb);
+        List<ImportErrorDTO> errors = service.validateAll(wb).errors();
 
         assertThat(errors).anySatisfy(e -> {
             assertThat(e.getSheet()).isEqualTo("Leases");
@@ -166,7 +166,7 @@ class PortfolioImportServiceTest {
         setCell(wb, "Leases", 1, "BookingDeposit_Date", "2026-02-15");
         setCell(wb, "Leases", 1, "BookingDeposit_Bank", "Emirates NBD");
 
-        List<ImportErrorDTO> errors = service.validateWorkbook(wb);
+        List<ImportErrorDTO> errors = service.validateAll(wb).errors();
 
         assertThat(errors).anySatisfy(e -> {
             assertThat(e.getField()).isEqualTo("BookingDeposit_Amount");
@@ -179,7 +179,7 @@ class PortfolioImportServiceTest {
         Workbook wb = buildLegacyWorkbook();
         setCell(wb, "Leases", 1, "AgreementDate", "not-a-date");
 
-        List<ImportErrorDTO> errors = service.validateWorkbook(wb);
+        List<ImportErrorDTO> errors = service.validateAll(wb).errors();
 
         assertThat(errors).anySatisfy(e -> {
             assertThat(e.getField()).isEqualTo("AgreementDate");
@@ -191,7 +191,7 @@ class PortfolioImportServiceTest {
         Workbook wb = buildLegacyWorkbook();
         setCell(wb, "Leases", 1, "AdminFee", "-100");
 
-        List<ImportErrorDTO> errors = service.validateWorkbook(wb);
+        List<ImportErrorDTO> errors = service.validateAll(wb).errors();
 
         assertThat(errors).anySatisfy(e -> {
             assertThat(e.getField()).isEqualTo("AdminFee");
@@ -204,7 +204,7 @@ class PortfolioImportServiceTest {
         Workbook wb = buildLegacyWorkbook();
         setCell(wb, "Leases", 1, "ParkingRemoteFee", "free");
 
-        List<ImportErrorDTO> errors = service.validateWorkbook(wb);
+        List<ImportErrorDTO> errors = service.validateAll(wb).errors();
 
         assertThat(errors).anySatisfy(e -> assertThat(e.getField()).isEqualTo("ParkingRemoteFee"));
     }
@@ -214,7 +214,7 @@ class PortfolioImportServiceTest {
         Workbook wb = buildLegacyWorkbook();
         setCell(wb, "Leases", 1, "RentVatApplicable", "maybe");
 
-        List<ImportErrorDTO> errors = service.validateWorkbook(wb);
+        List<ImportErrorDTO> errors = service.validateAll(wb).errors();
 
         assertThat(errors).anySatisfy(e -> assertThat(e.getField()).isEqualTo("RentVatApplicable"));
     }
@@ -224,7 +224,7 @@ class PortfolioImportServiceTest {
         for (String value : new String[]{"true", "false", "yes", "no", "1", "0", "TRUE", ""}) {
             Workbook wb = buildLegacyWorkbook();
             setCell(wb, "Leases", 1, "RentVatApplicable", value);
-            List<ImportErrorDTO> errors = service.validateWorkbook(wb);
+            List<ImportErrorDTO> errors = service.validateAll(wb).errors();
             assertThat(errors)
                     .as("VAT toggle should accept '%s'", value)
                     .extracting(ImportErrorDTO::getField)
@@ -236,7 +236,7 @@ class PortfolioImportServiceTest {
     void chequesSheet_absent_isFine() {
         // Legacy workbook has no Cheques sheet — must validate cleanly.
         Workbook wb = buildLegacyWorkbook();
-        List<ImportErrorDTO> errors = service.validateWorkbook(wb);
+        List<ImportErrorDTO> errors = service.validateAll(wb).errors();
         assertThat(errors).extracting(ImportErrorDTO::getSheet).doesNotContain("Cheques");
     }
 
@@ -247,7 +247,7 @@ class PortfolioImportServiceTest {
         addChequeRow(wb, 1, "Marina Heights", "999", "ahmed@email.com",
                 "1", "2026-01-01", "2026-01-01", "C-1", "Emirates NBD", "5000", "CHEQUE");
 
-        List<ImportErrorDTO> errors = service.validateWorkbook(wb);
+        List<ImportErrorDTO> errors = service.validateAll(wb).errors();
 
         assertThat(errors).anySatisfy(e -> {
             assertThat(e.getSheet()).isEqualTo("Cheques");
@@ -265,7 +265,7 @@ class PortfolioImportServiceTest {
         addChequeRow(wb, 2, "Marina Heights", "101", "ahmed@email.com",
                 "1", "2026-04-01", "2026-04-01", "C-2", "Emirates NBD", "30000", "CHEQUE");
 
-        List<ImportErrorDTO> errors = service.validateWorkbook(wb);
+        List<ImportErrorDTO> errors = service.validateAll(wb).errors();
 
         assertThat(errors).anySatisfy(e -> {
             assertThat(e.getSheet()).isEqualTo("Cheques");
@@ -284,7 +284,7 @@ class PortfolioImportServiceTest {
         addChequeRow(wb, 2, "Marina Heights", "101", "ahmed@email.com",
                 "2", "2026-07-01", "2026-07-01", "C-2", "Emirates NBD", "20000", "CHEQUE");
 
-        List<ImportErrorDTO> errors = service.validateWorkbook(wb);
+        List<ImportErrorDTO> errors = service.validateAll(wb).errors();
 
         assertThat(errors).anySatisfy(e -> {
             assertThat(e.getSheet()).isEqualTo("Cheques");
@@ -300,7 +300,7 @@ class PortfolioImportServiceTest {
         addChequeRow(wb, 1, "Marina Heights", "101", "ahmed@email.com",
                 "1", "2026-01-01", "2026-01-01", "", "Emirates NBD", "60000", "CHEQUE");
 
-        List<ImportErrorDTO> errors = service.validateWorkbook(wb);
+        List<ImportErrorDTO> errors = service.validateAll(wb).errors();
 
         assertThat(errors).anySatisfy(e -> {
             assertThat(e.getSheet()).isEqualTo("Cheques");
@@ -315,7 +315,7 @@ class PortfolioImportServiceTest {
         addChequeRow(wb, 1, "Marina Heights", "101", "ahmed@email.com",
                 "1", "2026-01-01", "", "", "", "60000", "CASH");
 
-        List<ImportErrorDTO> errors = service.validateWorkbook(wb);
+        List<ImportErrorDTO> errors = service.validateAll(wb).errors();
 
         assertThat(errors).filteredOn(e -> "Cheques".equals(e.getSheet())).isEmpty();
     }
@@ -347,7 +347,7 @@ class PortfolioImportServiceTest {
         addChequeRow(wb, 1, "Marina Heights", "101", "ahmed@email.com",
                 "abc", "2026-01-01", "2026-01-01", "C-1", "Emirates NBD", "60000", "CHEQUE");
 
-        List<ImportErrorDTO> errors = service.validateWorkbook(wb);
+        List<ImportErrorDTO> errors = service.validateAll(wb).errors();
 
         assertThat(errors).anySatisfy(e -> {
             assertThat(e.getSheet()).isEqualTo("Cheques");
@@ -361,7 +361,7 @@ class PortfolioImportServiceTest {
         clearCell(wb, "Leases", 1, "RentAmount");
         setCell(wb, "Leases", 1, "MonthlyRent", "5000");
 
-        List<ImportErrorDTO> errors = service.validateWorkbook(wb);
+        List<ImportErrorDTO> errors = service.validateAll(wb).errors();
 
         assertThat(errors).extracting(ImportErrorDTO::getField).doesNotContain("RentAmount", "MonthlyRent");
     }

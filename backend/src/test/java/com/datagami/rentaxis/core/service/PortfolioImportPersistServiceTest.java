@@ -136,8 +136,8 @@ class PortfolioImportPersistServiceTest {
 
         Lease saved = captureSavedLease();
         assertThat(saved.getMonthlyRent()).isEqualByComparingTo("5000");
-        // monthsBetween(2026-01-01, 2026-12-31) == 11; totalRent = 5000 * 11 = 55000.
-        assertThat(saved.getRentAmount()).isEqualByComparingTo("55000");
+        // End-date inclusive: Jan 1 → Dec 31 counts as 12 months; totalRent = 5000 * 12 = 60000.
+        assertThat(saved.getRentAmount()).isEqualByComparingTo("60000");
     }
 
     @Test
@@ -152,11 +152,11 @@ class PortfolioImportPersistServiceTest {
         service.persistWorkbook(wb, newJob());
 
         Lease saved = captureSavedLease();
-        // monthsBetween(2026-01-01, 2026-12-31) == 11; monthlyRent = 60000 / 11 = 5454.55.
+        // End-date inclusive: Jan 1 → Dec 31 counts as 12 months; monthlyRent = 60000 / 12 = 5000.
         assertThat(saved.getRentAmount()).isEqualByComparingTo("60000");
         assertThat(saved.getMonthlyRent())
                 .as("monthly rent must be totalRent/months, NOT totalRent/paymentTerms")
-                .isEqualByComparingTo("5454.55");
+                .isEqualByComparingTo("5000");
     }
 
     @Test

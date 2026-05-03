@@ -193,13 +193,14 @@ public class PortfolioImportPersistService {
             // was computed as totalRent / paymentTerms — that gave per-installment
             // amount, not per-month rent, whenever paymentTerms != monthsBetween.
             //
-            // Convention note: ChronoUnit.MONTHS.between(2026-01-01, 2026-12-31) == 11,
-            // not 12 — because endDate is the last day INCLUSIVE in our lease model.
-            // The Cheques-sheet sum check uses the same basis, so the totals stay
-            // self-consistent. Admins entering MonthlyRent against a "1-year lease"
-            // get totalRent = monthlyRent * 11 here. If they want a 12-cheque
-            // schedule they should set paymentTerms=12 (or supply 12 Cheques rows).
-            long monthsBetween = Math.max(ChronoUnit.MONTHS.between(startDate, endDate), 1);
+            // End-date is inclusive in the UAE lease convention (Jan 1 → Dec 31 is a
+            // 12-month lease), so we step end forward by one day before counting
+            // whole months. Without this, MONTHS.between(2026-01-01, 2026-12-31)
+            // returns 11 and admins entering MonthlyRent=5000 would get
+            // totalRent=55,000 instead of the expected 60,000. The Cheques-sheet sum
+            // check (PortfolioImportService.computeTotalRentOrNull) uses the same
+            // helper so cheque totals validate against the same number.
+            long monthsBetween = monthsInclusive(startDate, endDate);
             BigDecimal monthlyRent;
             BigDecimal totalRent;
             if (!monthlyRentStr.isEmpty()) {
@@ -262,27 +263,29 @@ public class PortfolioImportPersistService {
             leasesCreated++;
 
             // Booking deposit: persist a PaymentSchedule row mirroring LeaseService.createDraftLease.
+            // The Leases-sheet validator enforces all-or-nothing across the four BookingDeposit_*
+            // columns, so reaching this branch means Date / Number / Bank are also non-empty and
+            // parseable. We re-assert here to fail fast if a caller skipped validation.
             String bdAmt = cell(row, leaseHi, "BookingDeposit_Amount");
             if (!bdAmt.isEmpty()) {
+                String bdNum = cell(row, leaseHi, "BookingDeposit_Number");
+                String bdBank = cell(row, leaseHi, "BookingDeposit_Bank");
+                String bdDateStr = cell(row, leaseHi, "BookingDeposit_Date");
+                if (bdDateStr.isEmpty() || bdNum.isEmpty() || bdBank.isEmpty()) {
+                    throw new IllegalStateException(
+                            "BookingDeposit_Amount set without all of Date/Number/Bank on row " + (i + 1) +
+                            " — this indicates a validation bug, please report it");
+                }
+                LocalDate bdDate = LocalDate.parse(bdDateStr);
+
                 PaymentSchedule booking = new PaymentSchedule();
                 booking.setLease(savedLease);
                 booking.setUnit(unit);
                 booking.setProperty(unit.getProperty());
                 booking.setInstallmentNumber(0);
                 booking.setAmount(new BigDecimal(bdAmt));
-                String bdNum = cell(row, leaseHi, "BookingDeposit_Number");
-                String bdBank = cell(row, leaseHi, "BookingDeposit_Bank");
-                String bdDateStr = cell(row, leaseHi, "BookingDeposit_Date");
-                LocalDate bdDate = null;
-                if (!bdDateStr.isEmpty()) {
-                    try { bdDate = LocalDate.parse(bdDateStr); }
-                    catch (DateTimeParseException e) {
-                        log.warn("BookingDeposit_Date '{}' on row {} unparseable; persisting booking without date (validator should have flagged)",
-                                bdDateStr, i + 1);
-                    }
-                }
-                booking.setChequeNumber(bdNum.isEmpty() ? null : bdNum);
-                booking.setBankName(bdBank.isEmpty() ? null : bdBank);
+                booking.setChequeNumber(bdNum);
+                booking.setBankName(bdBank);
                 booking.setChequeDate(bdDate);
                 booking.setDueDate(bdDate);
                 booking.setStatus(PaymentStatus.PENDING);
@@ -434,6 +437,16 @@ public class PortfolioImportPersistService {
                              String uniqueId, String bank, BigDecimal amount, String method) {}
 
     private static BigDecimal nz(BigDecimal v) { return v == null ? BigDecimal.ZERO : v; }
+
+    /**
+     * End-date-inclusive month count. {@code MONTHS.between(2026-01-01, 2026-12-31)}
+     * is 11; admins entering a "1-year lease" with those dates expect 12, so we step
+     * end forward by one day before counting whole months. Floors at 1 to avoid
+     * divide-by-zero downstream.
+     */
+    static long monthsInclusive(LocalDate startDate, LocalDate endDate) {
+        return Math.max(ChronoUnit.MONTHS.between(startDate, endDate.plusDays(1)), 1);
+    }
 
     /** Mirrors PaymentScheduleService.ordinalOf; duplicated locally to avoid widening visibility. */
     private static String ordinalOf(int n) {
