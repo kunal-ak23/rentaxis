@@ -16,6 +16,7 @@ import {
     CreditCard,
     Sliders,
     GitBranch,
+    AlertTriangle,
     Landmark,
     UserCog,
     Wrench,
@@ -30,7 +31,7 @@ import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { useSession } from "next-auth/react";
-import { hasPermission, canConfigureGateway, type UserRole } from "@/lib/rbac";
+import { hasPermission, canConfigureGateway, canConfigureFines, type UserRole } from "@/lib/rbac";
 import { useTenantFeatures } from "@/hooks/useTenantFeatures";
 import { SidebarTooltip } from "./SidebarTooltip";
 
@@ -96,6 +97,7 @@ export default function MvpSidebar() {
         { name: "Account Mappings", href: "/dashboard/settings/account-mappings", icon: GitBranch },
         { name: tOnlinePayments("gatewayConfig"), href: "/dashboard/settings/gateway", icon: CreditCard },
         { name: tOnlinePayments("rentSettings"), href: "/dashboard/settings/rent-settings", icon: Sliders },
+        ...(canConfigureFines(userRole) ? [{ name: "Cheque-failure Fines", href: "/dashboard/settings/fines", icon: AlertTriangle }] : []),
     ] : [];
 
     // Tenant user minimal items

@@ -631,6 +631,27 @@
     "availableNow": "Available Now",
     "noDescription": ""
   },
+  "Fines": {
+    "pageTitle": "Cheque-failure fines",
+    "pageSubtitle": "Penalties applied when a cheque fails. Applied across all properties unless overridden in a property's rent-collection settings.",
+    "sectionAmounts": "Fine amounts",
+    "sectionAccrual": "Accrual after grace",
+    "bounceAmount": "Bounce fine (AED)",
+    "signatureMismatchAmount": "Signature mismatch fine (AED)",
+    "accountClosedAmount": "Account closed fine (AED)",
+    "graceDays": "Grace days",
+    "perDayRate": "Per-day rate (AED/day)",
+    "graceDaysHint": "Days after bounce before daily accrual begins",
+    "perDayRateHint": "AED charged per day after grace period expires",
+    "save": "Save",
+    "saved": "Fine settings saved",
+    "accessDenied": "You do not have permission to configure fine settings.",
+    "overrideSection": "Cheque-failure fine overrides",
+    "overrideSectionHint": "Leave blank to inherit the organisation default shown in the placeholder.",
+    "resetToDefault": "Reset to org default",
+    "overrideBadge": "Override",
+    "orgDefault": "Org default: {value}"
+  },
   "Marketplace": {
     "title": "Browse Properties",
     "subtitle": "Find your perfect home",
