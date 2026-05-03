@@ -462,9 +462,9 @@ public class PaymentScheduleService {
         financialTransactionService.recordChequeBounce(saved);
 
         // Renter notifications — both PAYMENT_BOUNCED (existing template) and
-        // PENALTY_INCURRED (new). Wrapped so a downed mailer never blocks the
-        // status transition (notifications are best-effort, not part of the
-        // audit-critical path).
+        // PENALTY_INCURRED (extracted to NotificationService.sendPenaltyIncurred
+        // in M7). Wrapped so a downed mailer never blocks the status transition
+        // (notifications are best-effort, not part of the audit-critical path).
         try {
             UUID renterUserId = saved.getLease().getRenter().getUserId();
             if (renterUserId != null) {
@@ -474,11 +474,7 @@ public class PaymentScheduleService {
                                 + " was marked " + reason + ". A fine of " + fineAmount
                                 + " AED has been added. Please arrange a replacement and clear the fine.",
                         "PAYMENT", saved.getId());
-                notificationService.notify(tenantId, renterUserId,
-                        "PENALTY_INCURRED", "Penalty Incurred",
-                        "A " + fineAmount + " AED penalty has been added for installment #"
-                                + saved.getInstallmentNumber() + " (" + reason + "). Please clear it via bank transfer, cheque, or cash.",
-                        "PENALTY", savedPenalty.getId());
+                notificationService.sendPenaltyIncurred(saved, reason, fineAmount, savedPenalty.getId());
             }
         } catch (Exception e) {
             log.warn("Failed to send mark-failed notifications for payment {}: {}", saved.getId(), e.getMessage());

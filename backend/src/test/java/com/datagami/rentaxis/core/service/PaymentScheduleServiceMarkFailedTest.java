@@ -251,7 +251,10 @@ class PaymentScheduleServiceMarkFailedTest {
 
         ArgumentCaptor<String> typeCaptor = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
-        verify(notificationService, times(2)).notify(
+        // Only PAYMENT_BOUNCED still goes via the inline notify(...) — the
+        // PENALTY_INCURRED notification was extracted to sendPenaltyIncurred()
+        // in M7.
+        verify(notificationService, times(1)).notify(
                 eq(tenantId), eq(renterUserId),
                 typeCaptor.capture(),
                 any(),
@@ -259,11 +262,11 @@ class PaymentScheduleServiceMarkFailedTest {
                 any(),
                 any());
 
-        // First notification = PAYMENT_BOUNCED with reason AND fine amount in body
-        // — the fine matters here because the body explicitly tells the renter what
-        // the financial impact of the bounce is.
-        assertThat(typeCaptor.getAllValues().get(0)).isEqualTo("PAYMENT_BOUNCED");
-        String bouncedBody = bodyCaptor.getAllValues().get(0);
+        // PAYMENT_BOUNCED with reason AND fine amount in body — the fine
+        // matters here because the body explicitly tells the renter what the
+        // financial impact of the bounce is.
+        assertThat(typeCaptor.getValue()).isEqualTo("PAYMENT_BOUNCED");
+        String bouncedBody = bodyCaptor.getValue();
         assertThat(bouncedBody).contains("BOUNCE");
         assertThat(bouncedBody).contains("500");
     }
@@ -282,21 +285,14 @@ class PaymentScheduleServiceMarkFailedTest {
 
         service.markFailed(payment.getId(), ChequeFailureReason.SIGNATURE_MISMATCH, null);
 
-        ArgumentCaptor<String> typeCaptor = ArgumentCaptor.forClass(String.class);
-        ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
-        verify(notificationService, times(2)).notify(
-                eq(tenantId), eq(renterUserId),
-                typeCaptor.capture(),
-                any(),
-                bodyCaptor.capture(),
-                any(),
-                any());
-
-        // Second notification = PENALTY_INCURRED with amount + reason in body.
-        assertThat(typeCaptor.getAllValues().get(1)).isEqualTo("PENALTY_INCURRED");
-        String penaltyBody = bodyCaptor.getAllValues().get(1);
-        assertThat(penaltyBody).contains("750");
-        assertThat(penaltyBody).contains("SIGNATURE_MISMATCH");
+        // PENALTY_INCURRED is now sent via the dedicated NotificationService
+        // helper — verify the helper was invoked with the right schedule, reason,
+        // and fine amount.
+        ArgumentCaptor<BigDecimal> fineCaptor = ArgumentCaptor.forClass(BigDecimal.class);
+        verify(notificationService, times(1)).sendPenaltyIncurred(
+                eq(payment), eq(ChequeFailureReason.SIGNATURE_MISMATCH),
+                fineCaptor.capture(), any(UUID.class));
+        assertThat(fineCaptor.getValue()).isEqualByComparingTo("750");
     }
 
     @Test
