@@ -1,6 +1,8 @@
 package com.datagami.rentaxis.api;
 
 import com.datagami.rentaxis.api.dto.AgingReportDTO;
+import com.datagami.rentaxis.api.dto.MarkFailedRequestDTO;
+import com.datagami.rentaxis.api.dto.MarkFailedResponseDTO;
 import com.datagami.rentaxis.api.dto.PaymentPreviewDTO;
 import com.datagami.rentaxis.api.dto.PaymentScheduleDTO;
 import com.datagami.rentaxis.api.dto.LeasePaymentStatsDTO;
@@ -8,7 +10,10 @@ import com.datagami.rentaxis.api.dto.PaymentSummaryDTO;
 import com.datagami.rentaxis.api.dto.UpdatePaymentStatusDTO;
 import com.datagami.rentaxis.core.service.PaymentScheduleService;
 import com.datagami.rentaxis.core.service.RentReceiptService;
+import com.datagami.rentaxis.domain.entity.PaymentPenalty;
 import com.datagami.rentaxis.domain.entity.enums.PaymentStatus;
+import com.datagami.rentaxis.domain.repository.PaymentPenaltyRepository;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -33,6 +38,7 @@ public class PaymentScheduleController {
 
     private final PaymentScheduleService paymentScheduleService;
     private final RentReceiptService rentReceiptService;
+    private final PaymentPenaltyRepository paymentPenaltyRepository;
 
     @GetMapping
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
@@ -87,6 +93,28 @@ public class PaymentScheduleController {
             @PathVariable UUID id,
             @RequestBody UpdatePaymentStatusDTO dto) {
         return ResponseEntity.ok(paymentScheduleService.bouncePayment(id, dto));
+    }
+
+    /**
+     * Reason-aware replacement for {@link #bouncePayment}: also returns the
+     * freshly-created penalty so the UI can show the fine immediately. The
+     * legacy {@code PUT /{id}/bounce} endpoint is kept for backward
+     * compatibility with existing clients (it now delegates to the same
+     * service path with reason=BOUNCE).
+     */
+    @PostMapping("/{id}/mark-failed")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
+    public ResponseEntity<MarkFailedResponseDTO> markFailed(
+            @PathVariable UUID id,
+            @Valid @RequestBody MarkFailedRequestDTO body) {
+        PaymentScheduleDTO updated = paymentScheduleService.markFailed(id, body.failureReason(), body.notes());
+        PaymentPenalty p = paymentPenaltyRepository
+                .findFirstByPaymentScheduleIdOrderByCreatedAtDesc(id)
+                .orElseThrow(() -> new IllegalStateException("Penalty missing after markFailed"));
+        var penaltyDto = new MarkFailedResponseDTO.PenaltySummaryDTO(
+                p.getId(), p.getPenaltyType(), p.getPenaltyAmount(),
+                p.getFineGraceDays(), p.getFinePerDayRate(), p.getCreatedAt());
+        return ResponseEntity.ok(new MarkFailedResponseDTO(updated, penaltyDto));
     }
 
     @PostMapping("/{id}/replace")
