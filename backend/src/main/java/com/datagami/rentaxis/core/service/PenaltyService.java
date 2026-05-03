@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.core.service;
 
+import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.PaymentPenalty;
@@ -28,15 +29,18 @@ public class PenaltyService {
     private final PaymentPenaltyRepository paymentPenaltyRepository;
     private final LeaseRepository leaseRepository;
     private final PenaltyProcessingService penaltyProcessingService;
+    private final NotificationService notificationService;
     private final Clock clock;
 
     public PenaltyService(PaymentPenaltyRepository paymentPenaltyRepository,
                           LeaseRepository leaseRepository,
                           PenaltyProcessingService penaltyProcessingService,
+                          NotificationService notificationService,
                           Clock clock) {
         this.paymentPenaltyRepository = paymentPenaltyRepository;
         this.leaseRepository = leaseRepository;
         this.penaltyProcessingService = penaltyProcessingService;
+        this.notificationService = notificationService;
         this.clock = clock;
     }
 
@@ -124,6 +128,13 @@ public class PenaltyService {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
+    /**
+     * Waive a penalty: set waived/waivedBy/waivedReason/waivedAt and also
+     * {@code clearedAt} so the daily accrual pass stops accruing perDayRate
+     * against this row. Rejects re-waivers and already-cleared penalties so
+     * a goodwill waiver after a partial payment doesn't quietly clobber the
+     * payment audit.
+     */
     @Transactional
     public PaymentPenalty waivePenalty(UUID penaltyId, String reason, UUID waivedBy) {
         PaymentPenalty penalty = paymentPenaltyRepository.findById(penaltyId)
@@ -134,11 +145,31 @@ public class PenaltyService {
             throw new RuntimeException("Access denied");
         }
 
+        if (penalty.getClearedAt() != null) {
+            throw new BusinessRuleViolationException("Penalty already cleared");
+        }
+        if (penalty.isWaived()) {
+            throw new BusinessRuleViolationException("Penalty already waived");
+        }
+
+        LocalDateTime now = LocalDateTime.now(clock);
         penalty.setWaived(true);
         penalty.setWaivedReason(reason);
         penalty.setWaivedBy(waivedBy);
-        penalty.setWaivedAt(LocalDateTime.now(clock));
-        return paymentPenaltyRepository.save(penalty);
+        penalty.setWaivedAt(now);
+        // Also stamp clearedAt — accrual job ignores cleared rows. Otherwise
+        // a waived-but-not-cleared penalty would keep accruing perDayRate.
+        penalty.setClearedAt(now);
+        PaymentPenalty saved = paymentPenaltyRepository.save(penalty);
+
+        // Best-effort notification — never block the waive bookkeeping.
+        try {
+            notificationService.sendPenaltyWaived(saved, reason);
+        } catch (Exception e) {
+            log.warn("Failed to send PENALTY_WAIVED notification for penalty {}: {}", saved.getId(), e.getMessage());
+        }
+
+        return saved;
     }
 
     @Transactional

@@ -30,6 +30,7 @@ class PenaltyServiceChequeFailureAccrualTest {
     @Mock PaymentPenaltyRepository paymentPenaltyRepository;
     @Mock LeaseRepository leaseRepository;
     @Mock PenaltyProcessingService penaltyProcessingService;
+    @Mock NotificationService notificationService;
 
     private Clock fixedClock;
     private PenaltyService service;
@@ -44,7 +45,7 @@ class PenaltyServiceChequeFailureAccrualTest {
 
     private void setToday(LocalDate today) {
         fixedClock = Clock.fixed(today.atStartOfDay(ZoneId.of("UTC")).toInstant(), ZoneId.of("UTC"));
-        service = new PenaltyService(paymentPenaltyRepository, leaseRepository, penaltyProcessingService, fixedClock);
+        service = new PenaltyService(paymentPenaltyRepository, leaseRepository, penaltyProcessingService, notificationService, fixedClock);
     }
 
     @Test
