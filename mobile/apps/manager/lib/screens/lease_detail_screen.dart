@@ -7,6 +7,7 @@ import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
+import '../widgets/mark_cheque_failed_dialog.dart';
 
 final _leaseServiceProvider = Provider<LeaseService>((ref) {
   final client = ref.watch(apiClientProvider);
@@ -669,72 +670,113 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
             final paymentStatus = payment['status'] ?? 'PENDING';
             final paymentColor =
                 StatusHelper.getPaymentStatusColor(paymentStatus);
+            final isDeposited = paymentStatus == 'DEPOSITED';
 
-            return Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppColors.border),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: paymentColor.withValues(alpha: 0.1),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Center(
-                      child: Text(
-                        '${index + 1}',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 13,
-                          color: paymentColor,
-                        ),
+            final rowContent = Row(
+              children: [
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: paymentColor.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(
+                    child: Text(
+                      '${index + 1}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                        color: paymentColor,
                       ),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          Formatters.currency(
-                              (payment['amount'] ?? 0).toDouble()),
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 14,
-                          ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        Formatters.currency(
+                            (payment['amount'] ?? 0).toDouble()),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
                         ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Due: ${Formatters.date(payment['dueDate'])}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                      if (payment['purposeLabel'] != null) ...[
                         const SizedBox(height: 2),
                         Text(
-                          'Due: ${Formatters.date(payment['dueDate'])}',
+                          payment['purposeLabel'] as String,
                           style: const TextStyle(
-                            fontSize: 12,
-                            color: AppColors.textSecondary,
+                            fontSize: 11,
+                            color: AppColors.textMuted,
                           ),
                         ),
-                        if (payment['purposeLabel'] != null) ...[
-                          const SizedBox(height: 2),
-                          Text(
-                            payment['purposeLabel'] as String,
-                            style: const TextStyle(
-                              fontSize: 11,
-                              color: AppColors.textMuted,
-                            ),
-                          ),
-                        ],
                       ],
-                    ),
+                    ],
                   ),
-                  StatusBadge(label: paymentStatus, color: paymentColor),
+                ),
+                StatusBadge(label: paymentStatus, color: paymentColor),
+                if (isDeposited) ...[
+                  const SizedBox(width: 4),
+                  const Icon(Icons.more_vert,
+                      size: 18, color: AppColors.textMuted),
                 ],
+              ],
+            );
+
+            return Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: isDeposited
+                      ? AppColors.danger.withValues(alpha: 0.25)
+                      : AppColors.border,
+                ),
               ),
+              child: isDeposited
+                  ? InkWell(
+                      borderRadius: BorderRadius.circular(10),
+                      onTap: () async {
+                        final paymentId = payment['id'] as String? ?? '';
+                        final amount = (payment['amount'] ?? 0) as num;
+                        final result = await showMarkChequeFailedDialog(
+                          context,
+                          paymentId: paymentId,
+                          installmentNumber: index + 1,
+                          amount: amount,
+                          paymentService:
+                              ref.read(_paymentServiceProvider),
+                        );
+                        if (result != null && mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content: Text('Cheque marked as failed')),
+                          );
+                          _loadData();
+                        }
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: rowContent,
+                      ),
+                    )
+                  : Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: rowContent,
+                    ),
             );
           }),
       ],

@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
+import '../widgets/mark_cheque_failed_dialog.dart';
 
 final _paymentServiceProvider = Provider<PaymentService>((ref) {
   final client = ref.watch(apiClientProvider);
@@ -325,7 +326,6 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
   }
 
   void _showPaymentActions(Map<String, dynamic> payment) {
-    final status = payment['status'] ?? '';
     final paymentId = payment['id'] ?? '';
 
     showModalBottomSheet(
@@ -352,11 +352,24 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
               () => ref.read(_paymentServiceProvider).clearPayment(paymentId),
               'Payment cleared');
         },
-        onBounce: () async {
+        onMarkFailed: () async {
           Navigator.pop(ctx);
-          await _performAction(
-              () => ref.read(_paymentServiceProvider).bouncePayment(paymentId),
-              'Payment bounced');
+          final installmentNumber =
+              (payment['installmentNumber'] as int?) ?? 1;
+          final amount = (payment['amount'] ?? 0) as num;
+          final result = await showMarkChequeFailedDialog(
+            context,
+            paymentId: paymentId,
+            installmentNumber: installmentNumber,
+            amount: amount,
+            paymentService: ref.read(_paymentServiceProvider),
+          );
+          if (result != null && mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Cheque marked as failed')),
+            );
+            _refresh();
+          }
         },
         onDownloadReceipt: () async {
           Navigator.pop(ctx);
@@ -660,7 +673,7 @@ class _PaymentActionSheet extends StatelessWidget {
   final VoidCallback onCollect;
   final VoidCallback onDeposit;
   final VoidCallback onClear;
-  final VoidCallback onBounce;
+  final VoidCallback onMarkFailed;
   final VoidCallback onDownloadReceipt;
 
   const _PaymentActionSheet({
@@ -668,7 +681,7 @@ class _PaymentActionSheet extends StatelessWidget {
     required this.onCollect,
     required this.onDeposit,
     required this.onClear,
-    required this.onBounce,
+    required this.onMarkFailed,
     required this.onDownloadReceipt,
   });
 
@@ -771,9 +784,9 @@ class _PaymentActionSheet extends StatelessWidget {
             const SizedBox(height: 8),
             _ActionButton(
               icon: Icons.cancel_outlined,
-              label: 'Mark as Bounced',
+              label: 'Mark Failed',
               color: AppColors.danger,
-              onTap: onBounce,
+              onTap: onMarkFailed,
             ),
           ],
           if (status == 'BOUNCED')
