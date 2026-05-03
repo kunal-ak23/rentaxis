@@ -187,7 +187,7 @@ PenaltyPaymentDTO { id, amount, paymentMethod, paymentReference, receivedAt, rec
 
 ## Failure-marking flow (single transaction)
 
-1. Validate the schedule is in a markable state — `PENDING / OVERDUE / COLLECTED / DEPOSITED`. Reject `CLEARED / CANCELLED / already-BOUNCED`.
+1. Validate the schedule is in `DEPOSITED` status. Reject everything else. (Design originally listed `PENDING / OVERDUE / COLLECTED / DEPOSITED`; the implementation intentionally narrows this to `DEPOSITED` only — a cheque cannot return from the bank until it has been presented, so only deposited schedules can fail.)
 2. `schedule.status = BOUNCED`; `schedule.failureReason = <reason>`; `schedule.statusChangedAt = now()`.
 3. `FineConfig cfg = fineConfigResolver.resolve(schedule.property.id)`.
 4. `BigDecimal fineAmount = cfg.amountFor(reason)`.
@@ -310,6 +310,10 @@ These are small content / default flips, bundled in the same release.
 - Feature is **on by default** for all tenants — no per-tenant feature flag.
 - Behavioral change for existing data: the daily `PenaltyService` will now skip schedules in `BOUNCED` state (instead of accruing per-day overdue on them). Legacy `PaymentPenalty` rows of type `OVERDUE_*` keep their current `daysOverdue` value but stop incrementing; documented in changeset and release notes.
 - No backfill of cheque-failure fines for historical bounces — `failureReason` data not available retroactively. Documented as "fines apply forward from release date."
+
+### Deferred endpoints
+
+`PATCH /api/v1/payments/{id}/failure-reason` — correction of a wrong reason after marking; the resulting fine delta applied as a `PenaltyPayment` adjustment. Deferred post-MVP: operations teams can waive + re-mark via the existing waive + mark-failed pair.
 
 ## Out of scope
 

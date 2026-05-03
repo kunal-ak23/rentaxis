@@ -1,6 +1,7 @@
 package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
+import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.PaymentPenalty;
@@ -89,8 +90,19 @@ public class PenaltyService {
      * Sibling pass to {@link PenaltyProcessingService#processLeaseOverduePayments}: walks
      * open {@code CHEQUE_FAILURE} {@link PaymentPenalty} rows (cleared_at IS NULL) and
      * updates {@code daysOverdue} based on how many days past
-     * {@code (createdAt + fineGraceDays)} we are today. Runs across all tenants — caller
-     * is expected to have cleared {@link TenantContextHolder}.
+     * {@code (createdAt + fineGraceDays)} we are today.
+     *
+     * <p><b>Multi-tenant note:</b> The caller ({@link #calculateDailyPenalties}) clears
+     * {@link TenantContextHolder} before invoking this method. With no tenant context set,
+     * the Hibernate tenant filter ({@code @Filter("tenantFilter")}) on
+     * {@code BaseTenantEntity} subclasses is <em>not</em> activated by
+     * {@link com.datagami.rentaxis.core.tenant.TenantAspect} — because the aspect gates on
+     * {@code TenantContextHolder.getTenantId() != null}. This is intentional: the cron
+     * must process all tenants in a single pass. Each saved entity retains its original
+     * {@code tenant_id}, so data is never written cross-tenant.</p>
+     *
+     * <p>TODO (MVP deferral): reminder notifications for unpaid penalties past
+     * {@code graceUntil} are not yet wired here; see design §Notifications.</p>
      */
     @Transactional
     public void processChequeFailureAccruals() {
@@ -138,11 +150,11 @@ public class PenaltyService {
     @Transactional
     public PaymentPenalty waivePenalty(UUID penaltyId, String reason, UUID waivedBy) {
         PaymentPenalty penalty = paymentPenaltyRepository.findById(penaltyId)
-                .orElseThrow(() -> new RuntimeException("Penalty not found: " + penaltyId));
+                .orElseThrow(() -> new NotFoundException("Penalty not found: " + penaltyId));
 
         UUID currentTenantId = TenantContextHolder.getTenantId();
         if (currentTenantId != null && !currentTenantId.equals(penalty.getTenantId())) {
-            throw new RuntimeException("Access denied");
+            throw new BusinessRuleViolationException("Access denied");
         }
 
         if (penalty.getClearedAt() != null) {
@@ -175,11 +187,11 @@ public class PenaltyService {
     @Transactional
     public List<PaymentPenalty> recalculateForLease(UUID leaseId) {
         Lease lease = leaseRepository.findById(leaseId)
-                .orElseThrow(() -> new RuntimeException("Lease not found: " + leaseId));
+                .orElseThrow(() -> new NotFoundException("Lease not found: " + leaseId));
 
         UUID currentTenantId = TenantContextHolder.getTenantId();
         if (currentTenantId != null && !currentTenantId.equals(lease.getTenantId())) {
-            throw new RuntimeException("Access denied");
+            throw new BusinessRuleViolationException("Access denied");
         }
 
         penaltyProcessingService.processLeaseOverduePayments(lease, LocalDate.now(clock));

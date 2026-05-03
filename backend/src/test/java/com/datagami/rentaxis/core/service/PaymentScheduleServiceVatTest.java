@@ -77,7 +77,8 @@ class PaymentScheduleServiceVatTest {
                 notificationService,
                 fineConfigResolver,
                 paymentPenaltyRepository,
-                leaseEventRepository);
+                leaseEventRepository,
+                new com.fasterxml.jackson.databind.ObjectMapper());
 
         tenantId = UUID.randomUUID();
         TenantContextHolder.setTenantId(tenantId);

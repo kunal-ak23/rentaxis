@@ -2,7 +2,6 @@ package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
-import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.LeaseEvent;
 import com.datagami.rentaxis.domain.entity.PaymentPenalty;
 import com.datagami.rentaxis.domain.entity.PenaltyPayment;
@@ -55,8 +54,7 @@ public class PenaltyPaymentService {
     private final LeaseEventRepository leaseEventRepository;
     private final LeaseRepository leaseRepository;
     private final Clock clock;
-
-    private static final ObjectMapper JSON = new ObjectMapper();
+    private final ObjectMapper objectMapper;
 
     public PenaltyPaymentService(PaymentPenaltyRepository paymentPenaltyRepository,
                                  PenaltyPaymentRepository penaltyPaymentRepository,
@@ -64,7 +62,8 @@ public class PenaltyPaymentService {
                                  NotificationService notificationService,
                                  LeaseEventRepository leaseEventRepository,
                                  LeaseRepository leaseRepository,
-                                 Clock clock) {
+                                 Clock clock,
+                                 com.fasterxml.jackson.databind.ObjectMapper objectMapper) {
         this.paymentPenaltyRepository = paymentPenaltyRepository;
         this.penaltyPaymentRepository = penaltyPaymentRepository;
         this.financialTransactionService = financialTransactionService;
@@ -72,6 +71,7 @@ public class PenaltyPaymentService {
         this.leaseEventRepository = leaseEventRepository;
         this.leaseRepository = leaseRepository;
         this.clock = clock;
+        this.objectMapper = objectMapper;
     }
 
     /**
@@ -199,7 +199,7 @@ public class PenaltyPaymentService {
             payload.put("penaltyId", p.getId().toString());
             payload.put("amount", receipt.getAmount().toPlainString());
             payload.put("paymentMethod", receipt.getPaymentMethod());
-            ev.setNotes(JSON.writeValueAsString(payload));
+            ev.setNotes(objectMapper.writeValueAsString(payload));
         } catch (JsonProcessingException e) {
             log.warn("Failed to serialize PENALTY_PAYMENT_RECORDED notes JSON: {}", e.getMessage());
             ev.setNotes("PENALTY_PAYMENT_RECORDED penaltyId=" + p.getId() + " amount=" + receipt.getAmount());

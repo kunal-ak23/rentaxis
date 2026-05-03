@@ -64,7 +64,8 @@ class PenaltyPaymentServiceTest {
                 notificationService,
                 leaseEventRepository,
                 leaseRepository,
-                fixedClock);
+                fixedClock,
+                new com.fasterxml.jackson.databind.ObjectMapper());
         penaltyId = UUID.randomUUID();
         receivedBy = UUID.randomUUID();
     }

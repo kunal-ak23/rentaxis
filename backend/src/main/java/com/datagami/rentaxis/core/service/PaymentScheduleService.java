@@ -57,8 +57,8 @@ public class PaymentScheduleService {
     private final PaymentPenaltyRepository paymentPenaltyRepository;
     private final LeaseEventRepository leaseEventRepository;
 
-    /** Reused for serializing the LeaseEvent.notes audit blob — see {@link #markFailed}. */
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    /** Injected Spring-managed ObjectMapper (honours date/time config, custom modules). */
+    private final ObjectMapper objectMapper;
 
     @Transactional
     public List<PaymentSchedule> generateScheduleForLease(Lease lease) {
@@ -445,6 +445,7 @@ public class PaymentScheduleService {
         penalty.setPaymentScheduleId(saved.getId());
         penalty.setLeaseId(saved.getLease().getId());
         penalty.setPenaltyType("CHEQUE_FAILURE");
+        penalty.setFailureReason(reason);   // snapshot — eliminates per-row schedule join in PenaltyController
         penalty.setPenaltyAmount(fineAmount);
         penalty.setDaysOverdue(0);
         penalty.setFineGraceDays(cfg.graceDays());
@@ -502,7 +503,7 @@ public class PaymentScheduleService {
         return new MarkFailedResult(mapToDTO(saved), savedPenalty);
     }
 
-    private static String buildLeaseEventNotes(
+    private String buildLeaseEventNotes(
             ChequeFailureReason reason, UUID paymentScheduleId, UUID penaltyId, BigDecimal fineAmount) {
         Map<String, String> payload = new LinkedHashMap<>();
         payload.put("eventType", "PAYMENT_FAILED_" + reason.name());
@@ -510,7 +511,7 @@ public class PaymentScheduleService {
         payload.put("penaltyId", penaltyId.toString());
         payload.put("fineAmount", fineAmount.toPlainString());
         try {
-            return OBJECT_MAPPER.writeValueAsString(payload);
+            return objectMapper.writeValueAsString(payload);
         } catch (JsonProcessingException e) {
             // Should never happen for a Map<String,String>; fall back to a
             // best-effort marker so the audit row still records the event type.

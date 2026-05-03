@@ -10,13 +10,10 @@ import com.datagami.rentaxis.core.service.PenaltyPaymentService;
 import com.datagami.rentaxis.core.service.PenaltyService;
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.PaymentPenalty;
-import com.datagami.rentaxis.domain.entity.PaymentSchedule;
 import com.datagami.rentaxis.domain.entity.PenaltyPayment;
 import com.datagami.rentaxis.domain.entity.Renter;
-import com.datagami.rentaxis.domain.entity.enums.ChequeFailureReason;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.PaymentPenaltyRepository;
-import com.datagami.rentaxis.domain.repository.PaymentScheduleRepository;
 import com.datagami.rentaxis.domain.repository.PenaltyPaymentRepository;
 import com.datagami.rentaxis.domain.repository.RenterRepository;
 import jakarta.validation.Valid;
@@ -38,7 +35,6 @@ public class PenaltyController {
 
     private final PaymentPenaltyRepository penaltyRepo;
     private final PenaltyPaymentRepository paymentRepo;
-    private final PaymentScheduleRepository scheduleRepo;
     private final PenaltyService penaltyService;
     private final PenaltyPaymentService penaltyPaymentService;
     private final RenterRepository renterRepository;
@@ -67,6 +63,10 @@ public class PenaltyController {
                     .stream().map(Lease::getId).toList();
             if (leaseId != null && !allowedLeaseIds.contains(leaseId)) {
                 throw new AccessDeniedException("Lease does not belong to this renter");
+            }
+            // Guard: IN() with empty list generates invalid SQL in most databases.
+            if (allowedLeaseIds.isEmpty()) {
+                return ResponseEntity.ok(org.springframework.data.domain.Page.empty(pageable));
             }
             page = penaltyRepo.findFilteredForRenter(allowedLeaseIds, leaseId, openOnly, clearedOnly, pageable);
         } else {
@@ -103,13 +103,7 @@ public class PenaltyController {
     // -------------------------------------------------------------------------
 
     private PenaltyDTO toDto(PaymentPenalty p) {
-        ChequeFailureReason failureReason = null;
-        if (p.getPaymentScheduleId() != null) {
-            failureReason = scheduleRepo.findById(p.getPaymentScheduleId())
-                    .map(PaymentSchedule::getFailureReason)
-                    .orElse(null);
-        }
-
+        // failureReason is denormalized onto PaymentPenalty (changeset 50) — no extra query.
         List<PenaltyPayment> receipts = paymentRepo
                 .findByPaymentPenaltyIdOrderByReceivedAtAscCreatedAtAsc(p.getId());
 
@@ -122,7 +116,7 @@ public class PenaltyController {
                 p.getPaymentScheduleId(),
                 p.getLeaseId(),
                 p.getPenaltyType(),
-                failureReason,
+                p.getFailureReason(),
                 p.getPenaltyAmount(),
                 p.getDaysOverdue(),
                 p.getFineGraceDays(),

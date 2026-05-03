@@ -33,6 +33,9 @@ class FineConfigResolverTest {
     @Mock
     private LandlordOrgFineSettingsRepository orgRepo;
 
+    @Mock
+    private FineSettingsInitializer initializer;
+
     @InjectMocks
     private FineConfigResolver resolver;
 
@@ -128,9 +131,12 @@ class FineConfigResolverTest {
         UUID propertyId = UUID.randomUUID();
         UUID tenantId = UUID.randomUUID();
 
+        LandlordOrgFineSettings defaults = orgWithDefaults();
+        defaults.setLandlordOrgId(tenantId);
+
         when(orgRepo.findByLandlordOrgId(tenantId)).thenReturn(Optional.empty());
         when(rcsRepo.findByPropertyId(propertyId)).thenReturn(Optional.empty());
-        when(orgRepo.save(any(LandlordOrgFineSettings.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(initializer.upsertDefault(tenantId)).thenReturn(defaults);
 
         FineConfig cfg = resolver.resolve(propertyId, tenantId);
 
@@ -140,7 +146,7 @@ class FineConfigResolverTest {
         assertThat(cfg.graceDays()).isEqualTo(7);
         assertThat(cfg.perDayRate()).isEqualByComparingTo("25");
         assertThat(cfg.source()).isEqualTo(FineConfig.Source.ORG);
-        verify(orgRepo).save(any(LandlordOrgFineSettings.class));
+        verify(initializer).upsertDefault(tenantId);
     }
 
     @Test
@@ -148,22 +154,25 @@ class FineConfigResolverTest {
         UUID propertyId = UUID.randomUUID();
         UUID tenantId = UUID.randomUUID();
 
+        LandlordOrgFineSettings defaults = orgWithDefaults();
+        defaults.setLandlordOrgId(tenantId);
+
         when(orgRepo.findByLandlordOrgId(tenantId)).thenReturn(Optional.empty());
         when(rcsRepo.findByPropertyId(propertyId)).thenReturn(Optional.empty());
-        when(orgRepo.save(any(LandlordOrgFineSettings.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        ArgumentCaptor<UUID> tenantIdCaptor = ArgumentCaptor.forClass(UUID.class);
+        when(initializer.upsertDefault(tenantIdCaptor.capture())).thenReturn(defaults);
 
         resolver.resolve(propertyId, tenantId);
 
-        ArgumentCaptor<LandlordOrgFineSettings> captor = ArgumentCaptor.forClass(LandlordOrgFineSettings.class);
-        verify(orgRepo).save(captor.capture());
-
-        LandlordOrgFineSettings saved = captor.getValue();
-        assertThat(saved.getLandlordOrgId()).isEqualTo(tenantId);
-        assertThat(saved.getFineBounceAmount()).isEqualByComparingTo("500");
-        assertThat(saved.getFineSignatureMismatchAmount()).isEqualByComparingTo("500");
-        assertThat(saved.getFineAccountClosedAmount()).isEqualByComparingTo("1000");
-        assertThat(saved.getFineGraceDays()).isEqualTo(7);
-        assertThat(saved.getFinePerDayRate()).isEqualByComparingTo("25");
+        assertThat(tenantIdCaptor.getValue()).isEqualTo(tenantId);
+        // Verify the returned defaults carry the right values.
+        assertThat(defaults.getLandlordOrgId()).isEqualTo(tenantId);
+        assertThat(defaults.getFineBounceAmount()).isEqualByComparingTo("500");
+        assertThat(defaults.getFineSignatureMismatchAmount()).isEqualByComparingTo("500");
+        assertThat(defaults.getFineAccountClosedAmount()).isEqualByComparingTo("1000");
+        assertThat(defaults.getFineGraceDays()).isEqualTo(7);
+        assertThat(defaults.getFinePerDayRate()).isEqualByComparingTo("25");
     }
 
     @Test
@@ -215,12 +224,12 @@ class FineConfigResolverTest {
 
         when(rcsRepo.findByPropertyId(propertyId)).thenReturn(Optional.empty());
 
-        // First lookup: empty (we lost the race). Save: throws DataIntegrityViolationException.
-        // Re-query: returns the winner's row.
+        // First lookup: empty (we lost the race). initializer throws DIVE (its REQUIRES_NEW
+        // tx rolled back in isolation — the outer tx is unaffected). Re-query returns the winner.
         when(orgRepo.findByLandlordOrgId(tenantId))
-                .thenReturn(Optional.empty())          // first call (before save attempt)
+                .thenReturn(Optional.empty())          // first call (before upsert attempt)
                 .thenReturn(Optional.of(winner));      // second call (after constraint violation)
-        when(orgRepo.save(any(LandlordOrgFineSettings.class)))
+        when(initializer.upsertDefault(tenantId))
                 .thenThrow(new DataIntegrityViolationException("duplicate key"));
 
         FineConfig cfg = resolver.resolve(propertyId, tenantId);
@@ -228,6 +237,6 @@ class FineConfigResolverTest {
         assertThat(cfg.source()).isEqualTo(FineConfig.Source.ORG);
 
         verify(orgRepo, times(2)).findByLandlordOrgId(tenantId);
-        verify(orgRepo, times(1)).save(any(LandlordOrgFineSettings.class));
+        verify(initializer, times(1)).upsertDefault(tenantId);
     }
 }

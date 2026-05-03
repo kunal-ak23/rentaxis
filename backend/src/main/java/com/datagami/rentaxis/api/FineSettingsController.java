@@ -1,17 +1,17 @@
 package com.datagami.rentaxis.api;
 
 import com.datagami.rentaxis.api.dto.FineConfigDTO;
-import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
+import com.datagami.rentaxis.core.service.FineSettingsInitializer;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.LandlordOrgFineSettings;
 import com.datagami.rentaxis.domain.repository.LandlordOrgFineSettingsRepository;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
-import java.math.BigDecimal;
 import java.util.UUID;
 
 @RestController
@@ -20,20 +20,28 @@ import java.util.UUID;
 public class FineSettingsController {
 
     private final LandlordOrgFineSettingsRepository repo;
+    private final FineSettingsInitializer initializer;
 
     @GetMapping
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
     public ResponseEntity<FineConfigDTO> get() {
         UUID tenantId = TenantContextHolder.getTenantId();
         LandlordOrgFineSettings s = repo.findByLandlordOrgId(tenantId)
-                .orElseGet(() -> createDefault(tenantId));
+                .orElseGet(() -> {
+                    try {
+                        return initializer.upsertDefault(tenantId);
+                    } catch (DataIntegrityViolationException e) {
+                        return repo.findByLandlordOrgId(tenantId)
+                                .orElseThrow(() -> new IllegalStateException(
+                                        "Org fine settings missing after concurrent create for tenant " + tenantId, e));
+                    }
+                });
         return ResponseEntity.ok(toDto(s));
     }
 
     @PutMapping
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
     public ResponseEntity<FineConfigDTO> update(@Valid @RequestBody FineConfigDTO body) {
-        validate(body);
 
         UUID tenantId = TenantContextHolder.getTenantId();
         LandlordOrgFineSettings s = repo.findByLandlordOrgId(tenantId)
@@ -56,35 +64,6 @@ public class FineSettingsController {
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
-
-    private LandlordOrgFineSettings createDefault(UUID tenantId) {
-        LandlordOrgFineSettings defaults = new LandlordOrgFineSettings();
-        defaults.setLandlordOrgId(tenantId);
-        defaults.setFineBounceAmount(new BigDecimal("500"));
-        defaults.setFineSignatureMismatchAmount(new BigDecimal("500"));
-        defaults.setFineAccountClosedAmount(new BigDecimal("1000"));
-        defaults.setFineGraceDays(7);
-        defaults.setFinePerDayRate(new BigDecimal("25"));
-        return repo.save(defaults);
-    }
-
-    private void validate(FineConfigDTO body) {
-        if (body.bounceAmount() != null && body.bounceAmount().signum() < 0) {
-            throw new BusinessRuleViolationException("bounceAmount must be >= 0");
-        }
-        if (body.signatureMismatchAmount() != null && body.signatureMismatchAmount().signum() < 0) {
-            throw new BusinessRuleViolationException("signatureMismatchAmount must be >= 0");
-        }
-        if (body.accountClosedAmount() != null && body.accountClosedAmount().signum() < 0) {
-            throw new BusinessRuleViolationException("accountClosedAmount must be >= 0");
-        }
-        if (body.graceDays() != null && body.graceDays() < 0) {
-            throw new BusinessRuleViolationException("graceDays must be >= 0");
-        }
-        if (body.perDayRate() != null && body.perDayRate().signum() < 0) {
-            throw new BusinessRuleViolationException("perDayRate must be >= 0");
-        }
-    }
 
     private FineConfigDTO toDto(LandlordOrgFineSettings s) {
         return new FineConfigDTO(

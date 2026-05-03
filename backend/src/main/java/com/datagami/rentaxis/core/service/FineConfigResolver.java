@@ -15,14 +15,9 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class FineConfigResolver {
 
-    private static final BigDecimal DEFAULT_BOUNCE = new BigDecimal("500");
-    private static final BigDecimal DEFAULT_SIGN   = new BigDecimal("500");
-    private static final BigDecimal DEFAULT_CLOSED = new BigDecimal("1000");
-    private static final int        DEFAULT_GRACE = 7;
-    private static final BigDecimal DEFAULT_RATE  = new BigDecimal("25");
-
     private final RentCollectionSettingsRepository rcsRepo;
     private final LandlordOrgFineSettingsRepository orgRepo;
+    private final FineSettingsInitializer initializer;
 
     public FineConfig resolve(UUID propertyId, UUID tenantId) {
         LandlordOrgFineSettings org = findOrCreateOrg(tenantId);
@@ -46,30 +41,21 @@ public class FineConfigResolver {
                 overridden ? FineConfig.Source.PROPERTY : FineConfig.Source.ORG);
     }
 
-    private LandlordOrgFineSettings findOrCreateOrg(UUID tenantId) {
+    LandlordOrgFineSettings findOrCreateOrg(UUID tenantId) {
         return orgRepo.findByLandlordOrgId(tenantId)
                 .orElseGet(() -> {
                     try {
-                        return upsertDefault(tenantId);
+                        // initializer runs in REQUIRES_NEW — its transaction commits or
+                        // rolls back in isolation so a constraint violation here never
+                        // poisons the caller's outer transaction.
+                        return initializer.upsertDefault(tenantId);
                     } catch (DataIntegrityViolationException e) {
                         // Lost the race — another thread inserted concurrently.
-                        // Re-query and return the winner's row.
                         return orgRepo.findByLandlordOrgId(tenantId)
                                 .orElseThrow(() -> new IllegalStateException(
-                                        "Org settings missing after concurrent insert race for tenant " + tenantId, e));
+                                        "Org settings missing after concurrent insert for tenant " + tenantId, e));
                     }
                 });
-    }
-
-    LandlordOrgFineSettings upsertDefault(UUID tenantId) {
-        LandlordOrgFineSettings o = new LandlordOrgFineSettings();
-        o.setLandlordOrgId(tenantId);
-        o.setFineBounceAmount(DEFAULT_BOUNCE);
-        o.setFineSignatureMismatchAmount(DEFAULT_SIGN);
-        o.setFineAccountClosedAmount(DEFAULT_CLOSED);
-        o.setFineGraceDays(DEFAULT_GRACE);
-        o.setFinePerDayRate(DEFAULT_RATE);
-        return orgRepo.save(o);
     }
 
     private static <T> T coalesce(T a, T b) { return a != null ? a : b; }

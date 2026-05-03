@@ -330,6 +330,14 @@ export default function RenterPenaltiesPage() {
     const [activeTab, setActiveTab] = useState<TabKey>("open");
     const [penalties, setPenalties] = useState<PenaltyDTO[]>([]);
     const [loading, setLoading] = useState(true);
+    const [paymentInstructions, setPaymentInstructions] = useState<string | null>(null);
+
+    useEffect(() => {
+        fetch("/api/proxy/v1/settings/org")
+            .then(r => r.ok ? r.json() : null)
+            .then(d => { if (d) setPaymentInstructions(d.penaltyPaymentInstructions || null); })
+            .catch(() => {});
+    }, []);
 
     const fetchPenalties = useCallback(async (tab: TabKey) => {
         setLoading(true);
@@ -460,56 +468,18 @@ export default function RenterPenaltiesPage() {
                         </div>
                     </div>
 
-                    <div className="p-5 space-y-4">
-                        {/* Bank transfer */}
-                        <div>
-                            <h3 className="text-[10px] font-bold text-muted uppercase tracking-[0.15em] mb-2">
-                                {t("bankTransferTitle")}
-                            </h3>
-                            <div className="bg-input/50 rounded-xl p-4 border border-border text-xs text-foreground space-y-1.5">
-                                <p>
-                                    <span className="text-muted font-semibold">{t("bankName")}: </span>
-                                    {t("bankNameValue")}
-                                </p>
-                                <p>
-                                    <span className="text-muted font-semibold">{t("accountName")}: </span>
-                                    {t("accountNameValue")}
-                                </p>
-                                <p>
-                                    <span className="text-muted font-semibold">{t("iban")}: </span>
-                                    <span className="font-mono tracking-wider">{t("ibanValue")}</span>
-                                </p>
-                                <p className="text-[10px] text-muted pt-1">
-                                    {t("bankTransferNote")}
-                                </p>
+                    <div className="p-5">
+                        {/* Tenant-configured instructions from OrgSettings.penaltyPaymentInstructions */}
+                        {paymentInstructions ? (
+                            <div className="bg-input/50 rounded-xl p-4 border border-border text-xs text-foreground whitespace-pre-wrap">
+                                {paymentInstructions}
                             </div>
-                        </div>
-
-                        {/* Office visit */}
-                        <div>
-                            <h3 className="text-[10px] font-bold text-muted uppercase tracking-[0.15em] mb-2">
-                                {t("officeVisitTitle")}
-                            </h3>
-                            <div className="bg-input/50 rounded-xl p-4 border border-border text-xs text-foreground space-y-1.5">
-                                <p>
-                                    <span className="text-muted font-semibold">{t("address")}: </span>
-                                    {t("addressValue")}
-                                </p>
-                                <p>
-                                    <span className="text-muted font-semibold">{t("officeHours")}: </span>
-                                    {t("officeHoursValue")}
-                                </p>
-                                <p>
-                                    <span className="text-muted font-semibold">{t("phone")}: </span>
-                                    {t("phoneValue")}
-                                </p>
-                            </div>
-                        </div>
-
-                        {/* TODO: integrate OrgSettings.penalty_payment_instructions endpoint
-                            once a dedicated GET /api/proxy/v1/org/payment-instructions endpoint is built.
-                            For now, copy is hardcoded in i18n bundles (RenterPenalties namespace). */}
-                        <p className="text-[10px] text-muted italic">
+                        ) : (
+                            <p className="text-xs text-muted">
+                                {t("howToPayDefault")}
+                            </p>
+                        )}
+                        <p className="text-[10px] text-muted italic mt-3">
                             {t("howToPayFooter")}
                         </p>
                     </div>

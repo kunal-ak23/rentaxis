@@ -80,7 +80,8 @@ class PaymentScheduleServiceMarkFailedTest {
                 notificationService,
                 fineConfigResolver,
                 paymentPenaltyRepository,
-                leaseEventRepository);
+                leaseEventRepository,
+                new com.fasterxml.jackson.databind.ObjectMapper());
 
         tenantId = UUID.randomUUID();
         propertyId = UUID.randomUUID();
