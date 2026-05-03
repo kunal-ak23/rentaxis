@@ -154,7 +154,7 @@ class PenaltyPaymentServiceTest {
 
         PenaltyPaymentService.RecordReceiptInput first = new PenaltyPaymentService.RecordReceiptInput(
                 new BigDecimal("200"), "BANK_TRANSFER", "UTR-1", TODAY, null);
-        PenaltyPayment firstSaved = service.recordReceipt(penaltyId, first, receivedBy);
+        service.recordReceipt(penaltyId, first, receivedBy);
         assertThat(p.getClearedAt()).isNull();
         verify(notificationService, never()).sendPenaltyCleared(any(), any());
 
