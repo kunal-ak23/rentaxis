@@ -734,6 +734,8 @@ public class PaymentScheduleService {
         // Default payment method comes from the property settings — same as the monthly preview.
         var settings = rentCollectionSettingsRepository.findByPropertyId(propertyId).orElse(null);
         boolean onlineEnabled = settings != null && Boolean.TRUE.equals(settings.getOnlinePaymentEnabled());
+        // Cheque-first default: ONLINE only when the property explicitly enables it
+        // via RentCollectionSettings.onlinePaymentEnabled=true.
         dto.setDefaultPaymentMethod(onlineEnabled ? "ONLINE" : "CHEQUE");
         return dto;
     }
@@ -852,6 +854,8 @@ public class PaymentScheduleService {
         dto.setTotalAmount(totalRent);
         dto.setTotalPayments(lines.size());
         dto.setDueDayOfMonth(dueDay);
+        // Cheque-first default: ONLINE only when the property explicitly enables it
+        // via RentCollectionSettings.onlinePaymentEnabled=true.
         dto.setDefaultPaymentMethod(onlineEnabled ? "ONLINE" : "CHEQUE");
         return dto;
     }
