@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.domain.entity;
 
+import com.datagami.rentaxis.domain.entity.enums.ChequeFailureReason;
 import com.datagami.rentaxis.domain.entity.enums.PaymentStatus;
 import jakarta.persistence.*;
 import lombok.Getter;
@@ -56,6 +57,10 @@ public class PaymentSchedule extends BaseTenantEntity {
 
     @Column(name = "cheque_date")
     private LocalDate chequeDate;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "cheque_failure_reason", length = 30)
+    private ChequeFailureReason failureReason;
 
     @Column(name = "status_changed_at")
     private Instant statusChangedAt;
