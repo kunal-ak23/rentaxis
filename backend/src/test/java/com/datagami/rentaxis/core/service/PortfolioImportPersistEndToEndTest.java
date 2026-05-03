@@ -1,11 +1,9 @@
-package com.datagami.rentaxis.api;
+package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.dto.PortfolioImportJobDetailsDTO;
-import com.datagami.rentaxis.core.service.PortfolioImportPersistService;
 import com.datagami.rentaxis.domain.entity.*;
 import com.datagami.rentaxis.domain.entity.enums.*;
 import com.datagami.rentaxis.domain.repository.*;
-import com.datagami.rentaxis.core.service.PaymentScheduleService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
@@ -29,16 +27,21 @@ import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 
 /**
- * End-to-end-style test for the bulk-import flow with the new payment-schedule
- * extension. Drives a single workbook through all five scenarios from the plan
- * and asserts the persist service writes the right entities + counters.
+ * End-to-end-style test for the bulk-import persist flow with the new
+ * payment-schedule extension. Drives a single workbook through all five
+ * scenarios from the plan and asserts the persist service writes the right
+ * entities + counters.
  *
  * <p>This is stricter than each unit test in isolation: it exercises the
  * Cheques-sheet override, auto-distribute, DRAFT status, booking deposits, and
- * MonthlyRent-input paths in one transaction.</p>
+ * MonthlyRent-input paths in one call.</p>
+ *
+ * <p>Repositories are mocked. Despite covering multiple scenarios, this is NOT
+ * a Spring Boot integration test (no DB, no transaction boundary verification,
+ * no async-dispatch coverage) — those are out of scope for the test infra here.</p>
  */
 @ExtendWith(MockitoExtension.class)
-class PortfolioImportIT {
+class PortfolioImportPersistEndToEndTest {
 
     @Mock PropertyRepository propertyRepository;
     @Mock BuildingRepository buildingRepository;

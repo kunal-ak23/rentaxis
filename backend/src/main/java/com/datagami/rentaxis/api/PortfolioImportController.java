@@ -90,7 +90,8 @@ public class PortfolioImportController {
         }
     }
 
-    private PortfolioImportResultDTO mapToResult(ImportJob job) {
+    /** Package-private for unit tests. */
+    PortfolioImportResultDTO mapToResult(ImportJob job) {
         PortfolioImportResultDTO dto = new PortfolioImportResultDTO();
         dto.setJobId(job.getId());
         dto.setStatus(job.getStatus());
@@ -120,12 +121,14 @@ public class PortfolioImportController {
                     if (details.getChequesFromSheet() != null) dto.setChequesFromSheet(details.getChequesFromSheet());
                     if (details.getBookingDepositsCreated() != null) dto.setBookingDepositsCreated(details.getBookingDepositsCreated());
                 } catch (Exception e) {
+                    log.warn("Failed to parse import job {} errors as wrapper object: {}", job.getId(), e.toString());
                     dto.setErrors(List.of(new ImportErrorDTO("General", 0, "", "Could not parse error details")));
                 }
             } else {
                 try {
                     dto.setErrors(objectMapper.readValue(raw, new TypeReference<List<ImportErrorDTO>>() {}));
                 } catch (Exception e) {
+                    log.warn("Failed to parse import job {} errors as legacy array: {}", job.getId(), e.toString());
                     dto.setErrors(List.of(new ImportErrorDTO("General", 0, "", "Could not parse error details")));
                 }
             }
