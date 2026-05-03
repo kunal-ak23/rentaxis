@@ -14,4 +14,6 @@ public interface PaymentPenaltyRepository extends JpaRepository<PaymentPenalty, 
     Optional<PaymentPenalty> findByPaymentScheduleId(UUID paymentScheduleId);
 
     List<PaymentPenalty> findByLeaseIdAndWaivedFalse(UUID leaseId);
+
+    List<PaymentPenalty> findByPenaltyTypeAndClearedAtIsNull(String penaltyType);
 }

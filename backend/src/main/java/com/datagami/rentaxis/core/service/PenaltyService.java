@@ -13,8 +13,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
 
@@ -26,13 +28,16 @@ public class PenaltyService {
     private final PaymentPenaltyRepository paymentPenaltyRepository;
     private final LeaseRepository leaseRepository;
     private final PenaltyProcessingService penaltyProcessingService;
+    private final Clock clock;
 
     public PenaltyService(PaymentPenaltyRepository paymentPenaltyRepository,
                           LeaseRepository leaseRepository,
-                          PenaltyProcessingService penaltyProcessingService) {
+                          PenaltyProcessingService penaltyProcessingService,
+                          Clock clock) {
         this.paymentPenaltyRepository = paymentPenaltyRepository;
         this.leaseRepository = leaseRepository;
         this.penaltyProcessingService = penaltyProcessingService;
+        this.clock = clock;
     }
 
     /**
@@ -42,7 +47,7 @@ public class PenaltyService {
     @Scheduled(cron = "0 0 2 * * *")
     public void calculateDailyPenalties() {
         log.info("Starting daily penalty calculation");
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(clock);
 
         // Clear tenant context to query across all tenants
         TenantContextHolder.clear();
@@ -62,11 +67,48 @@ public class PenaltyService {
                     TenantContextHolder.clear();
                 }
             }
+
+            // Sibling pass: per-day accrual on unpaid CHEQUE_FAILURE penalties.
+            try {
+                processChequeFailureAccruals();
+            } catch (Exception e) {
+                log.error("Error processing cheque-failure penalty accruals: {}", e.getMessage(), e);
+            }
         } finally {
             TenantContextHolder.clear();
         }
 
         log.info("Daily penalty calculation completed");
+    }
+
+    /**
+     * Sibling pass to {@link PenaltyProcessingService#processLeaseOverduePayments}: walks
+     * open {@code CHEQUE_FAILURE} {@link PaymentPenalty} rows (cleared_at IS NULL) and
+     * updates {@code daysOverdue} based on how many days past
+     * {@code (createdAt + fineGraceDays)} we are today. Runs across all tenants — caller
+     * is expected to have cleared {@link TenantContextHolder}.
+     */
+    @Transactional
+    public void processChequeFailureAccruals() {
+        LocalDate today = LocalDate.now(clock);
+        List<PaymentPenalty> open = paymentPenaltyRepository
+                .findByPenaltyTypeAndClearedAtIsNull("CHEQUE_FAILURE");
+        log.info("Found {} open CHEQUE_FAILURE penalties to accrue", open.size());
+
+        LocalDateTime now = LocalDateTime.now(clock);
+        for (PaymentPenalty p : open) {
+            if (p.getFineGraceDays() == null || p.getCreatedAt() == null) {
+                // Safety: skip rows missing the fields populated by markFailed (M5).
+                continue;
+            }
+            LocalDate graceUntil = p.getCreatedAt().toLocalDate().plusDays(p.getFineGraceDays());
+            long days = today.isAfter(graceUntil)
+                    ? ChronoUnit.DAYS.between(graceUntil, today)
+                    : 0;
+            p.setDaysOverdue((int) days);
+            p.setLastCalculatedAt(now);
+        }
+        paymentPenaltyRepository.saveAll(open);
     }
 
     @Transactional(readOnly = true)
@@ -95,7 +137,7 @@ public class PenaltyService {
         penalty.setWaived(true);
         penalty.setWaivedReason(reason);
         penalty.setWaivedBy(waivedBy);
-        penalty.setWaivedAt(LocalDateTime.now());
+        penalty.setWaivedAt(LocalDateTime.now(clock));
         return paymentPenaltyRepository.save(penalty);
     }
 
@@ -109,7 +151,7 @@ public class PenaltyService {
             throw new RuntimeException("Access denied");
         }
 
-        penaltyProcessingService.processLeaseOverduePayments(lease, LocalDate.now());
+        penaltyProcessingService.processLeaseOverduePayments(lease, LocalDate.now(clock));
         return paymentPenaltyRepository.findByLeaseIdOrderByCreatedAtAsc(leaseId);
     }
 }
