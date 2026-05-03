@@ -169,8 +169,8 @@ public class NotificationService {
                 case "PAYMENT_COLLECTED" -> "<p style=\"margin:0;color:#475569;font-size:12px;\">Your cheque has been collected and is being processed. You will be notified once it clears.</p>";
                 case "PAYMENT_FAILED" -> "<p style=\"margin:0;color:#DC2626;font-size:12px;font-weight:600;\">Your online payment could not be verified. Please try again or contact support.</p>";
                 case "PAYMENT_BOUNCED" -> "<p style=\"margin:0;color:#DC2626;font-size:12px;font-weight:600;\">Your cheque has bounced. Please arrange a replacement cheque immediately to avoid penalties.</p>";
-                case "PAYMENT_DUE" -> "<p style=\"margin:0;color:#D97706;font-size:12px;font-weight:600;\">Your rent payment is due soon. Please ensure timely payment to avoid late fees.</p>";
-                case "PAYMENT_OVERDUE" -> "<p style=\"margin:0;color:#DC2626;font-size:12px;font-weight:600;\">Your rent payment is overdue. Please make the payment immediately.</p>";
+                case "PAYMENT_DUE" -> "<p style=\"margin:0;color:#D97706;font-size:12px;font-weight:600;\">Your rent payment is due soon. Please prepare your cheque or use an alternate method (bank transfer or online) to settle on time.</p>";
+                case "PAYMENT_OVERDUE" -> "<p style=\"margin:0;color:#DC2626;font-size:12px;font-weight:600;\">Your rent payment is overdue. Please arrange your cheque, bank transfer, or online payment immediately to avoid penalties.</p>";
                 case "LEASE_EXPIRING" -> "<p style=\"margin:0;color:#D97706;font-size:12px;\">A lease in your portfolio is expiring soon. Review and take action if renewal is needed.</p>";
                 case "TENANT_PROVISIONED" -> "<p style=\"margin:0;color:#475569;font-size:12px;\">A new organization has been created on the platform.</p>";
                 case "MEETING_REQUESTED" -> "<p style=\"margin:0;color:#475569;font-size:12px;\">A new meeting has been requested. Please review and approve or decline.</p>";
