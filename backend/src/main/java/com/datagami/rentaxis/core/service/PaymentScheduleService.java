@@ -14,7 +14,6 @@ import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.PaymentStatus;
 import com.datagami.rentaxis.domain.entity.enums.TransactionNature;
 import com.datagami.rentaxis.api.dto.PaymentPreviewDTO;
-import com.datagami.rentaxis.domain.entity.RentCollectionSettings;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.LeaseEventRepository;
 import com.datagami.rentaxis.domain.repository.PaymentPenaltyRepository;
