@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useId } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Loader2, DollarSign } from "lucide-react";
 import { useTranslations } from "next-intl";
@@ -31,6 +31,7 @@ export function RecordPenaltyPaymentDialog({
     onSuccess,
 }: RecordPenaltyPaymentDialogProps) {
     const t = useTranslations("RecordPenaltyPaymentDialog");
+    const titleId = useId();
 
     const [amount, setAmount] = useState<string>(String(outstanding));
     const [paymentMethod, setPaymentMethod] = useState("BANK_TRANSFER");
@@ -51,6 +52,21 @@ export function RecordPenaltyPaymentDialog({
         setError(null);
         onClose();
     };
+
+    // ESC-to-close while open. Skip when submitting so an in-flight
+    // request can finish before the modal disappears.
+    useEffect(() => {
+        if (!isOpen) return;
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === "Escape" && !submitting) {
+                e.preventDefault();
+                handleClose();
+            }
+        };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isOpen, submitting]);
 
     const handleSubmit = async (ev: React.FormEvent) => {
         ev.preventDefault();
@@ -106,18 +122,21 @@ export function RecordPenaltyPaymentDialog({
                         onClick={handleClose}
                     />
                     <motion.div
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby={titleId}
                         initial={{ opacity: 0, scale: 0.95, y: 10 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.95, y: 10 }}
                         transition={{ duration: 0.2, type: "spring", bounce: 0 }}
-                        className="relative w-full max-w-md bg-surface rounded-xl shadow-2xl flex flex-col overflow-hidden"
+                        className="relative w-full max-w-md bg-surface rounded-xl shadow-2xl flex flex-col overflow-hidden motion-reduce:transition-none"
                     >
                         <form onSubmit={handleSubmit}>
                             {/* Header */}
                             <div className="p-6 pb-4">
                                 <div className="flex items-center gap-2 mb-1">
                                     <DollarSign size={16} className="text-primary shrink-0" />
-                                    <h2 className="text-lg font-bold text-foreground tracking-tight">
+                                    <h2 id={titleId} className="text-lg font-bold text-foreground tracking-tight">
                                         {t("title")}
                                     </h2>
                                 </div>

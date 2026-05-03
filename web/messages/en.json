@@ -650,7 +650,10 @@
     "overrideSectionHint": "Leave blank to inherit the organisation default shown in the placeholder.",
     "resetToDefault": "Reset to org default",
     "overrideBadge": "Override",
-    "orgDefault": "Org default: {value}"
+    "orgDefault": "Org default: {value}",
+    "errorLoad": "Failed to load fine settings.",
+    "errorSave": "Failed to save fine settings.",
+    "errorNetwork": "Network error. Please try again."
   },
   "Marketplace": {
     "title": "Browse Properties",

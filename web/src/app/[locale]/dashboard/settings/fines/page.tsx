@@ -58,7 +58,7 @@ export default function FinesSettingsPage() {
             } else if (res.status === 404) {
                 setConfig(DEFAULT_FINE_CONFIG);
             } else {
-                setError("Failed to load fine settings.");
+                setError(t("errorLoad"));
             }
         } catch {
             setConfig(DEFAULT_FINE_CONFIG);
@@ -84,10 +84,10 @@ export default function FinesSettingsPage() {
                 setTimeout(() => setSaveSuccess(false), 4000);
             } else {
                 const data = await res.json().catch(() => ({}));
-                setError((data as { message?: string }).message || "Failed to save fine settings.");
+                setError((data as { message?: string }).message || t("errorSave"));
             }
         } catch {
-            setError("Network error. Please try again.");
+            setError(t("errorNetwork"));
         } finally {
             setSaving(false);
         }
@@ -152,7 +152,11 @@ export default function FinesSettingsPage() {
 
             {/* Success Banner */}
             {saveSuccess && (
-                <div className="mb-6 flex items-center gap-3 bg-green-50 border border-green-200 text-green-700 px-5 py-3 rounded-xl text-sm font-semibold">
+                <div
+                    role="status"
+                    aria-live="polite"
+                    className="mb-6 flex items-center gap-3 bg-success/10 border border-success/20 text-success px-5 py-3 rounded-xl text-sm font-semibold"
+                >
                     <CheckCircle size={18} />
                     {t("saved")}
                 </div>
@@ -160,7 +164,11 @@ export default function FinesSettingsPage() {
 
             {/* Error Banner */}
             {error && (
-                <div className="mb-6 flex items-center gap-3 bg-red-50 border border-red-200 text-red-700 px-5 py-3 rounded-xl text-sm font-semibold">
+                <div
+                    role="alert"
+                    aria-live="assertive"
+                    className="mb-6 flex items-center gap-3 bg-error/10 border border-error/20 text-error px-5 py-3 rounded-xl text-sm font-semibold"
+                >
                     <XCircle size={18} />
                     {error}
                 </div>
