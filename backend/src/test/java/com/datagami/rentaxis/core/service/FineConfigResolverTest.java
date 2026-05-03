@@ -1,0 +1,195 @@
+package com.datagami.rentaxis.core.service;
+
+import com.datagami.rentaxis.domain.entity.LandlordOrgFineSettings;
+import com.datagami.rentaxis.domain.entity.RentCollectionSettings;
+import com.datagami.rentaxis.domain.entity.enums.ChequeFailureReason;
+import com.datagami.rentaxis.domain.repository.LandlordOrgFineSettingsRepository;
+import com.datagami.rentaxis.domain.repository.RentCollectionSettingsRepository;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.math.BigDecimal;
+import java.util.Optional;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+@ExtendWith(MockitoExtension.class)
+class FineConfigResolverTest {
+
+    @Mock
+    private RentCollectionSettingsRepository rcsRepo;
+
+    @Mock
+    private LandlordOrgFineSettingsRepository orgRepo;
+
+    @InjectMocks
+    private FineConfigResolver resolver;
+
+    private LandlordOrgFineSettings standardOrg(UUID tenantId) {
+        LandlordOrgFineSettings o = new LandlordOrgFineSettings();
+        o.setLandlordOrgId(tenantId);
+        o.setFineBounceAmount(new BigDecimal("500"));
+        o.setFineSignatureMismatchAmount(new BigDecimal("500"));
+        o.setFineAccountClosedAmount(new BigDecimal("1000"));
+        o.setFineGraceDays(7);
+        o.setFinePerDayRate(new BigDecimal("25"));
+        return o;
+    }
+
+    @Test
+    void resolve_orgOnly_returnsOrgValuesAndSourceOrg() {
+        UUID propertyId = UUID.randomUUID();
+        UUID tenantId = UUID.randomUUID();
+
+        when(orgRepo.findByLandlordOrgId(tenantId)).thenReturn(Optional.of(standardOrg(tenantId)));
+        when(rcsRepo.findByPropertyId(propertyId)).thenReturn(Optional.empty());
+
+        FineConfig cfg = resolver.resolve(propertyId, tenantId);
+
+        assertThat(cfg.bounceAmount()).isEqualByComparingTo("500");
+        assertThat(cfg.signatureMismatchAmount()).isEqualByComparingTo("500");
+        assertThat(cfg.accountClosedAmount()).isEqualByComparingTo("1000");
+        assertThat(cfg.graceDays()).isEqualTo(7);
+        assertThat(cfg.perDayRate()).isEqualByComparingTo("25");
+        assertThat(cfg.source()).isEqualTo(FineConfig.Source.ORG);
+        verify(orgRepo, never()).save(any());
+    }
+
+    @Test
+    void resolve_propertyOverridesField_returnsPropertyValueButOrgForOthers() {
+        UUID propertyId = UUID.randomUUID();
+        UUID tenantId = UUID.randomUUID();
+
+        RentCollectionSettings rcs = new RentCollectionSettings();
+        rcs.setFineBounceAmount(new BigDecimal("750"));
+        // others are null
+
+        when(orgRepo.findByLandlordOrgId(tenantId)).thenReturn(Optional.of(standardOrg(tenantId)));
+        when(rcsRepo.findByPropertyId(propertyId)).thenReturn(Optional.of(rcs));
+
+        FineConfig cfg = resolver.resolve(propertyId, tenantId);
+
+        assertThat(cfg.bounceAmount()).isEqualByComparingTo("750");
+        assertThat(cfg.signatureMismatchAmount()).isEqualByComparingTo("500");
+        assertThat(cfg.accountClosedAmount()).isEqualByComparingTo("1000");
+        assertThat(cfg.graceDays()).isEqualTo(7);
+        assertThat(cfg.perDayRate()).isEqualByComparingTo("25");
+        assertThat(cfg.source()).isEqualTo(FineConfig.Source.PROPERTY);
+    }
+
+    @Test
+    void resolve_propertyOverridesAllFields_sourceIsProperty() {
+        UUID propertyId = UUID.randomUUID();
+        UUID tenantId = UUID.randomUUID();
+
+        RentCollectionSettings rcs = new RentCollectionSettings();
+        rcs.setFineBounceAmount(new BigDecimal("800"));
+        rcs.setFineSignatureMismatchAmount(new BigDecimal("900"));
+        rcs.setFineAccountClosedAmount(new BigDecimal("1500"));
+        rcs.setFineGraceDays(14);
+        rcs.setFinePerDayRate(new BigDecimal("50"));
+
+        when(orgRepo.findByLandlordOrgId(tenantId)).thenReturn(Optional.of(standardOrg(tenantId)));
+        when(rcsRepo.findByPropertyId(propertyId)).thenReturn(Optional.of(rcs));
+
+        FineConfig cfg = resolver.resolve(propertyId, tenantId);
+
+        assertThat(cfg.bounceAmount()).isEqualByComparingTo("800");
+        assertThat(cfg.signatureMismatchAmount()).isEqualByComparingTo("900");
+        assertThat(cfg.accountClosedAmount()).isEqualByComparingTo("1500");
+        assertThat(cfg.graceDays()).isEqualTo(14);
+        assertThat(cfg.perDayRate()).isEqualByComparingTo("50");
+        assertThat(cfg.source()).isEqualTo(FineConfig.Source.PROPERTY);
+    }
+
+    @Test
+    void resolve_orgMissing_createsDefaultsAndReturnsOrg() {
+        UUID propertyId = UUID.randomUUID();
+        UUID tenantId = UUID.randomUUID();
+
+        when(orgRepo.findByLandlordOrgId(tenantId)).thenReturn(Optional.empty());
+        when(rcsRepo.findByPropertyId(propertyId)).thenReturn(Optional.empty());
+        when(orgRepo.save(any(LandlordOrgFineSettings.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        FineConfig cfg = resolver.resolve(propertyId, tenantId);
+
+        assertThat(cfg.bounceAmount()).isEqualByComparingTo("500");
+        assertThat(cfg.signatureMismatchAmount()).isEqualByComparingTo("500");
+        assertThat(cfg.accountClosedAmount()).isEqualByComparingTo("1000");
+        assertThat(cfg.graceDays()).isEqualTo(7);
+        assertThat(cfg.perDayRate()).isEqualByComparingTo("25");
+        assertThat(cfg.source()).isEqualTo(FineConfig.Source.ORG);
+        verify(orgRepo).save(any(LandlordOrgFineSettings.class));
+    }
+
+    @Test
+    void resolve_orgMissing_savedRowHasCorrectLandlordOrgIdAndDefaults() {
+        UUID propertyId = UUID.randomUUID();
+        UUID tenantId = UUID.randomUUID();
+
+        when(orgRepo.findByLandlordOrgId(tenantId)).thenReturn(Optional.empty());
+        when(rcsRepo.findByPropertyId(propertyId)).thenReturn(Optional.empty());
+        when(orgRepo.save(any(LandlordOrgFineSettings.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        resolver.resolve(propertyId, tenantId);
+
+        ArgumentCaptor<LandlordOrgFineSettings> captor = ArgumentCaptor.forClass(LandlordOrgFineSettings.class);
+        verify(orgRepo).save(captor.capture());
+
+        LandlordOrgFineSettings saved = captor.getValue();
+        assertThat(saved.getLandlordOrgId()).isEqualTo(tenantId);
+        assertThat(saved.getFineBounceAmount()).isEqualByComparingTo("500");
+        assertThat(saved.getFineSignatureMismatchAmount()).isEqualByComparingTo("500");
+        assertThat(saved.getFineAccountClosedAmount()).isEqualByComparingTo("1000");
+        assertThat(saved.getFineGraceDays()).isEqualTo(7);
+        assertThat(saved.getFinePerDayRate()).isEqualByComparingTo("25");
+    }
+
+    @Test
+    void amountFor_returnsCorrectAmountPerReason() {
+        FineConfig cfg = new FineConfig(
+                new BigDecimal("500"),
+                new BigDecimal("750"),
+                new BigDecimal("1000"),
+                7,
+                BigDecimal.valueOf(25),
+                FineConfig.Source.ORG
+        );
+
+        assertThat(cfg.amountFor(ChequeFailureReason.BOUNCE)).isEqualByComparingTo("500");
+        assertThat(cfg.amountFor(ChequeFailureReason.SIGNATURE_MISMATCH)).isEqualByComparingTo("750");
+        assertThat(cfg.amountFor(ChequeFailureReason.ACCOUNT_CLOSED)).isEqualByComparingTo("1000");
+    }
+
+    @Test
+    void resolve_rcsExistsButAllFineFieldsNull_sourceIsOrg() {
+        // RCS row exists (e.g. for non-fine settings like dueDayOfMonth) but no fine overrides;
+        // this must be treated identically to no RCS row at all for the purpose of `source`.
+        UUID propertyId = UUID.randomUUID();
+        UUID tenantId = UUID.randomUUID();
+
+        RentCollectionSettings rcs = new RentCollectionSettings();
+        rcs.setDueDayOfMonth(5); // unrelated field set, all fine fields null
+
+        when(orgRepo.findByLandlordOrgId(tenantId)).thenReturn(Optional.of(standardOrg(tenantId)));
+        when(rcsRepo.findByPropertyId(propertyId)).thenReturn(Optional.of(rcs));
+
+        FineConfig cfg = resolver.resolve(propertyId, tenantId);
+
+        assertThat(cfg.bounceAmount()).isEqualByComparingTo("500");
+        assertThat(cfg.signatureMismatchAmount()).isEqualByComparingTo("500");
+        assertThat(cfg.accountClosedAmount()).isEqualByComparingTo("1000");
+        assertThat(cfg.graceDays()).isEqualTo(7);
+        assertThat(cfg.perDayRate()).isEqualByComparingTo("25");
+        assertThat(cfg.source()).isEqualTo(FineConfig.Source.ORG);
+    }
+}
