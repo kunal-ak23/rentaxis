@@ -9,11 +9,14 @@ import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.*;
+import com.datagami.rentaxis.domain.entity.enums.ChequeFailureReason;
 import com.datagami.rentaxis.domain.entity.enums.PaymentStatus;
 import com.datagami.rentaxis.domain.entity.enums.TransactionNature;
 import com.datagami.rentaxis.api.dto.PaymentPreviewDTO;
 import com.datagami.rentaxis.domain.entity.RentCollectionSettings;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
+import com.datagami.rentaxis.domain.repository.LeaseEventRepository;
+import com.datagami.rentaxis.domain.repository.PaymentPenaltyRepository;
 import com.datagami.rentaxis.domain.repository.PaymentScheduleRepository;
 import com.datagami.rentaxis.domain.repository.RentCollectionSettingsRepository;
 import lombok.RequiredArgsConstructor;
@@ -45,6 +48,9 @@ public class PaymentScheduleService {
     private final AccountMappingService accountMappingService;
     private final RentCollectionSettingsRepository rentCollectionSettingsRepository;
     private final NotificationService notificationService;
+    private final FineConfigResolver fineConfigResolver;
+    private final PaymentPenaltyRepository paymentPenaltyRepository;
+    private final LeaseEventRepository leaseEventRepository;
 
     @Transactional
     public List<PaymentSchedule> generateScheduleForLease(Lease lease) {
@@ -385,33 +391,105 @@ public class PaymentScheduleService {
         return mapToDTO(payment);
     }
 
+    /**
+     * Legacy entry point kept for backward compatibility with the existing
+     * {@code PUT /api/v1/payments/{id}/bounce} endpoint and any older clients
+     * that haven't been migrated to {@link #markFailed} yet. It now delegates
+     * to {@link #markFailed} with {@link ChequeFailureReason#BOUNCE} so callers
+     * automatically pick up the new fine + penalty + financial-transaction
+     * side effects without any client change.
+     */
     @Transactional
     public PaymentScheduleDTO bouncePayment(UUID paymentId, UpdatePaymentStatusDTO dto) {
-        PaymentSchedule payment = paymentScheduleRepository.findById(paymentId)
+        return markFailed(paymentId, ChequeFailureReason.BOUNCE, dto.getNotes());
+    }
+
+    /**
+     * Mark a deposited payment as failed (bounced / signature mismatched /
+     * account closed). Records the fine snapshot, posts the cheque-bounce
+     * journal entry, fires renter notifications, and writes a lease event for
+     * audit. Only payments in {@link PaymentStatus#DEPOSITED} are accepted —
+     * cheques that never made it to the bank can't bounce.
+     */
+    @Transactional
+    public PaymentScheduleDTO markFailed(UUID paymentId, ChequeFailureReason reason, String notes) {
+        PaymentSchedule s = paymentScheduleRepository.findById(paymentId)
                 .orElseThrow(() -> new NotFoundException("Payment not found"));
 
-        if (payment.getStatus() != PaymentStatus.DEPOSITED) {
-            throw new BusinessRuleViolationException("Can only bounce payments in DEPOSITED status");
+        if (s.getStatus() != PaymentStatus.DEPOSITED) {
+            throw new BusinessRuleViolationException(
+                    "Can only mark payments in DEPOSITED status as failed (current: " + s.getStatus() + ")");
         }
 
-        payment.setStatus(PaymentStatus.BOUNCED);
-        if (dto.getNotes() != null) {
-            payment.setNotes(dto.getNotes());
+        s.setStatus(PaymentStatus.BOUNCED);
+        s.setFailureReason(reason);
+        s.setStatusChangedAt(Instant.now());
+        if (notes != null && !notes.isBlank()) {
+            s.setNotes(notes);
         }
-        payment.setStatusChangedAt(Instant.now());
-        PaymentSchedule saved = paymentScheduleRepository.save(payment);
+        PaymentSchedule saved = paymentScheduleRepository.save(s);
 
-        // Notify renter: cheque bounced
+        UUID tenantId = TenantContextHolder.getTenantId();
+        FineConfig cfg = fineConfigResolver.resolve(saved.getProperty().getId(), tenantId);
+        java.math.BigDecimal fineAmount = cfg.amountFor(reason);
+
+        PaymentPenalty penalty = new PaymentPenalty();
+        penalty.setPaymentScheduleId(saved.getId());
+        penalty.setLeaseId(saved.getLease().getId());
+        penalty.setPenaltyType("CHEQUE_FAILURE");
+        penalty.setPenaltyAmount(fineAmount);
+        penalty.setDaysOverdue(0);
+        penalty.setFineGraceDays(cfg.graceDays());
+        penalty.setFinePerDayRate(cfg.perDayRate());
+        penalty.setLastCalculatedAt(java.time.LocalDateTime.now());
+        PaymentPenalty savedPenalty = paymentPenaltyRepository.save(penalty);
+
+        // Post CHEQUE_BOUNCED financial transaction (existing nature, existing AccountMapping).
         try {
-            UUID renterUserId = payment.getLease().getRenter().getUserId();
+            financialTransactionService.recordChequeBounce(saved);
+        } catch (Exception e) {
+            log.warn("Failed to record CHEQUE_BOUNCED financial transaction for payment {}: {}", saved.getId(), e.getMessage());
+        }
+
+        // Renter notifications — both PAYMENT_BOUNCED (existing template) and
+        // PENALTY_INCURRED (new). Wrapped so a downed mailer never blocks the
+        // status transition.
+        try {
+            UUID renterUserId = saved.getLease().getRenter().getUserId();
             if (renterUserId != null) {
-                notificationService.notify(TenantContextHolder.getTenantId(), renterUserId,
-                        "PAYMENT_BOUNCED", "Cheque Bounced",
-                        "Installment #" + payment.getInstallmentNumber() + " cheque of " + payment.getAmount() + " has bounced. Please arrange a replacement.",
-                        "PAYMENT", payment.getId());
+                notificationService.notify(tenantId, renterUserId,
+                        "PAYMENT_BOUNCED", "Cheque Failed",
+                        "Installment #" + saved.getInstallmentNumber() + " cheque of " + saved.getAmount()
+                                + " was marked " + reason + ". A fine of " + fineAmount
+                                + " AED has been added. Please arrange a replacement and clear the fine.",
+                        "PAYMENT", saved.getId());
+                notificationService.notify(tenantId, renterUserId,
+                        "PENALTY_INCURRED", "Penalty Incurred",
+                        "A " + fineAmount + " AED penalty has been added for installment #"
+                                + saved.getInstallmentNumber() + " (" + reason + "). Please clear it via bank transfer, cheque, or cash.",
+                        "PENALTY", savedPenalty.getId());
             }
         } catch (Exception e) {
-            log.warn("Failed to send cheque bounced notification for payment {}: {}", payment.getId(), e.getMessage());
+            log.warn("Failed to send mark-failed notifications for payment {}: {}", saved.getId(), e.getMessage());
+        }
+
+        // Lease event audit. The existing LeaseEvent entity has no eventType
+        // column, so the marker is embedded into `notes` as JSON. The lease's
+        // current status is preserved for both previousState and newState
+        // because mark-failed is a payment-level transition, not a lease one.
+        try {
+            LeaseEvent ev = new LeaseEvent();
+            ev.setLease(saved.getLease());
+            ev.setPreviousState(saved.getLease().getStatus());
+            ev.setNewState(saved.getLease().getStatus());
+            ev.setNotes("{\"eventType\":\"PAYMENT_FAILED_" + reason.name()
+                    + "\",\"paymentScheduleId\":\"" + saved.getId()
+                    + "\",\"penaltyId\":\"" + savedPenalty.getId()
+                    + "\",\"fineAmount\":\"" + fineAmount + "\"}");
+            ev.setCreatedAt(Instant.now());
+            leaseEventRepository.save(ev);
+        } catch (Exception e) {
+            log.warn("Failed to record lease event for failed payment {}: {}", saved.getId(), e.getMessage());
         }
 
         return mapToDTO(saved);

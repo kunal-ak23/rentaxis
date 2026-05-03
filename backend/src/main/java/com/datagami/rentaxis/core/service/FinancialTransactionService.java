@@ -4,13 +4,18 @@ import com.datagami.rentaxis.api.dto.CreateSplitTransactionDTO;
 import com.datagami.rentaxis.api.dto.ReportDTO;
 import com.datagami.rentaxis.api.dto.TrialBalanceDTO;
 import com.datagami.rentaxis.api.dto.VatReturnDTO;
+import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Account;
+import com.datagami.rentaxis.domain.entity.AccountMapping;
 import com.datagami.rentaxis.domain.entity.FinancialTransaction;
+import com.datagami.rentaxis.domain.entity.PaymentSchedule;
 import com.datagami.rentaxis.domain.entity.Property;
 import com.datagami.rentaxis.domain.entity.Staff;
 import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.Vendor;
 import com.datagami.rentaxis.domain.entity.enums.AccountType;
+import com.datagami.rentaxis.domain.entity.enums.TransactionNature;
+import com.datagami.rentaxis.domain.repository.AccountMappingRepository;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.FinancialTransactionRepository;
 import com.datagami.rentaxis.domain.repository.PropertyRepository;
@@ -35,19 +40,71 @@ public class FinancialTransactionService {
     private final PropertyRepository propertyRepository;
     private final VendorRepository vendorRepository;
     private final StaffRepository staffRepository;
+    private final AccountMappingRepository accountMappingRepository;
 
     public FinancialTransactionService(FinancialTransactionRepository repository,
             AccountRepository accountRepository,
             UnitRepository unitRepository,
             PropertyRepository propertyRepository,
             VendorRepository vendorRepository,
-            StaffRepository staffRepository) {
+            StaffRepository staffRepository,
+            AccountMappingRepository accountMappingRepository) {
         this.repository = repository;
         this.accountRepository = accountRepository;
         this.unitRepository = unitRepository;
         this.propertyRepository = propertyRepository;
         this.vendorRepository = vendorRepository;
         this.staffRepository = staffRepository;
+        this.accountMappingRepository = accountMappingRepository;
+    }
+
+    /**
+     * Posts a CHEQUE_BOUNCED journal entry for a payment that was marked failed
+     * after deposit. Resolves the debit/credit accounts from the configured
+     * AccountMapping for {@link TransactionNature#CHEQUE_BOUNCED}; falls back to
+     * the standard chart-of-accounts codes (debit C-01-01 rental income, credit
+     * A-02-02 bank) when no mapping has been seeded for the tenant.
+     */
+    @Transactional
+    public void recordChequeBounce(PaymentSchedule payment) {
+        AccountMapping mapping = accountMappingRepository
+                .findByTransactionNature(TransactionNature.CHEQUE_BOUNCED)
+                .orElse(null);
+
+        Account debitAccount;
+        Account creditAccount;
+        if (mapping != null) {
+            debitAccount = mapping.getDebitAccount();
+            creditAccount = mapping.getCreditAccount();
+        } else {
+            UUID tenantId = TenantContextHolder.getTenantId();
+            debitAccount = accountRepository.findByCodeAndTenantId("C-01-01", tenantId)
+                    .orElseThrow(() -> new RuntimeException("Rental Income account (C-01-01) not found. Please configure account mappings."));
+            creditAccount = accountRepository.findByCodeAndTenantId("A-02-02", tenantId)
+                    .orElseThrow(() -> new RuntimeException("Bank account (A-02-02) not found. Please configure account mappings."));
+        }
+
+        // Reverse the rental-income side: debit income (cancel previously
+        // recognised earnings) and credit bank (cancel the deposit).
+        FinancialTransaction debitTxn = new FinancialTransaction();
+        debitTxn.setDate(LocalDate.now());
+        debitTxn.setDescription("Cheque bounced - Lease installment #" + payment.getInstallmentNumber());
+        debitTxn.setAccount(debitAccount);
+        debitTxn.setDebit(payment.getAmount());
+        debitTxn.setCredit(BigDecimal.ZERO);
+        debitTxn.setProperty(payment.getProperty());
+        debitTxn.setUnit(payment.getUnit());
+        createTransaction(debitTxn);
+
+        FinancialTransaction creditTxn = new FinancialTransaction();
+        creditTxn.setDate(LocalDate.now());
+        creditTxn.setDescription("Cheque bounced - Lease installment #" + payment.getInstallmentNumber());
+        creditTxn.setAccount(creditAccount);
+        creditTxn.setDebit(BigDecimal.ZERO);
+        creditTxn.setCredit(payment.getAmount());
+        creditTxn.setProperty(payment.getProperty());
+        creditTxn.setUnit(payment.getUnit());
+        createTransaction(creditTxn);
     }
 
     @Transactional

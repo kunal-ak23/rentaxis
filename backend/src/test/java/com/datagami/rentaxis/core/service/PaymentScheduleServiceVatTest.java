@@ -13,6 +13,8 @@ import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.enums.PaymentStatus;
 import com.datagami.rentaxis.domain.entity.enums.TransactionNature;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
+import com.datagami.rentaxis.domain.repository.LeaseEventRepository;
+import com.datagami.rentaxis.domain.repository.PaymentPenaltyRepository;
 import com.datagami.rentaxis.domain.repository.PaymentScheduleRepository;
 import com.datagami.rentaxis.domain.repository.RentCollectionSettingsRepository;
 import org.junit.jupiter.api.AfterEach;
@@ -47,6 +49,9 @@ class PaymentScheduleServiceVatTest {
     private AccountMappingService accountMappingService;
     private RentCollectionSettingsRepository rentCollectionSettingsRepository;
     private NotificationService notificationService;
+    private FineConfigResolver fineConfigResolver;
+    private PaymentPenaltyRepository paymentPenaltyRepository;
+    private LeaseEventRepository leaseEventRepository;
     private PaymentScheduleService service;
 
     private UUID tenantId;
@@ -59,6 +64,9 @@ class PaymentScheduleServiceVatTest {
         accountMappingService = mock(AccountMappingService.class);
         rentCollectionSettingsRepository = mock(RentCollectionSettingsRepository.class);
         notificationService = mock(NotificationService.class);
+        fineConfigResolver = mock(FineConfigResolver.class);
+        paymentPenaltyRepository = mock(PaymentPenaltyRepository.class);
+        leaseEventRepository = mock(LeaseEventRepository.class);
 
         service = new PaymentScheduleService(
                 paymentScheduleRepository,
@@ -66,7 +74,10 @@ class PaymentScheduleServiceVatTest {
                 financialTransactionService,
                 accountMappingService,
                 rentCollectionSettingsRepository,
-                notificationService);
+                notificationService,
+                fineConfigResolver,
+                paymentPenaltyRepository,
+                leaseEventRepository);
 
         tenantId = UUID.randomUUID();
         TenantContextHolder.setTenantId(tenantId);
