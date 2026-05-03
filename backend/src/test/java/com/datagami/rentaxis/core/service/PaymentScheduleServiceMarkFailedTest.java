@@ -1,6 +1,7 @@
 package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
+import com.datagami.rentaxis.api.dto.PaymentScheduleDTO;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.LeaseEvent;
@@ -101,7 +102,7 @@ class PaymentScheduleServiceMarkFailedTest {
         stubFindAndSave(payment);
         stubFineConfig(bounceCfg());
 
-        service.markFailed(payment.getId(), ChequeFailureReason.BOUNCE, "n");
+        MarkFailedResult result = service.markFailed(payment.getId(), ChequeFailureReason.BOUNCE, "n");
 
         ArgumentCaptor<PaymentSchedule> captor = ArgumentCaptor.forClass(PaymentSchedule.class);
         verify(paymentScheduleRepository).save(captor.capture());
@@ -110,6 +111,10 @@ class PaymentScheduleServiceMarkFailedTest {
         assertThat(saved.getFailureReason()).isEqualTo(ChequeFailureReason.BOUNCE);
         assertThat(saved.getStatusChangedAt()).isNotNull();
         assertThat(saved.getNotes()).isEqualTo("n");
+        // Result schedule mirrors the saved entity.
+        PaymentScheduleDTO dto = result.schedule();
+        assertThat(dto).isNotNull();
+        assertThat(dto.getStatus()).isEqualTo(PaymentStatus.BOUNCED);
     }
 
     // ---------- Penalty creation: amount per reason + snapshot fields ----------
@@ -126,7 +131,7 @@ class PaymentScheduleServiceMarkFailedTest {
                 new BigDecimal("25"),
                 FineConfig.Source.ORG));
 
-        service.markFailed(payment.getId(), ChequeFailureReason.BOUNCE, null);
+        MarkFailedResult result = service.markFailed(payment.getId(), ChequeFailureReason.BOUNCE, null);
 
         PaymentPenalty saved = capturePenalty();
         assertThat(saved.getPenaltyType()).isEqualTo("CHEQUE_FAILURE");
@@ -137,6 +142,8 @@ class PaymentScheduleServiceMarkFailedTest {
         assertThat(saved.getPaymentScheduleId()).isEqualTo(payment.getId());
         assertThat(saved.getLeaseId()).isEqualTo(leaseId);
         assertThat(saved.getLastCalculatedAt()).isNotNull();
+        // Result.penalty() returns the same persisted entity (no extra DB roundtrip).
+        assertThat(result.penalty()).isSameAs(saved);
     }
 
     @Test
@@ -252,9 +259,13 @@ class PaymentScheduleServiceMarkFailedTest {
                 any(),
                 any());
 
-        // First notification = PAYMENT_BOUNCED with reason in body.
+        // First notification = PAYMENT_BOUNCED with reason AND fine amount in body
+        // — the fine matters here because the body explicitly tells the renter what
+        // the financial impact of the bounce is.
         assertThat(typeCaptor.getAllValues().get(0)).isEqualTo("PAYMENT_BOUNCED");
-        assertThat(bodyCaptor.getAllValues().get(0)).contains("BOUNCE");
+        String bouncedBody = bodyCaptor.getAllValues().get(0);
+        assertThat(bouncedBody).contains("BOUNCE");
+        assertThat(bouncedBody).contains("500");
     }
 
     @Test
@@ -314,6 +325,50 @@ class PaymentScheduleServiceMarkFailedTest {
         service.markFailed(payment.getId(), ChequeFailureReason.BOUNCE, null);
 
         verify(financialTransactionService, times(1)).recordChequeBounce(any(PaymentSchedule.class));
+    }
+
+    // ---------- Robustness: null lease.status + FT-failure propagation ----------
+
+    @Test
+    void markFailed_leaseStatusNull_doesNotThrow() {
+        PaymentSchedule payment = depositedPayment(new BigDecimal("5000"));
+        // A draft / freshly-created lease may not have a status set yet —
+        // LeaseEvent.newState is NOT NULL so this would otherwise blow up at
+        // flush time. The service should fall back to ACTIVE (the most common
+        // non-null default) so the audit row still saves.
+        payment.getLease().setStatus(null);
+        stubFindAndSave(payment);
+        stubFineConfig(bounceCfg());
+
+        service.markFailed(payment.getId(), ChequeFailureReason.BOUNCE, null);
+
+        ArgumentCaptor<LeaseEvent> captor = ArgumentCaptor.forClass(LeaseEvent.class);
+        verify(leaseEventRepository).save(captor.capture());
+        LeaseEvent ev = captor.getValue();
+        assertThat(ev.getNewState()).isEqualTo(LeaseStatus.ACTIVE);
+        assertThat(ev.getPreviousState()).isEqualTo(LeaseStatus.ACTIVE);
+    }
+
+    @Test
+    void markFailed_financialTransactionFails_rollsBack() {
+        PaymentSchedule payment = depositedPayment(new BigDecimal("5000"));
+        stubFindAndSave(payment);
+        stubFineConfig(bounceCfg());
+        // recordChequeBounce shares the outer JPA transaction — when it
+        // throws, the exception MUST propagate so @Transactional triggers a
+        // full rollback of the schedule update + penalty + audit. Swallowing
+        // it would leave the books inconsistent with the schedule state.
+        org.mockito.Mockito.doThrow(new RuntimeException("ledger down"))
+                .when(financialTransactionService).recordChequeBounce(any(PaymentSchedule.class));
+
+        assertThatThrownBy(() -> service.markFailed(payment.getId(), ChequeFailureReason.BOUNCE, null))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("ledger down");
+
+        // LeaseEvent should NOT have been written — the FT call happens before
+        // the audit save, and even if it didn't, @Transactional would roll the
+        // whole unit back. Verify the audit save was not invoked.
+        verify(leaseEventRepository, never()).save(any());
     }
 
     // ---------- Helpers ----------
