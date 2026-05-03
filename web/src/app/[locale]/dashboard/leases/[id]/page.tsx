@@ -71,8 +71,7 @@ type ChequePenalty = {
     paymentScheduleId: string;
     failureReason: string;
     penaltyType: string;
-    baseFine: number;
-    accruedFine: number;
+    penaltyAmount: number;
     currentTotal: number;
     outstanding: number;
     daysOverdue: number;
@@ -993,11 +992,11 @@ export default function LeaseDetailPage() {
                                             {/* Amounts */}
                                             <div className="flex items-center gap-3 flex-1 flex-wrap text-xs">
                                                 <span className="text-muted">
-                                                    {tP("baseFine")}: <span className="font-semibold text-foreground tabular-nums">{formatCurrency(pen.baseFine)}</span>
+                                                    {tP("baseFine")}: <span className="font-semibold text-foreground tabular-nums">{formatCurrency(pen.penaltyAmount)}</span>
                                                 </span>
-                                                {pen.daysOverdue > 0 && (
+                                                {(pen.currentTotal - pen.penaltyAmount) > 0 && (
                                                     <span className="text-muted">
-                                                        {tP("accrued")}: <span className="font-semibold text-warning tabular-nums">{formatCurrency(pen.accruedFine)}</span>
+                                                        {tP("accrued")}: <span className="font-semibold text-warning tabular-nums">{formatCurrency(pen.currentTotal - pen.penaltyAmount)}</span>
                                                     </span>
                                                 )}
                                                 <span className="text-muted">
