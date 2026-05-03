@@ -313,6 +313,29 @@ class PortfolioImportPersistServiceTest {
     }
 
     @Test
+    void persist_withWarnings_foldsThemIntoJobErrorsWrapper() throws Exception {
+        Workbook wb = buildWorkbookWithOneLease(b -> b.paymentTerms("4"));
+        ImportJob job = newJob();
+
+        var warnings = List.of(
+                new com.datagami.rentaxis.api.dto.ImportErrorDTO(
+                        "Cheques", 7, "DueDate",
+                        "DueDate 2027-01-01 is outside lease period 2026-01-01..2026-12-31"));
+
+        service.persistWorkbook(wb, job, warnings);
+
+        assertThat(job.getErrors())
+                .as("warnings must be folded into the wrapper even when no counters are set")
+                .isNotNull()
+                .startsWith("{");
+        var details = new com.fasterxml.jackson.databind.ObjectMapper()
+                .readValue(job.getErrors(),
+                        com.datagami.rentaxis.api.dto.PortfolioImportJobDetailsDTO.class);
+        assertThat(details.getWarnings()).hasSize(1);
+        assertThat(details.getWarnings().get(0).getField()).isEqualTo("DueDate");
+    }
+
+    @Test
     void persist_writesCountersIntoJobErrorsColumnAsWrapperJson() throws Exception {
         Workbook wb = buildWorkbookWithOneLease(b -> b
                 .bookingDeposit("10000", "BD-001", "2026-02-15", "Emirates NBD"));

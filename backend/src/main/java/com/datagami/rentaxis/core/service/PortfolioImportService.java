@@ -598,20 +598,21 @@ public class PortfolioImportService {
             job.setStatus("VALIDATING");
             importJobRepository.save(job);
 
-            List<ImportErrorDTO> errors = validateWorkbook(workbook);
-            if (!errors.isEmpty()) {
+            ValidationOutcome outcome = validateAll(workbook);
+            if (!outcome.errors().isEmpty()) {
                 job.setStatus("VALIDATION_FAILED");
-                job.setErrors(objectMapper.writeValueAsString(errors));
+                job.setErrors(objectMapper.writeValueAsString(outcome.errors()));
                 job.setCompletedAt(Instant.now());
                 importJobRepository.save(job);
                 return;
             }
 
-            // Phase 2: Persist
+            // Phase 2: Persist. Warnings (if any) are folded into the JSONB wrapper
+            // alongside the new counters by the persist service.
             job.setStatus("PERSISTING");
             importJobRepository.save(job);
 
-            persistService.persistWorkbook(workbook, job);
+            persistService.persistWorkbook(workbook, job, outcome.warnings());
 
             job.setStatus("COMPLETED");
             job.setCompletedAt(Instant.now());
