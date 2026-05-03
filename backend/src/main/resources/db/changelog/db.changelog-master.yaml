@@ -99,3 +99,5 @@ databaseChangeLog:
       file: db/changelog/changesets/45-lease-agreement-fields.yaml
   - include:
       file: db/changelog/changesets/46-widen-cheque-number.yaml
+  - include:
+      file: db/changelog/changesets/47-cheque-failure-penalties.yaml
