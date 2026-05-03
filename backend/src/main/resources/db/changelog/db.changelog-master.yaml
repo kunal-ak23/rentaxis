@@ -103,3 +103,5 @@ databaseChangeLog:
       file: db/changelog/changesets/47-cheque-failure-penalties.yaml
   - include:
       file: db/changelog/changesets/48-default-fine-settings.yaml
+  - include:
+      file: db/changelog/changesets/49-org-settings-penalty-instructions.yaml
