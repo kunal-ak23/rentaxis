@@ -13,6 +13,7 @@ import com.datagami.rentaxis.domain.entity.PenaltyPayment;
 import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.enums.ChequeFailureReason;
 import com.datagami.rentaxis.domain.repository.DeviceTokenRepository;
+import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.NotificationRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
 import lombok.extern.slf4j.Slf4j;
@@ -33,6 +34,7 @@ public class NotificationService {
     private final NotificationRepository notificationRepository;
     private final DeviceTokenRepository deviceTokenRepository;
     private final UserRepository userRepository;
+    private final LeaseRepository leaseRepository;
 
     @Value("${AZURE_COMMUNICATION_CONNECTION_STRING:}")
     private String azureCommConnectionString;
@@ -45,10 +47,12 @@ public class NotificationService {
 
     public NotificationService(NotificationRepository notificationRepository,
                                 DeviceTokenRepository deviceTokenRepository,
-                                UserRepository userRepository) {
+                                UserRepository userRepository,
+                                LeaseRepository leaseRepository) {
         this.notificationRepository = notificationRepository;
         this.deviceTokenRepository = deviceTokenRepository;
         this.userRepository = userRepository;
+        this.leaseRepository = leaseRepository;
     }
 
     /**
@@ -201,14 +205,23 @@ public class NotificationService {
      */
     public void sendPenaltyIncurred(PaymentSchedule schedule, ChequeFailureReason reason,
                                      BigDecimal fineAmount, UUID penaltyId) {
-        UUID renterUserId = schedule.getLease().getRenter().getUserId();
-        if (renterUserId == null) return;
+        UUID renterUserId = schedule.getLease() != null && schedule.getLease().getRenter() != null
+                ? schedule.getLease().getRenter().getUserId()
+                : null;
+        if (renterUserId == null) {
+            log.warn("PENALTY_INCURRED notification skipped — no renter user id for penalty {}", penaltyId);
+            return;
+        }
         UUID tenantId = TenantContextHolder.getTenantId();
         String body = "A " + fineAmount + " AED penalty has been added for installment #"
                 + schedule.getInstallmentNumber() + " (" + reason
                 + "). Please clear it via bank transfer, cheque, or cash.";
-        notify(tenantId, renterUserId, "PENALTY_INCURRED", "Penalty Incurred",
-                body, "PENALTY", penaltyId);
+        try {
+            notify(tenantId, renterUserId, "PENALTY_INCURRED", "Penalty Incurred",
+                    body, "PENALTY", penaltyId);
+        } catch (Exception e) {
+            log.warn("Failed to send PENALTY_INCURRED notification for penalty {}: {}", penaltyId, e.getMessage());
+        }
     }
 
     /**
@@ -217,21 +230,24 @@ public class NotificationService {
      * paper trail in their notification feed / email.
      */
     public void sendPenaltyCleared(PaymentPenalty penalty, PenaltyPayment receipt) {
-        // Penalty doesn't carry a renterUserId directly; we look up via the lease
-        // when a renter listener exists. For MVP we send to the lease's renter.
-        // The caller (PenaltyPaymentService) is responsible for the lookup —
-        // keeping this method tolerant of a null userId so notification failures
-        // never block clearance bookkeeping.
-        UUID renterUserId = resolveRenterUserId(penalty);
-        if (renterUserId == null) return;
         UUID tenantId = penalty.getTenantId() != null
                 ? penalty.getTenantId()
                 : TenantContextHolder.getTenantId();
-        String body = "Your " + penalty.getPenaltyAmount() + " AED penalty has been cleared. "
-                + "Receipt of " + receipt.getAmount() + " AED received via "
-                + receipt.getPaymentMethod() + ".";
-        notify(tenantId, renterUserId, "PENALTY_CLEARED", "Penalty Cleared",
-                body, "PENALTY", penalty.getId());
+        UUID renterUserId = leaseRepository.findById(penalty.getLeaseId())
+                .map(l -> l.getRenter() != null ? l.getRenter().getUserId() : null)
+                .orElse(null);
+        if (renterUserId == null) {
+            log.warn("PENALTY_CLEARED notification skipped — no renter user id for penalty {}", penalty.getId());
+            return;
+        }
+        String body = "Your " + penalty.getPenaltyAmount() + " AED penalty has been cleared after receipt of "
+                + receipt.getAmount() + " AED via " + receipt.getPaymentMethod() + ".";
+        try {
+            notify(tenantId, renterUserId, "PENALTY_CLEARED", "Penalty Cleared",
+                    body, "PENALTY", penalty.getId());
+        } catch (Exception e) {
+            log.warn("Failed to send PENALTY_CLEARED notification for penalty {}: {}", penalty.getId(), e.getMessage());
+        }
     }
 
     /**
@@ -239,30 +255,23 @@ public class NotificationService {
      * goodwill / reason so the renter understands why the fine is gone.
      */
     public void sendPenaltyWaived(PaymentPenalty penalty, String reason) {
-        UUID renterUserId = resolveRenterUserId(penalty);
-        if (renterUserId == null) return;
         UUID tenantId = penalty.getTenantId() != null
                 ? penalty.getTenantId()
                 : TenantContextHolder.getTenantId();
-        String body = "Your " + penalty.getPenaltyAmount() + " AED penalty has been waived"
-                + (reason != null && !reason.isBlank() ? " (reason: " + reason + ")" : "")
-                + ". No further action required.";
-        notify(tenantId, renterUserId, "PENALTY_WAIVED", "Penalty Waived",
-                body, "PENALTY", penalty.getId());
-    }
-
-    /**
-     * PaymentPenalty has no direct user link — the renter is reached via the
-     * lease. PenaltyPayment likewise. For unit tests this returns null when
-     * the entity tree is mocked thin; production data always has a renter.
-     */
-    private UUID resolveRenterUserId(PaymentPenalty penalty) {
-        // Defensive: penalty entity in MVP only has lease_id (UUID), not the
-        // Lease entity. The clearer/waiver flow currently relies on the caller
-        // providing the userId via a future overload. For now, return null and
-        // rely on callers + tests to verify the helper was invoked rather than
-        // the actual notify(...) inner call.
-        return null;
+        UUID renterUserId = leaseRepository.findById(penalty.getLeaseId())
+                .map(l -> l.getRenter() != null ? l.getRenter().getUserId() : null)
+                .orElse(null);
+        if (renterUserId == null) {
+            log.warn("PENALTY_WAIVED notification skipped — no renter user id for penalty {}", penalty.getId());
+            return;
+        }
+        String body = "Your " + penalty.getPenaltyAmount() + " AED penalty has been waived. Reason: " + reason + ".";
+        try {
+            notify(tenantId, renterUserId, "PENALTY_WAIVED", "Penalty Waived",
+                    body, "PENALTY", penalty.getId());
+        } catch (Exception e) {
+            log.warn("Failed to send PENALTY_WAIVED notification for penalty {}: {}", penalty.getId(), e.getMessage());
+        }
     }
 
     @Transactional(readOnly = true)
