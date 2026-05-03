@@ -101,3 +101,5 @@ databaseChangeLog:
       file: db/changelog/changesets/46-widen-cheque-number.yaml
   - include:
       file: db/changelog/changesets/47-cheque-failure-penalties.yaml
+  - include:
+      file: db/changelog/changesets/48-default-fine-settings.yaml
