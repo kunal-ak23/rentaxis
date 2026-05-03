@@ -5,8 +5,8 @@ import com.datagami.rentaxis.domain.entity.RentCollectionSettings;
 import com.datagami.rentaxis.domain.repository.LandlordOrgFineSettingsRepository;
 import com.datagami.rentaxis.domain.repository.RentCollectionSettingsRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.UUID;
@@ -25,8 +25,7 @@ public class FineConfigResolver {
     private final LandlordOrgFineSettingsRepository orgRepo;
 
     public FineConfig resolve(UUID propertyId, UUID tenantId) {
-        LandlordOrgFineSettings org = orgRepo.findByLandlordOrgId(tenantId)
-                .orElseGet(() -> upsertDefault(tenantId));
+        LandlordOrgFineSettings org = findOrCreateOrg(tenantId);
 
         RentCollectionSettings rcs = rcsRepo.findByPropertyId(propertyId).orElse(null);
 
@@ -47,7 +46,21 @@ public class FineConfigResolver {
                 overridden ? FineConfig.Source.PROPERTY : FineConfig.Source.ORG);
     }
 
-    @Transactional
+    private LandlordOrgFineSettings findOrCreateOrg(UUID tenantId) {
+        return orgRepo.findByLandlordOrgId(tenantId)
+                .orElseGet(() -> {
+                    try {
+                        return upsertDefault(tenantId);
+                    } catch (DataIntegrityViolationException e) {
+                        // Lost the race — another thread inserted concurrently.
+                        // Re-query and return the winner's row.
+                        return orgRepo.findByLandlordOrgId(tenantId)
+                                .orElseThrow(() -> new IllegalStateException(
+                                        "Org settings missing after concurrent insert race for tenant " + tenantId, e));
+                    }
+                });
+    }
+
     LandlordOrgFineSettings upsertDefault(UUID tenantId) {
         LandlordOrgFineSettings o = new LandlordOrgFineSettings();
         o.setLandlordOrgId(tenantId);

@@ -11,6 +11,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import java.math.BigDecimal;
 import java.util.Optional;
@@ -19,6 +20,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -37,6 +39,16 @@ class FineConfigResolverTest {
     private LandlordOrgFineSettings standardOrg(UUID tenantId) {
         LandlordOrgFineSettings o = new LandlordOrgFineSettings();
         o.setLandlordOrgId(tenantId);
+        o.setFineBounceAmount(new BigDecimal("500"));
+        o.setFineSignatureMismatchAmount(new BigDecimal("500"));
+        o.setFineAccountClosedAmount(new BigDecimal("1000"));
+        o.setFineGraceDays(7);
+        o.setFinePerDayRate(new BigDecimal("25"));
+        return o;
+    }
+
+    private LandlordOrgFineSettings orgWithDefaults() {
+        LandlordOrgFineSettings o = new LandlordOrgFineSettings();
         o.setFineBounceAmount(new BigDecimal("500"));
         o.setFineSignatureMismatchAmount(new BigDecimal("500"));
         o.setFineAccountClosedAmount(new BigDecimal("1000"));
@@ -191,5 +203,31 @@ class FineConfigResolverTest {
         assertThat(cfg.graceDays()).isEqualTo(7);
         assertThat(cfg.perDayRate()).isEqualByComparingTo("25");
         assertThat(cfg.source()).isEqualTo(FineConfig.Source.ORG);
+    }
+
+    @Test
+    void resolve_concurrentInsertRace_recoversByRequery() {
+        UUID propertyId = UUID.randomUUID();
+        UUID tenantId   = UUID.randomUUID();
+
+        LandlordOrgFineSettings winner = orgWithDefaults();
+        winner.setLandlordOrgId(tenantId);
+
+        when(rcsRepo.findByPropertyId(propertyId)).thenReturn(Optional.empty());
+
+        // First lookup: empty (we lost the race). Save: throws DataIntegrityViolationException.
+        // Re-query: returns the winner's row.
+        when(orgRepo.findByLandlordOrgId(tenantId))
+                .thenReturn(Optional.empty())          // first call (before save attempt)
+                .thenReturn(Optional.of(winner));      // second call (after constraint violation)
+        when(orgRepo.save(any(LandlordOrgFineSettings.class)))
+                .thenThrow(new DataIntegrityViolationException("duplicate key"));
+
+        FineConfig cfg = resolver.resolve(propertyId, tenantId);
+        assertThat(cfg.bounceAmount()).isEqualByComparingTo("500");
+        assertThat(cfg.source()).isEqualTo(FineConfig.Source.ORG);
+
+        verify(orgRepo, times(2)).findByLandlordOrgId(tenantId);
+        verify(orgRepo, times(1)).save(any(LandlordOrgFineSettings.class));
     }
 }
