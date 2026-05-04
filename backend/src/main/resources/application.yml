@@ -47,3 +47,13 @@ azure:
   storage:
     connection-string: ${AZURE_STORAGE_CONNECTION_STRING:}
     container: ${AZURE_STORAGE_CONTAINER:listings}
+  openai:
+    endpoint: ${AZURE_OPENAI_ENDPOINT:}
+    api-key: ${AZURE_OPENAI_API_KEY:}
+    deployment: ${AZURE_OPENAI_CHEQUE_DEPLOYMENT:gpt-4o}
+    api-version: "2024-10-21"
+    timeout-seconds: 30
+
+cheque-extraction:
+  retention-days: 90
+  purge-cron: "0 0 3 * * *"
