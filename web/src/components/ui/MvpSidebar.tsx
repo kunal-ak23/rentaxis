@@ -124,8 +124,8 @@ export default function MvpSidebar() {
     ) => (
         <>
             <div className={cn(
-                "px-4 mt-7 mb-2.5 text-[9px] font-semibold uppercase tracking-[0.2em]",
-                "text-sidebar-muted",
+                "px-2 mt-4 mb-1 text-[10.5px] font-semibold uppercase tracking-[0.08em]",
+                "text-[--ink-500]",
                 isCollapsed && "hidden"
             )} {...(sectionDataTour ? { 'data-tour': sectionDataTour } : {})}>
                 {label}
@@ -139,23 +139,23 @@ export default function MvpSidebar() {
                             href={item.href}
                             data-tour={item.tourId}
                             className={cn(
-                                "group flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 text-[13px] font-medium relative cursor-pointer",
-                                "focus:outline-none focus:ring-2 focus:ring-accent/30",
+                                "group flex items-center gap-2.5 px-2.5 py-2 rounded-[--radius-sm] transition-colors text-[13.5px] font-medium relative cursor-pointer",
+                                "focus:outline-none focus:ring-2 focus:ring-[--gold-500]/30",
                                 isActive
-                                    ? "bg-white/10 text-white"
-                                    : "text-sidebar-muted hover:bg-white/5 hover:text-white",
+                                    ? "bg-[--sand-100] text-[--ink-900] font-semibold"
+                                    : "text-[--ink-600] hover:bg-[--sand-100]",
                                 isCollapsed && "justify-center"
                             )}
                         >
                             <Icon size={16} className={cn(
                                 "shrink-0 transition-colors",
-                                isActive ? "text-accent" : "group-hover:text-white/80"
+                                isActive ? "text-[--gold-500]" : "text-[--ink-500]"
                             )} />
                             {!isCollapsed && <span className="flex-1">{item.name}</span>}
                             {isActive && !isCollapsed && (
                                 <motion.div
                                     layoutId={`sidebar-${layoutIdPrefix}-indicator`}
-                                    className="absolute left-0 w-[3px] h-5 bg-accent rounded-r-full"
+                                    className="absolute left-[-12px] top-1.5 bottom-1.5 w-0.5 bg-[--gold-500] rounded-r-sm"
                                 />
                             )}
                         </Link>
@@ -168,32 +168,33 @@ export default function MvpSidebar() {
     return (
         <aside
             className={cn(
-                "relative bg-sidebar h-screen flex flex-col transition-all duration-300 ease-in-out z-40 sticky top-0",
-                isCollapsed ? "w-[72px]" : "w-[260px]"
+                "relative h-screen flex flex-col border-r border-border bg-surface transition-all duration-200 z-40 sticky top-0",
+                isCollapsed ? "w-[68px]" : "w-[244px]"
             )}
+            style={{ flexShrink: 0 }}
         >
             {/* Collapse Toggle */}
             <button
                 onClick={() => setIsCollapsed(!isCollapsed)}
                 aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-                className="absolute -right-3 top-12 bg-sidebar border border-white/10 rounded-full p-1.5 shadow-lg hover:bg-white/10 z-50 transition-all duration-200 active:scale-90 cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent/30"
+                className="absolute -right-3 top-12 bg-surface border border-border rounded-full p-1.5 shadow-sm hover:bg-[--sand-100] z-50 transition-all duration-200 active:scale-90 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[--gold-500]/30"
             >
                 {isCollapsed
-                    ? <ChevronRight size={10} className="text-white/70" />
-                    : <Menu size={10} className="text-white/70" />
+                    ? <ChevronRight size={10} className="text-[--ink-600]" />
+                    : <Menu size={10} className="text-[--ink-600]" />
                 }
             </button>
 
             {/* Logo */}
-            <div className={cn("mb-2 px-5 mt-2 flex items-center", isCollapsed && "px-0 justify-center")}>
-                <Link href="/" className="flex items-center gap-2 focus:outline-none focus:ring-2 focus:ring-accent/30 rounded-lg">
+            <div className={cn("h-[60px] px-4 flex items-center border-b border-border", isCollapsed && "justify-center")}>
+                <Link href="/" className="flex items-center gap-2 focus:outline-none focus:ring-2 focus:ring-[--gold-500]/30 rounded-lg">
                     <Image
                         src="/logo.png"
                         alt="RentAxis"
                         width={isCollapsed ? 32 : 140}
                         height={isCollapsed ? 32 : 40}
                         className={cn(
-                            "object-contain brightness-0 invert transition-all duration-300",
+                            "object-contain transition-all duration-300",
                             isCollapsed ? "w-8 h-8" : "w-[140px] h-[40px]"
                         )}
                         priority
@@ -201,38 +202,38 @@ export default function MvpSidebar() {
                 </Link>
             </div>
 
-            <nav data-tour="sidebar-nav" className="flex-1 py-1 px-3 space-y-0.5 overflow-y-auto">
+            <nav data-tour="sidebar-nav" className="flex-1 px-3 py-3 space-y-0.5 overflow-y-auto thinscroll">
                 {/* Dashboard Home */}
                 <SidebarTooltip label={tDashboard("dashboard")} enabled={isCollapsed}>
                     <Link
                         href="/dashboard"
                         className={cn(
-                            "group flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 text-[13px] font-medium relative mb-1 cursor-pointer",
-                            "focus:outline-none focus:ring-2 focus:ring-accent/30",
+                            "group flex items-center gap-2.5 px-2.5 py-2 rounded-[--radius-sm] transition-colors text-[13.5px] font-medium relative mb-1 cursor-pointer",
+                            "focus:outline-none focus:ring-2 focus:ring-[--gold-500]/30",
                             pathname.endsWith("/dashboard") || pathname.endsWith("/dashboard/")
-                                ? "bg-white/10 text-white"
-                                : "text-sidebar-muted hover:bg-white/5 hover:text-white",
+                                ? "bg-[--sand-100] text-[--ink-900] font-semibold"
+                                : "text-[--ink-600] hover:bg-[--sand-100]",
                             isCollapsed && "justify-center"
                         )}
                     >
                         <Home size={16} className={cn(
                             "shrink-0 transition-colors",
-                            (pathname.endsWith("/dashboard") || pathname.endsWith("/dashboard/")) ? "text-accent" : "group-hover:text-white/80"
+                            (pathname.endsWith("/dashboard") || pathname.endsWith("/dashboard/")) ? "text-[--gold-500]" : "text-[--ink-500]"
                         )} />
                         {!isCollapsed && <span className="flex-1">{tDashboard("dashboard")}</span>}
                         {(pathname.endsWith("/dashboard") || pathname.endsWith("/dashboard/")) && !isCollapsed && (
                             <motion.div
                                 layoutId="sidebar-dashboard-indicator"
-                                className="absolute left-0 w-[3px] h-5 bg-accent rounded-r-full"
+                                className="absolute left-[-12px] top-1.5 bottom-1.5 w-0.5 bg-[--gold-500] rounded-r-sm"
                             />
                         )}
                     </Link>
                 </SidebarTooltip>
 
-                {allItems.length > 0 && renderSection(allItems, "Overview", "overview")}
-                {financeItems.length > 0 && renderSection(financeItems, "Finance", "finance", "sidebar-finance")}
-                {hrItems.length > 0 && renderSection(hrItems, "HR", "hr")}
-                {settingsItems.length > 0 && renderSection(settingsItems, "Settings", "settings")}
+                {allItems.length > 0 && renderSection(allItems, "Workspace", "overview")}
+                {financeItems.length > 0 && renderSection(financeItems, "Operations", "finance", "sidebar-finance")}
+                {hrItems.length > 0 && renderSection(hrItems, "Operations", "hr")}
+                {settingsItems.length > 0 && renderSection(settingsItems, "Operations", "settings")}
 
                 {/* Support Section */}
                 <div className={cn(
@@ -247,23 +248,23 @@ export default function MvpSidebar() {
                         href="/dashboard/help"
                         data-tour="sidebar-help"
                         className={cn(
-                            "group flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 text-[13px] font-medium relative cursor-pointer",
-                            "focus:outline-none focus:ring-2 focus:ring-accent/30",
+                            "group flex items-center gap-2.5 px-2.5 py-2 rounded-[--radius-sm] transition-colors text-[13.5px] font-medium relative cursor-pointer",
+                            "focus:outline-none focus:ring-2 focus:ring-[--gold-500]/30",
                             pathname.includes("/dashboard/help")
-                                ? "bg-white/10 text-white"
-                                : "text-sidebar-muted hover:bg-white/5 hover:text-white",
+                                ? "bg-[--sand-100] text-[--ink-900] font-semibold"
+                                : "text-[--ink-600] hover:bg-[--sand-100]",
                             isCollapsed && "justify-center"
                         )}
                     >
                         <HelpCircle size={16} className={cn(
                             "shrink-0 transition-colors",
-                            pathname.includes("/dashboard/help") ? "text-accent" : "group-hover:text-white/80"
+                            pathname.includes("/dashboard/help") ? "text-[--gold-500]" : "text-[--ink-500]"
                         )} />
                         {!isCollapsed && <span className="flex-1">Help &amp; Guides</span>}
                         {pathname.includes("/dashboard/help") && !isCollapsed && (
                             <motion.div
                                 layoutId="sidebar-help-indicator"
-                                className="absolute left-0 w-[3px] h-5 bg-accent rounded-r-full"
+                                className="absolute left-[-12px] top-1.5 bottom-1.5 w-0.5 bg-[--gold-500] rounded-r-sm"
                             />
                         )}
                     </Link>
@@ -271,10 +272,31 @@ export default function MvpSidebar() {
             </nav>
 
             {/* Footer */}
-            <div className="mt-auto px-3 pb-6">
-                {!isCollapsed && (
-                    <div className="px-3 text-[9px] text-white/20 font-medium tracking-wider text-center">
-                        {APP_VERSION}
+            <div className="mt-auto border-t border-border p-3">
+                {isCollapsed ? (
+                    <div className="flex justify-center">
+                        <div
+                            className="w-8 h-8 rounded-full flex items-center justify-center text-[12px] font-semibold"
+                            style={{ background: 'var(--ink-900)', color: 'var(--gold-500)' }}
+                        >
+                            RX
+                        </div>
+                    </div>
+                ) : (
+                    <div className="flex items-center justify-between gap-2 p-2 rounded-[--radius] border border-border bg-[--sand-100]">
+                        <div className="flex items-center gap-2">
+                            <div
+                                className="w-8 h-8 rounded-full flex items-center justify-center text-[12px] font-semibold"
+                                style={{ background: 'var(--ink-900)', color: 'var(--gold-500)' }}
+                            >
+                                RX
+                            </div>
+                            <div className="leading-tight">
+                                <div className="text-[12px] font-semibold text-[--ink-900]">RentAxis</div>
+                                <div className="text-[10px] text-[--ink-500]">{APP_VERSION}</div>
+                            </div>
+                        </div>
+                        <ChevronRight size={14} className="text-[--ink-500]" />
                     </div>
                 )}
             </div>
