@@ -2,6 +2,7 @@ package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
+import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.LeaseEvent;
 import com.datagami.rentaxis.domain.entity.PaymentPenalty;
 import com.datagami.rentaxis.domain.entity.PenaltyPayment;
@@ -102,6 +103,15 @@ public class PenaltyPaymentService {
 
         PaymentPenalty p = paymentPenaltyRepository.findById(penaltyId)
                 .orElseThrow(() -> new NotFoundException("Penalty " + penaltyId + " not found"));
+
+        // Defense-in-depth: the Hibernate tenantFilter already filters findById,
+        // but mirror the explicit check used in PenaltyService.waivePenalty so a
+        // misconfigured filter cannot silently let a cross-tenant receipt land.
+        UUID currentTenantId = TenantContextHolder.getTenantId();
+        if (currentTenantId != null && !currentTenantId.equals(p.getTenantId())) {
+            throw new BusinessRuleViolationException("Access denied");
+        }
+
         if (p.getClearedAt() != null) {
             throw new BusinessRuleViolationException("Penalty already cleared");
         }

@@ -2,7 +2,6 @@ package com.datagami.rentaxis.api;
 
 import com.datagami.rentaxis.domain.entity.OrgSettings;
 import com.datagami.rentaxis.domain.repository.OrgSettingsRepository;
-import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -30,7 +29,7 @@ public class OrgSettingsController {
     @PutMapping
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
     public ResponseEntity<Map<String, Object>> update(
-            @Valid @RequestBody Map<String, String> body) {
+            @RequestBody Map<String, String> body) {
         String instructions = body.getOrDefault("penaltyPaymentInstructions", "");
         List<OrgSettings> rows = repo.findAll();
         OrgSettings s = rows.isEmpty() ? new OrgSettings() : rows.get(0);
