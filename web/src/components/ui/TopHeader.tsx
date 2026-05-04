@@ -2,7 +2,6 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useSession, signOut } from "next-auth/react";
-import { TenantSwitcher } from "./TenantSwitcher";
 import { Link } from "@/i18n/routing";
 import { usePathname, useRouter } from "next/navigation";
 import { useLocale } from "next-intl";
@@ -124,23 +123,17 @@ export function TopHeader() {
     return (
         <header className="h-[60px] px-7 flex items-center gap-4 border-b border-border bg-surface shrink-0 z-30">
             <div className="flex items-center relative w-full justify-between gap-4">
-                {/* Left Side: Context Switcher */}
-                <div className="flex items-center w-[300px]">
-                    {session?.user && (
-                        <div className="w-full" data-tour="tenant-switcher">
-                            <TenantSwitcher isCollapsed={false} />
-                        </div>
-                    )}
-                </div>
-
-                {/* Right Side */}
-                <div className="flex items-center gap-3">
-                    {/* Search placeholder */}
-                    <div className="hidden lg:flex items-center gap-2 px-3 h-9 bg-[--sand-100] border border-border rounded-[--radius] min-w-[280px]">
+                {/* Search */}
+                <div className="flex-1 max-w-[420px]" data-tour="topbar-search">
+                    <div className="hidden lg:flex items-center gap-2 px-3 h-9 bg-[--sand-100] border border-border rounded-[--radius]">
                         <Search size={14} className="text-[--ink-500] shrink-0" />
                         <span className="text-[13px] text-[--ink-500] flex-1">Search leases, tenants, cheques…</span>
                         <kbd className="text-[11px] text-[--ink-500] px-1.5 py-0.5 border border-border rounded font-mono">⌘K</kbd>
                     </div>
+                </div>
+
+                {/* Right Side */}
+                <div className="flex items-center gap-3">{/* (locale, bell, profile) */}
 
                     {/* Locale Switcher */}
                     <div className="flex items-center bg-[--sand-100] rounded-[--radius] p-0.5 border border-border">

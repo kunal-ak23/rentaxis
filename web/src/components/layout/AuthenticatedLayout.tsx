@@ -46,7 +46,7 @@ export default function AuthenticatedLayout({
                 <MvpSidebar />
                 <div className="flex flex-col flex-1 min-w-0">
                     <TopHeader />
-                    <main className="flex-1 overflow-y-auto thinscroll bg-background">
+                    <main className="flex-1 overflow-y-auto thinscroll bg-background px-6 py-6 lg:px-8 lg:py-7">
                         {children}
                     </main>
                 </div>

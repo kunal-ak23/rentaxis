@@ -187,7 +187,7 @@ export default function DashboardPage() {
   });
 
   return (
-    <div className="p-7 flex flex-col gap-5 bg-background min-h-full">
+    <div className="flex flex-col gap-5">
       <div className="flex items-end justify-between">
         <div>
           <p className="text-[12.5px] text-[--ink-500] mb-1">{dayLabel}</p>

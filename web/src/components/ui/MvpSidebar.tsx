@@ -34,6 +34,7 @@ import { useSession } from "next-auth/react";
 import { hasPermission, canConfigureGateway, canConfigureFines, type UserRole } from "@/lib/rbac";
 import { useTenantFeatures } from "@/hooks/useTenantFeatures";
 import { SidebarTooltip } from "./SidebarTooltip";
+import { TenantSwitcher } from "./TenantSwitcher";
 
 const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || '0.6.0.dev';
 
@@ -271,32 +272,12 @@ export default function MvpSidebar() {
                 </SidebarTooltip>
             </nav>
 
-            {/* Footer */}
+            {/* Footer — current org / tenant switcher */}
             <div className="mt-auto border-t border-border p-3">
-                {isCollapsed ? (
-                    <div className="flex justify-center">
-                        <div
-                            className="w-8 h-8 rounded-full flex items-center justify-center text-[12px] font-semibold"
-                            style={{ background: 'var(--ink-900)', color: 'var(--gold-500)' }}
-                        >
-                            RX
-                        </div>
-                    </div>
-                ) : (
-                    <div className="flex items-center justify-between gap-2 p-2 rounded-[--radius] border border-border bg-[--sand-100]">
-                        <div className="flex items-center gap-2">
-                            <div
-                                className="w-8 h-8 rounded-full flex items-center justify-center text-[12px] font-semibold"
-                                style={{ background: 'var(--ink-900)', color: 'var(--gold-500)' }}
-                            >
-                                RX
-                            </div>
-                            <div className="leading-tight">
-                                <div className="text-[12px] font-semibold text-[--ink-900]">RentAxis</div>
-                                <div className="text-[10px] text-[--ink-500]">{APP_VERSION}</div>
-                            </div>
-                        </div>
-                        <ChevronRight size={14} className="text-[--ink-500]" />
+                <TenantSwitcher isCollapsed={isCollapsed} />
+                {!isCollapsed && (
+                    <div className="text-[10px] text-[--ink-500] mt-2 px-1 font-mono">
+                        v{APP_VERSION}
                     </div>
                 )}
             </div>

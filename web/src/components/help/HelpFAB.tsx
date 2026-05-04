@@ -44,9 +44,9 @@ export default function HelpFAB() {
             className="absolute bottom-16 right-0 w-64 rounded-xl bg-white shadow-xl border border-gray-200 overflow-hidden"
           >
             {/* Header */}
-            <div className="bg-teal-600 px-4 py-3 text-white">
+            <div className="bg-[--ink-900] px-4 py-3 text-white">
               <p className="font-semibold text-sm">Need Help?</p>
-              <p className="text-xs text-teal-100">Resources for this page</p>
+              <p className="text-xs text-white/70">Resources for this page</p>
             </div>
 
             {/* Options */}
@@ -56,11 +56,11 @@ export default function HelpFAB() {
                   href={`/dashboard/help/${ctx.article}`}
                   onClick={() => setOpen(false)}
                   className={cn(
-                    'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-gray-700',
-                    'hover:bg-teal-50 transition-colors'
+                    'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-foreground',
+                    'hover:bg-[--sand-100] transition-colors'
                   )}
                 >
-                  <BookOpen className="w-4 h-4 text-teal-600 shrink-0" />
+                  <BookOpen className="w-4 h-4 text-[--gold-500] shrink-0" />
                   View Page Help
                 </Link>
               )}
@@ -72,11 +72,11 @@ export default function HelpFAB() {
                     startTour(ctx.tour!);
                   }}
                   className={cn(
-                    'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-gray-700 w-full text-left',
-                    'hover:bg-teal-50 transition-colors'
+                    'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-foreground w-full text-left',
+                    'hover:bg-[--sand-100] transition-colors'
                   )}
                 >
-                  <Play className="w-4 h-4 text-teal-600 shrink-0" />
+                  <Play className="w-4 h-4 text-[--gold-500] shrink-0" />
                   Take a Tour
                 </button>
               )}
@@ -85,11 +85,11 @@ export default function HelpFAB() {
                 href="/dashboard/help"
                 onClick={() => setOpen(false)}
                 className={cn(
-                  'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-gray-700',
-                  'hover:bg-teal-50 transition-colors'
+                  'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-foreground',
+                  'hover:bg-[--sand-100] transition-colors'
                 )}
               >
-                <HelpCircle className="w-4 h-4 text-teal-600 shrink-0" />
+                <HelpCircle className="w-4 h-4 text-[--gold-500] shrink-0" />
                 Help Center
               </Link>
             </div>
@@ -104,8 +104,8 @@ export default function HelpFAB() {
         className={cn(
           'w-12 h-12 rounded-full flex items-center justify-center shadow-lg transition-colors',
           open
-            ? 'bg-gray-600 hover:bg-gray-700'
-            : 'bg-teal-600 hover:bg-teal-700'
+            ? 'bg-[--ink-700] hover:bg-[--ink-800]'
+            : 'bg-[--ink-900] hover:bg-[--ink-800]'
         )}
       >
         {open ? (

@@ -315,7 +315,7 @@ export default function PaymentsPage() {
         : [];
 
     return (
-        <div className="p-7 flex flex-col gap-[18px] bg-background min-h-full">
+        <div className="flex flex-col gap-[18px]">
             {/* Header */}
             <div className="flex items-end justify-between">
                 <div>
