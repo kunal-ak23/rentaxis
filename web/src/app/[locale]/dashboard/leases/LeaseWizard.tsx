@@ -6,6 +6,7 @@ import { ArrowLeft, ArrowRight, X, Check, Loader2, Sparkles, AlertTriangle, Buil
 import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/format";
 import PaymentScheduleEditor from "./PaymentScheduleEditor";
+import ChequeScanner from "@/components/cheques/ChequeScanner";
 
 /**
  * Five-step wizard for creating a new draft lease.
@@ -450,6 +451,20 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                                 </label>
                                 {data.bookingDepositOpen && (
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+                                        <div className="md:col-span-2">
+                                            <ChequeScanner
+                                                onExtracted={(result) =>
+                                                    update({
+                                                        bookingDeposit: {
+                                                            ...data.bookingDeposit,
+                                                            chequeNumber: result.chequeNumber ?? data.bookingDeposit.chequeNumber,
+                                                            chequeDate: result.chequeDate ?? data.bookingDeposit.chequeDate,
+                                                            bankName: result.bankName ?? data.bookingDeposit.bankName,
+                                                        },
+                                                    })
+                                                }
+                                            />
+                                        </div>
                                         <Field label="Amount (AED) *">
                                             <input type="number" min={0} step={0.01} value={data.bookingDeposit.amount}
                                                 onChange={(e) => update({ bookingDeposit: { ...data.bookingDeposit, amount: Number(e.target.value) } })}
