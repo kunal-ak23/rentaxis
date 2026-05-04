@@ -872,16 +872,16 @@ export default function LeaseDetailPage() {
                     )}
 
                     <div className={cn(
-                        "bg-surface rounded-xl border border-border",
+                        "bg-surface rounded-[--radius-lg] border border-border overflow-hidden",
                         lease && (lease.status === "DRAFT" || lease.status === "PENDING_SIGNATURE") && "hidden"
                     )}>
-                        <div className="px-5 py-3.5 border-b border-border">
-                            <h2 className="text-xs font-semibold text-muted uppercase tracking-wider flex items-center gap-2"><CreditCard size={13} /> Payment Schedule</h2>
+                        <div className="px-5 py-3.5 border-b border-border bg-[--sand-50]">
+                            <h2 className="text-xs font-semibold text-muted uppercase tracking-wider flex items-center gap-2"><CreditCard size={13} /> Payment Schedule Timeline</h2>
                         </div>
-                        <div className="overflow-x-auto">
+                        <div className="overflow-x-auto bg-surface">
                             <table className="w-full">
                                 <thead>
-                                    <tr className="bg-input/50">
+                                    <tr className="bg-[--sand-100]">
                                         <th className="px-4 py-2.5 text-start text-[10px] font-semibold text-muted uppercase tracking-wider">#</th>
                                         <th className="px-4 py-2.5 text-start text-[10px] font-semibold text-muted uppercase tracking-wider">Due Date</th>
                                         <th className="px-4 py-2.5 text-end text-[10px] font-semibold text-muted uppercase tracking-wider">Amount</th>
@@ -895,7 +895,7 @@ export default function LeaseDetailPage() {
                                 </thead>
                                 <tbody>
                                     {payments.map(p => (
-                                        <tr key={p.id} className="border-b border-border hover:bg-input/30 transition-colors">
+                                        <tr key={p.id} className="border-b border-border hover:bg-[--sand-50] transition-colors">
                                             <td className="px-4 py-2.5 text-xs text-muted">{p.installmentNumber}</td>
                                             <td className="px-4 py-2.5 text-xs text-foreground tabular-nums">{new Date(p.dueDate).toLocaleDateString()}</td>
                                             <td className="px-4 py-2.5 text-xs font-medium text-foreground text-end tabular-nums">{formatCurrency(p.amount)}</td>
