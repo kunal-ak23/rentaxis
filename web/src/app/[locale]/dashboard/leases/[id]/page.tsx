@@ -17,6 +17,7 @@ import PaymentScheduleEditor from "../PaymentScheduleEditor";
 import LeaseMetadataEditor from "../LeaseMetadataEditor";
 import { MarkChequeFailedDialog, type PenaltySummary } from "@/components/payments/MarkChequeFailedDialog";
 import { RecordPenaltyPaymentDialog } from "@/components/penalties/RecordPenaltyPaymentDialog";
+import { CollectChequeDialog } from "@/components/payments/CollectChequeDialog";
 
 type Lease = {
     id: string; unitId: string; renterId: string; unitIdentifier: string;
@@ -178,6 +179,10 @@ export default function LeaseDetailPage() {
         amount: number;
     } | null>(null);
     const [markFailedToast, setMarkFailedToast] = useState<string | null>(null);
+
+    // Collect-cheque dialog state (admin can collect a PENDING payment inline)
+    const [collectingPaymentId, setCollectingPaymentId] = useState<string | null>(null);
+    const [collectMode, setCollectMode] = useState<"collect" | "replace">("collect");
 
     // Cheque-failure penalties section
     const [chequePenalties, setChequePenalties] = useState<ChequePenalty[]>([]);
@@ -869,14 +874,32 @@ export default function LeaseDetailPage() {
                                             </td>
                                             {isAdmin && (
                                                 <td className="px-4 py-2.5">
-                                                    {p.status === "DEPOSITED" && (
-                                                        <button
-                                                            onClick={() => setMarkFailedTarget({ paymentId: p.id, installmentNumber: p.installmentNumber, amount: p.amount })}
-                                                            className="px-2.5 py-1 bg-error/10 text-error hover:bg-error/20 rounded-lg text-[10px] font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-error/20 focus:outline-none"
-                                                        >
-                                                            Mark failed
-                                                        </button>
-                                                    )}
+                                                    <div className="flex items-center gap-2">
+                                                        {p.status === "PENDING" && (
+                                                            <button
+                                                                onClick={() => { setCollectMode("collect"); setCollectingPaymentId(p.id); }}
+                                                                className="px-2.5 py-1 bg-primary/10 text-primary hover:bg-primary/20 rounded-lg text-[10px] font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/20 focus:outline-none"
+                                                            >
+                                                                Collect
+                                                            </button>
+                                                        )}
+                                                        {p.status === "BOUNCED" && (
+                                                            <button
+                                                                onClick={() => { setCollectMode("replace"); setCollectingPaymentId(p.id); }}
+                                                                className="px-2.5 py-1 bg-purple-600/10 text-purple-700 hover:bg-purple-600/20 rounded-lg text-[10px] font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-purple-600/20 focus:outline-none"
+                                                            >
+                                                                Replace
+                                                            </button>
+                                                        )}
+                                                        {p.status === "DEPOSITED" && (
+                                                            <button
+                                                                onClick={() => setMarkFailedTarget({ paymentId: p.id, installmentNumber: p.installmentNumber, amount: p.amount })}
+                                                                className="px-2.5 py-1 bg-error/10 text-error hover:bg-error/20 rounded-lg text-[10px] font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-error/20 focus:outline-none"
+                                                            >
+                                                                Mark failed
+                                                            </button>
+                                                        )}
+                                                    </div>
                                                 </td>
                                             )}
                                         </tr>
@@ -1406,6 +1429,15 @@ export default function LeaseDetailPage() {
                 onSuccess={onMarkFailedSuccess}
             />
         )}
+
+        {/* Collect / Replace Cheque Dialog */}
+        <CollectChequeDialog
+            open={!!collectingPaymentId}
+            paymentId={collectingPaymentId}
+            mode={collectMode}
+            onClose={() => setCollectingPaymentId(null)}
+            onSuccess={() => { setCollectingPaymentId(null); fetchPayments(); }}
+        />
 
         {/* Record Penalty Payment Dialog */}
         {recordPaymentTarget && (
