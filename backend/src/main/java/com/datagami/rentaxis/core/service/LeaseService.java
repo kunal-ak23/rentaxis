@@ -25,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -357,6 +358,9 @@ public class LeaseService {
             ps.setChequeNumber(emptyToNull(row.getChequeNumber()));
             ps.setChequeDate(row.getChequeDate());
             ps.setBankName(emptyToNull(row.getBankName()));
+            ps.setChequeImageUrl(emptyToNull(row.getChequeImageUrl()));
+            ps.setChequeImageBlobPath(emptyToNull(row.getChequeImageBlobPath()));
+            ps.setChequeImageUploadedAt(resolveChequeImageUploadedAt(row.getChequeImageBlobPath(), row.getChequeImageUploadedAt()));
         }
         return paymentScheduleRepository.saveAll(existing.values().stream()
                 // Return rows in installment order so the UI can render them deterministically.
@@ -372,6 +376,13 @@ public class LeaseService {
 
     private static String emptyToNull(String s) {
         return isBlank(s) ? null : s.trim();
+    }
+
+    private static OffsetDateTime resolveChequeImageUploadedAt(String blobPath, OffsetDateTime uploadedAt) {
+        if (isBlank(blobPath)) {
+            return null;
+        }
+        return uploadedAt != null ? uploadedAt : OffsetDateTime.now();
     }
 
     /**

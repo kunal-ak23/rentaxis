@@ -7,6 +7,7 @@ import lombok.Data;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -50,5 +51,10 @@ public class UpdatePaymentScheduleDTO {
 
         // Required when paymentMethod is CHEQUE or BANK_TRANSFER; ignored for CASH.
         private String bankName;
+
+        // Optional cheque image metadata captured by cheque scanner flows.
+        private String chequeImageUrl;
+        private String chequeImageBlobPath;
+        private OffsetDateTime chequeImageUploadedAt;
     }
 }

@@ -50,4 +50,24 @@ public interface PaymentScheduleRepository extends JpaRepository<PaymentSchedule
     List<PaymentSchedule> findForRenterSearch(
             @Param("propertyId") UUID propertyId,
             @Param("status") PaymentStatus status);
+
+    @Query("""
+        SELECT new com.datagami.rentaxis.domain.repository.ChequeImagePurgeRow(
+            ps.id, ps.tenantId, ps.chequeImageBlobPath
+        )
+        FROM PaymentSchedule ps
+        WHERE ps.chequeImageBlobPath IS NOT NULL
+          AND ps.chequeDate < :cutoff
+        """)
+    List<ChequeImagePurgeRow> findChequeImagesOlderThan(@Param("cutoff") LocalDate cutoff);
+
+    @org.springframework.data.jpa.repository.Modifying
+    @Query("""
+        UPDATE PaymentSchedule ps
+        SET ps.chequeImageUrl = NULL,
+            ps.chequeImageBlobPath = NULL,
+            ps.chequeImageUploadedAt = NULL
+        WHERE ps.id = :id
+        """)
+    void clearChequeImage(@Param("id") UUID id);
 }

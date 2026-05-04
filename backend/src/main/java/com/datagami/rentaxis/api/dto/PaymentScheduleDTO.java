@@ -6,6 +6,7 @@ import lombok.Data;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 @Data
@@ -25,6 +26,9 @@ public class PaymentScheduleDTO {
     private String bankName;
     private String payerName;
     private LocalDate chequeDate;
+    private String chequeImageUrl;
+    private String chequeImageBlobPath;
+    private OffsetDateTime chequeImageUploadedAt;
     private Instant statusChangedAt;
     private String notes;
     private UUID replacedById;

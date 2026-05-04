@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Loader2, Save, RefreshCw, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/format";
+import ChequeScanner, { type ChequeScannerResult } from "@/components/cheques/ChequeScanner";
 
 /**
  * Editable payment-schedule table for a DRAFT or PENDING_SIGNATURE lease.
@@ -25,6 +26,10 @@ type ScheduleRow = {
     chequeNumber: string | null;
     chequeDate: string | null;
     bankName: string | null;
+    payerName: string | null;
+    chequeImageUrl: string | null;
+    chequeImageBlobPath: string | null;
+    chequeImageUploadedAt: string | null;
     purposeLabel: string | null;
     isBookingDeposit?: boolean;
 };
@@ -76,6 +81,7 @@ export default function PaymentScheduleEditor({ leaseId, leaseStatus, canManage,
     const [error, setError] = useState<string | null>(null);
     const [saved, setSaved] = useState(false);
     const [dirty, setDirty] = useState(false);
+    const [extractedFields, setExtractedFields] = useState<Set<string>>(new Set());
 
     const editable = canManage && EDITABLE_STATUSES.has(leaseStatus);
 
@@ -96,6 +102,7 @@ export default function PaymentScheduleEditor({ leaseId, leaseStatus, canManage,
                     });
                 setRows(mine);
                 setDirty(false);
+                setExtractedFields(new Set());
             } else {
                 setError("Failed to load payment schedule");
             }
@@ -114,6 +121,14 @@ export default function PaymentScheduleEditor({ leaseId, leaseStatus, canManage,
 
     const updateRow = (id: string, patch: Partial<ScheduleRow>) => {
         setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+        const keys = Object.keys(patch);
+        if (keys.length > 0) {
+            setExtractedFields((prev) => {
+                const next = new Set(prev);
+                for (const k of keys) next.delete(`${id}:${k}`);
+                return next;
+            });
+        }
         setDirty(true);
         setSaved(false);
         setError(null);
@@ -138,6 +153,9 @@ export default function PaymentScheduleEditor({ leaseId, leaseStatus, canManage,
                     chequeNumber: r.chequeNumber || null,
                     chequeDate: r.chequeDate || null,
                     bankName: r.bankName || null,
+                    chequeImageUrl: r.chequeImageUrl || null,
+                    chequeImageBlobPath: r.chequeImageBlobPath || null,
+                    chequeImageUploadedAt: r.chequeImageUploadedAt || null,
                 })),
             };
             const res = await fetch(`/api/proxy/v1/leases/${leaseId}/payment-schedule`, {
@@ -220,6 +238,30 @@ export default function PaymentScheduleEditor({ leaseId, leaseStatus, canManage,
                                 : m === "ONLINE" ? "Online payment date"
                                 : "Receipt date (optional)";
                             const rowDisabled = !editable || r.status !== "PENDING";
+                            const markExtracted = (field: string) => extractedFields.has(`${r.id}:${field}`);
+                            const onExtracted = (data: ChequeScannerResult) => {
+                                const patch: Partial<ScheduleRow> = {
+                                    chequeImageUrl: data.imageUrl,
+                                    chequeImageBlobPath: data.imageBlobPath,
+                                    chequeImageUploadedAt: data.imageUploadedAt,
+                                };
+                                if (typeof data.chequeNumber !== "undefined") patch.chequeNumber = data.chequeNumber ?? null;
+                                if (typeof data.bankName !== "undefined") patch.bankName = data.bankName ?? null;
+                                if (typeof data.payerName !== "undefined") patch.payerName = data.payerName ?? null;
+                                if (typeof data.chequeDate !== "undefined") patch.chequeDate = data.chequeDate ?? null;
+                                setRows((prev) => prev.map((row) => (row.id === r.id ? { ...row, ...patch } : row)));
+                                setExtractedFields((prev) => {
+                                    const next = new Set(prev);
+                                    if (typeof data.chequeNumber !== "undefined") next.add(`${r.id}:chequeNumber`);
+                                    if (typeof data.bankName !== "undefined") next.add(`${r.id}:bankName`);
+                                    if (typeof data.payerName !== "undefined") next.add(`${r.id}:payerName`);
+                                    if (typeof data.chequeDate !== "undefined") next.add(`${r.id}:chequeDate`);
+                                    return next;
+                                });
+                                setDirty(true);
+                                setSaved(false);
+                                setError(null);
+                            };
                             return (
                                 <tr key={r.id} className="border-t border-border align-top">
                                     <td className="px-3 py-2 tabular-nums">{r.isBookingDeposit ? "B" : r.installmentNumber}</td>
@@ -286,7 +328,13 @@ export default function PaymentScheduleEditor({ leaseId, leaseStatus, canManage,
                                                             isCash ? "w-64" : "w-44"
                                                         )}
                                                     />
+                                                    {markExtracted("chequeNumber") && (
+                                                        <div className="text-[10px] text-emerald-600 mt-0.5">✨ Extracted</div>
+                                                    )}
                                                     <div className="text-[10px] text-muted mt-0.5">{subLabel}{chequeRequired ? " *" : ""}</div>
+                                                    <div className="mt-1">
+                                                        <ChequeScanner onExtracted={onExtracted} disabled={rowDisabled} />
+                                                    </div>
                                                 </>
                                             );
                                         })()}
@@ -300,6 +348,9 @@ export default function PaymentScheduleEditor({ leaseId, leaseStatus, canManage,
                                             placeholder={bankRequired ? "—" : "n/a"}
                                             className="border border-border rounded px-2 py-1 text-xs bg-surface w-32 disabled:bg-input/40 disabled:cursor-not-allowed"
                                         />
+                                        {markExtracted("bankName") && (
+                                            <div className="text-[10px] text-emerald-600 mt-0.5">✨ Extracted</div>
+                                        )}
                                     </td>
                                     <td className="px-3 py-2 text-right">
                                         <input

@@ -17,6 +17,7 @@ import { canManagePayments } from "@/lib/rbac";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Pagination } from "@/components/ui/Pagination";
 import { MarkChequeFailedDialog, type PenaltySummary } from "@/components/payments/MarkChequeFailedDialog";
+import ChequeScanner from "@/components/cheques/ChequeScanner";
 import type { UserRole } from "@/lib/rbac";
 
 type Payment = {
@@ -29,6 +30,8 @@ type Payment = {
     bankName: string | null;
     payerName: string | null;
     chequeDate: string | null;
+    chequeImageUrl: string | null;
+    chequeImageBlobPath: string | null;
     propertyName: string | null;
     unitIdentifier: string | null;
     renterName: string | null;
@@ -94,6 +97,9 @@ export default function PaymentsPage() {
         bankName: "",
         payerName: "",
         chequeDate: "",
+        chequeImageUrl: "",
+        chequeImageBlobPath: "",
+        chequeImageUploadedAt: "",
     });
 
     // Confirmation dialog state
@@ -194,7 +200,7 @@ export default function PaymentsPage() {
 
     const handleCollect = (paymentId: string) => {
         setCollectingPaymentId(paymentId);
-        setChequeForm({ chequeNumber: "", bankName: "", payerName: "", chequeDate: "" });
+        setChequeForm({ chequeNumber: "", bankName: "", payerName: "", chequeDate: "", chequeImageUrl: "", chequeImageBlobPath: "", chequeImageUploadedAt: "" });
         setShowChequeModal(true);
     };
 
@@ -261,7 +267,7 @@ export default function PaymentsPage() {
 
     const handleReplace = async (paymentId: string) => {
         setCollectingPaymentId(paymentId);
-        setChequeForm({ chequeNumber: "", bankName: "", payerName: "", chequeDate: "" });
+        setChequeForm({ chequeNumber: "", bankName: "", payerName: "", chequeDate: "", chequeImageUrl: "", chequeImageBlobPath: "", chequeImageUploadedAt: "" });
         setShowChequeModal(true);
     };
 
@@ -654,6 +660,22 @@ export default function PaymentsPage() {
                             className="space-y-5"
                         >
                             <div>
+                                <div className="mb-3">
+                                    <ChequeScanner
+                                        onExtracted={(data) =>
+                                            setChequeForm((prev) => ({
+                                                ...prev,
+                                                chequeNumber: data.chequeNumber ?? prev.chequeNumber,
+                                                bankName: data.bankName ?? prev.bankName,
+                                                payerName: data.payerName ?? prev.payerName,
+                                                chequeDate: data.chequeDate ?? prev.chequeDate,
+                                                chequeImageUrl: data.imageUrl,
+                                                chequeImageBlobPath: data.imageBlobPath,
+                                                chequeImageUploadedAt: data.imageUploadedAt,
+                                            }))
+                                        }
+                                    />
+                                </div>
                                 <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
                                     {t("chequeNumber")}
                                 </label>

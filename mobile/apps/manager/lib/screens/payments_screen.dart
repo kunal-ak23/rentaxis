@@ -2,15 +2,22 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 import '../widgets/mark_cheque_failed_dialog.dart';
+import '../widgets/cheque_scanner.dart';
 
 final _paymentServiceProvider = Provider<PaymentService>((ref) {
   final client = ref.watch(apiClientProvider);
   return PaymentService(client.dio);
+});
+
+final _chequeExtractionServiceProvider = Provider<ChequeExtractionService>((
+  ref,
+) {
+  final client = ref.watch(apiClientProvider);
+  return ChequeExtractionService(client.dio);
 });
 
 final _propertyServiceProvider = Provider<PropertyService>((ref) {
@@ -20,18 +27,20 @@ final _propertyServiceProvider = Provider<PropertyService>((ref) {
 
 final _paymentSummaryProvider =
     FutureProvider.autoDispose<Map<String, dynamic>>((ref) async {
-  final service = ref.watch(_paymentServiceProvider);
-  return service.getSummary();
-});
+      final service = ref.watch(_paymentServiceProvider);
+      return service.getSummary();
+    });
 
-final _paymentsProvider =
-    FutureProvider.autoDispose<List<dynamic>>((ref) async {
+final _paymentsProvider = FutureProvider.autoDispose<List<dynamic>>((
+  ref,
+) async {
   final service = ref.watch(_paymentServiceProvider);
   return service.getPayments();
 });
 
-final _propertiesForFilterProvider =
-    FutureProvider.autoDispose<List<dynamic>>((ref) async {
+final _propertiesForFilterProvider = FutureProvider.autoDispose<List<dynamic>>((
+  ref,
+) async {
   final service = ref.watch(_propertyServiceProvider);
   return service.getProperties();
 });
@@ -103,25 +112,32 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
                 value: _selectedPropertyId,
                 isExpanded: true,
                 decoration: const InputDecoration(
-                  contentPadding:
-                      EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
                   hintText: 'All Properties',
                 ),
                 items: [
                   const DropdownMenuItem<String?>(
                     value: null,
-                    child: Text('All Properties',
-                        style: TextStyle(fontSize: 13)),
+                    child: Text(
+                      'All Properties',
+                      style: TextStyle(fontSize: 13),
+                    ),
                   ),
-                  ...properties.map((p) => DropdownMenuItem<String?>(
-                        value: p['id'],
-                        child: Text(p['name'] ?? '',
-                            style: const TextStyle(fontSize: 13),
-                            overflow: TextOverflow.ellipsis),
-                      )),
+                  ...properties.map(
+                    (p) => DropdownMenuItem<String?>(
+                      value: p['id'],
+                      child: Text(
+                        p['name'] ?? '',
+                        style: const TextStyle(fontSize: 13),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
                 ],
-                onChanged: (v) =>
-                    setState(() => _selectedPropertyId = v),
+                onChanged: (v) => setState(() => _selectedPropertyId = v),
               ),
             ),
           ),
@@ -196,8 +212,10 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
                   );
                 }
 
-                final visibleCount = ((_currentPage + 1) * _pageSize)
-                    .clamp(0, filtered.length);
+                final visibleCount = ((_currentPage + 1) * _pageSize).clamp(
+                  0,
+                  filtered.length,
+                );
                 final hasMore = visibleCount < filtered.length;
 
                 return RefreshIndicator(
@@ -213,18 +231,20 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           child: Center(
                             child: OutlinedButton(
-                              onPressed: () =>
-                                  setState(() => _currentPage++),
+                              onPressed: () => setState(() => _currentPage++),
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: AppColors.primary,
                                 side: BorderSide(
-                                    color: AppColors.primary
-                                        .withValues(alpha: 0.3)),
+                                  color: AppColors.primary.withValues(
+                                    alpha: 0.3,
+                                  ),
+                                ),
                               ),
                               child: Text(
                                 'Show More (${filtered.length - visibleCount} remaining)',
                                 style: GoogleFonts.josefinSans(
-                                    fontWeight: FontWeight.w600),
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                             ),
                           ),
@@ -251,24 +271,46 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
 
   Widget _buildSummaryCards(Map<String, dynamic> summary) {
     final items = [
-      _SummaryData('Pending', summary['pendingCount'] ?? 0,
-          Formatters.currencyCompact((summary['pendingAmount'] ?? 0).toDouble()),
-          AppColors.statusPending),
-      _SummaryData('Collected', summary['collectedCount'] ?? 0,
-          Formatters.currencyCompact((summary['collectedAmount'] ?? 0).toDouble()),
-          AppColors.statusCollected),
-      _SummaryData('Deposited', summary['depositedCount'] ?? 0,
-          Formatters.currencyCompact((summary['depositedAmount'] ?? 0).toDouble()),
-          AppColors.info),
-      _SummaryData('Cleared', summary['clearedCount'] ?? 0,
-          Formatters.currencyCompact((summary['clearedAmount'] ?? 0).toDouble()),
-          AppColors.statusCleared),
-      _SummaryData('Bounced', summary['bouncedCount'] ?? 0,
-          Formatters.currencyCompact((summary['bouncedAmount'] ?? 0).toDouble()),
-          AppColors.statusBounced),
-      _SummaryData('Overdue', summary['overdueCount'] ?? 0,
-          Formatters.currencyCompact((summary['overdueAmount'] ?? 0).toDouble()),
-          AppColors.statusOverdue),
+      _SummaryData(
+        'Pending',
+        summary['pendingCount'] ?? 0,
+        Formatters.currencyCompact((summary['pendingAmount'] ?? 0).toDouble()),
+        AppColors.statusPending,
+      ),
+      _SummaryData(
+        'Collected',
+        summary['collectedCount'] ?? 0,
+        Formatters.currencyCompact(
+          (summary['collectedAmount'] ?? 0).toDouble(),
+        ),
+        AppColors.statusCollected,
+      ),
+      _SummaryData(
+        'Deposited',
+        summary['depositedCount'] ?? 0,
+        Formatters.currencyCompact(
+          (summary['depositedAmount'] ?? 0).toDouble(),
+        ),
+        AppColors.info,
+      ),
+      _SummaryData(
+        'Cleared',
+        summary['clearedCount'] ?? 0,
+        Formatters.currencyCompact((summary['clearedAmount'] ?? 0).toDouble()),
+        AppColors.statusCleared,
+      ),
+      _SummaryData(
+        'Bounced',
+        summary['bouncedCount'] ?? 0,
+        Formatters.currencyCompact((summary['bouncedAmount'] ?? 0).toDouble()),
+        AppColors.statusBounced,
+      ),
+      _SummaryData(
+        'Overdue',
+        summary['overdueCount'] ?? 0,
+        Formatters.currencyCompact((summary['overdueAmount'] ?? 0).toDouble()),
+        AppColors.statusOverdue,
+      ),
     ];
 
     return SizedBox(
@@ -294,29 +336,35 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
               children: [
                 Row(
                   children: [
-                    Text('${item.count}',
-                        style: GoogleFonts.josefinSans(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 18,
-                          color: item.color,
-                        )),
+                    Text(
+                      '${item.count}',
+                      style: GoogleFonts.josefinSans(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 18,
+                        color: item.color,
+                      ),
+                    ),
                     const SizedBox(width: 4),
                     Flexible(
-                      child: Text(item.label,
-                          style: GoogleFonts.josefinSans(
-                            fontSize: 11,
-                            color: item.color.withValues(alpha: 0.8),
-                          ),
-                          overflow: TextOverflow.ellipsis),
+                      child: Text(
+                        item.label,
+                        style: GoogleFonts.josefinSans(
+                          fontSize: 11,
+                          color: item.color.withValues(alpha: 0.8),
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   ],
                 ),
-                Text(item.amount,
-                    style: GoogleFonts.josefinSans(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: item.color,
-                    )),
+                Text(
+                  item.amount,
+                  style: GoogleFonts.josefinSans(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: item.color,
+                  ),
+                ),
               ],
             ),
           );
@@ -343,19 +391,20 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
         onDeposit: () async {
           Navigator.pop(ctx);
           await _performAction(
-              () => ref.read(_paymentServiceProvider).depositPayment(paymentId),
-              'Payment deposited');
+            () => ref.read(_paymentServiceProvider).depositPayment(paymentId),
+            'Payment deposited',
+          );
         },
         onClear: () async {
           Navigator.pop(ctx);
           await _performAction(
-              () => ref.read(_paymentServiceProvider).clearPayment(paymentId),
-              'Payment cleared');
+            () => ref.read(_paymentServiceProvider).clearPayment(paymentId),
+            'Payment cleared',
+          );
         },
         onMarkFailed: () async {
           Navigator.pop(ctx);
-          final installmentNumber =
-              (payment['installmentNumber'] as int?) ?? 1;
+          final installmentNumber = (payment['installmentNumber'] as int?) ?? 1;
           final amount = (payment['amount'] ?? 0) as num;
           final result = await showMarkChequeFailedDialog(
             context,
@@ -384,7 +433,9 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
     final bankNameCtrl = TextEditingController();
     final payerNameCtrl = TextEditingController();
     DateTime? chequeDate;
-    String? chequeImagePath;
+    String? chequeImageUrl;
+    String? chequeImageBlobPath;
+    DateTime? chequeImageUploadedAt;
     final formKey = GlobalKey<FormState>();
 
     await showModalBottomSheet(
@@ -396,7 +447,11 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheetState) => Padding(
           padding: EdgeInsets.fromLTRB(
-              24, 24, 24, MediaQuery.of(ctx).viewInsets.bottom + 24),
+            24,
+            24,
+            24,
+            MediaQuery.of(ctx).viewInsets.bottom + 24,
+          ),
           child: Form(
             key: formKey,
             child: SingleChildScrollView(
@@ -415,8 +470,10 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
                     ),
                   ),
                   const SizedBox(height: 20),
-                  Text('Collect Payment',
-                      style: Theme.of(ctx).textTheme.headlineSmall),
+                  Text(
+                    'Collect Payment',
+                    style: Theme.of(ctx).textTheme.headlineSmall,
+                  ),
                   const SizedBox(height: 20),
                   TextFormField(
                     controller: chequeNumberCtrl,
@@ -424,9 +481,8 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
                       labelText: 'Cheque Number',
                       prefixIcon: Icon(Icons.numbers_outlined),
                     ),
-                    validator: (v) => v == null || v.trim().isEmpty
-                        ? 'Required'
-                        : null,
+                    validator: (v) =>
+                        v == null || v.trim().isEmpty ? 'Required' : null,
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
@@ -435,9 +491,8 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
                       labelText: 'Bank Name',
                       prefixIcon: Icon(Icons.account_balance_outlined),
                     ),
-                    validator: (v) => v == null || v.trim().isEmpty
-                        ? 'Required'
-                        : null,
+                    validator: (v) =>
+                        v == null || v.trim().isEmpty ? 'Required' : null,
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
@@ -478,26 +533,32 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
                     ),
                   ),
                   const SizedBox(height: 16),
-                  OutlinedButton.icon(
-                    onPressed: () async {
-                      final picker = ImagePicker();
-                      final image = await picker.pickImage(
-                        source: ImageSource.camera,
-                        imageQuality: 80,
-                      );
-                      if (image != null) {
-                        setSheetState(() => chequeImagePath = image.path);
-                      }
+                  ChequeScannerWidget(
+                    service: ref.read(_chequeExtractionServiceProvider),
+                    onExtracted: (result) {
+                      setSheetState(() {
+                        final extracted = result.extracted;
+                        if (extracted != null) {
+                          chequeNumberCtrl.text =
+                              extracted['chequeNumber']?.toString() ??
+                              chequeNumberCtrl.text;
+                          bankNameCtrl.text =
+                              extracted['bankName']?.toString() ??
+                              bankNameCtrl.text;
+                          payerNameCtrl.text =
+                              extracted['payerName']?.toString() ??
+                              payerNameCtrl.text;
+                          final rawDate = extracted['chequeDate']?.toString();
+                          if (rawDate != null && rawDate.isNotEmpty) {
+                            chequeDate =
+                                DateTime.tryParse(rawDate) ?? chequeDate;
+                          }
+                        }
+                        chequeImageUrl = result.imageUrl;
+                        chequeImageBlobPath = result.imageBlobPath;
+                        chequeImageUploadedAt = result.uploadedAt;
+                      });
                     },
-                    icon: Icon(
-                      chequeImagePath != null
-                          ? Icons.check_circle
-                          : Icons.camera_alt_outlined,
-                      size: 18,
-                    ),
-                    label: Text(chequeImagePath != null
-                        ? 'Cheque photo captured'
-                        : 'Scan Cheque'),
                   ),
                   const SizedBox(height: 24),
                   SizedBox(
@@ -510,14 +571,26 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
                           () => ref
                               .read(_paymentServiceProvider)
                               .collectPayment(paymentId, {
-                            'chequeNumber': chequeNumberCtrl.text.trim(),
-                            'bankName': bankNameCtrl.text.trim(),
-                            if (payerNameCtrl.text.isNotEmpty)
-                              'payerName': payerNameCtrl.text.trim(),
-                            if (chequeDate != null)
-                              'chequeDate':
-                                  chequeDate!.toIso8601String().split('T')[0],
-                          }),
+                                'chequeNumber': chequeNumberCtrl.text.trim(),
+                                'bankName': bankNameCtrl.text.trim(),
+                                if (payerNameCtrl.text.isNotEmpty)
+                                  'payerName': payerNameCtrl.text.trim(),
+                                if (chequeDate != null)
+                                  'chequeDate': chequeDate!
+                                      .toIso8601String()
+                                      .split('T')[0],
+                                if (chequeImageUrl != null &&
+                                    chequeImageUrl!.isNotEmpty)
+                                  'chequeImageUrl': chequeImageUrl,
+                                if (chequeImageBlobPath != null &&
+                                    chequeImageBlobPath!.isNotEmpty)
+                                  'chequeImageBlobPath': chequeImageBlobPath,
+                                if (chequeImageUploadedAt != null)
+                                  'chequeImageUploadedAt':
+                                      chequeImageUploadedAt!
+                                          .toUtc()
+                                          .toIso8601String(),
+                              }),
                           'Payment collected',
                         );
                       },
@@ -534,20 +607,22 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
   }
 
   Future<void> _performAction(
-      Future<dynamic> Function() action, String successMsg) async {
+    Future<dynamic> Function() action,
+    String successMsg,
+  ) async {
     try {
       await action();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(successMsg)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(successMsg)));
         _refresh();
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Action failed')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Action failed')));
       }
     }
   }
@@ -612,8 +687,11 @@ class _PaymentCard extends StatelessWidget {
                   color: statusColor.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(Icons.receipt_outlined,
-                    color: statusColor, size: 20),
+                child: Icon(
+                  Icons.receipt_outlined,
+                  color: statusColor,
+                  size: 20,
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(

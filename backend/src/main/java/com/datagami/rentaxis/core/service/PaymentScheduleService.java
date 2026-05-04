@@ -34,6 +34,7 @@ import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -269,6 +270,9 @@ public class PaymentScheduleService {
         payment.setBankName(dto.getBankName());
         payment.setPayerName(dto.getPayerName());
         payment.setChequeDate(dto.getChequeDate());
+        payment.setChequeImageUrl(dto.getChequeImageUrl());
+        payment.setChequeImageBlobPath(dto.getChequeImageBlobPath());
+        payment.setChequeImageUploadedAt(resolveChequeImageUploadedAt(dto));
         payment.setStatusChangedAt(Instant.now());
         PaymentSchedule saved = paymentScheduleRepository.save(payment);
 
@@ -542,6 +546,9 @@ public class PaymentScheduleService {
         newPayment.setBankName(dto.getBankName());
         newPayment.setPayerName(dto.getPayerName());
         newPayment.setChequeDate(dto.getChequeDate());
+        newPayment.setChequeImageUrl(dto.getChequeImageUrl());
+        newPayment.setChequeImageBlobPath(dto.getChequeImageBlobPath());
+        newPayment.setChequeImageUploadedAt(resolveChequeImageUploadedAt(dto));
 
         PaymentSchedule savedNewPayment = paymentScheduleRepository.save(newPayment);
 
@@ -876,6 +883,13 @@ public class PaymentScheduleService {
         return mapToDTO(ps);
     }
 
+    private OffsetDateTime resolveChequeImageUploadedAt(UpdatePaymentStatusDTO dto) {
+        if (dto.getChequeImageBlobPath() == null || dto.getChequeImageBlobPath().isBlank()) {
+            return null;
+        }
+        return dto.getChequeImageUploadedAt() != null ? dto.getChequeImageUploadedAt() : OffsetDateTime.now();
+    }
+
     private PaymentScheduleDTO mapToDTO(PaymentSchedule ps) {
         PaymentScheduleDTO dto = new PaymentScheduleDTO();
         dto.setId(ps.getId());
@@ -893,6 +907,9 @@ public class PaymentScheduleService {
         dto.setBankName(ps.getBankName());
         dto.setPayerName(ps.getPayerName());
         dto.setChequeDate(ps.getChequeDate());
+        dto.setChequeImageUrl(ps.getChequeImageUrl());
+        dto.setChequeImageBlobPath(ps.getChequeImageBlobPath());
+        dto.setChequeImageUploadedAt(ps.getChequeImageUploadedAt());
         dto.setStatusChangedAt(ps.getStatusChangedAt());
         dto.setNotes(ps.getNotes());
         dto.setReplacedById(ps.getReplacedBy() != null ? ps.getReplacedBy().getId() : null);
