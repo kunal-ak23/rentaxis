@@ -17,6 +17,7 @@ import 'screens/wishlist/wishlist_screen.dart';
 import 'screens/meetings_screen.dart';
 import 'screens/meeting_detail_screen.dart';
 import 'screens/create_meeting_screen.dart';
+import 'screens/penalties_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authProvider);
@@ -119,6 +120,10 @@ final routerProvider = Provider<GoRouter>((ref) {
                 ),
               ),
             ],
+          ),
+          GoRoute(
+            path: '/penalties',
+            builder: (context, state) => const PenaltiesScreen(),
           ),
         ],
       ),

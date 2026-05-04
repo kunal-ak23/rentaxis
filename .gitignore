@@ -25,3 +25,4 @@ Thumbs.db
 # Generated contracts
 data/contracts/
 backend/data/
+graphify-out/

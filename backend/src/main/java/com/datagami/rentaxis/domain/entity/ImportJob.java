@@ -42,6 +42,25 @@ public class ImportJob extends BaseTenantEntity {
     @Column(name = "schedules_created")
     private int schedulesCreated;
 
+    /**
+     * JSONB payload with two valid shapes — the controller's {@code mapToResult}
+     * picks based on the first non-whitespace character:
+     *
+     * <ul>
+     *   <li><b>JSON array</b> — {@code [{"sheet":...,"row":...,"field":...,"message":...}, ...]} —
+     *       the historical shape. Used for {@code VALIDATION_FAILED} jobs and any
+     *       {@code FAILED} job. Always a {@code List<ImportErrorDTO>}.</li>
+     *   <li><b>JSON object</b> — {@code PortfolioImportJobDetailsDTO} — wrapper added
+     *       2026-05-02 to carry the bulk-import counters
+     *       ({@code chequesFromSheet}, {@code bookingDepositsCreated}) and warnings
+     *       alongside any errors. Used for {@code COMPLETED} jobs that have anything
+     *       beyond the legacy fields to report. {@code null} when there's nothing
+     *       to surface.</li>
+     * </ul>
+     *
+     * Future writers MUST preserve this discriminator (array-vs-object first char) or
+     * the controller's parse path needs revisiting.
+     */
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")
     private String errors;

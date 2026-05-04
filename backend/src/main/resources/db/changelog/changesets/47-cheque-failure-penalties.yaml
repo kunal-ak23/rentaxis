@@ -1,0 +1,216 @@
+databaseChangeLog:
+  - changeSet:
+      id: 47-cheque-failure-penalties
+      author: rentaxis-system
+      changes:
+        # 1. Add cheque_failure_reason to payment_schedules
+        - addColumn:
+            tableName: payment_schedules
+            columns:
+              - column:
+                  name: cheque_failure_reason
+                  type: varchar(30)
+                  constraints:
+                    nullable: true
+
+        # 2. Add 5 nullable per-property override fields to rent_collection_settings
+        - addColumn:
+            tableName: rent_collection_settings
+            columns:
+              - column:
+                  name: fine_bounce_amount
+                  type: numeric(12,2)
+                  constraints:
+                    nullable: true
+              - column:
+                  name: fine_signature_mismatch_amount
+                  type: numeric(12,2)
+                  constraints:
+                    nullable: true
+              - column:
+                  name: fine_account_closed_amount
+                  type: numeric(12,2)
+                  constraints:
+                    nullable: true
+              - column:
+                  name: fine_grace_days
+                  type: int
+                  constraints:
+                    nullable: true
+              - column:
+                  name: fine_per_day_rate
+                  type: numeric(12,2)
+                  constraints:
+                    nullable: true
+
+        # 3. Add snapshot columns + cleared_at to payment_penalties
+        - addColumn:
+            tableName: payment_penalties
+            columns:
+              - column:
+                  name: fine_grace_days
+                  type: int
+                  constraints:
+                    nullable: true
+              - column:
+                  name: fine_per_day_rate
+                  type: numeric(12,2)
+                  constraints:
+                    nullable: true
+              - column:
+                  name: cleared_at
+                  type: timestamp
+                  constraints:
+                    nullable: true
+
+        # 4. Create landlord_org_fine_settings table
+        - createTable:
+            tableName: landlord_org_fine_settings
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: tenant_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: landlord_org_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    unique: true
+                    foreignKeyName: fk_lofs_landlord_org
+                    references: landlord_org(id)
+              - column:
+                  name: fine_bounce_amount
+                  type: numeric(12,2)
+                  defaultValueNumeric: 500
+                  constraints:
+                    nullable: false
+              - column:
+                  name: fine_signature_mismatch_amount
+                  type: numeric(12,2)
+                  defaultValueNumeric: 500
+                  constraints:
+                    nullable: false
+              - column:
+                  name: fine_account_closed_amount
+                  type: numeric(12,2)
+                  defaultValueNumeric: 1000
+                  constraints:
+                    nullable: false
+              - column:
+                  name: fine_grace_days
+                  type: int
+                  defaultValueNumeric: 7
+                  constraints:
+                    nullable: false
+              - column:
+                  name: fine_per_day_rate
+                  type: numeric(12,2)
+                  defaultValueNumeric: 25
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamp
+                  defaultValueComputed: CURRENT_TIMESTAMP
+              - column:
+                  name: updated_at
+                  type: timestamp
+                  defaultValueComputed: CURRENT_TIMESTAMP
+        - createIndex:
+            tableName: landlord_org_fine_settings
+            indexName: idx_lofs_tenant_id
+            columns:
+              - column:
+                  name: tenant_id
+
+        # 5. Create penalty_payments table
+        - createTable:
+            tableName: penalty_payments
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: tenant_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: payment_penalty_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_pp_payment_penalty
+                    references: payment_penalties(id)
+                    deleteCascade: true
+              - column:
+                  name: amount
+                  type: numeric(12,2)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: payment_method
+                  type: varchar(20)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: payment_reference
+                  type: varchar(255)
+                  constraints:
+                    nullable: true
+              - column:
+                  name: received_at
+                  type: date
+                  constraints:
+                    nullable: false
+              - column:
+                  name: received_by
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: notes
+                  type: text
+                  constraints:
+                    nullable: true
+              - column:
+                  name: financial_transaction_id
+                  type: uuid
+                  constraints:
+                    nullable: true
+                    foreignKeyName: fk_pp_financial_tx
+                    references: financial_transactions(id)
+              - column:
+                  name: created_at
+                  type: timestamp
+                  defaultValueComputed: CURRENT_TIMESTAMP
+        - createIndex:
+            tableName: penalty_payments
+            indexName: idx_pp_penalty_received
+            columns:
+              - column:
+                  name: payment_penalty_id
+              - column:
+                  name: received_at
+        - createIndex:
+            tableName: penalty_payments
+            indexName: idx_pp_tenant_id
+            columns:
+              - column:
+                  name: tenant_id
+        - sql:
+            sql: ALTER TABLE penalty_payments ADD CONSTRAINT chk_pp_amount_positive CHECK (amount > 0)
+      comment: "Cheque-failure penalty schema: failure reason on payment_schedules, per-property fine overrides on rent_collection_settings, snapshot columns on payment_penalties, new landlord_org_fine_settings config table, new penalty_payments journal table."

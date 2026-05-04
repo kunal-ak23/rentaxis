@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
 class NotificationsScreen extends ConsumerStatefulWidget {
@@ -215,6 +216,10 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
                       .read(notificationProvider.notifier)
                       .markAsRead(notification['id']);
                 }
+                // Deep-link: PENALTY_INCURRED → penalties screen.
+                if (type.toUpperCase() == 'PENALTY_INCURRED') {
+                  context.push('/penalties');
+                }
               },
             );
           },
@@ -241,6 +246,9 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
       case 'LEASE_UPDATE':
         icon = Icons.description_outlined;
         color = AppColors.primary;
+      case 'PENALTY_INCURRED':
+        icon = Icons.gavel_outlined;
+        color = AppColors.danger;
       default:
         icon = Icons.notifications_outlined;
         color = AppColors.textSecondary;

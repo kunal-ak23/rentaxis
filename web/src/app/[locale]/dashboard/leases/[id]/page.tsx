@@ -15,6 +15,8 @@ import {
 import { useTranslations } from "next-intl";
 import PaymentScheduleEditor from "../PaymentScheduleEditor";
 import LeaseMetadataEditor from "../LeaseMetadataEditor";
+import { MarkChequeFailedDialog, type PenaltySummary } from "@/components/payments/MarkChequeFailedDialog";
+import { RecordPenaltyPaymentDialog } from "@/components/penalties/RecordPenaltyPaymentDialog";
 
 type Lease = {
     id: string; unitId: string; renterId: string; unitIdentifier: string;
@@ -60,6 +62,32 @@ type PaymentPenalty = {
     waivedReason?: string;
     waivedAt?: string;
     lastCalculatedAt: string;
+};
+
+// Cheque-failure penalty from the new /penalties endpoint
+type ChequePenalty = {
+    id: string;
+    leaseId: string;
+    paymentScheduleId: string;
+    failureReason: string;
+    penaltyType: string;
+    penaltyAmount: number;
+    currentTotal: number;
+    outstanding: number;
+    daysOverdue: number;
+    status: string; // "OPEN" | "CLEARED" | "WAIVED"
+    createdAt: string;
+    payments: ChequePenaltyPayment[];
+};
+
+type ChequePenaltyPayment = {
+    id: string;
+    amount: number;
+    paymentMethod: string;
+    paymentReference: string | null;
+    receivedAt: string | null;
+    notes: string | null;
+    createdAt: string;
 };
 
 type Settlement = {
@@ -135,6 +163,7 @@ export default function LeaseDetailPage() {
     // that 403s when clicked.
     const canGenerateContract = hasRole(userRole, ["SUPER_ADMIN", "TENANT_ADMIN"]);
     const t = useTranslations("MasterData");
+    const tP = useTranslations("LeasePenalties");
 
     const [lease, setLease] = useState<Lease | null>(null);
     const [renter, setRenter] = useState<Renter | null>(null);
@@ -151,6 +180,21 @@ export default function LeaseDetailPage() {
 
     // Settlement state
     const [settlement, setSettlement] = useState<Settlement | null>(null);
+
+    // Mark-failed dialog state
+    const [markFailedTarget, setMarkFailedTarget] = useState<{
+        paymentId: string;
+        installmentNumber: number;
+        amount: number;
+    } | null>(null);
+    const [markFailedToast, setMarkFailedToast] = useState<string | null>(null);
+
+    // Cheque-failure penalties section
+    const [chequePenalties, setChequePenalties] = useState<ChequePenalty[]>([]);
+    const [chequePenaltiesTab, setChequePenaltiesTab] = useState<"open" | "cleared">("open");
+    const [chequePenaltiesLoading, setChequePenaltiesLoading] = useState(false);
+    const [expandedPenaltyIds, setExpandedPenaltyIds] = useState<Set<string>>(new Set());
+    const [recordPaymentTarget, setRecordPaymentTarget] = useState<ChequePenalty | null>(null);
 
     // Extend lease state
     const [extendOpen, setExtendOpen] = useState(false);
@@ -206,6 +250,22 @@ export default function LeaseDetailPage() {
         } catch {}
     }, [leaseId]);
 
+    const fetchChequePenalties = useCallback(async (status: "open" | "cleared") => {
+        setChequePenaltiesLoading(true);
+        try {
+            const res = await fetch(`/api/proxy/v1/penalties?leaseId=${leaseId}&status=${status}`);
+            if (res.ok) setChequePenalties(await res.json());
+        } catch {} finally { setChequePenaltiesLoading(false); }
+    }, [leaseId]);
+
+    const onMarkFailedSuccess = (response: { schedule: unknown; penalty: PenaltySummary }) => {
+        fetchPayments();
+        fetchChequePenalties(chequePenaltiesTab);
+        const msg = `Cheque marked failed. Fine applied: ${response.penalty.penaltyAmount} AED.`;
+        setMarkFailedToast(msg);
+        setTimeout(() => setMarkFailedToast(null), 5000);
+    };
+
     const handleWaivePenalty = async () => {
         if (!waiveModalPenalty || !waiveReason.trim()) return;
         setWaiving(true);
@@ -255,6 +315,10 @@ export default function LeaseDetailPage() {
     useEffect(() => {
         if (lease?.unitId) fetchTickets();
     }, [lease?.unitId, fetchTickets]);
+
+    useEffect(() => {
+        fetchChequePenalties(chequePenaltiesTab);
+    }, [chequePenaltiesTab, fetchChequePenalties]);
 
 
     useEffect(() => {
@@ -805,6 +869,7 @@ export default function LeaseDetailPage() {
                                         <th className="px-4 py-2.5 text-start text-[10px] font-semibold text-muted uppercase tracking-wider">Cheque #</th>
                                         <th className="px-4 py-2.5 text-start text-[10px] font-semibold text-muted uppercase tracking-wider">Bank</th>
                                         <th className="px-4 py-2.5 text-end text-[10px] font-semibold text-muted uppercase tracking-wider">Receipt</th>
+                                        {isAdmin && <th className="px-4 py-2.5 text-start text-[10px] font-semibold text-muted uppercase tracking-wider">Actions</th>}
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -850,6 +915,18 @@ export default function LeaseDetailPage() {
                                                     </button>
                                                 )}
                                             </td>
+                                            {isAdmin && (
+                                                <td className="px-4 py-2.5">
+                                                    {p.status === "DEPOSITED" && (
+                                                        <button
+                                                            onClick={() => setMarkFailedTarget({ paymentId: p.id, installmentNumber: p.installmentNumber, amount: p.amount })}
+                                                            className="px-2.5 py-1 bg-error/10 text-error hover:bg-error/20 rounded-lg text-[10px] font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-error/20 focus:outline-none"
+                                                        >
+                                                            Mark failed
+                                                        </button>
+                                                    )}
+                                                </td>
+                                            )}
                                         </tr>
                                     ))}
                                 </tbody>
@@ -862,6 +939,115 @@ export default function LeaseDetailPage() {
                             )}
                         </div>
                     </div>
+                </div>
+            </div>
+
+            {/* ── Penalties Section ─────────────────────────────────── */}
+            <div className="mt-6 bg-surface rounded-xl border border-border">
+                <div className="px-5 py-3.5 border-b border-border flex items-center justify-between">
+                    <h2 className="text-xs font-semibold text-muted uppercase tracking-wider flex items-center gap-2">
+                        <AlertTriangle size={13} /> {tP("title")}
+                    </h2>
+                    {/* Open / Cleared tabs */}
+                    <div className="flex gap-1">
+                        {(["open", "cleared"] as const).map((tab) => (
+                            <button
+                                key={tab}
+                                onClick={() => setChequePenaltiesTab(tab)}
+                                className={cn(
+                                    "px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors cursor-pointer",
+                                    chequePenaltiesTab === tab
+                                        ? "bg-primary/10 text-primary"
+                                        : "text-muted hover:text-foreground"
+                                )}
+                            >
+                                {tab === "open" ? tP("tabOpen") : tP("tabCleared")}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+                <div className="p-4">
+                    {chequePenaltiesLoading ? (
+                        <div className="flex justify-center py-6">
+                            <Loader2 size={16} className="animate-spin text-muted" />
+                        </div>
+                    ) : chequePenalties.length === 0 ? (
+                        <div className="text-center py-8 text-muted">
+                            <AlertTriangle size={24} className="mx-auto mb-2 opacity-30" />
+                            <p className="text-xs">
+                                {chequePenaltiesTab === "open" ? tP("noOpenPenalties") : tP("noClearedPenalties")}
+                            </p>
+                        </div>
+                    ) : (
+                        <div className="space-y-3">
+                            {chequePenalties.map((pen) => {
+                                const isExpanded = expandedPenaltyIds.has(pen.id);
+                                return (
+                                    <div key={pen.id} className="border border-border rounded-xl overflow-hidden">
+                                        <div className="px-4 py-3 bg-input/30 flex flex-wrap items-center gap-3">
+                                            {/* Reason badge */}
+                                            <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-error/10 text-error border border-error/20">
+                                                {pen.failureReason || pen.penaltyType}
+                                            </span>
+                                            {/* Amounts */}
+                                            <div className="flex items-center gap-3 flex-1 flex-wrap text-xs">
+                                                <span className="text-muted">
+                                                    {tP("baseFine")}: <span className="font-semibold text-foreground tabular-nums">{formatCurrency(pen.penaltyAmount)}</span>
+                                                </span>
+                                                {(pen.currentTotal - pen.penaltyAmount) > 0 && (
+                                                    <span className="text-muted">
+                                                        {tP("accrued")}: <span className="font-semibold text-warning tabular-nums">{formatCurrency(pen.currentTotal - pen.penaltyAmount)}</span>
+                                                    </span>
+                                                )}
+                                                <span className="text-muted">
+                                                    {tP("currentTotal")}: <span className="font-semibold text-foreground tabular-nums">{formatCurrency(pen.currentTotal)}</span>
+                                                </span>
+                                                <span className="text-muted">
+                                                    {tP("outstanding")}: <span className={cn("font-bold tabular-nums", pen.outstanding > 0 ? "text-error" : "text-success")}>{formatCurrency(pen.outstanding)}</span>
+                                                </span>
+                                            </div>
+                                            {/* Actions */}
+                                            <div className="flex items-center gap-2 shrink-0">
+                                                {pen.payments.length > 0 && (
+                                                    <button
+                                                        onClick={() => setExpandedPenaltyIds(prev => {
+                                                            const next = new Set(prev);
+                                                            if (isExpanded) next.delete(pen.id); else next.add(pen.id);
+                                                            return next;
+                                                        })}
+                                                        className="text-[10px] font-semibold text-primary hover:text-primary/80 cursor-pointer underline"
+                                                    >
+                                                        {isExpanded ? tP("collapseHistory") : tP("expandHistory")} ({pen.payments.length})
+                                                    </button>
+                                                )}
+                                                {pen.status === "OPEN" && isAdmin && (
+                                                    <button
+                                                        onClick={() => setRecordPaymentTarget(pen)}
+                                                        className="px-2.5 py-1 bg-primary/10 text-primary hover:bg-primary/20 rounded-lg text-[10px] font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/20 focus:outline-none"
+                                                    >
+                                                        {tP("recordPayment")}
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                        {/* Payment history (expanded) */}
+                                        {isExpanded && pen.payments.length > 0 && (
+                                            <div className="px-4 py-3 border-t border-border space-y-2">
+                                                {pen.payments.map((pmnt) => (
+                                                    <div key={pmnt.id} className="flex items-center justify-between text-xs text-muted">
+                                                        <span className="font-semibold text-foreground tabular-nums">{formatCurrency(pmnt.amount)}</span>
+                                                        <span>{pmnt.paymentMethod}</span>
+                                                        {pmnt.paymentReference && <span className="text-[10px]">{pmnt.paymentReference}</span>}
+                                                        <span className="text-[10px]">{pmnt.receivedAt ? new Date(pmnt.receivedAt).toLocaleDateString() : new Date(pmnt.createdAt).toLocaleDateString()}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -1139,6 +1325,40 @@ export default function LeaseDetailPage() {
                         </button>
                     </div>
                 </div>
+            </div>
+        )}
+
+        {/* Mark Cheque Failed Dialog */}
+        {markFailedTarget && (
+            <MarkChequeFailedDialog
+                paymentId={markFailedTarget.paymentId}
+                installmentNumber={markFailedTarget.installmentNumber}
+                amount={markFailedTarget.amount}
+                isOpen={!!markFailedTarget}
+                onClose={() => setMarkFailedTarget(null)}
+                onSuccess={onMarkFailedSuccess}
+            />
+        )}
+
+        {/* Record Penalty Payment Dialog */}
+        {recordPaymentTarget && (
+            <RecordPenaltyPaymentDialog
+                penaltyId={recordPaymentTarget.id}
+                outstanding={recordPaymentTarget.outstanding}
+                isOpen={!!recordPaymentTarget}
+                onClose={() => setRecordPaymentTarget(null)}
+                onSuccess={() => {
+                    setRecordPaymentTarget(null);
+                    fetchChequePenalties(chequePenaltiesTab);
+                }}
+            />
+        )}
+
+        {/* Success toast */}
+        {markFailedToast && (
+            <div className="fixed bottom-6 right-6 z-[200] bg-surface border border-success/30 text-success text-xs font-semibold px-4 py-3 rounded-xl shadow-xl flex items-center gap-2">
+                <CheckCircle size={14} />
+                {markFailedToast}
             </div>
         )}
         </>

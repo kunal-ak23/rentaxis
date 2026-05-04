@@ -21,6 +21,7 @@ import { formatCurrency, formatCurrencyCompact, formatNumber } from "@/lib/forma
 import { canViewPayments, canManagePayments } from "@/lib/rbac";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Pagination } from "@/components/ui/Pagination";
+import { MarkChequeFailedDialog, type PenaltySummary } from "@/components/payments/MarkChequeFailedDialog";
 import type { UserRole } from "@/lib/rbac";
 
 type Payment = {
@@ -109,6 +110,13 @@ export default function PaymentsPage() {
         onConfirm: () => void;
         isDestructive: boolean;
     }>({ open: false, title: "", message: "", onConfirm: () => {}, isDestructive: false });
+
+    // Mark-failed dialog state (replaces handleBounce confirm flow)
+    const [markFailedTarget, setMarkFailedTarget] = useState<{
+        paymentId: string;
+        installmentNumber: number;
+        amount: number;
+    } | null>(null);
 
     useEffect(() => {
         fetchProperties();
@@ -253,26 +261,8 @@ export default function PaymentsPage() {
         });
     };
 
-    const handleBounce = (paymentId: string) => {
-        setConfirmDialog({
-            open: true,
-            title: t("bounce"),
-            message: t("confirmBounce"),
-            isDestructive: true,
-            onConfirm: async () => {
-                setConfirmDialog((prev) => ({ ...prev, open: false }));
-                try {
-                    const res = await fetch(`/api/proxy/v1/payments/${paymentId}/bounce`, {
-                        method: "PUT",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({}),
-                    });
-                    if (res.ok) refreshData();
-                } catch (err) {
-                    console.error(err);
-                }
-            },
-        });
+    const onMarkFailedSuccess = (_response: { schedule: unknown; penalty: PenaltySummary }) => {
+        refreshData();
     };
 
     const handleReplace = async (paymentId: string) => {
@@ -579,7 +569,11 @@ export default function PaymentsPage() {
                                                         </button>
                                                         <button
                                                             onClick={() =>
-                                                                handleBounce(payment.id)
+                                                                setMarkFailedTarget({
+                                                                    paymentId: payment.id,
+                                                                    installmentNumber: payment.installmentNumber,
+                                                                    amount: payment.amount,
+                                                                })
                                                             }
                                                             className="px-3 py-1.5 bg-error/10 text-error hover:bg-error/20 rounded-lg text-[10px] font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/20 focus:outline-none"
                                                         >
@@ -758,6 +752,18 @@ export default function PaymentsPage() {
                         </form>
                     </div>
                 </div>
+            )}
+
+            {/* Mark Cheque Failed Dialog */}
+            {markFailedTarget && (
+                <MarkChequeFailedDialog
+                    paymentId={markFailedTarget.paymentId}
+                    installmentNumber={markFailedTarget.installmentNumber}
+                    amount={markFailedTarget.amount}
+                    isOpen={!!markFailedTarget}
+                    onClose={() => setMarkFailedTarget(null)}
+                    onSuccess={onMarkFailedSuccess}
+                />
             )}
         </div>
     );

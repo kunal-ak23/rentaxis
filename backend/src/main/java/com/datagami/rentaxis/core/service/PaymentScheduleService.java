@@ -9,13 +9,18 @@ import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.*;
+import com.datagami.rentaxis.domain.entity.enums.ChequeFailureReason;
+import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.PaymentStatus;
 import com.datagami.rentaxis.domain.entity.enums.TransactionNature;
 import com.datagami.rentaxis.api.dto.PaymentPreviewDTO;
-import com.datagami.rentaxis.domain.entity.RentCollectionSettings;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
+import com.datagami.rentaxis.domain.repository.LeaseEventRepository;
+import com.datagami.rentaxis.domain.repository.PaymentPenaltyRepository;
 import com.datagami.rentaxis.domain.repository.PaymentScheduleRepository;
 import com.datagami.rentaxis.domain.repository.RentCollectionSettingsRepository;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -28,9 +33,12 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -45,6 +53,12 @@ public class PaymentScheduleService {
     private final AccountMappingService accountMappingService;
     private final RentCollectionSettingsRepository rentCollectionSettingsRepository;
     private final NotificationService notificationService;
+    private final FineConfigResolver fineConfigResolver;
+    private final PaymentPenaltyRepository paymentPenaltyRepository;
+    private final LeaseEventRepository leaseEventRepository;
+
+    /** Injected Spring-managed ObjectMapper (honours date/time config, custom modules). */
+    private final ObjectMapper objectMapper;
 
     @Transactional
     public List<PaymentSchedule> generateScheduleForLease(Lease lease) {
@@ -385,36 +399,125 @@ public class PaymentScheduleService {
         return mapToDTO(payment);
     }
 
+    /**
+     * Legacy entry point kept for backward compatibility with the existing
+     * {@code PUT /api/v1/payments/{id}/bounce} endpoint and any older clients
+     * that haven't been migrated to {@link #markFailed} yet. It now delegates
+     * to {@link #markFailed} with {@link ChequeFailureReason#BOUNCE} so callers
+     * automatically pick up the new fine + penalty + financial-transaction
+     * side effects without any client change.
+     */
     @Transactional
     public PaymentScheduleDTO bouncePayment(UUID paymentId, UpdatePaymentStatusDTO dto) {
-        PaymentSchedule payment = paymentScheduleRepository.findById(paymentId)
+        return markFailed(paymentId, ChequeFailureReason.BOUNCE, dto.getNotes()).schedule();
+    }
+
+    /**
+     * Mark a deposited payment as failed (bounced / signature mismatched /
+     * account closed). Records the fine snapshot, posts the cheque-bounce
+     * journal entry, fires renter notifications, and writes a lease event for
+     * audit. Only payments in {@link PaymentStatus#DEPOSITED} are accepted —
+     * cheques that never made it to the bank can't bounce.
+     */
+    @Transactional
+    public MarkFailedResult markFailed(UUID paymentId, ChequeFailureReason reason, String notes) {
+        PaymentSchedule s = paymentScheduleRepository.findById(paymentId)
                 .orElseThrow(() -> new NotFoundException("Payment not found"));
 
-        if (payment.getStatus() != PaymentStatus.DEPOSITED) {
-            throw new BusinessRuleViolationException("Can only bounce payments in DEPOSITED status");
+        if (s.getStatus() != PaymentStatus.DEPOSITED) {
+            throw new BusinessRuleViolationException(
+                    "Can only mark payments in DEPOSITED status as failed (current: " + s.getStatus() + ")");
         }
 
-        payment.setStatus(PaymentStatus.BOUNCED);
-        if (dto.getNotes() != null) {
-            payment.setNotes(dto.getNotes());
+        s.setStatus(PaymentStatus.BOUNCED);
+        s.setFailureReason(reason);
+        s.setStatusChangedAt(Instant.now());
+        if (notes != null && !notes.isBlank()) {
+            s.setNotes(notes);
         }
-        payment.setStatusChangedAt(Instant.now());
-        PaymentSchedule saved = paymentScheduleRepository.save(payment);
+        PaymentSchedule saved = paymentScheduleRepository.save(s);
 
-        // Notify renter: cheque bounced
+        UUID tenantId = TenantContextHolder.getTenantId();
+        FineConfig cfg = fineConfigResolver.resolve(saved.getProperty().getId(), tenantId);
+        BigDecimal fineAmount = cfg.amountFor(reason);
+
+        PaymentPenalty penalty = new PaymentPenalty();
+        penalty.setPaymentScheduleId(saved.getId());
+        penalty.setLeaseId(saved.getLease().getId());
+        penalty.setPenaltyType("CHEQUE_FAILURE");
+        penalty.setFailureReason(reason);   // snapshot — eliminates per-row schedule join in PenaltyController
+        penalty.setPenaltyAmount(fineAmount);
+        penalty.setDaysOverdue(0);
+        penalty.setFineGraceDays(cfg.graceDays());
+        penalty.setFinePerDayRate(cfg.perDayRate());
+        penalty.setLastCalculatedAt(LocalDateTime.now());
+        PaymentPenalty savedPenalty = paymentPenaltyRepository.save(penalty);
+
+        // Post CHEQUE_BOUNCED financial transaction (existing nature, existing
+        // AccountMapping). NOT wrapped in try/catch — recordChequeBounce
+        // participates in this same outer JPA transaction, so swallowing its
+        // exception poisons the connection and the eventual commit fails with a
+        // confusing TransactionSystemException. Letting it propagate triggers
+        // proper rollback of the status change + penalty + audit so the books
+        // stay consistent with the schedule state.
+        financialTransactionService.recordChequeBounce(saved);
+
+        // Renter notifications — both PAYMENT_BOUNCED (existing template) and
+        // PENALTY_INCURRED (extracted to NotificationService.sendPenaltyIncurred
+        // in M7). Wrapped so a downed mailer never blocks the status transition
+        // (notifications are best-effort, not part of the audit-critical path).
         try {
-            UUID renterUserId = payment.getLease().getRenter().getUserId();
+            UUID renterUserId = saved.getLease().getRenter().getUserId();
             if (renterUserId != null) {
-                notificationService.notify(TenantContextHolder.getTenantId(), renterUserId,
-                        "PAYMENT_BOUNCED", "Cheque Bounced",
-                        "Installment #" + payment.getInstallmentNumber() + " cheque of " + payment.getAmount() + " has bounced. Please arrange a replacement.",
-                        "PAYMENT", payment.getId());
+                notificationService.notify(tenantId, renterUserId,
+                        "PAYMENT_BOUNCED", "Cheque Failed",
+                        "Installment #" + saved.getInstallmentNumber() + " cheque of " + saved.getAmount()
+                                + " was marked " + reason + ". A fine of " + fineAmount
+                                + " AED has been added. Please arrange a replacement and clear the fine.",
+                        "PAYMENT", saved.getId());
+                notificationService.sendPenaltyIncurred(saved, reason, fineAmount, savedPenalty.getId());
             }
         } catch (Exception e) {
-            log.warn("Failed to send cheque bounced notification for payment {}: {}", payment.getId(), e.getMessage());
+            log.warn("Failed to send mark-failed notifications for payment {}: {}", saved.getId(), e.getMessage());
         }
 
-        return mapToDTO(saved);
+        // Lease event audit. The existing LeaseEvent entity has no eventType
+        // column, so the marker is embedded into `notes` as JSON (serialized
+        // via Jackson so any future field containing quotes is escaped
+        // correctly). The lease's current status is preserved for both
+        // previousState and newState because mark-failed is a payment-level
+        // transition, not a lease one — but newState is NOT NULL on the
+        // entity, so we fall back to ACTIVE when the lease has no status set
+        // (e.g. drafts in flight) to avoid a DataIntegrityViolationException
+        // at flush time.
+        LeaseStatus currentStatus = saved.getLease().getStatus();
+        LeaseStatus auditState = currentStatus != null ? currentStatus : LeaseStatus.ACTIVE;
+        LeaseEvent ev = new LeaseEvent();
+        ev.setLease(saved.getLease());
+        ev.setPreviousState(auditState);
+        ev.setNewState(auditState);
+        ev.setNotes(buildLeaseEventNotes(reason, saved.getId(), savedPenalty.getId(), fineAmount));
+        ev.setCreatedAt(Instant.now());
+        leaseEventRepository.save(ev);
+
+        return new MarkFailedResult(mapToDTO(saved), savedPenalty);
+    }
+
+    private String buildLeaseEventNotes(
+            ChequeFailureReason reason, UUID paymentScheduleId, UUID penaltyId, BigDecimal fineAmount) {
+        Map<String, String> payload = new LinkedHashMap<>();
+        payload.put("eventType", "PAYMENT_FAILED_" + reason.name());
+        payload.put("paymentScheduleId", paymentScheduleId.toString());
+        payload.put("penaltyId", penaltyId.toString());
+        payload.put("fineAmount", fineAmount.toPlainString());
+        try {
+            return objectMapper.writeValueAsString(payload);
+        } catch (JsonProcessingException e) {
+            // Should never happen for a Map<String,String>; fall back to a
+            // best-effort marker so the audit row still records the event type.
+            log.warn("Failed to serialize lease event notes JSON: {}", e.getMessage());
+            return "{\"eventType\":\"PAYMENT_FAILED_" + reason.name() + "\"}";
+        }
     }
 
     @Transactional
@@ -632,6 +735,8 @@ public class PaymentScheduleService {
         // Default payment method comes from the property settings — same as the monthly preview.
         var settings = rentCollectionSettingsRepository.findByPropertyId(propertyId).orElse(null);
         boolean onlineEnabled = settings != null && Boolean.TRUE.equals(settings.getOnlinePaymentEnabled());
+        // Cheque-first default: ONLINE only when the property explicitly enables it
+        // via RentCollectionSettings.onlinePaymentEnabled=true.
         dto.setDefaultPaymentMethod(onlineEnabled ? "ONLINE" : "CHEQUE");
         return dto;
     }
@@ -750,6 +855,8 @@ public class PaymentScheduleService {
         dto.setTotalAmount(totalRent);
         dto.setTotalPayments(lines.size());
         dto.setDueDayOfMonth(dueDay);
+        // Cheque-first default: ONLINE only when the property explicitly enables it
+        // via RentCollectionSettings.onlinePaymentEnabled=true.
         dto.setDefaultPaymentMethod(onlineEnabled ? "ONLINE" : "CHEQUE");
         return dto;
     }

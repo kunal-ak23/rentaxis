@@ -1,0 +1,13 @@
+databaseChangeLog:
+  - changeSet:
+      id: 49-org-settings-penalty-instructions
+      author: rentaxis-system
+      changes:
+        - addColumn:
+            tableName: org_settings
+            columns:
+              - column:
+                  name: penalty_payment_instructions
+                  type: text
+                  constraints:
+                    nullable: true

@@ -27,6 +27,9 @@ public class OrgSettings extends BaseTenantEntity {
     @Column(name = "reminder_days")
     private Integer reminderDays = 30;
 
+    @Column(name = "penalty_payment_instructions", columnDefinition = "TEXT")
+    private String penaltyPaymentInstructions;
+
     // Getters and Setters
     public UUID getId() {
         return id;
@@ -74,5 +77,13 @@ public class OrgSettings extends BaseTenantEntity {
 
     public void setReminderDays(Integer reminderDays) {
         this.reminderDays = reminderDays;
+    }
+
+    public String getPenaltyPaymentInstructions() {
+        return penaltyPaymentInstructions;
+    }
+
+    public void setPenaltyPaymentInstructions(String penaltyPaymentInstructions) {
+        this.penaltyPaymentInstructions = penaltyPaymentInstructions;
     }
 }

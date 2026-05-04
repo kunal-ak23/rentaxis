@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.domain.entity;
 
+import com.datagami.rentaxis.domain.entity.enums.ChequeFailureReason;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -38,6 +39,19 @@ public class PaymentPenalty extends BaseTenantEntity {
 
     @Column(name = "grace_period_days")
     private Integer gracePeriodDays;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "cheque_failure_reason", length = 30)
+    private ChequeFailureReason failureReason;
+
+    @Column(name = "fine_grace_days")
+    private Integer fineGraceDays;
+
+    @Column(name = "fine_per_day_rate")
+    private BigDecimal finePerDayRate;
+
+    @Column(name = "cleared_at")
+    private LocalDateTime clearedAt;
 
     @Column(name = "waived", nullable = false)
     private boolean waived = false;

@@ -14,4 +14,11 @@ public class RentCollectionSettingsDTO {
     private String penaltyType;
     private BigDecimal penaltyAmount;
     private Boolean onlinePaymentEnabled;
+
+    // Per-property fine overrides (null = use org-level defaults)
+    private java.math.BigDecimal fineBounceAmount;
+    private java.math.BigDecimal fineSignatureMismatchAmount;
+    private java.math.BigDecimal fineAccountClosedAmount;
+    private Integer fineGraceDays;
+    private java.math.BigDecimal finePerDayRate;
 }

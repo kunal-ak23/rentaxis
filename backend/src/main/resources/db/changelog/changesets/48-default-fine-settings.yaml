@@ -1,0 +1,20 @@
+databaseChangeLog:
+  - changeSet:
+      id: 48-default-fine-settings
+      author: rentaxis-system
+      changes:
+        - sql:
+            sql: |
+              INSERT INTO landlord_org_fine_settings (
+                id, tenant_id, landlord_org_id,
+                fine_bounce_amount, fine_signature_mismatch_amount, fine_account_closed_amount,
+                fine_grace_days, fine_per_day_rate
+              )
+              SELECT
+                gen_random_uuid(), lo.id, lo.id, 500, 500, 1000, 7, 25
+              FROM landlord_org lo
+              WHERE NOT EXISTS (
+                SELECT 1 FROM landlord_org_fine_settings lofs
+                WHERE lofs.landlord_org_id = lo.id
+              );
+      comment: "Backfill one landlord_org_fine_settings row per existing landlord_org with system defaults (bounce=500, signature_mismatch=500, account_closed=1000, grace_days=7, per_day_rate=25). Idempotent via WHERE NOT EXISTS."

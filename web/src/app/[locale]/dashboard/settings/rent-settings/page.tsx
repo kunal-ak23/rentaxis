@@ -15,6 +15,9 @@ import {
     AlertTriangle,
     CreditCard,
     Save,
+    ChevronDown,
+    ChevronRight,
+    RotateCcw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { canConfigureRentSettings } from "@/lib/rbac";
@@ -34,6 +37,20 @@ type RentSettings = {
     penaltyType: "NONE" | "FIXED_PER_DAY" | "PERCENTAGE";
     penaltyAmount: number;
     onlinePaymentEnabled: boolean;
+    // nullable fine override fields — null means inherit org default
+    fineBounceAmount: number | null;
+    fineSignatureMismatchAmount: number | null;
+    fineAccountClosedAmount: number | null;
+    fineGraceDays: number | null;
+    finePerDayRate: number | null;
+};
+
+type FineConfig = {
+    bounceAmount: number;
+    signatureMismatchAmount: number;
+    accountClosedAmount: number;
+    graceDays: number;
+    perDayRate: number;
 };
 
 const DEFAULT_SETTINGS: Omit<RentSettings, "propertyId"> = {
@@ -42,24 +59,43 @@ const DEFAULT_SETTINGS: Omit<RentSettings, "propertyId"> = {
     penaltyType: "NONE",
     penaltyAmount: 0,
     onlinePaymentEnabled: false,
+    fineBounceAmount: null,
+    fineSignatureMismatchAmount: null,
+    fineAccountClosedAmount: null,
+    fineGraceDays: null,
+    finePerDayRate: null,
+};
+
+const ORG_FINE_DEFAULTS: FineConfig = {
+    bounceAmount: 500,
+    signatureMismatchAmount: 500,
+    accountClosedAmount: 1000,
+    graceDays: 7,
+    perDayRate: 25,
 };
 
 export default function RentSettingsPage() {
     const t = useTranslations("OnlinePayments");
+    const tFines = useTranslations("Fines");
     const { data: session } = useSession();
     const userRole = session?.user?.role as UserRole | undefined;
 
     const [properties, setProperties] = useState<Property[]>([]);
     const [selectedPropertyId, setSelectedPropertyId] = useState("");
     const [settings, setSettings] = useState<RentSettings | null>(null);
+    const [orgFines, setOrgFines] = useState<FineConfig>(ORG_FINE_DEFAULTS);
     const [initialLoading, setInitialLoading] = useState(true);
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
     const [saveSuccess, setSaveSuccess] = useState(false);
     const [error, setError] = useState("");
+    const [finesExpanded, setFinesExpanded] = useState(false);
 
     useEffect(() => {
-        fetchProperties().finally(() => setInitialLoading(false));
+        Promise.all([
+            fetchProperties(),
+            fetchOrgFines(),
+        ]).finally(() => setInitialLoading(false));
     }, []);
 
     useEffect(() => {
@@ -69,6 +105,18 @@ export default function RentSettingsPage() {
             setSettings(null);
         }
     }, [selectedPropertyId]);
+
+    const fetchOrgFines = async () => {
+        try {
+            const res = await fetch("/api/proxy/v1/settings/fines");
+            if (res.ok) {
+                const data = await res.json();
+                setOrgFines(data);
+            }
+        } catch {
+            // use defaults
+        }
+    };
 
     const fetchProperties = async () => {
         try {
@@ -90,7 +138,11 @@ export default function RentSettingsPage() {
         try {
             const res = await fetch(`/api/proxy/v1/rent-settings/${propertyId}`);
             if (res.ok) {
-                setSettings(await res.json());
+                const data = await res.json();
+                setSettings({
+                    ...DEFAULT_SETTINGS,
+                    ...data,
+                });
             } else if (res.status === 404) {
                 // No settings yet — use defaults
                 setSettings({
@@ -100,7 +152,7 @@ export default function RentSettingsPage() {
             } else {
                 setError("Failed to load rent settings.");
             }
-        } catch (err) {
+        } catch {
             // Treat network errors as "no settings"
             setSettings({
                 ...DEFAULT_SETTINGS,
@@ -126,18 +178,23 @@ export default function RentSettingsPage() {
                     penaltyType: settings.penaltyType,
                     penaltyAmount: settings.penaltyAmount,
                     onlinePaymentEnabled: settings.onlinePaymentEnabled,
+                    fineBounceAmount: settings.fineBounceAmount,
+                    fineSignatureMismatchAmount: settings.fineSignatureMismatchAmount,
+                    fineAccountClosedAmount: settings.fineAccountClosedAmount,
+                    fineGraceDays: settings.fineGraceDays,
+                    finePerDayRate: settings.finePerDayRate,
                 }),
             });
             if (res.ok) {
                 setSaveSuccess(true);
                 const saved = await res.json();
-                setSettings(saved);
+                setSettings({ ...DEFAULT_SETTINGS, ...saved });
                 setTimeout(() => setSaveSuccess(false), 4000);
             } else {
                 const data = await res.json().catch(() => ({}));
-                setError(data.message || "Failed to save settings.");
+                setError((data as { message?: string }).message || "Failed to save settings.");
             }
-        } catch (err) {
+        } catch {
             setError("Network error. Please try again.");
         } finally {
             setSaving(false);
@@ -147,6 +204,29 @@ export default function RentSettingsPage() {
     const updateField = <K extends keyof RentSettings>(field: K, value: RentSettings[K]) => {
         if (!settings) return;
         setSettings({ ...settings, [field]: value });
+    };
+
+    // Fine override helpers
+    const setFineOverride = (field: keyof RentSettings, value: string) => {
+        if (!settings) return;
+        const parsed = value === "" ? null : Number(value);
+        setSettings({ ...settings, [field]: parsed });
+    };
+
+    const resetFineOverride = (field: keyof RentSettings) => {
+        if (!settings) return;
+        setSettings({ ...settings, [field]: null });
+    };
+
+    const fineOverrideValue = (field: keyof RentSettings): string => {
+        if (!settings) return "";
+        const val = settings[field];
+        return val === null || val === undefined ? "" : String(val);
+    };
+
+    const isOverridden = (field: keyof RentSettings): boolean => {
+        if (!settings) return false;
+        return settings[field] !== null && settings[field] !== undefined;
     };
 
     // Access check
@@ -329,8 +409,8 @@ export default function RentSettingsPage() {
                                 <label className="block text-[10px] font-bold text-muted uppercase tracking-widest mb-1.5">
                                     {t("penaltyAmount")}
                                     {settings.penaltyType === "FIXED_PER_DAY"
-                                        ? " \u2014 Amount per day (AED)"
-                                        : " \u2014 Percentage per day (%)"}
+                                        ? " — Amount per day (AED)"
+                                        : " — Percentage per day (%)"}
                                 </label>
                                 <input
                                     type="number"
@@ -374,6 +454,103 @@ export default function RentSettingsPage() {
                                     )}
                                 />
                             </button>
+                        </div>
+
+                        {/* ── Cheque-failure Fine Overrides (collapsible) ── */}
+                        <div className="border border-border rounded-xl overflow-hidden">
+                            <button
+                                type="button"
+                                onClick={() => setFinesExpanded(v => !v)}
+                                className="w-full flex items-center justify-between p-4 bg-input hover:bg-input/80 transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/20"
+                            >
+                                <span className="flex items-center gap-2 text-xs font-bold text-muted uppercase tracking-[0.15em]">
+                                    <AlertTriangle size={13} className="text-amber-500/70" />
+                                    {tFines("overrideSection")}
+                                    {/* Show count of active overrides as a pill */}
+                                    {(() => {
+                                        const count = [
+                                            settings.fineBounceAmount,
+                                            settings.fineSignatureMismatchAmount,
+                                            settings.fineAccountClosedAmount,
+                                            settings.fineGraceDays,
+                                            settings.finePerDayRate,
+                                        ].filter(v => v !== null && v !== undefined).length;
+                                        return count > 0 ? (
+                                            <span className="ml-1 text-[9px] font-bold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
+                                                {count} override{count > 1 ? "s" : ""} active
+                                            </span>
+                                        ) : null;
+                                    })()}
+                                </span>
+                                {finesExpanded
+                                    ? <ChevronDown size={14} className="text-muted" />
+                                    : <ChevronRight size={14} className="text-muted" />
+                                }
+                            </button>
+
+                            {finesExpanded && (
+                                <div className="p-5 border-t border-border space-y-5">
+                                    <p className="text-[11px] text-muted font-medium">
+                                        {tFines("overrideSectionHint")}
+                                    </p>
+
+                                    {/* Fine Override Field helper */}
+                                    {([
+                                        { field: "fineBounceAmount" as const, label: tFines("bounceAmount"), orgVal: orgFines.bounceAmount, unit: "AED" },
+                                        { field: "fineSignatureMismatchAmount" as const, label: tFines("signatureMismatchAmount"), orgVal: orgFines.signatureMismatchAmount, unit: "AED" },
+                                        { field: "fineAccountClosedAmount" as const, label: tFines("accountClosedAmount"), orgVal: orgFines.accountClosedAmount, unit: "AED" },
+                                        { field: "fineGraceDays" as const, label: tFines("graceDays"), orgVal: orgFines.graceDays, unit: "days" },
+                                        { field: "finePerDayRate" as const, label: tFines("perDayRate"), orgVal: orgFines.perDayRate, unit: "AED/day" },
+                                    ] as const).map(({ field, label, orgVal, unit }) => {
+                                        const overridden = isOverridden(field);
+                                        return (
+                                            <div key={field}>
+                                                <div className="flex items-center gap-2 mb-1.5">
+                                                    <label className="text-[10px] font-bold text-muted uppercase tracking-widest">
+                                                        {label}
+                                                    </label>
+                                                    {overridden && (
+                                                        <span className="text-[9px] font-bold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
+                                                            {tFines("overrideBadge")}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <input
+                                                        type="number"
+                                                        min={0}
+                                                        step={1}
+                                                        value={fineOverrideValue(field)}
+                                                        placeholder={String(orgVal)}
+                                                        onChange={e => setFineOverride(field, e.target.value)}
+                                                        className={cn(
+                                                            "w-40 border rounded-lg bg-surface p-3 text-sm font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all duration-200",
+                                                            overridden ? "border-amber-300 bg-amber-50/30" : "border-border"
+                                                        )}
+                                                    />
+                                                    <span className="text-xs font-semibold text-muted">{unit}</span>
+                                                    {overridden && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => resetFineOverride(field)}
+                                                            className="flex items-center gap-1 text-[10px] font-bold text-muted hover:text-foreground border border-border rounded-lg px-2 py-1.5 transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                                            title={tFines("resetToDefault")}
+                                                        >
+                                                            <RotateCcw size={10} />
+                                                            {tFines("resetToDefault")}
+                                                        </button>
+                                                    )}
+                                                </div>
+                                                {!overridden && (
+                                                    <p className="text-[10px] text-muted mt-1">
+                                                        {tFines("orgDefault", { value: `${orgVal} ${unit}` })}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
                         </div>
                     </div>
 

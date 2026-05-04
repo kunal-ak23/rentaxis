@@ -764,6 +764,12 @@ export default function PropertiesPage() {
                                                 { label: "Renters", count: portfolioResult.rentersCreated },
                                                 { label: "Leases", count: portfolioResult.leasesCreated },
                                                 { label: "Payment Schedules", count: portfolioResult.paymentSchedulesCreated },
+                                                ...(portfolioResult.chequesFromSheet > 0
+                                                    ? [{ label: "Cheques (from sheet)", count: portfolioResult.chequesFromSheet }]
+                                                    : []),
+                                                ...(portfolioResult.bookingDepositsCreated > 0
+                                                    ? [{ label: "Booking Deposits", count: portfolioResult.bookingDepositsCreated }]
+                                                    : []),
                                             ].map(item => (
                                                 <div key={item.label} className="bg-input/50 rounded-lg p-3 border border-border text-center">
                                                     <p className="text-lg font-bold text-foreground tabular-nums">{item.count}</p>
@@ -771,6 +777,28 @@ export default function PropertiesPage() {
                                                 </div>
                                             ))}
                                         </div>
+
+                                        {portfolioResult.warnings && portfolioResult.warnings.length > 0 && (
+                                            <div className="mb-6 max-h-64 overflow-y-auto">
+                                                <h4 className="text-xs font-semibold text-warning mb-2 flex items-center gap-1.5">
+                                                    <AlertCircle size={12} />
+                                                    Warnings
+                                                    <span className="text-[10px] font-medium text-muted">
+                                                        ({portfolioResult.warnings.length})
+                                                    </span>
+                                                </h4>
+                                                <div className="space-y-1">
+                                                    {(portfolioResult.warnings as Array<{ sheet: string; row: number; field: string; message: string }>).map((w, i) => (
+                                                        <div key={i} className="flex items-start gap-2 text-xs bg-warning/5 border border-warning/20 rounded-lg px-3 py-2">
+                                                            <span className="text-[10px] font-mono text-muted shrink-0">{w.sheet}</span>
+                                                            {w.row > 0 && <span className="text-[10px] font-mono text-muted shrink-0">Row {w.row}</span>}
+                                                            {w.field && <span className="text-[10px] font-semibold text-warning shrink-0">{w.field}:</span>}
+                                                            <span className="text-foreground">{w.message}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
                                     </>
                                 ) : (
                                     <>

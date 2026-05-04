@@ -1,0 +1,25 @@
+databaseChangeLog:
+  - changeSet:
+      id: 50-payment-penalties-failure-reason
+      author: rentaxis-system
+      changes:
+        # Denormalize cheque_failure_reason onto payment_penalties so
+        # PenaltyController.toDto can read it directly instead of doing
+        # a per-penalty lookup on payment_schedules (N+1 eliminated).
+        - addColumn:
+            tableName: payment_penalties
+            columns:
+              - column:
+                  name: cheque_failure_reason
+                  type: varchar(30)
+                  constraints:
+                    nullable: true
+        # Backfill: join through payment_schedules for existing CHEQUE_FAILURE rows.
+        - sql:
+            sql: |
+              UPDATE payment_penalties pp
+                 SET cheque_failure_reason = ps.cheque_failure_reason
+                FROM payment_schedules ps
+               WHERE pp.payment_schedule_id = ps.id
+                 AND pp.penalty_type = 'CHEQUE_FAILURE'
+                 AND ps.cheque_failure_reason IS NOT NULL;

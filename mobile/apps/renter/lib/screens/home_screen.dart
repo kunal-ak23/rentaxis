@@ -16,6 +16,18 @@ final _paymentServiceProvider = Provider<PaymentService>((ref) {
   return PaymentService(client.dio);
 });
 
+final _homePenaltyServiceProvider = Provider<PenaltyService>((ref) {
+  final client = ref.watch(apiClientProvider);
+  return PenaltyService(client.dio);
+});
+
+/// Fetches open penalties for the badge count on the Home screen.
+final _openPenaltyCountProvider = FutureProvider.autoDispose<int>((ref) async {
+  final service = ref.watch(_homePenaltyServiceProvider);
+  final list = await service.listPenalties(status: 'open', size: 50);
+  return list.length;
+});
+
 final _myLeasesProvider = FutureProvider.autoDispose<List<dynamic>>((ref) {
   final service = ref.watch(_leaseServiceProvider);
   return service.getMyLeases();
@@ -40,6 +52,7 @@ class HomeScreen extends ConsumerWidget {
     final leasesAsync = ref.watch(_myLeasesProvider);
     final paymentsAsync = ref.watch(_myPaymentsProvider);
     final notifState = ref.watch(notificationProvider);
+    final openPenaltyCount = ref.watch(_openPenaltyCountProvider).valueOrNull ?? 0;
 
     return Scaffold(
       body: RefreshIndicator(
@@ -47,6 +60,7 @@ class HomeScreen extends ConsumerWidget {
         onRefresh: () async {
           ref.invalidate(_myLeasesProvider);
           ref.invalidate(_myPaymentsProvider);
+          ref.invalidate(_openPenaltyCountProvider);
           ref.read(notificationProvider.notifier).fetchUnreadCount();
         },
         child: ListView(
@@ -62,7 +76,7 @@ class HomeScreen extends ConsumerWidget {
             // Quick Actions
             AnimatedListItem(
               index: 1,
-              child: _buildQuickActions(context),
+              child: _buildQuickActions(context, openPenaltyCount),
             ),
             const SizedBox(height: 28),
 
@@ -163,29 +177,48 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildQuickActions(BuildContext context) {
-    return Row(
+  Widget _buildQuickActions(BuildContext context, int openPenaltyCount) {
+    return Column(
       children: [
-        _QuickActionButton(
-          icon: Icons.payment,
-          label: 'Pay Rent',
-          color: AppColors.primary,
-          onTap: () => context.go('/payments'),
+        Row(
+          children: [
+            _QuickActionButton(
+              icon: Icons.payment,
+              label: 'Pay Rent',
+              color: AppColors.primary,
+              onTap: () => context.go('/payments'),
+            ),
+            const SizedBox(width: 12),
+            _QuickActionButton(
+              icon: Icons.build_outlined,
+              label: 'Raise Ticket',
+              color: AppColors.warning,
+              onTap: () => context.push('/tickets/create'),
+            ),
+            const SizedBox(width: 12),
+            _QuickActionButton(
+              icon: Icons.notifications_outlined,
+              label: 'Notifications',
+              color: AppColors.info,
+              onTap: () => context.push('/notifications'),
+            ),
+          ],
         ),
-        const SizedBox(width: 12),
-        _QuickActionButton(
-          icon: Icons.build_outlined,
-          label: 'Raise Ticket',
-          color: AppColors.warning,
-          onTap: () => context.push('/tickets/create'),
-        ),
-        const SizedBox(width: 12),
-        _QuickActionButton(
-          icon: Icons.notifications_outlined,
-          label: 'Notifications',
-          color: AppColors.info,
-          onTap: () => context.push('/notifications'),
-        ),
+        if (openPenaltyCount > 0) ...[
+          const SizedBox(height: 12),
+          _PenaltyBannerButton(
+            count: openPenaltyCount,
+            onTap: () => context.push('/penalties'),
+          ),
+        ] else ...[
+          const SizedBox(height: 12),
+          _QuickActionRow(
+            icon: Icons.gavel_outlined,
+            label: 'Penalties',
+            color: AppColors.textSecondary,
+            onTap: () => context.push('/penalties'),
+          ),
+        ],
       ],
     );
   }
@@ -698,6 +731,138 @@ class _KeyContactsSectionState extends State<_KeyContactsSection> {
           );
         }),
       ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Penalty banner — shown on home when there are open penalties.
+// ---------------------------------------------------------------------------
+
+class _PenaltyBannerButton extends StatelessWidget {
+  final int count;
+  final VoidCallback onTap;
+
+  const _PenaltyBannerButton({required this.count, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: AppColors.danger.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: AppColors.danger.withValues(alpha: 0.25),
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: AppColors.danger.withValues(alpha: 0.10),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.gavel_outlined,
+                color: AppColors.danger,
+                size: 18,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '$count penalt${count == 1 ? 'y' : 'ies'} due',
+                    style: GoogleFonts.josefinSans(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.danger,
+                    ),
+                  ),
+                  Text(
+                    'Tap to view and arrange payment',
+                    style: GoogleFonts.josefinSans(
+                      fontSize: 11,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              Icons.chevron_right,
+              color: AppColors.danger.withValues(alpha: 0.5),
+              size: 20,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Quiet row link — shown on home when there are no open penalties.
+// ---------------------------------------------------------------------------
+
+class _QuickActionRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _QuickActionRow({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.04),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: color.withValues(alpha: 0.12),
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: color),
+            const SizedBox(width: 10),
+            Text(
+              label,
+              style: GoogleFonts.josefinSans(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: color,
+              ),
+            ),
+            const Spacer(),
+            Icon(
+              Icons.chevron_right,
+              size: 18,
+              color: color.withValues(alpha: 0.4),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

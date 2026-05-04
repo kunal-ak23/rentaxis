@@ -1,8 +1,12 @@
 package com.datagami.rentaxis.core.service;
 
+import com.datagami.rentaxis.api.dto.ImportErrorDTO;
+import com.datagami.rentaxis.api.dto.PortfolioImportJobDetailsDTO;
 import com.datagami.rentaxis.domain.entity.*;
 import com.datagami.rentaxis.domain.entity.enums.*;
 import com.datagami.rentaxis.domain.repository.*;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
@@ -12,6 +16,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 
 @Slf4j
@@ -25,10 +31,24 @@ public class PortfolioImportPersistService {
     private final RenterRepository renterRepository;
     private final LeaseRepository leaseRepository;
     private final PaymentScheduleService paymentScheduleService;
+    private final PaymentScheduleRepository paymentScheduleRepository;
     private final ImportJobRepository importJobRepository;
+
+    private static final Set<String> VALID_BOOLS_TRUE = Set.of("true", "yes", "1");
+    private static final Set<String> VALID_BOOLS_FALSE = Set.of("false", "no", "0");
 
     @Transactional
     public void persistWorkbook(Workbook workbook, ImportJob job) {
+        persistWorkbook(workbook, job, List.of());
+    }
+
+    /**
+     * Same as {@link #persistWorkbook(Workbook, ImportJob)} but additionally folds the
+     * supplied validation warnings into the {@link PortfolioImportJobDetailsDTO}
+     * wrapper persisted in {@code job.errors}, so the controller can surface them.
+     */
+    @Transactional
+    public void persistWorkbook(Workbook workbook, ImportJob job, List<ImportErrorDTO> warnings) {
         Sheet propertiesSheet = workbook.getSheet("Properties");
         Sheet unitsSheet = workbook.getSheet("Units");
         Sheet rentersSheet = workbook.getSheet("Renters");
@@ -129,24 +149,31 @@ public class PortfolioImportPersistService {
         }
         job.setRentersCreated(renterMap.size());
 
-        // 5. Create Leases + Payment Schedules
+        // 5. Pre-read the optional Cheques sheet, keyed by lease.
+        Map<String, List<ChequeRow>> chequesByLeaseKey = readChequesSheet(workbook);
+
+        // 6. Create Leases + Payment Schedules
+        HeaderIndex leaseHi = new HeaderIndex(leasesSheet);
         int leasesCreated = 0;
         int schedulesCreated = 0;
+        int chequesFromSheet = 0;
+        int bookingDepositsCreated = 0;
         for (int i = 1; i <= leasesSheet.getLastRowNum(); i++) {
             Row row = leasesSheet.getRow(i);
             if (row == null || isRowEmpty(row)) continue;
 
-            String propertyName = getCellString(row, 0);
-            String buildingName = getCellString(row, 1);
-            String unitNumber = getCellString(row, 2);
-            String renterEmail = getCellString(row, 3);
-            LocalDate startDate = parseDate(getCellString(row, 4));
-            LocalDate endDate = parseDate(getCellString(row, 5));
-            BigDecimal rentAmount = new BigDecimal(getCellString(row, 6));
-            String depositStr = getCellString(row, 7);
-            String paymentTermsStr = getCellString(row, 8);
-            String paymentMethodStr = getCellString(row, 9);
-            String ejariNumber = getCellString(row, 10);
+            String propertyName = cell(row, leaseHi, "PropertyName");
+            String buildingName = cell(row, leaseHi, "BuildingName");
+            String unitNumber = cell(row, leaseHi, "UnitNumber");
+            String renterEmail = cell(row, leaseHi, "RenterEmail");
+            LocalDate startDate = parseDate(cell(row, leaseHi, "StartDate"));
+            LocalDate endDate = parseDate(cell(row, leaseHi, "EndDate"));
+            String rentAmountStr = cell(row, leaseHi, "RentAmount");
+            String monthlyRentStr = cell(row, leaseHi, "MonthlyRent");
+            String depositStr = cell(row, leaseHi, "DepositAmount");
+            String paymentTermsStr = cell(row, leaseHi, "PaymentTerms");
+            String paymentMethodStr = cell(row, leaseHi, "PaymentMethod");
+            String ejariNumber = cell(row, leaseHi, "EjariNumber");
 
             Unit unit = unitMap.get(propertyName.toLowerCase() + "|" + buildingName.toLowerCase() + "|" + unitNumber.toLowerCase());
             Renter renter = renterMap.get(renterEmail.toLowerCase());
@@ -162,27 +189,42 @@ public class PortfolioImportPersistService {
                         " — this indicates a validation bug, please report it");
             }
 
+            // Compute monthlyRent + totalRent. Fixes the prior bug where monthlyRent
+            // was computed as totalRent / paymentTerms — that gave per-installment
+            // amount, not per-month rent, whenever paymentTerms != monthsBetween.
+            //
+            // End-date is inclusive in the UAE lease convention (Jan 1 → Dec 31 is a
+            // 12-month lease), so we step end forward by one day before counting
+            // whole months. Without this, MONTHS.between(2026-01-01, 2026-12-31)
+            // returns 11 and admins entering MonthlyRent=5000 would get
+            // totalRent=55,000 instead of the expected 60,000. The Cheques-sheet sum
+            // check (PortfolioImportService.computeTotalRentOrNull) uses the same
+            // helper so cheque totals validate against the same number.
+            long monthsBetween = monthsInclusive(startDate, endDate);
+            BigDecimal monthlyRent;
+            BigDecimal totalRent;
+            if (!monthlyRentStr.isEmpty()) {
+                monthlyRent = new BigDecimal(monthlyRentStr);
+                totalRent = monthlyRent.multiply(BigDecimal.valueOf(monthsBetween));
+            } else {
+                totalRent = new BigDecimal(rentAmountStr);
+                monthlyRent = totalRent.divide(BigDecimal.valueOf(monthsBetween), 2, RoundingMode.HALF_UP);
+            }
+
             Lease lease = new Lease();
             lease.setUnit(unit);
             lease.setRenter(renter);
             lease.setStartDate(startDate);
             lease.setEndDate(endDate);
-            lease.setRentAmount(rentAmount);
-            lease.setStatus(LeaseStatus.ACTIVE);
+            lease.setRentAmount(totalRent);
+            lease.setMonthlyRent(monthlyRent);
 
             if (!depositStr.isEmpty()) {
                 lease.setDepositAmount(new BigDecimal(depositStr));
             }
-
-            int installments = 12;
             if (!paymentTermsStr.isEmpty()) {
-                installments = Integer.parseInt(paymentTermsStr);
-                lease.setPaymentTerms(installments);
+                lease.setPaymentTerms(Integer.parseInt(paymentTermsStr));
             }
-
-            // Calculate monthly rent using installments (payment terms) to avoid
-            // ChronoUnit.MONTHS off-by-one (e.g. Jan 1 - Dec 31 = 11 months, not 12)
-            lease.setMonthlyRent(rentAmount.divide(BigDecimal.valueOf(installments), 2, RoundingMode.HALF_UP));
             if (!paymentMethodStr.isEmpty()) {
                 lease.setPaymentMethod(PaymentMethod.valueOf(paymentMethodStr.toUpperCase()));
             }
@@ -190,23 +232,246 @@ public class PortfolioImportPersistService {
                 lease.setEjariNumber(ejariNumber);
             }
 
+            // ---- New lease-agreement fields (added 2026-05-02) ----
+            BigDecimal adminFee = parseDecimalOrZero(cell(row, leaseHi, "AdminFee"));
+            BigDecimal parkingRemoteFee = parseDecimalOrZero(cell(row, leaseHi, "ParkingRemoteFee"));
+            lease.setAdminFee(adminFee);
+            lease.setParkingRemoteFee(parkingRemoteFee);
+
+            boolean commercialDefault = unit.getProperty().getType() == PropertyType.COMMERCIAL;
+            lease.setRentVatApplicable(parseBoolOrDefault(cell(row, leaseHi, "RentVatApplicable"), commercialDefault));
+            lease.setAdminFeeVatApplicable(parseBoolOrDefault(cell(row, leaseHi, "AdminFeeVatApplicable"), commercialDefault));
+            lease.setSecurityDepositVatApplicable(parseBoolOrDefault(cell(row, leaseHi, "SecurityDepositVatApplicable"), commercialDefault));
+            lease.setParkingRemoteVatApplicable(parseBoolOrDefault(cell(row, leaseHi, "ParkingRemoteVatApplicable"), commercialDefault));
+
+            String depMethod = cell(row, leaseHi, "DepositPaymentMethod").toUpperCase();
+            if (!depMethod.isEmpty()) {
+                lease.setDepositPaymentMethod(PaymentMethod.valueOf(depMethod));
+            }
+
+            String agreementStr = cell(row, leaseHi, "AgreementDate");
+            if (!agreementStr.isEmpty()) {
+                try { lease.setAgreementDate(LocalDate.parse(agreementStr)); }
+                catch (DateTimeParseException ignored) { /* validator already flagged this */ }
+            }
+
+            String statusStr = cell(row, leaseHi, "Status").toUpperCase();
+            LeaseStatus leaseStatus = "DRAFT".equals(statusStr) ? LeaseStatus.DRAFT : LeaseStatus.ACTIVE;
+            lease.setStatus(leaseStatus);
+
             Lease savedLease = leaseRepository.save(lease);
             leasesCreated++;
 
-            // Update unit status to OCCUPIED
-            unit.setStatus(UnitStatus.OCCUPIED);
-            unit.setCurrentTenantName(renter.getNameEn());
-            unit.setActualRent(rentAmount);
-            unitRepository.save(unit);
+            // Booking deposit: persist a PaymentSchedule row mirroring LeaseService.createDraftLease.
+            // The Leases-sheet validator enforces all-or-nothing across the four BookingDeposit_*
+            // columns, so reaching this branch means Date / Number / Bank are also non-empty and
+            // parseable. We re-assert here to fail fast if a caller skipped validation.
+            String bdAmt = cell(row, leaseHi, "BookingDeposit_Amount");
+            if (!bdAmt.isEmpty()) {
+                String bdNum = cell(row, leaseHi, "BookingDeposit_Number");
+                String bdBank = cell(row, leaseHi, "BookingDeposit_Bank");
+                String bdDateStr = cell(row, leaseHi, "BookingDeposit_Date");
+                if (bdDateStr.isEmpty() || bdNum.isEmpty() || bdBank.isEmpty()) {
+                    throw new IllegalStateException(
+                            "BookingDeposit_Amount set without all of Date/Number/Bank on row " + (i + 1) +
+                            " — this indicates a validation bug, please report it");
+                }
+                LocalDate bdDate = LocalDate.parse(bdDateStr);
 
-            // Auto-generate payment schedules
-            var schedules = paymentScheduleService.generateScheduleForLease(savedLease);
-            schedulesCreated += schedules.size();
+                PaymentSchedule booking = new PaymentSchedule();
+                booking.setLease(savedLease);
+                booking.setUnit(unit);
+                booking.setProperty(unit.getProperty());
+                booking.setInstallmentNumber(0);
+                booking.setAmount(new BigDecimal(bdAmt));
+                booking.setChequeNumber(bdNum);
+                booking.setBankName(bdBank);
+                booking.setChequeDate(bdDate);
+                booking.setDueDate(bdDate);
+                booking.setStatus(PaymentStatus.PENDING);
+                booking.setPaymentMethod(savedLease.getPaymentMethod() != null
+                        ? savedLease.getPaymentMethod().name() : "CHEQUE");
+                booking.setPurposeLabel("BOOKING RECEIVED");
+                booking.setBookingDeposit(true);
+                paymentScheduleRepository.save(booking);
+                bookingDepositsCreated++;
+            }
+
+            // Apply lease-status-driven side effects.
+            if (leaseStatus == LeaseStatus.ACTIVE) {
+                unit.setStatus(UnitStatus.OCCUPIED);
+                unit.setCurrentTenantName(renter.getNameEn());
+                unit.setActualRent(totalRent);
+                unitRepository.save(unit);
+            }
+            // DRAFT → unit stays VACANT, no further change.
+
+            // Schedule generation: Cheques-sheet rows win if present; otherwise
+            // delegate to PaymentScheduleService for auto-distribution.
+            String chequesKey = leaseKey(propertyName, unitNumber, renterEmail);
+            List<ChequeRow> chequeRows = chequesByLeaseKey.getOrDefault(chequesKey, List.of());
+            if (chequeRows.isEmpty()) {
+                var schedules = paymentScheduleService.generateScheduleForLease(savedLease);
+                schedulesCreated += schedules.size();
+            } else {
+                chequeRows.sort(Comparator.comparingInt(ChequeRow::installmentNo));
+                savedLease.setPaymentTerms(chequeRows.size());
+                savedLease = leaseRepository.save(savedLease);
+
+                boolean bundled = nz(savedLease.getAdminFee()).signum() > 0
+                        || nz(savedLease.getDepositAmount()).signum() > 0
+                        || nz(savedLease.getParkingRemoteFee()).signum() > 0;
+
+                for (ChequeRow ch : chequeRows) {
+                    PaymentSchedule ps = new PaymentSchedule();
+                    ps.setLease(savedLease);
+                    ps.setUnit(unit);
+                    ps.setProperty(unit.getProperty());
+                    ps.setInstallmentNumber(ch.installmentNo());
+                    ps.setDueDate(ch.dueDate());
+                    if (ch.chequeOrPaymentDate() != null) ps.setChequeDate(ch.chequeOrPaymentDate());
+                    ps.setChequeNumber(ch.uniqueId());
+                    ps.setBankName(ch.bank());
+                    ps.setAmount(ch.amount());
+                    ps.setStatus(PaymentStatus.PENDING);
+                    String chMethod = ch.method() != null ? ch.method()
+                            : (savedLease.getPaymentMethod() != null
+                                    ? savedLease.getPaymentMethod().name() : "CHEQUE");
+                    ps.setPaymentMethod(chMethod);
+                    String label = "RENT - " + ordinalOf(ch.installmentNo()) + " INSTALLMENT";
+                    if (ch.installmentNo() == 1 && bundled) {
+                        label += "/ADMIN/SD/REMOTE";
+                    }
+                    ps.setPurposeLabel(label);
+                    paymentScheduleRepository.save(ps);
+                }
+                schedulesCreated += chequeRows.size();
+                chequesFromSheet += chequeRows.size();
+            }
         }
 
         job.setLeasesCreated(leasesCreated);
         job.setSchedulesCreated(schedulesCreated);
+
+        // Persist the new counters and any warnings via the existing JSONB `errors`
+        // column using the PortfolioImportJobDetailsDTO wrapper. Avoids a DB migration;
+        // the controller reads either the legacy array form (validation-failed jobs)
+        // or this wrapper. Wrapper is written when there's anything to surface
+        // beyond the legacy fields.
+        boolean hasWarnings = warnings != null && !warnings.isEmpty();
+        if (chequesFromSheet > 0 || bookingDepositsCreated > 0 || hasWarnings) {
+            try {
+                PortfolioImportJobDetailsDTO details = new PortfolioImportJobDetailsDTO();
+                if (chequesFromSheet > 0) details.setChequesFromSheet(chequesFromSheet);
+                if (bookingDepositsCreated > 0) details.setBookingDepositsCreated(bookingDepositsCreated);
+                if (hasWarnings) details.setWarnings(warnings);
+                job.setErrors(JOB_DETAILS_MAPPER.writeValueAsString(details));
+            } catch (JsonProcessingException e) {
+                log.warn("Failed to serialize bulk-import counters into job.errors", e);
+            }
+        }
+
         importJobRepository.save(job);
+    }
+
+    private static final ObjectMapper JOB_DETAILS_MAPPER = new ObjectMapper();
+
+    private Map<String, List<ChequeRow>> readChequesSheet(Workbook workbook) {
+        Sheet sheet = workbook.getSheet("Cheques");
+        if (sheet == null) return Collections.emptyMap();
+        HeaderIndex hi = new HeaderIndex(sheet);
+        Map<String, List<ChequeRow>> byKey = new HashMap<>();
+        for (int r = 1; r <= sheet.getLastRowNum(); r++) {
+            Row row = sheet.getRow(r);
+            if (row == null || isRowEmpty(row)) continue;
+            String pname = cell(row, hi, "PropertyName");
+            String unum = cell(row, hi, "UnitNumber");
+            String email = cell(row, hi, "RenterEmail");
+            int installmentNo;
+            try { installmentNo = Integer.parseInt(cell(row, hi, "InstallmentNo")); }
+            catch (NumberFormatException e) {
+                log.debug("Cheques row {} dropped: InstallmentNo not numeric (validator should have flagged)", r + 1);
+                continue;
+            }
+            LocalDate dueDate;
+            try { dueDate = LocalDate.parse(cell(row, hi, "DueDate")); }
+            catch (DateTimeParseException e) {
+                log.debug("Cheques row {} dropped: DueDate not ISO (validator should have flagged)", r + 1);
+                continue;
+            }
+            String chequeOrPaymentDateStr = cell(row, hi, "ChequeOrPaymentDate");
+            LocalDate chequeOrPaymentDate = null;
+            if (!chequeOrPaymentDateStr.isEmpty()) {
+                try { chequeOrPaymentDate = LocalDate.parse(chequeOrPaymentDateStr); }
+                catch (DateTimeParseException ignored) {
+                    log.debug("Cheques row {} ChequeOrPaymentDate not ISO (validator should have flagged)", r + 1);
+                }
+            }
+            String uniqueId = cell(row, hi, "UniqueId");
+            String bank = cell(row, hi, "Bank");
+            BigDecimal amount;
+            try { amount = new BigDecimal(cell(row, hi, "Amount")); }
+            catch (NumberFormatException e) {
+                log.debug("Cheques row {} dropped: Amount not numeric (validator should have flagged)", r + 1);
+                continue;
+            }
+            String method = cell(row, hi, "Method").toUpperCase();
+            ChequeRow ch = new ChequeRow(installmentNo, dueDate, chequeOrPaymentDate,
+                    uniqueId.isEmpty() ? null : uniqueId,
+                    bank.isEmpty() ? null : bank,
+                    amount,
+                    method.isEmpty() ? null : method);
+            byKey.computeIfAbsent(leaseKey(pname, unum, email), k -> new ArrayList<>()).add(ch);
+        }
+        return byKey;
+    }
+
+    private static String leaseKey(String propertyName, String unitNumber, String renterEmail) {
+        return propertyName.trim().toLowerCase(Locale.ROOT)
+                + "|" + unitNumber.trim().toLowerCase(Locale.ROOT)
+                + "|" + renterEmail.trim().toLowerCase(Locale.ROOT);
+    }
+
+    /** Cheques-sheet row, with the lease's PaymentMethod already substituted in when blank. */
+    private record ChequeRow(int installmentNo, LocalDate dueDate, LocalDate chequeOrPaymentDate,
+                             String uniqueId, String bank, BigDecimal amount, String method) {}
+
+    private static BigDecimal nz(BigDecimal v) { return v == null ? BigDecimal.ZERO : v; }
+
+    /**
+     * End-date-inclusive month count. {@code MONTHS.between(2026-01-01, 2026-12-31)}
+     * is 11; admins entering a "1-year lease" with those dates expect 12, so we step
+     * end forward by one day before counting whole months. Floors at 1 to avoid
+     * divide-by-zero downstream.
+     */
+    static long monthsInclusive(LocalDate startDate, LocalDate endDate) {
+        return Math.max(ChronoUnit.MONTHS.between(startDate, endDate.plusDays(1)), 1);
+    }
+
+    /** Mirrors PaymentScheduleService.ordinalOf; duplicated locally to avoid widening visibility. */
+    private static String ordinalOf(int n) {
+        if (n % 100 >= 11 && n % 100 <= 13) return n + "TH";
+        return switch (n % 10) {
+            case 1 -> n + "ST";
+            case 2 -> n + "ND";
+            case 3 -> n + "RD";
+            default -> n + "TH";
+        };
+    }
+
+    private static BigDecimal parseDecimalOrZero(String s) {
+        if (s == null || s.isEmpty()) return BigDecimal.ZERO;
+        try { return new BigDecimal(s); }
+        catch (NumberFormatException e) { return BigDecimal.ZERO; }
+    }
+
+    private static boolean parseBoolOrDefault(String s, boolean fallback) {
+        if (s == null) return fallback;
+        String v = s.trim().toLowerCase(Locale.ROOT);
+        if (v.isEmpty()) return fallback;
+        if (VALID_BOOLS_TRUE.contains(v)) return true;
+        if (VALID_BOOLS_FALSE.contains(v)) return false;
+        return fallback;
     }
 
     // --- Helpers ---
@@ -244,5 +509,47 @@ public class PortfolioImportPersistService {
             if (!getCellString(row, i).isEmpty()) return false;
         }
         return true;
+    }
+
+    /** Reads a cell by header name. Returns "" when the header is absent. */
+    private String cell(Row row, HeaderIndex hi, String header) {
+        int c = hi.col(header);
+        return c < 0 ? "" : getCellString(row, c);
+    }
+
+    /**
+     * Maps header names (case-insensitive, trimmed) to column indexes for a sheet.
+     * Mirrors {@code PortfolioImportService.HeaderIndex} — kept duplicated rather than
+     * extracted because the two services are independent and the helper is small.
+     */
+    static final class HeaderIndex {
+        private final Map<String, Integer> byName;
+
+        HeaderIndex(Sheet sheet) {
+            Map<String, Integer> m = new HashMap<>();
+            Row header = sheet.getRow(sheet.getFirstRowNum());
+            if (header == null) header = sheet.getRow(0);
+            if (header != null) {
+                for (int c = 0; c < header.getLastCellNum(); c++) {
+                    Cell cell = header.getCell(c);
+                    if (cell == null) continue;
+                    String v = cell.getCellType() == CellType.STRING
+                            ? cell.getStringCellValue().trim()
+                            : "";
+                    if (!v.isEmpty()) m.put(v.toLowerCase(Locale.ROOT), c);
+                }
+            }
+            this.byName = m;
+        }
+
+        /** -1 when the header isn't present (old template). */
+        int col(String name) {
+            Integer v = byName.get(name.toLowerCase(Locale.ROOT));
+            return v == null ? -1 : v;
+        }
+
+        boolean has(String name) {
+            return byName.containsKey(name.toLowerCase(Locale.ROOT));
+        }
     }
 }

@@ -76,3 +76,7 @@ export function canConfigureGateway(role: UserRole): boolean {
 export function canConfigureRentSettings(role: UserRole): boolean {
     return ['SUPER_ADMIN', 'TENANT_ADMIN'].includes(role);
 }
+
+export function canConfigureFines(role: UserRole): boolean {
+    return ['SUPER_ADMIN', 'TENANT_ADMIN'].includes(role);
+}

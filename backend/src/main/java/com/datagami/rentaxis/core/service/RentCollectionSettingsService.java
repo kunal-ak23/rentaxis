@@ -45,6 +45,12 @@ public class RentCollectionSettingsService {
         settings.setPenaltyType(dto.getPenaltyType() != null ? PenaltyType.valueOf(dto.getPenaltyType()) : PenaltyType.NONE);
         settings.setPenaltyAmount(dto.getPenaltyAmount());
         settings.setOnlinePaymentEnabled(dto.getOnlinePaymentEnabled());
+        // Fine override fields — null preserved as null (= use org-level defaults)
+        settings.setFineBounceAmount(dto.getFineBounceAmount());
+        settings.setFineSignatureMismatchAmount(dto.getFineSignatureMismatchAmount());
+        settings.setFineAccountClosedAmount(dto.getFineAccountClosedAmount());
+        settings.setFineGraceDays(dto.getFineGraceDays());
+        settings.setFinePerDayRate(dto.getFinePerDayRate());
         settings.setUpdatedAt(Instant.now());
 
         RentCollectionSettings saved = rentCollectionSettingsRepository.save(settings);
@@ -60,6 +66,11 @@ public class RentCollectionSettingsService {
         dto.setPenaltyType(settings.getPenaltyType() != null ? settings.getPenaltyType().name() : PenaltyType.NONE.name());
         dto.setPenaltyAmount(settings.getPenaltyAmount());
         dto.setOnlinePaymentEnabled(settings.getOnlinePaymentEnabled());
+        dto.setFineBounceAmount(settings.getFineBounceAmount());
+        dto.setFineSignatureMismatchAmount(settings.getFineSignatureMismatchAmount());
+        dto.setFineAccountClosedAmount(settings.getFineAccountClosedAmount());
+        dto.setFineGraceDays(settings.getFineGraceDays());
+        dto.setFinePerDayRate(settings.getFinePerDayRate());
         return dto;
     }
 }

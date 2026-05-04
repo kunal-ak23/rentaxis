@@ -76,6 +76,18 @@ class PaymentService {
     return response.data;
   }
 
+  Future<Map<String, dynamic>> markPaymentFailed(
+    String id, {
+    required String failureReason,
+    String? notes,
+  }) async {
+    final response = await _dio.post('/v1/payments/$id/mark-failed', data: {
+      'failureReason': failureReason,
+      if (notes != null && notes.isNotEmpty) 'notes': notes,
+    });
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
   Future<List<int>> downloadReceipt(String id) async {
     final response = await _dio.get('/v1/payments/$id/receipt',
         options: Options(responseType: ResponseType.bytes));

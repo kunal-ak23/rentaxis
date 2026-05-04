@@ -46,3 +46,21 @@ cd web && npm run dev            # Frontend only
 cd mobile/apps/manager && flutter run  # Admin app
 cd mobile/apps/renter && flutter run   # Renter app
 ```
+
+## graphify (knowledge graph)
+
+This repo has a graphify-built knowledge graph at `graphify-out/`. **Before answering codebase questions or doing wide file searches, check the graph first** — it summarizes 4,000+ nodes / 8,500+ edges across backend (Java) + web (Next.js) + mobile (Flutter) + design docs into 353 communities and explicit cross-file relationships.
+
+- `graphify-out/GRAPH_REPORT.md` — god nodes, community structure, surprising connections, suggested questions. Read this for high-level orientation.
+- `graphify-out/graph.json` — raw graph data, queryable via `/graphify query "<question>"`, `/graphify path "A" "B"`, `/graphify explain "Concept"`.
+- `graphify-out/graph.html` — interactive visualization, open in browser.
+
+**When to use the graph:**
+- Onboarding to a new module → `/graphify explain "<concept>"`.
+- Tracing dependencies → `/graphify path "A" "B"`.
+- Open-ended "how does X work" → `/graphify query "<question>"`.
+- Before reading >3 files for the same question, check the graph for the right entry point.
+
+**Auto-update:** Git hooks (`.git/hooks/post-commit` and `post-checkout`) re-run AST extraction on code changes — no LLM needed, runs in ~5 seconds. For doc/image changes, run `/graphify --update` manually (uses LLM).
+
+When the user types `/graphify`, invoke the Skill tool with `skill: "graphify"` before doing anything else.

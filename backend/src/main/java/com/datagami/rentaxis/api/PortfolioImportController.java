@@ -1,6 +1,7 @@
 package com.datagami.rentaxis.api;
 
 import com.datagami.rentaxis.api.dto.ImportErrorDTO;
+import com.datagami.rentaxis.api.dto.PortfolioImportJobDetailsDTO;
 import com.datagami.rentaxis.api.dto.PortfolioImportResultDTO;
 import com.datagami.rentaxis.core.service.PortfolioImportService;
 import com.datagami.rentaxis.core.service.PortfolioTemplateService;
@@ -89,7 +90,8 @@ public class PortfolioImportController {
         }
     }
 
-    private PortfolioImportResultDTO mapToResult(ImportJob job) {
+    /** Package-private for unit tests. */
+    PortfolioImportResultDTO mapToResult(ImportJob job) {
         PortfolioImportResultDTO dto = new PortfolioImportResultDTO();
         dto.setJobId(job.getId());
         dto.setStatus(job.getStatus());
@@ -100,14 +102,36 @@ public class PortfolioImportController {
         dto.setLeasesCreated(job.getLeasesCreated());
         dto.setPaymentSchedulesCreated(job.getSchedulesCreated());
 
-        if (job.getErrors() != null) {
-            try {
-                dto.setErrors(objectMapper.readValue(job.getErrors(), new TypeReference<List<ImportErrorDTO>>() {}));
-            } catch (Exception e) {
-                dto.setErrors(List.of(new ImportErrorDTO("General", 0, "", "Could not parse error details")));
-            }
-        } else {
+        // The errors column carries either:
+        //   - the legacy array form (List<ImportErrorDTO>) for jobs older than the
+        //     bulk-import payment-schedule extension and validation-failed jobs, or
+        //   - the new wrapper form (PortfolioImportJobDetailsDTO) carrying counters
+        //     and warnings alongside any errors. Detect by the first non-whitespace
+        //     character so existing rows keep parsing.
+        String raw = job.getErrors();
+        if (raw == null) {
             dto.setErrors(Collections.emptyList());
+        } else {
+            String trimmed = raw.stripLeading();
+            if (trimmed.startsWith("{")) {
+                try {
+                    PortfolioImportJobDetailsDTO details = objectMapper.readValue(raw, PortfolioImportJobDetailsDTO.class);
+                    dto.setErrors(details.getErrors() == null ? Collections.emptyList() : details.getErrors());
+                    dto.setWarnings(details.getWarnings() == null ? Collections.emptyList() : details.getWarnings());
+                    if (details.getChequesFromSheet() != null) dto.setChequesFromSheet(details.getChequesFromSheet());
+                    if (details.getBookingDepositsCreated() != null) dto.setBookingDepositsCreated(details.getBookingDepositsCreated());
+                } catch (Exception e) {
+                    log.warn("Failed to parse import job {} errors as wrapper object: {}", job.getId(), e.toString());
+                    dto.setErrors(List.of(new ImportErrorDTO("General", 0, "", "Could not parse error details")));
+                }
+            } else {
+                try {
+                    dto.setErrors(objectMapper.readValue(raw, new TypeReference<List<ImportErrorDTO>>() {}));
+                } catch (Exception e) {
+                    log.warn("Failed to parse import job {} errors as legacy array: {}", job.getId(), e.toString());
+                    dto.setErrors(List.of(new ImportErrorDTO("General", 0, "", "Could not parse error details")));
+                }
+            }
         }
 
         return dto;
