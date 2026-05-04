@@ -9,6 +9,7 @@ import lombok.Setter;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 @Entity
@@ -57,6 +58,15 @@ public class PaymentSchedule extends BaseTenantEntity {
 
     @Column(name = "cheque_date")
     private LocalDate chequeDate;
+
+    @Column(name = "cheque_image_url", length = 500)
+    private String chequeImageUrl;
+
+    @Column(name = "cheque_image_blob_path", length = 500)
+    private String chequeImageBlobPath;
+
+    @Column(name = "cheque_image_uploaded_at")
+    private OffsetDateTime chequeImageUploadedAt;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "cheque_failure_reason", length = 30)
