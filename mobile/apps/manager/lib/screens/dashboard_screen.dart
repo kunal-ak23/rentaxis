@@ -232,11 +232,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
   Widget _buildAlertsSection(Map<String, dynamic> data) {
     final expiringLeases = data['expiringLeases'] ?? data['expiringLeaseCount'] ?? 0;
-    final overduePayments = data['overduePaymentCount'] ?? 0;
     final overdueTotal = (data['overdueAmount'] ?? 0).toDouble();
-    final openTickets = data['openTicketCount'] ?? 0;
 
-    if (expiringLeases == 0 && overduePayments == 0 && openTickets == 0) {
+    if (expiringLeases == 0 && overdueTotal == 0) {
       return const SizedBox.shrink();
     }
 
@@ -261,24 +259,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             subtitle: 'Within the next 30 days',
             onTap: () => context.go('/leases'),
           ),
-        if (overduePayments > 0) ...[
+        if (overdueTotal > 0) ...[
           const SizedBox(height: 8),
           _AlertCard(
             icon: Icons.money_off_rounded,
             color: AppColors.danger,
-            title: '$overduePayments overdue payment${overduePayments > 1 ? 's' : ''}',
-            subtitle: 'Total: ${Formatters.currency(overdueTotal)}',
+            title: '${Formatters.currency(overdueTotal)} overdue',
+            subtitle: 'Across leases needing attention',
             onTap: () => context.go('/payments'),
-          ),
-        ],
-        if (openTickets > 0) ...[
-          const SizedBox(height: 8),
-          _AlertCard(
-            icon: Icons.support_agent_outlined,
-            color: AppColors.info,
-            title: '$openTickets open ticket${openTickets > 1 ? 's' : ''}',
-            subtitle: 'Needs attention',
-            onTap: () => context.push('/tickets'),
           ),
         ],
       ],
@@ -622,53 +610,6 @@ class _AlertCard extends StatelessWidget {
               ),
             ),
             Icon(Icons.chevron_right, color: color.withValues(alpha: 0.5)),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// --- Quick Action Chip ---
-
-class _QuickActionChip extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  const _QuickActionChip({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(24),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: BoxDecoration(
-          color: AppColors.primary.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(
-            color: AppColors.primary.withValues(alpha: 0.2),
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 18, color: AppColors.primary),
-            const SizedBox(width: 8),
-            Text(
-              label,
-              style: GoogleFonts.josefinSans(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: AppColors.primary,
-              ),
-            ),
           ],
         ),
       ),

@@ -3,6 +3,12 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
+/// Design surface for the cheque scan flow.
+///
+/// TODO: this screen is currently a UI mock. It does not integrate with a
+/// camera plugin, MLKit/OCR, or the payments API. Wire up `mobile_scanner` +
+/// a server-side OCR endpoint before exposing to QA / production. Until then
+/// the "Confirm & log" action just dismisses the route.
 class ScanChequeScreen extends StatelessWidget {
   const ScanChequeScreen({super.key});
 
@@ -107,7 +113,15 @@ class ScanChequeScreen extends StatelessWidget {
                   Expanded(
                     flex: 2,
                     child: ElevatedButton(
-                      onPressed: () => context.pop(),
+                      onPressed: () {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Cheque OCR is not wired up yet — coming soon'),
+                            backgroundColor: AppColors.primary,
+                          ),
+                        );
+                        context.pop();
+                      },
                       child: const Text('Confirm & log'),
                     ),
                   ),

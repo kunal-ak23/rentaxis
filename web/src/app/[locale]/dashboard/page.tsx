@@ -5,7 +5,7 @@ import { useSession } from "next-auth/react";
 import { Link } from "@/i18n/routing";
 import { formatCurrencyCompact } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { Activity, AlertTriangle, Calendar, Download, Plus, TrendingDown, TrendingUp } from "lucide-react";
+import { Activity, Calendar, Download, Plus, TrendingDown, TrendingUp } from "lucide-react";
 
 type DashboardSummary = {
   totalProperties: number;
@@ -193,8 +193,8 @@ export default function DashboardPage() {
           <p className="text-[12.5px] text-[--ink-500] mb-1">{dayLabel}</p>
           <h1 className="font-serif text-[28px] font-semibold tracking-tight m-0">Good morning, {firstName}</h1>
           <p className="text-[13.5px] text-[--ink-600] mt-1">
-            <span className="text-[--gold-700] font-semibold">{summary.expiringLeases} expiring leases</span>
-            {summary.overdueAmount > 0 ? <span className="text-[--red-600] font-semibold ml-1.5">· overdue amount exists</span> : null}
+            <span className="text-[--gold-700] font-semibold">{summary.expiringLeases} expiring lease{summary.expiringLeases === 1 ? '' : 's'}</span>
+            {summary.overdueAmount > 0 ? <span className="text-[--red-600] font-semibold ml-1.5">· {formatCurrencyCompact(summary.overdueAmount)} overdue</span> : null}
           </p>
         </div>
         <div className="flex gap-2">

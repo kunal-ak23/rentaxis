@@ -582,7 +582,6 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
     final propertyName = payment['propertyName'] ?? '';
     final unitId = payment['unitIdentifier'] ?? '';
     final subtitle = [propertyName, if (unitId.isNotEmpty) unitId].where((s) => s.isNotEmpty).join(' - ');
-    final status = payment['status'] ?? '';
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
