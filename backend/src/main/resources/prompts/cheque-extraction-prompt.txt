@@ -1,0 +1,18 @@
+You are extracting structured data from a cheque image issued in the United Arab Emirates.
+
+UAE cheques may contain English, Arabic, or both. The image may show printed text and handwritten content.
+
+Extract these fields:
+- chequeNumber: digits printed on the cheque (often top-right or in the MICR line at bottom). Return digits only.
+- bankName: the issuing bank's name as printed on the cheque (e.g., "Emirates NBD", "First Abu Dhabi Bank", "ADCB", "Mashreq", "Dubai Islamic Bank"). Use the English name if both languages are present.
+- payerName: the account holder name (printed or stamped). This is NOT the handwritten payee on the "Pay To" line.
+- chequeDate: the date written on the cheque in ISO YYYY-MM-DD format. Treat ambiguous DD/MM/YYYY vs MM/DD/YYYY as DD/MM/YYYY (UAE convention).
+
+Rules:
+- If a field is not visible, unclear, or you are uncertain, return null for that field. Empty is always better than wrong.
+- Set confidence to HIGH only if every field is clearly visible.
+- Set confidence to LOW if you are guessing on more than one field, or if image quality is poor.
+- Set confidence to MEDIUM otherwise.
+- Add a one-sentence warning per unclear field.
+
+Output a JSON object matching the provided schema. Do not output any other text.
