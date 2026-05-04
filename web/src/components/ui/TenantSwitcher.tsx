@@ -136,9 +136,9 @@ export function TenantSwitcher({ isCollapsed }: { isCollapsed: boolean }) {
                 onClick={openDropdown}
                 aria-label={canSwitch ? "Switch organization" : "Current organization"}
                 className={cn(
-                    "w-full flex items-center justify-between gap-2 p-2 rounded-[--radius] border border-border bg-[--sand-100] transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[--gold-500]/30",
+                    "w-full flex items-center justify-between gap-2 p-2 rounded-[var(--radius)] border border-border bg-[var(--sand-100)] transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[var(--gold-500)]/30",
                     isCollapsed ? "justify-center" : "",
-                    canSwitch ? "cursor-pointer hover:bg-[--sand-200]" : "cursor-default"
+                    canSwitch ? "cursor-pointer hover:bg-[var(--sand-200)]" : "cursor-default"
                 )}
             >
                 {isCollapsed ? (
@@ -157,10 +157,10 @@ export function TenantSwitcher({ isCollapsed }: { isCollapsed: boolean }) {
                             {orgInitials}
                         </div>
                         <div className="flex flex-col items-start text-left flex-1 min-w-0 leading-tight">
-                            <span className="text-[12px] font-semibold text-[--ink-900] truncate w-full">
+                            <span className="text-[12px] font-semibold text-[var(--ink-900)] truncate w-full">
                                 {orgName}
                             </span>
-                            <span className="text-[10px] text-[--ink-500] truncate w-full">
+                            <span className="text-[10px] text-[var(--ink-500)] truncate w-full">
                                 {isSuperAdmin ? "Administering" : "Organization"}
                             </span>
                         </div>
@@ -168,7 +168,7 @@ export function TenantSwitcher({ isCollapsed }: { isCollapsed: boolean }) {
                 )}
 
                 {!isCollapsed && canSwitch && (
-                    <ChevronsUpDown size={14} className="text-[--ink-500] shrink-0" />
+                    <ChevronsUpDown size={14} className="text-[var(--ink-500)] shrink-0" />
                 )}
             </button>
 

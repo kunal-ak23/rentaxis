@@ -125,10 +125,10 @@ export function TopHeader() {
             <div className="flex items-center relative w-full justify-between gap-4">
                 {/* Search */}
                 <div className="flex-1 max-w-[420px]" data-tour="topbar-search">
-                    <div className="hidden lg:flex items-center gap-2 px-3 h-9 bg-[--sand-100] border border-border rounded-[--radius]">
-                        <Search size={14} className="text-[--ink-500] shrink-0" />
-                        <span className="text-[13px] text-[--ink-500] flex-1">Search leases, tenants, cheques…</span>
-                        <kbd className="text-[11px] text-[--ink-500] px-1.5 py-0.5 border border-border rounded font-mono">⌘K</kbd>
+                    <div className="hidden lg:flex items-center gap-2 px-3 h-9 bg-[var(--sand-100)] border border-border rounded-[var(--radius)]">
+                        <Search size={14} className="text-[var(--ink-500)] shrink-0" />
+                        <span className="text-[13px] text-[var(--ink-500)] flex-1">Search leases, tenants, cheques…</span>
+                        <kbd className="text-[11px] text-[var(--ink-500)] px-1.5 py-0.5 border border-border rounded font-mono">⌘K</kbd>
                     </div>
                 </div>
 
@@ -136,7 +136,7 @@ export function TopHeader() {
                 <div className="flex items-center gap-3">{/* (locale, bell, profile) */}
 
                     {/* Locale Switcher */}
-                    <div className="flex items-center bg-[--sand-100] rounded-[--radius] p-0.5 border border-border">
+                    <div className="flex items-center bg-[var(--sand-100)] rounded-[var(--radius)] p-0.5 border border-border">
                         <Link
                             href={pathname.replace(new RegExp(`^/${locale}`), '') || '/'}
                             locale="en"
@@ -145,7 +145,7 @@ export function TopHeader() {
                                 "focus:outline-none focus:ring-2 focus:ring-primary/30",
                                 locale === 'en'
                                     ? 'bg-surface text-primary shadow-sm border border-border'
-                                    : 'text-[--ink-500] hover:text-foreground'
+                                    : 'text-[var(--ink-500)] hover:text-foreground'
                             )}
                         >
                             EN
@@ -158,7 +158,7 @@ export function TopHeader() {
                                 "focus:outline-none focus:ring-2 focus:ring-primary/30",
                                 locale === 'ar'
                                     ? 'bg-surface text-primary shadow-sm border border-border'
-                                    : 'text-[--ink-500] hover:text-foreground'
+                                    : 'text-[var(--ink-500)] hover:text-foreground'
                             )}
                         >
                             AR
@@ -168,7 +168,7 @@ export function TopHeader() {
                     {/* Notification Bell */}
                     {session?.user && (
                         <div className="relative">
-                            <button onClick={toggleDropdown} className="relative w-9 h-9 flex items-center justify-center border border-border rounded-[--radius] bg-surface text-[--ink-600] hover:text-foreground hover:bg-[--sand-100] transition-colors cursor-pointer">
+                            <button onClick={toggleDropdown} className="relative w-9 h-9 flex items-center justify-center border border-border rounded-[var(--radius)] bg-surface text-[var(--ink-600)] hover:text-foreground hover:bg-[var(--sand-100)] transition-colors cursor-pointer">
                                 <Bell size={18} />
                                 {unreadCount > 0 && (
                                     <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-error text-white text-[9px] font-bold rounded-full flex items-center justify-center">
@@ -224,7 +224,7 @@ export function TopHeader() {
                                         {userRole ? getRoleLabel(userRole) : ''}
                                     </span>
                                 </div>
-                                <div className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm border border-[--gold-400]" style={{ background: 'var(--gold-500)', color: 'var(--ink-900)' }}>
+                                <div className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm border border-[var(--gold-400)]" style={{ background: 'var(--gold-500)', color: 'var(--ink-900)' }}>
                                     {session.user.name?.charAt(0) || 'U'}
                                 </div>
                                 <ChevronDown size={12} className={cn("text-muted transition-transform", isProfileOpen && "rotate-180")} />
