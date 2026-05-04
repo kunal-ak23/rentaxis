@@ -34,6 +34,7 @@ import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -271,7 +272,7 @@ public class PaymentScheduleService {
         payment.setChequeDate(dto.getChequeDate());
         payment.setChequeImageUrl(dto.getChequeImageUrl());
         payment.setChequeImageBlobPath(dto.getChequeImageBlobPath());
-        payment.setChequeImageUploadedAt(dto.getChequeImageUploadedAt());
+        payment.setChequeImageUploadedAt(resolveChequeImageUploadedAt(dto));
         payment.setStatusChangedAt(Instant.now());
         PaymentSchedule saved = paymentScheduleRepository.save(payment);
 
@@ -547,7 +548,7 @@ public class PaymentScheduleService {
         newPayment.setChequeDate(dto.getChequeDate());
         newPayment.setChequeImageUrl(dto.getChequeImageUrl());
         newPayment.setChequeImageBlobPath(dto.getChequeImageBlobPath());
-        newPayment.setChequeImageUploadedAt(dto.getChequeImageUploadedAt());
+        newPayment.setChequeImageUploadedAt(resolveChequeImageUploadedAt(dto));
 
         PaymentSchedule savedNewPayment = paymentScheduleRepository.save(newPayment);
 
@@ -880,6 +881,13 @@ public class PaymentScheduleService {
     /** Public alias for {@link #mapToDTO} so other services / controllers can map without re-implementing. */
     public PaymentScheduleDTO toDTO(PaymentSchedule ps) {
         return mapToDTO(ps);
+    }
+
+    private OffsetDateTime resolveChequeImageUploadedAt(UpdatePaymentStatusDTO dto) {
+        if (dto.getChequeImageBlobPath() == null || dto.getChequeImageBlobPath().isBlank()) {
+            return null;
+        }
+        return dto.getChequeImageUploadedAt() != null ? dto.getChequeImageUploadedAt() : OffsetDateTime.now();
     }
 
     private PaymentScheduleDTO mapToDTO(PaymentSchedule ps) {

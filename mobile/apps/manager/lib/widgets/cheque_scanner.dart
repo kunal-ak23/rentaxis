@@ -61,11 +61,20 @@ class _ChequeScannerWidgetState extends State<ChequeScannerWidget> {
 
       if (result.extracted != null &&
           result.extracted?['confidence']?.toString().toUpperCase() == 'LOW') {
+        ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
         ScaffoldMessenger.of(context).showMaterialBanner(
-          const MaterialBanner(
-            content: Text('AI confidence is low. Please verify extracted values.'),
-            leading: Icon(Icons.warning_amber_rounded),
-            actions: [SizedBox.shrink()],
+          MaterialBanner(
+            content: const Text(
+              'AI confidence is low. Please verify extracted values.',
+            ),
+            leading: const Icon(Icons.warning_amber_rounded),
+            actions: [
+              TextButton(
+                onPressed: () =>
+                    ScaffoldMessenger.of(context).hideCurrentMaterialBanner(),
+                child: const Text('Dismiss'),
+              ),
+            ],
           ),
         );
       }

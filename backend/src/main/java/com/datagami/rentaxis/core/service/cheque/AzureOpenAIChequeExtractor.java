@@ -2,18 +2,61 @@ package com.datagami.rentaxis.core.service.cheque;
 
 import com.azure.ai.openai.OpenAIClient;
 import com.azure.ai.openai.models.ChatCompletions;
+import com.azure.ai.openai.models.ChatCompletionsJsonSchemaResponseFormat;
+import com.azure.ai.openai.models.ChatCompletionsJsonSchemaResponseFormatJsonSchema;
+import com.azure.ai.openai.models.ChatCompletionsOptions;
+import com.azure.ai.openai.models.ChatMessageImageContentItem;
+import com.azure.ai.openai.models.ChatMessageImageDetailLevel;
+import com.azure.ai.openai.models.ChatMessageImageUrl;
+import com.azure.ai.openai.models.ChatMessageTextContentItem;
+import com.azure.ai.openai.models.ChatRequestMessage;
+import com.azure.ai.openai.models.ChatRequestSystemMessage;
+import com.azure.ai.openai.models.ChatRequestUserMessage;
+import com.azure.core.util.BinaryData;
 import com.datagami.rentaxis.api.dto.ExtractedChequeDTO;
 import com.datagami.rentaxis.core.config.AzureOpenAIConfig;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 
 @Component
+@Primary
+@ConditionalOnBean(OpenAIClient.class)
 public class AzureOpenAIChequeExtractor implements ChequeExtractor {
+
+    private static final String SYSTEM_PROMPT = """
+            You extract UAE rent cheque details from cheque images.
+            Return only JSON matching the provided schema. Use null when a field is unreadable.
+            chequeDate must be ISO-8601 yyyy-MM-dd. confidence must be HIGH, MEDIUM, or LOW.
+            Add short warnings for obscured, missing, or uncertain fields.
+            """;
+
+    private static final String SCHEMA = """
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "chequeNumber": { "type": ["string", "null"] },
+                "bankName": { "type": ["string", "null"] },
+                "payerName": { "type": ["string", "null"] },
+                "chequeDate": { "type": ["string", "null"] },
+                "confidence": { "type": "string", "enum": ["HIGH", "MEDIUM", "LOW"] },
+                "warnings": {
+                  "type": "array",
+                  "items": { "type": "string" }
+                }
+              },
+              "required": ["chequeNumber", "bankName", "payerName", "chequeDate", "confidence", "warnings"]
+            }
+            """;
 
     private final OpenAIClient openAIClient;
     private final AzureOpenAIConfig config;
@@ -25,6 +68,7 @@ public class AzureOpenAIChequeExtractor implements ChequeExtractor {
     }
 
     @Override
+    @CircuitBreaker(name = "chequeExtraction")
     public ExtractionResult extract(byte[] imageBytes, String contentType) {
         try {
             String content = fetchContent(imageBytes, contentType);
@@ -38,7 +82,31 @@ public class AzureOpenAIChequeExtractor implements ChequeExtractor {
     }
 
     protected String fetchContent(byte[] imageBytes, String contentType) {
-        ChatCompletions completions = openAIClient.getChatCompletions(config.getDeployment(), null);
+        String dataUrl = "data:%s;base64,%s".formatted(
+                contentType == null || contentType.isBlank() ? "image/jpeg" : contentType,
+                Base64.getEncoder().encodeToString(imageBytes)
+        );
+
+        List<ChatRequestMessage> messages = List.of(
+                new ChatRequestSystemMessage(SYSTEM_PROMPT),
+                new ChatRequestUserMessage(List.of(
+                        new ChatMessageTextContentItem("Extract cheque fields from this image."),
+                        new ChatMessageImageContentItem(
+                                new ChatMessageImageUrl(dataUrl).setDetail(ChatMessageImageDetailLevel.HIGH)
+                        )
+                ))
+        );
+
+        ChatCompletionsOptions options = new ChatCompletionsOptions(messages)
+                .setTemperature(0.0)
+                .setMaxTokens(500)
+                .setResponseFormat(new ChatCompletionsJsonSchemaResponseFormat(
+                        new ChatCompletionsJsonSchemaResponseFormatJsonSchema("cheque_extraction")
+                                .setStrict(true)
+                                .setSchema(BinaryData.fromString(SCHEMA))
+                ));
+
+        ChatCompletions completions = openAIClient.getChatCompletions(config.getDeployment(), options);
         if (completions == null || completions.getChoices() == null || completions.getChoices().isEmpty()
                 || completions.getChoices().get(0).getMessage() == null) {
             return null;

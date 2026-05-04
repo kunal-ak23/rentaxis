@@ -84,7 +84,7 @@ class ChequeExtractionControllerTest {
 
         MockMultipartFile file = new MockMultipartFile("file", "cheque.jpg", MediaType.IMAGE_JPEG_VALUE, new byte[]{1, 2, 3});
 
-        mockMvc.perform(multipart("/api/cheques/extract").file(file).with(withTenant()))
+        mockMvc.perform(multipart("/api/v1/cheques/extract").file(file).with(withTenant()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.image.url").value("https://blob"))
                 .andExpect(jsonPath("$.extracted.chequeNumber").value("123"));
@@ -97,7 +97,7 @@ class ChequeExtractionControllerTest {
 
         MockMultipartFile file = new MockMultipartFile("file", "cheque.jpg", MediaType.IMAGE_JPEG_VALUE, new byte[]{1});
 
-        mockMvc.perform(multipart("/api/cheques/extract").file(file).with(withTenant()))
+        mockMvc.perform(multipart("/api/v1/cheques/extract").file(file).with(withTenant()))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").value("bad file"));
     }
@@ -106,7 +106,7 @@ class ChequeExtractionControllerTest {
     void extract_unauthenticated_returns401() throws Exception {
         MockMultipartFile file = new MockMultipartFile("file", "cheque.jpg", MediaType.IMAGE_JPEG_VALUE, new byte[]{1});
 
-        mockMvc.perform(multipart("/api/cheques/extract").file(file).with(withTenant()))
+        mockMvc.perform(multipart("/api/v1/cheques/extract").file(file).with(withTenant()))
                 .andExpect(status().isForbidden());
     }
 
@@ -117,7 +117,7 @@ class ChequeExtractionControllerTest {
                 new ChequeExtractionResponseDTO(new ChequeImageMetaDTO("https://blob", "cheques/abc.jpg", OffsetDateTime.now()), null, List.of("w"))
         );
         MockMultipartFile file = new MockMultipartFile("file", "cheque.jpg", MediaType.IMAGE_JPEG_VALUE, new byte[]{1});
-        mockMvc.perform(multipart("/api/cheques/extract").file(file).with(withTenant())).andExpect(status().isOk());
+        mockMvc.perform(multipart("/api/v1/cheques/extract").file(file).with(withTenant())).andExpect(status().isOk());
     }
 
     @Test
@@ -127,7 +127,7 @@ class ChequeExtractionControllerTest {
                 new ChequeExtractionResponseDTO(new ChequeImageMetaDTO("https://blob", "cheques/abc.jpg", OffsetDateTime.now()), null, List.of("w"))
         );
         MockMultipartFile file = new MockMultipartFile("file", "cheque.jpg", MediaType.IMAGE_JPEG_VALUE, new byte[]{1});
-        mockMvc.perform(multipart("/api/cheques/extract").file(file).with(withTenant())).andExpect(status().isOk());
+        mockMvc.perform(multipart("/api/v1/cheques/extract").file(file).with(withTenant())).andExpect(status().isOk());
     }
 
     private org.springframework.test.web.servlet.request.RequestPostProcessor withTenant() {

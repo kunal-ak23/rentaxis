@@ -158,10 +158,15 @@
   "cheque": {
     "scanner": {
       "scanButton": "Scan Cheque",
+      "close": "Close",
+      "uploadPrompt": "Upload a cheque photo to auto-fill values.",
+      "choosePhoto": "Choose photo",
       "uploading": "Uploading…",
       "extracting": "Reading cheque…",
+      "uploadingAndExtracting": "Uploading and extracting…",
       "useValues": "Use these values",
       "rescan": "Re-scan",
+      "genericError": "Couldn't read this cheque. Please try again.",
       "extractionFailed": "Couldn't read this cheque automatically. Save the photo and fill manually?",
       "attachPhoto": "Attach photo and continue",
       "lowConfidenceBanner": "AI couldn't read this clearly — please double-check the values.",

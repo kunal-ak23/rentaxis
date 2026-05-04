@@ -58,7 +58,7 @@ class ChequeExtractionIT {
 
         MockMultipartFile file = new MockMultipartFile("file", "cheque.jpg", MediaType.IMAGE_JPEG_VALUE, new byte[]{1, 2, 3});
 
-        mockMvc.perform(multipart("/api/cheques/extract")
+        mockMvc.perform(multipart("/api/v1/cheques/extract")
                         .file(file)
                         .header("X-User-Id", UUID.randomUUID().toString())
                         .header("X-User-Role", "TENANT_ADMIN")

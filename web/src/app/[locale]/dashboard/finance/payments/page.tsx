@@ -99,6 +99,7 @@ export default function PaymentsPage() {
         chequeDate: "",
         chequeImageUrl: "",
         chequeImageBlobPath: "",
+        chequeImageUploadedAt: "",
     });
 
     // Confirmation dialog state
@@ -199,7 +200,7 @@ export default function PaymentsPage() {
 
     const handleCollect = (paymentId: string) => {
         setCollectingPaymentId(paymentId);
-        setChequeForm({ chequeNumber: "", bankName: "", payerName: "", chequeDate: "", chequeImageUrl: "", chequeImageBlobPath: "" });
+        setChequeForm({ chequeNumber: "", bankName: "", payerName: "", chequeDate: "", chequeImageUrl: "", chequeImageBlobPath: "", chequeImageUploadedAt: "" });
         setShowChequeModal(true);
     };
 
@@ -266,7 +267,7 @@ export default function PaymentsPage() {
 
     const handleReplace = async (paymentId: string) => {
         setCollectingPaymentId(paymentId);
-        setChequeForm({ chequeNumber: "", bankName: "", payerName: "", chequeDate: "", chequeImageUrl: "", chequeImageBlobPath: "" });
+        setChequeForm({ chequeNumber: "", bankName: "", payerName: "", chequeDate: "", chequeImageUrl: "", chequeImageBlobPath: "", chequeImageUploadedAt: "" });
         setShowChequeModal(true);
     };
 
@@ -670,6 +671,7 @@ export default function PaymentsPage() {
                                                 chequeDate: data.chequeDate ?? prev.chequeDate,
                                                 chequeImageUrl: data.imageUrl,
                                                 chequeImageBlobPath: data.imageBlobPath,
+                                                chequeImageUploadedAt: data.imageUploadedAt,
                                             }))
                                         }
                                     />

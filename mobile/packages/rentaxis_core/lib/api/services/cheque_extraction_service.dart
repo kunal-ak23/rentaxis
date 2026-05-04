@@ -41,7 +41,7 @@ class ChequeExtractionService {
       'file': await MultipartFile.fromFile(image.path),
     });
 
-    final response = await _dio.post('/api/cheques/extract', data: form);
+    final response = await _dio.post('/v1/cheques/extract', data: form);
     return ChequeExtractionResult.fromJson(
       Map<String, dynamic>.from(response.data as Map),
     );

@@ -5,7 +5,7 @@ Cheque extraction lets users upload cheque photos and auto-fill `chequeNumber`, 
 
 The backend endpoint is:
 
-- `POST /api/cheques/extract` (multipart `file`)
+- `POST /api/v1/cheques/extract` (multipart `file`)
 
 The flow is:
 
@@ -59,7 +59,7 @@ No per-tenant cheque-extraction flag is enforced yet. If needed, gate in control
 ## Cost Monitoring
 Track and alert on:
 
-- request volume to `/api/cheques/extract`
+- request volume to `/api/v1/cheques/extract`
 - extraction latency (p50/p95)
 - extraction failure ratio
 - Azure usage/token costs from provider logs

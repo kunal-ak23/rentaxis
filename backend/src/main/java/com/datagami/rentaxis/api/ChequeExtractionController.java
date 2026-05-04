@@ -15,7 +15,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/cheques")
+@RequestMapping("/api/v1/cheques")
 public class ChequeExtractionController {
 
     private final ChequeExtractionService service;

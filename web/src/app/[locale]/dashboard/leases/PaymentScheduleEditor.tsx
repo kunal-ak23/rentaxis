@@ -29,6 +29,7 @@ type ScheduleRow = {
     payerName: string | null;
     chequeImageUrl: string | null;
     chequeImageBlobPath: string | null;
+    chequeImageUploadedAt: string | null;
     purposeLabel: string | null;
     isBookingDeposit?: boolean;
 };
@@ -154,6 +155,7 @@ export default function PaymentScheduleEditor({ leaseId, leaseStatus, canManage,
                     bankName: r.bankName || null,
                     chequeImageUrl: r.chequeImageUrl || null,
                     chequeImageBlobPath: r.chequeImageBlobPath || null,
+                    chequeImageUploadedAt: r.chequeImageUploadedAt || null,
                 })),
             };
             const res = await fetch(`/api/proxy/v1/leases/${leaseId}/payment-schedule`, {
@@ -241,6 +243,7 @@ export default function PaymentScheduleEditor({ leaseId, leaseStatus, canManage,
                                 const patch: Partial<ScheduleRow> = {
                                     chequeImageUrl: data.imageUrl,
                                     chequeImageBlobPath: data.imageBlobPath,
+                                    chequeImageUploadedAt: data.imageUploadedAt,
                                 };
                                 if (typeof data.chequeNumber !== "undefined") patch.chequeNumber = data.chequeNumber ?? null;
                                 if (typeof data.bankName !== "undefined") patch.bankName = data.bankName ?? null;
