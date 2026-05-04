@@ -84,20 +84,20 @@ function StatCard({
   sparkColor?: string;
 }) {
   return (
-    <div className="bg-surface border border-border rounded-[--radius-lg] p-5 flex flex-col gap-2.5">
+    <div className="bg-surface border border-border rounded-[var(--radius-lg)] p-5 flex flex-col gap-2.5">
       <div className="flex items-center justify-between">
-        <span className="text-[12.5px] text-[--ink-500] font-medium">{label}</span>
+        <span className="text-[12.5px] text-[var(--ink-500)] font-medium">{label}</span>
         {delta && (
-          <span className={cn("flex items-center gap-1 text-[12px] font-semibold", deltaPos ? "text-[--green-600]" : "text-[--red-600]")}>
+          <span className={cn("flex items-center gap-1 text-[12px] font-semibold", deltaPos ? "text-[var(--green-600)]" : "text-[var(--red-600)]")}>
             {deltaPos ? <TrendingUp size={11} /> : <TrendingDown size={11} />} {delta}
           </span>
         )}
       </div>
       <div className="flex items-baseline gap-1.5">
         <span className="font-serif text-[28px] font-semibold tracking-tight leading-none">{value}</span>
-        {unit && <span className="text-[13px] text-[--ink-500] font-medium">{unit}</span>}
+        {unit && <span className="text-[13px] text-[var(--ink-500)] font-medium">{unit}</span>}
       </div>
-      {sub && <p className="text-[12px] text-[--ink-500]">{sub}</p>}
+      {sub && <p className="text-[12px] text-[var(--ink-500)]">{sub}</p>}
       {sparkData && <Sparkline data={sparkData} color={sparkColor ?? "var(--accent)"} />}
     </div>
   );
@@ -121,10 +121,10 @@ function CollectionChart() {
   const colArea = `${colPath} L${x(months.length - 1)},${p.t + ch} L${x(0)},${p.t + ch} Z`;
 
   return (
-    <div className="bg-surface border border-border rounded-[--radius-lg] p-5">
+    <div className="bg-surface border border-border rounded-[var(--radius-lg)] p-5">
       <div className="flex justify-between items-start mb-3.5">
         <div>
-          <div className="text-[13px] text-[--ink-500] mb-0.5">Collection vs expected</div>
+          <div className="text-[13px] text-[var(--ink-500)] mb-0.5">Collection vs expected</div>
           <div className="font-serif text-[20px] font-semibold text-foreground">12-month performance</div>
         </div>
       </div>
@@ -161,14 +161,14 @@ export default function DashboardPage() {
   }, []);
 
   if (loading) {
-    return <div className="p-7 text-sm text-[--ink-500]">Loading dashboard…</div>;
+    return <div className="p-7 text-sm text-[var(--ink-500)]">Loading dashboard…</div>;
   }
 
   if (!summary) {
     return (
       <div className="p-7">
         <div className="text-center py-24 bg-surface border border-dashed border-border rounded-2xl flex flex-col items-center">
-          <div className="w-16 h-16 bg-[--sand-100] rounded-2xl flex items-center justify-center text-muted mb-6">
+          <div className="w-16 h-16 bg-[var(--sand-100)] rounded-2xl flex items-center justify-center text-muted mb-6">
             <Activity size={32} />
           </div>
           <p className="text-sm font-semibold text-muted tracking-wide">Unable to load dashboard data</p>
@@ -190,22 +190,22 @@ export default function DashboardPage() {
     <div className="flex flex-col gap-5">
       <div className="flex items-end justify-between">
         <div>
-          <p className="text-[12.5px] text-[--ink-500] mb-1">{dayLabel}</p>
+          <p className="text-[12.5px] text-[var(--ink-500)] mb-1">{dayLabel}</p>
           <h1 className="font-serif text-[28px] font-semibold tracking-tight m-0">Good morning, {firstName}</h1>
-          <p className="text-[13.5px] text-[--ink-600] mt-1">
-            <span className="text-[--gold-700] font-semibold">{summary.expiringLeases} expiring lease{summary.expiringLeases === 1 ? '' : 's'}</span>
-            {summary.overdueAmount > 0 ? <span className="text-[--red-600] font-semibold ml-1.5">· {formatCurrencyCompact(summary.overdueAmount)} overdue</span> : null}
+          <p className="text-[13.5px] text-[var(--ink-600)] mt-1">
+            <span className="text-[var(--gold-700)] font-semibold">{summary.expiringLeases} expiring lease{summary.expiringLeases === 1 ? '' : 's'}</span>
+            {summary.overdueAmount > 0 ? <span className="text-[var(--red-600)] font-semibold ml-1.5">· {formatCurrencyCompact(summary.overdueAmount)} overdue</span> : null}
           </p>
         </div>
         <div className="flex gap-2">
-          <button className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-medium border border-border rounded-[--radius] bg-surface">
+          <button className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-medium border border-border rounded-[var(--radius)] bg-surface">
             <Calendar size={13} />
             {now.toLocaleDateString(undefined, { month: "short", year: "numeric" })}
           </button>
-          <button className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-medium border border-border rounded-[--radius] bg-surface">
+          <button className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-medium border border-border rounded-[var(--radius)] bg-surface">
             <Download size={13} /> Export
           </button>
-          <Link href="/dashboard/leases/new" className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-semibold rounded-[--radius] bg-[--ink-900] text-white">
+          <Link href="/dashboard/leases/new" className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-semibold rounded-[var(--radius)] bg-[var(--ink-900)] text-white">
             <Plus size={13} /> New lease
           </Link>
         </div>
@@ -253,33 +253,33 @@ export default function DashboardPage() {
 
       <div className="grid gap-3.5" style={{ gridTemplateColumns: "1.6fr 1fr" }}>
         <CollectionChart />
-        <div className="bg-surface border border-border rounded-[--radius-lg] p-5">
-          <div className="text-[13px] text-[--ink-500]">Portfolio snapshot</div>
+        <div className="bg-surface border border-border rounded-[var(--radius-lg)] p-5">
+          <div className="text-[13px] text-[var(--ink-500)]">Portfolio snapshot</div>
           <div className="font-serif text-[20px] font-semibold text-foreground mb-3">Current totals</div>
           <div className="space-y-2.5 text-[13px]">
-            <div className="flex justify-between"><span className="text-[--ink-500]">Properties</span><span className="font-semibold">{summary.totalProperties}</span></div>
-            <div className="flex justify-between"><span className="text-[--ink-500]">Active leases</span><span className="font-semibold">{summary.activeLeases}</span></div>
-            <div className="flex justify-between"><span className="text-[--ink-500]">Draft leases</span><span className="font-semibold">{summary.draftLeases}</span></div>
-            <div className="flex justify-between"><span className="text-[--ink-500]">Vacant units</span><span className="font-semibold">{summary.vacantUnits}</span></div>
+            <div className="flex justify-between"><span className="text-[var(--ink-500)]">Properties</span><span className="font-semibold">{summary.totalProperties}</span></div>
+            <div className="flex justify-between"><span className="text-[var(--ink-500)]">Active leases</span><span className="font-semibold">{summary.activeLeases}</span></div>
+            <div className="flex justify-between"><span className="text-[var(--ink-500)]">Draft leases</span><span className="font-semibold">{summary.draftLeases}</span></div>
+            <div className="flex justify-between"><span className="text-[var(--ink-500)]">Vacant units</span><span className="font-semibold">{summary.vacantUnits}</span></div>
           </div>
         </div>
       </div>
 
-      <div className="bg-surface border border-border rounded-[--radius-lg] p-5">
+      <div className="bg-surface border border-border rounded-[var(--radius-lg)] p-5">
         <div className="font-serif text-[20px] font-semibold text-foreground mb-3">Recent activity</div>
         {summary.recentActivity.length === 0 ? (
-          <p className="text-[13px] text-[--ink-500]">No activity yet.</p>
+          <p className="text-[13px] text-[var(--ink-500)]">No activity yet.</p>
         ) : (
           <div className="space-y-2">
             {summary.recentActivity.slice(0, 8).map((item, index) => (
               <div key={`${item.timestamp}-${index}`} className="flex items-center gap-3 py-2 border-t border-border first:border-t-0">
-                <div className="w-7 h-7 rounded-full bg-[--sand-100] flex items-center justify-center text-[10px] font-semibold text-[--ink-700]">
+                <div className="w-7 h-7 rounded-full bg-[var(--sand-100)] flex items-center justify-center text-[10px] font-semibold text-[var(--ink-700)]">
                   {item.type.slice(0, 2)}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-[13px] text-foreground truncate">{item.description}</p>
                 </div>
-                <div className="text-[11px] text-[--ink-500] whitespace-nowrap">{formatTimeAgo(item.timestamp)}</div>
+                <div className="text-[11px] text-[var(--ink-500)] whitespace-nowrap">{formatTimeAgo(item.timestamp)}</div>
               </div>
             ))}
           </div>

@@ -325,7 +325,7 @@ export default function PaymentsPage() {
             {/* Header */}
             <div className="flex items-end justify-between">
                 <div>
-                    <p className="text-[12.5px] text-[--ink-500]">Finance</p>
+                    <p className="text-[12.5px] text-[var(--ink-500)]">Finance</p>
                     <h1 className="font-serif text-[26px] font-semibold tracking-tight m-0">
                         {t("title")}
                     </h1>
@@ -334,12 +334,12 @@ export default function PaymentsPage() {
 
             {/* Summary strip skeleton */}
             {loading && !summary && (
-                <div className="bg-surface border border-border rounded-[--radius-lg] px-6 py-5 grid grid-cols-2 md:grid-cols-4 animate-pulse">
+                <div className="bg-surface border border-border rounded-[var(--radius-lg)] px-6 py-5 grid grid-cols-2 md:grid-cols-4 animate-pulse">
                     {[1, 2, 3, 4].map((i) => (
                         <div key={i} className="px-6 first:pl-0 border-r last:border-r-0 border-border">
-                            <div className="h-3 w-20 bg-[--sand-100] rounded mb-3" />
-                            <div className="h-7 w-32 bg-[--sand-100] rounded mb-2" />
-                            <div className="h-3 w-16 bg-[--sand-100] rounded" />
+                            <div className="h-3 w-20 bg-[var(--sand-100)] rounded mb-3" />
+                            <div className="h-7 w-32 bg-[var(--sand-100)] rounded mb-2" />
+                            <div className="h-3 w-16 bg-[var(--sand-100)] rounded" />
                         </div>
                     ))}
                 </div>
@@ -347,11 +347,11 @@ export default function PaymentsPage() {
 
             {/* Summary strip */}
             {summary && (
-                <div className="bg-surface border border-border rounded-[--radius-lg] px-6 py-5 grid grid-cols-2 md:grid-cols-4">
+                <div className="bg-surface border border-border rounded-[var(--radius-lg)] px-6 py-5 grid grid-cols-2 md:grid-cols-4">
                     {summaryCells.map((cell, i) => {
                         const tone =
-                            cell.tone === "pos" ? "text-[--green-600]" :
-                            cell.tone === "neg" ? "text-[--red-600]"   : "text-[--ink-500]";
+                            cell.tone === "pos" ? "text-[var(--green-600)]" :
+                            cell.tone === "neg" ? "text-[var(--red-600)]"   : "text-[var(--ink-500)]";
                         return (
                             <div
                                 key={cell.label}
@@ -360,7 +360,7 @@ export default function PaymentsPage() {
                                     i < summaryCells.length - 1 ? "border-r border-border" : "",
                                 )}
                             >
-                                <div className="text-[11.5px] text-[--ink-500] uppercase tracking-[0.06em] font-semibold">
+                                <div className="text-[11.5px] text-[var(--ink-500)] uppercase tracking-[0.06em] font-semibold">
                                     {cell.label}
                                 </div>
                                 <div className="font-serif font-mono text-[22px] font-semibold text-foreground mt-1 tracking-tight">
@@ -378,13 +378,13 @@ export default function PaymentsPage() {
             {/* Filter chips + search */}
             <div className="flex items-center gap-2 flex-wrap">
                 <div className="relative w-full sm:max-w-xs">
-                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[--ink-500]" />
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ink-500)]" />
                     <input
                         type="text"
                         value={searchRenterName}
                         onChange={(ev) => setSearchRenterName(ev.target.value)}
                         placeholder="Search renter name"
-                        className="w-full bg-surface border border-border pl-9 pr-3 h-9 rounded-[--radius] text-[13px] focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all"
+                        className="w-full bg-surface border border-border pl-9 pr-3 h-9 rounded-[var(--radius)] text-[13px] focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all"
                     />
                 </div>
                 <div className="relative">
@@ -416,7 +416,7 @@ export default function PaymentsPage() {
                     </select>
                 </div>
                 {summary && (
-                    <span className="text-[12px] text-[--ink-500] ml-auto">
+                    <span className="text-[12px] text-[var(--ink-500)] ml-auto">
                         Showing <strong className="text-foreground">{payments.length}</strong> of {totalItems} payments
                     </span>
                 )}
@@ -442,11 +442,11 @@ export default function PaymentsPage() {
             )}
 
             {/* Payments Table */}
-            {!loading && payments.length > 0 && <div className="bg-surface border border-border rounded-[--radius-lg] overflow-hidden">
+            {!loading && payments.length > 0 && <div className="bg-surface border border-border rounded-[var(--radius-lg)] overflow-hidden">
                 <div className="overflow-x-auto">
                     <table className="w-full">
                         <thead>
-                            <tr className="bg-[--sand-100]">
+                            <tr className="bg-[var(--sand-100)]">
                                 <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                     #
                                 </th>
@@ -482,7 +482,7 @@ export default function PaymentsPage() {
                             {payments.map((payment) => (
                                 <tr
                                     key={payment.id}
-                                    className="border-b border-border hover:bg-[--sand-50] transition-colors"
+                                    className="border-b border-border hover:bg-[var(--sand-50)] transition-colors"
                                 >
                                     <td className="px-5 py-3 text-xs font-bold text-foreground">
                                         {payment.installmentNumber}
@@ -526,7 +526,7 @@ export default function PaymentsPage() {
                                     <td className="px-5 py-3 text-xs text-foreground font-medium">
                                         {payment.chequeNumber || "--"}
                                     </td>
-                                    <td className="px-5 py-3 text-xs text-[--ink-600] font-medium">
+                                    <td className="px-5 py-3 text-xs text-[var(--ink-600)] font-medium">
                                         {getMethodLabel(payment)}
                                     </td>
                                     <td className="px-5 py-3">

@@ -126,7 +126,7 @@ export default function MvpSidebar() {
         <>
             <div className={cn(
                 "px-2 mt-4 mb-1 text-[10.5px] font-semibold uppercase tracking-[0.08em]",
-                "text-[--ink-500]",
+                "text-[var(--ink-500)]",
                 isCollapsed && "hidden"
             )} {...(sectionDataTour ? { 'data-tour': sectionDataTour } : {})}>
                 {label}
@@ -140,23 +140,23 @@ export default function MvpSidebar() {
                             href={item.href}
                             data-tour={item.tourId}
                             className={cn(
-                                "group flex items-center gap-2.5 px-2.5 py-2 rounded-[--radius-sm] transition-colors text-[13.5px] font-medium relative cursor-pointer",
-                                "focus:outline-none focus:ring-2 focus:ring-[--gold-500]/30",
+                                "group flex items-center gap-2.5 px-2.5 py-2 rounded-[var(--radius-sm)] transition-colors text-[13.5px] font-medium relative cursor-pointer",
+                                "focus:outline-none focus:ring-2 focus:ring-[var(--gold-500)]/30",
                                 isActive
-                                    ? "bg-[--sand-100] text-[--ink-900] font-semibold"
-                                    : "text-[--ink-600] hover:bg-[--sand-100]",
+                                    ? "bg-[var(--sand-100)] text-[var(--ink-900)] font-semibold"
+                                    : "text-[var(--ink-600)] hover:bg-[var(--sand-100)]",
                                 isCollapsed && "justify-center"
                             )}
                         >
                             <Icon size={16} className={cn(
                                 "shrink-0 transition-colors",
-                                isActive ? "text-[--gold-500]" : "text-[--ink-500]"
+                                isActive ? "text-[var(--gold-500)]" : "text-[var(--ink-500)]"
                             )} />
                             {!isCollapsed && <span className="flex-1">{item.name}</span>}
                             {isActive && !isCollapsed && (
                                 <motion.div
                                     layoutId={`sidebar-${layoutIdPrefix}-indicator`}
-                                    className="absolute left-[-12px] top-1.5 bottom-1.5 w-0.5 bg-[--gold-500] rounded-r-sm"
+                                    className="absolute left-[-12px] top-1.5 bottom-1.5 w-0.5 bg-[var(--gold-500)] rounded-r-sm"
                                 />
                             )}
                         </Link>
@@ -178,17 +178,17 @@ export default function MvpSidebar() {
             <button
                 onClick={() => setIsCollapsed(!isCollapsed)}
                 aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-                className="absolute -right-3 top-12 bg-surface border border-border rounded-full p-1.5 shadow-sm hover:bg-[--sand-100] z-50 transition-all duration-200 active:scale-90 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[--gold-500]/30"
+                className="absolute -right-3 top-12 bg-surface border border-border rounded-full p-1.5 shadow-sm hover:bg-[var(--sand-100)] z-50 transition-all duration-200 active:scale-90 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[var(--gold-500)]/30"
             >
                 {isCollapsed
-                    ? <ChevronRight size={10} className="text-[--ink-600]" />
-                    : <Menu size={10} className="text-[--ink-600]" />
+                    ? <ChevronRight size={10} className="text-[var(--ink-600)]" />
+                    : <Menu size={10} className="text-[var(--ink-600)]" />
                 }
             </button>
 
             {/* Logo */}
             <div className={cn("h-[60px] px-4 flex items-center border-b border-border", isCollapsed && "justify-center")}>
-                <Link href="/" className="flex items-center gap-2 focus:outline-none focus:ring-2 focus:ring-[--gold-500]/30 rounded-lg">
+                <Link href="/" className="flex items-center gap-2 focus:outline-none focus:ring-2 focus:ring-[var(--gold-500)]/30 rounded-lg">
                     <Image
                         src="/logo.png"
                         alt="RentAxis"
@@ -209,23 +209,23 @@ export default function MvpSidebar() {
                     <Link
                         href="/dashboard"
                         className={cn(
-                            "group flex items-center gap-2.5 px-2.5 py-2 rounded-[--radius-sm] transition-colors text-[13.5px] font-medium relative mb-1 cursor-pointer",
-                            "focus:outline-none focus:ring-2 focus:ring-[--gold-500]/30",
+                            "group flex items-center gap-2.5 px-2.5 py-2 rounded-[var(--radius-sm)] transition-colors text-[13.5px] font-medium relative mb-1 cursor-pointer",
+                            "focus:outline-none focus:ring-2 focus:ring-[var(--gold-500)]/30",
                             pathname.endsWith("/dashboard") || pathname.endsWith("/dashboard/")
-                                ? "bg-[--sand-100] text-[--ink-900] font-semibold"
-                                : "text-[--ink-600] hover:bg-[--sand-100]",
+                                ? "bg-[var(--sand-100)] text-[var(--ink-900)] font-semibold"
+                                : "text-[var(--ink-600)] hover:bg-[var(--sand-100)]",
                             isCollapsed && "justify-center"
                         )}
                     >
                         <Home size={16} className={cn(
                             "shrink-0 transition-colors",
-                            (pathname.endsWith("/dashboard") || pathname.endsWith("/dashboard/")) ? "text-[--gold-500]" : "text-[--ink-500]"
+                            (pathname.endsWith("/dashboard") || pathname.endsWith("/dashboard/")) ? "text-[var(--gold-500)]" : "text-[var(--ink-500)]"
                         )} />
                         {!isCollapsed && <span className="flex-1">{tDashboard("dashboard")}</span>}
                         {(pathname.endsWith("/dashboard") || pathname.endsWith("/dashboard/")) && !isCollapsed && (
                             <motion.div
                                 layoutId="sidebar-dashboard-indicator"
-                                className="absolute left-[-12px] top-1.5 bottom-1.5 w-0.5 bg-[--gold-500] rounded-r-sm"
+                                className="absolute left-[-12px] top-1.5 bottom-1.5 w-0.5 bg-[var(--gold-500)] rounded-r-sm"
                             />
                         )}
                     </Link>
@@ -249,23 +249,23 @@ export default function MvpSidebar() {
                         href="/dashboard/help"
                         data-tour="sidebar-help"
                         className={cn(
-                            "group flex items-center gap-2.5 px-2.5 py-2 rounded-[--radius-sm] transition-colors text-[13.5px] font-medium relative cursor-pointer",
-                            "focus:outline-none focus:ring-2 focus:ring-[--gold-500]/30",
+                            "group flex items-center gap-2.5 px-2.5 py-2 rounded-[var(--radius-sm)] transition-colors text-[13.5px] font-medium relative cursor-pointer",
+                            "focus:outline-none focus:ring-2 focus:ring-[var(--gold-500)]/30",
                             pathname.includes("/dashboard/help")
-                                ? "bg-[--sand-100] text-[--ink-900] font-semibold"
-                                : "text-[--ink-600] hover:bg-[--sand-100]",
+                                ? "bg-[var(--sand-100)] text-[var(--ink-900)] font-semibold"
+                                : "text-[var(--ink-600)] hover:bg-[var(--sand-100)]",
                             isCollapsed && "justify-center"
                         )}
                     >
                         <HelpCircle size={16} className={cn(
                             "shrink-0 transition-colors",
-                            pathname.includes("/dashboard/help") ? "text-[--gold-500]" : "text-[--ink-500]"
+                            pathname.includes("/dashboard/help") ? "text-[var(--gold-500)]" : "text-[var(--ink-500)]"
                         )} />
                         {!isCollapsed && <span className="flex-1">Help &amp; Guides</span>}
                         {pathname.includes("/dashboard/help") && !isCollapsed && (
                             <motion.div
                                 layoutId="sidebar-help-indicator"
-                                className="absolute left-[-12px] top-1.5 bottom-1.5 w-0.5 bg-[--gold-500] rounded-r-sm"
+                                className="absolute left-[-12px] top-1.5 bottom-1.5 w-0.5 bg-[var(--gold-500)] rounded-r-sm"
                             />
                         )}
                     </Link>
@@ -276,7 +276,7 @@ export default function MvpSidebar() {
             <div className="mt-auto border-t border-border p-3">
                 <TenantSwitcher isCollapsed={isCollapsed} />
                 {!isCollapsed && (
-                    <div className="text-[10px] text-[--ink-500] mt-2 px-1 font-mono">
+                    <div className="text-[10px] text-[var(--ink-500)] mt-2 px-1 font-mono">
                         v{APP_VERSION}
                     </div>
                 )}

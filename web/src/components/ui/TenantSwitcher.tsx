@@ -83,13 +83,35 @@ export function TenantSwitcher({ isCollapsed }: { isCollapsed: boolean }) {
     };
 
     const buttonRef = useRef<HTMLButtonElement>(null);
-    const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0, width: 0 });
+    const [dropdownPos, setDropdownPos] = useState<{
+        left: number;
+        width: number;
+        top?: number;
+        bottom?: number;
+    }>({ left: 0, width: 0 });
 
     const openDropdown = () => {
         if (!canSwitch) return;
         if (buttonRef.current) {
             const rect = buttonRef.current.getBoundingClientRect();
-            setDropdownPos({ top: rect.bottom + 8, left: rect.left, width: rect.width });
+            // Estimate dropdown height: max-h-[200px] + 1px borders + 4px padding ≈ 210px.
+            // If there isn't room below, anchor by `bottom` so the menu grows upward.
+            const ESTIMATED_HEIGHT = 220;
+            const spaceBelow = window.innerHeight - rect.bottom;
+            const openUpward = spaceBelow < ESTIMATED_HEIGHT;
+            setDropdownPos(
+                openUpward
+                    ? {
+                          bottom: window.innerHeight - rect.top + 8,
+                          left: rect.left,
+                          width: rect.width,
+                      }
+                    : {
+                          top: rect.bottom + 8,
+                          left: rect.left,
+                          width: rect.width,
+                      }
+            );
         }
         setIsOpen(!isOpen);
     };
@@ -114,9 +136,9 @@ export function TenantSwitcher({ isCollapsed }: { isCollapsed: boolean }) {
                 onClick={openDropdown}
                 aria-label={canSwitch ? "Switch organization" : "Current organization"}
                 className={cn(
-                    "w-full flex items-center justify-between gap-2 p-2 rounded-[--radius] border border-border bg-[--sand-100] transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[--gold-500]/30",
+                    "w-full flex items-center justify-between gap-2 p-2 rounded-[var(--radius)] border border-border bg-[var(--sand-100)] transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[var(--gold-500)]/30",
                     isCollapsed ? "justify-center" : "",
-                    canSwitch ? "cursor-pointer hover:bg-[--sand-200]" : "cursor-default"
+                    canSwitch ? "cursor-pointer hover:bg-[var(--sand-200)]" : "cursor-default"
                 )}
             >
                 {isCollapsed ? (
@@ -135,10 +157,10 @@ export function TenantSwitcher({ isCollapsed }: { isCollapsed: boolean }) {
                             {orgInitials}
                         </div>
                         <div className="flex flex-col items-start text-left flex-1 min-w-0 leading-tight">
-                            <span className="text-[12px] font-semibold text-[--ink-900] truncate w-full">
+                            <span className="text-[12px] font-semibold text-[var(--ink-900)] truncate w-full">
                                 {orgName}
                             </span>
-                            <span className="text-[10px] text-[--ink-500] truncate w-full">
+                            <span className="text-[10px] text-[var(--ink-500)] truncate w-full">
                                 {isSuperAdmin ? "Administering" : "Organization"}
                             </span>
                         </div>
@@ -146,7 +168,7 @@ export function TenantSwitcher({ isCollapsed }: { isCollapsed: boolean }) {
                 )}
 
                 {!isCollapsed && canSwitch && (
-                    <ChevronsUpDown size={14} className="text-[--ink-500] shrink-0" />
+                    <ChevronsUpDown size={14} className="text-[var(--ink-500)] shrink-0" />
                 )}
             </button>
 
@@ -156,7 +178,12 @@ export function TenantSwitcher({ isCollapsed }: { isCollapsed: boolean }) {
                     <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
                     <div
                         className="fixed bg-surface rounded-xl shadow-xl border border-border z-50 overflow-hidden"
-                        style={{ top: dropdownPos.top, left: dropdownPos.left, width: dropdownPos.width }}
+                        style={{
+                            top: dropdownPos.top,
+                            bottom: dropdownPos.bottom,
+                            left: dropdownPos.left,
+                            width: dropdownPos.width,
+                        }}
                     >
                         <div className="max-h-[200px] overflow-y-auto p-1">
                             {isSuperAdmin && (
