@@ -83,13 +83,35 @@ export function TenantSwitcher({ isCollapsed }: { isCollapsed: boolean }) {
     };
 
     const buttonRef = useRef<HTMLButtonElement>(null);
-    const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0, width: 0 });
+    const [dropdownPos, setDropdownPos] = useState<{
+        left: number;
+        width: number;
+        top?: number;
+        bottom?: number;
+    }>({ left: 0, width: 0 });
 
     const openDropdown = () => {
         if (!canSwitch) return;
         if (buttonRef.current) {
             const rect = buttonRef.current.getBoundingClientRect();
-            setDropdownPos({ top: rect.bottom + 8, left: rect.left, width: rect.width });
+            // Estimate dropdown height: max-h-[200px] + 1px borders + 4px padding ≈ 210px.
+            // If there isn't room below, anchor by `bottom` so the menu grows upward.
+            const ESTIMATED_HEIGHT = 220;
+            const spaceBelow = window.innerHeight - rect.bottom;
+            const openUpward = spaceBelow < ESTIMATED_HEIGHT;
+            setDropdownPos(
+                openUpward
+                    ? {
+                          bottom: window.innerHeight - rect.top + 8,
+                          left: rect.left,
+                          width: rect.width,
+                      }
+                    : {
+                          top: rect.bottom + 8,
+                          left: rect.left,
+                          width: rect.width,
+                      }
+            );
         }
         setIsOpen(!isOpen);
     };
@@ -156,7 +178,12 @@ export function TenantSwitcher({ isCollapsed }: { isCollapsed: boolean }) {
                     <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
                     <div
                         className="fixed bg-surface rounded-xl shadow-xl border border-border z-50 overflow-hidden"
-                        style={{ top: dropdownPos.top, left: dropdownPos.left, width: dropdownPos.width }}
+                        style={{
+                            top: dropdownPos.top,
+                            bottom: dropdownPos.bottom,
+                            left: dropdownPos.left,
+                            width: dropdownPos.width,
+                        }}
                     >
                         <div className="max-h-[200px] overflow-y-auto p-1">
                             {isSuperAdmin && (
