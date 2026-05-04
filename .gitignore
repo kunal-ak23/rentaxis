@@ -4,6 +4,7 @@
 .env.backend
 .env.web
 .env.postgres
+!.env.*.template
 infra/envs/*.env
 !infra/envs/*.env.template
 
