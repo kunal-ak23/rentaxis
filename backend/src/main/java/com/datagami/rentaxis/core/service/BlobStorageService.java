@@ -65,6 +65,27 @@ public class BlobStorageService {
     }
 
     /**
+     * Uploads a cheque image to {@code tenant-{tenantId}/cheques/{uuid}.{ext}}.
+     */
+    public UploadResult uploadCheque(UUID tenantId, MultipartFile file) {
+        if (tenantId == null || file == null) {
+            throw new BlobStorageException("tenantId and file are required");
+        }
+        String ext = extractExtension(file.getOriginalFilename());
+        String blobPath = String.format("cheques/%s%s", UUID.randomUUID(), ext);
+        try (InputStream in = file.getInputStream()) {
+            BlobContainerClient containerClient = getContainerClient(tenantId);
+            BlobClient blobClient = containerClient.getBlobClient(blobPath);
+            blobClient.upload(in, file.getSize(), true);
+            return new UploadResult(blobClient.getBlobUrl(), blobPath);
+        } catch (IOException e) {
+            throw new BlobStorageException("Failed to read upload stream for " + blobPath, e);
+        } catch (com.azure.storage.blob.models.BlobStorageException e) {
+            throw new BlobStorageException("Failed to upload blob " + blobPath, e);
+        }
+    }
+
+    /**
      * Deletes a blob by its container-relative path within a tenant's container.
      * Idempotent: silently succeeds if the blob does not exist.
      */

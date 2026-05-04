@@ -1,8 +1,12 @@
 package com.datagami.rentaxis.core.service;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.mock.web.MockMultipartFile;
+
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class BlobStorageServiceTest {
 
@@ -31,5 +35,24 @@ class BlobStorageServiceTest {
     void extractExtension_stripsPathComponents() {
         assertThat(BlobStorageService.extractExtension("some/path/to/photo.webp")).isEqualTo(".webp");
         assertThat(BlobStorageService.extractExtension("C:\\Users\\file.pdf")).isEqualTo(".pdf");
+    }
+
+    @Test
+    void uploadCheque_throwsWhenTenantMissing() {
+        var service = new BlobStorageService();
+        var file = new MockMultipartFile("file", "cheque.jpg", "image/jpeg", new byte[]{1, 2, 3});
+
+        assertThatThrownBy(() -> service.uploadCheque(null, file))
+                .isInstanceOf(BlobStorageService.BlobStorageException.class)
+                .hasMessageContaining("tenantId and file are required");
+    }
+
+    @Test
+    void uploadCheque_throwsWhenFileMissing() {
+        var service = new BlobStorageService();
+
+        assertThatThrownBy(() -> service.uploadCheque(UUID.randomUUID(), null))
+                .isInstanceOf(BlobStorageService.BlobStorageException.class)
+                .hasMessageContaining("tenantId and file are required");
     }
 }
