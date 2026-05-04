@@ -2,15 +2,20 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 import '../widgets/mark_cheque_failed_dialog.dart';
+import '../widgets/cheque_scanner.dart';
 
 final _paymentServiceProvider = Provider<PaymentService>((ref) {
   final client = ref.watch(apiClientProvider);
   return PaymentService(client.dio);
+});
+
+final _chequeExtractionServiceProvider = Provider<ChequeExtractionService>((ref) {
+  final client = ref.watch(apiClientProvider);
+  return ChequeExtractionService(client.dio);
 });
 
 final _propertyServiceProvider = Provider<PropertyService>((ref) {
@@ -384,7 +389,8 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
     final bankNameCtrl = TextEditingController();
     final payerNameCtrl = TextEditingController();
     DateTime? chequeDate;
-    String? chequeImagePath;
+    String? chequeImageUrl;
+    String? chequeImageBlobPath;
     final formKey = GlobalKey<FormState>();
 
     await showModalBottomSheet(
@@ -478,26 +484,27 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
                     ),
                   ),
                   const SizedBox(height: 16),
-                  OutlinedButton.icon(
-                    onPressed: () async {
-                      final picker = ImagePicker();
-                      final image = await picker.pickImage(
-                        source: ImageSource.camera,
-                        imageQuality: 80,
-                      );
-                      if (image != null) {
-                        setSheetState(() => chequeImagePath = image.path);
-                      }
+                  ChequeScannerWidget(
+                    service: ref.read(_chequeExtractionServiceProvider),
+                    onExtracted: (result) {
+                      setSheetState(() {
+                        final extracted = result.extracted;
+                        if (extracted != null) {
+                          chequeNumberCtrl.text =
+                              extracted['chequeNumber']?.toString() ?? chequeNumberCtrl.text;
+                          bankNameCtrl.text =
+                              extracted['bankName']?.toString() ?? bankNameCtrl.text;
+                          payerNameCtrl.text =
+                              extracted['payerName']?.toString() ?? payerNameCtrl.text;
+                          final rawDate = extracted['chequeDate']?.toString();
+                          if (rawDate != null && rawDate.isNotEmpty) {
+                            chequeDate = DateTime.tryParse(rawDate) ?? chequeDate;
+                          }
+                        }
+                        chequeImageUrl = result.imageUrl;
+                        chequeImageBlobPath = result.imageBlobPath;
+                      });
                     },
-                    icon: Icon(
-                      chequeImagePath != null
-                          ? Icons.check_circle
-                          : Icons.camera_alt_outlined,
-                      size: 18,
-                    ),
-                    label: Text(chequeImagePath != null
-                        ? 'Cheque photo captured'
-                        : 'Scan Cheque'),
                   ),
                   const SizedBox(height: 24),
                   SizedBox(
@@ -517,6 +524,11 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
                             if (chequeDate != null)
                               'chequeDate':
                                   chequeDate!.toIso8601String().split('T')[0],
+                            if (chequeImageUrl != null && chequeImageUrl!.isNotEmpty)
+                              'chequeImageUrl': chequeImageUrl,
+                            if (chequeImageBlobPath != null &&
+                                chequeImageBlobPath!.isNotEmpty)
+                              'chequeImageBlobPath': chequeImageBlobPath,
                           }),
                           'Payment collected',
                         );
