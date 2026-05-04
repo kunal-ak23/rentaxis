@@ -1,110 +1,189 @@
 @import "tailwindcss";
 
+/* ── RentAxis design tokens — Sand · Navy · Gold ─────────────────── */
 :root {
-  --background: #FAFAF8;
-  --foreground: #0F172A;
-  --primary: #0F766E;
-  --primary-foreground: #ffffff;
-  --accent: #C8A951;
-  --accent-foreground: #0F172A;
-  --sidebar: #0F1B2D;
-  --sidebar-foreground: #ffffff;
-  --sidebar-muted: rgba(255, 255, 255, 0.5);
-  --surface: #ffffff;
-  --border: #E2E0DC;
-  --input: #F5F4F0;
-  --ring: rgba(15, 118, 110, 0.15);
-  --muted: #475569;
-  --success: #059669;
-  --warning: #D97706;
-  --error: #DC2626;
-  --info: #0D9488;
+  /* Core neutrals — ink scale */
+  --ink-900: #0B1F3A;
+  --ink-800: #142C4F;
+  --ink-700: #1F3D67;
+  --ink-600: #335580;
+  --ink-500: #5C7494;
+  --ink-400: #8094B1;
+  --ink-300: #B5C2D5;
+  --ink-200: #DCE3ED;
+  --ink-100: #ECF0F5;
+  --ink-50:  #F5F7FA;
 
-  /* Font scale factor — change this single value to resize everything.
-     1 = default (14px base), 0.85 = compact enterprise, 0.75 = ultra-dense */
-  --font-scale: 0.85;
+  /* Sand backgrounds */
+  --sand-50:  #FAF7F2;
+  --sand-100: #F4EFE6;
+  --sand-200: #EAE2D2;
+  --sand-300: #D8CBB1;
+
+  /* Gold accent */
+  --gold-700: #8C7434;
+  --gold-600: #A88A40;
+  --gold-500: #C9A961;
+  --gold-400: #D9BE83;
+  --gold-100: #F4EBD3;
+
+  /* Teal secondary */
+  --teal-700: #1F5959;
+  --teal-600: #2D7D7D;
+  --teal-500: #4A9999;
+  --teal-100: #D6EBEB;
+
+  /* Status */
+  --green-600: #2F7B4C;
+  --green-100: #DDEFE3;
+  --amber-600: #B5781E;
+  --amber-100: #F8EBD0;
+  --red-600:   #B33A30;
+  --red-100:   #F6DAD6;
+
+  /* Semantic — light mode */
+  --background:          #FAF7F2;
+  --foreground:          #0B1F3A;
+  --primary:             #0B1F3A;
+  --primary-foreground:  #FFFFFF;
+  --accent:              #C9A961;
+  --accent-foreground:   #0B1F3A;
+  --surface:             #FFFFFF;
+  --surface-2:           #F4EFE6;
+  --border:              #E6DFD3;
+  --border-strong:       #D8CBB1;
+  --muted:               #335580;
+  --success:             #2F7B4C;
+  --warning:             #B5781E;
+  --error:               #B33A30;
+  --info:                #2D7D7D;
+
+  /* Sidebar */
+  --sidebar:             #FFFFFF;
+  --sidebar-foreground:  #0B1F3A;
+  --sidebar-muted:       #5C7494;
+
+  /* Typography */
+  --font-sans:  'Inter', 'IBM Plex Sans Arabic', system-ui, sans-serif;
+  --font-serif: 'Source Serif 4', Georgia, serif;
+  --font-mono:  'JetBrains Mono', ui-monospace, monospace;
+
+  /* Radius */
+  --radius-sm: 6px;
+  --radius:    10px;
+  --radius-lg: 14px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(11,31,58,0.04), 0 1px 1px rgba(11,31,58,0.03);
+  --shadow:    0 2px 4px rgba(11,31,58,0.04), 0 8px 24px -8px rgba(11,31,58,0.08);
+  --shadow-lg: 0 24px 48px -16px rgba(11,31,58,0.18);
 }
 
 @theme inline {
-  --color-background: #FAFAF8;
-  --color-foreground: #0F172A;
-  --color-primary: #0F766E;
-  --color-primary-foreground: #ffffff;
-  --color-accent: #C8A951;
-  --color-accent-foreground: #0F172A;
-  --color-sidebar: #0F1B2D;
-  --color-sidebar-foreground: #ffffff;
-  --color-sidebar-muted: rgba(255, 255, 255, 0.5);
-  --color-surface: #ffffff;
-  --color-border: #E2E0DC;
-  --color-input: #F5F4F0;
-  --color-muted: #475569;
-  --color-success: #059669;
-  --color-warning: #D97706;
-  --color-error: #DC2626;
-  --color-info: #0D9488;
-  --font-sans: 'Josefin Sans', system-ui, -apple-system, sans-serif;
-  --font-heading: 'Cinzel', Georgia, serif;
-  --font-mono: var(--font-geist-mono);
+  --color-background:          #FAF7F2;
+  --color-foreground:          #0B1F3A;
+  --color-primary:             #0B1F3A;
+  --color-primary-foreground:  #FFFFFF;
+  --color-accent:              #C9A961;
+  --color-accent-foreground:   #0B1F3A;
+  --color-surface:             #FFFFFF;
+  --color-border:              #E6DFD3;
+  --color-muted:               #335580;
+  --color-success:             #2F7B4C;
+  --color-warning:             #B5781E;
+  --color-error:               #B33A30;
+  --color-info:                #2D7D7D;
+  --color-sidebar:             #FFFFFF;
+  --color-sidebar-foreground:  #0B1F3A;
+  --color-sidebar-muted:       rgba(11,31,58,0.45);
+  --font-sans:   'Inter', 'IBM Plex Sans Arabic', system-ui, sans-serif;
+  --font-serif:  'Source Serif 4', Georgia, serif;
+  --font-mono:   'JetBrains Mono', ui-monospace, monospace;
 }
 
+/* Dark mode */
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0A1120;
-    --foreground: #F1F5F9;
-    --primary: #14B8A6;
-    --primary-foreground: #ffffff;
-    --accent: #D4B45C;
-    --accent-foreground: #F1F5F9;
-    --sidebar: #060D18;
-    --sidebar-foreground: #ffffff;
-    --sidebar-muted: rgba(255, 255, 255, 0.4);
-    --surface: #0F1B2D;
-    --border: #1E293B;
-    --input: #1E293B;
-    --muted: #94A3B8;
+    --background:          #0A1424;
+    --foreground:          #F2F5F9;
+    --primary:             #C9A961;
+    --primary-foreground:  #0B1F3A;
+    --surface:             #11203A;
+    --surface-2:           #18283F;
+    --border:              #1E3252;
+    --border-strong:       #2A4063;
+    --muted:               #A8B6CC;
+    --sidebar:             #0A1424;
+    --sidebar-foreground:  #F2F5F9;
+    --sidebar-muted:       #7E8FAA;
   }
 }
 
+/* ── Base styles ──────────────────────────────────────────────────── */
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: 'Josefin Sans', system-ui, -apple-system, sans-serif;
-  font-size: calc(14px * var(--font-scale));
+  font-family: var(--font-sans);
+  font-size: 14px;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-h1 {
-  font-size: calc(1.375rem * var(--font-scale));
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  line-height: 1.2;
-  color: var(--foreground);
+.font-serif { font-family: var(--font-serif); }
+.font-mono  { font-family: var(--font-mono); font-feature-settings: "tnum" 1; }
+
+/* ── Status pills ─────────────────────────────────────────────────── */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.pill .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
 }
 
-h2 {
-  font-size: calc(1.125rem * var(--font-scale));
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  line-height: 1.3;
-  color: var(--foreground);
+.pill-paid    { background: var(--green-100); color: var(--green-600); }
+.pill-pending { background: var(--amber-100); color: var(--amber-600); }
+.pill-overdue { background: var(--red-100);   color: var(--red-600); }
+.pill-cleared { background: var(--gold-100);  color: var(--gold-700); }
+.pill-bounced { background: var(--red-100);   color: var(--red-600); }
+.pill-future  { background: var(--ink-100);   color: var(--ink-600); }
+
+/* ── Cheque card chrome ───────────────────────────────────────────── */
+.cheque-card {
+  position: relative;
+  background: linear-gradient(135deg, #FFFFFF 0%, var(--sand-50) 100%);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+}
+.cheque-card::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 12px;
+  bottom: 12px;
+  width: 3px;
+  background: var(--accent);
+  border-radius: 0 2px 2px 0;
 }
 
-h3 {
-  font-size: calc(1rem * var(--font-scale));
-  font-weight: 600;
-  line-height: 1.4;
-  color: var(--foreground);
-}
+/* ── Thin scrollbar ───────────────────────────────────────────────── */
+.thinscroll::-webkit-scrollbar       { width: 8px; height: 8px; }
+.thinscroll::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 999px; }
+.thinscroll::-webkit-scrollbar-track { background: transparent; }
 
-p {
-  font-size: calc(0.875rem * var(--font-scale));
-  line-height: 1.6;
-  color: var(--muted);
-}
-
-/* Tabular numbers for financial data */
-.tabular-nums {
-  font-variant-numeric: tabular-nums;
-}
+/* ── Typography scale ─────────────────────────────────────────────── */
+h1 { font-size: 1.375rem; font-weight: 700; letter-spacing: -0.01em; line-height: 1.2; color: var(--foreground); }
+h2 { font-size: 1.125rem; font-weight: 600; letter-spacing: -0.01em; line-height: 1.3; color: var(--foreground); }
+h3 { font-size: 1rem;     font-weight: 600; line-height: 1.4; color: var(--foreground); }
