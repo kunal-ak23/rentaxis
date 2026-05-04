@@ -48,9 +48,13 @@ export function CollectChequeDialog({ open, paymentId, mode, onClose, onSuccess 
   const t = useTranslations("Payments");
   const [form, setForm] = useState<ChequeForm>(emptyForm);
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (open) setForm(emptyForm);
+    if (open) {
+      setForm(emptyForm);
+      setError(null);
+    }
   }, [open, paymentId]);
 
   if (!open || !paymentId) return null;
@@ -58,6 +62,7 @@ export function CollectChequeDialog({ open, paymentId, mode, onClose, onSuccess 
   const submit = async (ev: React.FormEvent) => {
     ev.preventDefault();
     setSubmitting(true);
+    setError(null);
     try {
       const url = mode === "replace"
         ? `/api/proxy/v1/payments/${paymentId}/replace`
@@ -71,9 +76,19 @@ export function CollectChequeDialog({ open, paymentId, mode, onClose, onSuccess 
       if (res.ok) {
         onSuccess();
         onClose();
+        return;
       }
+      // Surface the backend's reason if available; fall back to a generic
+      // message with the status code so the user knows something failed.
+      let detail: string | null = null;
+      try {
+        const data = await res.json();
+        detail = data?.message || data?.error || null;
+      } catch { /* response wasn't JSON */ }
+      setError(detail || `Request failed (${res.status})`);
     } catch (err) {
       console.error(err);
+      setError(err instanceof Error ? err.message : "Network error");
     } finally {
       setSubmitting(false);
     }
@@ -155,12 +170,19 @@ export function CollectChequeDialog({ open, paymentId, mode, onClose, onSuccess 
               {t("chequeDate")}
             </label>
             <input
+              required
               type="date"
               className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
               value={form.chequeDate}
               onChange={(ev) => setForm({ ...form, chequeDate: ev.target.value })}
             />
           </div>
+
+          {error && (
+            <div className="rounded-lg border border-error/30 bg-error/5 px-3 py-2 text-xs text-error">
+              {error}
+            </div>
+          )}
 
           <div className="flex justify-end gap-3 mt-6">
             <button
