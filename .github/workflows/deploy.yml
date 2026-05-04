@@ -99,6 +99,9 @@ jobs:
           NEXTAUTH_SECRET=${{ secrets.NEXTAUTH_SECRET }}
           AZURE_STORAGE_CONNECTION_STRING=${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}
           AZURE_STORAGE_CONTAINER_PREFIX=${{ secrets.AZURE_STORAGE_CONTAINER_PREFIX }}
+          AZURE_OPENAI_ENDPOINT=${{ secrets.AZURE_OPENAI_ENDPOINT }}
+          AZURE_OPENAI_API_KEY=${{ secrets.AZURE_OPENAI_API_KEY }}
+          AZURE_OPENAI_CHEQUE_DEPLOYMENT=${{ secrets.AZURE_OPENAI_CHEQUE_DEPLOYMENT }}
           EOF
           sed -i 's/^[[:space:]]*//' /tmp/rentaxis.env
 
