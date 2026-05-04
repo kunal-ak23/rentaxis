@@ -155,6 +155,21 @@
     "renter": "المستأجر",
     "status": "الحالة"
   },
+  "cheque": {
+    "scanner": {
+      "scanButton": "مسح الشيك",
+      "uploading": "جارٍ الرفع…",
+      "extracting": "جارٍ قراءة الشيك…",
+      "useValues": "استخدام هذه القيم",
+      "rescan": "إعادة المسح",
+      "extractionFailed": "تعذر قراءة هذا الشيك تلقائيًا. هل تريد حفظ الصورة والمتابعة يدويًا؟",
+      "attachPhoto": "إرفاق الصورة والمتابعة",
+      "lowConfidenceBanner": "لم يتمكن الذكاء الاصطناعي من القراءة بوضوح — يرجى التحقق من القيم.",
+      "extractedBadge": "✨ مستخرج",
+      "fileTooLarge": "الصورة كبيرة جدًا؛ الحد الأقصى 10MB",
+      "invalidType": "استخدم صورة بصيغة JPG أو PNG أو HEIC"
+    }
+  },
   "Finance": {
     "chartOfAccounts": "شجرة الحسابات",
     "chartOfAccountsDesc": "إدارة تسلسل حسابات مؤسستك للتسجيل المالي.",

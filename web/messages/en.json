@@ -155,6 +155,21 @@
     "renter": "Renter",
     "status": "Status"
   },
+  "cheque": {
+    "scanner": {
+      "scanButton": "Scan Cheque",
+      "uploading": "Uploading…",
+      "extracting": "Reading cheque…",
+      "useValues": "Use these values",
+      "rescan": "Re-scan",
+      "extractionFailed": "Couldn't read this cheque automatically. Save the photo and fill manually?",
+      "attachPhoto": "Attach photo and continue",
+      "lowConfidenceBanner": "AI couldn't read this clearly — please double-check the values.",
+      "extractedBadge": "✨ Extracted",
+      "fileTooLarge": "Photo too large; max 10MB",
+      "invalidType": "Use a JPG, PNG or HEIC image"
+    }
+  },
   "Finance": {
     "chartOfAccounts": "Chart of Accounts",
     "chartOfAccountsDesc": "Manage your organisation's account hierarchy for financial recording.",
