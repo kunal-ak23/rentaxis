@@ -557,18 +557,19 @@ export default function LeaseDetailPage() {
     const clearedCount = payments.filter(p => p.status === "CLEARED").length;
     const pendingCount = payments.filter(p => p.status === "PENDING" || p.status === "ONLINE_PENDING").length;
     const totalPaid = payments.filter(p => p.status === "CLEARED").reduce((sum, p) => sum + p.amount, 0);
+    const leaseTabs = ["Overview", "Payment schedule", "Penalties", "Contract", "Maintenance", "Documents"];
 
     return (
         <>
-        <div>
+        <div className="p-7 flex flex-col gap-[18px] bg-background min-h-full">
             {/* Header */}
-            <div className="flex items-center gap-4 mb-8">
+            <div className="flex items-start gap-5">
                 <Link href="/dashboard/leases" className="p-2 rounded-lg hover:bg-input transition-colors text-muted hover:text-foreground">
                     <ArrowLeft size={18} />
                 </Link>
                 <div className="flex-1">
                     <div className="flex items-center gap-3">
-                        <h1 className="mb-0">Unit {lease.unitIdentifier}</h1>
+                        <h1 className="mb-0 font-serif text-[26px] font-semibold tracking-tight">Unit {lease.unitIdentifier}</h1>
                         <span className={cn("px-2.5 py-1 rounded-lg text-[10px] font-semibold border", STATUS_COLORS[lease.status] || "bg-input text-muted border-border")}>
                             {lease.status.replace("_", " ")}
                         </span>
@@ -578,7 +579,8 @@ export default function LeaseDetailPage() {
                             </span>
                         )}
                     </div>
-                    <p className="text-sm text-muted">{lease.propertyName} &bull; {lease.renterName}</p>
+                    <p className="text-[12.5px] text-[--ink-500]">{lease.propertyName}</p>
+                    <p className="text-sm text-muted">{lease.renterName}</p>
                 </div>
                 {canGenerateContract && lease.status === "DRAFT" && (
                     <button
@@ -640,24 +642,43 @@ export default function LeaseDetailPage() {
                 )}
             </div>
 
-            {/* KPI Summary */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-                <div className="bg-surface rounded-xl p-4 border border-border">
-                    <p className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-1">Monthly Rent</p>
-                    <p className="text-lg font-bold text-foreground tabular-nums">{formatCurrencyCompact(lease.monthlyRent || lease.rentAmount)}</p>
+            {/* Ribbon summary */}
+            <div className="bg-surface border border-border rounded-[--radius-lg] p-5 grid grid-cols-2 md:grid-cols-5 gap-4">
+                <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[--ink-500]">Lease term</p>
+                    <p className="text-sm font-semibold text-foreground">{new Date(lease.startDate).toLocaleDateString()} - {new Date(lease.endDate).toLocaleDateString()}</p>
                 </div>
-                <div className="bg-surface rounded-xl p-4 border border-border">
-                    <p className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-1">Total Paid</p>
-                    <p className="text-lg font-bold text-success tabular-nums">{formatCurrencyCompact(totalPaid)}</p>
+                <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[--ink-500]">Annual rent</p>
+                    <p className="text-sm font-semibold text-foreground tabular-nums">{formatCurrencyCompact(lease.rentAmount)}</p>
                 </div>
-                <div className="bg-surface rounded-xl p-4 border border-border">
-                    <p className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-1">Payments</p>
-                    <p className="text-lg font-bold text-foreground">{clearedCount}/{payments.length} cleared</p>
+                <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[--ink-500]">Deposit</p>
+                    <p className="text-sm font-semibold text-foreground tabular-nums">{formatCurrencyCompact(lease.depositAmount)}</p>
                 </div>
-                <div className="bg-surface rounded-xl p-4 border border-border">
-                    <p className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-1">Pending</p>
-                    <p className={cn("text-lg font-bold", pendingCount > 0 ? "text-warning" : "text-success")}>{pendingCount}</p>
+                <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[--ink-500]">Collected</p>
+                    <p className="text-sm font-semibold text-success tabular-nums">{formatCurrencyCompact(totalPaid)}</p>
                 </div>
+                <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[--ink-500]">Pending payments</p>
+                    <p className={cn("text-sm font-semibold", pendingCount > 0 ? "text-warning" : "text-success")}>{pendingCount}</p>
+                </div>
+            </div>
+
+            {/* Visual tabs strip */}
+            <div className="flex gap-1 border-b border-border overflow-x-auto">
+                {leaseTabs.map((tab, idx) => (
+                    <button
+                        key={tab}
+                        className={cn(
+                            "px-3.5 py-2.5 text-[13.5px] font-medium -mb-px whitespace-nowrap",
+                            idx === 0 ? "text-foreground font-semibold border-b-2 border-[--gold-500]" : "text-[--ink-500]"
+                        )}
+                    >
+                        {tab}
+                    </button>
+                ))}
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
