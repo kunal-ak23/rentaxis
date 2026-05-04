@@ -5,6 +5,7 @@ import 'package:rentaxis_core/rentaxis_core.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/payments_screen.dart';
+import 'screens/pay_rent_screen.dart';
 import 'screens/tickets_screen.dart';
 import 'screens/create_ticket_screen.dart';
 import 'screens/ticket_detail_screen.dart';
@@ -64,6 +65,12 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/payments',
             builder: (context, state) => const PaymentsScreen(),
+            routes: [
+              GoRoute(
+                path: 'pay',
+                builder: (context, state) => const PayRentScreen(),
+              ),
+            ],
           ),
           GoRoute(
             path: '/tickets',

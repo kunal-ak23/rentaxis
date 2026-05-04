@@ -251,14 +251,23 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
               (a, b) => (b['dueDate'] ?? '').compareTo(a['dueDate'] ?? ''));
 
           num totalDue = 0;
+          num totalLease = 0;
+          num paid = 0;
           for (final p in upcoming) {
             totalDue += (p['totalPayable'] ?? p['amount'] ?? 0) as num;
+          }
+          for (final p in payments) {
+            totalLease += (p['amount'] ?? 0) as num;
+            final s = p['status'] ?? '';
+            if (s == 'CLEARED' || s == 'COLLECTED' || s == 'DEPOSITED') {
+              paid += (p['totalPayable'] ?? p['amount'] ?? 0) as num;
+            }
           }
 
           return TabBarView(
             controller: _tabController,
             children: [
-              _buildUpcomingTab(upcoming, totalDue),
+              _buildUpcomingTab(upcoming, totalDue, paid, totalLease),
               _buildHistoryTab(history),
             ],
           );
@@ -275,7 +284,7 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
     );
   }
 
-  Widget _buildUpcomingTab(List<dynamic> upcoming, num totalDue) {
+  Widget _buildUpcomingTab(List<dynamic> upcoming, num totalDue, num paid, num totalLease) {
     return RefreshIndicator(
       color: AppColors.primary,
       onRefresh: () async => ref.invalidate(_myPaymentsProvider),
@@ -293,48 +302,64 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
           : ListView(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 150),
               children: [
-                // Summary card with glass-morphism
+                // Progress summary card
                 AnimatedListItem(
                   index: 0,
                   child: Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.all(24),
+                    padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [AppColors.navyDark, Color(0xFF163048)],
-                      ),
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: AppShadows.medium,
+                      color: AppColors.surface2,
+                      border: Border.all(color: AppColors.border),
+                      borderRadius: BorderRadius.circular(14),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          'Total Due',
-                          style: GoogleFonts.josefinSans(
-                            color: Colors.white.withValues(alpha: 0.6),
-                            fontSize: 13,
-                            letterSpacing: 0.5,
-                          ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Total paid this lease',
+                              style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted),
+                            ),
+                            Text(
+                              '${totalLease <= 0 ? 0 : ((paid / totalLease) * 100).round()}% complete',
+                              style: GoogleFonts.inter(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.accentDark,
+                              ),
+                            ),
+                          ],
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          Formatters.currency(totalDue),
-                          style: GoogleFonts.josefinSans(
-                            color: AppColors.accent,
-                            fontSize: 32,
-                            fontWeight: FontWeight.w700,
+                          Formatters.currencyCompact(paid),
+                          style: GoogleFonts.sourceSerif4(
+                            fontSize: 28,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textPrimary,
                           ),
                         ),
-                        const SizedBox(height: 6),
                         Text(
-                          '${upcoming.length} payment${upcoming.length == 1 ? '' : 's'} pending',
-                          style: GoogleFonts.josefinSans(
-                            color: Colors.white.withValues(alpha: 0.4),
-                            fontSize: 12,
+                          '${Formatters.currencyCompact(totalLease)} total',
+                          style: GoogleFonts.inter(fontSize: 14, color: AppColors.textMuted),
+                        ),
+                        const SizedBox(height: 12),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(999),
+                          child: LinearProgressIndicator(
+                            value: totalLease <= 0 ? 0 : (paid / totalLease).clamp(0, 1).toDouble(),
+                            backgroundColor: Colors.white,
+                            valueColor: const AlwaysStoppedAnimation<Color>(AppColors.accent),
+                            minHeight: 8,
                           ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          '${upcoming.length} cheque${upcoming.length == 1 ? '' : 's'} pending · ${Formatters.currencyCompact(totalDue)} due',
+                          style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted),
                         ),
                       ],
                     ),
@@ -364,7 +389,10 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
     final totalPayable = payment['totalPayable'] ?? amount;
     final dueDate = Formatters.date(payment['dueDate']);
     final installmentNum = payment['installmentNumber'] ?? '';
-    final label = installmentNum != '' ? 'Installment #$installmentNum' : (payment['installmentLabel'] ?? payment['label'] ?? 'Payment');
+    final totalInstallments = payment['paymentTerms'] ?? '';
+    final label = installmentNum != ''
+        ? 'CHEQUE $installmentNum${totalInstallments == '' ? '' : ' OF $totalInstallments'}'
+        : (payment['installmentLabel'] ?? payment['label'] ?? 'Payment');
     final propertyName = payment['propertyName'] ?? '';
     final unitNumber = payment['unitIdentifier'] ?? '';
 
@@ -438,11 +466,7 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
                             label: 'Amount',
                             value: Formatters.currency(amount)),
                         if ((penalty as num) > 0)
-                          _PaymentDetail(
-                            label: 'Penalty',
-                            value: Formatters.currency(penalty),
-                            valueColor: AppColors.danger,
-                          ),
+                          _PaymentDetail(label: 'Penalty', value: Formatters.currency(penalty), valueColor: AppColors.danger),
                       ],
                     ),
                     const SizedBox(height: 14),
@@ -558,7 +582,6 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
     final propertyName = payment['propertyName'] ?? '';
     final unitId = payment['unitIdentifier'] ?? '';
     final subtitle = [propertyName, if (unitId.isNotEmpty) unitId].where((s) => s.isNotEmpty).join(' - ');
-    final status = payment['status'] ?? '';
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),

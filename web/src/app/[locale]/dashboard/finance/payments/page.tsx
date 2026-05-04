@@ -4,21 +4,16 @@ import { useState, useEffect } from "react";
 import { useTranslations } from "next-intl";
 import { useSession } from "next-auth/react";
 import {
-    CreditCard,
     Calendar,
-    DollarSign,
-    AlertCircle,
-    CheckCircle,
-    XCircle,
-    ArrowRightCircle,
+    CreditCard,
     Search,
     Building2,
     X,
     Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { formatCurrency, formatCurrencyCompact, formatNumber } from "@/lib/format";
-import { canViewPayments, canManagePayments } from "@/lib/rbac";
+import { formatCurrencyCompact, formatNumber } from "@/lib/format";
+import { canManagePayments } from "@/lib/rbac";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Pagination } from "@/components/ui/Pagination";
 import { MarkChequeFailedDialog, type PenaltySummary } from "@/components/payments/MarkChequeFailedDialog";
@@ -75,7 +70,6 @@ export default function PaymentsPage() {
     const t = useTranslations("Payments");
     const { data: session } = useSession();
     const userRole = session?.user?.role as UserRole | undefined;
-    const canView = userRole ? canViewPayments(userRole) : false;
     const canManage = userRole ? canManagePayments(userRole) : false;
 
     const [payments, setPayments] = useState<Payment[]>([]);
@@ -309,96 +303,87 @@ export default function PaymentsPage() {
         };
         return map[status] || status;
     };
+    const getMethodLabel = (payment: Payment): string => (payment.chequeNumber ? "Cheque" : "—");
 
-    const summaryCards = summary
+    const summaryCells = summary
         ? [
-              { label: t("totalDue"), value: summary.totalAmount ?? 0, color: "text-info", bg: "bg-info/10", icon: DollarSign },
-              { label: t("collected"), value: summary.collectedAmount ?? 0, color: "text-warning", bg: "bg-warning/10", icon: ArrowRightCircle },
-              { label: t("cleared"), value: summary.clearedAmount ?? 0, color: "text-success", bg: "bg-success/10", icon: CheckCircle },
-              { label: t("overdue"), value: summary.overdueAmount ?? 0, color: "text-error", bg: "bg-error/10", icon: AlertCircle },
+              { label: t("cleared"),  value: summary.clearedAmount ?? 0,    sub: `${summary.clearedCount}/${summary.totalPayments} ${t("paymentsCleared")}`, tone: "pos" as const },
+              { label: t("collected"), value: summary.collectedAmount ?? 0, sub: `${summary.collectedCount} payments`, tone: "neutral" as const },
+              { label: t("overdue"),  value: summary.overdueAmount ?? 0,    sub: `${summary.overdueCount} overdue`,    tone: "neg" as const },
+              { label: t("totalDue"), value: summary.totalAmount ?? 0,      sub: `${summary.totalPayments} total`,     tone: "neutral" as const },
           ]
         : [];
 
     return (
-        <div>
+        <div className="p-7 flex flex-col gap-[18px] bg-background min-h-full">
             {/* Header */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10">
+            <div className="flex items-end justify-between">
                 <div>
-                    <h1 className="text-xl font-bold text-foreground tracking-tight mb-1 flex items-center gap-2">
-                        <CreditCard size={20} className="text-primary" />
+                    <p className="text-[12.5px] text-[--ink-500]">Finance</p>
+                    <h1 className="font-serif text-[26px] font-semibold tracking-tight m-0">
                         {t("title")}
                     </h1>
-                    <p className="text-xs text-muted font-medium">{t("description")}</p>
                 </div>
             </div>
 
-            {/* Summary Cards Skeleton */}
+            {/* Summary strip skeleton */}
             {loading && !summary && (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                <div className="bg-surface border border-border rounded-[--radius-lg] px-6 py-5 grid grid-cols-2 md:grid-cols-4 animate-pulse">
                     {[1, 2, 3, 4].map((i) => (
-                        <div key={i} className="bg-surface border border-border rounded-xl p-5 animate-pulse">
-                            <div className="flex items-center gap-3 mb-3">
-                                <div className="w-9 h-9 rounded-xl bg-input" />
-                                <div className="h-3 w-16 bg-input rounded" />
-                            </div>
-                            <div className="h-5 w-24 bg-input rounded" />
+                        <div key={i} className="px-6 first:pl-0 border-r last:border-r-0 border-border">
+                            <div className="h-3 w-20 bg-[--sand-100] rounded mb-3" />
+                            <div className="h-7 w-32 bg-[--sand-100] rounded mb-2" />
+                            <div className="h-3 w-16 bg-[--sand-100] rounded" />
                         </div>
                     ))}
                 </div>
             )}
 
-            {/* Summary Cards */}
+            {/* Summary strip */}
             {summary && (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-                    {summaryCards.map((card) => {
-                        const Icon = card.icon;
+                <div className="bg-surface border border-border rounded-[--radius-lg] px-6 py-5 grid grid-cols-2 md:grid-cols-4">
+                    {summaryCells.map((cell, i) => {
+                        const tone =
+                            cell.tone === "pos" ? "text-[--green-600]" :
+                            cell.tone === "neg" ? "text-[--red-600]"   : "text-[--ink-500]";
                         return (
                             <div
-                                key={card.label}
-                                className="bg-surface rounded-xl p-5 border border-border hover:shadow-md transition-all duration-200"
-                            >
-                                <div className="flex items-center gap-3 mb-3">
-                                    <div
-                                        className={cn(
-                                            "w-9 h-9 rounded-xl flex items-center justify-center",
-                                            card.bg
-                                        )}
-                                    >
-                                        <Icon size={16} className={card.color} />
-                                    </div>
-                                    <span className="text-xs font-semibold text-muted uppercase tracking-[0.15em]">
-                                        {card.label}
-                                    </span>
-                                </div>
-                                <p className={cn("text-lg font-bold tabular-nums", card.color)}>
-                                    {formatCurrencyCompact(card.value)}
-                                </p>
-                                {card.label === t("cleared") && summary.totalPayments > 0 && (
-                                    <p className="text-[10px] text-muted mt-1 font-medium">
-                                        {summary.clearedCount}/{summary.totalPayments} {t("paymentsCleared")}
-                                    </p>
+                                key={cell.label}
+                                className={cn(
+                                    "px-6 first:pl-0",
+                                    i < summaryCells.length - 1 ? "border-r border-border" : "",
                                 )}
+                            >
+                                <div className="text-[11.5px] text-[--ink-500] uppercase tracking-[0.06em] font-semibold">
+                                    {cell.label}
+                                </div>
+                                <div className="font-serif font-mono text-[22px] font-semibold text-foreground mt-1 tracking-tight">
+                                    {formatCurrencyCompact(cell.value)}
+                                </div>
+                                <div className={cn("text-[11.5px] font-medium mt-0.5", tone)}>
+                                    {cell.sub}
+                                </div>
                             </div>
                         );
                     })}
                 </div>
             )}
 
-            {/* Filters */}
-            <div className="flex flex-col sm:flex-row gap-3 mb-6">
+            {/* Filter chips + search */}
+            <div className="flex items-center gap-2 flex-wrap">
                 <div className="relative w-full sm:max-w-xs">
-                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[--ink-500]" />
                     <input
                         type="text"
                         value={searchRenterName}
                         onChange={(ev) => setSearchRenterName(ev.target.value)}
                         placeholder="Search renter name"
-                        className="w-full bg-surface border border-border pl-9 pr-3 py-2.5 rounded-lg text-xs font-medium focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
+                        className="w-full bg-surface border border-border pl-9 pr-3 h-9 rounded-[--radius] text-[13px] focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all"
                     />
                 </div>
                 <div className="relative">
                     <select
-                        className="appearance-none bg-surface border border-border px-4 py-2.5 rounded-lg text-xs font-bold pr-8 cursor-pointer focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
+                        className="appearance-none bg-surface border border-border pl-3 pr-7 h-9 rounded-full text-[12.5px] font-medium cursor-pointer focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all"
                         value={selectedProperty}
                         onChange={(ev) => setSelectedProperty(ev.target.value)}
                     >
@@ -412,7 +397,7 @@ export default function PaymentsPage() {
                 </div>
                 <div className="relative">
                     <select
-                        className="appearance-none bg-surface border border-border px-4 py-2.5 rounded-lg text-xs font-bold pr-8 cursor-pointer focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
+                        className="appearance-none bg-surface border border-border pl-3 pr-7 h-9 rounded-full text-[12.5px] font-medium cursor-pointer focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all"
                         value={selectedStatus}
                         onChange={(ev) => setSelectedStatus(ev.target.value)}
                     >
@@ -424,6 +409,11 @@ export default function PaymentsPage() {
                         ))}
                     </select>
                 </div>
+                {summary && (
+                    <span className="text-[12px] text-[--ink-500] ml-auto">
+                        Showing <strong className="text-foreground">{payments.length}</strong> of {totalItems} payments
+                    </span>
+                )}
             </div>
 
             {/* Table Skeleton */}
@@ -446,11 +436,11 @@ export default function PaymentsPage() {
             )}
 
             {/* Payments Table */}
-            {!loading && payments.length > 0 && <div className="bg-surface border border-border rounded-xl overflow-hidden">
+            {!loading && payments.length > 0 && <div className="bg-surface border border-border rounded-[--radius-lg] overflow-hidden">
                 <div className="overflow-x-auto">
                     <table className="w-full">
                         <thead>
-                            <tr className="bg-input/70">
+                            <tr className="bg-[--sand-100]">
                                 <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                     #
                                 </th>
@@ -470,6 +460,9 @@ export default function PaymentsPage() {
                                     {t("chequeNumber")}
                                 </th>
                                 <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
+                                    Method
+                                </th>
+                                <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                     {t("status")}
                                 </th>
                                 {canManage && (
@@ -483,7 +476,7 @@ export default function PaymentsPage() {
                             {payments.map((payment) => (
                                 <tr
                                     key={payment.id}
-                                    className="border-b border-border hover:bg-input/30 transition-colors"
+                                    className="border-b border-border hover:bg-[--sand-50] transition-colors"
                                 >
                                     <td className="px-5 py-3 text-xs font-bold text-foreground">
                                         {payment.installmentNumber}
@@ -526,6 +519,9 @@ export default function PaymentsPage() {
                                     </td>
                                     <td className="px-5 py-3 text-xs text-foreground font-medium">
                                         {payment.chequeNumber || "--"}
+                                    </td>
+                                    <td className="px-5 py-3 text-xs text-[--ink-600] font-medium">
+                                        {getMethodLabel(payment)}
                                     </td>
                                     <td className="px-5 py-3">
                                         <span

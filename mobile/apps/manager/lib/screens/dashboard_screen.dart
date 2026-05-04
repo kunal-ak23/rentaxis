@@ -52,7 +52,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             children: [
               AnimatedListItem(
                 index: 0,
-                child: _buildGreeting(),
+                child: _buildGreeting(data),
               ),
               const SizedBox(height: 24),
               AnimatedListItem(
@@ -74,6 +74,17 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 index: 4,
                 child: _buildRecentActivity(data),
               ),
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerRight,
+                child: FloatingActionButton.small(
+                  heroTag: 'scan-fab',
+                  onPressed: () => context.push('/scan'),
+                  backgroundColor: AppColors.accent,
+                  foregroundColor: AppColors.navyDark,
+                  child: const Icon(Icons.qr_code_scanner_outlined),
+                ),
+              ),
             ],
           ),
         ),
@@ -81,30 +92,50 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     );
   }
 
-  Widget _buildGreeting() {
-    final hour = DateTime.now().hour;
-    final greeting = hour < 12 ? 'Good Morning' : (hour < 17 ? 'Good Afternoon' : 'Good Evening');
+  Widget _buildGreeting(Map<String, dynamic> data) {
+    final renewals = (data['expiringLeases'] ?? 0) as num;
+    final overdueFlag = ((data['overdueAmount'] ?? 0) as num) > 0 ? 1 : 0;
+    final actionCount = renewals + overdueFlag;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          greeting,
-          style: GoogleFonts.cinzel(
-            fontSize: 22,
-            fontWeight: FontWeight.w700,
-            color: AppColors.navyDark,
-          ),
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF0B1F3A), Color(0xFF1F3D67)],
         ),
-        const SizedBox(height: 4),
-        Text(
-          'Here\'s your portfolio overview',
-          style: GoogleFonts.josefinSans(
-            fontSize: 14,
-            color: AppColors.textSecondary,
+      ),
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('TODAY',
+              style: GoogleFonts.inter(
+                fontSize: 11,
+                color: Colors.white60,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.8,
+              )),
+          const SizedBox(height: 6),
+          Text(
+            '$actionCount actions need you',
+            style: GoogleFonts.sourceSerif4(
+              fontSize: 26,
+              fontWeight: FontWeight.w600,
+              color: Colors.white,
+            ),
           ),
-        ),
-      ],
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              _MiniStat(n: '$renewals', l: 'Renewals to confirm', tone: AppColors.gold400),
+              const SizedBox(width: 8),
+              _MiniStat(n: '$overdueFlag', l: 'Overdue follow-up', tone: const Color(0xFFE89289)),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
@@ -201,11 +232,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
   Widget _buildAlertsSection(Map<String, dynamic> data) {
     final expiringLeases = data['expiringLeases'] ?? data['expiringLeaseCount'] ?? 0;
-    final overduePayments = data['overduePaymentCount'] ?? 0;
     final overdueTotal = (data['overdueAmount'] ?? 0).toDouble();
-    final openTickets = data['openTicketCount'] ?? 0;
 
-    if (expiringLeases == 0 && overduePayments == 0 && openTickets == 0) {
+    if (expiringLeases == 0 && overdueTotal == 0) {
       return const SizedBox.shrink();
     }
 
@@ -230,24 +259,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             subtitle: 'Within the next 30 days',
             onTap: () => context.go('/leases'),
           ),
-        if (overduePayments > 0) ...[
+        if (overdueTotal > 0) ...[
           const SizedBox(height: 8),
           _AlertCard(
             icon: Icons.money_off_rounded,
             color: AppColors.danger,
-            title: '$overduePayments overdue payment${overduePayments > 1 ? 's' : ''}',
-            subtitle: 'Total: ${Formatters.currency(overdueTotal)}',
+            title: '${Formatters.currency(overdueTotal)} overdue',
+            subtitle: 'Across leases needing attention',
             onTap: () => context.go('/payments'),
-          ),
-        ],
-        if (openTickets > 0) ...[
-          const SizedBox(height: 8),
-          _AlertCard(
-            icon: Icons.support_agent_outlined,
-            color: AppColors.info,
-            title: '$openTickets open ticket${openTickets > 1 ? 's' : ''}',
-            subtitle: 'Needs attention',
-            onTap: () => context.push('/tickets'),
           ),
         ],
       ],
@@ -255,53 +274,50 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   }
 
   Widget _buildQuickActions() {
+    final actions = [
+      (icon: Icons.qr_code_scanner_outlined, label: 'Scan cheque', primary: true, route: '/scan'),
+      (icon: Icons.note_add_outlined, label: 'New lease', primary: false, route: '/leases'),
+      (icon: Icons.payments_outlined, label: 'Record pay', primary: false, route: '/payments'),
+      (icon: Icons.build_outlined, label: 'Maintenance', primary: false, route: '/tickets'),
+    ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Quick Actions',
-            style: Theme.of(context).textTheme.headlineSmall),
+        Text('Quick Actions', style: Theme.of(context).textTheme.headlineSmall),
         const SizedBox(height: 14),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              _QuickActionChip(
-                icon: Icons.receipt_long_outlined,
-                label: 'Collect Cheque',
-                onTap: () => context.go('/payments'),
+        GridView.count(
+          crossAxisCount: 4,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          crossAxisSpacing: 8,
+          mainAxisSpacing: 8,
+          childAspectRatio: 0.95,
+          children: actions.map((a) => GestureDetector(
+            onTap: () => context.push(a.route),
+            child: Container(
+              decoration: BoxDecoration(
+                color: a.primary ? AppColors.accent : AppColors.surface,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: a.primary ? AppColors.accent : AppColors.border),
               ),
-              const SizedBox(width: 10),
-              _QuickActionChip(
-                icon: Icons.note_add_outlined,
-                label: 'Create Lease',
-                onTap: () => context.go('/leases'),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(a.icon, size: 18, color: a.primary ? AppColors.navyDark : AppColors.textPrimary),
+                  const SizedBox(height: 6),
+                  Text(
+                    a.label,
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: a.primary ? AppColors.navyDark : AppColors.textPrimary,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 10),
-              _QuickActionChip(
-                icon: Icons.person_add_outlined,
-                label: 'Add Renter',
-                onTap: () => context.push('/renters'),
-              ),
-              const SizedBox(width: 10),
-              _QuickActionChip(
-                icon: Icons.confirmation_number_outlined,
-                label: 'New Ticket',
-                onTap: () => context.push('/tickets/create'),
-              ),
-              const SizedBox(width: 10),
-              _QuickActionChip(
-                icon: Icons.badge_outlined,
-                label: 'Staff',
-                onTap: () => context.push('/staff'),
-              ),
-              const SizedBox(width: 10),
-              _QuickActionChip(
-                icon: Icons.assessment_outlined,
-                label: 'Reports',
-                onTap: () => context.push('/finance-reports'),
-              ),
-            ],
-          ),
+            ),
+          )).toList(),
         ),
       ],
     );
@@ -363,6 +379,39 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       'RENTER_CREATED' => AppColors.primary,
       _ => AppColors.textMuted,
     };
+  }
+}
+
+class _MiniStat extends StatelessWidget {
+  final String n;
+  final String l;
+  final Color tone;
+
+  const _MiniStat({required this.n, required this.l, required this.tone});
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            n,
+            style: GoogleFonts.sourceSerif4(
+              fontSize: 24,
+              fontWeight: FontWeight.w600,
+              color: tone,
+              height: 1,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            l,
+            style: GoogleFonts.inter(fontSize: 10.5, color: Colors.white70, height: 1.3),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -561,53 +610,6 @@ class _AlertCard extends StatelessWidget {
               ),
             ),
             Icon(Icons.chevron_right, color: color.withValues(alpha: 0.5)),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// --- Quick Action Chip ---
-
-class _QuickActionChip extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  const _QuickActionChip({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(24),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: BoxDecoration(
-          color: AppColors.primary.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(
-            color: AppColors.primary.withValues(alpha: 0.2),
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 18, color: AppColors.primary),
-            const SizedBox(width: 8),
-            Text(
-              label,
-              style: GoogleFonts.josefinSans(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: AppColors.primary,
-              ),
-            ),
           ],
         ),
       ),

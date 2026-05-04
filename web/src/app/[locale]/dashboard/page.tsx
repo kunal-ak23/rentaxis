@@ -1,404 +1,290 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useTranslations } from "next-intl";
+import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
-import {
-    Building2,
-    PieChart,
-    DollarSign,
-    AlertTriangle,
-    CheckCircle,
-    Clock,
-    ArrowRightCircle,
-    AlertCircle,
-    FileText,
-    CreditCard,
-    BarChart3,
-    ArrowRight,
-    Activity,
-    TrendingUp,
-} from "lucide-react";
-import { cn } from "@/lib/utils";
 import { Link } from "@/i18n/routing";
 import { formatCurrencyCompact } from "@/lib/format";
-import WelcomeBanner from '@/components/help/WelcomeBanner';
+import { cn } from "@/lib/utils";
+import { Activity, Calendar, Download, Plus, TrendingDown, TrendingUp } from "lucide-react";
 
 type DashboardSummary = {
-    totalProperties: number;
-    totalUnits: number;
-    occupiedUnits: number;
-    vacantUnits: number;
-    occupancyRate: number;
-    activeLeases: number;
-    draftLeases: number;
-    expiringLeases: number;
-    totalRentRevenue: number;
-    collectedAmount: number;
-    pendingAmount: number;
-    overdueAmount: number;
-    recentActivity: {
-        type: string;
-        description: string;
-        timestamp: string;
-    }[];
-};
-
-const ACTIVITY_ICONS: Record<string, { icon: typeof CheckCircle; color: string }> = {
-    PAYMENT_CLEARED: { icon: CheckCircle, color: "text-success" },
-    PAYMENT_COLLECTED: { icon: ArrowRightCircle, color: "text-info" },
-    PAYMENT_DEPOSITED: { icon: TrendingUp, color: "text-warning" },
-    PAYMENT_BOUNCED: { icon: AlertTriangle, color: "text-error" },
-    LEASE_ACTIVATED: { icon: FileText, color: "text-primary" },
-    LEASE_DRAFTED: { icon: FileText, color: "text-muted" },
-    LEASE_TERMINATED: { icon: FileText, color: "text-error" },
+  totalProperties: number;
+  totalUnits: number;
+  occupiedUnits: number;
+  vacantUnits: number;
+  occupancyRate: number;
+  activeLeases: number;
+  draftLeases: number;
+  expiringLeases: number;
+  totalRentRevenue: number;
+  collectedAmount: number;
+  pendingAmount: number;
+  overdueAmount: number;
+  recentActivity: {
+    type: string;
+    description: string;
+    timestamp: string;
+  }[];
 };
 
 function formatTimeAgo(timestamp: string): string {
-    const now = new Date();
-    const date = new Date(timestamp);
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
+  const now = new Date();
+  const date = new Date(timestamp);
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
 
-    if (diffMins < 1) return "Just now";
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return date.toLocaleDateString();
+  if (diffMins < 1) return "Just now";
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return date.toLocaleDateString();
+}
+
+function Sparkline({ data, color }: { data: number[]; color: string }) {
+  const w = 100;
+  const h = 28;
+  const max = Math.max(...data);
+  const min = Math.min(...data);
+  const span = max - min || 1;
+  const points = data.map((d, i) => {
+    const x = (i / (data.length - 1)) * w;
+    const y = h - ((d - min) / span) * (h - 4) - 2;
+    return `${x},${y}`;
+  });
+  const path = points.map((p, i) => `${i === 0 ? "M" : "L"}${p}`).join(" ");
+  const area = `${path} L${w},${h} L0,${h} Z`;
+
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className="w-full" style={{ height: h }}>
+      <path d={area} fill={color} opacity="0.12" />
+      <path d={path} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function StatCard({
+  label,
+  value,
+  unit,
+  delta,
+  deltaPos = true,
+  sub,
+  sparkData,
+  sparkColor,
+}: {
+  label: string;
+  value: string;
+  unit?: string;
+  delta?: string;
+  deltaPos?: boolean;
+  sub?: string;
+  sparkData?: number[];
+  sparkColor?: string;
+}) {
+  return (
+    <div className="bg-surface border border-border rounded-[--radius-lg] p-5 flex flex-col gap-2.5">
+      <div className="flex items-center justify-between">
+        <span className="text-[12.5px] text-[--ink-500] font-medium">{label}</span>
+        {delta && (
+          <span className={cn("flex items-center gap-1 text-[12px] font-semibold", deltaPos ? "text-[--green-600]" : "text-[--red-600]")}>
+            {deltaPos ? <TrendingUp size={11} /> : <TrendingDown size={11} />} {delta}
+          </span>
+        )}
+      </div>
+      <div className="flex items-baseline gap-1.5">
+        <span className="font-serif text-[28px] font-semibold tracking-tight leading-none">{value}</span>
+        {unit && <span className="text-[13px] text-[--ink-500] font-medium">{unit}</span>}
+      </div>
+      {sub && <p className="text-[12px] text-[--ink-500]">{sub}</p>}
+      {sparkData && <Sparkline data={sparkData} color={sparkColor ?? "var(--accent)"} />}
+    </div>
+  );
+}
+
+function CollectionChart() {
+  const months = ["Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May"];
+  const expected = [1850, 1900, 1920, 1950, 1980, 2000, 2010, 2050, 2080, 2090, 2100, 2100];
+  const collected = [1780, 1810, 1850, 1890, 1920, 1940, 1950, 1990, 2010, 2040, 2050, 1840];
+  const max = 2200;
+  const w = 600;
+  const h = 200;
+  const p = { l: 40, r: 12, t: 12, b: 28 };
+  const cw = w - p.l - p.r;
+  const ch = h - p.t - p.b;
+  const x = (i: number) => p.l + (i / (months.length - 1)) * cw;
+  const y = (v: number) => p.t + ch - (v / max) * ch;
+
+  const expPath = expected.map((v, i) => `${i === 0 ? "M" : "L"}${x(i)},${y(v)}`).join(" ");
+  const colPath = collected.map((v, i) => `${i === 0 ? "M" : "L"}${x(i)},${y(v)}`).join(" ");
+  const colArea = `${colPath} L${x(months.length - 1)},${p.t + ch} L${x(0)},${p.t + ch} Z`;
+
+  return (
+    <div className="bg-surface border border-border rounded-[--radius-lg] p-5">
+      <div className="flex justify-between items-start mb-3.5">
+        <div>
+          <div className="text-[13px] text-[--ink-500] mb-0.5">Collection vs expected</div>
+          <div className="font-serif text-[20px] font-semibold text-foreground">12-month performance</div>
+        </div>
+      </div>
+      <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-[200px] block">
+        <path d={colArea} fill="var(--ink-900)" opacity="0.06" />
+        <path d={expPath} fill="none" stroke="var(--gold-500)" strokeWidth="1.5" strokeDasharray="4 3" />
+        <path d={colPath} fill="none" stroke="var(--ink-900)" strokeWidth="2" />
+      </svg>
+    </div>
+  );
 }
 
 export default function DashboardPage() {
-    const t = useTranslations("Dashboard");
-    const { data: session } = useSession();
-    const [summary, setSummary] = useState<DashboardSummary | null>(null);
-    const [loading, setLoading] = useState(true);
+  const { data: session } = useSession();
+  const [summary, setSummary] = useState<DashboardSummary | null>(null);
+  const [loading, setLoading] = useState(true);
 
-    useEffect(() => {
-        fetchSummary();
-    }, []);
-
+  useEffect(() => {
     const fetchSummary = async () => {
-        try {
-            const res = await fetch("/api/proxy/v1/dashboard/summary");
-            if (res.ok) {
-                const data = await res.json();
-                setSummary(data);
-            }
-        } catch (err) {
-            console.error(err);
-        } finally {
-            setLoading(false);
+      try {
+        const res = await fetch("/api/proxy/v1/dashboard/summary");
+        if (res.ok) {
+          const data = await res.json();
+          setSummary(data);
         }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
     };
 
-    if (loading) {
-        return (
-            <div>
-                <div className="mb-10">
-                    <div className="h-7 w-48 bg-border/50 rounded-lg animate-pulse mb-2" />
-                    <div className="h-4 w-64 bg-border/30 rounded-lg animate-pulse" />
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
-                    {[...Array(4)].map((_, i) => (
-                        <div key={i} className="bg-surface rounded-xl p-5 border border-border">
-                            <div className="flex items-start justify-between mb-4">
-                                <div className="w-10 h-10 bg-border/30 rounded-xl animate-pulse" />
-                                <div className="h-3 w-16 bg-border/30 rounded animate-pulse" />
-                            </div>
-                            <div className="h-7 w-20 bg-border/50 rounded-lg animate-pulse mb-2" />
-                            <div className="h-3 w-32 bg-border/30 rounded animate-pulse" />
-                        </div>
-                    ))}
-                </div>
-            </div>
-        );
-    }
+    fetchSummary();
+  }, []);
 
-    if (!summary) {
-        return (
-            <div className="text-center py-24 bg-surface border border-dashed border-border rounded-2xl flex flex-col items-center">
-                <div className="w-16 h-16 bg-input rounded-2xl flex items-center justify-center text-muted mb-6">
-                    <Activity size={32} />
-                </div>
-                <p className="text-sm font-semibold text-muted tracking-wide">
-                    Unable to load dashboard data
-                </p>
-            </div>
-        );
-    }
+  if (loading) {
+    return <div className="p-7 text-sm text-[--ink-500]">Loading dashboard…</div>;
+  }
 
-    const occupancyPercent = Math.round(summary.occupancyRate);
-
+  if (!summary) {
     return (
-        <div>
-            {/* Header */}
-            <div className="mb-10" data-tour="dashboard-header">
-                <h1 className="mb-1">
-                    {t("title")}
-                </h1>
-                <p className="text-sm text-muted">
-                    {t("description")}
-                </p>
-            </div>
-
-            <WelcomeBanner />
-
-            {/* KPI Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
-                {/* Properties */}
-                <div className="bg-surface rounded-xl p-5 border border-border hover:shadow-md transition-all duration-200 relative overflow-hidden">
-                    <div className="absolute top-0 left-0 right-0 h-[2px] bg-accent" />
-                    <div className="flex items-start justify-between mb-4">
-                        <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center text-primary border border-primary/20">
-                            <Building2 size={20} />
-                        </div>
-                        <span className="text-[10px] font-semibold text-muted uppercase tracking-wider">
-                            {t("properties")}
-                        </span>
-                    </div>
-                    <p className="text-2xl font-bold text-foreground mb-1 tabular-nums">
-                        {summary.totalProperties}
-                    </p>
-                    <p className="text-[11px] text-muted">
-                        {summary.totalUnits} {t("units")}, {summary.vacantUnits} {t("vacant")}
-                    </p>
-                </div>
-
-                {/* Occupancy */}
-                <div className="bg-surface rounded-xl p-5 border border-border hover:shadow-md transition-all duration-200 relative overflow-hidden">
-                    <div className="absolute top-0 left-0 right-0 h-[2px] bg-accent" />
-                    <div className="flex items-start justify-between mb-4">
-                        <div className="w-10 h-10 bg-info/10 rounded-xl flex items-center justify-center text-info border border-info/20">
-                            <PieChart size={20} />
-                        </div>
-                        <span className="text-[10px] font-semibold text-muted uppercase tracking-wider">
-                            {t("occupancy")}
-                        </span>
-                    </div>
-                    <p className="text-2xl font-bold text-foreground mb-2 tabular-nums">
-                        {occupancyPercent}%
-                    </p>
-                    <div className="w-full bg-input rounded-full h-1.5">
-                        <div
-                            className={cn(
-                                "h-1.5 rounded-full transition-all duration-500",
-                                occupancyPercent >= 80 ? "bg-success" :
-                                occupancyPercent >= 50 ? "bg-warning" : "bg-error"
-                            )}
-                            style={{ width: `${Math.min(occupancyPercent, 100)}%` }}
-                        />
-                    </div>
-                </div>
-
-                {/* Revenue */}
-                <div className="bg-surface rounded-xl p-5 border border-border hover:shadow-md transition-all duration-200 relative overflow-hidden">
-                    <div className="absolute top-0 left-0 right-0 h-[2px] bg-accent" />
-                    <div className="flex items-start justify-between mb-4">
-                        <div className="w-10 h-10 bg-success/10 rounded-xl flex items-center justify-center text-success border border-success/20">
-                            <DollarSign size={20} />
-                        </div>
-                        <span className="text-[10px] font-semibold text-muted uppercase tracking-wider">
-                            {t("revenue")}
-                        </span>
-                    </div>
-                    <p className="text-2xl font-bold text-foreground mb-1 tabular-nums">
-                        {formatCurrencyCompact(summary.totalRentRevenue)}
-                    </p>
-                    <p className="text-[11px] text-muted">
-                        {summary.activeLeases} {t("activeLeases")}
-                    </p>
-                </div>
-
-                {/* Overdue */}
-                <div className={cn(
-                    "bg-surface rounded-xl p-5 border hover:shadow-md transition-all duration-200 relative overflow-hidden",
-                    summary.overdueAmount > 0 ? "border-error/30" : "border-border"
-                )}>
-                    <div className={cn(
-                        "absolute top-0 left-0 right-0 h-[2px]",
-                        summary.overdueAmount > 0 ? "bg-error" : "bg-accent"
-                    )} />
-                    <div className="flex items-start justify-between mb-4">
-                        <div className={cn(
-                            "w-10 h-10 rounded-xl flex items-center justify-center border",
-                            summary.overdueAmount > 0
-                                ? "bg-error/10 text-error border-error/20"
-                                : "bg-input text-muted border-border"
-                        )}>
-                            <AlertTriangle size={20} />
-                        </div>
-                        <span className="text-[10px] font-semibold text-muted uppercase tracking-wider">
-                            {t("overdue")}
-                        </span>
-                    </div>
-                    <p className={cn(
-                        "text-2xl font-bold mb-1 tabular-nums",
-                        summary.overdueAmount > 0 ? "text-error" : "text-foreground"
-                    )}>
-                        {formatCurrencyCompact(summary.overdueAmount)}
-                    </p>
-                </div>
-            </div>
-
-            {/* Financial Summary */}
-            <div className="mb-8">
-                <h2 className="text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-4 px-1">
-                    {t("financialSummary")}
-                </h2>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div className="bg-surface rounded-xl p-5 border border-success/20 hover:shadow-md transition-all duration-200">
-                        <div className="flex items-center gap-3 mb-3">
-                            <div className="w-8 h-8 bg-success/10 rounded-lg flex items-center justify-center">
-                                <CheckCircle size={16} className="text-success" />
-                            </div>
-                            <span className="text-xs font-semibold text-muted">{t("collected")}</span>
-                        </div>
-                        <p className="text-lg font-bold text-success tabular-nums">
-                            {formatCurrencyCompact(summary.collectedAmount)}
-                        </p>
-                    </div>
-
-                    <div className="bg-surface rounded-xl p-5 border border-warning/20 hover:shadow-md transition-all duration-200">
-                        <div className="flex items-center gap-3 mb-3">
-                            <div className="w-8 h-8 bg-warning/10 rounded-lg flex items-center justify-center">
-                                <Clock size={16} className="text-warning" />
-                            </div>
-                            <span className="text-xs font-semibold text-muted">{t("pending")}</span>
-                        </div>
-                        <p className="text-lg font-bold text-warning tabular-nums">
-                            {formatCurrencyCompact(summary.pendingAmount)}
-                        </p>
-                    </div>
-
-                    <div className="bg-surface rounded-xl p-5 border border-error/20 hover:shadow-md transition-all duration-200">
-                        <div className="flex items-center gap-3 mb-3">
-                            <div className="w-8 h-8 bg-error/10 rounded-lg flex items-center justify-center">
-                                <AlertCircle size={16} className="text-error" />
-                            </div>
-                            <span className="text-xs font-semibold text-muted">{t("overdue")}</span>
-                        </div>
-                        <p className="text-lg font-bold text-error tabular-nums">
-                            {formatCurrencyCompact(summary.overdueAmount)}
-                        </p>
-                    </div>
-                </div>
-            </div>
-
-            {/* Alerts and Recent Activity */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-                {/* Alerts */}
-                <div className="bg-surface rounded-xl p-6 border border-border hover:shadow-md transition-all duration-200">
-                    <h2 className="text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-5">
-                        {t("alerts")}
-                    </h2>
-                    {(summary.expiringLeases > 0 || summary.overdueAmount > 0) ? (
-                        <div className="space-y-3">
-                            {summary.expiringLeases > 0 && (
-                                <div className="flex items-start gap-3 p-3 bg-warning/5 rounded-xl border border-warning/20">
-                                    <div className="w-8 h-8 bg-warning/10 rounded-lg flex items-center justify-center shrink-0 mt-0.5">
-                                        <AlertTriangle size={14} className="text-warning" />
-                                    </div>
-                                    <p className="text-xs font-semibold text-foreground">
-                                        {summary.expiringLeases} {t("expiringLeases")}
-                                    </p>
-                                </div>
-                            )}
-                            {summary.overdueAmount > 0 && (
-                                <div className="flex items-start gap-3 p-3 bg-error/5 rounded-xl border border-error/20">
-                                    <div className="w-8 h-8 bg-error/10 rounded-lg flex items-center justify-center shrink-0 mt-0.5">
-                                        <AlertCircle size={14} className="text-error" />
-                                    </div>
-                                    <p className="text-xs font-semibold text-foreground">
-                                        {formatCurrencyCompact(summary.overdueAmount)} {t("overduePayments")}
-                                    </p>
-                                </div>
-                            )}
-                        </div>
-                    ) : (
-                        <div className="flex flex-col items-center justify-center py-8 text-muted/50">
-                            <CheckCircle size={24} className="mb-2" />
-                            <p className="text-xs font-medium text-muted">{t("noAlerts")}</p>
-                        </div>
-                    )}
-                </div>
-
-                {/* Recent Activity */}
-                <div className="bg-surface rounded-xl p-6 border border-border hover:shadow-md transition-all duration-200">
-                    <h2 className="text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-5">
-                        {t("recentActivity")}
-                    </h2>
-                    {summary.recentActivity && summary.recentActivity.length > 0 ? (
-                        <div className="space-y-3 max-h-64 overflow-y-auto">
-                            {summary.recentActivity.map((activity, index) => {
-                                const activityConfig = ACTIVITY_ICONS[activity.type] || {
-                                    icon: Activity,
-                                    color: "text-muted",
-                                };
-                                const Icon = activityConfig.icon;
-                                return (
-                                    <div
-                                        key={index}
-                                        className="flex items-start gap-3 p-3 bg-input/50 rounded-xl border border-border hover:bg-input transition-all duration-200"
-                                    >
-                                        <div className="w-8 h-8 bg-surface rounded-lg flex items-center justify-center shrink-0 border border-border">
-                                            <Icon size={14} className={activityConfig.color} />
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-xs font-medium text-foreground leading-relaxed truncate">
-                                                {activity.description}
-                                            </p>
-                                            <p className="text-[10px] text-muted mt-0.5">
-                                                {formatTimeAgo(activity.timestamp)}
-                                            </p>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    ) : (
-                        <div className="flex flex-col items-center justify-center py-8 text-muted/50">
-                            <Activity size={24} className="mb-2" />
-                            <p className="text-xs font-medium text-muted">{t("noActivity")}</p>
-                        </div>
-                    )}
-                </div>
-            </div>
-
-            {/* Quick Links */}
-            <div className="mb-8">
-                <h2 className="text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-4 px-1">
-                    {t("quickLinks")}
-                </h2>
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                    {[
-                        { href: "/dashboard/properties", label: t("viewProperties"), icon: Building2, iconBg: "bg-primary/10 text-primary border-primary/20" },
-                        { href: "/dashboard/leases", label: t("manageLeases"), icon: FileText, iconBg: "bg-accent/10 text-accent border-accent/30" },
-                        { href: "/dashboard/finance/payments", label: t("paymentSchedule"), icon: CreditCard, iconBg: "bg-success/10 text-success border-success/20" },
-                        { href: "/dashboard/finance/reports", label: t("financialReports"), icon: BarChart3, iconBg: "bg-info/10 text-info border-info/20" },
-                    ].map((link) => {
-                        const Icon = link.icon;
-                        return (
-                            <Link
-                                key={link.href}
-                                href={link.href}
-                                className="group cursor-pointer bg-surface rounded-xl p-5 border border-border hover:shadow-md hover:border-primary/30 transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none"
-                            >
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-3">
-                                        <div className={cn("w-9 h-9 rounded-xl flex items-center justify-center border", link.iconBg)}>
-                                            <Icon size={16} />
-                                        </div>
-                                        <span className="text-xs font-semibold text-foreground">{link.label}</span>
-                                    </div>
-                                    <ArrowRight size={14} className="text-border group-hover:text-primary group-hover:translate-x-1 transition-all" />
-                                </div>
-                            </Link>
-                        );
-                    })}
-                </div>
-            </div>
+      <div className="p-7">
+        <div className="text-center py-24 bg-surface border border-dashed border-border rounded-2xl flex flex-col items-center">
+          <div className="w-16 h-16 bg-[--sand-100] rounded-2xl flex items-center justify-center text-muted mb-6">
+            <Activity size={32} />
+          </div>
+          <p className="text-sm font-semibold text-muted tracking-wide">Unable to load dashboard data</p>
         </div>
+      </div>
     );
+  }
+
+  const firstName = session?.user?.name?.split(" ")[0] ?? "there";
+  const now = new Date();
+  const dayLabel = now.toLocaleDateString(undefined, {
+    weekday: "long",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+
+  return (
+    <div className="p-7 flex flex-col gap-5 bg-background min-h-full">
+      <div className="flex items-end justify-between">
+        <div>
+          <p className="text-[12.5px] text-[--ink-500] mb-1">{dayLabel}</p>
+          <h1 className="font-serif text-[28px] font-semibold tracking-tight m-0">Good morning, {firstName}</h1>
+          <p className="text-[13.5px] text-[--ink-600] mt-1">
+            <span className="text-[--gold-700] font-semibold">{summary.expiringLeases} expiring lease{summary.expiringLeases === 1 ? '' : 's'}</span>
+            {summary.overdueAmount > 0 ? <span className="text-[--red-600] font-semibold ml-1.5">· {formatCurrencyCompact(summary.overdueAmount)} overdue</span> : null}
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <button className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-medium border border-border rounded-[--radius] bg-surface">
+            <Calendar size={13} />
+            {now.toLocaleDateString(undefined, { month: "short", year: "numeric" })}
+          </button>
+          <button className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-medium border border-border rounded-[--radius] bg-surface">
+            <Download size={13} /> Export
+          </button>
+          <Link href="/dashboard/leases/new" className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-semibold rounded-[--radius] bg-[--ink-900] text-white">
+            <Plus size={13} /> New lease
+          </Link>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3.5">
+        <StatCard
+          label="Collected this month"
+          value={formatCurrencyCompact(summary.collectedAmount)}
+          delta="+12.4%"
+          deltaPos
+          sub={`of ${formatCurrencyCompact(summary.totalRentRevenue)} expected`}
+          sparkData={[20, 28, 24, 32, 30, 38, 42, 40, 48, 52, 49, 58]}
+          sparkColor="var(--green-600)"
+        />
+        <StatCard
+          label="Pending payments"
+          value={formatCurrencyCompact(summary.pendingAmount)}
+          delta="+3.0%"
+          deltaPos={false}
+          sub="Awaiting collection"
+          sparkData={[8, 10, 9, 12, 15, 14, 16, 18]}
+          sparkColor="var(--gold-600)"
+        />
+        <StatCard
+          label="Occupancy"
+          value={summary.occupancyRate.toFixed(1)}
+          unit="%"
+          delta="+1.2%"
+          deltaPos
+          sub={`${summary.occupiedUnits} of ${summary.totalUnits} units leased`}
+          sparkData={[88, 89, 90, 91, 92, 93, 94, 94.3]}
+          sparkColor="var(--teal-600)"
+        />
+        <StatCard
+          label="Overdue"
+          value={formatCurrencyCompact(summary.overdueAmount)}
+          delta="-2.1%"
+          deltaPos
+          sub="Requires follow-up"
+          sparkData={[140, 128, 118, 110, 102, 98, 92, 87]}
+          sparkColor="var(--red-600)"
+        />
+      </div>
+
+      <div className="grid gap-3.5" style={{ gridTemplateColumns: "1.6fr 1fr" }}>
+        <CollectionChart />
+        <div className="bg-surface border border-border rounded-[--radius-lg] p-5">
+          <div className="text-[13px] text-[--ink-500]">Portfolio snapshot</div>
+          <div className="font-serif text-[20px] font-semibold text-foreground mb-3">Current totals</div>
+          <div className="space-y-2.5 text-[13px]">
+            <div className="flex justify-between"><span className="text-[--ink-500]">Properties</span><span className="font-semibold">{summary.totalProperties}</span></div>
+            <div className="flex justify-between"><span className="text-[--ink-500]">Active leases</span><span className="font-semibold">{summary.activeLeases}</span></div>
+            <div className="flex justify-between"><span className="text-[--ink-500]">Draft leases</span><span className="font-semibold">{summary.draftLeases}</span></div>
+            <div className="flex justify-between"><span className="text-[--ink-500]">Vacant units</span><span className="font-semibold">{summary.vacantUnits}</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-surface border border-border rounded-[--radius-lg] p-5">
+        <div className="font-serif text-[20px] font-semibold text-foreground mb-3">Recent activity</div>
+        {summary.recentActivity.length === 0 ? (
+          <p className="text-[13px] text-[--ink-500]">No activity yet.</p>
+        ) : (
+          <div className="space-y-2">
+            {summary.recentActivity.slice(0, 8).map((item, index) => (
+              <div key={`${item.timestamp}-${index}`} className="flex items-center gap-3 py-2 border-t border-border first:border-t-0">
+                <div className="w-7 h-7 rounded-full bg-[--sand-100] flex items-center justify-center text-[10px] font-semibold text-[--ink-700]">
+                  {item.type.slice(0, 2)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[13px] text-foreground truncate">{item.description}</p>
+                </div>
+                <div className="text-[11px] text-[--ink-500] whitespace-nowrap">{formatTimeAgo(item.timestamp)}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }

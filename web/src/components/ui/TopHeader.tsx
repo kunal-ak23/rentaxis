@@ -7,7 +7,7 @@ import { Link } from "@/i18n/routing";
 import { usePathname, useRouter } from "next/navigation";
 import { useLocale } from "next-intl";
 import { cn } from "@/lib/utils";
-import { LogOut, User, ChevronDown, Bell } from "lucide-react";
+import { LogOut, User, ChevronDown, Bell, Search } from "lucide-react";
 import { getRoleLabel, type UserRole } from "@/lib/rbac";
 
 type Notification = {
@@ -122,8 +122,8 @@ export function TopHeader() {
     };
 
     return (
-        <header className="shrink-0 z-30 w-full h-14 bg-surface/80 backdrop-blur-md border-b border-border flex items-center justify-between px-6">
-            <div className="flex items-center relative w-full justify-between">
+        <header className="h-[60px] px-7 flex items-center gap-4 border-b border-border bg-surface shrink-0 z-30">
+            <div className="flex items-center relative w-full justify-between gap-4">
                 {/* Left Side: Context Switcher */}
                 <div className="flex items-center w-[300px]">
                     {session?.user && (
@@ -135,8 +135,15 @@ export function TopHeader() {
 
                 {/* Right Side */}
                 <div className="flex items-center gap-3">
+                    {/* Search placeholder */}
+                    <div className="hidden lg:flex items-center gap-2 px-3 h-9 bg-[--sand-100] border border-border rounded-[--radius] min-w-[280px]">
+                        <Search size={14} className="text-[--ink-500] shrink-0" />
+                        <span className="text-[13px] text-[--ink-500] flex-1">Search leases, tenants, cheques…</span>
+                        <kbd className="text-[11px] text-[--ink-500] px-1.5 py-0.5 border border-border rounded font-mono">⌘K</kbd>
+                    </div>
+
                     {/* Locale Switcher */}
-                    <div className="flex items-center bg-input rounded-lg p-0.5 border border-border">
+                    <div className="flex items-center bg-[--sand-100] rounded-[--radius] p-0.5 border border-border">
                         <Link
                             href={pathname.replace(new RegExp(`^/${locale}`), '') || '/'}
                             locale="en"
@@ -145,7 +152,7 @@ export function TopHeader() {
                                 "focus:outline-none focus:ring-2 focus:ring-primary/30",
                                 locale === 'en'
                                     ? 'bg-surface text-primary shadow-sm border border-border'
-                                    : 'text-muted hover:text-foreground'
+                                    : 'text-[--ink-500] hover:text-foreground'
                             )}
                         >
                             EN
@@ -158,7 +165,7 @@ export function TopHeader() {
                                 "focus:outline-none focus:ring-2 focus:ring-primary/30",
                                 locale === 'ar'
                                     ? 'bg-surface text-primary shadow-sm border border-border'
-                                    : 'text-muted hover:text-foreground'
+                                    : 'text-[--ink-500] hover:text-foreground'
                             )}
                         >
                             AR
@@ -168,7 +175,7 @@ export function TopHeader() {
                     {/* Notification Bell */}
                     {session?.user && (
                         <div className="relative">
-                            <button onClick={toggleDropdown} className="relative p-2 text-muted hover:text-foreground transition-colors cursor-pointer rounded-lg hover:bg-input">
+                            <button onClick={toggleDropdown} className="relative w-9 h-9 flex items-center justify-center border border-border rounded-[--radius] bg-surface text-[--ink-600] hover:text-foreground hover:bg-[--sand-100] transition-colors cursor-pointer">
                                 <Bell size={18} />
                                 {unreadCount > 0 && (
                                     <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-error text-white text-[9px] font-bold rounded-full flex items-center justify-center">
@@ -224,7 +231,7 @@ export function TopHeader() {
                                         {userRole ? getRoleLabel(userRole) : ''}
                                     </span>
                                 </div>
-                                <div className="w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-sm border border-primary/20">
+                                <div className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm border border-[--gold-400]" style={{ background: 'var(--gold-500)', color: 'var(--ink-900)' }}>
                                     {session.user.name?.charAt(0) || 'U'}
                                 </div>
                                 <ChevronDown size={12} className={cn("text-muted transition-transform", isProfileOpen && "rotate-180")} />

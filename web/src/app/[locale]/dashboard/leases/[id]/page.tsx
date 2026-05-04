@@ -557,18 +557,19 @@ export default function LeaseDetailPage() {
     const clearedCount = payments.filter(p => p.status === "CLEARED").length;
     const pendingCount = payments.filter(p => p.status === "PENDING" || p.status === "ONLINE_PENDING").length;
     const totalPaid = payments.filter(p => p.status === "CLEARED").reduce((sum, p) => sum + p.amount, 0);
+    const leaseTabs = ["Overview", "Payment schedule", "Penalties", "Contract", "Maintenance", "Documents"];
 
     return (
         <>
-        <div>
+        <div className="p-7 flex flex-col gap-[18px] bg-background min-h-full">
             {/* Header */}
-            <div className="flex items-center gap-4 mb-8">
+            <div className="flex items-start gap-5">
                 <Link href="/dashboard/leases" className="p-2 rounded-lg hover:bg-input transition-colors text-muted hover:text-foreground">
                     <ArrowLeft size={18} />
                 </Link>
                 <div className="flex-1">
                     <div className="flex items-center gap-3">
-                        <h1 className="mb-0">Unit {lease.unitIdentifier}</h1>
+                        <h1 className="mb-0 font-serif text-[26px] font-semibold tracking-tight">Unit {lease.unitIdentifier}</h1>
                         <span className={cn("px-2.5 py-1 rounded-lg text-[10px] font-semibold border", STATUS_COLORS[lease.status] || "bg-input text-muted border-border")}>
                             {lease.status.replace("_", " ")}
                         </span>
@@ -578,7 +579,8 @@ export default function LeaseDetailPage() {
                             </span>
                         )}
                     </div>
-                    <p className="text-sm text-muted">{lease.propertyName} &bull; {lease.renterName}</p>
+                    <p className="text-[12.5px] text-[--ink-500]">{lease.propertyName}</p>
+                    <p className="text-sm text-muted">{lease.renterName}</p>
                 </div>
                 {canGenerateContract && lease.status === "DRAFT" && (
                     <button
@@ -640,24 +642,43 @@ export default function LeaseDetailPage() {
                 )}
             </div>
 
-            {/* KPI Summary */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-                <div className="bg-surface rounded-xl p-4 border border-border">
-                    <p className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-1">Monthly Rent</p>
-                    <p className="text-lg font-bold text-foreground tabular-nums">{formatCurrencyCompact(lease.monthlyRent || lease.rentAmount)}</p>
+            {/* Ribbon summary */}
+            <div className="bg-surface border border-border rounded-[--radius-lg] p-5 grid grid-cols-2 md:grid-cols-5 gap-4">
+                <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[--ink-500]">Lease term</p>
+                    <p className="text-sm font-semibold text-foreground">{new Date(lease.startDate).toLocaleDateString()} - {new Date(lease.endDate).toLocaleDateString()}</p>
                 </div>
-                <div className="bg-surface rounded-xl p-4 border border-border">
-                    <p className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-1">Total Paid</p>
-                    <p className="text-lg font-bold text-success tabular-nums">{formatCurrencyCompact(totalPaid)}</p>
+                <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[--ink-500]">Annual rent</p>
+                    <p className="text-sm font-semibold text-foreground tabular-nums">{formatCurrencyCompact(lease.rentAmount)}</p>
                 </div>
-                <div className="bg-surface rounded-xl p-4 border border-border">
-                    <p className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-1">Payments</p>
-                    <p className="text-lg font-bold text-foreground">{clearedCount}/{payments.length} cleared</p>
+                <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[--ink-500]">Deposit</p>
+                    <p className="text-sm font-semibold text-foreground tabular-nums">{formatCurrencyCompact(lease.depositAmount)}</p>
                 </div>
-                <div className="bg-surface rounded-xl p-4 border border-border">
-                    <p className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-1">Pending</p>
-                    <p className={cn("text-lg font-bold", pendingCount > 0 ? "text-warning" : "text-success")}>{pendingCount}</p>
+                <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[--ink-500]">Collected</p>
+                    <p className="text-sm font-semibold text-success tabular-nums">{formatCurrencyCompact(totalPaid)}</p>
                 </div>
+                <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[--ink-500]">Pending payments</p>
+                    <p className={cn("text-sm font-semibold", pendingCount > 0 ? "text-warning" : "text-success")}>{pendingCount}</p>
+                </div>
+            </div>
+
+            {/* Visual tabs strip */}
+            <div className="flex gap-1 border-b border-border overflow-x-auto">
+                {leaseTabs.map((tab, idx) => (
+                    <button
+                        key={tab}
+                        className={cn(
+                            "px-3.5 py-2.5 text-[13.5px] font-medium -mb-px whitespace-nowrap",
+                            idx === 0 ? "text-foreground font-semibold border-b-2 border-[--gold-500]" : "text-[--ink-500]"
+                        )}
+                    >
+                        {tab}
+                    </button>
+                ))}
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -851,16 +872,16 @@ export default function LeaseDetailPage() {
                     )}
 
                     <div className={cn(
-                        "bg-surface rounded-xl border border-border",
+                        "bg-surface rounded-[--radius-lg] border border-border overflow-hidden",
                         lease && (lease.status === "DRAFT" || lease.status === "PENDING_SIGNATURE") && "hidden"
                     )}>
-                        <div className="px-5 py-3.5 border-b border-border">
-                            <h2 className="text-xs font-semibold text-muted uppercase tracking-wider flex items-center gap-2"><CreditCard size={13} /> Payment Schedule</h2>
+                        <div className="px-5 py-3.5 border-b border-border bg-[--sand-50]">
+                            <h2 className="text-xs font-semibold text-muted uppercase tracking-wider flex items-center gap-2"><CreditCard size={13} /> Payment Schedule Timeline</h2>
                         </div>
-                        <div className="overflow-x-auto">
+                        <div className="overflow-x-auto bg-surface">
                             <table className="w-full">
                                 <thead>
-                                    <tr className="bg-input/50">
+                                    <tr className="bg-[--sand-100]">
                                         <th className="px-4 py-2.5 text-start text-[10px] font-semibold text-muted uppercase tracking-wider">#</th>
                                         <th className="px-4 py-2.5 text-start text-[10px] font-semibold text-muted uppercase tracking-wider">Due Date</th>
                                         <th className="px-4 py-2.5 text-end text-[10px] font-semibold text-muted uppercase tracking-wider">Amount</th>
@@ -874,7 +895,7 @@ export default function LeaseDetailPage() {
                                 </thead>
                                 <tbody>
                                     {payments.map(p => (
-                                        <tr key={p.id} className="border-b border-border hover:bg-input/30 transition-colors">
+                                        <tr key={p.id} className="border-b border-border hover:bg-[--sand-50] transition-colors">
                                             <td className="px-4 py-2.5 text-xs text-muted">{p.installmentNumber}</td>
                                             <td className="px-4 py-2.5 text-xs text-foreground tabular-nums">{new Date(p.dueDate).toLocaleDateString()}</td>
                                             <td className="px-4 py-2.5 text-xs font-medium text-foreground text-end tabular-nums">{formatCurrency(p.amount)}</td>
@@ -943,8 +964,8 @@ export default function LeaseDetailPage() {
             </div>
 
             {/* ── Penalties Section ─────────────────────────────────── */}
-            <div className="mt-6 bg-surface rounded-xl border border-border">
-                <div className="px-5 py-3.5 border-b border-border flex items-center justify-between">
+            <div className="mt-6 bg-surface rounded-[--radius-lg] border border-border overflow-hidden">
+                <div className="px-5 py-3.5 border-b border-border bg-[--sand-50] flex items-center justify-between">
                     <h2 className="text-xs font-semibold text-muted uppercase tracking-wider flex items-center gap-2">
                         <AlertTriangle size={13} /> {tP("title")}
                     </h2>
@@ -983,8 +1004,8 @@ export default function LeaseDetailPage() {
                             {chequePenalties.map((pen) => {
                                 const isExpanded = expandedPenaltyIds.has(pen.id);
                                 return (
-                                    <div key={pen.id} className="border border-border rounded-xl overflow-hidden">
-                                        <div className="px-4 py-3 bg-input/30 flex flex-wrap items-center gap-3">
+                                    <div key={pen.id} className="border border-border rounded-[--radius] overflow-hidden bg-white">
+                                        <div className="px-4 py-3 bg-[--sand-50] flex flex-wrap items-center gap-3">
                                             {/* Reason badge */}
                                             <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-error/10 text-error border border-error/20">
                                                 {pen.failureReason || pen.penaltyType}
@@ -1103,7 +1124,7 @@ export default function LeaseDetailPage() {
             {/* Settlement Summary for TERMINATED/CLOSED leases */}
             {(lease.status === "TERMINATED" || lease.status === "CLOSED") && settlement && (
                 settlement.status === "DRAFT" ? (
-                    <div className="mt-6 bg-surface rounded-xl border border-border px-5 py-4 flex items-center justify-between">
+                    <div className="mt-6 bg-surface rounded-[--radius-lg] border border-border px-5 py-4 flex items-center justify-between">
                         <div className="flex items-center gap-2 text-xs text-muted">
                             <DollarSign size={13} />
                             <span>Settlement in progress</span>
@@ -1116,8 +1137,8 @@ export default function LeaseDetailPage() {
                         </Link>
                     </div>
                 ) : (
-                    <div className="mt-6 bg-surface rounded-xl border border-border">
-                        <div className="px-5 py-3.5 border-b border-border">
+                    <div className="mt-6 bg-surface rounded-[--radius-lg] border border-border overflow-hidden">
+                        <div className="px-5 py-3.5 border-b border-border bg-[--sand-50]">
                             <h2 className="text-xs font-semibold text-muted uppercase tracking-wider flex items-center gap-2">
                                 <DollarSign size={13} /> Settlement Summary
                             </h2>

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:intl/intl.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -48,10 +47,8 @@ class HomeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final authState = ref.watch(authProvider);
     final leasesAsync = ref.watch(_myLeasesProvider);
     final paymentsAsync = ref.watch(_myPaymentsProvider);
-    final notifState = ref.watch(notificationProvider);
     final openPenaltyCount = ref.watch(_openPenaltyCountProvider).valueOrNull ?? 0;
 
     return Scaffold(
@@ -66,12 +63,22 @@ class HomeScreen extends ConsumerWidget {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 150),
           children: [
-            // Greeting
-            AnimatedListItem(
-              index: 0,
-              child: _buildGreeting(context, authState),
+            leasesAsync.when(
+              data: (leases) {
+                final activeLease = _findActiveLease(leases);
+                final nextPayment = _findNextPayment(
+                  paymentsAsync.valueOrNull ?? [],
+                  activeLease?['id'] as String?,
+                );
+                return _HeroBalanceCard(
+                  activeLease: activeLease,
+                  nextPayment: nextPayment,
+                );
+              },
+              loading: () => const ShimmerLoading(height: 180),
+              error: (_, __) => const _HeroBalanceCard(activeLease: null, nextPayment: null),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 20),
 
             // Quick Actions
             AnimatedListItem(
@@ -144,39 +151,6 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildGreeting(BuildContext context, AuthState authState) {
-    final firstName = (authState.name ?? 'there').split(' ').first;
-    final hour = DateTime.now().hour;
-    final greeting = hour < 12
-        ? 'Good Morning'
-        : hour < 17
-            ? 'Good Afternoon'
-            : 'Good Evening';
-    final today = DateFormat('EEEE, d MMMM yyyy').format(DateTime.now());
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          '$greeting, $firstName',
-          style: GoogleFonts.inter(
-            fontSize: 22,
-            fontWeight: FontWeight.w700,
-            color: AppColors.textPrimary,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          today,
-          style: Theme.of(context)
-              .textTheme
-              .bodyMedium
-              ?.copyWith(color: AppColors.textMuted),
-        ),
-      ],
-    );
-  }
-
   Widget _buildQuickActions(BuildContext context, int openPenaltyCount) {
     return Column(
       children: [
@@ -186,7 +160,7 @@ class HomeScreen extends ConsumerWidget {
               icon: Icons.payment,
               label: 'Pay Rent',
               color: AppColors.primary,
-              onTap: () => context.go('/payments'),
+              onTap: () => context.push('/payments/pay'),
             ),
             const SizedBox(width: 12),
             _QuickActionButton(
@@ -239,6 +213,117 @@ class HomeScreen extends ConsumerWidget {
       return aDate.compareTo(bDate);
     });
     return pending.first;
+  }
+
+  Map<String, dynamic>? _findActiveLease(List<dynamic> leases) {
+    for (final l in leases) {
+      if ((l['status'] ?? '').toString().toUpperCase() == 'ACTIVE') {
+        return Map<String, dynamic>.from(l as Map);
+      }
+    }
+    if (leases.isEmpty) return null;
+    return Map<String, dynamic>.from(leases.first as Map);
+  }
+}
+
+class _HeroBalanceCard extends StatelessWidget {
+  final Map<String, dynamic>? activeLease;
+  final Map<String, dynamic>? nextPayment;
+
+  const _HeroBalanceCard({required this.activeLease, required this.nextPayment});
+
+  @override
+  Widget build(BuildContext context) {
+    if (activeLease == null) {
+      return Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(18),
+          color: AppColors.surface,
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('No active lease',
+                style: GoogleFonts.inter(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                )),
+            const SizedBox(height: 6),
+            Text(
+              'Your payment timeline will appear once your lease is active.',
+              style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final amount = nextPayment?['totalPayable'] ?? nextPayment?['amount'] ?? 0;
+    final dueDate = Formatters.date(nextPayment?['dueDate']?.toString());
+    final leaseRent = activeLease?['rentAmount'] ?? activeLease?['monthlyRent'] ?? 0;
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF0B1F3A), Color(0xFF1F3D67)],
+        ),
+      ),
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'NEXT PAYMENT DUE',
+            style: GoogleFonts.inter(
+              fontSize: 11.5,
+              color: Colors.white70,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.7,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            Formatters.currencyCompact(amount),
+            style: GoogleFonts.sourceSerif4(
+              fontSize: 34,
+              fontWeight: FontWeight.w600,
+              color: Colors.white,
+              letterSpacing: -0.5,
+            ),
+          ),
+          Text(
+            nextPayment == null ? 'No pending payment found' : 'Due $dueDate',
+            style: GoogleFonts.inter(fontSize: 12, color: Colors.white70),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Lease value ${Formatters.currencyCompact(leaseRent)}',
+                  style: GoogleFonts.inter(fontSize: 11.5, color: Colors.white70),
+                ),
+              ),
+              ElevatedButton(
+                onPressed: nextPayment == null ? null : () => context.push('/payments/pay'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.accent,
+                  foregroundColor: AppColors.navyDark,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                ),
+                child: const Text('Pay now'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 }
 
