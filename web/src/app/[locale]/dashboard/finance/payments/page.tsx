@@ -309,6 +309,7 @@ export default function PaymentsPage() {
         };
         return map[status] || status;
     };
+    const getMethodLabel = (payment: Payment): string => (payment.chequeNumber ? "Cheque" : "—");
 
     const summaryCards = summary
         ? [
@@ -446,11 +447,11 @@ export default function PaymentsPage() {
             )}
 
             {/* Payments Table */}
-            {!loading && payments.length > 0 && <div className="bg-surface border border-border rounded-xl overflow-hidden">
+            {!loading && payments.length > 0 && <div className="bg-surface border border-border rounded-[--radius-lg] overflow-hidden">
                 <div className="overflow-x-auto">
                     <table className="w-full">
                         <thead>
-                            <tr className="bg-input/70">
+                            <tr className="bg-[--sand-100]">
                                 <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                     #
                                 </th>
@@ -470,6 +471,9 @@ export default function PaymentsPage() {
                                     {t("chequeNumber")}
                                 </th>
                                 <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
+                                    Method
+                                </th>
+                                <th className="text-left px-5 py-3.5 text-[11px] font-semibold text-muted uppercase tracking-wider">
                                     {t("status")}
                                 </th>
                                 {canManage && (
@@ -483,7 +487,7 @@ export default function PaymentsPage() {
                             {payments.map((payment) => (
                                 <tr
                                     key={payment.id}
-                                    className="border-b border-border hover:bg-input/30 transition-colors"
+                                    className="border-b border-border hover:bg-[--sand-50] transition-colors"
                                 >
                                     <td className="px-5 py-3 text-xs font-bold text-foreground">
                                         {payment.installmentNumber}
@@ -526,6 +530,9 @@ export default function PaymentsPage() {
                                     </td>
                                     <td className="px-5 py-3 text-xs text-foreground font-medium">
                                         {payment.chequeNumber || "--"}
+                                    </td>
+                                    <td className="px-5 py-3 text-xs text-[--ink-600] font-medium">
+                                        {getMethodLabel(payment)}
                                     </td>
                                     <td className="px-5 py-3">
                                         <span
