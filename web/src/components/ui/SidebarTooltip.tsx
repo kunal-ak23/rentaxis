@@ -44,9 +44,9 @@ export function SidebarTooltip({ label, enabled, children }: SidebarTooltipProps
                         className="fixed z-[9999] pointer-events-none"
                         style={{ top: pos.top, left: pos.left, transform: "translateY(-50%)" }}
                     >
-                        <div className="relative px-3 py-1.5 bg-sidebar text-white text-xs font-medium rounded-lg shadow-xl border border-white/10 whitespace-nowrap">
+                        <div className="relative px-3 py-1.5 bg-[--ink-900] text-white text-xs font-medium rounded-lg shadow-xl border border-white/10 whitespace-nowrap">
                             {label}
-                            <div className="absolute right-full top-1/2 -translate-y-1/2 border-[5px] border-transparent border-r-sidebar" />
+                            <div className="absolute right-full top-1/2 -translate-y-1/2 border-[5px] border-transparent border-r-[--ink-900]" />
                         </div>
                     </motion.div>
                 )}
