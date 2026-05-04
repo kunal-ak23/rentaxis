@@ -964,8 +964,8 @@ export default function LeaseDetailPage() {
             </div>
 
             {/* ── Penalties Section ─────────────────────────────────── */}
-            <div className="mt-6 bg-surface rounded-xl border border-border">
-                <div className="px-5 py-3.5 border-b border-border flex items-center justify-between">
+            <div className="mt-6 bg-surface rounded-[--radius-lg] border border-border overflow-hidden">
+                <div className="px-5 py-3.5 border-b border-border bg-[--sand-50] flex items-center justify-between">
                     <h2 className="text-xs font-semibold text-muted uppercase tracking-wider flex items-center gap-2">
                         <AlertTriangle size={13} /> {tP("title")}
                     </h2>
@@ -1004,8 +1004,8 @@ export default function LeaseDetailPage() {
                             {chequePenalties.map((pen) => {
                                 const isExpanded = expandedPenaltyIds.has(pen.id);
                                 return (
-                                    <div key={pen.id} className="border border-border rounded-xl overflow-hidden">
-                                        <div className="px-4 py-3 bg-input/30 flex flex-wrap items-center gap-3">
+                                    <div key={pen.id} className="border border-border rounded-[--radius] overflow-hidden bg-white">
+                                        <div className="px-4 py-3 bg-[--sand-50] flex flex-wrap items-center gap-3">
                                             {/* Reason badge */}
                                             <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-error/10 text-error border border-error/20">
                                                 {pen.failureReason || pen.penaltyType}
@@ -1124,7 +1124,7 @@ export default function LeaseDetailPage() {
             {/* Settlement Summary for TERMINATED/CLOSED leases */}
             {(lease.status === "TERMINATED" || lease.status === "CLOSED") && settlement && (
                 settlement.status === "DRAFT" ? (
-                    <div className="mt-6 bg-surface rounded-xl border border-border px-5 py-4 flex items-center justify-between">
+                    <div className="mt-6 bg-surface rounded-[--radius-lg] border border-border px-5 py-4 flex items-center justify-between">
                         <div className="flex items-center gap-2 text-xs text-muted">
                             <DollarSign size={13} />
                             <span>Settlement in progress</span>
@@ -1137,8 +1137,8 @@ export default function LeaseDetailPage() {
                         </Link>
                     </div>
                 ) : (
-                    <div className="mt-6 bg-surface rounded-xl border border-border">
-                        <div className="px-5 py-3.5 border-b border-border">
+                    <div className="mt-6 bg-surface rounded-[--radius-lg] border border-border overflow-hidden">
+                        <div className="px-5 py-3.5 border-b border-border bg-[--sand-50]">
                             <h2 className="text-xs font-semibold text-muted uppercase tracking-wider flex items-center gap-2">
                                 <DollarSign size={13} /> Settlement Summary
                             </h2>
