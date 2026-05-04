@@ -2,29 +2,37 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class AppColors {
-  static const primary = Color(0xFF14555C); // Dark teal (matches logo)
-  static const primaryLight = Color(0xFF1A7A7A);
-  static const accent = Color(0xFFC8A951); // Gold
-  static const navyDark = Color(0xFF0F1B2D); // Dark Navy
-  static const background = Color(0xFFFAFAF8); // Warm White
+  static const primary = Color(0xFF0B1F3A);
+  static const primaryLight = Color(0xFF1F3D67);
+  static const accent = Color(0xFFC9A961);
+  static const accentDark = Color(0xFF8C7434);
+  static const accentLight = Color(0xFFF4EBD3);
+  static const gold400 = Color(0xFFD9BE83);
+  static const navyDark = Color(0xFF0B1F3A);
+  static const background = Color(0xFFFAF7F2);
   static const surface = Color(0xFFFFFFFF);
-  static const border = Color(0xFFE2E0DC);
-  static const textPrimary = Color(0xFF0F172A); // Slate 900
-  static const textSecondary = Color(0xFF475569); // Slate 600
-  static const textMuted = Color(0xFF94A3B8); // Slate 400
-  static const success = Color(0xFF16A34A);
-  static const warning = Color(0xFFD97706);
-  static const danger = Color(0xFFDC2626);
-  static const info = Color(0xFF2563EB);
+  static const surface2 = Color(0xFFF4EFE6);
+  static const border = Color(0xFFE6DFD3);
+  static const borderStrong = Color(0xFFD8CBB1);
+  static const textPrimary = Color(0xFF0B1F3A);
+  static const textSecondary = Color(0xFF335580);
+  static const textMuted = Color(0xFF5C7494);
+  static const success = Color(0xFF2F7B4C);
+  static const successLight = Color(0xFFDDEFE3);
+  static const warning = Color(0xFFB5781E);
+  static const warningLight = Color(0xFFF8EBD0);
+  static const danger = Color(0xFFB33A30);
+  static const dangerLight = Color(0xFFF6DAD6);
+  static const info = Color(0xFF2D7D7D);
 
   // Status colors
-  static const statusPending = Color(0xFFF59E0B);
-  static const statusActive = Color(0xFF16A34A);
-  static const statusDraft = Color(0xFF64748B);
-  static const statusOverdue = Color(0xFFDC2626);
-  static const statusCleared = Color(0xFF16A34A);
-  static const statusBounced = Color(0xFFDC2626);
-  static const statusCollected = Color(0xFF2563EB);
+  static const statusPending = warning;
+  static const statusActive = success;
+  static const statusDraft = textMuted;
+  static const statusOverdue = danger;
+  static const statusCleared = success;
+  static const statusBounced = danger;
+  static const statusCollected = info;
 }
 
 class AppShadows {
@@ -69,7 +77,7 @@ class AppShadows {
 }
 
 class AppTheme {
-  static TextTheme get _headingTextTheme => GoogleFonts.cinzelTextTheme(
+  static TextTheme get _headingTextTheme => GoogleFonts.sourceSerif4TextTheme(
         const TextTheme(
           headlineLarge: TextStyle(
             fontSize: 28,
@@ -92,7 +100,7 @@ class AppTheme {
         ),
       );
 
-  static TextTheme get _bodyTextTheme => GoogleFonts.josefinSansTextTheme(
+  static TextTheme get _bodyTextTheme => GoogleFonts.interTextTheme(
         const TextTheme(
           titleLarge: TextStyle(
             fontSize: 16,
@@ -171,7 +179,7 @@ class AppTheme {
           elevation: 0,
           scrolledUnderElevation: 0.5,
           centerTitle: false,
-          titleTextStyle: GoogleFonts.cinzel(
+          titleTextStyle: GoogleFonts.sourceSerif4(
             fontSize: 18,
             fontWeight: FontWeight.w600,
             color: AppColors.textPrimary,
@@ -183,11 +191,11 @@ class AppTheme {
           unselectedItemColor: AppColors.textMuted,
           type: BottomNavigationBarType.fixed,
           elevation: 0,
-          selectedLabelStyle: GoogleFonts.josefinSans(
+          selectedLabelStyle: GoogleFonts.inter(
             fontSize: 12,
             fontWeight: FontWeight.w600,
           ),
-          unselectedLabelStyle: GoogleFonts.josefinSans(
+          unselectedLabelStyle: GoogleFonts.inter(
             fontSize: 12,
             fontWeight: FontWeight.w400,
           ),
@@ -209,7 +217,7 @@ class AppTheme {
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
             ),
-            textStyle: GoogleFonts.josefinSans(
+            textStyle: GoogleFonts.inter(
               fontSize: 15,
               fontWeight: FontWeight.w600,
               letterSpacing: 0.3,
@@ -224,7 +232,7 @@ class AppTheme {
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
             ),
-            textStyle: GoogleFonts.josefinSans(
+            textStyle: GoogleFonts.inter(
               fontSize: 15,
               fontWeight: FontWeight.w600,
               letterSpacing: 0.3,
@@ -252,15 +260,15 @@ class AppTheme {
           ),
           contentPadding:
               const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-          hintStyle: GoogleFonts.josefinSans(
+          hintStyle: GoogleFonts.inter(
             color: AppColors.textMuted,
             fontSize: 14,
           ),
-          labelStyle: GoogleFonts.josefinSans(
+          labelStyle: GoogleFonts.inter(
             color: AppColors.textSecondary,
             fontSize: 14,
           ),
-          floatingLabelStyle: GoogleFonts.josefinSans(
+          floatingLabelStyle: GoogleFonts.inter(
             color: AppColors.primary,
             fontSize: 14,
             fontWeight: FontWeight.w600,
@@ -273,7 +281,7 @@ class AppTheme {
         ),
         chipTheme: ChipThemeData(
           backgroundColor: AppColors.background,
-          labelStyle: GoogleFonts.josefinSans(
+          labelStyle: GoogleFonts.inter(
             fontSize: 12,
             color: AppColors.textPrimary,
           ),
