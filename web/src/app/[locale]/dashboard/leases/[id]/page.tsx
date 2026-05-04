@@ -48,23 +48,8 @@ type Ticket = {
     category: string; createdAt: string; assignedToName: string | null;
 };
 
-type PaymentPenalty = {
-    id: string;
-    paymentScheduleId: string;
-    leaseId: string;
-    penaltyAmount: number;
-    daysOverdue: number;
-    penaltyType: string;
-    penaltyRate: number;
-    gracePeriodDays: number;
-    waived: boolean;
-    waivedBy?: string;
-    waivedReason?: string;
-    waivedAt?: string;
-    lastCalculatedAt: string;
-};
-
-// Cheque-failure penalty from the new /penalties endpoint
+// Matches backend PenaltyDTO. Used for both per-row penalty decoration
+// and the dedicated cheque-penalties section since both hit /api/v1/penalties.
 type ChequePenalty = {
     id: string;
     leaseId: string;
@@ -76,7 +61,10 @@ type ChequePenalty = {
     outstanding: number;
     daysOverdue: number;
     status: string; // "OPEN" | "CLEARED" | "WAIVED"
+    waived: boolean;
+    waivedReason?: string;
     createdAt: string;
+    clearedAt?: string;
     payments: ChequePenaltyPayment[];
 };
 
@@ -168,13 +156,13 @@ export default function LeaseDetailPage() {
     const [lease, setLease] = useState<Lease | null>(null);
     const [renter, setRenter] = useState<Renter | null>(null);
     const [payments, setPayments] = useState<Payment[]>([]);
-    const [penalties, setPenalties] = useState<PaymentPenalty[]>([]);
+    const [penalties, setPenalties] = useState<ChequePenalty[]>([]);
     const [attachments, setAttachments] = useState<Attachment[]>([]);
     const [loading, setLoading] = useState(true);
     const [docName, setDocName] = useState("");
     const [uploadingDoc, setUploadingDoc] = useState(false);
     const [tickets, setTickets] = useState<Ticket[]>([]);
-    const [waiveModalPenalty, setWaiveModalPenalty] = useState<PaymentPenalty | null>(null);
+    const [waiveModalPenalty, setWaiveModalPenalty] = useState<ChequePenalty | null>(null);
     const [waiveReason, setWaiveReason] = useState("");
     const [waiving, setWaiving] = useState(false);
 
