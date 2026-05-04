@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useSession } from "next-auth/react";
 import Cookies from "js-cookie";
 import { useRouter, usePathname } from "next/navigation";
-import { Building2, Check, ChevronsUpDown } from "lucide-react";
+import { Check, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 
@@ -94,46 +94,59 @@ export function TenantSwitcher({ isCollapsed }: { isCollapsed: boolean }) {
         setIsOpen(!isOpen);
     };
 
-    if (!userExt?.tenantId && userRole !== 'SUPER_ADMIN') return null;
-    if (!canSwitch) return null; // Hide for single-tenant users (renters, tenant users, etc.)
+    if (!userExt?.tenantId && userRole !== 'SUPER_ADMIN') {
+        // No tenant context — render nothing
+        return null;
+    }
 
     const isSuperAdmin = userRole === 'SUPER_ADMIN';
+    const orgName = isSuperAdmin && !activeTenant ? "Global View" : activeTenant?.name || "—";
+    const orgInitials = (orgName || "")
+        .split(/\s+/)
+        .slice(0, 2)
+        .map((s) => s[0]?.toUpperCase() ?? "")
+        .join("") || "OR";
 
     return (
-        <div className="relative px-3">
+        <div className="relative">
             <button
                 ref={buttonRef}
                 onClick={openDropdown}
-                aria-label="Switch organization"
+                aria-label={canSwitch ? "Switch organization" : "Current organization"}
                 className={cn(
-                    "w-full flex items-center justify-between bg-input border border-border p-2 rounded-xl transition-all duration-200 hover:bg-input/80 focus:outline-none focus:ring-2 focus:ring-primary/20",
+                    "w-full flex items-center justify-between gap-2 p-2 rounded-[--radius] border border-border bg-[--sand-100] transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[--gold-500]/30",
                     isCollapsed ? "justify-center" : "",
-                    !canSwitch && "cursor-default hover:bg-input",
-                    canSwitch && "cursor-pointer"
+                    canSwitch ? "cursor-pointer hover:bg-[--sand-200]" : "cursor-default"
                 )}
             >
                 {isCollapsed ? (
-                    <div className="w-8 h-8 rounded-lg bg-surface shadow-sm border border-border/50 flex items-center justify-center">
-                        <Building2 size={14} className="text-primary" />
+                    <div
+                        className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-semibold"
+                        style={{ background: 'var(--ink-900)', color: 'var(--gold-500)' }}
+                    >
+                        {orgInitials}
                     </div>
                 ) : (
-                    <div className="flex items-center gap-3 overflow-hidden">
-                        <div className="w-8 h-8 rounded-lg bg-surface shadow-sm border border-border/50 flex items-center justify-center shrink-0">
-                            <Building2 size={14} className="text-primary" />
+                    <div className="flex items-center gap-2 overflow-hidden flex-1 min-w-0">
+                        <div
+                            className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-semibold shrink-0"
+                            style={{ background: 'var(--ink-900)', color: 'var(--gold-500)' }}
+                        >
+                            {orgInitials}
                         </div>
-                        <div className="flex flex-col items-start truncate overflow-hidden text-left relative z-10 w-full" style={{ maxWidth: '140px' }}>
-                            <span className="text-[10px] font-bold text-muted uppercase tracking-widest leading-none mb-0.5">
-                                {isSuperAdmin ? "Administering" : "Organization"}
+                        <div className="flex flex-col items-start text-left flex-1 min-w-0 leading-tight">
+                            <span className="text-[12px] font-semibold text-[--ink-900] truncate w-full">
+                                {orgName}
                             </span>
-                            <span className="text-xs font-bold text-foreground truncate w-full">
-                                {isSuperAdmin && !activeTenant ? "Global View" : activeTenant?.name || "Select Tenant"}
+                            <span className="text-[10px] text-[--ink-500] truncate w-full">
+                                {isSuperAdmin ? "Administering" : "Organization"}
                             </span>
                         </div>
                     </div>
                 )}
 
                 {!isCollapsed && canSwitch && (
-                    <ChevronsUpDown size={14} className="text-muted shrink-0" />
+                    <ChevronsUpDown size={14} className="text-[--ink-500] shrink-0" />
                 )}
             </button>
 

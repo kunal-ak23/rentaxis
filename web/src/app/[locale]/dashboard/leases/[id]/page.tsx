@@ -561,7 +561,7 @@ export default function LeaseDetailPage() {
 
     return (
         <>
-        <div className="p-7 flex flex-col gap-[18px] bg-background min-h-full">
+        <div className="flex flex-col gap-[18px]">
             {/* Header */}
             <div className="flex items-start gap-5">
                 <Link href="/dashboard/leases" className="p-2 rounded-lg hover:bg-input transition-colors text-muted hover:text-foreground">
