@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
 final _leaseServiceProvider = Provider<LeaseService>((ref) {
@@ -76,20 +77,25 @@ class _LeasesScreenState extends ConsumerState<LeasesScreen> {
               itemBuilder: (context, index) {
                 final filter = _filters[index];
                 final isSelected = _statusFilter == filter;
-                return FilterChip(
-                  label: Text(filter.replaceAll('_', ' ')),
-                  selected: isSelected,
-                  onSelected: (_) =>
-                      setState(() => _statusFilter = filter),
-                  selectedColor: AppColors.primary.withValues(alpha: 0.15),
-                  checkmarkColor: AppColors.primary,
-                  labelStyle: TextStyle(
-                    fontSize: 12,
-                    fontWeight:
-                        isSelected ? FontWeight.w600 : FontWeight.w400,
-                    color: isSelected
-                        ? AppColors.primary
-                        : AppColors.textSecondary,
+                return GestureDetector(
+                  onTap: () => setState(() => _statusFilter = filter),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: isSelected ? AppColors.primary : AppColors.surface,
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: isSelected ? AppColors.primary : AppColors.border),
+                    ),
+                    child: Center(
+                      child: Text(
+                        filter.replaceAll('_', ' '),
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: isSelected ? Colors.white : AppColors.textSecondary,
+                        ),
+                      ),
+                    ),
                   ),
                 );
               },
@@ -177,77 +183,83 @@ class _LeaseCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final status = lease['status'] ?? 'DRAFT';
-    final statusColor = StatusHelper.getLeaseStatusColor(status);
-    final annualRent = (lease['annualRent'] ?? lease['totalRent'] ?? 0).toDouble();
+    final statusColor = StatusHelper.getLeaseStatusColor(status.toString());
+    final rent = (lease['rentAmount'] ?? 0).toDouble();
+    final renterName = (lease['renterName'] ?? 'Unknown Renter').toString();
+    final unitNumber = (lease['unitNumber'] ?? '-').toString();
+    final propertyName = (lease['propertyName'] ?? '-').toString();
+    final endDateRaw = lease['endDate']?.toString();
+    int? daysLeft;
+    if (endDateRaw != null && endDateRaw.isNotEmpty) {
+      try {
+        daysLeft = DateTime.parse(endDateRaw).difference(DateTime.now()).inDays;
+      } catch (_) {}
+    }
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 10),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        border: Border.all(color: AppColors.border),
+        borderRadius: BorderRadius.circular(12),
+      ),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+        child: IntrinsicHeight(
+          child: Row(
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          lease['renterName'] ?? 'Unknown Renter',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 15,
+              Container(
+                width: 4,
+                decoration: BoxDecoration(
+                  color: statusColor,
+                  borderRadius: const BorderRadius.horizontal(left: Radius.circular(12)),
+                ),
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 36,
+                        height: 36,
+                        decoration: const BoxDecoration(color: AppColors.surface2, shape: BoxShape.circle),
+                        child: Center(
+                          child: Text(
+                            _initials(renterName),
+                            style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary),
                           ),
                         ),
-                        const SizedBox(height: 4),
-                        Row(
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Icon(Icons.apartment_outlined,
-                                size: 14, color: AppColors.textMuted),
-                            const SizedBox(width: 4),
-                            Flexible(
-                              child: Text(
-                                '${lease['propertyName'] ?? '-'} - Unit ${lease['unitNumber'] ?? '-'}',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: AppColors.textSecondary,
-                                ),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
+                            Text(renterName, style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+                            Text('$propertyName · Unit $unitNumber', style: GoogleFonts.inter(fontSize: 11.5, color: AppColors.textMuted)),
+                            const SizedBox(height: 4),
+                            Text(status.toString().replaceAll('_', ' '), style: GoogleFonts.inter(fontSize: 10.5, color: statusColor, fontWeight: FontWeight.w600)),
                           ],
                         ),
-                      ],
-                    ),
+                      ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            rent > 0 ? Formatters.currencyCompact(rent) : '—',
+                            style: GoogleFonts.jetBrainsMono(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                          ),
+                          Text(
+                            daysLeft == null ? '—' : '${daysLeft < 0 ? 0 : daysLeft} left',
+                            style: GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
-                  StatusBadge(label: status, color: statusColor),
-                ],
-              ),
-              const Divider(height: 20),
-              Row(
-                children: [
-                  _LeaseInfo(
-                    label: 'Rent',
-                    value: Formatters.currency(annualRent),
-                    icon: Icons.attach_money,
-                  ),
-                  const Spacer(),
-                  _LeaseInfo(
-                    label: 'Start',
-                    value: Formatters.dateShort(lease['startDate']),
-                    icon: Icons.calendar_today_outlined,
-                  ),
-                  const SizedBox(width: 16),
-                  _LeaseInfo(
-                    label: 'End',
-                    value: Formatters.dateShort(lease['endDate']),
-                    icon: Icons.event_outlined,
-                  ),
-                ],
+                ),
               ),
             ],
           ),
@@ -255,38 +267,11 @@ class _LeaseCard extends StatelessWidget {
       ),
     );
   }
-}
 
-class _LeaseInfo extends StatelessWidget {
-  final String label;
-  final String value;
-  final IconData icon;
-
-  const _LeaseInfo({
-    required this.label,
-    required this.value,
-    required this.icon,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 14, color: AppColors.textMuted),
-        const SizedBox(width: 4),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label,
-                style: const TextStyle(
-                    fontSize: 10, color: AppColors.textMuted)),
-            Text(value,
-                style: const TextStyle(
-                    fontSize: 12, fontWeight: FontWeight.w600)),
-          ],
-        ),
-      ],
-    );
+  String _initials(String value) {
+    final parts = value.split(' ').where((e) => e.isNotEmpty).toList();
+    if (parts.isEmpty) return 'R';
+    if (parts.length == 1) return parts.first.substring(0, 1).toUpperCase();
+    return (parts.first.substring(0, 1) + parts.last.substring(0, 1)).toUpperCase();
   }
 }
