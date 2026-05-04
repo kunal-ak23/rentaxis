@@ -1,0 +1,23 @@
+databaseChangeLog:
+  - changeSet:
+      id: 52-cheque-image-purge-partial-index
+      author: rentaxis-system
+      changes:
+        - dropIndex:
+            tableName: payment_schedules
+            indexName: idx_payment_schedules_cheque_image_purge
+        - sql:
+            splitStatements: false
+            sql: |
+              CREATE INDEX idx_payment_schedules_cheque_image_purge
+              ON payment_schedules (cheque_date)
+              WHERE cheque_image_blob_path IS NOT NULL;
+        - rollback:
+            - sql:
+                sql: DROP INDEX IF EXISTS idx_payment_schedules_cheque_image_purge;
+            - createIndex:
+                tableName: payment_schedules
+                indexName: idx_payment_schedules_cheque_image_purge
+                columns:
+                  - column: { name: cheque_date }
+                  - column: { name: cheque_image_blob_path }

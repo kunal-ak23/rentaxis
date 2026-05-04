@@ -18,18 +18,14 @@ import com.datagami.rentaxis.core.config.AzureOpenAIConfig;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
-import org.springframework.context.annotation.Primary;
-import org.springframework.stereotype.Component;
+import lombok.extern.slf4j.Slf4j;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 
-@Component
-@Primary
-@ConditionalOnBean(OpenAIClient.class)
+@Slf4j
 public class AzureOpenAIChequeExtractor implements ChequeExtractor {
 
     private static final String SYSTEM_PROMPT = """
@@ -68,17 +64,24 @@ public class AzureOpenAIChequeExtractor implements ChequeExtractor {
     }
 
     @Override
-    @CircuitBreaker(name = "chequeExtraction")
+    @CircuitBreaker(name = "chequeExtraction", fallbackMethod = "extractFallback")
     public ExtractionResult extract(byte[] imageBytes, String contentType) {
-        try {
-            String content = fetchContent(imageBytes, contentType);
-            if (content == null || content.isBlank()) {
-                return new ExtractionResult(null, List.of("Extraction failed: empty model response"));
-            }
-            return parseResponse(content);
-        } catch (Exception e) {
-            return new ExtractionResult(null, List.of("Extraction failed: " + e.getMessage()));
+        // Let SDK / network exceptions propagate so the circuit breaker can register them.
+        // Only JSON parsing failures or empty responses are mapped to a soft fail here.
+        String content = fetchContent(imageBytes, contentType);
+        if (content == null || content.isBlank()) {
+            return new ExtractionResult(null, List.of("Extraction failed: empty model response"));
         }
+        return parseResponse(content);
+    }
+
+    @SuppressWarnings("unused")
+    ExtractionResult extractFallback(byte[] imageBytes, String contentType, Throwable t) {
+        log.warn("Cheque extraction failed: {}", t.getClass().getSimpleName(), t);
+        String reason = t instanceof io.github.resilience4j.circuitbreaker.CallNotPermittedException
+                ? "temporarily unavailable"
+                : t.getClass().getSimpleName();
+        return new ExtractionResult(null, List.of("Extraction failed: " + reason));
     }
 
     protected String fetchContent(byte[] imageBytes, String contentType) {

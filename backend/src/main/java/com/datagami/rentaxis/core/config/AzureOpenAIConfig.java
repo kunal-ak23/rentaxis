@@ -10,7 +10,6 @@ public class AzureOpenAIConfig {
     private String apiKey = "";
     private String deployment = "gpt-4o";
     private String apiVersion = "2024-10-21";
-    private int timeoutSeconds = 30;
 
     public String getEndpoint() {
         return endpoint;
@@ -42,14 +41,6 @@ public class AzureOpenAIConfig {
 
     public void setApiVersion(String apiVersion) {
         this.apiVersion = apiVersion;
-    }
-
-    public int getTimeoutSeconds() {
-        return timeoutSeconds;
-    }
-
-    public void setTimeoutSeconds(int timeoutSeconds) {
-        this.timeoutSeconds = timeoutSeconds;
     }
 
     public boolean isConfigured() {

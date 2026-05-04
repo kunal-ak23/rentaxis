@@ -2,9 +2,12 @@ package com.datagami.rentaxis.core.service.cheque;
 
 import com.azure.ai.openai.OpenAIClient;
 import com.azure.ai.openai.OpenAIClientBuilder;
+import com.azure.ai.openai.OpenAIServiceVersion;
 import com.azure.core.credential.AzureKeyCredential;
 import com.datagami.rentaxis.core.config.AzureOpenAIConfig;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -20,6 +23,31 @@ public class AzureOpenAIClientConfig {
         return new OpenAIClientBuilder()
                 .endpoint(cfg.getEndpoint())
                 .credential(new AzureKeyCredential(cfg.getApiKey()))
+                .serviceVersion(parseVersion(cfg.getApiVersion()))
                 .buildClient();
+    }
+
+    @Bean
+    @ConditionalOnBean(OpenAIClient.class)
+    public ChequeExtractor azureChequeExtractor(OpenAIClient client, AzureOpenAIConfig cfg) {
+        return new AzureOpenAIChequeExtractor(client, cfg);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(ChequeExtractor.class)
+    public ChequeExtractor unavailableChequeExtractor() {
+        return new UnavailableChequeExtractor();
+    }
+
+    private static OpenAIServiceVersion parseVersion(String v) {
+        if (v == null || v.isBlank()) {
+            return OpenAIServiceVersion.getLatest();
+        }
+        for (OpenAIServiceVersion sv : OpenAIServiceVersion.values()) {
+            if (sv.getVersion().equals(v)) {
+                return sv;
+            }
+        }
+        return OpenAIServiceVersion.getLatest();
     }
 }

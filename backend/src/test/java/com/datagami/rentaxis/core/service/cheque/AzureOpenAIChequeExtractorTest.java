@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import java.time.LocalDate;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 
 class AzureOpenAIChequeExtractorTest {
@@ -55,13 +56,45 @@ class AzureOpenAIChequeExtractorTest {
     }
 
     @Test
-    void extract_modelThrowsRuntimeException_returnsNullExtractionWithWarning() {
+    void extract_modelThrowsRuntimeException_propagatesSoCircuitBreakerCanTrip() {
+        // After the B3 fix, exceptions must propagate out of extract() so
+        // Resilience4j's @CircuitBreaker can register the failure. The fallback
+        // method handles the user-facing soft fail.
         var extractor = new ThrowingExtractor(config);
 
-        var result = extractor.extract(new byte[]{1}, "image/jpeg");
+        assertThatThrownBy(() -> extractor.extract(new byte[]{1}, "image/jpeg"))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("Azure says no");
+    }
+
+    @Test
+    void extractFallback_returnsNullWithSanitizedWarning() {
+        // Resilience4j calls this when the breaker is open or extract() throws.
+        // The warning must contain the exception class name only, not the
+        // raw message (which may include endpoint URLs or other PII).
+        var extractor = new StubExtractor(config, "");
+        var cause = new IllegalStateException("internal endpoint https://x leak");
+
+        var result = extractor.extractFallback(new byte[]{1}, "image/jpeg", cause);
 
         assertThat(result.extracted()).isNull();
-        assertThat(result.warnings()).anyMatch(w -> w.contains("Extraction failed"));
+        assertThat(result.warnings()).hasSize(1);
+        assertThat(result.warnings().get(0)).isEqualTo("Extraction failed: IllegalStateException");
+        assertThat(result.warnings().get(0)).doesNotContain("https://x");
+    }
+
+    @Test
+    void extractFallback_circuitOpen_returnsTemporarilyUnavailable() {
+        var extractor = new StubExtractor(config, "");
+        var openCause = io.github.resilience4j.circuitbreaker.CallNotPermittedException
+                .createCallNotPermittedException(io.github.resilience4j.circuitbreaker.CircuitBreaker
+                        .ofDefaults("chequeExtraction"));
+
+        var result = extractor.extractFallback(new byte[]{1}, "image/jpeg", openCause);
+
+        assertThat(result.extracted()).isNull();
+        assertThat(result.warnings()).hasSize(1);
+        assertThat(result.warnings().get(0)).contains("temporarily unavailable");
     }
 
     @Test

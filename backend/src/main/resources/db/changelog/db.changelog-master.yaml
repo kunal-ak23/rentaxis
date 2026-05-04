@@ -109,3 +109,5 @@ databaseChangeLog:
       file: db/changelog/changesets/50-payment-penalties-failure-reason.yaml
   - include:
       file: db/changelog/changesets/51-cheque-image-fields.yaml
+  - include:
+      file: db/changelog/changesets/52-cheque-image-purge-partial-index.yaml
