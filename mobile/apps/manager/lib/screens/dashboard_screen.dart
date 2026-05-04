@@ -74,6 +74,17 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 index: 4,
                 child: _buildRecentActivity(data),
               ),
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerRight,
+                child: FloatingActionButton.small(
+                  heroTag: 'scan-fab',
+                  onPressed: () => context.push('/scan'),
+                  backgroundColor: AppColors.accent,
+                  foregroundColor: AppColors.navyDark,
+                  child: const Icon(Icons.qr_code_scanner_outlined),
+                ),
+              ),
             ],
           ),
         ),
