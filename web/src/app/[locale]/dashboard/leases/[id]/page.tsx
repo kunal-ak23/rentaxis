@@ -530,6 +530,35 @@ export default function LeaseDetailPage() {
         }
     };
 
+    const handleDeposit = async (paymentId: string) => {
+        try {
+            const res = await fetch(`/api/proxy/v1/payments/${paymentId}/deposit`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({}),
+            });
+            if (res.ok) fetchPayments();
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
+    const handleClear = async (paymentId: string) => {
+        if (!window.confirm("Clearing this cheque will create a financial transaction. Continue?")) {
+            return;
+        }
+        try {
+            const res = await fetch(`/api/proxy/v1/payments/${paymentId}/clear`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({}),
+            });
+            if (res.ok) fetchPayments();
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
     const handleDownloadReceipt = async (paymentId: string, installmentNo: number) => {
         const res = await fetch(`/api/proxy/v1/payments/${paymentId}/receipt`);
         if (res.ok) {
@@ -883,20 +912,36 @@ export default function LeaseDetailPage() {
                                                                 Collect
                                                             </button>
                                                         )}
+                                                        {p.status === "COLLECTED" && (
+                                                            <button
+                                                                onClick={() => handleDeposit(p.id)}
+                                                                className="px-2.5 py-1 bg-warning/10 text-warning hover:bg-warning/20 rounded-lg text-[10px] font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-warning/20 focus:outline-none"
+                                                            >
+                                                                Deposit
+                                                            </button>
+                                                        )}
+                                                        {p.status === "DEPOSITED" && (
+                                                            <>
+                                                                <button
+                                                                    onClick={() => handleClear(p.id)}
+                                                                    className="px-2.5 py-1 bg-success/10 text-success hover:bg-success/20 rounded-lg text-[10px] font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-success/20 focus:outline-none"
+                                                                >
+                                                                    Clear
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => setMarkFailedTarget({ paymentId: p.id, installmentNumber: p.installmentNumber, amount: p.amount })}
+                                                                    className="px-2.5 py-1 bg-error/10 text-error hover:bg-error/20 rounded-lg text-[10px] font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-error/20 focus:outline-none"
+                                                                >
+                                                                    Mark failed
+                                                                </button>
+                                                            </>
+                                                        )}
                                                         {p.status === "BOUNCED" && (
                                                             <button
                                                                 onClick={() => { setCollectMode("replace"); setCollectingPaymentId(p.id); }}
                                                                 className="px-2.5 py-1 bg-purple-600/10 text-purple-700 hover:bg-purple-600/20 rounded-lg text-[10px] font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-purple-600/20 focus:outline-none"
                                                             >
                                                                 Replace
-                                                            </button>
-                                                        )}
-                                                        {p.status === "DEPOSITED" && (
-                                                            <button
-                                                                onClick={() => setMarkFailedTarget({ paymentId: p.id, installmentNumber: p.installmentNumber, amount: p.amount })}
-                                                                className="px-2.5 py-1 bg-error/10 text-error hover:bg-error/20 rounded-lg text-[10px] font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-error/20 focus:outline-none"
-                                                            >
-                                                                Mark failed
                                                             </button>
                                                         )}
                                                     </div>
