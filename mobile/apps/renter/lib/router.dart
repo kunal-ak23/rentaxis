@@ -68,7 +68,9 @@ final routerProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(
                 path: 'pay',
-                builder: (context, state) => const PayRentScreen(),
+                builder: (context, state) => PayRentScreen(
+                  paymentId: state.uri.queryParameters['paymentId'],
+                ),
               ),
             ],
           ),

@@ -84,12 +84,13 @@ class _Header extends StatelessWidget {
   const _Header({required this.leasesAsync});
 
   String _tenancyLabel(List<dynamic> leases) {
-    final active = leases.whereType<Map<String, dynamic>>().firstWhere(
-          (l) => l['status'] == 'ACTIVE' || l['status'] == 'PENDING_SIGNATURE',
-          orElse: () => leases.isEmpty
-              ? <String, dynamic>{}
-              : (leases.first as Map<String, dynamic>),
-        );
+    // Filter to typed maps once so the orElse fallback can't crash on a
+    // non-Map first entry. (Reviewer nit #6.)
+    final typed = leases.whereType<Map<String, dynamic>>().toList();
+    final active = typed.firstWhere(
+      (l) => l['status'] == 'ACTIVE' || l['status'] == 'PENDING_SIGNATURE',
+      orElse: () => typed.isEmpty ? <String, dynamic>{} : typed.first,
+    );
     final start = active['startDate']?.toString();
     final end = active['endDate']?.toString();
     if (start == null || end == null) return 'Your tenancy';
@@ -154,7 +155,9 @@ class _ProgressCard extends StatelessWidget {
             .fold<double>(
                 0, (s, p) => s + ((p['amount'] ?? 0) as num).toDouble());
         final ratio = total > 0 ? (paid / total).clamp(0.0, 1.0) : 0.0;
-        final pct = (ratio * 100).round();
+        // Floor (not round) so "100% complete" only shows when paid==total.
+        // Otherwise 99.6% would round up and mislead the user.
+        final pct = (ratio * 100).floor();
         return Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -312,10 +315,12 @@ class _ChequeCard extends StatelessWidget {
 
     return InkWell(
       onTap: () {
-        // PENDING / OVERDUE → open Pay Rent for this payment.
-        // Other statuses are read-only.
+        // PENDING / OVERDUE → open Pay Rent for this payment with the
+        // tapped paymentId pre-selected. Other statuses are read-only.
         if (status == 'PENDING' || status == 'OVERDUE') {
-          context.push('/payments/pay');
+          final id = payment['id']?.toString();
+          context.push(
+              id != null ? '/payments/pay?paymentId=$id' : '/payments/pay');
         }
       },
       borderRadius: BorderRadius.circular(14),
