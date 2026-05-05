@@ -80,7 +80,9 @@ class HomeScreen extends ConsumerWidget {
             const SizedBox(height: 16),
             _MaybeHero(leasesAsync: leasesAsync, paymentsAsync: paymentsAsync),
             const SizedBox(height: 18),
-            _QuickActions(),
+            _QuickActions(
+              penaltyBadge: ref.watch(_openPenaltyCountProvider).valueOrNull,
+            ),
             const SizedBox(height: 22),
             _RecentActivityHeader(),
             const SizedBox(height: 10),
@@ -140,6 +142,33 @@ int _totalInstalmentsFor(List<dynamic> payments, String? leaseId) {
       .length;
 }
 
+/// Sum of `amount` over CLEARED payments — what the renter has actually
+/// paid. Avoids the assumption that every cheque is the same size.
+double _clearedAmountFor(List<dynamic> payments, String? leaseId) {
+  if (leaseId == null) return 0;
+  return payments
+      .whereType<Map<String, dynamic>>()
+      .where((p) => p['leaseId'] == leaseId && p['status'] == 'CLEARED')
+      .fold<double>(
+          0, (s, p) => s + ((p['amount'] ?? 0) as num).toDouble());
+}
+
+/// Sum of `amount` over the entire lease schedule. Matches the
+/// denominator the renter expects to see ("X / Y") so cleared can
+/// converge on total at full clearance, regardless of rentAmount being
+/// rent-only vs schedule-with-VAT.
+double _scheduleTotalFor(List<dynamic> payments, String? leaseId) {
+  if (leaseId == null) return 0;
+  return payments
+      .whereType<Map<String, dynamic>>()
+      .where((p) =>
+          p['leaseId'] == leaseId &&
+          p['status'] != 'CANCELLED' &&
+          p['status'] != 'REPLACED')
+      .fold<double>(
+          0, (s, p) => s + ((p['amount'] ?? 0) as num).toDouble());
+}
+
 // ─── Header ─────────────────────────────────────────────────────────────────
 
 class _Header extends StatelessWidget {
@@ -160,8 +189,11 @@ class _Header extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final propertyName = lease?['propertyName']?.toString();
-    final unit = lease?['unitNumber']?.toString();
-    final tenancyLabel = (propertyName != null && unit != null)
+    // Backend's LeaseDTO uses `unitIdentifier`. We fall back to
+    // `unitNumber` defensively in case other endpoints emit it.
+    final unit = (lease?['unitIdentifier'] ?? lease?['unitNumber'])
+        ?.toString();
+    final tenancyLabel = (propertyName != null && unit != null && unit.isNotEmpty)
         ? '$propertyName · $unit'
         : (propertyName ?? 'No active lease');
     return Row(
@@ -236,11 +268,15 @@ class _MaybeHero extends StatelessWidget {
     final next = _nextPaymentFor(payments, leaseId);
     final cleared = _clearedCount(payments, leaseId);
     final total = _totalInstalmentsFor(payments, leaseId);
+    final clearedAmount = _clearedAmountFor(payments, leaseId);
+    final scheduleTotal = _scheduleTotalFor(payments, leaseId);
     return _HeroBalanceCard(
       lease: lease,
       next: next,
       clearedCount: cleared,
       totalCount: total,
+      clearedAmount: clearedAmount,
+      scheduleTotal: scheduleTotal,
     );
   }
 }
@@ -282,11 +318,15 @@ class _HeroBalanceCard extends StatelessWidget {
   final Map<String, dynamic>? next;
   final int clearedCount;
   final int totalCount;
+  final double clearedAmount;
+  final double scheduleTotal;
   const _HeroBalanceCard({
     required this.lease,
     required this.next,
     required this.clearedCount,
     required this.totalCount,
+    required this.clearedAmount,
+    required this.scheduleTotal,
   });
 
   @override
@@ -296,8 +336,10 @@ class _HeroBalanceCard extends StatelessWidget {
     final installmentNumber = next?['installmentNumber'];
     final installmentTotal = totalCount;
     final daysToDue = _daysUntil(dueRaw);
-    final clearedAmount = clearedCount * (amount > 0 ? amount.toDouble() : 0);
-    final totalAmount = (lease['rentAmount'] ?? 0) as num;
+    // If the schedule sum is unavailable (e.g. payments not loaded), fall
+    // back to lease.rentAmount so the totals slot isn't empty.
+    final totalAmount =
+        scheduleTotal > 0 ? scheduleTotal : ((lease['rentAmount'] ?? 0) as num).toDouble();
 
     return Container(
       decoration: BoxDecoration(
@@ -467,6 +509,20 @@ class _Progress extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // For long monthly schedules (12+) discrete segments become tiny
+    // hairlines that read poorly. Render a single proportional bar instead.
+    if (total > 6) {
+      final ratio = total > 0 ? (cleared / total).clamp(0.0, 1.0) : 0.0;
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(2),
+        child: LinearProgressIndicator(
+          value: ratio,
+          minHeight: 4,
+          backgroundColor: Colors.white.withValues(alpha: 0.15),
+          valueColor: const AlwaysStoppedAnimation(AppColors.accent),
+        ),
+      );
+    }
     return Row(
       children: List.generate(total, (i) {
         final filled = i < cleared;
@@ -548,28 +604,35 @@ class _GhostButton extends StatelessWidget {
 // ─── Quick actions ──────────────────────────────────────────────────────────
 
 class _QuickActions extends StatelessWidget {
+  final int? penaltyBadge;
+  const _QuickActions({this.penaltyBadge});
+
   @override
   Widget build(BuildContext context) {
     final actions = [
       (
         icon: Icons.receipt_long_outlined,
         label: 'Cheques',
-        route: '/payments'
+        route: '/payments',
+        badge: (penaltyBadge != null && penaltyBadge! > 0) ? penaltyBadge : null
       ),
       (
         icon: Icons.build_outlined,
         label: 'Maintain',
-        route: '/tickets'
+        route: '/tickets',
+        badge: null
       ),
       (
         icon: Icons.description_outlined,
         label: 'Contract',
-        route: '/profile'
+        route: '/profile',
+        badge: null
       ),
       (
         icon: Icons.contact_mail_outlined,
-        label: 'Contact',
-        route: '/notifications'
+        label: 'Inbox',
+        route: '/notifications',
+        badge: null
       ),
     ];
     return GridView.count(
@@ -592,15 +655,47 @@ class _QuickActions extends StatelessWidget {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Container(
-                        width: 32,
-                        height: 32,
-                        decoration: BoxDecoration(
-                          color: AppColors.surface2,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Icon(a.icon,
-                            size: 16, color: AppColors.primary),
+                      Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Container(
+                            width: 32,
+                            height: 32,
+                            decoration: BoxDecoration(
+                              color: AppColors.surface2,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(a.icon,
+                                size: 16, color: AppColors.primary),
+                          ),
+                          if (a.badge != null)
+                            Positioned(
+                              top: -4,
+                              right: -4,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 4),
+                                constraints: const BoxConstraints(
+                                    minWidth: 16, minHeight: 16),
+                                decoration: BoxDecoration(
+                                  color: AppColors.danger,
+                                  borderRadius: BorderRadius.circular(999),
+                                  border: Border.all(
+                                      color: AppColors.surface, width: 2),
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    '${a.badge}',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                       const SizedBox(height: 6),
                       Text(
