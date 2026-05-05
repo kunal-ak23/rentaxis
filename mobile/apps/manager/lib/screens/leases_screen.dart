@@ -329,6 +329,7 @@ class _LeaseCard extends StatelessWidget {
       case 'PENDING_SIGNATURE':
         return AppColors.accentDark;
       case 'EXPIRED':
+      case 'NOTICE_GIVEN':
         return AppColors.warning;
       case 'TERMINATED':
       case 'CLOSED':
@@ -339,8 +340,11 @@ class _LeaseCard extends StatelessWidget {
   }
 
   String _initials(String name) {
+    // "".split(RegExp(r"\s+")) returns [""], not [], so isEmpty alone
+    // would let us fall into substring(0,1) on an empty string. Guard
+    // against both an empty list AND an empty first token.
     final parts = name.trim().split(RegExp(r'\s+'));
-    if (parts.isEmpty) return '?';
+    if (parts.isEmpty || parts.first.isEmpty) return '?';
     if (parts.length == 1) return parts.first.substring(0, 1).toUpperCase();
     return (parts[0].substring(0, 1) + parts[1].substring(0, 1)).toUpperCase();
   }
