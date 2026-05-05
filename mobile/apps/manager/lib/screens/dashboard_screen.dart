@@ -282,7 +282,11 @@ class _TodayCard extends StatelessWidget {
                     const SizedBox(width: 10),
                     Expanded(
                       child: _MiniStat(
-                        n: overdueAmount > 0 ? '!' : '0',
+                        // Show actual currency amount, not "!" — the user
+                        // needs to see how much is at stake at a glance.
+                        n: overdueAmount > 0
+                            ? Formatters.currencyCompact(overdueAmount)
+                            : '0',
                         l: 'Overdue',
                         tone: overdueAmount > 0
                             ? const Color(0xFFE89289)
@@ -374,7 +378,13 @@ class _QuickActions extends StatelessWidget {
       childAspectRatio: 0.95,
       children: actions
           .map((a) => InkWell(
-                onTap: () => context.push(a.route),
+                onTap: () => a.primary
+                    // Scan is a sub-route outside the bottom-nav shell;
+                    // push it so the user returns to the dashboard on close.
+                    ? context.push(a.route)
+                    // Other quick actions are bottom-nav tabs; use go() so
+                    // we don't accumulate back-stack entries.
+                    : context.go(a.route),
                 borderRadius: BorderRadius.circular(14),
                 child: Container(
                   decoration: BoxDecoration(
@@ -509,7 +519,7 @@ class _TodaysQueue extends StatelessWidget {
               ),
             ),
             InkWell(
-              onTap: () => context.push('/payments'),
+              onTap: () => context.go('/payments'),
               child: Text(
                 'All →',
                 style: GoogleFonts.inter(
@@ -574,7 +584,9 @@ class _TaskRow extends StatelessWidget {
       _Tone.teal => const Color(0xFFD6EBEB),
     };
     return InkWell(
-      onTap: () => context.push(task.route),
+      // Task routes (/payments, /leases) are bottom-nav tabs — go() so
+      // the bottom nav stays consistent and we don't accumulate stack entries.
+      onTap: () => context.go(task.route),
       borderRadius: BorderRadius.circular(12),
       child: Container(
         padding: const EdgeInsets.all(12),
@@ -651,11 +663,18 @@ class _PortfolioGlance extends StatelessWidget {
     final totalRevenue =
         ((data['totalRentRevenue'] ?? 0) as num).toDouble();
     final collected = ((data['collectedAmount'] ?? 0) as num).toDouble();
+    final pending = ((data['pendingAmount'] ?? 0) as num).toDouble();
+    final overdue = ((data['overdueAmount'] ?? 0) as num).toDouble();
     final occupancy = data['occupancyRate'] != null
         ? ((data['occupancyRate'] as num).toDouble())
         : 0.0;
-    final progress =
-        totalRevenue > 0 ? (collected / totalRevenue).clamp(0.0, 1.0) : 0.0;
+    // Progress = collected / total-due-this-period. totalRentRevenue is
+    // the annual rent roll, which is the wrong denominator for "% collected
+    // so far" — use collected + pending + overdue instead.
+    final dueThisPeriod = collected + pending + overdue;
+    final progress = dueThisPeriod > 0
+        ? (collected / dueThisPeriod).clamp(0.0, 1.0)
+        : 0.0;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -744,7 +763,9 @@ class _PortfolioGlance extends StatelessWidget {
                         fontSize: 11, color: AppColors.textMuted),
                   ),
                   Text(
-                    Formatters.currencyCompact(totalRevenue),
+                    // Show collected so the bottom-right complements the
+                    // headline figure (totalRevenue) rather than duplicating it.
+                    Formatters.currencyCompact(collected),
                     style: GoogleFonts.jetBrainsMono(
                       fontSize: 11,
                       color: AppColors.textMuted,
