@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:intl/intl.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
 final _paymentServiceProvider = Provider<PaymentService>((ref) {
@@ -129,13 +128,14 @@ class _PayBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final amount = ((payment['amount'] ?? 0) as num).toDouble();
-    final lateFee = ((payment['lateFee'] ?? 0) as num).toDouble();
-    final adjustments = ((payment['adjustments'] ?? 0) as num).toDouble();
-    final total = amount + lateFee - adjustments;
+    // PaymentScheduleDTO doesn't currently expose lateFee or adjustments.
+    // Once the backend adds those fields, surface them as separate receipt
+    // rows; until then the total equals amount so we keep the receipt
+    // honest with just Base + Total.
+    final total = amount;
 
     final installmentNum = payment['installmentNumber'];
-    final dueRaw = payment['dueDate']?.toString();
-    final dueLabel = _formatDate(dueRaw);
+    final dueLabel = Formatters.date(payment['dueDate']?.toString());
     final subtitle = installmentNum != null
         ? 'Cheque $installmentNum · due $dueLabel'
         : 'Due $dueLabel';
@@ -219,15 +219,11 @@ class _PayBody extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 22),
-              // Receipt summary
+              // Receipt summary — base + total only until the backend
+              // exposes lateFee/adjustments on PaymentScheduleDTO.
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: _ReceiptSummary(
-                  amount: amount,
-                  lateFee: lateFee,
-                  adjustments: adjustments,
-                  total: total,
-                ),
+                child: _ReceiptSummary(amount: amount, total: total),
               ),
             ],
           ),
@@ -254,7 +250,7 @@ class _PayBody extends StatelessWidget {
                     ),
                   ),
                   child: Text(
-                    'Continue · ${_formatAmount(total)}',
+                    'Continue · ${Formatters.currency(total)}',
                     style: GoogleFonts.inter(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
@@ -286,15 +282,6 @@ class _PayBody extends StatelessWidget {
     );
   }
 
-  String _formatDate(String? iso) {
-    if (iso == null || iso.isEmpty) return '—';
-    final dt = DateTime.tryParse(iso);
-    if (dt == null) return '—';
-    return DateFormat('d MMM yyyy').format(dt);
-  }
-
-  String _formatAmount(num n) =>
-      'AED ${NumberFormat('#,##0').format(n)}';
 }
 
 class _CenteredAmount extends StatelessWidget {
@@ -318,27 +305,15 @@ class _CenteredAmount extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          RichText(
-            text: TextSpan(
-              children: [
-                TextSpan(
-                  text: 'AED ',
-                  style: GoogleFonts.sourceSerif4(
-                    fontSize: 28,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                TextSpan(
-                  text: NumberFormat('#,##0').format(amount),
-                  style: GoogleFonts.jetBrainsMono(
-                    fontSize: 38,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -1,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-              ],
+          // Use the shared Formatters.currency so locale, symbol and
+          // decimal precision stay consistent across the app.
+          Text(
+            Formatters.currency(amount),
+            style: GoogleFonts.sourceSerif4(
+              fontSize: 36,
+              fontWeight: FontWeight.w600,
+              letterSpacing: -0.7,
+              color: AppColors.textPrimary,
             ),
           ),
           const SizedBox(height: 6),
@@ -474,15 +449,8 @@ class _MethodTile extends StatelessWidget {
 
 class _ReceiptSummary extends StatelessWidget {
   final double amount;
-  final double lateFee;
-  final double adjustments;
   final double total;
-  const _ReceiptSummary({
-    required this.amount,
-    required this.lateFee,
-    required this.adjustments,
-    required this.total,
-  });
+  const _ReceiptSummary({required this.amount, required this.total});
 
   @override
   Widget build(BuildContext context) {
@@ -495,29 +463,14 @@ class _ReceiptSummary extends StatelessWidget {
       ),
       child: Column(
         children: [
-          _Row(
-            label: 'Base rent',
-            value: 'AED ${NumberFormat('#,##0').format(amount)}',
-          ),
-          _Row(
-            label: 'Late fee',
-            value: 'AED ${NumberFormat('#,##0').format(lateFee)}',
-            muted: lateFee == 0,
-          ),
-          _Row(
-            label: 'Adjustments',
-            value: adjustments == 0
-                ? 'AED 0'
-                : '−AED ${NumberFormat('#,##0').format(adjustments)}',
-            tone: adjustments > 0 ? _RowTone.green : null,
-          ),
+          _Row(label: 'Base rent', value: Formatters.currency(amount)),
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 8),
             child: Divider(height: 1, color: AppColors.border),
           ),
           _Row(
             label: 'Total',
-            value: 'AED ${NumberFormat('#,##0').format(total)}',
+            value: Formatters.currency(total),
             bold: true,
           ),
         ],
@@ -526,28 +479,18 @@ class _ReceiptSummary extends StatelessWidget {
   }
 }
 
-enum _RowTone { green }
-
 class _Row extends StatelessWidget {
   final String label;
   final String value;
   final bool bold;
-  final bool muted;
-  final _RowTone? tone;
   const _Row({
     required this.label,
     required this.value,
     this.bold = false,
-    this.muted = false,
-    this.tone,
   });
 
   @override
   Widget build(BuildContext context) {
-    final valueColor = tone == _RowTone.green
-        ? AppColors.success
-        : (muted ? AppColors.textMuted : AppColors.textPrimary);
-    final labelColor = muted ? AppColors.textMuted : AppColors.textSecondary;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -558,7 +501,7 @@ class _Row extends StatelessWidget {
             style: GoogleFonts.inter(
               fontSize: 13,
               fontWeight: bold ? FontWeight.w600 : FontWeight.w400,
-              color: bold ? AppColors.textPrimary : labelColor,
+              color: bold ? AppColors.textPrimary : AppColors.textSecondary,
             ),
           ),
           Text(
@@ -566,7 +509,7 @@ class _Row extends StatelessWidget {
             style: GoogleFonts.jetBrainsMono(
               fontSize: 13,
               fontWeight: bold ? FontWeight.w700 : FontWeight.w500,
-              color: valueColor,
+              color: AppColors.textPrimary,
             ),
           ),
         ],
