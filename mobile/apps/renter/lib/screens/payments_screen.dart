@@ -1,11 +1,8 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:open_filex/open_filex.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:razorpay_flutter/razorpay_flutter.dart';
+import 'package:intl/intl.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
 final _paymentServiceProvider = Provider<PaymentService>((ref) {
@@ -14,756 +11,514 @@ final _paymentServiceProvider = Provider<PaymentService>((ref) {
 });
 
 final _myPaymentsProvider = FutureProvider.autoDispose<List<dynamic>>((ref) {
-  final service = ref.watch(_paymentServiceProvider);
-  return service.getMyPayments();
+  return ref.watch(_paymentServiceProvider).getMyPayments();
 });
 
-class PaymentsScreen extends ConsumerStatefulWidget {
+final _myLeasesProvider = FutureProvider.autoDispose<List<dynamic>>((ref) {
+  final client = ref.watch(apiClientProvider);
+  return LeaseService(client.dio).getMyLeases();
+});
+
+/// Renter Cheques screen — redesigned to the handoff
+/// (mobile-renter.jsx · `RenterCheques`).
+///
+/// Layout:
+///   1. Header — tenancy year eyebrow + serif "Your cheques" title
+///   2. Progress card — sand-tinted "Total paid this lease" with
+///      mono current/total and a gold gradient progress bar
+///   3. List — every cheque shown with a coloured accent bar
+///      (green = cleared, gold = pending), serif amount, due date,
+///      cheque number, and a status pill on the right.
+///
+/// Tap a PENDING row → opens the Pay Rent flow with that payment
+/// pre-selected (existing route /payments/pay; payment-screen
+/// handles which one to focus).
+class PaymentsScreen extends ConsumerWidget {
   const PaymentsScreen({super.key});
 
   @override
-  ConsumerState<PaymentsScreen> createState() => _PaymentsScreenState();
-}
-
-class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
-  late Razorpay _razorpay;
-  String? _processingPaymentId;
-
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-    _razorpay = Razorpay();
-    _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _handlePaymentSuccess);
-    _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _handlePaymentError);
-    _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleExternalWallet);
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    _razorpay.clear();
-    super.dispose();
-  }
-
-  void _handlePaymentSuccess(PaymentSuccessResponse response) async {
-    try {
-      await ref.read(_paymentServiceProvider).verifyPayment({
-        'gatewayPaymentId': response.paymentId,
-        'gatewayOrderId': response.orderId,
-        'gatewaySignature': response.signature,
-      });
-      if (mounted) {
-        ref.invalidate(_myPaymentsProvider);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Payment successful!'),
-            backgroundColor: AppColors.success,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Payment verification failed. Contact support.'),
-            backgroundColor: AppColors.danger,
-          ),
-        );
-      }
-    }
-    setState(() => _processingPaymentId = null);
-  }
-
-  void _handlePaymentError(PaymentFailureResponse response) async {
-    // Cancel the ONLINE_PENDING state so payment reverts to PENDING
-    if (_processingPaymentId != null) {
-      try {
-        await ref.read(_paymentServiceProvider).cancelPayment(_processingPaymentId!);
-      } catch (_) {}
-    }
-    setState(() => _processingPaymentId = null);
-    ref.invalidate(_myPaymentsProvider);
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content:
-              Text('Payment failed: ${response.message ?? 'Unknown error'}'),
-          backgroundColor: AppColors.danger,
-        ),
-      );
-    }
-  }
-
-  void _handleExternalWallet(ExternalWalletResponse response) {
-    setState(() => _processingPaymentId = null);
-  }
-
-  Future<void> _initiatePayment(Map<String, dynamic> payment) async {
-    final paymentId = payment['id'];
-    setState(() => _processingPaymentId = paymentId);
-
-    try {
-      final order =
-          await ref.read(_paymentServiceProvider).createOrder(paymentId);
-
-      final options = {
-        'key': order['gatewayKey'],
-        'amount': ((order['amount'] ?? 0) * 100).toInt(), // Convert to paise
-        'order_id': order['orderId'],
-        'name': 'RentAxis',
-        'description':
-            'Rent Payment - ${payment['installmentLabel'] ?? payment['label'] ?? ''}',
-        'prefill': {
-          'email': order['renterEmail'] ?? ref.read(authProvider).email ?? '',
-          'contact': '',
-        },
-        'currency': order['currency'] ?? 'INR',
-      };
-
-      _razorpay.open(options);
-    } catch (e) {
-      setState(() => _processingPaymentId = null);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to create payment order'),
-            backgroundColor: AppColors.danger,
-          ),
-        );
-      }
-    }
-  }
-
-  Future<void> _downloadReceipt(String paymentId) async {
-    try {
-      final bytes =
-          await ref.read(_paymentServiceProvider).downloadReceipt(paymentId);
-      final dir = await getApplicationDocumentsDirectory();
-      final file = File('${dir.path}/receipt_$paymentId.pdf');
-      await file.writeAsBytes(bytes);
-      await OpenFilex.open(file.path);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to download receipt'),
-            backgroundColor: AppColors.danger,
-          ),
-        );
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final paymentsAsync = ref.watch(_myPaymentsProvider);
+    final leasesAsync = ref.watch(_myLeasesProvider);
 
-    return Column(
-      children: [
-        // Page title + tab bar
-        Container(
-          color: AppColors.surface,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    Future<void> refresh() async {
+      ref.invalidate(_myPaymentsProvider);
+      ref.invalidate(_myLeasesProvider);
+      await ref.read(_myPaymentsProvider.future);
+    }
+
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: SafeArea(
+        child: RefreshIndicator(
+          color: AppColors.primary,
+          onRefresh: refresh,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 130),
+            physics: const AlwaysScrollableScrollPhysics(),
             children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-                child: Text(
-                  'Payments',
-                  style: GoogleFonts.cinzel(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
-                  ),
+              _Header(leasesAsync: leasesAsync),
+              const SizedBox(height: 16),
+              _ProgressCard(paymentsAsync: paymentsAsync),
+              const SizedBox(height: 18),
+              paymentsAsync.when(
+                loading: () => const _ChequesShimmer(),
+                error: (e, _) => ErrorState(
+                  message: 'Failed to load cheques',
+                  onRetry: refresh,
                 ),
-              ),
-              Container(
-                margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                padding: const EdgeInsets.all(3),
-                decoration: BoxDecoration(
-                  color: AppColors.background,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: TabBar(
-                  controller: _tabController,
-                  indicator: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(8),
-                    boxShadow: AppShadows.soft,
-                  ),
-                  indicatorSize: TabBarIndicatorSize.tab,
-                  dividerColor: Colors.transparent,
-                  labelColor: AppColors.primary,
-                  unselectedLabelColor: AppColors.textMuted,
-                  labelStyle: GoogleFonts.josefinSans(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                  unselectedLabelStyle: GoogleFonts.josefinSans(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w400,
-                  ),
-                  labelPadding: EdgeInsets.zero,
-                  tabs: const [
-                    Tab(text: 'Upcoming', height: 36),
-                    Tab(text: 'History', height: 36),
-                  ],
-                ),
+                data: (payments) => _ChequesList(payments: payments),
               ),
             ],
           ),
         ),
-        // Body
-        Expanded(child: _buildBody(paymentsAsync)),
+      ),
+    );
+  }
+}
+
+// ─── Header ─────────────────────────────────────────────────────────────────
+
+class _Header extends StatelessWidget {
+  final AsyncValue<List<dynamic>> leasesAsync;
+  const _Header({required this.leasesAsync});
+
+  String _tenancyLabel(List<dynamic> leases) {
+    // Filter to typed maps once so the orElse fallback can't crash on a
+    // non-Map first entry. (Reviewer nit #6.)
+    final typed = leases.whereType<Map<String, dynamic>>().toList();
+    final active = typed.firstWhere(
+      (l) => l['status'] == 'ACTIVE' || l['status'] == 'PENDING_SIGNATURE',
+      orElse: () => typed.isEmpty ? <String, dynamic>{} : typed.first,
+    );
+    final start = active['startDate']?.toString();
+    final end = active['endDate']?.toString();
+    if (start == null || end == null) return 'Your tenancy';
+    final s = DateTime.tryParse(start);
+    final e = DateTime.tryParse(end);
+    if (s == null || e == null) return 'Your tenancy';
+    if (s.year == e.year) return 'Tenancy ${s.year}';
+    return 'Tenancy ${s.year}–${e.year}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final eyebrow = leasesAsync.when(
+      data: _tenancyLabel,
+      loading: () => 'Your tenancy',
+      error: (_, _) => 'Your tenancy',
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          eyebrow,
+          style: GoogleFonts.inter(
+              fontSize: 12, color: AppColors.textMuted),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Your cheques',
+          style: GoogleFonts.sourceSerif4(
+            fontSize: 22,
+            fontWeight: FontWeight.w600,
+            letterSpacing: -0.4,
+            color: AppColors.textPrimary,
+          ),
+        ),
       ],
     );
   }
+}
 
-  Widget _buildBody(AsyncValue<List<dynamic>> paymentsAsync) {
-    return Scaffold(
-      body: paymentsAsync.when(
-        data: (payments) {
-          final upcoming = payments.where((p) {
-            final status = p['status'] ?? '';
-            return status == 'PENDING' ||
-                status == 'OVERDUE' ||
-                status == 'ONLINE_PENDING';
-          }).toList();
+// ─── Progress card ──────────────────────────────────────────────────────────
 
-          final history = payments.where((p) {
-            final status = p['status'] ?? '';
-            return status == 'CLEARED' ||
-                status == 'COLLECTED' ||
-                status == 'DEPOSITED';
-          }).toList();
+class _ProgressCard extends StatelessWidget {
+  final AsyncValue<List<dynamic>> paymentsAsync;
+  const _ProgressCard({required this.paymentsAsync});
 
-          upcoming.sort((a, b) {
-            final aOverdue = a['status'] == 'OVERDUE' ? 0 : 1;
-            final bOverdue = b['status'] == 'OVERDUE' ? 0 : 1;
-            if (aOverdue != bOverdue) return aOverdue.compareTo(bOverdue);
-            return (a['dueDate'] ?? '').compareTo(b['dueDate'] ?? '');
-          });
-
-          history.sort(
-              (a, b) => (b['dueDate'] ?? '').compareTo(a['dueDate'] ?? ''));
-
-          num totalDue = 0;
-          num totalLease = 0;
-          num paid = 0;
-          for (final p in upcoming) {
-            totalDue += (p['totalPayable'] ?? p['amount'] ?? 0) as num;
-          }
-          for (final p in payments) {
-            totalLease += (p['amount'] ?? 0) as num;
-            final s = p['status'] ?? '';
-            if (s == 'CLEARED' || s == 'COLLECTED' || s == 'DEPOSITED') {
-              paid += (p['totalPayable'] ?? p['amount'] ?? 0) as num;
-            }
-          }
-
-          return TabBarView(
-            controller: _tabController,
+  @override
+  Widget build(BuildContext context) {
+    return paymentsAsync.when(
+      loading: () => const ShimmerLoading(
+          height: 110, width: double.infinity, borderRadius: 12),
+      error: (_, _) => const SizedBox.shrink(),
+      data: (payments) {
+        final visible = payments
+            .whereType<Map<String, dynamic>>()
+            .where((p) => p['status'] != 'CANCELLED' && p['status'] != 'REPLACED')
+            .toList();
+        final total = visible.fold<double>(
+            0, (s, p) => s + ((p['amount'] ?? 0) as num).toDouble());
+        final paid = visible
+            .where((p) => p['status'] == 'CLEARED')
+            .fold<double>(
+                0, (s, p) => s + ((p['amount'] ?? 0) as num).toDouble());
+        final ratio = total > 0 ? (paid / total).clamp(0.0, 1.0) : 0.0;
+        // Floor (not round) so "100% complete" only shows when paid==total.
+        // Otherwise 99.6% would round up and mislead the user.
+        final pct = (ratio * 100).floor();
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppColors.surface2,
+            border: Border.all(color: AppColors.border),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildUpcomingTab(upcoming, totalDue, paid, totalLease),
-              _buildHistoryTab(history),
-            ],
-          );
-        },
-        loading: () => Padding(
-          padding: const EdgeInsets.all(20),
-          child: ListShimmer(itemCount: 3),
-        ),
-        error: (err, _) => ErrorState(
-          message: 'Failed to load payments',
-          onRetry: () => ref.invalidate(_myPaymentsProvider),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildUpcomingTab(List<dynamic> upcoming, num totalDue, num paid, num totalLease) {
-    return RefreshIndicator(
-      color: AppColors.primary,
-      onRefresh: () async => ref.invalidate(_myPaymentsProvider),
-      child: upcoming.isEmpty
-          ? ListView(
-              children: const [
-                SizedBox(height: 80),
-                EmptyState(
-                  icon: Icons.check_circle_outline,
-                  title: 'All Caught Up!',
-                  subtitle: 'No pending payments',
-                ),
-              ],
-            )
-          : ListView(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 150),
-              children: [
-                // Progress summary card
-                AnimatedListItem(
-                  index: 0,
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: AppColors.surface2,
-                      border: Border.all(color: AppColors.border),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              'Total paid this lease',
-                              style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted),
-                            ),
-                            Text(
-                              '${totalLease <= 0 ? 0 : ((paid / totalLease) * 100).round()}% complete',
-                              style: GoogleFonts.inter(
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.accentDark,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          Formatters.currencyCompact(paid),
-                          style: GoogleFonts.sourceSerif4(
-                            fontSize: 28,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                        Text(
-                          '${Formatters.currencyCompact(totalLease)} total',
-                          style: GoogleFonts.inter(fontSize: 14, color: AppColors.textMuted),
-                        ),
-                        const SizedBox(height: 12),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(999),
-                          child: LinearProgressIndicator(
-                            value: totalLease <= 0 ? 0 : (paid / totalLease).clamp(0, 1).toDouble(),
-                            backgroundColor: Colors.white,
-                            valueColor: const AlwaysStoppedAnimation<Color>(AppColors.accent),
-                            minHeight: 8,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          '${upcoming.length} cheque${upcoming.length == 1 ? '' : 's'} pending · ${Formatters.currencyCompact(totalDue)} due',
-                          style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted),
-                        ),
-                      ],
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
+                children: [
+                  Text(
+                    'Total paid this lease',
+                    style: GoogleFonts.inter(
+                        fontSize: 12, color: AppColors.textMuted),
+                  ),
+                  Text(
+                    '$pct% complete',
+                    style: GoogleFonts.inter(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.accentDark,
                     ),
                   ),
-                ),
-                const SizedBox(height: 18),
-
-                // Payment cards
-                ...upcoming.asMap().entries.map((entry) {
-                  return AnimatedListItem(
-                    index: entry.key + 1,
-                    child: _buildUpcomingCard(entry.value),
-                  );
-                }),
-              ],
-            ),
-    );
-  }
-
-  Widget _buildUpcomingCard(Map<String, dynamic> payment) {
-    final status = payment['status'] ?? 'PENDING';
-    final isOverdue = status == 'OVERDUE';
-    final isProcessing = status == 'ONLINE_PENDING' ||
-        _processingPaymentId == payment['id'];
-    final amount = payment['amount'] ?? 0;
-    final penalty = payment['penaltyAmount'] ?? 0;
-    final totalPayable = payment['totalPayable'] ?? amount;
-    final dueDate = Formatters.date(payment['dueDate']);
-    final installmentNum = payment['installmentNumber'] ?? '';
-    final totalInstallments = payment['paymentTerms'] ?? '';
-    final label = installmentNum != ''
-        ? 'CHEQUE $installmentNum${totalInstallments == '' ? '' : ' OF $totalInstallments'}'
-        : (payment['installmentLabel'] ?? payment['label'] ?? 'Payment');
-    final propertyName = payment['propertyName'] ?? '';
-    final unitNumber = payment['unitIdentifier'] ?? '';
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: AppShadows.soft,
-            border: isOverdue
-                ? Border.all(
-                    color: AppColors.danger.withValues(alpha: 0.2),
-                  )
-                : null,
-          ),
-        child: IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Left accent border — gold for upcoming, red for overdue
-              Container(
-                width: 5,
-                color: isOverdue ? AppColors.danger : AppColors.accent,
+                ],
               ),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.all(18),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+              const SizedBox(height: 6),
+              RichText(
+                text: TextSpan(
+                  style: GoogleFonts.sourceSerif4(
+                    fontSize: 28,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            label.isNotEmpty ? label : 'Payment',
-                            style: Theme.of(context).textTheme.titleMedium,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        StatusBadge(
-                          label: status,
-                          color:
-                              StatusHelper.getPaymentStatusColor(status),
-                        ),
-                      ],
-                    ),
-                    if (propertyName.isNotEmpty ||
-                        unitNumber.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        [
-                          propertyName,
-                          if (unitNumber.isNotEmpty) 'Unit $unitNumber'
-                        ].join(' - '),
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodySmall
-                            ?.copyWith(color: AppColors.textMuted),
+                    TextSpan(text: 'AED ${NumberFormat('#,##0').format(paid)}'),
+                    TextSpan(
+                      text: '  / ${NumberFormat('#,##0').format(total)}',
+                      style: GoogleFonts.sourceSerif4(
+                        fontSize: 14,
+                        color: AppColors.textMuted,
                       ),
-                    ],
-                    const SizedBox(height: 14),
-                    Row(
-                      children: [
-                        _PaymentDetail(
-                            label: 'Due Date', value: dueDate),
-                        _PaymentDetail(
-                            label: 'Amount',
-                            value: Formatters.currency(amount)),
-                        if ((penalty as num) > 0)
-                          _PaymentDetail(label: 'Penalty', value: Formatters.currency(penalty), valueColor: AppColors.danger),
-                      ],
                     ),
-                    const SizedBox(height: 14),
-                    Divider(
-                      height: 1,
-                      color: AppColors.border.withValues(alpha: 0.5),
-                    ),
-                    const SizedBox(height: 14),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Total Payable',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .labelSmall),
-                            Text(
-                              Formatters.currency(totalPayable),
-                              style: GoogleFonts.josefinSans(
-                                fontSize: 20,
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.primary,
-                              ),
-                            ),
-                          ],
-                        ),
-                        if (!isProcessing)
-                          _PayNowButton(
-                            onPressed: () => _initiatePayment(payment),
-                          )
-                        else
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 20, vertical: 12),
-                            decoration: BoxDecoration(
-                              color: AppColors.statusPending
-                                  .withValues(alpha: 0.08),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                SizedBox(
-                                  width: 14,
-                                  height: 14,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: AppColors.statusPending,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  'Processing...',
-                                  style: GoogleFonts.josefinSans(
-                                    color: AppColors.statusPending,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 13,
-                                  ),
-                                ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: SizedBox(
+                  height: 8,
+                  child: Stack(
+                    children: [
+                      Container(color: AppColors.surface),
+                      FractionallySizedBox(
+                        widthFactor: ratio,
+                        child: Container(
+                          decoration: const BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                AppColors.accent,
+                                AppColors.accentDark,
                               ],
                             ),
                           ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHistoryTab(List<dynamic> history) {
-    return RefreshIndicator(
-      color: AppColors.primary,
-      onRefresh: () async => ref.invalidate(_myPaymentsProvider),
-      child: history.isEmpty
-          ? ListView(
-              children: const [
-                SizedBox(height: 80),
-                EmptyState(
-                  icon: Icons.history,
-                  title: 'No Payment History',
-                  subtitle: 'Completed payments will appear here',
-                ),
-              ],
-            )
-          : ListView.builder(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 150),
-              itemCount: history.length,
-              itemBuilder: (context, index) {
-                final payment = history[index];
-                return AnimatedListItem(
-                  index: index,
-                  child: _buildHistoryCard(payment),
-                );
-              },
-            ),
-    );
-  }
-
-  Widget _buildHistoryCard(Map<String, dynamic> payment) {
-    final amount = payment['totalPayable'] ?? payment['amount'] ?? 0;
-    final dueDate = Formatters.date(payment['dueDate']);
-    final installmentNum = payment['installmentNumber'] ?? '';
-    final label = installmentNum != '' ? 'Installment #$installmentNum' : (payment['installmentLabel'] ?? payment['label'] ?? 'Payment');
-    final propertyName = payment['propertyName'] ?? '';
-    final unitId = payment['unitIdentifier'] ?? '';
-    final subtitle = [propertyName, if (unitId.isNotEmpty) unitId].where((s) => s.isNotEmpty).join(' - ');
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: AppShadows.soft,
-          ),
-        child: IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Green accent
-              Container(
-                width: 5,
-                color: AppColors.success,
-              ),
-            Expanded(
-              child: ListTile(
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                leading: Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: AppColors.success.withValues(alpha: 0.08),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.check_circle,
-                    color: AppColors.success,
-                    size: 22,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                title: Text(
-                  label.isNotEmpty ? label : 'Payment',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                subtitle: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (subtitle.isNotEmpty)
-                      Text(
-                        subtitle,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppColors.textMuted),
-                      ),
-                    Text(
-                      dueDate,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ],
-                ),
-                trailing: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      Formatters.currency(amount),
-                      style: GoogleFonts.josefinSans(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 14,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    GestureDetector(
-                      onTap: () => _downloadReceipt(payment['id']),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.download_rounded,
-                              size: 14, color: AppColors.primary),
-                          const SizedBox(width: 3),
-                          Text(
-                            'Receipt',
-                            style: GoogleFonts.josefinSans(
-                              fontSize: 11,
-                              color: AppColors.primary,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _PayNowButton extends StatefulWidget {
-  final VoidCallback onPressed;
-
-  const _PayNowButton({required this.onPressed});
-
-  @override
-  State<_PayNowButton> createState() => _PayNowButtonState();
-}
-
-class _PayNowButtonState extends State<_PayNowButton> {
-  double _scale = 1.0;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTapDown: (_) => setState(() => _scale = 0.95),
-      onTapUp: (_) {
-        setState(() => _scale = 1.0);
-        widget.onPressed();
-      },
-      onTapCancel: () => setState(() => _scale = 1.0),
-      child: AnimatedScale(
-        scale: _scale,
-        duration: const Duration(milliseconds: 150),
-        curve: Curves.easeOut,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [AppColors.primary, AppColors.primaryLight],
-            ),
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.primary.withValues(alpha: 0.25),
-                blurRadius: 8,
-                offset: const Offset(0, 3),
               ),
             ],
           ),
-          child: Text(
-            'Pay Now',
-            style: GoogleFonts.josefinSans(
-              color: Colors.white,
-              fontWeight: FontWeight.w600,
-              fontSize: 14,
+        );
+      },
+    );
+  }
+}
+
+// ─── Cheques list ───────────────────────────────────────────────────────────
+
+class _ChequesList extends StatelessWidget {
+  final List<dynamic> payments;
+  const _ChequesList({required this.payments});
+
+  @override
+  Widget build(BuildContext context) {
+    final list = payments
+        .whereType<Map<String, dynamic>>()
+        .where((p) => p['status'] != 'CANCELLED' && p['status'] != 'REPLACED')
+        .toList()
+      ..sort((a, b) {
+        final ai = (a['installmentNumber'] ?? 0) as num;
+        final bi = (b['installmentNumber'] ?? 0) as num;
+        return ai.compareTo(bi);
+      });
+
+    if (list.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          border: Border.all(color: AppColors.border),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.inbox_outlined, color: AppColors.textMuted),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'No cheques yet — they will appear here once your lease is set up.',
+                style: GoogleFonts.inter(
+                  fontSize: 12.5,
+                  color: AppColors.textSecondary,
+                ),
+              ),
             ),
+          ],
+        ),
+      );
+    }
+
+    final total = list.length;
+    return Column(
+      children: list
+          .map((p) => Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _ChequeCard(payment: p, totalCount: total),
+              ))
+          .toList(),
+    );
+  }
+}
+
+class _ChequeCard extends StatelessWidget {
+  final Map<String, dynamic> payment;
+  final int totalCount;
+  const _ChequeCard({required this.payment, required this.totalCount});
+
+  @override
+  Widget build(BuildContext context) {
+    final status = payment['status']?.toString() ?? 'PENDING';
+    final amount = (payment['amount'] ?? 0) as num;
+    final n = payment['installmentNumber'];
+    final dueRaw = payment['dueDate']?.toString();
+    final cheque = payment['chequeNumber']?.toString();
+    final dueLabel = _formatDate(dueRaw);
+
+    final accent = _accentFor(status);
+
+    return InkWell(
+      onTap: () {
+        // PENDING / OVERDUE → open Pay Rent for this payment with the
+        // tapped paymentId pre-selected. Other statuses are read-only.
+        if (status == 'PENDING' || status == 'OVERDUE') {
+          final id = payment['id']?.toString();
+          context.push(
+              id != null ? '/payments/pay?paymentId=$id' : '/payments/pay');
+        }
+      },
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          border: Border.all(color: AppColors.border),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: IntrinsicHeight(
+          child: Row(
+            children: [
+              Container(
+                width: 3,
+                margin: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                  color: accent,
+                  borderRadius: const BorderRadius.only(
+                    topRight: Radius.circular(2),
+                    bottomRight: Radius.circular(2),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(11, 14, 14, 14),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              n != null
+                                  ? 'CHEQUE $n OF $totalCount'
+                                  : 'CHEQUE',
+                              style: GoogleFonts.inter(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 0.6,
+                                color: AppColors.textMuted,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'AED ${NumberFormat('#,##0').format(amount)}',
+                              style: GoogleFonts.sourceSerif4(
+                                fontSize: 22,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: -0.3,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              [
+                                if (dueLabel.isNotEmpty) 'Due $dueLabel',
+                                if (cheque != null && cheque.isNotEmpty)
+                                  cheque,
+                              ].join(' · '),
+                              style: GoogleFonts.inter(
+                                fontSize: 11.5,
+                                color: AppColors.textMuted,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      _StatusPill(status: status),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
+
+  Color _accentFor(String status) {
+    switch (status) {
+      case 'CLEARED':
+        return AppColors.success;
+      case 'COLLECTED':
+      case 'DEPOSITED':
+        return AppColors.info;
+      case 'BOUNCED':
+      case 'OVERDUE':
+        return AppColors.danger;
+      case 'PENDING':
+      default:
+        return AppColors.accent;
+    }
+  }
+
+  String _formatDate(String? iso) {
+    if (iso == null || iso.isEmpty) return '';
+    final dt = DateTime.tryParse(iso);
+    if (dt == null) return '';
+    return DateFormat('d MMM yyyy').format(dt);
+  }
 }
 
-class _PaymentDetail extends StatelessWidget {
-  final String label;
-  final String value;
-  final Color? valueColor;
+class _StatusPill extends StatelessWidget {
+  final String status;
+  const _StatusPill({required this.status});
 
-  const _PaymentDetail({
-    required this.label,
-    required this.value,
-    this.valueColor,
-  });
+  ({Color fg, Color bg, String label}) _meta() {
+    switch (status) {
+      case 'CLEARED':
+        return (
+          fg: AppColors.success,
+          bg: AppColors.successLight,
+          label: 'cleared'
+        );
+      case 'COLLECTED':
+      case 'DEPOSITED':
+        return (
+          fg: AppColors.info,
+          bg: const Color(0xFFD6EBEB),
+          label: status == 'COLLECTED' ? 'collected' : 'deposited'
+        );
+      case 'BOUNCED':
+        return (
+          fg: AppColors.danger,
+          bg: AppColors.dangerLight,
+          label: 'bounced'
+        );
+      case 'OVERDUE':
+        return (
+          fg: AppColors.danger,
+          bg: AppColors.dangerLight,
+          label: 'overdue'
+        );
+      case 'PENDING':
+      default:
+        return (
+          fg: AppColors.accentDark,
+          bg: AppColors.accentLight,
+          label: 'pending'
+        );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    final m = _meta();
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: m.bg,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Text(label, style: Theme.of(context).textTheme.labelSmall),
-          const SizedBox(height: 3),
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: m.fg,
+            ),
+          ),
+          const SizedBox(width: 6),
           Text(
-            value,
-            style: GoogleFonts.josefinSans(
-              fontSize: 13,
+            m.label,
+            style: GoogleFonts.inter(
+              fontSize: 10.5,
               fontWeight: FontWeight.w600,
-              color: valueColor ?? AppColors.textPrimary,
+              color: m.fg,
+              letterSpacing: 0.2,
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ChequesShimmer extends StatelessWidget {
+  const _ChequesShimmer();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: List.generate(
+        4,
+        (_) => const Padding(
+          padding: EdgeInsets.only(bottom: 10),
+          child: ShimmerLoading(
+            height: 92,
+            width: double.infinity,
+            borderRadius: 14,
+          ),
+        ),
       ),
     );
   }
