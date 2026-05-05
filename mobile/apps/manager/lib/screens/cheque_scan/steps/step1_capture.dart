@@ -31,10 +31,12 @@ class Step1Capture extends StatefulWidget {
 class _Step1CaptureState extends State<Step1Capture>
     with WidgetsBindingObserver {
   CameraController? _controller;
-  Future<void>? _initFuture;
   String? _initError;
   bool _flashOn = false;
   bool _capturing = false;
+  // Set to true in dispose() so async camera-init paths can bail out
+  // cleanly if the user pops the route while initialise() is in flight.
+  bool _disposed = false;
 
   @override
   void initState() {
@@ -45,6 +47,7 @@ class _Step1CaptureState extends State<Step1Capture>
 
   @override
   void dispose() {
+    _disposed = true;
     WidgetsBinding.instance.removeObserver(this);
     _controller?.dispose();
     super.dispose();
@@ -52,10 +55,12 @@ class _Step1CaptureState extends State<Step1Capture>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (_disposed) return;
     final ctrl = _controller;
-    if (ctrl == null || !ctrl.value.isInitialized) return;
     if (state == AppLifecycleState.inactive) {
-      ctrl.dispose();
+      // Release camera while backgrounded; resume rebuilds it.
+      ctrl?.dispose();
+      _controller = null;
     } else if (state == AppLifecycleState.resumed) {
       _initCamera();
     }
@@ -64,6 +69,7 @@ class _Step1CaptureState extends State<Step1Capture>
   Future<void> _initCamera() async {
     try {
       final cameras = await availableCameras();
+      if (_disposed) return;
       if (cameras.isEmpty) {
         setState(() => _initError = 'No camera available on this device.');
         return;
@@ -79,13 +85,17 @@ class _Step1CaptureState extends State<Step1Capture>
         enableAudio: false,
         imageFormatGroup: ImageFormatGroup.jpeg,
       );
+      await ctrl.initialize();
+      if (_disposed) {
+        // The user popped while initialise was in flight — release the
+        // controller we just opened so the camera doesn't stay on.
+        await ctrl.dispose();
+        return;
+      }
       _controller = ctrl;
-      _initFuture = ctrl.initialize();
-      await _initFuture;
-      if (!mounted) return;
       setState(() {});
     } catch (e) {
-      if (!mounted) return;
+      if (_disposed || !mounted) return;
       setState(() => _initError = _humanizeCameraError(e));
     }
   }
@@ -102,15 +112,23 @@ class _Step1CaptureState extends State<Step1Capture>
     final ctrl = _controller;
     if (ctrl == null || !ctrl.value.isInitialized || _capturing) return;
     setState(() => _capturing = true);
+    final flashWasOn = _flashOn;
     try {
-      if (_flashOn) {
+      if (flashWasOn) {
         await ctrl.setFlashMode(FlashMode.torch);
       }
-      final XFile shot = await ctrl.takePicture();
-      if (_flashOn) {
-        await ctrl.setFlashMode(FlashMode.off);
+      try {
+        final XFile shot = await ctrl.takePicture();
+        widget.onCaptured(File(shot.path));
+      } finally {
+        // Always restore — if takePicture throws (camera busy, orientation
+        // change, etc.) we mustn't leave the torch stuck on.
+        if (flashWasOn && !_disposed) {
+          try {
+            await ctrl.setFlashMode(FlashMode.off);
+          } catch (_) {/* best effort */}
+        }
       }
-      widget.onCaptured(File(shot.path));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

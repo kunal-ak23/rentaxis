@@ -156,7 +156,12 @@ class _ChequeScanFlowScreenState extends ConsumerState<ChequeScanFlowScreen> {
             : null,
         'chequeImageUrl': _extracted!.imageUrl,
         'chequeImageBlobPath': _extracted!.imageBlobPath,
-        'chequeImageUploadedAt': _extracted!.uploadedAt.toIso8601String(),
+        // Normalize to UTC so the emitted ISO string carries a `Z` suffix.
+        // Backend (Spring + Jackson) deserializes OffsetDateTime strictly: a
+        // string with no offset (Dart's default for non-UTC DateTime) would
+        // be rejected.
+        'chequeImageUploadedAt':
+            _extracted!.uploadedAt.toUtc().toIso8601String(),
       });
       if (disposition == Disposition.depositToday) {
         await svc.depositPayment(_selectedPaymentId!);
@@ -182,6 +187,8 @@ class _ChequeScanFlowScreenState extends ConsumerState<ChequeScanFlowScreen> {
       _extracted = null;
       _extractionError = null;
       _submitError = null;
+      _submitting = false;
+      _disposition = Disposition.depositToday; // reset to default
       // Keep the matched payment / paymentId IF it was passed in via deep link.
       if (widget.paymentId == null) {
         _selectedPaymentId = null;
