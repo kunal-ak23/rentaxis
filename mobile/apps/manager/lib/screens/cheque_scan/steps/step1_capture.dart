@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
@@ -9,11 +10,11 @@ import '../widgets/step_header.dart';
 
 /// Step 1 — capture the cheque image.
 ///
-/// Shows a dark camera frame with corner brackets, a gold shutter button,
-/// and a list of capture tips. The actual camera invocation is delegated
-/// to image_picker (no in-app live preview yet — that would need
-/// camera/mobile_scanner; defer to a follow-up).
-class Step1Capture extends StatelessWidget {
+/// Shows a live in-app camera preview inside a dark frame with corner
+/// brackets, a gold shutter button, a torch toggle, and a gallery
+/// fallback. Camera lifecycle is fully managed: initialised on mount,
+/// disposed on dispose, paused on app backgrounding.
+class Step1Capture extends StatefulWidget {
   final ValueChanged<File> onCaptured;
   final VoidCallback? onClose;
 
@@ -23,14 +24,115 @@ class Step1Capture extends StatelessWidget {
     this.onClose,
   });
 
-  Future<void> _pick(BuildContext context, ImageSource source) async {
+  @override
+  State<Step1Capture> createState() => _Step1CaptureState();
+}
+
+class _Step1CaptureState extends State<Step1Capture>
+    with WidgetsBindingObserver {
+  CameraController? _controller;
+  Future<void>? _initFuture;
+  String? _initError;
+  bool _flashOn = false;
+  bool _capturing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _initCamera();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final ctrl = _controller;
+    if (ctrl == null || !ctrl.value.isInitialized) return;
+    if (state == AppLifecycleState.inactive) {
+      ctrl.dispose();
+    } else if (state == AppLifecycleState.resumed) {
+      _initCamera();
+    }
+  }
+
+  Future<void> _initCamera() async {
+    try {
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) {
+        setState(() => _initError = 'No camera available on this device.');
+        return;
+      }
+      // Prefer back camera if multiple are present.
+      final back = cameras.firstWhere(
+        (c) => c.lensDirection == CameraLensDirection.back,
+        orElse: () => cameras.first,
+      );
+      final ctrl = CameraController(
+        back,
+        ResolutionPreset.high,
+        enableAudio: false,
+        imageFormatGroup: ImageFormatGroup.jpeg,
+      );
+      _controller = ctrl;
+      _initFuture = ctrl.initialize();
+      await _initFuture;
+      if (!mounted) return;
+      setState(() {});
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _initError = _humanizeCameraError(e));
+    }
+  }
+
+  String _humanizeCameraError(Object e) {
+    final msg = e.toString();
+    if (msg.contains('CameraAccessDenied') || msg.contains('Permission denied')) {
+      return 'Camera access is denied. Enable it in your device settings, or use a photo from your gallery instead.';
+    }
+    return 'Camera unavailable: $msg';
+  }
+
+  Future<void> _takePicture() async {
+    final ctrl = _controller;
+    if (ctrl == null || !ctrl.value.isInitialized || _capturing) return;
+    setState(() => _capturing = true);
+    try {
+      if (_flashOn) {
+        await ctrl.setFlashMode(FlashMode.torch);
+      }
+      final XFile shot = await ctrl.takePicture();
+      if (_flashOn) {
+        await ctrl.setFlashMode(FlashMode.off);
+      }
+      widget.onCaptured(File(shot.path));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Capture failed: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _capturing = false);
+    }
+  }
+
+  Future<void> _pickFromGallery() async {
     final picker = ImagePicker();
     final picked = await picker.pickImage(
-      source: source,
+      source: ImageSource.gallery,
       imageQuality: 85,
     );
     if (picked == null) return;
-    onCaptured(File(picked.path));
+    widget.onCaptured(File(picked.path));
+  }
+
+  void _toggleFlash() {
+    setState(() => _flashOn = !_flashOn);
   }
 
   @override
@@ -42,7 +144,7 @@ class Step1Capture extends StatelessWidget {
           step: 1,
           title: 'Position the cheque',
           showBack: false,
-          onClose: onClose,
+          onClose: widget.onClose,
         ),
         Expanded(
           child: SingleChildScrollView(
@@ -59,7 +161,10 @@ class Step1Capture extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 14),
-                _CameraFrame(),
+                _CameraFrame(
+                  controller: _controller,
+                  initError: _initError,
+                ),
                 const SizedBox(height: 16),
                 ..._tips.map((t) => Padding(
                       padding: const EdgeInsets.only(bottom: 8),
@@ -71,26 +176,31 @@ class Step1Capture extends StatelessWidget {
                   children: [
                     _SecondaryButton(
                       icon: Icons.image_outlined,
-                      onTap: () => _pick(context, ImageSource.gallery),
+                      onTap: _pickFromGallery,
                     ),
                     const SizedBox(width: 28),
-                    _Shutter(onTap: () => _pick(context, ImageSource.camera)),
+                    _Shutter(
+                      capturing: _capturing,
+                      enabled: _initError == null &&
+                          (_controller?.value.isInitialized ?? false),
+                      onTap: _takePicture,
+                    ),
                     const SizedBox(width: 28),
                     _SecondaryButton(
-                      icon: Icons.flash_on_outlined,
-                      onTap: () {
-                        // Live flash control needs camera package; placeholder.
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Flash control coming soon')),
-                        );
-                      },
+                      icon: _flashOn
+                          ? Icons.flash_on
+                          : Icons.flash_off_outlined,
+                      onTap: _toggleFlash,
+                      active: _flashOn,
                     ),
                   ],
                 ),
                 const SizedBox(height: 8),
                 Center(
                   child: Text(
-                    'Tap to capture · or upload from photos',
+                    _initError != null
+                        ? 'Use the gallery icon to pick a photo'
+                        : 'Tap the gold button to capture',
                     style: GoogleFonts.inter(
                       fontSize: 11,
                       color: AppColors.textMuted,
@@ -113,37 +223,81 @@ class Step1Capture extends StatelessWidget {
 }
 
 class _CameraFrame extends StatelessWidget {
+  final CameraController? controller;
+  final String? initError;
+  const _CameraFrame({required this.controller, required this.initError});
+
   @override
   Widget build(BuildContext context) {
     return AspectRatio(
       aspectRatio: 1.55,
-      child: Container(
-        decoration: BoxDecoration(
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
           color: AppColors.navyDark,
-          borderRadius: BorderRadius.circular(18),
-        ),
-        child: Stack(
-          children: [
-            Center(
-              child: Text(
-                'Searching for cheque…',
-                style: GoogleFonts.inter(
-                  fontSize: 11,
-                  color: Colors.white.withValues(alpha: 0.3),
-                ),
-              ),
-            ),
-            ..._cornerPositions.map((pos) => Positioned(
-                  top: pos.top,
-                  bottom: pos.bottom,
-                  left: pos.left,
-                  right: pos.right,
-                  child: CustomPaint(
-                    size: const Size(30, 30),
-                    painter: _CornerPainter(pos.bracket),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (initError != null)
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Center(
+                    child: Text(
+                      initError!,
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: Colors.white.withValues(alpha: 0.75),
+                        height: 1.5,
+                      ),
+                    ),
                   ),
-                )),
-          ],
+                )
+              else if (controller == null || !controller!.value.isInitialized)
+                Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation(Colors.white54),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        'Starting camera…',
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          color: Colors.white.withValues(alpha: 0.5),
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                FittedBox(
+                  fit: BoxFit.cover,
+                  child: SizedBox(
+                    width: controller!.value.previewSize?.height ?? 0,
+                    height: controller!.value.previewSize?.width ?? 0,
+                    child: CameraPreview(controller!),
+                  ),
+                ),
+              ..._cornerPositions.map((pos) => Positioned(
+                    top: pos.top,
+                    bottom: pos.bottom,
+                    left: pos.left,
+                    right: pos.right,
+                    child: CustomPaint(
+                      size: const Size(30, 30),
+                      painter: _CornerPainter(pos.bracket),
+                    ),
+                  )),
+            ],
+          ),
         ),
       ),
     );
@@ -175,7 +329,7 @@ class _CornerPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final p = Paint()
-      ..color = Colors.white.withValues(alpha: 0.4)
+      ..color = Colors.white.withValues(alpha: 0.6)
       ..strokeWidth = 3
       ..style = PaintingStyle.stroke;
     switch (bracket) {
@@ -244,27 +398,49 @@ class _TipRow extends StatelessWidget {
 
 class _Shutter extends StatelessWidget {
   final VoidCallback onTap;
-  const _Shutter({required this.onTap});
+  final bool enabled;
+  final bool capturing;
+  const _Shutter({
+    required this.onTap,
+    required this.enabled,
+    required this.capturing,
+  });
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: enabled ? onTap : null,
       child: Container(
         width: 70,
         height: 70,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: AppColors.accent,
+          color: enabled
+              ? AppColors.accent
+              : AppColors.accent.withValues(alpha: 0.4),
           border: Border.all(color: AppColors.surface, width: 4),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.accent.withValues(alpha: 0.4),
-              blurRadius: 18,
-              offset: const Offset(0, 8),
-            ),
-          ],
+          boxShadow: enabled
+              ? [
+                  BoxShadow(
+                    color: AppColors.accent.withValues(alpha: 0.4),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
+                  ),
+                ]
+              : [],
         ),
+        child: capturing
+            ? const Center(
+                child: SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    valueColor: AlwaysStoppedAnimation(AppColors.primary),
+                  ),
+                ),
+              )
+            : null,
       ),
     );
   }
@@ -273,7 +449,12 @@ class _Shutter extends StatelessWidget {
 class _SecondaryButton extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
-  const _SecondaryButton({required this.icon, required this.onTap});
+  final bool active;
+  const _SecondaryButton({
+    required this.icon,
+    required this.onTap,
+    this.active = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -284,11 +465,16 @@ class _SecondaryButton extends StatelessWidget {
         width: 40,
         height: 40,
         decoration: BoxDecoration(
-          color: AppColors.surface,
-          border: Border.all(color: AppColors.border),
+          color: active ? AppColors.accent : AppColors.surface,
+          border: Border.all(
+              color: active ? AppColors.accent : AppColors.border),
           borderRadius: BorderRadius.circular(12),
         ),
-        child: Icon(icon, size: 16, color: AppColors.textSecondary),
+        child: Icon(
+          icon,
+          size: 16,
+          color: active ? AppColors.primary : AppColors.textSecondary,
+        ),
       ),
     );
   }
