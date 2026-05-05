@@ -37,7 +37,7 @@ import 'screens/listings/listing_interests_screen.dart';
 import 'screens/meetings_screen.dart';
 import 'screens/meeting_detail_screen.dart';
 import 'screens/create_meeting_screen.dart';
-import 'screens/scan_cheque_screen.dart';
+import 'screens/cheque_scan/cheque_scan_flow_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authProvider);
@@ -81,7 +81,9 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/scan',
-        builder: (context, state) => const ScanChequeScreen(),
+        builder: (context, state) => ChequeScanFlowScreen(
+          paymentId: state.uri.queryParameters['paymentId'],
+        ),
       ),
       ShellRoute(
         builder: (context, state, child) => ShellScreen(child: child),

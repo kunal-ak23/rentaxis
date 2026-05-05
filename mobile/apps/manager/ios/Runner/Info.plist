@@ -45,5 +45,11 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>RentAxis needs camera access to scan rent cheques and capture supporting documents.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>RentAxis needs access to your photo library to upload cheque images and supporting documents.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Microphone access is not used. The camera plugin requests this permission by default but RentAxis never records audio.</string>
 </dict>
 </plist>

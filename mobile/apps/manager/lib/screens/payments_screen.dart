@@ -1,23 +1,16 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 import '../widgets/mark_cheque_failed_dialog.dart';
-import '../widgets/cheque_scanner.dart';
 
 final _paymentServiceProvider = Provider<PaymentService>((ref) {
   final client = ref.watch(apiClientProvider);
   return PaymentService(client.dio);
-});
-
-final _chequeExtractionServiceProvider = Provider<ChequeExtractionService>((
-  ref,
-) {
-  final client = ref.watch(apiClientProvider);
-  return ChequeExtractionService(client.dio);
 });
 
 final _propertyServiceProvider = Provider<PropertyService>((ref) {
@@ -386,7 +379,13 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
         payment: payment,
         onCollect: () async {
           Navigator.pop(ctx);
-          await _showCollectForm(paymentId);
+          // Open the new 4-step scan wizard with this payment pre-selected.
+          // Mirrors the web flow: pick a payment row → Collect → scan
+          // wizard handles capture, extraction, confirmation, deposit.
+          await context.push('/scan?paymentId=$paymentId');
+          // After the wizard closes, refresh the list so collected/deposited
+          // status changes show up.
+          await _refresh();
         },
         onDeposit: () async {
           Navigator.pop(ctx);
@@ -424,184 +423,6 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
           Navigator.pop(ctx);
           await _downloadReceipt(paymentId);
         },
-      ),
-    );
-  }
-
-  Future<void> _showCollectForm(String paymentId) async {
-    final chequeNumberCtrl = TextEditingController();
-    final bankNameCtrl = TextEditingController();
-    final payerNameCtrl = TextEditingController();
-    DateTime? chequeDate;
-    String? chequeImageUrl;
-    String? chequeImageBlobPath;
-    DateTime? chequeImageUploadedAt;
-    final formKey = GlobalKey<FormState>();
-
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setSheetState) => Padding(
-          padding: EdgeInsets.fromLTRB(
-            24,
-            24,
-            24,
-            MediaQuery.of(ctx).viewInsets.bottom + 24,
-          ),
-          child: Form(
-            key: formKey,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 40,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: AppColors.border,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  Text(
-                    'Collect Payment',
-                    style: Theme.of(ctx).textTheme.headlineSmall,
-                  ),
-                  const SizedBox(height: 20),
-                  TextFormField(
-                    controller: chequeNumberCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Cheque Number',
-                      prefixIcon: Icon(Icons.numbers_outlined),
-                    ),
-                    validator: (v) =>
-                        v == null || v.trim().isEmpty ? 'Required' : null,
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: bankNameCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Bank Name',
-                      prefixIcon: Icon(Icons.account_balance_outlined),
-                    ),
-                    validator: (v) =>
-                        v == null || v.trim().isEmpty ? 'Required' : null,
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: payerNameCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Payer Name',
-                      prefixIcon: Icon(Icons.person_outline),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  InkWell(
-                    onTap: () async {
-                      final date = await showDatePicker(
-                        context: ctx,
-                        initialDate: DateTime.now(),
-                        firstDate: DateTime(2020),
-                        lastDate: DateTime(2030),
-                      );
-                      if (date != null) {
-                        setSheetState(() => chequeDate = date);
-                      }
-                    },
-                    child: InputDecorator(
-                      decoration: const InputDecoration(
-                        labelText: 'Cheque Date',
-                        prefixIcon: Icon(Icons.calendar_today_outlined),
-                      ),
-                      child: Text(
-                        chequeDate != null
-                            ? Formatters.date(chequeDate!.toIso8601String())
-                            : 'Select date',
-                        style: TextStyle(
-                          color: chequeDate != null
-                              ? AppColors.textPrimary
-                              : AppColors.textMuted,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  ChequeScannerWidget(
-                    service: ref.read(_chequeExtractionServiceProvider),
-                    onExtracted: (result) {
-                      setSheetState(() {
-                        final extracted = result.extracted;
-                        if (extracted != null) {
-                          chequeNumberCtrl.text =
-                              extracted['chequeNumber']?.toString() ??
-                              chequeNumberCtrl.text;
-                          bankNameCtrl.text =
-                              extracted['bankName']?.toString() ??
-                              bankNameCtrl.text;
-                          payerNameCtrl.text =
-                              extracted['payerName']?.toString() ??
-                              payerNameCtrl.text;
-                          final rawDate = extracted['chequeDate']?.toString();
-                          if (rawDate != null && rawDate.isNotEmpty) {
-                            chequeDate =
-                                DateTime.tryParse(rawDate) ?? chequeDate;
-                          }
-                        }
-                        chequeImageUrl = result.imageUrl;
-                        chequeImageBlobPath = result.imageBlobPath;
-                        chequeImageUploadedAt = result.uploadedAt;
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 24),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: () async {
-                        if (!formKey.currentState!.validate()) return;
-                        Navigator.pop(ctx);
-                        await _performAction(
-                          () => ref
-                              .read(_paymentServiceProvider)
-                              .collectPayment(paymentId, {
-                                'chequeNumber': chequeNumberCtrl.text.trim(),
-                                'bankName': bankNameCtrl.text.trim(),
-                                if (payerNameCtrl.text.isNotEmpty)
-                                  'payerName': payerNameCtrl.text.trim(),
-                                if (chequeDate != null)
-                                  'chequeDate': chequeDate!
-                                      .toIso8601String()
-                                      .split('T')[0],
-                                if (chequeImageUrl != null &&
-                                    chequeImageUrl!.isNotEmpty)
-                                  'chequeImageUrl': chequeImageUrl,
-                                if (chequeImageBlobPath != null &&
-                                    chequeImageBlobPath!.isNotEmpty)
-                                  'chequeImageBlobPath': chequeImageBlobPath,
-                                if (chequeImageUploadedAt != null)
-                                  'chequeImageUploadedAt':
-                                      chequeImageUploadedAt!
-                                          .toUtc()
-                                          .toIso8601String(),
-                              }),
-                          'Payment collected',
-                        );
-                      },
-                      child: const Text('Collect'),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
       ),
     );
   }
