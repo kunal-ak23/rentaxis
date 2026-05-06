@@ -140,6 +140,38 @@ public class UserService {
                 "USER_WELCOMED:" + user.getId()));
     }
 
+    public enum InviteResult { OK, NOT_FOUND, EXPIRED, ALREADY_USED, WEAK_PASSWORD }
+
+    /**
+     * Atomically redeems an invite token: validates it, hashes the new password,
+     * clears the token fields, saves, and publishes PASSWORD_CHANGED so the user
+     * gets a confirmation email. All within a single transaction.
+     */
+    @Transactional
+    public InviteResult acceptInvite(String token, String newRawPassword) {
+        if (newRawPassword == null || newRawPassword.length() < 8) {
+            return InviteResult.WEAK_PASSWORD;
+        }
+        var maybe = userRepository.findByInviteToken(token);
+        if (maybe.isEmpty()) return InviteResult.NOT_FOUND;
+        User user = maybe.get();
+        if (user.getInviteTokenExpiresAt() == null) return InviteResult.ALREADY_USED;
+        if (user.getInviteTokenExpiresAt().isBefore(Instant.now())) return InviteResult.EXPIRED;
+
+        user.setPasswordHash(passwordEncoder.encode(newRawPassword));
+        user.setInviteToken(null);
+        user.setInviteTokenExpiresAt(null);
+        userRepository.save(user);
+
+        events.publishEvent(new EmailEvent(this,
+                EmailEventType.PASSWORD_CHANGED,
+                user.getTenantId(),
+                new PasswordChangedPayload(user.getId(), user.getName(),
+                        Instant.now().toString(), null),
+                "PASSWORD_CHANGED:" + user.getId() + ":invite"));
+        return InviteResult.OK;
+    }
+
     /**
      * Encodes and persists the new password, then publishes PASSWORD_CHANGED within
      * a single transaction so the entity write and event publish share the same
