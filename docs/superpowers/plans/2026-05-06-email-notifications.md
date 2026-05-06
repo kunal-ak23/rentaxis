@@ -651,7 +651,7 @@ git commit -m "feat(email): EmailOutbox JPA entity"
 - Create: `backend/src/main/java/com/datagami/rentaxis/core/email/outbox/EmailOutboxRepository.java`
 - Create: `backend/src/test/java/com/datagami/rentaxis/core/email/outbox/EmailOutboxRepositoryTest.java`
 
-- [ ] **Step 1: Write failing repository integration test**
+- [x] **Step 1: Write failing repository integration test**
 
 Create `backend/src/test/java/com/datagami/rentaxis/core/email/outbox/EmailOutboxRepositoryTest.java`:
 
@@ -713,12 +713,12 @@ class EmailOutboxRepositoryTest {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd backend && ./gradlew test --tests EmailOutboxRepositoryTest`
 Expected: FAIL with `cannot find symbol EmailOutboxRepository`.
 
-- [ ] **Step 3: Implement repository**
+- [x] **Step 3: Implement repository**
 
 Create `backend/src/main/java/com/datagami/rentaxis/core/email/outbox/EmailOutboxRepository.java`:
 
@@ -760,12 +760,12 @@ public interface EmailOutboxRepository extends JpaRepository<EmailOutbox, UUID> 
 }
 ```
 
-- [ ] **Step 4: Run test**
+- [x] **Step 4: Run test**
 
 Run: `cd backend && ./gradlew test --tests EmailOutboxRepositoryTest`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/src/main/java/com/datagami/rentaxis/core/email/outbox/EmailOutboxRepository.java backend/src/test/java/com/datagami/rentaxis/core/email/outbox/EmailOutboxRepositoryTest.java
