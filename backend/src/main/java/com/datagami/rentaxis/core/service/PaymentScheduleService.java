@@ -300,11 +300,11 @@ public class PaymentScheduleService {
                 ),
                 "CHEQUE_RECEIVED:" + saved.getId()));
 
-        // Notify renter: cheque collected
+        // Notify renter in-app: cheque collected (CHEQUE_RECEIVED EmailEvent covers email)
         try {
             UUID renterUserId = payment.getLease().getRenter().getUserId();
             if (renterUserId != null) {
-                notificationService.notify(TenantContextHolder.getTenantId(), renterUserId,
+                notificationService.notifyInApp(TenantContextHolder.getTenantId(), renterUserId,
                         "PAYMENT_COLLECTED", "Cheque Collected",
                         "Installment #" + payment.getInstallmentNumber() + " cheque has been collected and is being processed.",
                         "PAYMENT", payment.getId());

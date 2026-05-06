@@ -230,12 +230,12 @@ public class OnlinePaymentService {
                         "ONLINE_PAYMENT_RECEIVED:" + onlinePayment.getId()));
             }
 
-            // Notify renter: payment success
+            // Notify renter in-app: payment success (ONLINE_PAYMENT_RECEIVED EmailEvent covers email)
             try {
                 PaymentSchedule schedule = onlinePayment.getPaymentSchedule();
                 UUID renterUserId = schedule.getLease().getRenter().getUserId();
                 if (renterUserId != null) {
-                    notificationService.notify(schedule.getTenantId(), renterUserId,
+                    notificationService.notifyInApp(schedule.getTenantId(), renterUserId,
                             "PAYMENT_CLEARED", "Online Payment Successful",
                             "Installment #" + schedule.getInstallmentNumber() + " of " + schedule.getAmount() + " paid online successfully. Receipt available.",
                             "PAYMENT", schedule.getId());
