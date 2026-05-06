@@ -2318,7 +2318,7 @@ git commit -m "feat(email): EN + AR i18n properties for Phase 1 events"
 - Create: `backend/src/main/java/com/datagami/rentaxis/core/email/dispatch/ResolvedRecipient.java`
 - Create: `backend/src/test/java/com/datagami/rentaxis/core/email/dispatch/RecipientResolverTest.java`
 
-- [ ] **Step 1: Define ResolvedRecipient**
+- [x] **Step 1: Define ResolvedRecipient**
 
 Create `backend/src/main/java/com/datagami/rentaxis/core/email/dispatch/ResolvedRecipient.java`:
 
@@ -2339,7 +2339,7 @@ public record ResolvedRecipient(
 ) {}
 ```
 
-- [ ] **Step 2: Failing test**
+- [x] **Step 2: Failing test**
 
 Create `backend/src/test/java/com/datagami/rentaxis/core/email/dispatch/RecipientResolverTest.java`:
 
@@ -2413,12 +2413,12 @@ class RecipientResolverTest {
 }
 ```
 
-- [ ] **Step 3: Run test to verify fail**
+- [x] **Step 3: Run test to verify fail**
 
 Run: `cd backend && ./gradlew test --tests RecipientResolverTest`
 Expected: FAIL — `RecipientResolver` not implemented.
 
-- [ ] **Step 4: Implement RecipientResolver**
+- [x] **Step 4: Implement RecipientResolver**
 
 Create `backend/src/main/java/com/datagami/rentaxis/core/email/dispatch/RecipientResolver.java`:
 
@@ -2532,12 +2532,12 @@ public class RecipientResolver {
 > ```
 > Add `findByUserId(UUID userId)` to `RenterRepository` if missing.
 
-- [ ] **Step 5: Run test**
+- [x] **Step 5: Run test**
 
 Run: `cd backend && ./gradlew test --tests RecipientResolverTest`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/src/main/java/com/datagami/rentaxis/core/email/dispatch/RecipientResolver.java backend/src/main/java/com/datagami/rentaxis/core/email/dispatch/ResolvedRecipient.java backend/src/main/java/com/datagami/rentaxis/domain/repository/ backend/src/test/java/com/datagami/rentaxis/core/email/dispatch/RecipientResolverTest.java
