@@ -1,0 +1,103 @@
+databaseChangeLog:
+  - changeSet:
+      id: 53-create-email-outbox-table
+      author: rentaxis
+      changes:
+        - createTable:
+            tableName: email_outbox
+            columns:
+              - column: { name: id, type: uuid, defaultValueComputed: gen_random_uuid(), constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid }
+              - column: { name: event_type, type: varchar(60), constraints: { nullable: false } }
+              - column: { name: event_category, type: varchar(20), constraints: { nullable: false } }
+              - column: { name: recipient_user_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: recipient_email, type: varchar(320), constraints: { nullable: false } }
+              - column: { name: recipient_locale, type: varchar(5), constraints: { nullable: false } }
+              - column: { name: subject, type: varchar(500), constraints: { nullable: false } }
+              - column: { name: body_html, type: text, constraints: { nullable: false } }
+              - column: { name: body_text, type: text }
+              - column: { name: attachments, type: jsonb }
+              - column: { name: status, type: varchar(20), constraints: { nullable: false }, defaultValue: PENDING }
+              - column: { name: scheduled_at, type: timestamp, defaultValueComputed: now(), constraints: { nullable: false } }
+              - column: { name: attempts, type: int, defaultValueNumeric: 0, constraints: { nullable: false } }
+              - column: { name: max_attempts, type: int, defaultValueNumeric: 5, constraints: { nullable: false } }
+              - column: { name: last_attempt_at, type: timestamp }
+              - column: { name: last_error, type: text }
+              - column: { name: azure_message_id, type: varchar(100) }
+              - column: { name: azure_delivery_status, type: varchar(30) }
+              - column: { name: reference_type, type: varchar(30) }
+              - column: { name: reference_id, type: uuid }
+              - column: { name: dedup_key, type: varchar(200) }
+              - column: { name: trace_id, type: varchar(50) }
+              - column: { name: created_at, type: timestamp, defaultValueComputed: now(), constraints: { nullable: false } }
+              - column: { name: updated_at, type: timestamp, defaultValueComputed: now(), constraints: { nullable: false } }
+        - createIndex:
+            indexName: idx_email_outbox_status_scheduled_at
+            tableName: email_outbox
+            columns: [{ column: { name: status } }, { column: { name: scheduled_at } }]
+        - createIndex:
+            indexName: idx_email_outbox_recipient_user_id
+            tableName: email_outbox
+            columns: [{ column: { name: recipient_user_id } }, { column: { name: created_at } }]
+        - createIndex:
+            indexName: idx_email_outbox_event_type
+            tableName: email_outbox
+            columns: [{ column: { name: event_type } }, { column: { name: created_at } }]
+        - createIndex:
+            indexName: idx_email_outbox_tenant_id
+            tableName: email_outbox
+            columns: [{ column: { name: tenant_id } }, { column: { name: created_at } }]
+        - createIndex:
+            indexName: idx_email_outbox_azure_message_id
+            tableName: email_outbox
+            columns: [{ column: { name: azure_message_id } }]
+        - createIndex:
+            indexName: idx_email_outbox_dedup_key
+            tableName: email_outbox
+            unique: true
+            columns: [{ column: { name: dedup_key } }]
+
+  - changeSet:
+      id: 53-create-shedlock-table
+      author: rentaxis
+      changes:
+        - createTable:
+            tableName: shedlock
+            columns:
+              - column: { name: name, type: varchar(64), constraints: { primaryKey: true, nullable: false } }
+              - column: { name: lock_until, type: timestamp, constraints: { nullable: false } }
+              - column: { name: locked_at, type: timestamp, constraints: { nullable: false } }
+              - column: { name: locked_by, type: varchar(255), constraints: { nullable: false } }
+
+  - changeSet:
+      id: 53-create-email-preferences-table
+      author: rentaxis
+      changes:
+        - createTable:
+            tableName: email_preferences
+            columns:
+              - column:
+                  name: user_id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+                    foreignKeyName: fk_email_prefs_user
+                    references: users(id)
+              - column: { name: marketing_enabled, type: boolean, defaultValueBoolean: true, constraints: { nullable: false } }
+              - column: { name: preferences_json, type: jsonb, defaultValue: '{}', constraints: { nullable: false } }
+              - column: { name: unsubscribe_token, type: varchar(64), constraints: { nullable: false, unique: true } }
+              - column: { name: updated_at, type: timestamp, defaultValueComputed: now(), constraints: { nullable: false } }
+
+  - changeSet:
+      id: 53-backfill-email-preferences
+      author: rentaxis
+      changes:
+        - sql:
+            sql: |
+              INSERT INTO email_preferences (user_id, marketing_enabled, preferences_json, unsubscribe_token, updated_at)
+              SELECT u.id, true, '{}'::jsonb,
+                     replace(gen_random_uuid()::text, '-', '') || replace(gen_random_uuid()::text, '-', ''),
+                     now()
+              FROM users u
+              WHERE NOT EXISTS (SELECT 1 FROM email_preferences ep WHERE ep.user_id = u.id);

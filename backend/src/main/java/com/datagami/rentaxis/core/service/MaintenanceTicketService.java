@@ -3,6 +3,9 @@ package com.datagami.rentaxis.core.service;
 import com.datagami.rentaxis.api.dto.*;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
+import com.datagami.rentaxis.core.email.EmailEventType;
+import com.datagami.rentaxis.core.email.event.EmailEvent;
+import com.datagami.rentaxis.core.email.event.payload.TicketPayload;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.*;
 import com.datagami.rentaxis.domain.entity.enums.TicketCategory;
@@ -12,6 +15,7 @@ import com.datagami.rentaxis.domain.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -47,6 +51,7 @@ public class MaintenanceTicketService {
     private final TicketHistoryRepository historyRepository;
     private final LandlordOrgRepository landlordOrgRepository;
     private final NotificationService notificationService;
+    private final ApplicationEventPublisher events;
 
     @Value("${AZURE_STORAGE_CONNECTION_STRING:}")
     private String azureConnectionString;
@@ -99,6 +104,26 @@ public class MaintenanceTicketService {
 
         MaintenanceTicket saved = ticketRepository.save(ticket);
         log.info("Created maintenance ticket {} for property {}", saved.getId(), property.getId());
+
+        // Emit TICKET_CREATED event
+        try {
+            events.publishEvent(new EmailEvent(this,
+                    EmailEventType.TICKET_CREATED,
+                    saved.getTenantId(),
+                    new TicketPayload(
+                            saved.getId(),
+                            saved.getReportedBy(),
+                            saved.getAssignedTo(),
+                            saved.getTitle(),
+                            saved.getCategory() != null ? saved.getCategory().name() : null,
+                            saved.getPriority() != null ? saved.getPriority().name() : null,
+                            saved.getStatus().name(),
+                            null),
+                    "TICKET_CREATED:" + saved.getId()));
+        } catch (Exception e) {
+            log.warn("Failed to publish TICKET_CREATED event for ticket {}", saved.getId(), e);
+        }
+
         return mapToDTO(saved);
     }
 
@@ -210,6 +235,27 @@ public class MaintenanceTicketService {
                         "TICKET", ticket.getId());
             } catch (Exception e) {
                 log.warn("Failed to send ticket resolved notification for ticket {}", ticketId, e);
+            }
+        }
+
+        // Emit TICKET_REOPENED event when transitioning to REOPENED status
+        if (targetStatus == TicketStatus.REOPENED) {
+            try {
+                events.publishEvent(new EmailEvent(this,
+                        EmailEventType.TICKET_REOPENED,
+                        saved.getTenantId(),
+                        new TicketPayload(
+                                saved.getId(),
+                                saved.getReportedBy(),
+                                saved.getAssignedTo(),
+                                saved.getTitle(),
+                                saved.getCategory() != null ? saved.getCategory().name() : null,
+                                saved.getPriority() != null ? saved.getPriority().name() : null,
+                                saved.getStatus().name(),
+                                null),
+                        "TICKET_REOPENED:" + saved.getId()));
+            } catch (Exception e) {
+                log.warn("Failed to publish TICKET_REOPENED event for ticket {}", saved.getId(), e);
             }
         }
 

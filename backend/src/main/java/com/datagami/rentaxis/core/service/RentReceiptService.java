@@ -2,6 +2,9 @@ package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
+import com.datagami.rentaxis.core.email.EmailEventType;
+import com.datagami.rentaxis.core.email.event.EmailEvent;
+import com.datagami.rentaxis.core.email.event.payload.RentReceiptPayload;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.*;
 import com.datagami.rentaxis.domain.entity.enums.OnlinePaymentStatus;
@@ -12,6 +15,7 @@ import com.datagami.rentaxis.domain.repository.PaymentScheduleRepository;
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,6 +24,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.List;
 import java.text.NumberFormat;
 import java.time.LocalDate;
@@ -35,6 +40,7 @@ public class RentReceiptService {
     private final PaymentScheduleRepository paymentScheduleRepository;
     private final LandlordOrgRepository landlordOrgRepository;
     private final OnlinePaymentRepository onlinePaymentRepository;
+    private final ApplicationEventPublisher events;
 
     @Transactional(readOnly = true)
     public byte[] generateReceipt(UUID paymentScheduleId) {
@@ -104,7 +110,28 @@ public class RentReceiptService {
                 .replace("{{ONLINE_PAYMENT_ID}}", getOnlinePaymentId(paymentScheduleId))
                 .replace("{{GENERATED_AT}}", java.time.LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd MMM yyyy HH:mm")));
 
-        return renderPdf(html);
+        byte[] pdfBytes = renderPdf(html);
+
+        // Structured email event: RENT_RECEIPT_AVAILABLE
+        // NOTE: pdfBase64 can be large (typical receipt ~200–500 KB base64-encoded).
+        // If body_html storage becomes a concern, replace pdfBase64 with a signed URL
+        // and update RentReceiptPayload accordingly.
+        String receiptFileName = "receipt-" + receiptNumber + ".pdf";
+        events.publishEvent(new EmailEvent(this,
+                EmailEventType.RENT_RECEIPT_AVAILABLE,
+                TenantContextHolder.getTenantId(),
+                new RentReceiptPayload(
+                        paymentScheduleId,  // no separate receipt entity; use paymentScheduleId as stable receipt ref
+                        lease.getId(),
+                        renter.getUserId(),
+                        formattedAmount + " AED",
+                        LocalDate.now().toString(),
+                        Base64.getEncoder().encodeToString(pdfBytes),
+                        receiptFileName
+                ),
+                "RENT_RECEIPT_AVAILABLE:" + paymentScheduleId));
+
+        return pdfBytes;
     }
 
     private String getOnlinePaymentId(UUID paymentScheduleId) {

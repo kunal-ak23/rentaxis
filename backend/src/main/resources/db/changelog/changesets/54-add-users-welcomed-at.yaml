@@ -1,0 +1,13 @@
+databaseChangeLog:
+  - changeSet:
+      id: 54-add-users-welcomed-at
+      author: rentaxis
+      preConditions:
+        - onFail: MARK_RAN
+          not:
+            columnExists:
+              tableName: users
+              columnName: welcomed_at
+      changes:
+        - sql:
+            sql: ALTER TABLE users ADD COLUMN welcomed_at TIMESTAMP

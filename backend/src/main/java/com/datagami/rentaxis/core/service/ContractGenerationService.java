@@ -3,6 +3,9 @@ package com.datagami.rentaxis.core.service;
 import com.datagami.rentaxis.api.dto.LeaseDocumentDTO;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
+import com.datagami.rentaxis.core.email.EmailEventType;
+import com.datagami.rentaxis.core.email.event.EmailEvent;
+import com.datagami.rentaxis.core.email.event.payload.LeasePayload;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.core.util.AmountInWordsUtil;
 import com.datagami.rentaxis.domain.entity.*;
@@ -19,6 +22,7 @@ import com.azure.storage.blob.BlobServiceClientBuilder;
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -60,6 +64,7 @@ public class ContractGenerationService {
     private final LandlordOrgRepository landlordOrgRepository;
     private final PaymentScheduleRepository paymentScheduleRepository;
     private final PaymentScheduleService paymentScheduleService;
+    private final ApplicationEventPublisher events;
 
     @Value("${rentaxis.contracts.storage-path:./data/contracts}")
     private String storagePath;
@@ -74,12 +79,14 @@ public class ContractGenerationService {
                                      LeaseDocumentRepository leaseDocumentRepository,
                                      LandlordOrgRepository landlordOrgRepository,
                                      PaymentScheduleRepository paymentScheduleRepository,
-                                     PaymentScheduleService paymentScheduleService) {
+                                     PaymentScheduleService paymentScheduleService,
+                                     ApplicationEventPublisher events) {
         this.leaseRepository = leaseRepository;
         this.leaseDocumentRepository = leaseDocumentRepository;
         this.landlordOrgRepository = landlordOrgRepository;
         this.paymentScheduleRepository = paymentScheduleRepository;
         this.paymentScheduleService = paymentScheduleService;
+        this.events = events;
     }
 
     /**
@@ -176,6 +183,19 @@ public class ContractGenerationService {
         }
 
         log.info("Contract generated for lease {} at {}", leaseId, documentUrl);
+
+        LeasePayload leasePayload = buildLeasePayload(lease, documentUrl);
+        events.publishEvent(new EmailEvent(this,
+                EmailEventType.LEASE_CONTRACT_GENERATED,
+                lease.getTenantId(),
+                leasePayload,
+                "LEASE_CONTRACT_GENERATED:" + leaseId + ":" + System.currentTimeMillis()));
+
+        events.publishEvent(new EmailEvent(this,
+                EmailEventType.LEASE_SIGNATURE_REQUESTED,
+                lease.getTenantId(),
+                leasePayload,
+                "LEASE_SIGNATURE_REQUESTED:" + leaseId + ":" + System.currentTimeMillis()));
 
         return mapToDTO(savedDoc);
     }
@@ -746,6 +766,21 @@ public class ContractGenerationService {
         }
         // Decode URL-encoded path (getBlobUrl() may return %2F for slashes)
         return URLDecoder.decode(path.substring(firstSlash + 1), StandardCharsets.UTF_8);
+    }
+
+    private LeasePayload buildLeasePayload(Lease lease, String contractUrl) {
+        BigDecimal monthly = lease.getMonthlyRent() != null ? lease.getMonthlyRent() : lease.getRentAmount();
+        return new LeasePayload(
+                lease.getId(),
+                lease.getRenter().getUserId(),
+                null,  // propertyManagerUserId — not stored on Lease; RecipientResolver falls back to tenant admins
+                lease.getUnit().getUnitNumber(),
+                lease.getUnit().getProperty().getNameEn(),
+                lease.getStartDate() != null ? lease.getStartDate().toString() : null,
+                lease.getEndDate() != null ? lease.getEndDate().toString() : null,
+                monthly != null ? monthly.toPlainString() : null,
+                contractUrl
+        );
     }
 
     private LeaseDocumentDTO mapToDTO(LeaseDocument doc) {

@@ -19,6 +19,7 @@ import com.datagami.rentaxis.domain.repository.PaymentScheduleRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.lang.reflect.Field;
 import java.math.BigDecimal;
@@ -50,7 +51,8 @@ class ContractGenerationServiceTest {
                 mock(LeaseDocumentRepository.class),
                 mock(LandlordOrgRepository.class),
                 mock(PaymentScheduleRepository.class),
-                mock(PaymentScheduleService.class));
+                mock(PaymentScheduleService.class),
+                mock(ApplicationEventPublisher.class));
     }
 
     private Lease leaseWith(BigDecimal rent, BigDecimal admin, BigDecimal deposit, BigDecimal parking,
@@ -158,7 +160,8 @@ class ContractGenerationServiceTest {
         when(leaseRepo.findMaxContractNumberForTenant(lease.getTenantId())).thenReturn(1750L);
         ContractGenerationService svc = new ContractGenerationService(
                 leaseRepo, mock(LeaseDocumentRepository.class), mock(LandlordOrgRepository.class),
-                mock(PaymentScheduleRepository.class), mock(PaymentScheduleService.class));
+                mock(PaymentScheduleRepository.class), mock(PaymentScheduleService.class),
+                mock(ApplicationEventPublisher.class));
 
         svc.assignContractNumberIfNull(lease);
         assertThat(lease.getContractNumber()).isEqualTo(1751L);
@@ -277,7 +280,8 @@ class ContractGenerationServiceTest {
         });
 
         ContractGenerationService realSvc = new ContractGenerationService(
-                leaseRepo, docRepo, orgRepo, scheduleRepo, mock(PaymentScheduleService.class));
+                leaseRepo, docRepo, orgRepo, scheduleRepo, mock(PaymentScheduleService.class),
+                mock(ApplicationEventPublisher.class));
         // Inject the temp storage path (since @Value isn't processed in plain unit tests).
         Field storagePathField = ContractGenerationService.class.getDeclaredField("storagePath");
         storagePathField.setAccessible(true);

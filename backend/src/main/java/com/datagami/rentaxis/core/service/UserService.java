@@ -1,5 +1,12 @@
 package com.datagami.rentaxis.core.service;
 
+import com.datagami.rentaxis.core.email.EmailEventType;
+import com.datagami.rentaxis.core.email.event.EmailEvent;
+import com.datagami.rentaxis.core.email.event.payload.PasswordChangedPayload;
+import com.datagami.rentaxis.core.email.event.payload.StaffRoleChangedPayload;
+import com.datagami.rentaxis.core.email.event.payload.TenantAdminAddedPayload;
+import com.datagami.rentaxis.core.email.event.payload.UserInvitedPayload;
+import com.datagami.rentaxis.core.email.event.payload.UserWelcomedPayload;
 import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.UserPropertyAssignment;
 import com.datagami.rentaxis.domain.entity.UserTenantMembership;
@@ -7,10 +14,12 @@ import com.datagami.rentaxis.domain.entity.enums.UserRole;
 import com.datagami.rentaxis.domain.repository.UserPropertyAssignmentRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
 import com.datagami.rentaxis.domain.repository.UserTenantMembershipRepository;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -22,19 +31,22 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
     private final UserPropertyAssignmentRepository propertyAssignmentRepository;
     private final UserTenantMembershipRepository tenantMembershipRepository;
+    private final ApplicationEventPublisher events;
 
     public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder,
             UserPropertyAssignmentRepository propertyAssignmentRepository,
-            UserTenantMembershipRepository tenantMembershipRepository) {
+            UserTenantMembershipRepository tenantMembershipRepository,
+            ApplicationEventPublisher events) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.propertyAssignmentRepository = propertyAssignmentRepository;
         this.tenantMembershipRepository = tenantMembershipRepository;
+        this.events = events;
     }
 
     @Transactional
     public User createUser(String email, String rawPassword, String name, UserRole role, String tenantId,
-            String phoneNumber) {
+            String phoneNumber, String addedByContext) {
         String normalizedEmail = email.toLowerCase().trim();
         if (userRepository.findByEmail(normalizedEmail).isPresent()) {
             throw new IllegalArgumentException("User with this email already exists.");
@@ -57,6 +69,29 @@ public class UserService {
             addTenantMembership(saved.getId(), UUID.fromString(tenantId));
         }
 
+        // Emit USER_INVITED for staff users (PROPERTY_MANAGER, TENANT_USER) created by an admin
+        if (role == UserRole.PROPERTY_MANAGER || role == UserRole.TENANT_USER) {
+            // TODO: switch to tokenized invite URL once onboarding token flow is designed (see Task 26 follow-up)
+            String setPasswordUrl = "/set-password?userId=" + saved.getId();
+            events.publishEvent(new EmailEvent(this,
+                    EmailEventType.USER_INVITED,
+                    saved.getTenantId(),
+                    new UserInvitedPayload(saved.getId(), saved.getName(), setPasswordUrl),
+                    "USER_INVITED:" + saved.getId()));
+        }
+
+        // Emit TENANT_ADMIN_ADDED inside the same @Transactional boundary so that
+        // the @TransactionalEventListener(AFTER_COMMIT) listener fires reliably.
+        // addedByContext is "system" for self-registration flows, "admin" for
+        // admin-created TENANT_ADMINs — callers pass this via the addedByContext param.
+        if (role == UserRole.TENANT_ADMIN && saved.getTenantId() != null) {
+            events.publishEvent(new EmailEvent(this,
+                    EmailEventType.TENANT_ADMIN_ADDED,
+                    saved.getTenantId(),
+                    new TenantAdminAddedPayload(saved.getTenantId(), saved.getId(), saved.getName(), addedByContext),
+                    "TENANT_ADMIN_ADDED:" + saved.getId()));
+        }
+
         return saved;
     }
 
@@ -71,6 +106,39 @@ public class UserService {
     @Transactional
     public User saveUser(User user) {
         return userRepository.save(user);
+    }
+
+    /**
+     * Marks a user as welcomed (sets welcomedAt) and publishes USER_WELCOMED within
+     * a single transaction so the entity write and event publish share the same
+     * commit boundary (TransactionalEventListener fires on commit).
+     */
+    @Transactional
+    public void markWelcomed(User user) {
+        user.setWelcomedAt(Instant.now());
+        userRepository.save(user);
+        events.publishEvent(new EmailEvent(this,
+                EmailEventType.USER_WELCOMED,
+                user.getTenantId(),
+                new UserWelcomedPayload(user.getId(), user.getName(), "/dashboard"),
+                "USER_WELCOMED:" + user.getId()));
+    }
+
+    /**
+     * Encodes and persists the new password, then publishes PASSWORD_CHANGED within
+     * a single transaction so the entity write and event publish share the same
+     * commit boundary (TransactionalEventListener fires on commit).
+     */
+    @Transactional
+    public void changePassword(User user, String newRawPassword) {
+        user.setPasswordHash(passwordEncoder.encode(newRawPassword));
+        userRepository.save(user);
+        events.publishEvent(new EmailEvent(this,
+                EmailEventType.PASSWORD_CHANGED,
+                user.getTenantId(),
+                new PasswordChangedPayload(user.getId(), user.getName(),
+                        Instant.now().toString(), null),
+                "PASSWORD_CHANGED:" + user.getId()));
     }
 
     public List<User> getAllUsers() {
@@ -91,6 +159,7 @@ public class UserService {
             throw new IllegalArgumentException("User with this email already exists.");
         }
 
+        UserRole previousRole = user.getRole();
         user.setEmail(normalizedEmail);
         user.setName(name);
         user.setRole(role);
@@ -109,6 +178,16 @@ public class UserService {
         if (newTenantId != null && (role == UserRole.TENANT_ADMIN || role == UserRole.PROPERTY_MANAGER
                 || role == UserRole.TENANT_USER || role == UserRole.RENTER)) {
             addTenantMembership(saved.getId(), newTenantId);
+        }
+
+        // Emit STAFF_ROLE_CHANGED when role transitions to a different value
+        if (previousRole != role) {
+            events.publishEvent(new EmailEvent(this,
+                    EmailEventType.STAFF_ROLE_CHANGED,
+                    saved.getTenantId(),
+                    new StaffRoleChangedPayload(saved.getTenantId(), saved.getId(), saved.getName(),
+                            previousRole.name(), role.name()),
+                    "STAFF_ROLE_CHANGED:" + saved.getId()));
         }
 
         return saved;

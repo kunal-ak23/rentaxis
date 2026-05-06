@@ -35,13 +35,17 @@ public class UserController {
 
     @PostMapping
     public ResponseEntity<UserResponseDTO> createUser(@RequestBody CreateUserRequest request) {
+        // TENANT_ADMIN_ADDED (when role == TENANT_ADMIN) is published inside
+        // createUser within the same @Transactional boundary so the
+        // AFTER_COMMIT listener fires reliably.
         User user = userService.createUser(
                 request.email(),
                 request.password(),
                 request.name(),
                 request.role(),
                 request.tenantId(),
-                request.phoneNumber());
+                request.phoneNumber(),
+                "admin");
 
         // If creating a PROPERTY_MANAGER, assign properties
         if (request.role() == UserRole.PROPERTY_MANAGER && request.propertyIds() != null) {

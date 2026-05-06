@@ -7,6 +7,9 @@ import com.datagami.rentaxis.api.dto.PaymentSummaryDTO;
 import com.datagami.rentaxis.api.dto.UpdatePaymentStatusDTO;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
+import com.datagami.rentaxis.core.email.EmailEventType;
+import com.datagami.rentaxis.core.email.event.EmailEvent;
+import com.datagami.rentaxis.core.email.event.payload.ChequePayload;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.*;
 import com.datagami.rentaxis.domain.entity.enums.ChequeFailureReason;
@@ -23,6 +26,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
@@ -57,6 +61,7 @@ public class PaymentScheduleService {
     private final FineConfigResolver fineConfigResolver;
     private final PaymentPenaltyRepository paymentPenaltyRepository;
     private final LeaseEventRepository leaseEventRepository;
+    private final ApplicationEventPublisher events;
 
     /** Injected Spring-managed ObjectMapper (honours date/time config, custom modules). */
     private final ObjectMapper objectMapper;
@@ -276,11 +281,30 @@ public class PaymentScheduleService {
         payment.setStatusChangedAt(Instant.now());
         PaymentSchedule saved = paymentScheduleRepository.save(payment);
 
-        // Notify renter: cheque collected
+        // Structured email event: CHEQUE_RECEIVED
+        events.publishEvent(new EmailEvent(this,
+                EmailEventType.CHEQUE_RECEIVED,
+                saved.getTenantId(),
+                new ChequePayload(
+                        saved.getId(),
+                        saved.getLease().getId(),
+                        saved.getLease().getRenter().getUserId(),
+                        null,  // propertyManagerUserId — not stored on Lease; RecipientResolver falls back to tenant admins
+                        saved.getInstallmentNumber(),
+                        saved.getChequeNumber(),
+                        saved.getBankName(),
+                        saved.getAmount() != null ? saved.getAmount().toPlainString() + " AED" : null,
+                        saved.getDueDate() != null ? saved.getDueDate().toString() : null,
+                        null,  // depositDateIso — not yet deposited
+                        null   // failureReason — not applicable
+                ),
+                "CHEQUE_RECEIVED:" + saved.getId()));
+
+        // Notify renter in-app: cheque collected (CHEQUE_RECEIVED EmailEvent covers email)
         try {
             UUID renterUserId = payment.getLease().getRenter().getUserId();
             if (renterUserId != null) {
-                notificationService.notify(TenantContextHolder.getTenantId(), renterUserId,
+                notificationService.notifyInApp(TenantContextHolder.getTenantId(), renterUserId,
                         "PAYMENT_COLLECTED", "Cheque Collected",
                         "Installment #" + payment.getInstallmentNumber() + " cheque has been collected and is being processed.",
                         "PAYMENT", payment.getId());
@@ -306,8 +330,28 @@ public class PaymentScheduleService {
             payment.setNotes(dto.getNotes());
         }
         payment.setStatusChangedAt(Instant.now());
+        PaymentSchedule deposited = paymentScheduleRepository.save(payment);
 
-        return mapToDTO(paymentScheduleRepository.save(payment));
+        // Structured email event: CHEQUE_DEPOSITED
+        events.publishEvent(new EmailEvent(this,
+                EmailEventType.CHEQUE_DEPOSITED,
+                deposited.getTenantId(),
+                new ChequePayload(
+                        deposited.getId(),
+                        deposited.getLease().getId(),
+                        deposited.getLease().getRenter().getUserId(),
+                        null,  // propertyManagerUserId — not stored on Lease; RecipientResolver falls back to tenant admins
+                        deposited.getInstallmentNumber(),
+                        deposited.getChequeNumber(),
+                        deposited.getBankName(),
+                        deposited.getAmount() != null ? deposited.getAmount().toPlainString() + " AED" : null,
+                        deposited.getDueDate() != null ? deposited.getDueDate().toString() : null,
+                        java.time.LocalDate.now().toString(),
+                        null   // failureReason — not applicable
+                ),
+                "CHEQUE_DEPOSITED:" + deposited.getId()));
+
+        return mapToDTO(deposited);
     }
 
     @Transactional

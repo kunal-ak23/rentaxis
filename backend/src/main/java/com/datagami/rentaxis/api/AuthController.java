@@ -48,6 +48,13 @@ public class AuthController {
                 List<String> tenantIds = userService.getUserTenantIds(user.getId())
                         .stream().map(UUID::toString).toList();
 
+                // USER_WELCOMED: emit on first successful login (welcomedAt null).
+                // markWelcomed is @Transactional — the entity write and event publish
+                // share the same transaction, so TransactionalEventListener fires on commit.
+                if (user.getWelcomedAt() == null) {
+                    userService.markWelcomed(user);
+                }
+
                 return ResponseEntity.ok(new AuthResponse(
                         user.getId().toString(),
                         user.getEmail(),
@@ -65,14 +72,17 @@ public class AuthController {
         // 1. Provision New Organization
         LandlordOrg org = orgService.provisionTenant(request.companyName());
 
-        // 2. Create the first user as TENANT_ADMIN for this new organization
+        // 2. Create the first user as TENANT_ADMIN for this new organization.
+        // TENANT_ADMIN_ADDED is published inside createUser within the same
+        // @Transactional boundary so the AFTER_COMMIT listener fires reliably.
         User user = userService.createUser(
                 request.email(),
                 request.password(),
                 request.fullName(),
                 UserRole.TENANT_ADMIN,
                 org.getId().toString(),
-                null);
+                null,
+                "system");
 
         return ResponseEntity.ok(new AuthResponse(
                 user.getId().toString(),
@@ -190,8 +200,10 @@ public class AuthController {
             return ResponseEntity.badRequest().body(java.util.Map.of("error", "New password must be at least 6 characters"));
         }
 
-        user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
-        userService.saveUser(user);
+        // changePassword is @Transactional — the entity write and event publish
+        // share the same transaction, so TransactionalEventListener fires on commit.
+        userService.changePassword(user, request.newPassword());
+
         return ResponseEntity.ok(java.util.Map.of("message", "Password updated successfully"));
     }
 }
