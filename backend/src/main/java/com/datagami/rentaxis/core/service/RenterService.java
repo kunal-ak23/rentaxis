@@ -73,6 +73,7 @@ public class RenterService {
                 saved.setUserId(user.getId());
                 renterRepository.save(saved);
 
+                // TODO: switch to tokenized invite URL once onboarding token flow is designed (see Task 26 follow-up)
                 String setPasswordUrl = "/set-password?userId=" + user.getId();
                 events.publishEvent(new EmailEvent(this,
                         EmailEventType.USER_INVITED,

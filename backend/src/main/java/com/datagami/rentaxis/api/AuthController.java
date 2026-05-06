@@ -2,9 +2,7 @@ package com.datagami.rentaxis.api;
 
 import com.datagami.rentaxis.core.email.EmailEventType;
 import com.datagami.rentaxis.core.email.event.EmailEvent;
-import com.datagami.rentaxis.core.email.event.payload.PasswordChangedPayload;
 import com.datagami.rentaxis.core.email.event.payload.TenantAdminAddedPayload;
-import com.datagami.rentaxis.core.email.event.payload.UserWelcomedPayload;
 import com.datagami.rentaxis.core.service.LandlordOrgService;
 import com.datagami.rentaxis.core.service.UserService;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
@@ -16,7 +14,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -58,15 +55,11 @@ public class AuthController {
                 List<String> tenantIds = userService.getUserTenantIds(user.getId())
                         .stream().map(UUID::toString).toList();
 
-                // USER_WELCOMED: emit on first successful login (welcomedAt null)
+                // USER_WELCOMED: emit on first successful login (welcomedAt null).
+                // markWelcomed is @Transactional — the entity write and event publish
+                // share the same transaction, so TransactionalEventListener fires on commit.
                 if (user.getWelcomedAt() == null) {
-                    user.setWelcomedAt(Instant.now());
-                    userService.saveUser(user);
-                    events.publishEvent(new EmailEvent(this,
-                            EmailEventType.USER_WELCOMED,
-                            user.getTenantId(),
-                            new UserWelcomedPayload(user.getId(), user.getName(), "/dashboard"),
-                            "USER_WELCOMED:" + user.getId()));
+                    userService.markWelcomed(user);
                 }
 
                 return ResponseEntity.ok(new AuthResponse(
@@ -218,15 +211,9 @@ public class AuthController {
             return ResponseEntity.badRequest().body(java.util.Map.of("error", "New password must be at least 6 characters"));
         }
 
-        user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
-        userService.saveUser(user);
-
-        events.publishEvent(new EmailEvent(this,
-                EmailEventType.PASSWORD_CHANGED,
-                user.getTenantId(),
-                new PasswordChangedPayload(user.getId(), user.getName(),
-                        Instant.now().toString(), null),
-                "PASSWORD_CHANGED:" + user.getId()));
+        // changePassword is @Transactional — the entity write and event publish
+        // share the same transaction, so TransactionalEventListener fires on commit.
+        userService.changePassword(user, request.newPassword());
 
         return ResponseEntity.ok(java.util.Map.of("message", "Password updated successfully"));
     }

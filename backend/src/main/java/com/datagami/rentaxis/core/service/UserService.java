@@ -2,8 +2,10 @@ package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.core.email.EmailEventType;
 import com.datagami.rentaxis.core.email.event.EmailEvent;
+import com.datagami.rentaxis.core.email.event.payload.PasswordChangedPayload;
 import com.datagami.rentaxis.core.email.event.payload.StaffRoleChangedPayload;
 import com.datagami.rentaxis.core.email.event.payload.UserInvitedPayload;
+import com.datagami.rentaxis.core.email.event.payload.UserWelcomedPayload;
 import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.UserPropertyAssignment;
 import com.datagami.rentaxis.domain.entity.UserTenantMembership;
@@ -16,6 +18,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -67,6 +70,7 @@ public class UserService {
 
         // Emit USER_INVITED for staff users (PROPERTY_MANAGER, TENANT_USER) created by an admin
         if (role == UserRole.PROPERTY_MANAGER || role == UserRole.TENANT_USER) {
+            // TODO: switch to tokenized invite URL once onboarding token flow is designed (see Task 26 follow-up)
             String setPasswordUrl = "/set-password?userId=" + saved.getId();
             events.publishEvent(new EmailEvent(this,
                     EmailEventType.USER_INVITED,
@@ -89,6 +93,39 @@ public class UserService {
     @Transactional
     public User saveUser(User user) {
         return userRepository.save(user);
+    }
+
+    /**
+     * Marks a user as welcomed (sets welcomedAt) and publishes USER_WELCOMED within
+     * a single transaction so the entity write and event publish share the same
+     * commit boundary (TransactionalEventListener fires on commit).
+     */
+    @Transactional
+    public void markWelcomed(User user) {
+        user.setWelcomedAt(Instant.now());
+        userRepository.save(user);
+        events.publishEvent(new EmailEvent(this,
+                EmailEventType.USER_WELCOMED,
+                user.getTenantId(),
+                new UserWelcomedPayload(user.getId(), user.getName(), "/dashboard"),
+                "USER_WELCOMED:" + user.getId()));
+    }
+
+    /**
+     * Encodes and persists the new password, then publishes PASSWORD_CHANGED within
+     * a single transaction so the entity write and event publish share the same
+     * commit boundary (TransactionalEventListener fires on commit).
+     */
+    @Transactional
+    public void changePassword(User user, String newRawPassword) {
+        user.setPasswordHash(passwordEncoder.encode(newRawPassword));
+        userRepository.save(user);
+        events.publishEvent(new EmailEvent(this,
+                EmailEventType.PASSWORD_CHANGED,
+                user.getTenantId(),
+                new PasswordChangedPayload(user.getId(), user.getName(),
+                        Instant.now().toString(), null),
+                "PASSWORD_CHANGED:" + user.getId()));
     }
 
     public List<User> getAllUsers() {
