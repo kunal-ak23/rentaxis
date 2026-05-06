@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.core.email.render;
 
+import com.datagami.rentaxis.core.email.event.payload.LegacyNotificationPayload;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -29,12 +30,23 @@ public class EmailRenderer {
         // a LegacyNotificationPayload(userId, title, body, referenceType,
         // referenceId). We render those through a generic template and use the
         // payload's title as the subject, bypassing per-event i18n keys.
-        boolean isLegacy = ctx.payloadVars().containsKey("body")
-                && ctx.payloadVars().containsKey("referenceType")
-                && ctx.payloadVars().containsKey("title");
-        String templateName = isLegacy
-                ? "email/events/legacy_notification"
-                : "email/events/" + ctx.type().snake();
+        String templateName;
+        String subject;
+        if (ctx.rawPayload() instanceof LegacyNotificationPayload legacy) {
+            templateName = "email/events/legacy_notification";
+            subject = legacy.title() == null ? ctx.type().name() : legacy.title();
+        } else {
+            templateName = "email/events/" + ctx.type().snake();
+            String subjectKey = "email." + ctx.type().snake() + ".subject";
+            Object[] subjectArgs = (Object[]) ctx.payloadVars().getOrDefault("__subjectArgs", new Object[0]);
+            try {
+                subject = messageSource.getMessage(subjectKey, subjectArgs, ctx.locale());
+            } catch (NoSuchElementException | org.springframework.context.NoSuchMessageException e) {
+                log.warn("Missing email i18n key {} for locale {} - falling back to event name",
+                        subjectKey, ctx.locale());
+                subject = ctx.type().name();
+            }
+        }
 
         Context tlCtx = new Context(ctx.locale());
         tlCtx.setVariable("recipient", Map.of(
@@ -46,22 +58,6 @@ public class EmailRenderer {
         tlCtx.setVariable("layout",
                 ctx.locale().getLanguage().equals("ar") ? "email/layout/master-rtl" : "email/layout/master");
         ctx.payloadVars().forEach(tlCtx::setVariable);
-
-        String subject;
-        if (isLegacy) {
-            Object titleVar = ctx.payloadVars().get("title");
-            subject = titleVar == null ? ctx.type().name() : titleVar.toString();
-        } else {
-            String subjectKey = "email." + ctx.type().snake() + ".subject";
-            Object[] subjectArgs = (Object[]) ctx.payloadVars().getOrDefault("__subjectArgs", new Object[0]);
-            try {
-                subject = messageSource.getMessage(subjectKey, subjectArgs, ctx.locale());
-            } catch (NoSuchElementException | org.springframework.context.NoSuchMessageException e) {
-                log.warn("Missing email i18n key {} for locale {} - falling back to event name",
-                        subjectKey, ctx.locale());
-                subject = ctx.type().name();
-            }
-        }
 
         String html = emailTemplateEngine.process(templateName, tlCtx);
         String text = htmlToPlainText(html);

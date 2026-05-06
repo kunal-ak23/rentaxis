@@ -65,7 +65,8 @@ public class EmailDispatcher {
                     portalBaseUrl,
                     branding,
                     unsubscribeUrl,
-                    payloadVars);
+                    payloadVars,
+                    event.getPayload());
 
             EmailRenderResult rendered = renderer.render(ctx);
 

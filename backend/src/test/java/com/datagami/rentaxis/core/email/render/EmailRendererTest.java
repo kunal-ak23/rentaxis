@@ -29,7 +29,8 @@ class EmailRendererTest {
                 new TenantBranding("Acme PM", "https://example/logo.png"),
                 "https://app.test/api/v1/email/unsubscribe?token=abc",
                 Map.of("setPasswordUrl", "https://app.test/set-password?token=xyz",
-                       "__subjectArgs", new Object[]{"Acme PM"})
+                       "__subjectArgs", new Object[]{"Acme PM"}),
+                null
         );
 
         EmailRenderResult result = renderer.render(ctx);
@@ -50,7 +51,8 @@ class EmailRendererTest {
                 new TenantBranding("شركة الأمل", "https://example/logo.png"),
                 "https://app.test/api/v1/email/unsubscribe?token=abc",
                 Map.of("setPasswordUrl", "https://app.test/set-password?token=xyz",
-                       "__subjectArgs", new Object[]{"شركة الأمل"})
+                       "__subjectArgs", new Object[]{"شركة الأمل"}),
+                null
         );
 
         EmailRenderResult result = renderer.render(ctx);

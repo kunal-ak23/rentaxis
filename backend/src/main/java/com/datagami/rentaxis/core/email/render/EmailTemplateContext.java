@@ -16,5 +16,6 @@ public record EmailTemplateContext(
         String portalBaseUrl,
         TenantBranding tenantBranding,
         String unsubscribeUrl,
-        Map<String, Object> payloadVars
+        Map<String, Object> payloadVars,
+        Object rawPayload
 ) {}
