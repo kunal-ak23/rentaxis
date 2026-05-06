@@ -24,7 +24,7 @@ export default function SetPasswordForm({ token, email, name, locale }: Props) {
         if (password !== confirm) { setError("Passwords don't match."); return; }
         setLoading(true);
         try {
-            const res = await fetch("/api/auth/set-password", {
+            const res = await fetch("/api/proxy/auth/set-password", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ token, newPassword: password }),

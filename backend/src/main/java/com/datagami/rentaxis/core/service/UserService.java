@@ -156,23 +156,29 @@ public class UserService {
         if (newRawPassword == null || newRawPassword.length() < 8) {
             return InviteResult.WEAK_PASSWORD;
         }
+        // Pre-flight read: lets us return distinct error codes (NOT_FOUND / EXPIRED / ALREADY_USED)
+        // for better UX without needing two atomic UPDATEs.
         var maybe = userRepository.findByInviteToken(token);
         if (maybe.isEmpty()) return InviteResult.NOT_FOUND;
-        User user = maybe.get();
-        if (user.getInviteTokenExpiresAt() == null) return InviteResult.ALREADY_USED;
-        if (user.getInviteTokenExpiresAt().isBefore(Instant.now())) return InviteResult.EXPIRED;
+        User probe = maybe.get();
+        if (probe.getInviteTokenExpiresAt() == null) return InviteResult.ALREADY_USED;
+        if (probe.getInviteTokenExpiresAt().isBefore(Instant.now())) return InviteResult.EXPIRED;
 
-        user.setPasswordHash(passwordEncoder.encode(newRawPassword));
-        user.setInviteToken(null);
-        user.setInviteTokenExpiresAt(null);
-        userRepository.save(user);
+        // Atomic redeem: returns 0 if a concurrent caller already cleared the token.
+        int updated = userRepository.redeemInviteToken(
+                token,
+                passwordEncoder.encode(newRawPassword),
+                Instant.now());
+        if (updated == 0) {
+            return InviteResult.ALREADY_USED;
+        }
 
         events.publishEvent(new EmailEvent(this,
                 EmailEventType.PASSWORD_CHANGED,
-                user.getTenantId(),
-                new PasswordChangedPayload(user.getId(), user.getName(),
+                probe.getTenantId(),
+                new PasswordChangedPayload(probe.getId(), probe.getName(),
                         Instant.now().toString(), null),
-                "PASSWORD_CHANGED:" + user.getId() + ":invite"));
+                "PASSWORD_CHANGED:" + probe.getId() + ":invite"));
         return InviteResult.OK;
     }
 
