@@ -115,3 +115,5 @@ databaseChangeLog:
       file: db/changelog/changesets/53-email-outbox.yaml
   - include:
       file: db/changelog/changesets/54-add-users-welcomed-at.yaml
+  - include:
+      file: db/changelog/changesets/55-email-prefs-cascade.yaml
