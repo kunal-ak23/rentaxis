@@ -4,6 +4,7 @@ import com.datagami.rentaxis.core.email.EmailEventType;
 import com.datagami.rentaxis.core.email.event.EmailEvent;
 import com.datagami.rentaxis.core.email.event.payload.PasswordChangedPayload;
 import com.datagami.rentaxis.core.email.event.payload.StaffRoleChangedPayload;
+import com.datagami.rentaxis.core.email.event.payload.TenantAdminAddedPayload;
 import com.datagami.rentaxis.core.email.event.payload.UserInvitedPayload;
 import com.datagami.rentaxis.core.email.event.payload.UserWelcomedPayload;
 import com.datagami.rentaxis.domain.entity.User;
@@ -45,7 +46,7 @@ public class UserService {
 
     @Transactional
     public User createUser(String email, String rawPassword, String name, UserRole role, String tenantId,
-            String phoneNumber) {
+            String phoneNumber, String addedByContext) {
         String normalizedEmail = email.toLowerCase().trim();
         if (userRepository.findByEmail(normalizedEmail).isPresent()) {
             throw new IllegalArgumentException("User with this email already exists.");
@@ -77,6 +78,18 @@ public class UserService {
                     saved.getTenantId(),
                     new UserInvitedPayload(saved.getId(), saved.getName(), setPasswordUrl),
                     "USER_INVITED:" + saved.getId()));
+        }
+
+        // Emit TENANT_ADMIN_ADDED inside the same @Transactional boundary so that
+        // the @TransactionalEventListener(AFTER_COMMIT) listener fires reliably.
+        // addedByContext is "system" for self-registration flows, "admin" for
+        // admin-created TENANT_ADMINs — callers pass this via the addedByContext param.
+        if (role == UserRole.TENANT_ADMIN && saved.getTenantId() != null) {
+            events.publishEvent(new EmailEvent(this,
+                    EmailEventType.TENANT_ADMIN_ADDED,
+                    saved.getTenantId(),
+                    new TenantAdminAddedPayload(saved.getTenantId(), saved.getId(), saved.getName(), addedByContext),
+                    "TENANT_ADMIN_ADDED:" + saved.getId()));
         }
 
         return saved;

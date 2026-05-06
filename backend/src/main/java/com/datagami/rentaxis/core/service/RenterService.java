@@ -68,7 +68,8 @@ public class RenterService {
                         dto.getNameEn(),
                         UserRole.RENTER,
                         tenantId != null ? tenantId.toString() : null,
-                        dto.getPhone()
+                        dto.getPhone(),
+                        "system"
                 );
                 saved.setUserId(user.getId());
                 renterRepository.save(saved);
