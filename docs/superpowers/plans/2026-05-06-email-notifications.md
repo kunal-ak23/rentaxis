@@ -1405,7 +1405,7 @@ git commit -m "feat(email): payload records for Phase 1 events"
 - Create: `backend/src/main/java/com/datagami/rentaxis/core/email/send/SendResult.java`
 - Create: `backend/src/main/java/com/datagami/rentaxis/core/email/send/AzureAcsEmailSender.java`
 
-- [ ] **Step 1: Implement interface + result**
+- [x] **Step 1: Implement interface + result**
 
 Create `backend/src/main/java/com/datagami/rentaxis/core/email/send/EmailSender.java`:
 
@@ -1427,7 +1427,7 @@ package com.datagami.rentaxis.core.email.send;
 public record SendResult(String azureMessageId, String azureDeliveryStatus) {}
 ```
 
-- [ ] **Step 2: Implement Azure ACS sender**
+- [x] **Step 2: Implement Azure ACS sender**
 
 Create `backend/src/main/java/com/datagami/rentaxis/core/email/send/AzureAcsEmailSender.java`:
 
@@ -1515,12 +1515,12 @@ public class AzureAcsEmailSender implements EmailSender {
 }
 ```
 
-- [ ] **Step 3: Verify compile**
+- [x] **Step 3: Verify compile**
 
 Run: `cd backend && ./gradlew compileJava`
 Expected: `BUILD SUCCESSFUL`. If `EmailAttachment` or its constructor signature differs in your azure-communication-email version, adjust the constructor call to match — same intent (name, contentType, BinaryData).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add backend/src/main/java/com/datagami/rentaxis/core/email/send/
