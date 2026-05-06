@@ -47,10 +47,12 @@ public class PayloadVarsExtractor {
     private static String computeCtaUrl(EmailEventType type, Map<String, Object> vars, String base, String lang) {
         String prefix = base + "/" + lang + "/dashboard";
         return switch (type) {
-            case USER_INVITED -> str(vars, "setPasswordUrl");
-            case USER_WELCOMED, EMAIL_VERIFIED -> str(vars, "dashboardUrl");
-            case PASSWORD_RESET_REQUESTED -> str(vars, "resetUrl");
-            case LEASE_CONTRACT_GENERATED -> str(vars, "contractSignedUrl");
+            // Until a tokenized /set-password page is built in the web app, send invitees
+            // to the login screen — admin shares the password OOB. Tracked as Phase 2 follow-up.
+            case USER_INVITED -> base + "/" + lang + "/auth/login";
+            case USER_WELCOMED, EMAIL_VERIFIED -> absolutize(str(vars, "dashboardUrl"), base, lang);
+            case PASSWORD_RESET_REQUESTED -> absolutize(str(vars, "resetUrl"), base, lang);
+            case LEASE_CONTRACT_GENERATED -> absolutize(str(vars, "contractSignedUrl"), base, lang);
             case LEASE_CREATED, LEASE_SIGNATURE_REQUESTED, LEASE_SIGNED, LEASE_ACTIVATED,
                  LEASE_EXPIRING, LEASE_RENEWED, LEASE_TERMINATED, RENT_RECEIPT_AVAILABLE
                     -> prefix + "/leases/" + str(vars, "leaseId");
@@ -91,5 +93,17 @@ public class PayloadVarsExtractor {
     private static String str(Map<String, Object> vars, String key) {
         Object v = vars.get(key);
         return v == null ? "" : v.toString();
+    }
+
+    /**
+     * Promote a possibly-relative URL to an absolute one. Already-absolute URLs
+     * (http(s)://...) are returned unchanged. Relative URLs starting with "/"
+     * get prefixed with the base + locale; null/blank fall back to the base.
+     */
+    private static String absolutize(String url, String base, String lang) {
+        if (url == null || url.isBlank()) return base;
+        if (url.startsWith("http://") || url.startsWith("https://")) return url;
+        String langPrefix = base + "/" + lang;
+        return url.startsWith("/") ? langPrefix + url : langPrefix + "/" + url;
     }
 }
