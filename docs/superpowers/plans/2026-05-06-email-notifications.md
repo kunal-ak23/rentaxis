@@ -780,7 +780,7 @@ git commit -m "feat(email): EmailOutboxRepository with skip-locked pickup"
 - Create: `backend/src/main/java/com/datagami/rentaxis/core/email/prefs/EmailPreferences.java`
 - Create: `backend/src/main/java/com/datagami/rentaxis/core/email/prefs/EmailPreferencesRepository.java`
 
-- [ ] **Step 1: Implement entity**
+- [x] **Step 1: Implement entity**
 
 Create `backend/src/main/java/com/datagami/rentaxis/core/email/prefs/EmailPreferences.java`:
 
@@ -821,7 +821,7 @@ public class EmailPreferences {
 }
 ```
 
-- [ ] **Step 2: Implement repository**
+- [x] **Step 2: Implement repository**
 
 Create `backend/src/main/java/com/datagami/rentaxis/core/email/prefs/EmailPreferencesRepository.java`:
 
@@ -838,12 +838,12 @@ public interface EmailPreferencesRepository extends JpaRepository<EmailPreferenc
 }
 ```
 
-- [ ] **Step 3: Verify compile**
+- [x] **Step 3: Verify compile**
 
 Run: `cd backend && ./gradlew compileJava`
 Expected: `BUILD SUCCESSFUL`.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add backend/src/main/java/com/datagami/rentaxis/core/email/prefs/
