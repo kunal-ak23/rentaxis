@@ -3603,7 +3603,17 @@ Commit: `ec40607` — feat(email): admin endpoints for outbox list/detail/retry
 **Files:**
 - Create: `backend/src/test/java/com/datagami/rentaxis/core/email/EmailPipelineE2ETest.java`
 
-- [ ] **Step 1: Write test**
+- [x] **Step 1: Write test**
+
+Deviations from the spec template:
+- Used `@MockitoBean` (Spring Boot 4.x) instead of the deprecated `@MockBean`.
+- Filtered `outboxRepo.findAll()` by `recipientUserId` to ignore the
+  default-Super-Admin row that `DataInitializer` creates on first boot.
+- Drove the worker via `worker.processOne(row)` rather than `worker.tick()`.
+  `tick()` carries `@SchedulerLock`, which silently no-ops when invoked
+  outside the `@Scheduled` trigger; `processOne` is the per-row
+  `@Transactional` unit of work the scheduler dispatches to, so the full
+  outbox + EmailSender + persistence path is still exercised end-to-end.
 
 Create `backend/src/test/java/com/datagami/rentaxis/core/email/EmailPipelineE2ETest.java`:
 
@@ -3685,12 +3695,12 @@ class EmailPipelineE2ETest {
 }
 ```
 
-- [ ] **Step 2: Run E2E test**
+- [x] **Step 2: Run E2E test**
 
 Run: `cd backend && ./gradlew test --tests EmailPipelineE2ETest`
-Expected: PASS.
+Result: PASS (BUILD SUCCESSFUL in 16s).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add backend/src/test/java/com/datagami/rentaxis/core/email/EmailPipelineE2ETest.java
