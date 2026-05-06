@@ -1,5 +1,7 @@
 package com.datagami.rentaxis.api;
 
+import com.datagami.rentaxis.api.dto.InviteTokenInfoResponse;
+import com.datagami.rentaxis.api.dto.SetPasswordRequest;
 import com.datagami.rentaxis.core.service.LandlordOrgService;
 import com.datagami.rentaxis.core.service.UserService;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
@@ -91,6 +93,35 @@ public class AuthController {
                 user.getRole().name(),
                 user.getTenantId() != null ? user.getTenantId().toString() : null,
                 List.of(org.getId().toString())));
+    }
+
+    @GetMapping("/set-password/validate")
+    public ResponseEntity<InviteTokenInfoResponse> validateInviteToken(@RequestParam("token") String token) {
+        return userService.findByInviteToken(token)
+                .map(u -> {
+                    if (u.getInviteTokenExpiresAt() == null
+                            || u.getInviteTokenExpiresAt().isBefore(java.time.Instant.now())) {
+                        return ResponseEntity.status(HttpStatus.GONE).<InviteTokenInfoResponse>build();
+                    }
+                    return ResponseEntity.ok(new InviteTokenInfoResponse(
+                            u.getEmail(), u.getName(), u.getInviteTokenExpiresAt()));
+                })
+                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).build());
+    }
+
+    @PostMapping("/set-password")
+    public ResponseEntity<Void> setPassword(@RequestBody SetPasswordRequest request) {
+        if (request == null || request.token() == null || request.token().isBlank()) {
+            return ResponseEntity.badRequest().build();
+        }
+        UserService.InviteResult result = userService.acceptInvite(request.token(), request.newPassword());
+        return switch (result) {
+            case OK -> ResponseEntity.noContent().build();
+            case NOT_FOUND -> ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+            case EXPIRED -> ResponseEntity.status(HttpStatus.GONE).build();
+            case ALREADY_USED -> ResponseEntity.status(HttpStatus.CONFLICT).build();
+            case WEAK_PASSWORD -> ResponseEntity.badRequest().build();
+        };
     }
 
     /**

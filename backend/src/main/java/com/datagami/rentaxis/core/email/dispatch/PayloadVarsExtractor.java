@@ -47,9 +47,12 @@ public class PayloadVarsExtractor {
     private static String computeCtaUrl(EmailEventType type, Map<String, Object> vars, String base, String lang) {
         String prefix = base + "/" + lang + "/dashboard";
         return switch (type) {
-            // Until a tokenized /set-password page is built in the web app, send invitees
-            // to the login screen — admin shares the password OOB. Tracked as Phase 2 follow-up.
-            case USER_INVITED -> base + "/" + lang + "/auth/login";
+            case USER_INVITED -> {
+                String token = str(vars, "inviteToken");
+                yield token.isBlank()
+                        ? base + "/" + lang + "/auth/login"
+                        : base + "/" + lang + "/auth/set-password?token=" + token;
+            }
             case USER_WELCOMED, EMAIL_VERIFIED -> absolutize(str(vars, "dashboardUrl"), base, lang);
             case PASSWORD_RESET_REQUESTED -> absolutize(str(vars, "resetUrl"), base, lang);
             case LEASE_CONTRACT_GENERATED -> absolutize(str(vars, "contractSignedUrl"), base, lang);

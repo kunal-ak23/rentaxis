@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
 import 'screens/login_screen.dart';
+import 'screens/set_password_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/payments_screen.dart';
 import 'screens/pay_rent_screen.dart';
@@ -30,8 +31,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isLoading = authState.isLoading;
       final isLoginRoute = state.matchedLocation == '/login';
       final isSplashRoute = state.matchedLocation == '/splash';
+      final isSetPasswordRoute = state.matchedLocation == '/set-password';
 
       if (isSplashRoute) return null; // Always allow splash
+      if (isSetPasswordRoute) return null; // Allow unauthenticated access
       if (isLoading) return null;
       if (!isLoggedIn && !isLoginRoute) return '/login';
       if (isLoggedIn && isLoginRoute) return '/';
@@ -54,6 +57,13 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/login',
         builder: (context, state) => const LoginScreen(),
+      ),
+      GoRoute(
+        path: '/set-password',
+        builder: (context, state) {
+          final token = state.uri.queryParameters['token'] ?? '';
+          return SetPasswordScreen(token: token);
+        },
       ),
       ShellRoute(
         builder: (context, state, child) => ShellScreen(child: child),

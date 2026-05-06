@@ -89,7 +89,7 @@ class EmailPipelineE2ETest {
         tx.executeWithoutResult(s -> publisher.publishEvent(new EmailEvent(this,
                 EmailEventType.USER_INVITED,
                 tenantId,
-                new UserInvitedPayload(userId, "E2E", "https://app.test/set?t=x"),
+                new UserInvitedPayload(userId, "E2E", "https://app.test/set?t=x", "test-token"),
                 "E2E:" + userId)));
 
         List<EmailOutbox> rows = outboxRepo.findAll().stream()

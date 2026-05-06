@@ -44,6 +44,15 @@ public class UserService {
         this.events = events;
     }
 
+    private static String generateInviteToken() {
+        java.security.SecureRandom rng = new java.security.SecureRandom();
+        byte[] buf = new byte[32];
+        rng.nextBytes(buf);
+        StringBuilder sb = new StringBuilder(64);
+        for (byte b : buf) sb.append(String.format("%02x", b));
+        return sb.toString();
+    }
+
     @Transactional
     public User createUser(String email, String rawPassword, String name, UserRole role, String tenantId,
             String phoneNumber, String addedByContext) {
@@ -60,6 +69,14 @@ public class UserService {
         user.setPhoneNumber(phoneNumber);
         user.setTenantId(tenantId != null && !tenantId.isBlank() ? UUID.fromString(tenantId) : null);
 
+        boolean issuesInviteToken = role == UserRole.RENTER
+                || role == UserRole.PROPERTY_MANAGER
+                || role == UserRole.TENANT_USER;
+        if (issuesInviteToken) {
+            user.setInviteToken(generateInviteToken());
+            user.setInviteTokenExpiresAt(java.time.Instant.now().plus(java.time.Duration.ofDays(7)));
+        }
+
         User saved = userRepository.save(user);
 
         // Auto-create tenant membership for tenant-scoped roles
@@ -69,14 +86,13 @@ public class UserService {
             addTenantMembership(saved.getId(), UUID.fromString(tenantId));
         }
 
-        // Emit USER_INVITED for staff users (PROPERTY_MANAGER, TENANT_USER) created by an admin
-        if (role == UserRole.PROPERTY_MANAGER || role == UserRole.TENANT_USER) {
-            // TODO: switch to tokenized invite URL once onboarding token flow is designed (see Task 26 follow-up)
-            String setPasswordUrl = "/set-password?userId=" + saved.getId();
+        // Emit USER_INVITED for any role we issued an invite token for (RENTER, PROPERTY_MANAGER, TENANT_USER)
+        if (issuesInviteToken) {
+            String setPasswordUrl = "/auth/set-password?token=" + saved.getInviteToken();
             events.publishEvent(new EmailEvent(this,
                     EmailEventType.USER_INVITED,
                     saved.getTenantId(),
-                    new UserInvitedPayload(saved.getId(), saved.getName(), setPasswordUrl),
+                    new UserInvitedPayload(saved.getId(), saved.getName(), setPasswordUrl, saved.getInviteToken()),
                     "USER_INVITED:" + saved.getId()));
         }
 
@@ -97,6 +113,10 @@ public class UserService {
 
     public Optional<User> findByEmail(String email) {
         return userRepository.findByEmail(email);
+    }
+
+    public Optional<User> findByInviteToken(String token) {
+        return userRepository.findByInviteToken(token);
     }
 
     public Optional<User> findById(UUID id) {
@@ -122,6 +142,44 @@ public class UserService {
                 user.getTenantId(),
                 new UserWelcomedPayload(user.getId(), user.getName(), "/dashboard"),
                 "USER_WELCOMED:" + user.getId()));
+    }
+
+    public enum InviteResult { OK, NOT_FOUND, EXPIRED, ALREADY_USED, WEAK_PASSWORD }
+
+    /**
+     * Atomically redeems an invite token: validates it, hashes the new password,
+     * clears the token fields, saves, and publishes PASSWORD_CHANGED so the user
+     * gets a confirmation email. All within a single transaction.
+     */
+    @Transactional
+    public InviteResult acceptInvite(String token, String newRawPassword) {
+        if (newRawPassword == null || newRawPassword.length() < 8) {
+            return InviteResult.WEAK_PASSWORD;
+        }
+        // Pre-flight read: lets us return distinct error codes (NOT_FOUND / EXPIRED / ALREADY_USED)
+        // for better UX without needing two atomic UPDATEs.
+        var maybe = userRepository.findByInviteToken(token);
+        if (maybe.isEmpty()) return InviteResult.NOT_FOUND;
+        User probe = maybe.get();
+        if (probe.getInviteTokenExpiresAt() == null) return InviteResult.ALREADY_USED;
+        if (probe.getInviteTokenExpiresAt().isBefore(Instant.now())) return InviteResult.EXPIRED;
+
+        // Atomic redeem: returns 0 if a concurrent caller already cleared the token.
+        int updated = userRepository.redeemInviteToken(
+                token,
+                passwordEncoder.encode(newRawPassword),
+                Instant.now());
+        if (updated == 0) {
+            return InviteResult.ALREADY_USED;
+        }
+
+        events.publishEvent(new EmailEvent(this,
+                EmailEventType.PASSWORD_CHANGED,
+                probe.getTenantId(),
+                new PasswordChangedPayload(probe.getId(), probe.getName(),
+                        Instant.now().toString(), null),
+                "PASSWORD_CHANGED:" + probe.getId() + ":invite"));
+        return InviteResult.OK;
     }
 
     /**

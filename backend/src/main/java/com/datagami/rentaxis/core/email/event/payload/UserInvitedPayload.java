@@ -5,5 +5,6 @@ import java.util.UUID;
 public record UserInvitedPayload(
         UUID inviteeUserId,
         String inviteeName,
-        String setPasswordUrl
+        String setPasswordUrl,
+        String inviteToken
 ) {}

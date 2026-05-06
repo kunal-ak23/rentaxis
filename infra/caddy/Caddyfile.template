@@ -9,6 +9,12 @@
     handle /api/auth/me* {
         reverse_proxy backend:8080
     }
+    handle /api/auth/set-password {
+        reverse_proxy backend:8080
+    }
+    handle /api/auth/set-password/* {
+        reverse_proxy backend:8080
+    }
 
     # All other /api/auth/* → Next.js NextAuth handler
     # (csrf, signin, signout, callback/*, providers, session, error, verify-request, _log)

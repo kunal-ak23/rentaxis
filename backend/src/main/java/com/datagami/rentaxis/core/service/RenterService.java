@@ -2,16 +2,12 @@ package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.dto.CreateRenterDTO;
 import com.datagami.rentaxis.api.dto.RenterDTO;
-import com.datagami.rentaxis.core.email.EmailEventType;
-import com.datagami.rentaxis.core.email.event.EmailEvent;
-import com.datagami.rentaxis.core.email.event.payload.UserInvitedPayload;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.Renter;
 import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
 import com.datagami.rentaxis.domain.repository.RenterRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,7 +21,6 @@ public class RenterService {
 
     private final RenterRepository renterRepository;
     private final UserService userService;
-    private final ApplicationEventPublisher events;
 
     @Transactional(readOnly = true)
     public List<RenterDTO> getAllRenters() {
@@ -73,14 +68,7 @@ public class RenterService {
                 );
                 saved.setUserId(user.getId());
                 renterRepository.save(saved);
-
-                // TODO: switch to tokenized invite URL once onboarding token flow is designed (see Task 26 follow-up)
-                String setPasswordUrl = "/set-password?userId=" + user.getId();
-                events.publishEvent(new EmailEvent(this,
-                        EmailEventType.USER_INVITED,
-                        tenantId,
-                        new UserInvitedPayload(user.getId(), dto.getNameEn(), setPasswordUrl),
-                        "USER_INVITED:" + user.getId()));
+                // USER_INVITED is now fired by UserService.createUser for RENTER role — no duplicate needed.
             } catch (Exception e) {
                 generatedPassword = null;
                 System.err.println("Failed to create portal account for renter " + saved.getId() + ": " + e.getMessage());
