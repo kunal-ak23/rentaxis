@@ -1770,7 +1770,7 @@ git commit -m "feat(email): EmailRenderer scaffolding (Thymeleaf + MessageSource
 - Create: `backend/src/main/resources/templates/email/layout/master.html`
 - Create: `backend/src/main/resources/templates/email/layout/master-rtl.html`
 
-- [ ] **Step 1: Create LTR layout**
+- [x] **Step 1: Create LTR layout**
 
 Create `backend/src/main/resources/templates/email/layout/master.html`:
 
@@ -1823,7 +1823,7 @@ Create `backend/src/main/resources/templates/email/layout/master.html`:
 </html>
 ```
 
-- [ ] **Step 2: Create RTL layout**
+- [x] **Step 2: Create RTL layout**
 
 Create `backend/src/main/resources/templates/email/layout/master-rtl.html` — same as `master.html` but:
 - Add `dir="rtl"` to `<html>`
@@ -1879,7 +1879,7 @@ Create `backend/src/main/resources/templates/email/layout/master-rtl.html` — s
 </html>
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add backend/src/main/resources/templates/email/layout/

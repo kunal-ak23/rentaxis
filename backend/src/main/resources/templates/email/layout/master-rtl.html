@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RentAxis</title>
+</head>
+<body style="margin:0;padding:0;background:#FAFAF8;font-family:'Segoe UI',Tahoma,Geneva,Verdana,Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#FAFAF8;padding:32px 0;" dir="rtl">
+  <tr><td align="center">
+    <table width="560" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;border:1px solid #E2E0DC;overflow:hidden;">
+      <tr><td style="background:#0F1B2D;padding:24px 32px;">
+        <table width="100%" cellpadding="0" cellspacing="0" dir="rtl">
+          <tr>
+            <td style="color:rgba(255,255,255,0.5);font-size:11px;">إدارة العقارات</td>
+            <td align="left" style="color:#C8A951;font-size:20px;font-weight:700;letter-spacing:1px;">RentAxis</td>
+          </tr>
+        </table>
+      </td></tr>
+
+      <tr><td style="padding:32px;text-align:right;">
+        <th:block th:fragment="layout(content)">
+          <th:block th:replace="${content}" />
+        </th:block>
+
+        <hr style="border:none;border-top:1px solid #E2E0DC;margin:24px 0;" />
+
+        <table th:if="${tenantBranding != null}" width="100%" cellpadding="0" cellspacing="0" style="background:#F5F4F0;border-radius:8px;padding:16px;" dir="rtl">
+          <tr><td style="padding:12px 16px;">
+            <span th:text="${tenantBranding.companyName}" style="font-weight:600;color:#0F172A;font-size:13px;">Acme PM</span>
+            <img th:if="${tenantBranding.logoUrl} != null" th:src="${tenantBranding.logoUrl}" alt="" height="24" style="vertical-align:middle;margin-right:8px;" />
+          </td></tr>
+        </table>
+      </td></tr>
+
+      <tr><td style="padding:20px 32px;border-top:1px solid #E2E0DC;background:#F5F4F0;">
+        <p style="margin:0;color:#94A3B8;font-size:11px;text-align:center;line-height:1.6;">
+          هذا إشعار تلقائي من نظام RentAxis لإدارة العقارات. الرجاء عدم الرد على هذا البريد الإلكتروني.<br/>
+          <a th:if="${unsubscribeUrl}" th:href="${unsubscribeUrl}" style="color:#94A3B8;">إلغاء الاشتراك في رسائل التسويق</a>
+        </p>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</body>
+</html>
