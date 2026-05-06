@@ -1,5 +1,9 @@
 package com.datagami.rentaxis.core.service;
 
+import com.datagami.rentaxis.core.email.EmailEventType;
+import com.datagami.rentaxis.core.email.event.EmailEvent;
+import com.datagami.rentaxis.core.email.event.payload.StaffRoleChangedPayload;
+import com.datagami.rentaxis.core.email.event.payload.UserInvitedPayload;
 import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.UserPropertyAssignment;
 import com.datagami.rentaxis.domain.entity.UserTenantMembership;
@@ -7,6 +11,7 @@ import com.datagami.rentaxis.domain.entity.enums.UserRole;
 import com.datagami.rentaxis.domain.repository.UserPropertyAssignmentRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
 import com.datagami.rentaxis.domain.repository.UserTenantMembershipRepository;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,14 +27,17 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
     private final UserPropertyAssignmentRepository propertyAssignmentRepository;
     private final UserTenantMembershipRepository tenantMembershipRepository;
+    private final ApplicationEventPublisher events;
 
     public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder,
             UserPropertyAssignmentRepository propertyAssignmentRepository,
-            UserTenantMembershipRepository tenantMembershipRepository) {
+            UserTenantMembershipRepository tenantMembershipRepository,
+            ApplicationEventPublisher events) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.propertyAssignmentRepository = propertyAssignmentRepository;
         this.tenantMembershipRepository = tenantMembershipRepository;
+        this.events = events;
     }
 
     @Transactional
@@ -55,6 +63,16 @@ public class UserService {
                 && (role == UserRole.TENANT_ADMIN || role == UserRole.PROPERTY_MANAGER
                         || role == UserRole.TENANT_USER || role == UserRole.RENTER)) {
             addTenantMembership(saved.getId(), UUID.fromString(tenantId));
+        }
+
+        // Emit USER_INVITED for staff users (PROPERTY_MANAGER, TENANT_USER) created by an admin
+        if (role == UserRole.PROPERTY_MANAGER || role == UserRole.TENANT_USER) {
+            String setPasswordUrl = "/set-password?userId=" + saved.getId();
+            events.publishEvent(new EmailEvent(this,
+                    EmailEventType.USER_INVITED,
+                    saved.getTenantId(),
+                    new UserInvitedPayload(saved.getId(), saved.getName(), setPasswordUrl),
+                    "USER_INVITED:" + saved.getId()));
         }
 
         return saved;
@@ -91,6 +109,7 @@ public class UserService {
             throw new IllegalArgumentException("User with this email already exists.");
         }
 
+        UserRole previousRole = user.getRole();
         user.setEmail(normalizedEmail);
         user.setName(name);
         user.setRole(role);
@@ -109,6 +128,16 @@ public class UserService {
         if (newTenantId != null && (role == UserRole.TENANT_ADMIN || role == UserRole.PROPERTY_MANAGER
                 || role == UserRole.TENANT_USER || role == UserRole.RENTER)) {
             addTenantMembership(saved.getId(), newTenantId);
+        }
+
+        // Emit STAFF_ROLE_CHANGED when role transitions to a different value
+        if (previousRole != role) {
+            events.publishEvent(new EmailEvent(this,
+                    EmailEventType.STAFF_ROLE_CHANGED,
+                    saved.getTenantId(),
+                    new StaffRoleChangedPayload(saved.getTenantId(), saved.getId(), saved.getName(),
+                            previousRole.name(), role.name()),
+                    "STAFF_ROLE_CHANGED:" + saved.getId()));
         }
 
         return saved;

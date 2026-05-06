@@ -6,6 +6,7 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.time.Instant;
 import java.util.UUID;
 
 @Entity
@@ -38,6 +39,9 @@ public class User extends BaseTenantEntity {
 
     @Column(name = "phone_number")
     private String phoneNumber;
+
+    @Column(name = "welcomed_at")
+    private Instant welcomedAt;
 
     // Optional override of tenantId from BaseTenantEntity
     // If a user is SUPER_ADMIN, tenantId might be null

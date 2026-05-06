@@ -1,9 +1,13 @@
 package com.datagami.rentaxis.api;
 
 import com.datagami.rentaxis.api.dto.UserResponseDTO;
+import com.datagami.rentaxis.core.email.EmailEventType;
+import com.datagami.rentaxis.core.email.event.EmailEvent;
+import com.datagami.rentaxis.core.email.event.payload.TenantAdminAddedPayload;
 import com.datagami.rentaxis.core.service.UserService;
 import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -17,9 +21,11 @@ import java.util.UUID;
 public class UserController {
 
     private final UserService userService;
+    private final ApplicationEventPublisher events;
 
-    public UserController(UserService userService) {
+    public UserController(UserService userService, ApplicationEventPublisher events) {
         this.userService = userService;
+        this.events = events;
     }
 
     public record CreateUserRequest(String email, String password, String name, UserRole role, String tenantId,
@@ -48,6 +54,15 @@ public class UserController {
             for (UUID propertyId : request.propertyIds()) {
                 userService.assignPropertyToUser(user.getId(), propertyId);
             }
+        }
+
+        // TENANT_ADMIN_ADDED: when an admin adds another TENANT_ADMIN to an existing tenant
+        if (request.role() == UserRole.TENANT_ADMIN && request.tenantId() != null) {
+            events.publishEvent(new EmailEvent(this,
+                    EmailEventType.TENANT_ADMIN_ADDED,
+                    user.getTenantId(),
+                    new TenantAdminAddedPayload(user.getTenantId(), user.getId(), user.getName(), "admin"),
+                    "TENANT_ADMIN_ADDED:" + user.getId()));
         }
 
         return ResponseEntity.ok(UserResponseDTO.from(user));

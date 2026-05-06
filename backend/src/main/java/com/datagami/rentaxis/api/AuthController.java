@@ -1,15 +1,22 @@
 package com.datagami.rentaxis.api;
 
+import com.datagami.rentaxis.core.email.EmailEventType;
+import com.datagami.rentaxis.core.email.event.EmailEvent;
+import com.datagami.rentaxis.core.email.event.payload.PasswordChangedPayload;
+import com.datagami.rentaxis.core.email.event.payload.TenantAdminAddedPayload;
+import com.datagami.rentaxis.core.email.event.payload.UserWelcomedPayload;
 import com.datagami.rentaxis.core.service.LandlordOrgService;
 import com.datagami.rentaxis.core.service.UserService;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
 import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -21,11 +28,14 @@ public class AuthController {
     private final UserService userService;
     private final LandlordOrgService orgService;
     private final PasswordEncoder passwordEncoder;
+    private final ApplicationEventPublisher events;
 
-    public AuthController(UserService userService, LandlordOrgService orgService, PasswordEncoder passwordEncoder) {
+    public AuthController(UserService userService, LandlordOrgService orgService, PasswordEncoder passwordEncoder,
+            ApplicationEventPublisher events) {
         this.userService = userService;
         this.orgService = orgService;
         this.passwordEncoder = passwordEncoder;
+        this.events = events;
     }
 
     public record LoginRequest(String email, String password) {
@@ -47,6 +57,17 @@ public class AuthController {
                 // Get all tenant memberships for the user
                 List<String> tenantIds = userService.getUserTenantIds(user.getId())
                         .stream().map(UUID::toString).toList();
+
+                // USER_WELCOMED: emit on first successful login (welcomedAt null)
+                if (user.getWelcomedAt() == null) {
+                    user.setWelcomedAt(Instant.now());
+                    userService.saveUser(user);
+                    events.publishEvent(new EmailEvent(this,
+                            EmailEventType.USER_WELCOMED,
+                            user.getTenantId(),
+                            new UserWelcomedPayload(user.getId(), user.getName(), "/dashboard"),
+                            "USER_WELCOMED:" + user.getId()));
+                }
 
                 return ResponseEntity.ok(new AuthResponse(
                         user.getId().toString(),
@@ -73,6 +94,13 @@ public class AuthController {
                 UserRole.TENANT_ADMIN,
                 org.getId().toString(),
                 null);
+
+        // TENANT_ADMIN_ADDED: first admin self-registered, no "addedBy" actor
+        events.publishEvent(new EmailEvent(this,
+                EmailEventType.TENANT_ADMIN_ADDED,
+                org.getId(),
+                new TenantAdminAddedPayload(org.getId(), user.getId(), user.getName(), "system"),
+                "TENANT_ADMIN_ADDED:" + user.getId()));
 
         return ResponseEntity.ok(new AuthResponse(
                 user.getId().toString(),
@@ -192,6 +220,14 @@ public class AuthController {
 
         user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
         userService.saveUser(user);
+
+        events.publishEvent(new EmailEvent(this,
+                EmailEventType.PASSWORD_CHANGED,
+                user.getTenantId(),
+                new PasswordChangedPayload(user.getId(), user.getName(),
+                        Instant.now().toString(), null),
+                "PASSWORD_CHANGED:" + user.getId()));
+
         return ResponseEntity.ok(java.util.Map.of("message", "Password updated successfully"));
     }
 }

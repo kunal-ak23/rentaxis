@@ -113,3 +113,5 @@ databaseChangeLog:
       file: db/changelog/changesets/52-cheque-image-purge-partial-index.yaml
   - include:
       file: db/changelog/changesets/53-email-outbox.yaml
+  - include:
+      file: db/changelog/changesets/54-add-users-welcomed-at.yaml
