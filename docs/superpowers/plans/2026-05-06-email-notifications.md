@@ -2852,7 +2852,7 @@ git commit -m "feat(email): EmailDispatcher with transactional event listener"
 **Files:**
 - Create: `backend/src/main/java/com/datagami/rentaxis/core/email/outbox/EmailOutboxService.java`
 
-- [ ] **Step 1: Implement service**
+- [x] **Step 1: Implement service**
 
 Create `backend/src/main/java/com/datagami/rentaxis/core/email/outbox/EmailOutboxService.java`:
 
@@ -2910,12 +2910,12 @@ public class EmailOutboxService {
 }
 ```
 
-- [ ] **Step 2: Verify compile**
+- [x] **Step 2: Verify compile**
 
 Run: `cd backend && ./gradlew compileJava`
 Expected: `BUILD SUCCESSFUL`.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add backend/src/main/java/com/datagami/rentaxis/core/email/outbox/EmailOutboxService.java
