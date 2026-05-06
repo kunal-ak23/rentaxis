@@ -3555,7 +3555,7 @@ SHA: 9eb191e — feat(email): emit USER_INVITED, PASSWORD_CHANGED, TENANT_ADMIN_
 **Files:**
 - Modify: `backend/src/main/java/com/datagami/rentaxis/core/service/MaintenanceTicketService.java`
 
-- [ ] **Step 1: Emit events**
+- [x] **Step 1: Emit events**
 
 Add:
 - `TICKET_CREATED` — when a renter raises a ticket; recipient is property manager.
@@ -3563,7 +3563,7 @@ Add:
 
 Existing `TICKET_ASSIGNED`, `TICKET_REPLY`, `TICKET_RESOLVED` continue flowing through `NotificationService.notify(...)` (already migrated in Task 23).
 
-- [ ] **Step 2: Tests + commit**
+- [x] **Step 2: Tests + commit**
 
 ```bash
 cd backend && ./gradlew test
