@@ -1,6 +1,7 @@
 package com.datagami.rentaxis.core.email.dispatch;
 
 import com.datagami.rentaxis.core.email.EmailEventType;
+import org.apache.commons.text.StringEscapeUtils;
 
 import java.lang.reflect.RecordComponent;
 import java.util.HashMap;
@@ -8,12 +9,33 @@ import java.util.Map;
 
 public class PayloadVarsExtractor {
 
+    /**
+     * Escape a user-controlled string for safe interpolation into th:utext message fragments.
+     * Variables whose key ends with "Url" (case-insensitive) are intentional URLs that go into
+     * {@code th:href} — Thymeleaf already URL-encodes those, so we must NOT HTML-escape them.
+     * Everything else that is a plain String gets escaped here to neutralise XSS via MessageFormat
+     * {0}/{1} argument substitution.
+     */
+    private static String escapeHtml(String s) {
+        return s == null ? null : StringEscapeUtils.escapeHtml4(s);
+    }
+
+    private static boolean isUrlKey(String key) {
+        return key != null && key.toLowerCase().endsWith("url");
+    }
+
     public static Map<String, Object> extract(EmailEventType type, Object payload, String portalBaseUrl, String localeLang) {
         Map<String, Object> vars = new HashMap<>();
         if (payload != null && payload.getClass().isRecord()) {
             for (RecordComponent c : payload.getClass().getRecordComponents()) {
-                try { vars.put(c.getName(), c.getAccessor().invoke(payload)); }
-                catch (Exception ignored) {}
+                try {
+                    Object val = c.getAccessor().invoke(payload);
+                    // HTML-escape String values that are not URLs to prevent XSS via th:utext interpolation
+                    if (val instanceof String s && !isUrlKey(c.getName())) {
+                        val = escapeHtml(s);
+                    }
+                    vars.put(c.getName(), val);
+                } catch (Exception ignored) {}
             }
         }
         vars.put("ctaUrl", computeCtaUrl(type, vars, portalBaseUrl, localeLang));

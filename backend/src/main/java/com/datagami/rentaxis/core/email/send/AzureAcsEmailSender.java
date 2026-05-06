@@ -17,6 +17,7 @@ import org.springframework.stereotype.Component;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @Component
 @RequiredArgsConstructor
@@ -54,7 +55,7 @@ public class AzureAcsEmailSender implements EmailSender {
                 .setBodyHtml(row.getBodyHtml())
                 .setBodyPlainText(row.getBodyText() == null ? "" : row.getBodyText());
 
-        List<EmailAttachment> attachments = parseAttachments(row.getAttachments());
+        List<EmailAttachment> attachments = parseAttachments(row.getId(), row.getAttachments());
         if (!attachments.isEmpty()) message.setAttachments(attachments);
 
         var poller = client.beginSend(message);
@@ -62,7 +63,7 @@ public class AzureAcsEmailSender implements EmailSender {
         return new SendResult(result.getId(), String.valueOf(result.getStatus()));
     }
 
-    private List<EmailAttachment> parseAttachments(String json) {
+    private List<EmailAttachment> parseAttachments(UUID outboxId, String json) {
         if (json == null || json.isBlank()) return List.of();
         try {
             List<Map<String, String>> parsed = JSON.readValue(json, new TypeReference<>() {});
@@ -74,7 +75,7 @@ public class AzureAcsEmailSender implements EmailSender {
                             com.azure.core.util.BinaryData.fromBytes(Base64.getDecoder().decode(a.get("base64")))))
                     .toList();
         } catch (Exception e) {
-            log.warn("Failed to parse attachments JSON: {}", e.getMessage());
+            log.warn("email.send.attachments_parse_failed outbox_id={} error={}", outboxId, e.getMessage());
             return List.of();
         }
     }

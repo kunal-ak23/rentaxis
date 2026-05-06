@@ -51,7 +51,7 @@ public class RecipientResolver {
     }
 
     private Locale toLocale(Language lang) {
-        return lang == Language.AR ? new Locale("ar") : Locale.ENGLISH;
+        return lang == Language.AR ? Locale.forLanguageTag("ar") : Locale.ENGLISH;
     }
 
     private List<UUID> userIdsFor(RecipientRole role, Object payload) {
