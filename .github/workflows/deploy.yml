@@ -102,6 +102,8 @@ jobs:
           AZURE_OPENAI_ENDPOINT=${{ secrets.AZURE_OPENAI_ENDPOINT }}
           AZURE_OPENAI_API_KEY=${{ secrets.AZURE_OPENAI_API_KEY }}
           AZURE_OPENAI_CHEQUE_DEPLOYMENT=${{ secrets.AZURE_OPENAI_CHEQUE_DEPLOYMENT }}
+          AZURE_COMMUNICATION_CONNECTION_STRING=${{ secrets.AZURE_COMMUNICATION_CONNECTION_STRING }}
+          AZURE_EMAIL_SENDER=${{ secrets.AZURE_EMAIL_SENDER }}
           EOF
           sed -i 's/^[[:space:]]*//' /tmp/rentaxis.env
 
