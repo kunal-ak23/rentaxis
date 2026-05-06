@@ -10,7 +10,6 @@ import com.datagami.rentaxis.domain.entity.enums.ChequeFailureReason;
 import com.datagami.rentaxis.domain.repository.DeviceTokenRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.NotificationRepository;
-import com.datagami.rentaxis.domain.repository.UserRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -43,7 +42,6 @@ class NotificationServicePenaltyHelpersTest {
 
     @Mock NotificationRepository notificationRepository;
     @Mock DeviceTokenRepository deviceTokenRepository;
-    @Mock UserRepository userRepository;
     @Mock LeaseRepository leaseRepository;
     @Mock org.springframework.context.ApplicationEventPublisher events;
 
@@ -55,7 +53,7 @@ class NotificationServicePenaltyHelpersTest {
     @BeforeEach
     void setUp() {
         service = new NotificationService(
-                notificationRepository, deviceTokenRepository, userRepository, leaseRepository, events);
+                notificationRepository, deviceTokenRepository, leaseRepository, events);
         tenantId = UUID.randomUUID();
         renterUserId = UUID.randomUUID();
         TenantContextHolder.setTenantId(tenantId);

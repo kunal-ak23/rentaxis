@@ -14,7 +14,6 @@ import com.datagami.rentaxis.domain.entity.enums.ChequeFailureReason;
 import com.datagami.rentaxis.domain.repository.DeviceTokenRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.NotificationRepository;
-import com.datagami.rentaxis.domain.repository.UserRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -31,32 +30,25 @@ public class NotificationService {
 
     private final NotificationRepository notificationRepository;
     private final DeviceTokenRepository deviceTokenRepository;
-    private final UserRepository userRepository;
     private final LeaseRepository leaseRepository;
     private final ApplicationEventPublisher events;
 
     public NotificationService(NotificationRepository notificationRepository,
                                 DeviceTokenRepository deviceTokenRepository,
-                                UserRepository userRepository,
                                 LeaseRepository leaseRepository,
                                 ApplicationEventPublisher events) {
         this.notificationRepository = notificationRepository;
         this.deviceTokenRepository = deviceTokenRepository;
-        this.userRepository = userRepository;
         this.leaseRepository = leaseRepository;
         this.events = events;
     }
 
     /**
-     * Create in-app notification and publish an EmailEvent for the new
-     * outbox-driven email pipeline (replaces the legacy Azure ACS inline
-     * send). If the legacy notification {@code type} maps to a known
-     * {@link EmailEventType}, an event is published; otherwise the in-app
-     * row is the only side effect.
+     * Persist an in-app {@link Notification} row. Shared by {@link #notify} and
+     * {@link #notifyInApp} to avoid duplication.
      */
-    @Transactional
-    public void notify(UUID tenantId, UUID userId, String type, String title, String message,
-                       String referenceType, UUID referenceId) {
+    private void saveNotificationRow(UUID tenantId, UUID userId, String type, String title,
+                                     String message, String referenceType, UUID referenceId) {
         Notification n = new Notification();
         n.setTenantId(tenantId);
         n.setUserId(userId);
@@ -69,6 +61,19 @@ public class NotificationService {
         n.setIsRead(false);
         notificationRepository.save(n);
         log.info("Notification created: {} for user {}", type, userId);
+    }
+
+    /**
+     * Create in-app notification and publish an EmailEvent for the new
+     * outbox-driven email pipeline (replaces the legacy Azure ACS inline
+     * send). If the legacy notification {@code type} maps to a known
+     * {@link EmailEventType}, an event is published; otherwise the in-app
+     * row is the only side effect.
+     */
+    @Transactional
+    public void notify(UUID tenantId, UUID userId, String type, String title, String message,
+                       String referenceType, UUID referenceId) {
+        saveNotificationRow(tenantId, userId, type, title, message, referenceType, referenceId);
 
         EmailEventType mapped = mapLegacyType(type);
         if (mapped != null) {
@@ -80,6 +85,18 @@ public class NotificationService {
                     new LegacyNotificationPayload(userId, title, message, referenceType, referenceId),
                     dedup));
         }
+    }
+
+    /**
+     * Create an in-app {@link Notification} row WITHOUT publishing an {@link EmailEvent}.
+     * Use this at code sites that already publish a structured {@link EmailEvent} directly
+     * — calling the full {@link #notify} at those sites would result in a second email
+     * (via the legacy mapping) for the same action.
+     */
+    @Transactional
+    public void notifyInApp(UUID tenantId, UUID userId, String type, String title, String message,
+                            String referenceType, UUID referenceId) {
+        saveNotificationRow(tenantId, userId, type, title, message, referenceType, referenceId);
     }
 
     private EmailEventType mapLegacyType(String legacy) {

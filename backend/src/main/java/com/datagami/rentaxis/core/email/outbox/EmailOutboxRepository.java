@@ -1,14 +1,21 @@
 package com.datagami.rentaxis.core.email.outbox;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface EmailOutboxRepository extends JpaRepository<EmailOutbox, UUID> {
+
+    Page<EmailOutbox> findByTenantId(UUID tenantId, Pageable pageable);
+
+    Optional<EmailOutbox> findByIdAndTenantId(UUID id, UUID tenantId);
 
     @Query(value = """
         SELECT * FROM email_outbox
