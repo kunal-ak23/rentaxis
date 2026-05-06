@@ -153,9 +153,11 @@ git commit -m "chore(email): add Thymeleaf + ShedLock for email pipeline"
 - Create: `backend/src/main/resources/db/changelog/changesets/32-email-outbox.yaml`
 - Modify: `backend/src/main/resources/db/changelog/db.changelog-master.yaml`
 
-- [ ] **Step 1: Write changeset**
+- [x] **Step 1: Write changeset**
 
 Create `backend/src/main/resources/db/changelog/changesets/32-email-outbox.yaml`:
+
+> Adapted for current append-only repo state: implemented as `53-email-outbox.yaml` because `32-fix-table-permissions.yaml` through `52-cheque-image-purge-partial-index.yaml` already exist.
 
 ```yaml
 databaseChangeLog:
@@ -230,7 +232,7 @@ databaseChangeLog:
               - column: { name: locked_by, type: varchar(255), constraints: { nullable: false } }
 ```
 
-- [ ] **Step 2: Register changeset in master**
+- [x] **Step 2: Register changeset in master**
 
 Edit `backend/src/main/resources/db/changelog/db.changelog-master.yaml` and append (after the entry for `31-notifications-nullable-tenant.yaml`):
 
@@ -239,17 +241,17 @@ Edit `backend/src/main/resources/db/changelog/db.changelog-master.yaml` and appe
       file: db/changelog/changesets/32-email-outbox.yaml
 ```
 
-- [ ] **Step 3: Run migration locally**
+- [x] **Step 3: Run migration locally**
 
 Run: `cd backend && ./gradlew bootRun` (CTRL-C after Liquibase reports `Update successful`)
 Expected: Liquibase logs show `32-create-email-outbox-table::rentaxis ran successfully` and `32-create-shedlock-table::rentaxis ran successfully`. No errors.
 
-- [ ] **Step 4: Verify schema**
+- [x] **Step 4: Verify schema**
 
 Run: `docker compose exec db psql -U rentaxis -d rentaxis -c "\d email_outbox"` (or equivalent)
 Expected: All columns and indexes from step 1 are present.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/src/main/resources/db/changelog/
