@@ -66,7 +66,7 @@ class EmailDispatcherIntegrationTest {
             publisher.publishEvent(new EmailEvent(this,
                     EmailEventType.USER_INVITED,
                     tenantId,
-                    new UserInvitedPayload(userId, "Invitee", "https://app.test/set?t=x"),
+                    new UserInvitedPayload(userId, "Invitee", "https://app.test/set?t=x", "test-token"),
                     "USER_INVITED:user=" + userId));
         });
 
@@ -95,7 +95,7 @@ class EmailDispatcherIntegrationTest {
                 publisher.publishEvent(new EmailEvent(this,
                         EmailEventType.USER_INVITED,
                         tenantId,
-                        new UserInvitedPayload(userId, "Rb", "https://app.test/set?t=x"),
+                        new UserInvitedPayload(userId, "Rb", "https://app.test/set?t=x", "test-token"),
                         "USER_INVITED:user=" + userId + ":rb"));
                 throw new RuntimeException("force rollback");
             });

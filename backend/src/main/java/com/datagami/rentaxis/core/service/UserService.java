@@ -76,7 +76,7 @@ public class UserService {
             events.publishEvent(new EmailEvent(this,
                     EmailEventType.USER_INVITED,
                     saved.getTenantId(),
-                    new UserInvitedPayload(saved.getId(), saved.getName(), setPasswordUrl),
+                    new UserInvitedPayload(saved.getId(), saved.getName(), setPasswordUrl, null),
                     "USER_INVITED:" + saved.getId()));
         }
 

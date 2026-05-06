@@ -79,7 +79,7 @@ public class RenterService {
                 events.publishEvent(new EmailEvent(this,
                         EmailEventType.USER_INVITED,
                         tenantId,
-                        new UserInvitedPayload(user.getId(), dto.getNameEn(), setPasswordUrl),
+                        new UserInvitedPayload(user.getId(), dto.getNameEn(), setPasswordUrl, null),
                         "USER_INVITED:" + user.getId()));
             } catch (Exception e) {
                 generatedPassword = null;
