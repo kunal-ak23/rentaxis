@@ -1133,7 +1133,7 @@ git commit -m "feat(email): TenantBrandingResolver from LandlordOrg"
 - Create: `backend/src/main/java/com/datagami/rentaxis/core/email/event/EmailEvent.java`
 - Create: `backend/src/main/java/com/datagami/rentaxis/core/email/event/payload/UserInvitedPayload.java`
 
-- [ ] **Step 1: Implement base event**
+- [x] **Step 1: Implement base event**
 
 Create `backend/src/main/java/com/datagami/rentaxis/core/email/event/EmailEvent.java`:
 
@@ -1167,7 +1167,7 @@ public class EmailEvent extends ApplicationEvent {
 }
 ```
 
-- [ ] **Step 2: Implement first payload**
+- [x] **Step 2: Implement first payload**
 
 Create `backend/src/main/java/com/datagami/rentaxis/core/email/event/payload/UserInvitedPayload.java`:
 
@@ -1183,12 +1183,12 @@ public record UserInvitedPayload(
 ) {}
 ```
 
-- [ ] **Step 3: Verify compile**
+- [x] **Step 3: Verify compile**
 
 Run: `cd backend && ./gradlew compileJava`
 Expected: `BUILD SUCCESSFUL`.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add backend/src/main/java/com/datagami/rentaxis/core/email/event/
