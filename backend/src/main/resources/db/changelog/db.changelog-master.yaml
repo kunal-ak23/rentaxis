@@ -119,3 +119,5 @@ databaseChangeLog:
       file: db/changelog/changesets/55-email-prefs-cascade.yaml
   - include:
       file: db/changelog/changesets/56-add-users-invite-token.yaml
+  - include:
+      file: db/changelog/changesets/57-cascade-renters-user.yaml
