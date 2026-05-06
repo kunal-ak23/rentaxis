@@ -3289,7 +3289,7 @@ git commit -m "feat(email): unsubscribe + preferences endpoints"
 **Files:**
 - Modify: `backend/src/main/java/com/datagami/rentaxis/core/service/NotificationService.java`
 
-- [ ] **Step 1: Refactor NotificationService**
+- [x] **Step 1: Refactor NotificationService**
 
 Replace the body of `NotificationService.notify(...)` with: write the in-app `Notification` row (existing logic), then publish an `EmailEvent` with the matching `EmailEventType`. Delete `sendEmailAsync`, `buildEmailHtml`, `safe` and the Azure ACS imports.
 
@@ -3380,7 +3380,7 @@ public class NotificationService {
 }
 ```
 
-- [ ] **Step 2: Add LegacyNotificationPayload**
+- [x] **Step 2: Add LegacyNotificationPayload**
 
 Create `backend/src/main/java/com/datagami/rentaxis/core/email/event/payload/LegacyNotificationPayload.java`:
 
@@ -3400,7 +3400,7 @@ public record LegacyNotificationPayload(
 
 > **Implementer note:** templates rendered for legacy events fall back to the generic message via the EN/AR properties. Since legacy callers pass only title+body strings, this is a transitional shim — Tasks 24+ replace the legacy path with structured payloads where the data is available.
 
-- [ ] **Step 3: Add a generic fallback template**
+- [x] **Step 3: Add a generic fallback template**
 
 Create `backend/src/main/resources/templates/email/events/legacy_notification.html`:
 
@@ -3415,12 +3415,12 @@ Create `backend/src/main/resources/templates/email/events/legacy_notification.ht
 
 > Note: this template name `legacy_notification` doesn't match any `EmailEventType.snake()`. To make the renderer use it for legacy payloads, special-case the `LegacyNotificationPayload` in `EmailRenderer.render(...)`: if `payload instanceof LegacyNotificationPayload`, override the template name to `email/events/legacy_notification` and the subject to `payload.title()`. Add this branch to `EmailRenderer` (one extra `if` at top of `render()`).
 
-- [ ] **Step 4: Run NotificationService callers — full test suite**
+- [x] **Step 4: Run NotificationService callers — full test suite**
 
 Run: `cd backend && ./gradlew test`
 Expected: All tests pass. The 17 existing callers of `NotificationService.notify` produce the same in-app notification but now route email through the outbox.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/src/main/java/com/datagami/rentaxis/core/service/NotificationService.java backend/src/main/java/com/datagami/rentaxis/core/email/event/payload/LegacyNotificationPayload.java backend/src/main/resources/templates/email/events/legacy_notification.html backend/src/main/java/com/datagami/rentaxis/core/email/render/EmailRenderer.java
