@@ -44,6 +44,15 @@ public class UserService {
         this.events = events;
     }
 
+    private static String generateInviteToken() {
+        java.security.SecureRandom rng = new java.security.SecureRandom();
+        byte[] buf = new byte[32];
+        rng.nextBytes(buf);
+        StringBuilder sb = new StringBuilder(64);
+        for (byte b : buf) sb.append(String.format("%02x", b));
+        return sb.toString();
+    }
+
     @Transactional
     public User createUser(String email, String rawPassword, String name, UserRole role, String tenantId,
             String phoneNumber, String addedByContext) {
@@ -60,6 +69,14 @@ public class UserService {
         user.setPhoneNumber(phoneNumber);
         user.setTenantId(tenantId != null && !tenantId.isBlank() ? UUID.fromString(tenantId) : null);
 
+        boolean issuesInviteToken = role == UserRole.RENTER
+                || role == UserRole.PROPERTY_MANAGER
+                || role == UserRole.TENANT_USER;
+        if (issuesInviteToken) {
+            user.setInviteToken(generateInviteToken());
+            user.setInviteTokenExpiresAt(java.time.Instant.now().plus(java.time.Duration.ofDays(7)));
+        }
+
         User saved = userRepository.save(user);
 
         // Auto-create tenant membership for tenant-scoped roles
@@ -69,14 +86,13 @@ public class UserService {
             addTenantMembership(saved.getId(), UUID.fromString(tenantId));
         }
 
-        // Emit USER_INVITED for staff users (PROPERTY_MANAGER, TENANT_USER) created by an admin
-        if (role == UserRole.PROPERTY_MANAGER || role == UserRole.TENANT_USER) {
-            // TODO: switch to tokenized invite URL once onboarding token flow is designed (see Task 26 follow-up)
-            String setPasswordUrl = "/set-password?userId=" + saved.getId();
+        // Emit USER_INVITED for any role we issued an invite token for (RENTER, PROPERTY_MANAGER, TENANT_USER)
+        if (issuesInviteToken) {
+            String setPasswordUrl = "/auth/set-password?token=" + saved.getInviteToken();
             events.publishEvent(new EmailEvent(this,
                     EmailEventType.USER_INVITED,
                     saved.getTenantId(),
-                    new UserInvitedPayload(saved.getId(), saved.getName(), setPasswordUrl, null),
+                    new UserInvitedPayload(saved.getId(), saved.getName(), setPasswordUrl, saved.getInviteToken()),
                     "USER_INVITED:" + saved.getId()));
         }
 
