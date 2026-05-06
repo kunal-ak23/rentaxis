@@ -1,0 +1,17 @@
+databaseChangeLog:
+  - changeSet:
+      id: 56-add-users-invite-token
+      author: rentaxis
+      comment: >
+        Single-use invite tokens for tokenized USER_INVITED onboarding flow.
+        Token cleared on first successful set-password redemption.
+      changes:
+        - addColumn:
+            tableName: users
+            columns:
+              - column: { name: invite_token, type: varchar(64) }
+              - column: { name: invite_token_expires_at, type: timestamp }
+        - addUniqueConstraint:
+            tableName: users
+            columnNames: invite_token
+            constraintName: uq_users_invite_token

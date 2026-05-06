@@ -117,3 +117,5 @@ databaseChangeLog:
       file: db/changelog/changesets/54-add-users-welcomed-at.yaml
   - include:
       file: db/changelog/changesets/55-email-prefs-cascade.yaml
+  - include:
+      file: db/changelog/changesets/56-add-users-invite-token.yaml
