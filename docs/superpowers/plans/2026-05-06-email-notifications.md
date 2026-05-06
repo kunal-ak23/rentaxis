@@ -1016,7 +1016,7 @@ git commit -m "feat(email): EmailPreferenceService for opt-out + unsubscribe tok
 - Create: `backend/src/main/java/com/datagami/rentaxis/core/email/dispatch/TenantBrandingResolver.java`
 - Create: `backend/src/test/java/com/datagami/rentaxis/core/email/dispatch/TenantBrandingResolverTest.java`
 
-- [ ] **Step 1: Failing test**
+- [x] **Step 1: Failing test**
 
 Create `backend/src/test/java/com/datagami/rentaxis/core/email/dispatch/TenantBrandingResolverTest.java`:
 
@@ -1072,12 +1072,12 @@ class TenantBrandingResolverTest {
 }
 ```
 
-- [ ] **Step 2: Run test to verify fail**
+- [x] **Step 2: Run test to verify fail**
 
 Run: `cd backend && ./gradlew test --tests TenantBrandingResolverTest`
 Expected: FAIL — `TenantBranding`/`TenantBrandingResolver` do not exist.
 
-- [ ] **Step 3: Implement TenantBranding record + resolver**
+- [x] **Step 3: Implement TenantBranding record + resolver**
 
 Create `backend/src/main/java/com/datagami/rentaxis/core/email/dispatch/TenantBrandingResolver.java`:
 
@@ -1113,12 +1113,12 @@ record TenantBranding(String companyName, String logoUrl) {}
 
 > If the existing codebase requires `record` types in their own files, split into `TenantBranding.java`. Keep package-private.
 
-- [ ] **Step 4: Run test**
+- [x] **Step 4: Run test**
 
 Run: `cd backend && ./gradlew test --tests TenantBrandingResolverTest`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/src/main/java/com/datagami/rentaxis/core/email/dispatch/ backend/src/test/java/com/datagami/rentaxis/core/email/dispatch/TenantBrandingResolverTest.java
