@@ -2553,7 +2553,7 @@ git commit -m "feat(email): RecipientResolver maps event roles to users + locale
 - Create: `backend/src/main/java/com/datagami/rentaxis/core/email/dispatch/PayloadVarsExtractor.java`
 - Create: `backend/src/test/java/com/datagami/rentaxis/core/email/dispatch/EmailDispatcherIntegrationTest.java`
 
-- [ ] **Step 1: Implement payload-to-vars extractor**
+- [x] **Step 1: Implement payload-to-vars extractor**
 
 Create `backend/src/main/java/com/datagami/rentaxis/core/email/dispatch/PayloadVarsExtractor.java`:
 
@@ -2634,7 +2634,7 @@ public class PayloadVarsExtractor {
 }
 ```
 
-- [ ] **Step 2: Implement dispatcher**
+- [x] **Step 2: Implement dispatcher**
 
 Create `backend/src/main/java/com/datagami/rentaxis/core/email/dispatch/EmailDispatcher.java`:
 
@@ -2730,7 +2730,7 @@ public class EmailDispatcher {
 }
 ```
 
-- [ ] **Step 3: Failing integration test**
+- [x] **Step 3: Failing integration test**
 
 Create `backend/src/test/java/com/datagami/rentaxis/core/email/dispatch/EmailDispatcherIntegrationTest.java`:
 
@@ -2833,12 +2833,12 @@ class EmailDispatcherIntegrationTest {
 }
 ```
 
-- [ ] **Step 4: Run integration test**
+- [x] **Step 4: Run integration test**
 
 Run: `cd backend && ./gradlew test --tests EmailDispatcherIntegrationTest`
 Expected: PASS — both tests succeed.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/src/main/java/com/datagami/rentaxis/core/email/dispatch/EmailDispatcher.java backend/src/main/java/com/datagami/rentaxis/core/email/dispatch/PayloadVarsExtractor.java backend/src/test/java/com/datagami/rentaxis/core/email/dispatch/EmailDispatcherIntegrationTest.java
