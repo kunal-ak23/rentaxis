@@ -164,7 +164,8 @@ public class AuthController {
 
     // --- Self-Service Profile ---
 
-    public record ProfileResponse(String id, String email, String name, String role, String phoneNumber) {
+    public record ProfileResponse(String id, String email, String name, String role, String phoneNumber,
+                                   String tenantId, String orgName) {
     }
 
     public record UpdateProfileRequest(String name, String phoneNumber) {
@@ -177,12 +178,21 @@ public class AuthController {
     public ResponseEntity<ProfileResponse> getMyProfile(@RequestHeader("X-User-Id") String userIdStr) {
         UUID userId = UUID.fromString(userIdStr);
         return userService.findById(userId)
-                .map(user -> ResponseEntity.ok(new ProfileResponse(
-                        user.getId().toString(),
-                        user.getEmail(),
-                        user.getName(),
-                        user.getRole().name(),
-                        user.getPhoneNumber())))
+                .map(user -> {
+                    String tid = user.getTenantId() != null ? user.getTenantId().toString() : null;
+                    String orgName = (tid != null)
+                            ? orgService.findById(user.getTenantId())
+                                        .map(org -> org.getName()).orElse(null)
+                            : null;
+                    return ResponseEntity.ok(new ProfileResponse(
+                            user.getId().toString(),
+                            user.getEmail(),
+                            user.getName(),
+                            user.getRole().name(),
+                            user.getPhoneNumber(),
+                            tid,
+                            orgName));
+                })
                 .orElse(ResponseEntity.notFound().build());
     }
 
@@ -205,12 +215,17 @@ public class AuthController {
         }
 
         User saved = userService.saveUser(user);
+        String savedTid = saved.getTenantId() != null ? saved.getTenantId().toString() : null;
+        String savedOrg = savedTid != null
+                ? orgService.findById(saved.getTenantId()).map(o -> o.getName()).orElse(null) : null;
         return ResponseEntity.ok(new ProfileResponse(
                 saved.getId().toString(),
                 saved.getEmail(),
                 saved.getName(),
                 saved.getRole().name(),
-                saved.getPhoneNumber()));
+                saved.getPhoneNumber(),
+                savedTid,
+                savedOrg));
     }
 
     @PutMapping("/me/password")

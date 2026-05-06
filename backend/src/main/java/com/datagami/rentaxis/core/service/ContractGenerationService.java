@@ -592,11 +592,25 @@ public class ContractGenerationService {
         BlobClient blobClient = containerClient.getBlobClient(blobPath);
         blobClient.upload(new ByteArrayInputStream(pdfBytes), pdfBytes.length, true);
 
-        // Build URL manually to avoid encoding issues from getBlobUrl()
-        String accountUrl = blobServiceClient.getAccountUrl();
-        String url = accountUrl + "/" + containerName + "/" + blobPath;
-        log.info("Uploaded contract to Azure Blob: {}", url);
-        return url;
+        // Generate a 30-day SAS token so the URL in emails is directly downloadable
+        // without requiring the recipient to be logged into the app.
+        // The raw blob URL (without SAS) is still usable for backend-authenticated reads.
+        try {
+            com.azure.storage.blob.sas.BlobSasPermission permission =
+                    new com.azure.storage.blob.sas.BlobSasPermission().setReadPermission(true);
+            com.azure.storage.blob.sas.BlobServiceSasSignatureValues values =
+                    new com.azure.storage.blob.sas.BlobServiceSasSignatureValues(
+                            java.time.OffsetDateTime.now().plusDays(30), permission);
+            String sasToken = blobClient.generateSas(values);
+            String sasUrl = blobClient.getBlobUrl() + "?" + sasToken;
+            log.info("Uploaded contract to Azure Blob (SAS URL generated): {}", blobClient.getBlobUrl());
+            return sasUrl;
+        } catch (Exception e) {
+            // Fallback: return the raw URL if SAS generation fails (e.g. local dev with fake creds).
+            log.warn("SAS token generation failed, falling back to raw blob URL: {}", e.getMessage());
+            String accountUrl = blobServiceClient.getAccountUrl();
+            return accountUrl + "/" + containerName + "/" + blobPath;
+        }
     }
 
     private String saveToLocalDisk(String fileName, byte[] pdfBytes) {
