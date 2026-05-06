@@ -3184,7 +3184,7 @@ git commit -m "feat(email): EmailOutboxWorker with retry + ShedLock"
 - Create: `backend/src/main/java/com/datagami/rentaxis/core/email/api/UnsubscribeController.java`
 - Create: `backend/src/main/java/com/datagami/rentaxis/core/email/api/EmailPreferencesController.java`
 
-- [ ] **Step 1: Implement unsubscribe controller**
+- [x] **Step 1: Implement unsubscribe controller**
 
 Create `backend/src/main/java/com/datagami/rentaxis/core/email/api/UnsubscribeController.java`:
 
@@ -3223,7 +3223,7 @@ public class UnsubscribeController {
 }
 ```
 
-- [ ] **Step 2: Implement preferences controller**
+- [x] **Step 2: Implement preferences controller**
 
 Create `backend/src/main/java/com/datagami/rentaxis/core/email/api/EmailPreferencesController.java`:
 
@@ -3270,12 +3270,12 @@ public class EmailPreferencesController {
 
 > **Implementer note:** if `AuthenticatedUserProvider` doesn't exist, use whatever existing pattern the codebase uses to get the current user ID from `SecurityContextHolder` (e.g., look at `NotificationController` for the pattern).
 
-- [ ] **Step 3: Verify compile**
+- [x] **Step 3: Verify compile**
 
 Run: `cd backend && ./gradlew compileJava`
 Expected: `BUILD SUCCESSFUL`. If `AuthenticatedUserProvider` doesn't exist, replace it with the codebase's actual auth pattern before compiling.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add backend/src/main/java/com/datagami/rentaxis/core/email/api/
