@@ -43,6 +43,12 @@ public class User extends BaseTenantEntity {
     @Column(name = "welcomed_at")
     private Instant welcomedAt;
 
+    @Column(name = "invite_token", length = 64, unique = true)
+    private String inviteToken;
+
+    @Column(name = "invite_token_expires_at")
+    private Instant inviteTokenExpiresAt;
+
     // Optional override of tenantId from BaseTenantEntity
     // If a user is SUPER_ADMIN, tenantId might be null
 }
