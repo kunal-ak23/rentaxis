@@ -6,8 +6,12 @@ import com.datagami.rentaxis.api.dto.LeaseEventDTO;
 import com.datagami.rentaxis.api.dto.TerminateWithSettlementDTO;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
+import com.datagami.rentaxis.core.email.EmailEventType;
+import com.datagami.rentaxis.core.email.event.EmailEvent;
+import com.datagami.rentaxis.core.email.event.payload.LeasePayload;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.*;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Lazy;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.PaymentMethod;
@@ -44,6 +48,7 @@ public class LeaseService {
     private final PaymentScheduleRepository paymentScheduleRepository;
     private final SettlementService settlementService;
     private final UnitListingService unitListingService;
+    private final ApplicationEventPublisher events;
 
     public LeaseService(LeaseRepository leaseRepository,
                         UnitRepository unitRepository,
@@ -54,7 +59,8 @@ public class LeaseService {
                         PaymentScheduleService paymentScheduleService,
                         PaymentScheduleRepository paymentScheduleRepository,
                         SettlementService settlementService,
-                        @Lazy UnitListingService unitListingService) {
+                        @Lazy UnitListingService unitListingService,
+                        ApplicationEventPublisher events) {
         this.leaseRepository = leaseRepository;
         this.unitRepository = unitRepository;
         this.renterRepository = renterRepository;
@@ -65,6 +71,7 @@ public class LeaseService {
         this.paymentScheduleRepository = paymentScheduleRepository;
         this.settlementService = settlementService;
         this.unitListingService = unitListingService;
+        this.events = events;
     }
 
     @Transactional(readOnly = true)
@@ -199,6 +206,12 @@ public class LeaseService {
         paymentScheduleService.generateScheduleForLease(savedLease);
 
         recordEvent(savedLease, null, LeaseStatus.DRAFT, "Lease drafted");
+
+        events.publishEvent(new EmailEvent(this,
+                EmailEventType.LEASE_CREATED,
+                savedLease.getTenantId(),
+                buildLeasePayload(savedLease),
+                "LEASE_CREATED:" + savedLease.getId()));
 
         return mapToDTO(savedLease);
     }
@@ -426,6 +439,12 @@ public class LeaseService {
 
         paymentScheduleService.generateScheduleForLease(savedLease);
 
+        events.publishEvent(new EmailEvent(this,
+                EmailEventType.LEASE_ACTIVATED,
+                savedLease.getTenantId(),
+                buildLeasePayload(savedLease),
+                "LEASE_ACTIVATED:" + savedLease.getId()));
+
         return mapToDTO(savedLease);
     }
 
@@ -456,6 +475,12 @@ public class LeaseService {
         Lease savedLease = leaseRepository.save(lease);
         recordEvent(savedLease, previousStatus, LeaseStatus.TERMINATED,
                 notes != null ? notes : "Lease terminated early");
+
+        events.publishEvent(new EmailEvent(this,
+                EmailEventType.LEASE_TERMINATED,
+                savedLease.getTenantId(),
+                buildLeasePayload(savedLease),
+                "LEASE_TERMINATED:" + savedLease.getId() + ":" + Instant.now().toEpochMilli()));
 
         // Clear listing availability and notify interested renters
         try {
@@ -539,6 +564,18 @@ public class LeaseService {
         recordEvent(savedLease, previousStatus, LeaseStatus.ACTIVE, "Lease accepted by renter");
 
         paymentScheduleService.generateScheduleForLease(savedLease);
+
+        events.publishEvent(new EmailEvent(this,
+                EmailEventType.LEASE_SIGNED,
+                savedLease.getTenantId(),
+                buildLeasePayload(savedLease),
+                "LEASE_SIGNED:" + savedLease.getId()));
+
+        events.publishEvent(new EmailEvent(this,
+                EmailEventType.LEASE_ACTIVATED,
+                savedLease.getTenantId(),
+                buildLeasePayload(savedLease),
+                "LEASE_ACTIVATED:" + savedLease.getId()));
 
         return mapToDTO(savedLease);
     }
@@ -633,5 +670,20 @@ public class LeaseService {
     private static boolean isCommercialProperty(Unit unit) {
         PropertyType type = unit.getProperty().getType();
         return type == PropertyType.COMMERCIAL;
+    }
+
+    private LeasePayload buildLeasePayload(Lease lease) {
+        BigDecimal monthly = lease.getMonthlyRent() != null ? lease.getMonthlyRent() : lease.getRentAmount();
+        return new LeasePayload(
+                lease.getId(),
+                lease.getRenter().getUserId(),
+                null,  // propertyManagerUserId — not stored on Lease; RecipientResolver falls back to tenant admins
+                lease.getUnit().getUnitNumber(),
+                lease.getUnit().getProperty().getNameEn(),
+                lease.getStartDate() != null ? lease.getStartDate().toString() : null,
+                lease.getEndDate() != null ? lease.getEndDate().toString() : null,
+                monthly != null ? monthly.toPlainString() : null,
+                null   // contractSignedUrl — not available at runtime; template uses safe-nav
+        );
     }
 }
