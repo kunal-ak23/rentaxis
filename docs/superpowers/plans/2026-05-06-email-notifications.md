@@ -858,7 +858,7 @@ git commit -m "feat(email): EmailPreferences entity + repository"
 - Create: `backend/src/main/java/com/datagami/rentaxis/core/email/dispatch/EmailPreferenceService.java`
 - Create: `backend/src/test/java/com/datagami/rentaxis/core/email/dispatch/EmailPreferenceServiceTest.java`
 
-- [ ] **Step 1: Write failing test**
+- [x] **Step 1: Write failing test**
 
 Create `backend/src/test/java/com/datagami/rentaxis/core/email/dispatch/EmailPreferenceServiceTest.java`:
 
@@ -919,12 +919,12 @@ class EmailPreferenceServiceTest {
 }
 ```
 
-- [ ] **Step 2: Run test to verify fail**
+- [x] **Step 2: Run test to verify fail**
 
 Run: `cd backend && ./gradlew test --tests EmailPreferenceServiceTest`
 Expected: FAIL — `EmailPreferenceService` does not exist.
 
-- [ ] **Step 3: Implement service**
+- [x] **Step 3: Implement service**
 
 Create `backend/src/main/java/com/datagami/rentaxis/core/email/dispatch/EmailPreferenceService.java`:
 
@@ -996,12 +996,12 @@ public class EmailPreferenceService {
 }
 ```
 
-- [ ] **Step 4: Run test**
+- [x] **Step 4: Run test**
 
 Run: `cd backend && ./gradlew test --tests EmailPreferenceServiceTest`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/src/main/java/com/datagami/rentaxis/core/email/dispatch/EmailPreferenceService.java backend/src/test/java/com/datagami/rentaxis/core/email/dispatch/EmailPreferenceServiceTest.java
