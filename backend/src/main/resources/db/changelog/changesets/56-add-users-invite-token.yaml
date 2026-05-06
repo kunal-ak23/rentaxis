@@ -5,6 +5,15 @@ databaseChangeLog:
       comment: >
         Single-use invite tokens for tokenized USER_INVITED onboarding flow.
         Token cleared on first successful set-password redemption.
+        Precondition mirrors changeset 54 — required so dev environments
+        where the column has been pre-applied (because the test user does
+        not own the users table) don't fail Liquibase startup.
+      preConditions:
+        - onFail: MARK_RAN
+          not:
+            columnExists:
+              tableName: users
+              columnName: invite_token
       changes:
         - addColumn:
             tableName: users
