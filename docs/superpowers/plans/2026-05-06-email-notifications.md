@@ -1997,7 +1997,7 @@ git commit -m "feat(email): per-event Thymeleaf templates (Phase 1)"
 - Create: `backend/src/main/resources/messages/email_en.properties`
 - Create: `backend/src/main/resources/messages/email_ar.properties`
 
-- [ ] **Step 1: Create English properties**
+- [x] **Step 1: Create English properties**
 
 Create `backend/src/main/resources/messages/email_en.properties` with one block per event. Pattern per event:
 
@@ -2277,7 +2277,7 @@ email.meeting_no_show.body=You were marked as a no-show for <b>{0}</b> on <b>{1}
 email.meeting_no_show.cta=View meeting
 ```
 
-- [ ] **Step 2: Create Arabic properties (parallel structure)**
+- [x] **Step 2: Create Arabic properties (parallel structure)**
 
 Create `backend/src/main/resources/messages/email_ar.properties` mirroring every key from `email_en.properties`. Translation work — initial draft below; refine with translator. Every key must exist (missing keys log a WARN and fall back to EN).
 
@@ -2297,12 +2297,12 @@ email.user_invited.cta=تعيين كلمة المرور
 
 > **Implementer note:** This step is the bulk of the translation work. If translations aren't ready, fill with placeholder Arabic text matching the structure — the EN fallback at runtime will still work for missing keys, but every key SHOULD be present (missing keys log WARN and fall back to EN, which is correct but noisy). Final translation review can happen post-merge as a content task.
 
-- [ ] **Step 3: Verify renderer test now passes**
+- [x] **Step 3: Verify renderer test now passes**
 
 Run: `cd backend && ./gradlew test --tests EmailRendererTest`
 Expected: PASS — both tests now succeed (EN + AR + RTL).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add backend/src/main/resources/messages/

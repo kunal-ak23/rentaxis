@@ -8,7 +8,7 @@ import org.springframework.context.support.ReloadableResourceBundleMessageSource
 @Configuration
 public class EmailMessageSourceConfig {
 
-    @Bean(name = "emailMessageSource")
+    @Bean(name = {"emailMessageSource", "messageSource"})
     public MessageSource emailMessageSource() {
         ReloadableResourceBundleMessageSource ms = new ReloadableResourceBundleMessageSource();
         ms.setBasename("classpath:messages/email");
