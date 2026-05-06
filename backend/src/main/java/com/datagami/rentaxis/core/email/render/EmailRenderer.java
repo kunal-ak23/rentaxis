@@ -25,6 +25,17 @@ public class EmailRenderer {
     private final MessageSource messageSource;
 
     public EmailRenderResult render(EmailTemplateContext ctx) {
+        // Legacy fallback: NotificationService publishes EmailEvents wrapping
+        // a LegacyNotificationPayload(userId, title, body, referenceType,
+        // referenceId). We render those through a generic template and use the
+        // payload's title as the subject, bypassing per-event i18n keys.
+        boolean isLegacy = ctx.payloadVars().containsKey("body")
+                && ctx.payloadVars().containsKey("referenceType")
+                && ctx.payloadVars().containsKey("title");
+        String templateName = isLegacy
+                ? "email/events/legacy_notification"
+                : "email/events/" + ctx.type().snake();
+
         Context tlCtx = new Context(ctx.locale());
         tlCtx.setVariable("recipient", Map.of(
                 "name", ctx.recipientName() == null ? "" : ctx.recipientName(),
@@ -36,18 +47,23 @@ public class EmailRenderer {
                 ctx.locale().getLanguage().equals("ar") ? "email/layout/master-rtl" : "email/layout/master");
         ctx.payloadVars().forEach(tlCtx::setVariable);
 
-        String subjectKey = "email." + ctx.type().snake() + ".subject";
-        Object[] subjectArgs = (Object[]) ctx.payloadVars().getOrDefault("__subjectArgs", new Object[0]);
         String subject;
-        try {
-            subject = messageSource.getMessage(subjectKey, subjectArgs, ctx.locale());
-        } catch (NoSuchElementException | org.springframework.context.NoSuchMessageException e) {
-            log.warn("Missing email i18n key {} for locale {} - falling back to event name",
-                    subjectKey, ctx.locale());
-            subject = ctx.type().name();
+        if (isLegacy) {
+            Object titleVar = ctx.payloadVars().get("title");
+            subject = titleVar == null ? ctx.type().name() : titleVar.toString();
+        } else {
+            String subjectKey = "email." + ctx.type().snake() + ".subject";
+            Object[] subjectArgs = (Object[]) ctx.payloadVars().getOrDefault("__subjectArgs", new Object[0]);
+            try {
+                subject = messageSource.getMessage(subjectKey, subjectArgs, ctx.locale());
+            } catch (NoSuchElementException | org.springframework.context.NoSuchMessageException e) {
+                log.warn("Missing email i18n key {} for locale {} - falling back to event name",
+                        subjectKey, ctx.locale());
+                subject = ctx.type().name();
+            }
         }
 
-        String html = emailTemplateEngine.process("email/events/" + ctx.type().snake(), tlCtx);
+        String html = emailTemplateEngine.process(templateName, tlCtx);
         String text = htmlToPlainText(html);
 
         return new EmailRenderResult(subject, html, text, null);

@@ -45,6 +45,7 @@ class NotificationServicePenaltyHelpersTest {
     @Mock DeviceTokenRepository deviceTokenRepository;
     @Mock UserRepository userRepository;
     @Mock LeaseRepository leaseRepository;
+    @Mock org.springframework.context.ApplicationEventPublisher events;
 
     private NotificationService service;
 
@@ -54,7 +55,7 @@ class NotificationServicePenaltyHelpersTest {
     @BeforeEach
     void setUp() {
         service = new NotificationService(
-                notificationRepository, deviceTokenRepository, userRepository, leaseRepository);
+                notificationRepository, deviceTokenRepository, userRepository, leaseRepository, events);
         tenantId = UUID.randomUUID();
         renterUserId = UUID.randomUUID();
         TenantContextHolder.setTenantId(tenantId);
