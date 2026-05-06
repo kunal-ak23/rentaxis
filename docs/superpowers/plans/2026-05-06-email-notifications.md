@@ -1892,7 +1892,7 @@ git commit -m "feat(email): master layout templates (LTR + RTL)"
 
 **Files:** All under `backend/src/main/resources/templates/email/events/` — one file per event listed in the file structure.
 
-- [ ] **Step 1: Create all event templates**
+- [x] **Step 1: Create all event templates**
 
 For each event, create a file `<event_snake>.html`. The skeleton is identical:
 
@@ -1978,11 +1978,11 @@ To keep templates simple, the dispatcher computes the right `ctaUrl` and adds it
 
 For `password_changed` and `staff_role_changed` (no CTA), drop the `<table>...</table>` CTA block.
 
-- [ ] **Step 2: Verify templates parse**
+- [x] **Step 2: Verify templates parse**
 
 Run: `cd backend && ./gradlew compileJava bootRun` (start the app and immediately stop). Expected: no Thymeleaf parse errors during initialization.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add backend/src/main/resources/templates/email/events/
