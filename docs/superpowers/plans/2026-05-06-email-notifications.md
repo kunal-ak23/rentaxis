@@ -2982,7 +2982,7 @@ git commit -m "chore(email): ShedLock JDBC config for distributed scheduling"
 - Create: `backend/src/main/java/com/datagami/rentaxis/core/email/outbox/EmailOutboxWorker.java`
 - Create: `backend/src/test/java/com/datagami/rentaxis/core/email/outbox/EmailOutboxWorkerTest.java`
 
-- [ ] **Step 1: Failing test**
+- [x] **Step 1: Failing test**
 
 Create `backend/src/test/java/com/datagami/rentaxis/core/email/outbox/EmailOutboxWorkerTest.java`:
 
@@ -3073,12 +3073,12 @@ class EmailOutboxWorkerTest {
 }
 ```
 
-- [ ] **Step 2: Run test to verify fail**
+- [x] **Step 2: Run test to verify fail**
 
 Run: `cd backend && ./gradlew test --tests EmailOutboxWorkerTest`
 Expected: FAIL — `EmailOutboxWorker` not implemented.
 
-- [ ] **Step 3: Implement worker**
+- [x] **Step 3: Implement worker**
 
 Create `backend/src/main/java/com/datagami/rentaxis/core/email/outbox/EmailOutboxWorker.java`:
 
@@ -3164,12 +3164,12 @@ public class EmailOutboxWorker {
 }
 ```
 
-- [ ] **Step 4: Run test**
+- [x] **Step 4: Run test**
 
 Run: `cd backend && ./gradlew test --tests EmailOutboxWorkerTest`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/src/main/java/com/datagami/rentaxis/core/email/outbox/EmailOutboxWorker.java backend/src/test/java/com/datagami/rentaxis/core/email/outbox/EmailOutboxWorkerTest.java
