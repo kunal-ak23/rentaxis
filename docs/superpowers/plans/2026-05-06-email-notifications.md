@@ -265,9 +265,11 @@ git commit -m "feat(email): add email_outbox + shedlock tables (changeset 32)"
 **Files:**
 - Modify: `backend/src/main/resources/db/changelog/changesets/32-email-outbox.yaml` (append more changesets)
 
-- [ ] **Step 1: Append changesets**
+- [x] **Step 1: Append changesets**
 
 Append to `32-email-outbox.yaml`:
+
+> Adapted for current append-only repo state: appended to `53-email-outbox.yaml` with `53-*` changeset IDs.
 
 ```yaml
   - changeSet:
@@ -304,17 +306,17 @@ Append to `32-email-outbox.yaml`:
               WHERE NOT EXISTS (SELECT 1 FROM email_preferences ep WHERE ep.user_id = u.id);
 ```
 
-- [ ] **Step 2: Run migration**
+- [x] **Step 2: Run migration**
 
 Run: `cd backend && ./gradlew bootRun`
 Expected: New changesets execute. Stop after success.
 
-- [ ] **Step 3: Verify backfill**
+- [x] **Step 3: Verify backfill**
 
 Run: `docker compose exec db psql -U rentaxis -d rentaxis -c "SELECT count(*) FROM email_preferences;"`
 Expected: count equals `SELECT count(*) FROM users;`.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add backend/src/main/resources/db/changelog/changesets/32-email-outbox.yaml
