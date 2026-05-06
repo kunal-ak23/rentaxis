@@ -5,9 +5,13 @@ import com.datagami.rentaxis.core.email.event.EmailEvent;
 import com.datagami.rentaxis.core.email.event.payload.UserInvitedPayload;
 import com.datagami.rentaxis.core.email.outbox.EmailOutbox;
 import com.datagami.rentaxis.core.email.outbox.EmailOutboxRepository;
+import com.datagami.rentaxis.core.service.TenantFeatureService;
+import com.datagami.rentaxis.domain.entity.LandlordOrg;
 import com.datagami.rentaxis.domain.entity.User;
+import com.datagami.rentaxis.domain.entity.enums.TenantFeature;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
 import com.datagami.rentaxis.domain.entity.enums.UserStatus;
+import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,10 +38,18 @@ class EmailDispatcherIntegrationTest {
     @Autowired ApplicationEventPublisher publisher;
     @Autowired EmailOutboxRepository outboxRepo;
     @Autowired UserRepository userRepo;
+    @Autowired LandlordOrgRepository landlordOrgRepo;
     @Autowired TransactionTemplate tx;
+    @Autowired TenantFeatureService tenantFeatureService;
 
     @Test
     void publishingUserInvitedEnqueuesOutboxRowOnCommit() {
+        // Seed a tenant (FK target for tenant_feature.tenant_id).
+        LandlordOrg org = new LandlordOrg();
+        org.setName("Dispatcher-Test-" + UUID.randomUUID());
+        org = landlordOrgRepo.save(org);
+        UUID tenantId = org.getId();
+
         User u = new User();
         u.setEmail("invitee@x.test");
         u.setName("Invitee");
@@ -47,7 +59,8 @@ class EmailDispatcherIntegrationTest {
         u = userRepo.save(u);
 
         UUID userId = u.getId();
-        UUID tenantId = UUID.randomUUID();
+        // EMAIL_NOTIFICATIONS feature defaults to OFF; opt the test tenant in.
+        tenantFeatureService.setEnabled(tenantId, TenantFeature.EMAIL_NOTIFICATIONS, true);
 
         tx.executeWithoutResult(status -> {
             publisher.publishEvent(new EmailEvent(this,

@@ -7,9 +7,13 @@ import com.datagami.rentaxis.core.email.outbox.EmailOutboxRepository;
 import com.datagami.rentaxis.core.email.outbox.EmailOutboxWorker;
 import com.datagami.rentaxis.core.email.send.EmailSender;
 import com.datagami.rentaxis.core.email.send.SendResult;
+import com.datagami.rentaxis.core.service.TenantFeatureService;
+import com.datagami.rentaxis.domain.entity.LandlordOrg;
 import com.datagami.rentaxis.domain.entity.User;
+import com.datagami.rentaxis.domain.entity.enums.TenantFeature;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
 import com.datagami.rentaxis.domain.entity.enums.UserStatus;
+import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -52,12 +56,20 @@ class EmailPipelineE2ETest {
     @MockitoBean EmailSender sender;
     @Autowired ApplicationEventPublisher publisher;
     @Autowired UserRepository userRepo;
+    @Autowired LandlordOrgRepository landlordOrgRepo;
     @Autowired EmailOutboxRepository outboxRepo;
     @Autowired EmailOutboxWorker worker;
     @Autowired TransactionTemplate tx;
+    @Autowired TenantFeatureService tenantFeatureService;
 
     @Test
     void publishEventEnqueuesAndWorkerSends() {
+        // Seed a tenant (FK target for tenant_feature.tenant_id).
+        LandlordOrg org = new LandlordOrg();
+        org.setName("E2E-Tenant-" + UUID.randomUUID());
+        org = landlordOrgRepo.save(org);
+        UUID tenantId = org.getId();
+
         User u = new User();
         u.setEmail("e2e@x.test");
         u.setName("E2E");
@@ -67,11 +79,14 @@ class EmailPipelineE2ETest {
         u = userRepo.save(u);
         UUID userId = u.getId();
 
+        // EMAIL_NOTIFICATIONS feature defaults to OFF; opt the test tenant in.
+        tenantFeatureService.setEnabled(tenantId, TenantFeature.EMAIL_NOTIFICATIONS, true);
+
         when(sender.send(any(EmailOutbox.class))).thenReturn(new SendResult("msg-e2e", "Queued"));
 
         tx.executeWithoutResult(s -> publisher.publishEvent(new EmailEvent(this,
                 EmailEventType.USER_INVITED,
-                UUID.randomUUID(),
+                tenantId,
                 new UserInvitedPayload(userId, "E2E", "https://app.test/set?t=x"),
                 "E2E:" + userId)));
 

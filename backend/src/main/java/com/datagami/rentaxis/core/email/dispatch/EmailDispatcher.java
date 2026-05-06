@@ -6,6 +6,8 @@ import com.datagami.rentaxis.core.email.outbox.EmailOutboxRepository;
 import com.datagami.rentaxis.core.email.render.EmailRenderResult;
 import com.datagami.rentaxis.core.email.render.EmailRenderer;
 import com.datagami.rentaxis.core.email.render.EmailTemplateContext;
+import com.datagami.rentaxis.core.service.TenantFeatureService;
+import com.datagami.rentaxis.domain.entity.enums.TenantFeature;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -28,6 +30,7 @@ public class EmailDispatcher {
     private final TenantBrandingResolver brandingResolver;
     private final EmailRenderer renderer;
     private final EmailOutboxRepository outboxRepository;
+    private final TenantFeatureService tenantFeatureService;
 
     @Value("${NEXT_PUBLIC_API_URL:https://rentaxis.uaenorth.cloudapp.azure.com}")
     private String portalBaseUrl;
@@ -39,6 +42,14 @@ public class EmailDispatcher {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void onEmailEvent(EmailEvent event) {
         if (!enabled) return;
+
+        // Per-tenant kill-switch: gate email dispatch on the EMAIL_NOTIFICATIONS feature flag.
+        // Defaults to OFF — flipped on per-tenant from the admin UI during phased rollout.
+        if (!tenantFeatureService.isEnabled(event.getTenantId(), TenantFeature.EMAIL_NOTIFICATIONS)) {
+            log.info("email.dispatch.skipped reason=feature_disabled tenant_id={} event_type={}",
+                    event.getTenantId(), event.getType());
+            return;
+        }
 
         var recipients = recipientResolver.resolve(event.getType(), event.getPayload());
         TenantBranding branding = brandingResolver.resolve(event.getTenantId());

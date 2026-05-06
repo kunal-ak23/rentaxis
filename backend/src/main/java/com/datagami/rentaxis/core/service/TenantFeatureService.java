@@ -71,6 +71,7 @@ public class TenantFeatureService {
         return switch (feature) {
             case LISTINGS -> "Listings (Marketplace)";
             case MEETINGS -> "Meetings & Scheduling";
+            case EMAIL_NOTIFICATIONS -> "Email Notifications";
         };
     }
 }
