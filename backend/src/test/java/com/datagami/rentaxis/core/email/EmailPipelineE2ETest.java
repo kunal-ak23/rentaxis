@@ -4,6 +4,7 @@ import com.datagami.rentaxis.core.email.event.EmailEvent;
 import com.datagami.rentaxis.core.email.event.payload.UserInvitedPayload;
 import com.datagami.rentaxis.core.email.outbox.EmailOutbox;
 import com.datagami.rentaxis.core.email.outbox.EmailOutboxRepository;
+import com.datagami.rentaxis.core.email.outbox.EmailOutboxRowProcessor;
 import com.datagami.rentaxis.core.email.outbox.EmailOutboxWorker;
 import com.datagami.rentaxis.core.email.send.EmailSender;
 import com.datagami.rentaxis.core.email.send.SendResult;
@@ -59,6 +60,7 @@ class EmailPipelineE2ETest {
     @Autowired LandlordOrgRepository landlordOrgRepo;
     @Autowired EmailOutboxRepository outboxRepo;
     @Autowired EmailOutboxWorker worker;
+    @Autowired EmailOutboxRowProcessor processor;
     @Autowired TransactionTemplate tx;
     @Autowired TenantFeatureService tenantFeatureService;
 
@@ -103,7 +105,7 @@ class EmailPipelineE2ETest {
         // unit of work the scheduler invokes for each picked row, and it is
         // @Transactional, so this still exercises the full
         // outbox -> EmailSender -> persistence path end-to-end.
-        worker.processOne(row);
+        processor.processOne(row);
 
         EmailOutbox after = outboxRepo.findById(row.getId()).orElseThrow();
         assertThat(after.getStatus()).isEqualTo(EmailOutbox.Status.SENT);

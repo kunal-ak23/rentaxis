@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -22,15 +22,14 @@ class EmailOutboxWorkerTest {
     @Mock EmailOutboxRepository repo;
     @Mock EmailSender sender;
     @Mock EmailOutboxService service;
-    @InjectMocks EmailOutboxWorker worker;
+    @InjectMocks EmailOutboxRowProcessor processor;
 
     @Test
     void successfulSendMarksRowSent() {
         EmailOutbox row = newPendingRow();
-        when(repo.pickPending(anyInt())).thenReturn(List.of(row));
         when(sender.send(row)).thenReturn(new SendResult("msg-123", "Queued"));
 
-        worker.tick();
+        processor.processOne(row);
 
         assertThat(row.getStatus()).isEqualTo(EmailOutbox.Status.SENT);
         assertThat(row.getAzureMessageId()).isEqualTo("msg-123");
@@ -40,11 +39,10 @@ class EmailOutboxWorkerTest {
     @Test
     void failedSendRequeuesWithBackoff() {
         EmailOutbox row = newPendingRow();
-        when(repo.pickPending(anyInt())).thenReturn(List.of(row));
         when(sender.send(row)).thenThrow(new RuntimeException("ACS 503"));
         when(service.backoff(1)).thenReturn(java.time.Duration.ofMinutes(1));
 
-        worker.tick();
+        processor.processOne(row);
 
         assertThat(row.getStatus()).isEqualTo(EmailOutbox.Status.PENDING);
         assertThat(row.getAttempts()).isEqualTo(1);
@@ -56,14 +54,24 @@ class EmailOutboxWorkerTest {
         EmailOutbox row = newPendingRow();
         row.setAttempts(4);
         row.setMaxAttempts(5);
-        when(repo.pickPending(anyInt())).thenReturn(List.of(row));
         when(sender.send(row)).thenThrow(new RuntimeException("permanent"));
         lenient().when(service.backoff(anyInt())).thenReturn(java.time.Duration.ofHours(1));
 
-        worker.tick();
+        processor.processOne(row);
 
         assertThat(row.getStatus()).isEqualTo(EmailOutbox.Status.FAILED);
         assertThat(row.getAttempts()).isEqualTo(5);
+    }
+
+    @Test
+    void tickDelegatesProcessingToProcessor() {
+        EmailOutboxWorker worker = new EmailOutboxWorker(repo, service, processor);
+        when(repo.pickPending(anyInt())).thenReturn(List.of());
+
+        worker.tick();
+
+        verify(service).resetStuckSending();
+        verify(repo).pickPending(anyInt());
     }
 
     private EmailOutbox newPendingRow() {
