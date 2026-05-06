@@ -1538,7 +1538,7 @@ git commit -m "feat(email): AzureAcsEmailSender + EmailSender interface"
 - Create: `backend/src/main/java/com/datagami/rentaxis/core/email/config/EmailMessageSourceConfig.java`
 - Create: `backend/src/test/java/com/datagami/rentaxis/core/email/render/EmailRendererTest.java`
 
-- [ ] **Step 1: Configure MessageSource for email**
+- [x] **Step 1: Configure MessageSource for email**
 
 Create `backend/src/main/java/com/datagami/rentaxis/core/email/config/EmailMessageSourceConfig.java`:
 
@@ -1565,7 +1565,7 @@ public class EmailMessageSourceConfig {
 }
 ```
 
-- [ ] **Step 2: Implement render result + context records**
+- [x] **Step 2: Implement render result + context records**
 
 Create `backend/src/main/java/com/datagami/rentaxis/core/email/render/EmailRenderResult.java`:
 
@@ -1607,7 +1607,7 @@ public record EmailTemplateContext(
 > ```
 > If Task 9 placed it in the resolver file, move it out now and update the import.
 
-- [ ] **Step 3: Implement renderer**
+- [x] **Step 3: Implement renderer**
 
 Create `backend/src/main/java/com/datagami/rentaxis/core/email/render/EmailRenderer.java`:
 
@@ -1683,7 +1683,7 @@ public class EmailRenderer {
 }
 ```
 
-- [ ] **Step 4: Failing renderer test**
+- [x] **Step 4: Failing renderer test**
 
 Create `backend/src/test/java/com/datagami/rentaxis/core/email/render/EmailRendererTest.java`:
 
@@ -1750,12 +1750,12 @@ class EmailRendererTest {
 }
 ```
 
-- [ ] **Step 5: Run test to verify fail**
+- [x] **Step 5: Run test to verify fail**
 
 Run: `cd backend && ./gradlew test --tests EmailRendererTest`
 Expected: FAIL — templates and i18n keys not yet present (Tasks 14–16 fix this).
 
-- [ ] **Step 6: Commit (red-stays for now; will go green once templates exist)**
+- [x] **Step 6: Commit (red-stays for now; will go green once templates exist)**
 
 ```bash
 git add backend/src/main/java/com/datagami/rentaxis/core/email/render/ backend/src/main/java/com/datagami/rentaxis/core/email/config/ backend/src/test/java/com/datagami/rentaxis/core/email/render/EmailRendererTest.java

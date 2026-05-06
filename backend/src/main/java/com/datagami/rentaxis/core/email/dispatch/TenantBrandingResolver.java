@@ -19,5 +19,3 @@ public class TenantBrandingResolver {
                 .orElse(null);
     }
 }
-
-record TenantBranding(String companyName, String logoUrl) {}
