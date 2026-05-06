@@ -1201,7 +1201,7 @@ git commit -m "feat(email): EmailEvent base + UserInvitedPayload"
 
 **Files:** (all under `backend/src/main/java/com/datagami/rentaxis/core/email/event/payload/`)
 
-- [ ] **Step 1: Create all payloads**
+- [x] **Step 1: Create all payloads**
 
 Each payload is a `record`. Fields are the minimum needed for template rendering. Names match the templates' Thymeleaf variables. Pattern: include `referenceId` (the lease/payment/ticket UUID), human-readable labels, dates as ISO strings, monetary amounts as `String` formatted (e.g. "1,500 AED").
 
@@ -1384,12 +1384,12 @@ public record MeetingPayload(
 ) {}
 ```
 
-- [ ] **Step 2: Verify compile**
+- [x] **Step 2: Verify compile**
 
 Run: `cd backend && ./gradlew compileJava`
 Expected: `BUILD SUCCESSFUL`.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add backend/src/main/java/com/datagami/rentaxis/core/email/event/payload/
