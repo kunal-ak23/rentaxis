@@ -333,7 +333,7 @@ git commit -m "feat(email): add email_preferences with backfill (changeset 32)"
 - Create: `backend/src/main/java/com/datagami/rentaxis/core/email/EmailEventType.java`
 - Create: `backend/src/test/java/com/datagami/rentaxis/core/email/EmailEventTypeTest.java`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `backend/src/test/java/com/datagami/rentaxis/core/email/EmailEventTypeTest.java`:
 
@@ -375,12 +375,12 @@ class EmailEventTypeTest {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd backend && ./gradlew test --tests EmailEventTypeTest`
 Expected: FAIL with `cannot find symbol class EmailEventType`.
 
-- [ ] **Step 3: Implement EmailCategory**
+- [x] **Step 3: Implement EmailCategory**
 
 Create `backend/src/main/java/com/datagami/rentaxis/core/email/EmailCategory.java`:
 
@@ -393,7 +393,7 @@ public enum EmailCategory {
 }
 ```
 
-- [ ] **Step 4: Implement RecipientRole**
+- [x] **Step 4: Implement RecipientRole**
 
 Create `backend/src/main/java/com/datagami/rentaxis/core/email/RecipientRole.java`:
 
@@ -412,7 +412,7 @@ public enum RecipientRole {
 }
 ```
 
-- [ ] **Step 5: Implement EmailEventType**
+- [x] **Step 5: Implement EmailEventType**
 
 Create `backend/src/main/java/com/datagami/rentaxis/core/email/EmailEventType.java`:
 
@@ -500,12 +500,12 @@ public enum EmailEventType {
 }
 ```
 
-- [ ] **Step 6: Run tests**
+- [x] **Step 6: Run tests**
 
 Run: `cd backend && ./gradlew test --tests EmailEventTypeTest`
 Expected: All 5 tests PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add backend/src/main/java/com/datagami/rentaxis/core/email/ backend/src/test/java/com/datagami/rentaxis/core/email/
