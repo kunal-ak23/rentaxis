@@ -27,9 +27,11 @@ public class EmailPreferencesController {
     }
 
     @PutMapping
-    public ResponseEntity<Void> update(@RequestBody Map<String, Object> body) {
+    public ResponseEntity<Void> update(@RequestBody(required = false) Map<String, Object> body) {
         UUID userId = currentUserId();
-        if (body.get("marketingEnabled") instanceof Boolean b) service.setMarketing(userId, b);
+        if (body != null && body.get("marketingEnabled") instanceof Boolean b) {
+            service.setMarketing(userId, b);
+        }
         return ResponseEntity.noContent().build();
     }
 
