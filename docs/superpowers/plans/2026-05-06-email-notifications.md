@@ -519,7 +519,7 @@ git commit -m "feat(email): catalog enums (EmailEventType, EmailCategory, Recipi
 **Files:**
 - Create: `backend/src/main/java/com/datagami/rentaxis/core/email/outbox/EmailOutbox.java`
 
-- [ ] **Step 1: Implement entity**
+- [x] **Step 1: Implement entity**
 
 Create `backend/src/main/java/com/datagami/rentaxis/core/email/outbox/EmailOutbox.java`:
 
@@ -631,12 +631,12 @@ public class EmailOutbox {
 
 > **Note:** If `io.hypersistence.utils.hibernate.type.json.JsonType` isn't on the classpath, drop the import — `@JdbcTypeCode(SqlTypes.JSON)` alone (Hibernate 6+) is sufficient with a `String` field.
 
-- [ ] **Step 2: Verify compile**
+- [x] **Step 2: Verify compile**
 
 Run: `cd backend && ./gradlew compileJava`
 Expected: `BUILD SUCCESSFUL`.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add backend/src/main/java/com/datagami/rentaxis/core/email/outbox/EmailOutbox.java
