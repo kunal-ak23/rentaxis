@@ -3711,6 +3711,8 @@ git commit -m "test(email): end-to-end pipeline integration test"
 
 ## Task 30: Final smoke test on staging
 
+> **Status:** Code complete on `feat/email-notifications-phase1`. Backend full test suite green (`./gradlew test` BUILD SUCCESSFUL). Steps 1–4 below require staging access + ops involvement and are pending hand-off.
+
 - [ ] **Step 1: Deploy to staging**
 
 Standard deployment via the project's CI/CD pipeline.
