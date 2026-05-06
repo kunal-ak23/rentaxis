@@ -115,6 +115,10 @@ public class UserService {
         return userRepository.findByEmail(email);
     }
 
+    public Optional<User> findByInviteToken(String token) {
+        return userRepository.findByInviteToken(token);
+    }
+
     public Optional<User> findById(UUID id) {
         return userRepository.findById(id);
     }
