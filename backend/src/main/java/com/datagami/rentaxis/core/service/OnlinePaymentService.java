@@ -4,6 +4,9 @@ import com.datagami.rentaxis.api.dto.CreateOrderResponseDTO;
 import com.datagami.rentaxis.api.dto.RenterPaymentScheduleDTO;
 import com.datagami.rentaxis.api.dto.VerifyPaymentRequestDTO;
 import com.datagami.rentaxis.api.dto.VerifyPaymentResponseDTO;
+import com.datagami.rentaxis.core.email.EmailEventType;
+import com.datagami.rentaxis.core.email.event.EmailEvent;
+import com.datagami.rentaxis.core.email.event.payload.OnlinePaymentPayload;
 import com.datagami.rentaxis.core.service.gateway.PaymentGatewayFactory;
 import com.datagami.rentaxis.core.service.gateway.PaymentGatewayProvider;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
@@ -14,6 +17,7 @@ import com.datagami.rentaxis.domain.entity.enums.TransactionNature;
 import com.datagami.rentaxis.domain.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -43,6 +47,7 @@ public class OnlinePaymentService {
     private final LeaseRepository leaseRepository;
     private final RenterRepository renterRepository;
     private final NotificationService notificationService;
+    private final ApplicationEventPublisher events;
 
     @Transactional(readOnly = true)
     public List<RenterPaymentScheduleDTO> getMyPayments(UUID userId) {
@@ -206,6 +211,24 @@ public class OnlinePaymentService {
             response.setSuccess(true);
             response.setMessage("Payment verified and recorded successfully");
             response.setPaymentId(onlinePayment.getGatewayPaymentId());
+
+            // Structured email event: ONLINE_PAYMENT_RECEIVED
+            {
+                PaymentSchedule schedule = onlinePayment.getPaymentSchedule();
+                events.publishEvent(new EmailEvent(this,
+                        EmailEventType.ONLINE_PAYMENT_RECEIVED,
+                        schedule.getTenantId(),
+                        new OnlinePaymentPayload(
+                                onlinePayment.getId(),
+                                schedule.getLease().getId(),
+                                schedule.getLease().getRenter().getUserId(),
+                                null,  // propertyManagerUserId — not stored on Lease; RecipientResolver falls back to tenant admins
+                                onlinePayment.getAmount() != null ? onlinePayment.getAmount().toPlainString() + " " + onlinePayment.getCurrency() : null,
+                                onlinePayment.getGatewayPaymentId(),
+                                null   // failureReason — payment succeeded
+                        ),
+                        "ONLINE_PAYMENT_RECEIVED:" + onlinePayment.getId()));
+            }
 
             // Notify renter: payment success
             try {
