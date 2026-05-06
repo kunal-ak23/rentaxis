@@ -119,7 +119,7 @@ backend/src/main/resources/
 **Files:**
 - Modify: `backend/build.gradle`
 
-- [ ] **Step 1: Add dependencies**
+- [x] **Step 1: Add dependencies**
 
 Open `backend/build.gradle` and add to the `dependencies` block (alphabetical order around existing entries):
 
@@ -133,12 +133,12 @@ dependencies {
 }
 ```
 
-- [ ] **Step 2: Verify build**
+- [x] **Step 2: Verify build**
 
 Run: `cd backend && ./gradlew build -x test`
 Expected: `BUILD SUCCESSFUL`. New deps appear in `./gradlew dependencies` output.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add backend/build.gradle
