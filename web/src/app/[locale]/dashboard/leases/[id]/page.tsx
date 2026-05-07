@@ -18,6 +18,7 @@ import LeaseMetadataEditor from "../LeaseMetadataEditor";
 import { MarkChequeFailedDialog, type PenaltySummary } from "@/components/payments/MarkChequeFailedDialog";
 import { RecordPenaltyPaymentDialog } from "@/components/penalties/RecordPenaltyPaymentDialog";
 import { CollectChequeDialog } from "@/components/payments/CollectChequeDialog";
+import DueDateDelta from "@/components/payments/DueDateDelta";
 
 type Lease = {
     id: string; unitId: string; renterId: string; unitIdentifier: string;
@@ -31,7 +32,7 @@ type Lease = {
 
 type Payment = {
     id: string; installmentNumber: number; dueDate: string; amount: number;
-    status: string; chequeNumber: string; bankName: string; payerName: string;
+    status: string; chequeNumber: string; chequeDate: string | null; bankName: string; payerName: string;
 };
 
 type Renter = {
@@ -889,7 +890,17 @@ export default function LeaseDetailPage() {
                                                     );
                                                 })()}
                                             </td>
-                                            <td className="px-4 py-2.5 text-xs text-muted">{p.chequeNumber || "—"}</td>
+                                            <td className="px-4 py-2.5 text-xs text-muted">
+                                                <div className="flex flex-col gap-0.5">
+                                                    <span>{p.chequeNumber || "—"}</span>
+                                                    {p.chequeDate && (
+                                                        <span className="inline-flex items-center gap-1.5">
+                                                            <span className="text-[10px] text-muted tabular-nums">{p.chequeDate}</span>
+                                                            <DueDateDelta dueDate={p.dueDate} chequeDate={p.chequeDate} />
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </td>
                                             <td className="px-4 py-2.5 text-xs text-muted">{p.bankName || "—"}</td>
                                             <td className="px-4 py-2.5 text-end">
                                                 {p.status === "CLEARED" && (
