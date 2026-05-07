@@ -63,9 +63,9 @@ export default function BulkChequeUploadFlow({ leaseId, schedules, onSuccess, on
 
   const goExtract = async () => {
     setStep(2);
-    await extract.start(extract.items);
+    const extractedItems = await extract.start(extract.items);
     // Build initial rows from extracted items.
-    const initialRows = extract.items.map<RowState>(it => {
+    const initialRows = extractedItems.map<RowState>(it => {
       const ex = it.response?.extracted;
       return {
         itemId: it.id,

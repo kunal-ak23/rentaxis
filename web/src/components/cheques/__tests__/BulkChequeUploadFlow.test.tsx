@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import BulkChequeUploadFlow from "../BulkChequeUploadFlow";
 
@@ -39,6 +39,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  cleanup();
   vi.restoreAllMocks();
 });
 
@@ -75,7 +76,7 @@ describe("BulkChequeUploadFlow", () => {
 
     // Simulate folder pick.
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
-    Object.defineProperty(input, "files", { value: [makeFile("c1.png"), makeFile("c2.png")] });
+    Object.defineProperty(input, "files", { value: [makeFile("c1.png"), makeFile("c2.png")], configurable: true });
     fireEvent.change(input);
 
     fireEvent.click(screen.getByText("continueToExtract"));
@@ -111,7 +112,7 @@ describe("BulkChequeUploadFlow", () => {
 
     render(<BulkChequeUploadFlow leaseId="L1" schedules={schedules} onSuccess={() => {}} onClose={() => {}} />);
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
-    Object.defineProperty(input, "files", { value: [makeFile("x.png")] });
+    Object.defineProperty(input, "files", { value: [makeFile("x.png")], configurable: true });
     fireEvent.change(input);
     fireEvent.click(screen.getByText("continueToExtract"));
 

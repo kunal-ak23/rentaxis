@@ -62,9 +62,12 @@ export function useBulkChequeExtract() {
     setItems(prev => prev.map(it => (it.id === id ? { ...it, ...patch } : it)));
   };
 
-  const start = useCallback(async (toExtract: BulkExtractItem[]) => {
+  const start = useCallback(async (toExtract: BulkExtractItem[]): Promise<BulkExtractItem[]> => {
     setRunning(true);
-    const queue = [...toExtract];
+    // Local mutable copies so we can return the resolved items synchronously,
+    // independent of React state propagation.
+    const results: BulkExtractItem[] = toExtract.map(it => ({ ...it }));
+    const queue = [...results];
     const workers: Promise<void>[] = [];
 
     const next = async (): Promise<void> => {
@@ -73,9 +76,14 @@ export function useBulkChequeExtract() {
       setItem(job.id, { status: "extracting" });
       try {
         const response = await extractOne(job.file);
+        job.status = "extracted";
+        job.response = response;
         setItem(job.id, { status: "extracted", response });
       } catch (e) {
-        setItem(job.id, { status: "failed", error: e instanceof Error ? e.message : "Failed" });
+        const message = e instanceof Error ? e.message : "Failed";
+        job.status = "failed";
+        job.error = message;
+        setItem(job.id, { status: "failed", error: message });
       }
       return next();
     };
@@ -83,6 +91,7 @@ export function useBulkChequeExtract() {
     for (let i = 0; i < MAX_CONCURRENT; i++) workers.push(next());
     await Promise.all(workers);
     setRunning(false);
+    return results;
   }, []);
 
   const retry = useCallback(async (id: string) => {
