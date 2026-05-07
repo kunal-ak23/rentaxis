@@ -19,6 +19,7 @@ import { MarkChequeFailedDialog, type PenaltySummary } from "@/components/paymen
 import { RecordPenaltyPaymentDialog } from "@/components/penalties/RecordPenaltyPaymentDialog";
 import { CollectChequeDialog } from "@/components/payments/CollectChequeDialog";
 import DueDateDelta from "@/components/payments/DueDateDelta";
+import BulkChequeUploadFlow from "@/components/cheques/BulkChequeUploadFlow";
 
 type Lease = {
     id: string; unitId: string; renterId: string; unitIdentifier: string;
@@ -191,6 +192,9 @@ export default function LeaseDetailPage() {
     const [chequePenaltiesLoading, setChequePenaltiesLoading] = useState(false);
     const [expandedPenaltyIds, setExpandedPenaltyIds] = useState<Set<string>>(new Set());
     const [recordPaymentTarget, setRecordPaymentTarget] = useState<ChequePenalty | null>(null);
+
+    // Bulk cheque upload state
+    const [bulkOpen, setBulkOpen] = useState(false);
 
     // Extend lease state
     const [extendOpen, setExtendOpen] = useState(false);
@@ -590,6 +594,7 @@ export default function LeaseDetailPage() {
 
     const clearedCount = payments.filter(p => p.status === "CLEARED").length;
     const pendingCount = payments.filter(p => p.status === "PENDING" || p.status === "ONLINE_PENDING").length;
+    const hasPending = payments.some(p => p.status === "PENDING");
     const totalPaid = payments.filter(p => p.status === "CLEARED").reduce((sum, p) => sum + p.amount, 0);
     const leaseTabs = ["Overview", "Payment schedule", "Penalties", "Contract", "Maintenance", "Documents"];
 
@@ -841,8 +846,18 @@ export default function LeaseDetailPage() {
                         "bg-surface rounded-[var(--radius-lg)] border border-border overflow-hidden",
                         lease && (lease.status === "DRAFT" || lease.status === "PENDING_SIGNATURE") && "hidden"
                     )}>
-                        <div className="px-5 py-3.5 border-b border-border bg-[var(--sand-50)]">
+                        <div className="px-5 py-3.5 border-b border-border bg-[var(--sand-50)] flex items-center justify-between gap-3">
                             <h2 className="text-xs font-semibold text-muted uppercase tracking-wider flex items-center gap-2"><CreditCard size={13} /> Payment Schedule Timeline</h2>
+                            {isAdmin && (
+                                <button
+                                    type="button"
+                                    disabled={!hasPending}
+                                    onClick={() => setBulkOpen(true)}
+                                    className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-xs hover:bg-input/40 disabled:opacity-50"
+                                >
+                                    Bulk upload cheques
+                                </button>
+                            )}
                         </div>
                         <div className="overflow-x-auto bg-surface">
                             <table className="w-full">
@@ -1505,6 +1520,25 @@ export default function LeaseDetailPage() {
                 onSuccess={() => {
                     setRecordPaymentTarget(null);
                     fetchChequePenalties(chequePenaltiesTab);
+                }}
+            />
+        )}
+
+        {/* Bulk Cheque Upload Flow */}
+        {bulkOpen && (
+            <BulkChequeUploadFlow
+                leaseId={leaseId}
+                schedules={payments.map(p => ({
+                    id: p.id,
+                    installmentNumber: p.installmentNumber,
+                    dueDate: p.dueDate,
+                    amount: p.amount,
+                    status: p.status,
+                }))}
+                onClose={() => setBulkOpen(false)}
+                onSuccess={() => {
+                    setBulkOpen(false);
+                    fetchPayments();
                 }}
             />
         )}

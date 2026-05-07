@@ -28,9 +28,7 @@ function makeFile(name: string): File {
 
 beforeEach(() => {
   // jsdom doesn't ship URL.createObjectURL.
-  // @ts-expect-error
   global.URL.createObjectURL = vi.fn(() => "blob:mock");
-  // @ts-expect-error
   global.URL.revokeObjectURL = vi.fn();
   if (!("randomUUID" in (global.crypto ?? {}))) {
     // @ts-expect-error
@@ -68,7 +66,6 @@ describe("BulkChequeUploadFlow", () => {
         ok: true,
         json: async () => ({ schedules: [] }),
       });
-    // @ts-expect-error
     global.fetch = fetchMock;
 
     const onSuccess = vi.fn();
@@ -107,7 +104,6 @@ describe("BulkChequeUploadFlow", () => {
         warnings: [],
       }),
     });
-    // @ts-expect-error
     global.fetch = fetchMock;
 
     render(<BulkChequeUploadFlow leaseId="L1" schedules={schedules} onSuccess={() => {}} onClose={() => {}} />);
