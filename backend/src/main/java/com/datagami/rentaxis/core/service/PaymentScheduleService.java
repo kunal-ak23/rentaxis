@@ -21,6 +21,7 @@ import com.datagami.rentaxis.domain.entity.enums.TransactionNature;
 import com.datagami.rentaxis.api.dto.PaymentPreviewDTO;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.LeaseEventRepository;
+import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.PaymentPenaltyRepository;
 import com.datagami.rentaxis.domain.repository.PaymentScheduleRepository;
 import com.datagami.rentaxis.domain.repository.RentCollectionSettingsRepository;
@@ -57,6 +58,7 @@ import java.util.stream.Collectors;
 public class PaymentScheduleService {
 
     private final PaymentScheduleRepository paymentScheduleRepository;
+    private final LeaseRepository leaseRepository;
     private final AccountRepository accountRepository;
     private final FinancialTransactionService financialTransactionService;
     private final AccountMappingService accountMappingService;
@@ -326,6 +328,12 @@ public class PaymentScheduleService {
             throw new BulkAttachValidationException("items must not be empty");
         }
 
+        // Spec §7.2 step 1: lease must exist and belong to the caller's tenant.
+        // The TenantAspect filters by tenant_id, so a cross-tenant leaseId is
+        // simply not visible — both not-found and cross-tenant collapse to 404.
+        leaseRepository.findById(leaseId)
+                .orElseThrow(() -> new NotFoundException("Lease not found"));
+
         // Detect duplicate scheduleId / chequeNumber within the request.
         List<BulkAttachErrorRow> errors = new ArrayList<>();
         Set<UUID> seenScheduleIds = new HashSet<>();
@@ -424,6 +432,21 @@ public class PaymentScheduleService {
                             null
                     ),
                     "CHEQUE_RECEIVED:" + saved.getId()));
+        }
+
+        // In-app notification per row, mirroring single-cheque collectPayment.
+        for (PaymentSchedule saved : updated) {
+            try {
+                UUID renterUserId = saved.getLease().getRenter().getUserId();
+                if (renterUserId != null) {
+                    notificationService.notifyInApp(TenantContextHolder.getTenantId(), renterUserId,
+                            "PAYMENT_COLLECTED", "Cheque Collected",
+                            "Installment #" + saved.getInstallmentNumber() + " cheque has been collected and is being processed.",
+                            "PAYMENT", saved.getId());
+                }
+            } catch (Exception e) {
+                log.warn("Failed to send cheque collected notification for payment {}: {}", saved.getId(), e.getMessage());
+            }
         }
 
         return updated.stream().map(this::mapToDTO).toList();

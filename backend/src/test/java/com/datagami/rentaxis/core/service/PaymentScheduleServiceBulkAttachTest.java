@@ -222,6 +222,15 @@ class PaymentScheduleServiceBulkAttachTest {
                 .isInstanceOf(BulkAttachValidationException.class);
     }
 
+    @Test
+    void bulkAttach_leaseNotFound_throwsNotFoundException() {
+        UUID bogusLeaseId = UUID.randomUUID();
+        var item = buildItem(UUID.randomUUID(), "CHQ-X", LocalDate.now());
+
+        assertThatThrownBy(() -> service.bulkAttachCheques(bogusLeaseId, List.of(item)))
+                .isInstanceOf(com.datagami.rentaxis.api.exception.NotFoundException.class);
+    }
+
     private BulkAttachChequeItem buildItem(UUID scheduleId, String num, LocalDate date) {
         BulkAttachChequeItem it = new BulkAttachChequeItem();
         it.setScheduleId(scheduleId);
