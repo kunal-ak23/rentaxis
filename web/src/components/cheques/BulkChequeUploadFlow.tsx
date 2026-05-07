@@ -54,6 +54,18 @@ export default function BulkChequeUploadFlow({ leaseId, schedules, onSuccess, on
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => () => extract.reset(), []);
 
+  useEffect(() => {
+    const hasPending = extract.items.some(it => it.status === "extracting" || it.status === "extracted");
+    if (!hasPending) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      // Modern browsers ignore custom messages but show a generic prompt when preventDefault is called.
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [extract.items]);
+
   const onPick = (files: FileList | null) => {
     if (!files) return;
     const built = buildItemsFromFiles(Array.from(files));
@@ -133,7 +145,11 @@ export default function BulkChequeUploadFlow({ leaseId, schedules, onSuccess, on
     counts.needsDate === 0 &&
     counts.noSchedule === 0 &&
     counts.duplicateNumber === 0 &&
-    rows.every(r => r.chequeNumber.trim() && r.bankName.trim());
+    rows.every(r => {
+      if (!r.chequeNumber.trim() || !r.bankName.trim()) return false;
+      const item = extract.items.find(it => it.id === r.itemId);
+      return item?.response?.image != null;
+    });
 
   const approve = async () => {
     setSubmitting(true);
