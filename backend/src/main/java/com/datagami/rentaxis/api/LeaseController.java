@@ -21,7 +21,11 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import com.datagami.rentaxis.api.dto.BulkAttachChequesRequest;
+import com.datagami.rentaxis.api.dto.BulkAttachChequesResponse;
+import com.datagami.rentaxis.core.service.BulkAttachValidationException;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -218,5 +222,25 @@ public class LeaseController {
         String userIdStr = request.getHeader("X-User-Id");
         UUID userId = UUID.fromString(userIdStr);
         return ResponseEntity.ok(leaseService.rejectLease(id, userId));
+    }
+
+    // --- Bulk Cheque Attach ---
+
+    @PostMapping("/{leaseId}/cheques/bulk-attach")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','PROPERTY_MANAGER')")
+    public ResponseEntity<BulkAttachChequesResponse> bulkAttachCheques(
+            @PathVariable UUID leaseId,
+            @Valid @RequestBody BulkAttachChequesRequest request) {
+        var schedules = paymentScheduleService.bulkAttachCheques(leaseId, request.getItems());
+        return ResponseEntity.ok(new BulkAttachChequesResponse(schedules));
+    }
+
+    @ExceptionHandler(BulkAttachValidationException.class)
+    public ResponseEntity<Map<String, Object>> handleBulkAttach(BulkAttachValidationException ex) {
+        HttpStatus status = ex.isConflict() ? HttpStatus.CONFLICT : HttpStatus.BAD_REQUEST;
+        return ResponseEntity.status(status).body(Map.of(
+                "error", "validation_failed",
+                "rows", ex.getRows()
+        ));
     }
 }
