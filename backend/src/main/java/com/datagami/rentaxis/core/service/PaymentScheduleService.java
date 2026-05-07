@@ -1,6 +1,8 @@
 package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.dto.AgingReportDTO;
+import com.datagami.rentaxis.api.dto.BulkAttachChequeItem;
+import com.datagami.rentaxis.api.dto.BulkAttachErrorRow;
 import com.datagami.rentaxis.api.dto.PaymentScheduleDTO;
 import com.datagami.rentaxis.api.dto.LeasePaymentStatsDTO;
 import com.datagami.rentaxis.api.dto.PaymentSummaryDTO;
@@ -40,10 +42,12 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -314,6 +318,115 @@ public class PaymentScheduleService {
         }
 
         return mapToDTO(saved);
+    }
+
+    @Transactional
+    public List<PaymentScheduleDTO> bulkAttachCheques(UUID leaseId, List<BulkAttachChequeItem> items) {
+        if (items == null || items.isEmpty()) {
+            throw new BulkAttachValidationException("items must not be empty");
+        }
+
+        // Detect duplicate scheduleId / chequeNumber within the request.
+        List<BulkAttachErrorRow> errors = new ArrayList<>();
+        Set<UUID> seenScheduleIds = new HashSet<>();
+        Set<String> seenChequeNumbers = new HashSet<>();
+        for (BulkAttachChequeItem it : items) {
+            if (!seenScheduleIds.add(it.getScheduleId())) {
+                errors.add(new BulkAttachErrorRow(it.getScheduleId(), "duplicate_schedule_id_in_request"));
+            }
+            if (!seenChequeNumbers.add(it.getChequeNumber())) {
+                errors.add(new BulkAttachErrorRow(it.getScheduleId(), "duplicate_cheque_number_in_request"));
+            }
+        }
+        if (!errors.isEmpty()) {
+            throw new BulkAttachValidationException(errors, false);
+        }
+
+        // Load every targeted schedule in one shot.
+        List<UUID> scheduleIds = items.stream().map(BulkAttachChequeItem::getScheduleId).toList();
+        List<PaymentSchedule> schedules = paymentScheduleRepository.findAllById(scheduleIds);
+        Map<UUID, PaymentSchedule> byId = schedules.stream()
+                .collect(Collectors.toMap(PaymentSchedule::getId, s -> s));
+
+        // Validate each row.
+        List<BulkAttachErrorRow> notPending = new ArrayList<>();
+        List<BulkAttachErrorRow> badRows = new ArrayList<>();
+        for (BulkAttachChequeItem it : items) {
+            PaymentSchedule ps = byId.get(it.getScheduleId());
+            if (ps == null) {
+                badRows.add(new BulkAttachErrorRow(it.getScheduleId(), "schedule_not_found"));
+                continue;
+            }
+            if (!ps.getLease().getId().equals(leaseId)) {
+                badRows.add(new BulkAttachErrorRow(it.getScheduleId(), "schedule_not_in_lease"));
+                continue;
+            }
+            if (ps.getStatus() != PaymentStatus.PENDING) {
+                notPending.add(new BulkAttachErrorRow(it.getScheduleId(), "schedule_not_pending"));
+            }
+        }
+        if (!badRows.isEmpty()) {
+            throw new BulkAttachValidationException(badRows, false);
+        }
+        if (!notPending.isEmpty()) {
+            throw new BulkAttachValidationException(notPending, true);
+        }
+
+        // Cheque number conflict against other schedules on this lease.
+        List<PaymentSchedule> leaseSchedules = paymentScheduleRepository.findByLeaseId(leaseId);
+        Set<UUID> targetIds = new HashSet<>(scheduleIds);
+        Set<String> existingChequeNumbers = leaseSchedules.stream()
+                .filter(ps -> !targetIds.contains(ps.getId()))
+                .map(PaymentSchedule::getChequeNumber)
+                .filter(n -> n != null && !n.isBlank())
+                .collect(Collectors.toSet());
+        List<BulkAttachErrorRow> chequeConflicts = items.stream()
+                .filter(it -> existingChequeNumbers.contains(it.getChequeNumber()))
+                .map(it -> new BulkAttachErrorRow(it.getScheduleId(), "cheque_number_already_used_on_lease"))
+                .toList();
+        if (!chequeConflicts.isEmpty()) {
+            throw new BulkAttachValidationException(chequeConflicts, false);
+        }
+
+        // Apply.
+        Instant now = Instant.now();
+        List<PaymentSchedule> updated = new ArrayList<>(items.size());
+        for (BulkAttachChequeItem it : items) {
+            PaymentSchedule ps = byId.get(it.getScheduleId());
+            ps.setStatus(PaymentStatus.COLLECTED);
+            ps.setChequeNumber(it.getChequeNumber());
+            ps.setBankName(it.getBankName());
+            ps.setPayerName(it.getPayerName());
+            ps.setChequeDate(it.getChequeDate());
+            ps.setChequeImageUrl(it.getImageUrl());
+            ps.setChequeImageBlobPath(it.getImageBlobPath());
+            ps.setChequeImageUploadedAt(it.getImageUploadedAt());
+            ps.setStatusChangedAt(now);
+            updated.add(paymentScheduleRepository.save(ps));
+        }
+
+        // Fire one CHEQUE_RECEIVED event per row, mirroring single-cheque collectPayment.
+        for (PaymentSchedule saved : updated) {
+            events.publishEvent(new EmailEvent(this,
+                    EmailEventType.CHEQUE_RECEIVED,
+                    saved.getTenantId(),
+                    new ChequePayload(
+                            saved.getId(),
+                            saved.getLease().getId(),
+                            saved.getLease().getRenter().getUserId(),
+                            null,
+                            saved.getInstallmentNumber(),
+                            saved.getChequeNumber(),
+                            saved.getBankName(),
+                            saved.getAmount() != null ? saved.getAmount().toPlainString() + " AED" : null,
+                            saved.getDueDate() != null ? saved.getDueDate().toString() : null,
+                            null,
+                            null
+                    ),
+                    "CHEQUE_RECEIVED:" + saved.getId()));
+        }
+
+        return updated.stream().map(this::mapToDTO).toList();
     }
 
     @Transactional
