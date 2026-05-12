@@ -55,7 +55,16 @@ export default function BulkChequeUploadFlow({ leaseId, schedules, onSuccess, on
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => () => extract.reset(), []);
 
-  // a11y: Escape to close, focus restoration, basic Tab focus trap.
+  // Refs to give the a11y effect (mount-once) access to the latest
+  // submitting/onClose without re-running and breaking focus restoration.
+  const submittingRef = useRef(submitting);
+  const onCloseRef = useRef(onClose);
+  useEffect(() => { submittingRef.current = submitting; }, [submitting]);
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
+
+  // a11y: Escape to close, focus restoration, Tab focus trap. Runs once
+  // on mount — re-running on submit would clobber previouslyFocused and
+  // cause a focus jump mid-submit.
   useEffect(() => {
     const previouslyFocused = (typeof document !== "undefined" ? document.activeElement : null) as HTMLElement | null;
     const focusables = () =>
@@ -71,9 +80,9 @@ export default function BulkChequeUploadFlow({ leaseId, schedules, onSuccess, on
     queueMicrotask(() => focusables()[0]?.focus());
 
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !submitting) {
+      if (e.key === "Escape" && !submittingRef.current) {
         e.preventDefault();
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (e.key === "Tab") {
@@ -81,10 +90,20 @@ export default function BulkChequeUploadFlow({ leaseId, schedules, onSuccess, on
         if (items.length === 0) return;
         const first = items[0];
         const last = items[items.length - 1];
-        if (e.shiftKey && document.activeElement === first) {
+        const active = document.activeElement as HTMLElement | null;
+        // If focus has escaped the trap entirely (e.g. Approve button got
+        // disabled mid-submit and was removed from focusables, but is still
+        // activeElement), redirect into the dialog instead of letting the
+        // browser advance past it.
+        if (!active || !dialogRef.current?.contains(active) || !items.includes(active)) {
+          e.preventDefault();
+          (e.shiftKey ? last : first).focus();
+          return;
+        }
+        if (e.shiftKey && active === first) {
           e.preventDefault();
           last.focus();
-        } else if (!e.shiftKey && document.activeElement === last) {
+        } else if (!e.shiftKey && active === last) {
           e.preventDefault();
           first.focus();
         }
@@ -95,9 +114,9 @@ export default function BulkChequeUploadFlow({ leaseId, schedules, onSuccess, on
       window.removeEventListener("keydown", onKey);
       previouslyFocused?.focus?.();
     };
-    // onClose / submitting captured by closure; deliberate stable identity
+    // Mount-once: latest submitting/onClose read via refs above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [submitting]);
+  }, []);
 
   useEffect(() => {
     const hasPending = extract.items.some(it => it.status === "extracting" || it.status === "extracted");
