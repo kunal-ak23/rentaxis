@@ -329,9 +329,12 @@ public class PaymentScheduleService {
         }
 
         // Spec §7.2 step 1: lease must exist and belong to the caller's tenant.
-        // The TenantAspect filters by tenant_id, so a cross-tenant leaseId is
-        // simply not visible — both not-found and cross-tenant collapse to 404.
-        leaseRepository.findById(leaseId)
+        // Uses findByIdScopedToTenant (JPQL) so the Hibernate tenant filter
+        // applies — Spring Data's default findById bypasses @Filter on
+        // load-by-key in Hibernate 7, which would otherwise allow a caller in
+        // tenant A to operate on a lease id from tenant B. Both not-found and
+        // cross-tenant collapse to 404.
+        leaseRepository.findByIdScopedToTenant(leaseId)
                 .orElseThrow(() -> new NotFoundException("Lease not found"));
 
         // Detect duplicate scheduleId / chequeNumber within the request.
