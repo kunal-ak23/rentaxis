@@ -353,9 +353,10 @@ public class PaymentScheduleService {
             throw new BulkAttachValidationException(errors, false);
         }
 
-        // Load every targeted schedule in one shot.
+        // Load every targeted schedule in one shot under PESSIMISTIC_WRITE so
+        // concurrent bulk-attach callers can't both pass the PENDING precheck.
         List<UUID> scheduleIds = items.stream().map(BulkAttachChequeItem::getScheduleId).toList();
-        List<PaymentSchedule> schedules = paymentScheduleRepository.findAllById(scheduleIds);
+        List<PaymentSchedule> schedules = paymentScheduleRepository.findAllByIdForUpdate(scheduleIds);
         Map<UUID, PaymentSchedule> byId = schedules.stream()
                 .collect(Collectors.toMap(PaymentSchedule::getId, s -> s));
 

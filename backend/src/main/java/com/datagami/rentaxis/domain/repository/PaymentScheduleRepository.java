@@ -2,14 +2,17 @@ package com.datagami.rentaxis.domain.repository;
 
 import com.datagami.rentaxis.domain.entity.PaymentSchedule;
 import com.datagami.rentaxis.domain.entity.enums.PaymentStatus;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -23,6 +26,18 @@ public interface PaymentScheduleRepository extends JpaRepository<PaymentSchedule
     List<PaymentSchedule> findByStatus(PaymentStatus status);
 
     List<PaymentSchedule> findByLeaseIdAndStatus(UUID leaseId, PaymentStatus status);
+
+    /**
+     * Pessimistic write lock on the targeted schedule rows so concurrent
+     * bulk-attach callers serialize their check-then-update on
+     * {@code status == PENDING}. Without this, two parallel callers can both
+     * observe PENDING under {@code READ_COMMITTED} and both flip to
+     * COLLECTED, blowing the invariant and emitting duplicate
+     * CHEQUE_RECEIVED events.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT ps FROM PaymentSchedule ps WHERE ps.id IN :ids")
+    List<PaymentSchedule> findAllByIdForUpdate(@Param("ids") Collection<UUID> ids);
 
     @Query("SELECT ps FROM PaymentSchedule ps WHERE ps.status IN ('PENDING', 'COLLECTED') AND ps.dueDate < :date")
     List<PaymentSchedule> findOverdue(@Param("date") LocalDate date);
