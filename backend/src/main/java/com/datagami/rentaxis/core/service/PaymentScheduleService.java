@@ -385,13 +385,14 @@ public class PaymentScheduleService {
         }
 
         // Cheque number conflict against other schedules on this lease.
-        List<PaymentSchedule> leaseSchedules = paymentScheduleRepository.findByLeaseId(leaseId);
-        Set<UUID> targetIds = new HashSet<>(scheduleIds);
-        Set<String> existingChequeNumbers = leaseSchedules.stream()
-                .filter(ps -> !targetIds.contains(ps.getId()))
-                .map(PaymentSchedule::getChequeNumber)
-                .filter(n -> n != null && !n.isBlank())
-                .collect(Collectors.toSet());
+        // Single targeted query — returns only the conflicting numbers
+        // instead of loading every schedule on the lease.
+        List<String> incomingChequeNumbers = items.stream()
+                .map(BulkAttachChequeItem::getChequeNumber)
+                .toList();
+        Set<String> existingChequeNumbers = Set.copyOf(
+                paymentScheduleRepository.findConflictingChequeNumbersOnLease(
+                        leaseId, incomingChequeNumbers, scheduleIds));
         List<BulkAttachErrorRow> chequeConflicts = items.stream()
                 .filter(it -> existingChequeNumbers.contains(it.getChequeNumber()))
                 .map(it -> new BulkAttachErrorRow(it.getScheduleId(), "cheque_number_already_used_on_lease"))
