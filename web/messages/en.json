@@ -974,5 +974,35 @@
     "title": "Follow-ups due",
     "empty": "No follow-ups today",
     "linkLabel": "Open lease"
+  },
+  "renewals": {
+    "pageTitle": "Renewals",
+    "within30": "Within 30 days",
+    "within60": "Within 60 days",
+    "within90": "Within 90 days",
+    "beyond90": "Beyond 90 days",
+    "beyond90Hint": "Renewal reminders will start when this lease is within 90 days of expiry.",
+    "endDateLine": "Ends {date} · {days} days remaining",
+    "renew": "I want to renew",
+    "moveOut": "I plan to move out",
+    "discuss": "I want to discuss",
+    "statusNoResponseYet": "No response yet",
+    "statusYouSelected": "You've selected: {intent}",
+    "changeYourMind": "Change my mind:",
+    "remindersSentLabel": "Reminders sent",
+    "loading": "Loading...",
+    "emptyBucket": "(no leases in this window)",
+    "confirmIntent": "Confirm your choice",
+    "confirm": "Confirm",
+    "captured": "Got it — we recorded your choice. Redirecting...",
+    "tokenExpired": "This link is no longer valid. Please log in to update your renewal preference.",
+    "genericError": "Something went wrong. Please try again.",
+    "bannerMessage": "One of your leases is up for renewal in {days} days.",
+    "bannerCta": "Tell us your plan",
+    "intent": {
+      "RENEW": "Renew",
+      "MOVE_OUT": "Move out",
+      "DISCUSS": "Discuss"
+    }
   }
 }
