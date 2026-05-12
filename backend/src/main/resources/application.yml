@@ -68,3 +68,10 @@ resilience4j:
         wait-duration-in-open-state: 60s
         permitted-number-of-calls-in-half-open-state: 3
         automatic-transition-from-open-to-half-open-enabled: true
+
+app:
+  renewal:
+    scheduler:
+      enabled: ${APP_RENEWAL_SCHEDULER_ENABLED:false}
+    token-secret: ${APP_RENEWAL_TOKEN_SECRET:dev-only-please-rotate-in-prod-min-32-bytes-please}
+    portal-base-url: ${APP_RENEWAL_PORTAL_BASE_URL:http://localhost:3000}
