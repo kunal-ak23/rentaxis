@@ -1,0 +1,65 @@
+databaseChangeLog:
+  - changeSet:
+      id: 58-lease-renewal
+      author: rentaxis-system
+      changes:
+        # 1. renewal_opportunities
+        - createTable:
+            tableName: renewal_opportunities
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: lease_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_renewal_opp_lease, referencedTableName: leases, referencedColumnNames: id } }
+              - column: { name: stage, type: varchar(30), constraints: { nullable: false } }
+              - column: { name: intent, type: varchar(20) }
+              - column: { name: intent_captured_at, type: timestamptz }
+              - column: { name: opened_at, type: timestamptz, constraints: { nullable: false } }
+              - column: { name: closed_at, type: timestamptz }
+              - column: { name: outcome, type: varchar(30) }
+              - column: { name: created_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
+              - column: { name: updated_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
+        - createIndex: { tableName: renewal_opportunities, indexName: idx_renewal_opp_tenant_stage, columns: [ { column: { name: tenant_id } }, { column: { name: stage } } ] }
+        - createIndex: { tableName: renewal_opportunities, indexName: idx_renewal_opp_lease, columns: [ { column: { name: lease_id } } ] }
+        - sql:
+            sql: "CREATE UNIQUE INDEX uniq_open_opp_per_lease ON renewal_opportunities (lease_id) WHERE stage IN ('OPEN', 'INTENT_CAPTURED');"
+
+        # 2. lease_reminders
+        - createTable:
+            tableName: lease_reminders
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: opportunity_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_reminder_opp, referencedTableName: renewal_opportunities, referencedColumnNames: id } }
+              - column: { name: slot, type: smallint, constraints: { nullable: false } }
+              - column: { name: channel, type: varchar(20), constraints: { nullable: false } }
+              - column: { name: status, type: varchar(20), constraints: { nullable: false } }
+              - column: { name: sent_at, type: timestamptz }
+              - column: { name: attempt_count, type: int, constraints: { nullable: false }, defaultValueNumeric: 0 }
+              - column: { name: last_error, type: text }
+              - column: { name: created_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
+              - column: { name: updated_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
+        - addUniqueConstraint:
+            tableName: lease_reminders
+            columnNames: opportunity_id, slot, channel
+            constraintName: uniq_reminder_opp_slot_channel
+
+        # 3. lease_interactions
+        - createTable:
+            tableName: lease_interactions
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: opportunity_id, type: uuid, constraints: { nullable: true, foreignKeyName: fk_interaction_opp, referencedTableName: renewal_opportunities, referencedColumnNames: id } }
+              - column: { name: lease_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_interaction_lease, referencedTableName: leases, referencedColumnNames: id } }
+              - column: { name: type, type: varchar(20), constraints: { nullable: false } }
+              - column: { name: direction, type: varchar(10), constraints: { nullable: false } }
+              - column: { name: occurred_at, type: timestamptz, constraints: { nullable: false } }
+              - column: { name: summary, type: text, constraints: { nullable: false } }
+              - column: { name: outcome, type: varchar(20) }
+              - column: { name: follow_up_date, type: date }
+              - column: { name: created_by, type: uuid, constraints: { nullable: false, foreignKeyName: fk_interaction_user, referencedTableName: users, referencedColumnNames: id } }
+              - column: { name: deleted_at, type: timestamptz }
+              - column: { name: created_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
+        - createIndex: { tableName: lease_interactions, indexName: idx_interaction_lease_occurred, columns: [ { column: { name: lease_id } }, { column: { name: occurred_at } } ] }
+        - createIndex: { tableName: lease_interactions, indexName: idx_interaction_tenant_followup, columns: [ { column: { name: tenant_id } }, { column: { name: follow_up_date } } ] }
+        - createIndex: { tableName: lease_interactions, indexName: idx_interaction_opportunity, columns: [ { column: { name: opportunity_id } } ] }
