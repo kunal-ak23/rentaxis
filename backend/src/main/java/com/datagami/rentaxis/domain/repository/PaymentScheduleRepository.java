@@ -39,6 +39,23 @@ public interface PaymentScheduleRepository extends JpaRepository<PaymentSchedule
     @Query("SELECT ps FROM PaymentSchedule ps WHERE ps.id IN :ids")
     List<PaymentSchedule> findAllByIdForUpdate(@Param("ids") Collection<UUID> ids);
 
+    /**
+     * Returns the subset of {@code chequeNumbers} that already exist on
+     * <em>other</em> schedules of {@code leaseId} (i.e. excluding the ids
+     * being bulk-attached right now). Replaces the previous N+1 pattern of
+     * loading every schedule on the lease and filtering in-memory.
+     */
+    @Query("""
+        SELECT ps.chequeNumber FROM PaymentSchedule ps
+        WHERE ps.lease.id = :leaseId
+          AND ps.chequeNumber IN :chequeNumbers
+          AND ps.id NOT IN :excludeIds
+        """)
+    List<String> findConflictingChequeNumbersOnLease(
+            @Param("leaseId") UUID leaseId,
+            @Param("chequeNumbers") Collection<String> chequeNumbers,
+            @Param("excludeIds") Collection<UUID> excludeIds);
+
     @Query("SELECT ps FROM PaymentSchedule ps WHERE ps.status IN ('PENDING', 'COLLECTED') AND ps.dueDate < :date")
     List<PaymentSchedule> findOverdue(@Param("date") LocalDate date);
 

@@ -451,7 +451,7 @@
     "pickInstallment": "Pick an installment",
     "pinRow": "Pin / unpin assignment",
     "removeRow": "Remove this row",
-    "statusCounts": "{total} selected · {needsDate} need date · {noSchedule} no installment · {duplicate} duplicate cheque #",
+    "statusCounts": "{total} selected · {needsDate} need date · {noSchedule} no installment · {needsBank} need bank · {duplicate} duplicate cheque #",
     "approveAll": "Approve all ({ready}/{total})",
     "rowConflictError": "Some rows could not be saved (conflict). Reload and try again.",
     "networkError": "Network error. Please try again.",

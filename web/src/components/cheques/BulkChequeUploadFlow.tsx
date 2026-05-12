@@ -38,6 +38,7 @@ type Step = 1 | 2 | 3;
 export default function BulkChequeUploadFlow({ leaseId, schedules, onSuccess, onClose }: Props) {
   const t = useTranslations("bulkChequeUpload");
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
   const extract = useBulkChequeExtract();
   const [step, setStep] = useState<Step>(1);
   const [rows, setRows] = useState<RowState[]>([]);
@@ -53,6 +54,69 @@ export default function BulkChequeUploadFlow({ leaseId, schedules, onSuccess, on
   // Suppress exhaustive-deps: cleanup runs only on unmount
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => () => extract.reset(), []);
+
+  // Refs to give the a11y effect (mount-once) access to the latest
+  // submitting/onClose without re-running and breaking focus restoration.
+  const submittingRef = useRef(submitting);
+  const onCloseRef = useRef(onClose);
+  useEffect(() => { submittingRef.current = submitting; }, [submitting]);
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
+
+  // a11y: Escape to close, focus restoration, Tab focus trap. Runs once
+  // on mount — re-running on submit would clobber previouslyFocused and
+  // cause a focus jump mid-submit.
+  useEffect(() => {
+    const previouslyFocused = (typeof document !== "undefined" ? document.activeElement : null) as HTMLElement | null;
+    const focusables = () =>
+      dialogRef.current
+        ? Array.from(
+            dialogRef.current.querySelectorAll<HTMLElement>(
+              'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+            )
+          )
+        : [];
+
+    // Focus the first focusable on open.
+    queueMicrotask(() => focusables()[0]?.focus());
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !submittingRef.current) {
+        e.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      if (e.key === "Tab") {
+        const items = focusables();
+        if (items.length === 0) return;
+        const first = items[0];
+        const last = items[items.length - 1];
+        const active = document.activeElement as HTMLElement | null;
+        // If focus has escaped the trap entirely (e.g. Approve button got
+        // disabled mid-submit and was removed from focusables, but is still
+        // activeElement), redirect into the dialog instead of letting the
+        // browser advance past it.
+        if (!active || !dialogRef.current?.contains(active) || !items.includes(active)) {
+          e.preventDefault();
+          (e.shiftKey ? last : first).focus();
+          return;
+        }
+        if (e.shiftKey && active === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && active === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      previouslyFocused?.focus?.();
+    };
+    // Mount-once: latest submitting/onClose read via refs above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     const hasPending = extract.items.some(it => it.status === "extracting" || it.status === "extracted");
@@ -128,25 +192,28 @@ export default function BulkChequeUploadFlow({ leaseId, schedules, onSuccess, on
   const counts = useMemo(() => {
     let needsDate = 0;
     let noSchedule = 0;
+    let needsBank = 0;
     let duplicateNumber = 0;
     const numberSeen = new Map<string, number>();
     for (const r of rows) {
       if (!r.chequeDate) needsDate++;
       if (!r.scheduleId) noSchedule++;
+      if (!r.bankName.trim()) needsBank++;
       if (r.chequeNumber.trim()) numberSeen.set(r.chequeNumber.trim(), (numberSeen.get(r.chequeNumber.trim()) ?? 0) + 1);
     }
     for (const v of numberSeen.values()) if (v > 1) duplicateNumber += v;
-    const ready = rows.length - needsDate - noSchedule - duplicateNumber;
-    return { needsDate, noSchedule, duplicateNumber, ready };
+    const ready = rows.length - needsDate - noSchedule - needsBank - duplicateNumber;
+    return { needsDate, noSchedule, needsBank, duplicateNumber, ready };
   }, [rows]);
 
   const canApprove =
     rows.length > 0 &&
     counts.needsDate === 0 &&
     counts.noSchedule === 0 &&
+    counts.needsBank === 0 &&
     counts.duplicateNumber === 0 &&
     rows.every(r => {
-      if (!r.chequeNumber.trim() || !r.bankName.trim()) return false;
+      if (!r.chequeNumber.trim()) return false;
       const item = extract.items.find(it => it.id === r.itemId);
       return item?.response?.image != null;
     });
@@ -192,11 +259,17 @@ export default function BulkChequeUploadFlow({ leaseId, schedules, onSuccess, on
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
-      <div className="w-full max-w-6xl rounded-xl border border-border bg-background shadow-lg">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="bulk-cheque-upload-title"
+        className="w-full max-w-6xl rounded-xl border border-border bg-background shadow-lg"
+      >
         <div className="flex items-start justify-between border-b border-border px-5 py-4">
           <div>
             <p className="text-[11px] uppercase tracking-wider text-muted">{t("breadcrumb")}</p>
-            <h3 className="text-base font-semibold">{t("title")}</h3>
+            <h3 id="bulk-cheque-upload-title" className="text-base font-semibold">{t("title")}</h3>
           </div>
           <button type="button" onClick={onClose} className="rounded p-1 text-muted hover:bg-input/40">
             <X size={16} />
@@ -318,7 +391,11 @@ export default function BulkChequeUploadFlow({ leaseId, schedules, onSuccess, on
                           <input
                             value={row.bankName}
                             onChange={e => updateRow(row.itemId, { bankName: e.target.value })}
-                            className="w-32 rounded border border-border px-1 py-0.5"
+                            aria-invalid={!row.bankName.trim()}
+                            className={
+                              "w-32 rounded border px-1 py-0.5 " +
+                              (row.bankName.trim() ? "border-border" : "border-red-500")
+                            }
                           />
                         </td>
                         <td className="pr-2">
@@ -387,6 +464,7 @@ export default function BulkChequeUploadFlow({ leaseId, schedules, onSuccess, on
                     total: rows.length,
                     needsDate: counts.needsDate,
                     noSchedule: counts.noSchedule,
+                    needsBank: counts.needsBank,
                     duplicate: counts.duplicateNumber,
                   })}
                 </p>
