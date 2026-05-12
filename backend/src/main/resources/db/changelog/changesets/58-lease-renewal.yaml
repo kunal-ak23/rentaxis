@@ -60,6 +60,7 @@ databaseChangeLog:
               - column: { name: created_by, type: uuid, constraints: { nullable: false, foreignKeyName: fk_interaction_user, referencedTableName: users, referencedColumnNames: id } }
               - column: { name: deleted_at, type: timestamptz }
               - column: { name: created_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
+              - column: { name: updated_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
         - createIndex: { tableName: lease_interactions, indexName: idx_interaction_lease_occurred, columns: [ { column: { name: lease_id } }, { column: { name: occurred_at } } ] }
         - createIndex: { tableName: lease_interactions, indexName: idx_interaction_tenant_followup, columns: [ { column: { name: tenant_id } }, { column: { name: follow_up_date } } ] }
         - createIndex: { tableName: lease_interactions, indexName: idx_interaction_opportunity, columns: [ { column: { name: opportunity_id } } ] }
