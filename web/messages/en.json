@@ -969,5 +969,10 @@
     "followUpDueBadge": "{count} follow-ups due",
     "cannotEditSystemEntry": "System entries cannot be edited",
     "confirmDelete": "Delete this interaction?"
+  },
+  "followUpsWidget": {
+    "title": "Follow-ups due",
+    "empty": "No follow-ups today",
+    "linkLabel": "Open lease"
   }
 }
