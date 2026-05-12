@@ -20,6 +20,7 @@ import { RecordPenaltyPaymentDialog } from "@/components/penalties/RecordPenalty
 import { CollectChequeDialog } from "@/components/payments/CollectChequeDialog";
 import DueDateDelta from "@/components/payments/DueDateDelta";
 import BulkChequeUploadFlow from "@/components/cheques/BulkChequeUploadFlow";
+import LeaseInteractionsPanel from "@/components/leases/LeaseInteractionsPanel";
 
 type Lease = {
     id: string; unitId: string; renterId: string; unitIdentifier: string;
@@ -986,6 +987,10 @@ export default function LeaseDetailPage() {
                             )}
                         </div>
                     </div>
+
+                    {lease && lease.status !== "DRAFT" && lease.status !== "PENDING_SIGNATURE" && (
+                        <LeaseInteractionsPanel leaseId={leaseId} />
+                    )}
                 </div>
                 )} {/* end right column conditional */}
             </div>
