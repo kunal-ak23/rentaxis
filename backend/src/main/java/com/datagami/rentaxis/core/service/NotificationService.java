@@ -17,6 +17,7 @@ import com.datagami.rentaxis.domain.repository.NotificationRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -96,6 +97,22 @@ public class NotificationService {
     @Transactional
     public void notifyInApp(UUID tenantId, UUID userId, String type, String title, String message,
                             String referenceType, UUID referenceId) {
+        saveNotificationRow(tenantId, userId, type, title, message, referenceType, referenceId);
+    }
+
+    /**
+     * Variant of {@link #notifyInApp} that runs in its own transaction so a
+     * notification-write failure cannot poison the caller's outer transaction
+     * (caller catches the exception, but Hibernate has already marked the
+     * outer tx rollback-only under default REQUIRED propagation, causing a
+     * confusing TransactionSystemException at commit time).
+     *
+     * Use this from batch sites where one failing notification must not
+     * roll back the whole batch — e.g. {@code bulkAttachCheques}.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void notifyInAppInNewTx(UUID tenantId, UUID userId, String type, String title, String message,
+                                   String referenceType, UUID referenceId) {
         saveNotificationRow(tenantId, userId, type, title, message, referenceType, referenceId);
     }
 

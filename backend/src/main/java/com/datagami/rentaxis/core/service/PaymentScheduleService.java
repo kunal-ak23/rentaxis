@@ -438,12 +438,18 @@ public class PaymentScheduleService {
                     "CHEQUE_RECEIVED:" + saved.getId()));
         }
 
-        // In-app notification per row, mirroring single-cheque collectPayment.
+        // In-app notification per row. Uses REQUIRES_NEW so a single failed
+        // notification row write can't poison the bulk-attach outer
+        // transaction — without the new tx, the try/catch swallows the
+        // exception but Hibernate has already marked the outer tx
+        // rollback-only, surfacing as a confusing TransactionSystemException
+        // at commit time.
+        UUID tenantId = TenantContextHolder.getTenantId();
         for (PaymentSchedule saved : updated) {
             try {
                 UUID renterUserId = saved.getLease().getRenter().getUserId();
                 if (renterUserId != null) {
-                    notificationService.notifyInApp(TenantContextHolder.getTenantId(), renterUserId,
+                    notificationService.notifyInAppInNewTx(tenantId, renterUserId,
                             "PAYMENT_COLLECTED", "Cheque Collected",
                             "Installment #" + saved.getInstallmentNumber() + " cheque has been collected and is being processed.",
                             "PAYMENT", saved.getId());
