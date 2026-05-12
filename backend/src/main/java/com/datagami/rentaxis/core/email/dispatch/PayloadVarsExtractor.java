@@ -59,6 +59,8 @@ public class PayloadVarsExtractor {
             case LEASE_CREATED, LEASE_SIGNATURE_REQUESTED, LEASE_SIGNED, LEASE_ACTIVATED,
                  LEASE_EXPIRING, LEASE_RENEWED, LEASE_TERMINATED, RENT_RECEIPT_AVAILABLE
                     -> prefix + "/leases/" + str(vars, "leaseId");
+            case LEASE_RENEWAL_REMINDER -> prefix + "/leases/" + str(vars, "leaseId");
+            case RENEWAL_INTENT_CAPTURED -> prefix + "/leases/" + str(vars, "leaseId");
             case CHEQUE_RECEIVED, CHEQUE_DEPOSITED, CHEQUE_CLEARED, CHEQUE_BOUNCED,
                  PAYMENT_DUE_REMINDER, PAYMENT_OVERDUE, ONLINE_PAYMENT_RECEIVED, ONLINE_PAYMENT_FAILED,
                  PENALTY_INCURRED, PENALTY_CLEARED, PENALTY_WAIVED
@@ -80,6 +82,8 @@ public class PayloadVarsExtractor {
             case LEASE_CREATED, LEASE_SIGNED, LEASE_ACTIVATED, LEASE_EXPIRING,
                  LEASE_RENEWED, LEASE_TERMINATED, LEASE_SIGNATURE_REQUESTED
                     -> new Object[]{ vars.get("unitLabel"), vars.get("propertyName") };
+            case LEASE_RENEWAL_REMINDER -> new Object[]{ vars.get("unitNumber"), vars.get("propertyNameEn") };
+            case RENEWAL_INTENT_CAPTURED -> new Object[]{ vars.get("renterName"), vars.get("intent") };
             case CHEQUE_RECEIVED, CHEQUE_DEPOSITED, CHEQUE_CLEARED, CHEQUE_BOUNCED
                     -> new Object[]{ vars.get("chequeNumber"), vars.get("amountDisplay"), vars.get("installmentNumber") };
             case PAYMENT_DUE_REMINDER -> new Object[]{ vars.get("amountDisplay"), vars.get("dueDateIso"), vars.get("daysUntilDue") };
