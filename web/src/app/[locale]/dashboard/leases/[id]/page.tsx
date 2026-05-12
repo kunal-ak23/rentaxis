@@ -155,6 +155,7 @@ export default function LeaseDetailPage() {
     const canGenerateContract = hasRole(userRole, ["SUPER_ADMIN", "TENANT_ADMIN"]);
     const t = useTranslations("MasterData");
     const tP = useTranslations("LeasePenalties");
+    const tBulk = useTranslations("bulkChequeUpload");
 
     const [lease, setLease] = useState<Lease | null>(null);
     const [renter, setRenter] = useState<Renter | null>(null);
@@ -855,7 +856,7 @@ export default function LeaseDetailPage() {
                                     onClick={() => setBulkOpen(true)}
                                     className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-xs hover:bg-input/40 disabled:opacity-50"
                                 >
-                                    Bulk upload cheques
+                                    {tBulk("entryButton")}
                                 </button>
                             )}
                         </div>

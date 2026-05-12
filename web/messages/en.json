@@ -433,6 +433,7 @@
   "bulkChequeUpload": {
     "breadcrumb": "Cheques · Bulk upload",
     "title": "Upload cheques in bulk",
+    "entryButton": "Bulk upload cheques",
     "pickFolder": "Choose a folder of cheque images",
     "pickHint": "Pick a folder containing all post-dated cheques for this lease.",
     "selectedCount": "{n} images selected",
