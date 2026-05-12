@@ -55,4 +55,17 @@ public interface LeaseRepository extends JpaRepository<Lease, UUID> {
      */
     @Query("SELECT l FROM Lease l WHERE l.id = :id")
     Optional<Lease> findByIdScopedToTenant(@Param("id") UUID id);
+
+    @Query("""
+        SELECT l FROM Lease l
+        WHERE l.status = com.datagami.rentaxis.domain.entity.enums.LeaseStatus.ACTIVE
+          AND l.endDate <= :cutoff
+          AND NOT EXISTS (
+            SELECT 1 FROM RenewalOpportunity o
+            WHERE o.lease.id = l.id
+              AND o.stage IN (com.datagami.rentaxis.domain.entity.enums.RenewalStage.OPEN,
+                              com.datagami.rentaxis.domain.entity.enums.RenewalStage.INTENT_CAPTURED)
+          )
+    """)
+    List<Lease> findActiveLeasesEnteringRenewalWindow(@Param("cutoff") LocalDate cutoff);
 }
