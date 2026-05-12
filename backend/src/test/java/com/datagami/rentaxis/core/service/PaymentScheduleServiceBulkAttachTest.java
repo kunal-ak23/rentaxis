@@ -14,6 +14,7 @@ import com.datagami.rentaxis.domain.entity.enums.PaymentStatus;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
 import com.datagami.rentaxis.domain.entity.enums.UserStatus;
 import com.datagami.rentaxis.domain.repository.*;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -48,6 +49,7 @@ class PaymentScheduleServiceBulkAttachTest {
     @Autowired LandlordOrgRepository orgRepo;
     @Autowired UserRepository userRepo;
     @Autowired RenterRepository renterRepo;
+    @Autowired EntityManager entityManager;
 
     private UUID tenantId;
     private Lease lease;
@@ -229,6 +231,102 @@ class PaymentScheduleServiceBulkAttachTest {
 
         assertThatThrownBy(() -> service.bulkAttachCheques(bogusLeaseId, List.of(item)))
                 .isInstanceOf(com.datagami.rentaxis.api.exception.NotFoundException.class);
+    }
+
+    @Test
+    void bulkAttach_crossTenantLease_throwsNotFoundException() {
+        // Build a fully independent lease under a SECOND tenant.
+        UUID originalTenant = tenantId;
+
+        LandlordOrg otherOrg = new LandlordOrg();
+        otherOrg.setName("OtherTenant-" + UUID.randomUUID());
+        otherOrg = orgRepo.save(otherOrg);
+        UUID otherTenant = otherOrg.getId();
+        TenantContextHolder.setTenantId(otherTenant);
+
+        User otherRenterUser = new User();
+        otherRenterUser.setEmail("other+" + UUID.randomUUID() + "@test");
+        otherRenterUser.setName("Other Renter");
+        otherRenterUser.setRole(UserRole.RENTER);
+        otherRenterUser.setStatus(UserStatus.ACTIVE);
+        otherRenterUser.setPasswordHash("placeholder");
+        otherRenterUser.setTenantId(otherTenant);
+        otherRenterUser = userRepo.save(otherRenterUser);
+
+        Renter otherRenter = new Renter();
+        otherRenter.setUserId(otherRenterUser.getId());
+        otherRenter.setNameEn("Other Renter");
+        otherRenter.setTenantId(otherTenant);
+        otherRenter = renterRepo.save(otherRenter);
+
+        Property otherProperty = new Property();
+        otherProperty.setNameEn("Other Property");
+        otherProperty.setEmirate(Emirate.DUBAI);
+        otherProperty.setTenantId(otherTenant);
+        otherProperty = propertyRepo.save(otherProperty);
+
+        Unit otherUnit = new Unit();
+        otherUnit.setProperty(otherProperty);
+        otherUnit.setUnitNumber("Z9");
+        otherUnit.setTenantId(otherTenant);
+        otherUnit = unitRepo.save(otherUnit);
+
+        Lease otherLease = new Lease();
+        otherLease.setUnit(otherUnit);
+        otherLease.setRenter(otherRenter);
+        otherLease.setTenantId(otherTenant);
+        otherLease.setStartDate(LocalDate.of(2026, 6, 1));
+        otherLease.setEndDate(LocalDate.of(2027, 5, 31));
+        otherLease.setMonthlyRent(BigDecimal.valueOf(5000));
+        otherLease = leaseRepo.save(otherLease);
+
+        // Simulate a fresh request: evict the just-persisted other-tenant
+        // entities from the OSIV-shared L1 cache so the next findById
+        // actually hits the DB (where the Hibernate tenant filter applies).
+        // Saves above already committed via per-method transactions, so a
+        // bare clear() is sufficient — flush() would require an active tx.
+        entityManager.clear();
+
+        // Switch back to the original tenant; otherLease.id MUST be invisible.
+        TenantContextHolder.setTenantId(originalTenant);
+
+        var item = buildItem(UUID.randomUUID(), "CHQ-X", LocalDate.now());
+        UUID crossTenantLeaseId = otherLease.getId();
+        assertThatThrownBy(() -> service.bulkAttachCheques(crossTenantLeaseId, List.of(item)))
+                .isInstanceOf(com.datagami.rentaxis.api.exception.NotFoundException.class);
+    }
+
+    @Test
+    void bulkAttach_duplicateChequeNumberInRequest_throws() {
+        List<PaymentSchedule> pending = scheduleRepo.findByLeaseId(lease.getId());
+        // Two distinct schedule IDs but the SAME chequeNumber.
+        List<BulkAttachChequeItem> items = List.of(
+                buildItem(pending.get(0).getId(), "DUP-CHQ", LocalDate.now()),
+                buildItem(pending.get(1).getId(), "DUP-CHQ", LocalDate.now())
+        );
+
+        assertThatThrownBy(() -> service.bulkAttachCheques(lease.getId(), items))
+                .isInstanceOf(BulkAttachValidationException.class);
+    }
+
+    @Test
+    void bulkAttach_chequeNumberAlreadyUsedOnLease_throws() {
+        List<PaymentSchedule> pending = scheduleRepo.findByLeaseId(lease.getId());
+        // Pre-stamp installment #1 with a cheque number, leaving the other two PENDING.
+        PaymentSchedule first = pending.get(0);
+        first.setStatus(PaymentStatus.COLLECTED);
+        first.setChequeNumber("CHQ-EXISTING");
+        scheduleRepo.save(first);
+
+        // Try to attach to installment #2 reusing the same cheque number.
+        var item = buildItem(pending.get(1).getId(), "CHQ-EXISTING", LocalDate.now());
+
+        assertThatThrownBy(() -> service.bulkAttachCheques(lease.getId(), List.of(item)))
+                .isInstanceOf(BulkAttachValidationException.class);
+
+        // Untouched schedule #2 stays PENDING.
+        PaymentSchedule reloaded = scheduleRepo.findById(pending.get(1).getId()).orElseThrow();
+        assertThat(reloaded.getStatus()).isEqualTo(PaymentStatus.PENDING);
     }
 
     private BulkAttachChequeItem buildItem(UUID scheduleId, String num, LocalDate date) {
