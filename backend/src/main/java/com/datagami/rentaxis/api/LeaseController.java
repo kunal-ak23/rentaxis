@@ -1,14 +1,16 @@
 package com.datagami.rentaxis.api;
 
 import com.datagami.rentaxis.api.dto.*;
+import com.datagami.rentaxis.api.dto.BulkAttachChequesRequest;
+import com.datagami.rentaxis.api.dto.BulkAttachChequesResponse;
 import com.datagami.rentaxis.api.dto.ExtendLeaseDTO;
 import com.datagami.rentaxis.api.dto.SaveSettlementDTO;
 import com.datagami.rentaxis.core.service.ContractGenerationService;
 import com.datagami.rentaxis.core.service.LeaseService;
+import com.datagami.rentaxis.core.service.PaymentScheduleService;
 import com.datagami.rentaxis.core.service.SettlementService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
-import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -19,6 +21,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -32,7 +35,7 @@ public class LeaseController {
     private final LeaseService leaseService;
     private final ContractGenerationService contractGenerationService;
     private final SettlementService settlementService;
-    private final com.datagami.rentaxis.core.service.PaymentScheduleService paymentScheduleService;
+    private final PaymentScheduleService paymentScheduleService;
 
     @GetMapping
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
@@ -219,4 +222,16 @@ public class LeaseController {
         UUID userId = UUID.fromString(userIdStr);
         return ResponseEntity.ok(leaseService.rejectLease(id, userId));
     }
+
+    // --- Bulk Cheque Attach ---
+
+    @PostMapping("/{leaseId}/cheques/bulk-attach")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
+    public ResponseEntity<BulkAttachChequesResponse> bulkAttachCheques(
+            @PathVariable UUID leaseId,
+            @Valid @RequestBody BulkAttachChequesRequest request) {
+        var schedules = paymentScheduleService.bulkAttachCheques(leaseId, request.getItems());
+        return ResponseEntity.ok(new BulkAttachChequesResponse(schedules));
+    }
+
 }

@@ -1,6 +1,8 @@
 package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.dto.AgingReportDTO;
+import com.datagami.rentaxis.api.dto.BulkAttachChequeItem;
+import com.datagami.rentaxis.api.dto.BulkAttachErrorRow;
 import com.datagami.rentaxis.api.dto.PaymentScheduleDTO;
 import com.datagami.rentaxis.api.dto.LeasePaymentStatsDTO;
 import com.datagami.rentaxis.api.dto.PaymentSummaryDTO;
@@ -19,6 +21,7 @@ import com.datagami.rentaxis.domain.entity.enums.TransactionNature;
 import com.datagami.rentaxis.api.dto.PaymentPreviewDTO;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.LeaseEventRepository;
+import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.PaymentPenaltyRepository;
 import com.datagami.rentaxis.domain.repository.PaymentScheduleRepository;
 import com.datagami.rentaxis.domain.repository.RentCollectionSettingsRepository;
@@ -40,10 +43,12 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -53,6 +58,7 @@ import java.util.stream.Collectors;
 public class PaymentScheduleService {
 
     private final PaymentScheduleRepository paymentScheduleRepository;
+    private final LeaseRepository leaseRepository;
     private final AccountRepository accountRepository;
     private final FinancialTransactionService financialTransactionService;
     private final AccountMappingService accountMappingService;
@@ -314,6 +320,146 @@ public class PaymentScheduleService {
         }
 
         return mapToDTO(saved);
+    }
+
+    @Transactional
+    public List<PaymentScheduleDTO> bulkAttachCheques(UUID leaseId, List<BulkAttachChequeItem> items) {
+        if (items == null || items.isEmpty()) {
+            throw new BulkAttachValidationException("items must not be empty");
+        }
+
+        // Spec §7.2 step 1: lease must exist and belong to the caller's tenant.
+        // Uses findByIdScopedToTenant (JPQL) so the Hibernate tenant filter
+        // applies — Spring Data's default findById bypasses @Filter on
+        // load-by-key in Hibernate 7, which would otherwise allow a caller in
+        // tenant A to operate on a lease id from tenant B. Both not-found and
+        // cross-tenant collapse to 404.
+        leaseRepository.findByIdScopedToTenant(leaseId)
+                .orElseThrow(() -> new NotFoundException("Lease not found"));
+
+        // Detect duplicate scheduleId / chequeNumber within the request.
+        List<BulkAttachErrorRow> errors = new ArrayList<>();
+        Set<UUID> seenScheduleIds = new HashSet<>();
+        Set<String> seenChequeNumbers = new HashSet<>();
+        for (BulkAttachChequeItem it : items) {
+            if (!seenScheduleIds.add(it.getScheduleId())) {
+                errors.add(new BulkAttachErrorRow(it.getScheduleId(), "duplicate_schedule_id_in_request"));
+            }
+            if (!seenChequeNumbers.add(it.getChequeNumber())) {
+                errors.add(new BulkAttachErrorRow(it.getScheduleId(), "duplicate_cheque_number_in_request"));
+            }
+        }
+        if (!errors.isEmpty()) {
+            throw new BulkAttachValidationException(errors, false);
+        }
+
+        // Load every targeted schedule in one shot under PESSIMISTIC_WRITE so
+        // concurrent bulk-attach callers can't both pass the PENDING precheck.
+        List<UUID> scheduleIds = items.stream().map(BulkAttachChequeItem::getScheduleId).toList();
+        List<PaymentSchedule> schedules = paymentScheduleRepository.findAllByIdForUpdate(scheduleIds);
+        Map<UUID, PaymentSchedule> byId = schedules.stream()
+                .collect(Collectors.toMap(PaymentSchedule::getId, s -> s));
+
+        // Validate each row.
+        List<BulkAttachErrorRow> notPending = new ArrayList<>();
+        List<BulkAttachErrorRow> badRows = new ArrayList<>();
+        for (BulkAttachChequeItem it : items) {
+            PaymentSchedule ps = byId.get(it.getScheduleId());
+            if (ps == null) {
+                badRows.add(new BulkAttachErrorRow(it.getScheduleId(), "schedule_not_found"));
+                continue;
+            }
+            if (!ps.getLease().getId().equals(leaseId)) {
+                badRows.add(new BulkAttachErrorRow(it.getScheduleId(), "schedule_not_in_lease"));
+                continue;
+            }
+            if (ps.getStatus() != PaymentStatus.PENDING) {
+                notPending.add(new BulkAttachErrorRow(it.getScheduleId(), "schedule_not_pending"));
+            }
+        }
+        if (!badRows.isEmpty()) {
+            throw new BulkAttachValidationException(badRows, false);
+        }
+        if (!notPending.isEmpty()) {
+            throw new BulkAttachValidationException(notPending, true);
+        }
+
+        // Cheque number conflict against other schedules on this lease.
+        List<PaymentSchedule> leaseSchedules = paymentScheduleRepository.findByLeaseId(leaseId);
+        Set<UUID> targetIds = new HashSet<>(scheduleIds);
+        Set<String> existingChequeNumbers = leaseSchedules.stream()
+                .filter(ps -> !targetIds.contains(ps.getId()))
+                .map(PaymentSchedule::getChequeNumber)
+                .filter(n -> n != null && !n.isBlank())
+                .collect(Collectors.toSet());
+        List<BulkAttachErrorRow> chequeConflicts = items.stream()
+                .filter(it -> existingChequeNumbers.contains(it.getChequeNumber()))
+                .map(it -> new BulkAttachErrorRow(it.getScheduleId(), "cheque_number_already_used_on_lease"))
+                .toList();
+        if (!chequeConflicts.isEmpty()) {
+            throw new BulkAttachValidationException(chequeConflicts, false);
+        }
+
+        // Apply.
+        Instant now = Instant.now();
+        List<PaymentSchedule> updated = new ArrayList<>(items.size());
+        for (BulkAttachChequeItem it : items) {
+            PaymentSchedule ps = byId.get(it.getScheduleId());
+            ps.setStatus(PaymentStatus.COLLECTED);
+            ps.setChequeNumber(it.getChequeNumber());
+            ps.setBankName(it.getBankName());
+            ps.setPayerName(it.getPayerName());
+            ps.setChequeDate(it.getChequeDate());
+            ps.setChequeImageUrl(it.getImageUrl());
+            ps.setChequeImageBlobPath(it.getImageBlobPath());
+            ps.setChequeImageUploadedAt(it.getImageUploadedAt());
+            ps.setStatusChangedAt(now);
+            updated.add(paymentScheduleRepository.save(ps));
+        }
+
+        // Fire one CHEQUE_RECEIVED event per row, mirroring single-cheque collectPayment.
+        for (PaymentSchedule saved : updated) {
+            events.publishEvent(new EmailEvent(this,
+                    EmailEventType.CHEQUE_RECEIVED,
+                    saved.getTenantId(),
+                    new ChequePayload(
+                            saved.getId(),
+                            saved.getLease().getId(),
+                            saved.getLease().getRenter().getUserId(),
+                            null,
+                            saved.getInstallmentNumber(),
+                            saved.getChequeNumber(),
+                            saved.getBankName(),
+                            saved.getAmount() != null ? saved.getAmount().toPlainString() + " AED" : null,
+                            saved.getDueDate() != null ? saved.getDueDate().toString() : null,
+                            null,
+                            null
+                    ),
+                    "CHEQUE_RECEIVED:" + saved.getId()));
+        }
+
+        // In-app notification per row. Uses REQUIRES_NEW so a single failed
+        // notification row write can't poison the bulk-attach outer
+        // transaction — without the new tx, the try/catch swallows the
+        // exception but Hibernate has already marked the outer tx
+        // rollback-only, surfacing as a confusing TransactionSystemException
+        // at commit time.
+        UUID tenantId = TenantContextHolder.getTenantId();
+        for (PaymentSchedule saved : updated) {
+            try {
+                UUID renterUserId = saved.getLease().getRenter().getUserId();
+                if (renterUserId != null) {
+                    notificationService.notifyInAppInNewTx(tenantId, renterUserId,
+                            "PAYMENT_COLLECTED", "Cheque Collected",
+                            "Installment #" + saved.getInstallmentNumber() + " cheque has been collected and is being processed.",
+                            "PAYMENT", saved.getId());
+                }
+            } catch (Exception e) {
+                log.warn("Failed to send cheque collected notification for payment {}: {}", saved.getId(), e.getMessage());
+            }
+        }
+
+        return updated.stream().map(this::mapToDTO).toList();
     }
 
     @Transactional

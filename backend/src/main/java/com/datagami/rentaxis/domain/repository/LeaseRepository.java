@@ -11,6 +11,7 @@ import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
@@ -42,4 +43,16 @@ public interface LeaseRepository extends JpaRepository<Lease, UUID> {
 
     @Query("SELECT COALESCE(MAX(l.contractNumber), 0) FROM Lease l WHERE l.tenantId = :tenantId")
     Long findMaxContractNumberForTenant(@Param("tenantId") UUID tenantId);
+
+    /**
+     * Tenant-aware lookup by id. Unlike Spring Data's default {@code findById},
+     * this goes through JPQL — which applies Hibernate {@code @Filter}
+     * annotations. The default {@code findById} bypasses filters in Hibernate
+     * 7 (unless {@code applyToLoadByKey=true} is set on the filter), which
+     * would let a caller in tenant A operate on a lease id from tenant B.
+     * Use this anywhere a caller-supplied lease id must be scoped to the
+     * current tenant.
+     */
+    @Query("SELECT l FROM Lease l WHERE l.id = :id")
+    Optional<Lease> findByIdScopedToTenant(@Param("id") UUID id);
 }

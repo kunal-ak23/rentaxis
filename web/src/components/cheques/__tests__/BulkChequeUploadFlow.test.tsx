@@ -1,0 +1,119 @@
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import BulkChequeUploadFlow from "../BulkChequeUploadFlow";
+
+// Mock next-intl's useTranslations to return the key directly.
+vi.mock("next-intl", () => ({
+  useTranslations: () => (key: string, vars?: Record<string, unknown>) => {
+    if (vars) return `${key}:${JSON.stringify(vars)}`;
+    return key;
+  },
+}));
+
+vi.mock("next/image", () => ({
+  default: (props: any) => {
+    // eslint-disable-next-line @next/next/no-img-element, jsx-a11y/alt-text
+    return <img {...props} />;
+  },
+}));
+
+const schedules = [
+  { id: "s1", installmentNumber: 1, dueDate: "2026-06-05", amount: 5000, status: "PENDING" },
+  { id: "s2", installmentNumber: 2, dueDate: "2026-07-05", amount: 5000, status: "PENDING" },
+];
+
+function makeFile(name: string): File {
+  return new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], name, { type: "image/png" });
+}
+
+beforeEach(() => {
+  // jsdom doesn't ship URL.createObjectURL.
+  global.URL.createObjectURL = vi.fn(() => "blob:mock");
+  global.URL.revokeObjectURL = vi.fn();
+  if (!("randomUUID" in (global.crypto ?? {}))) {
+    // @ts-expect-error
+    global.crypto = { ...global.crypto, randomUUID: () => `id-${Math.random().toString(36).slice(2)}` };
+  }
+});
+
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
+
+describe("BulkChequeUploadFlow", () => {
+  it("auto-maps closest cheque date to due date and approves successfully", async () => {
+    const fetchMock = vi.fn()
+      // Two /extract calls:
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          image: { url: "u1", blobPath: "b1", uploadedAt: "2026-05-07T00:00:00Z" },
+          extracted: { chequeNumber: "C-1", bankName: "ENBD", payerName: "R", chequeDate: "2026-06-04", confidence: "HIGH" },
+          warnings: [],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          image: { url: "u2", blobPath: "b2", uploadedAt: "2026-05-07T00:00:01Z" },
+          extracted: { chequeNumber: "C-2", bankName: "ENBD", payerName: "R", chequeDate: "2026-07-04", confidence: "HIGH" },
+          warnings: [],
+        }),
+      })
+      // bulk-attach call:
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ schedules: [] }),
+      });
+    global.fetch = fetchMock;
+
+    const onSuccess = vi.fn();
+    render(<BulkChequeUploadFlow leaseId="L1" schedules={schedules} onSuccess={onSuccess} onClose={() => {}} />);
+
+    // Simulate folder pick.
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    Object.defineProperty(input, "files", { value: [makeFile("c1.png"), makeFile("c2.png")], configurable: true });
+    fireEvent.change(input);
+
+    fireEvent.click(screen.getByText("continueToExtract"));
+
+    await waitFor(() => screen.getByText("colChequeNumber"));
+
+    // Both rows should auto-map: C-1 → s1, C-2 → s2.
+    const selects = document.querySelectorAll("select");
+    expect((selects[0] as HTMLSelectElement).value).toBe("s1");
+    expect((selects[1] as HTMLSelectElement).value).toBe("s2");
+
+    // Click approve.
+    fireEvent.click(screen.getByText(/^approveAll/));
+
+    await waitFor(() => expect(onSuccess).toHaveBeenCalled());
+
+    // bulk-attach was the 3rd call.
+    const lastCall = fetchMock.mock.calls[2];
+    expect(lastCall[0]).toBe("/api/proxy/v1/leases/L1/cheques/bulk-attach");
+  });
+
+  it("disables approve when a row is missing a schedule", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        image: { url: "u1", blobPath: "b1", uploadedAt: "2026-05-07T00:00:00Z" },
+        extracted: { chequeNumber: "C-1", bankName: "ENBD", payerName: "R", chequeDate: null, confidence: "LOW" },
+        warnings: [],
+      }),
+    });
+    global.fetch = fetchMock;
+
+    render(<BulkChequeUploadFlow leaseId="L1" schedules={schedules} onSuccess={() => {}} onClose={() => {}} />);
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    Object.defineProperty(input, "files", { value: [makeFile("x.png")], configurable: true });
+    fireEvent.change(input);
+    fireEvent.click(screen.getByText("continueToExtract"));
+
+    await waitFor(() => screen.getByText(/^approveAll/));
+    const approve = screen.getByText(/^approveAll/) as HTMLButtonElement;
+    expect(approve.closest("button")).toBeDisabled();
+  });
+});

@@ -74,6 +74,7 @@ class PaymentScheduleServiceMarkFailedTest {
 
         service = new PaymentScheduleService(
                 paymentScheduleRepository,
+                mock(com.datagami.rentaxis.domain.repository.LeaseRepository.class),
                 accountRepository,
                 financialTransactionService,
                 accountMappingService,

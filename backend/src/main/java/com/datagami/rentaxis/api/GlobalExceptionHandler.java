@@ -4,6 +4,7 @@ import com.datagami.rentaxis.api.exception.AccessDeniedException;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.api.exception.SlotConflictException;
+import com.datagami.rentaxis.core.service.BulkAttachValidationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -71,6 +72,24 @@ public class GlobalExceptionHandler {
                 "error", true,
                 "message", ex.getMessage() == null ? "Invalid request" : ex.getMessage(),
                 "status", 400
+        ));
+    }
+
+    @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
+    public ResponseEntity<Map<String, Object>> handleSpringAccessDenied(org.springframework.security.access.AccessDeniedException ex) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
+                "error", true,
+                "message", "Access denied",
+                "status", 403
+        ));
+    }
+
+    @ExceptionHandler(BulkAttachValidationException.class)
+    public ResponseEntity<Map<String, Object>> handleBulkAttach(BulkAttachValidationException ex) {
+        HttpStatus status = ex.isConflict() ? HttpStatus.CONFLICT : HttpStatus.BAD_REQUEST;
+        return ResponseEntity.status(status).body(Map.of(
+                "error", "validation_failed",
+                "rows", ex.getRows()
         ));
     }
 
