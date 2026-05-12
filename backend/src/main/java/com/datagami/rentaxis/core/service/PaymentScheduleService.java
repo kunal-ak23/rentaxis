@@ -276,18 +276,45 @@ public class PaymentScheduleService {
             throw new BusinessRuleViolationException("Can only collect payments in PENDING status");
         }
 
-        payment.setStatus(PaymentStatus.COLLECTED);
-        payment.setChequeNumber(dto.getChequeNumber());
-        payment.setBankName(dto.getBankName());
-        payment.setPayerName(dto.getPayerName());
-        payment.setChequeDate(dto.getChequeDate());
-        payment.setChequeImageUrl(dto.getChequeImageUrl());
-        payment.setChequeImageBlobPath(dto.getChequeImageBlobPath());
-        payment.setChequeImageUploadedAt(resolveChequeImageUploadedAt(dto));
-        payment.setStatusChangedAt(Instant.now());
-        PaymentSchedule saved = paymentScheduleRepository.save(payment);
+        PaymentSchedule saved = applyChequeReceived(
+                payment,
+                dto.getChequeNumber(), dto.getBankName(), dto.getPayerName(), dto.getChequeDate(),
+                dto.getChequeImageUrl(), dto.getChequeImageBlobPath(), resolveChequeImageUploadedAt(dto),
+                Instant.now(), TenantContextHolder.getTenantId());
+        return mapToDTO(saved);
+    }
 
-        // Structured email event: CHEQUE_RECEIVED
+    /**
+     * Mark a single PENDING schedule as COLLECTED with the supplied cheque
+     * fields, persist it, publish the {@code CHEQUE_RECEIVED} EmailEvent, and
+     * fire the renter's in-app notification. Shared by the single-cheque
+     * {@link #collectPayment} and the batch {@link #bulkAttachCheques}.
+     *
+     * The in-app notification uses {@code REQUIRES_NEW} so a downstream
+     * notification-row write failure cannot poison the caller's outer
+     * transaction (the try/catch around it would otherwise swallow the
+     * exception while Hibernate kept the outer tx rollback-only, surfacing
+     * as a confusing {@code TransactionSystemException} at commit time).
+     *
+     * Caller must have already validated that the schedule is in
+     * {@code PENDING} state — this helper does not re-check.
+     */
+    private PaymentSchedule applyChequeReceived(
+            PaymentSchedule ps,
+            String chequeNumber, String bankName, String payerName, LocalDate chequeDate,
+            String imageUrl, String imageBlobPath, OffsetDateTime imageUploadedAt,
+            Instant when, UUID tenantId) {
+        ps.setStatus(PaymentStatus.COLLECTED);
+        ps.setChequeNumber(chequeNumber);
+        ps.setBankName(bankName);
+        ps.setPayerName(payerName);
+        ps.setChequeDate(chequeDate);
+        ps.setChequeImageUrl(imageUrl);
+        ps.setChequeImageBlobPath(imageBlobPath);
+        ps.setChequeImageUploadedAt(imageUploadedAt);
+        ps.setStatusChangedAt(when);
+        PaymentSchedule saved = paymentScheduleRepository.save(ps);
+
         events.publishEvent(new EmailEvent(this,
                 EmailEventType.CHEQUE_RECEIVED,
                 saved.getTenantId(),
@@ -295,7 +322,7 @@ public class PaymentScheduleService {
                         saved.getId(),
                         saved.getLease().getId(),
                         saved.getLease().getRenter().getUserId(),
-                        null,  // propertyManagerUserId — not stored on Lease; RecipientResolver falls back to tenant admins
+                        null,  // propertyManagerUserId — RecipientResolver falls back to tenant admins
                         saved.getInstallmentNumber(),
                         saved.getChequeNumber(),
                         saved.getBankName(),
@@ -306,20 +333,18 @@ public class PaymentScheduleService {
                 ),
                 "CHEQUE_RECEIVED:" + saved.getId()));
 
-        // Notify renter in-app: cheque collected (CHEQUE_RECEIVED EmailEvent covers email)
         try {
-            UUID renterUserId = payment.getLease().getRenter().getUserId();
+            UUID renterUserId = saved.getLease().getRenter().getUserId();
             if (renterUserId != null) {
-                notificationService.notifyInApp(TenantContextHolder.getTenantId(), renterUserId,
+                notificationService.notifyInAppInNewTx(tenantId, renterUserId,
                         "PAYMENT_COLLECTED", "Cheque Collected",
-                        "Installment #" + payment.getInstallmentNumber() + " cheque has been collected and is being processed.",
-                        "PAYMENT", payment.getId());
+                        "Installment #" + saved.getInstallmentNumber() + " cheque has been collected and is being processed.",
+                        "PAYMENT", saved.getId());
             }
         } catch (Exception e) {
-            log.warn("Failed to send cheque collected notification for payment {}: {}", payment.getId(), e.getMessage());
+            log.warn("Failed to send cheque collected notification for payment {}: {}", saved.getId(), e.getMessage());
         }
-
-        return mapToDTO(saved);
+        return saved;
     }
 
     @Transactional
@@ -401,65 +426,20 @@ public class PaymentScheduleService {
             throw new BulkAttachValidationException(chequeConflicts, false);
         }
 
-        // Apply.
+        // Apply each row via the shared helper — sets fields, saves,
+        // publishes the CHEQUE_RECEIVED event, and notifies the renter in a
+        // nested REQUIRES_NEW transaction.
         Instant now = Instant.now();
+        UUID tenantId = TenantContextHolder.getTenantId();
         List<PaymentSchedule> updated = new ArrayList<>(items.size());
         for (BulkAttachChequeItem it : items) {
             PaymentSchedule ps = byId.get(it.getScheduleId());
-            ps.setStatus(PaymentStatus.COLLECTED);
-            ps.setChequeNumber(it.getChequeNumber());
-            ps.setBankName(it.getBankName());
-            ps.setPayerName(it.getPayerName());
-            ps.setChequeDate(it.getChequeDate());
-            ps.setChequeImageUrl(it.getImageUrl());
-            ps.setChequeImageBlobPath(it.getImageBlobPath());
-            ps.setChequeImageUploadedAt(it.getImageUploadedAt());
-            ps.setStatusChangedAt(now);
-            updated.add(paymentScheduleRepository.save(ps));
+            updated.add(applyChequeReceived(
+                    ps,
+                    it.getChequeNumber(), it.getBankName(), it.getPayerName(), it.getChequeDate(),
+                    it.getImageUrl(), it.getImageBlobPath(), it.getImageUploadedAt(),
+                    now, tenantId));
         }
-
-        // Fire one CHEQUE_RECEIVED event per row, mirroring single-cheque collectPayment.
-        for (PaymentSchedule saved : updated) {
-            events.publishEvent(new EmailEvent(this,
-                    EmailEventType.CHEQUE_RECEIVED,
-                    saved.getTenantId(),
-                    new ChequePayload(
-                            saved.getId(),
-                            saved.getLease().getId(),
-                            saved.getLease().getRenter().getUserId(),
-                            null,
-                            saved.getInstallmentNumber(),
-                            saved.getChequeNumber(),
-                            saved.getBankName(),
-                            saved.getAmount() != null ? saved.getAmount().toPlainString() + " AED" : null,
-                            saved.getDueDate() != null ? saved.getDueDate().toString() : null,
-                            null,
-                            null
-                    ),
-                    "CHEQUE_RECEIVED:" + saved.getId()));
-        }
-
-        // In-app notification per row. Uses REQUIRES_NEW so a single failed
-        // notification row write can't poison the bulk-attach outer
-        // transaction — without the new tx, the try/catch swallows the
-        // exception but Hibernate has already marked the outer tx
-        // rollback-only, surfacing as a confusing TransactionSystemException
-        // at commit time.
-        UUID tenantId = TenantContextHolder.getTenantId();
-        for (PaymentSchedule saved : updated) {
-            try {
-                UUID renterUserId = saved.getLease().getRenter().getUserId();
-                if (renterUserId != null) {
-                    notificationService.notifyInAppInNewTx(tenantId, renterUserId,
-                            "PAYMENT_COLLECTED", "Cheque Collected",
-                            "Installment #" + saved.getInstallmentNumber() + " cheque has been collected and is being processed.",
-                            "PAYMENT", saved.getId());
-                }
-            } catch (Exception e) {
-                log.warn("Failed to send cheque collected notification for payment {}: {}", saved.getId(), e.getMessage());
-            }
-        }
-
         return updated.stream().map(this::mapToDTO).toList();
     }
 
