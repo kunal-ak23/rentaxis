@@ -173,25 +173,28 @@ export default function BulkChequeUploadFlow({ leaseId, schedules, onSuccess, on
   const counts = useMemo(() => {
     let needsDate = 0;
     let noSchedule = 0;
+    let needsBank = 0;
     let duplicateNumber = 0;
     const numberSeen = new Map<string, number>();
     for (const r of rows) {
       if (!r.chequeDate) needsDate++;
       if (!r.scheduleId) noSchedule++;
+      if (!r.bankName.trim()) needsBank++;
       if (r.chequeNumber.trim()) numberSeen.set(r.chequeNumber.trim(), (numberSeen.get(r.chequeNumber.trim()) ?? 0) + 1);
     }
     for (const v of numberSeen.values()) if (v > 1) duplicateNumber += v;
-    const ready = rows.length - needsDate - noSchedule - duplicateNumber;
-    return { needsDate, noSchedule, duplicateNumber, ready };
+    const ready = rows.length - needsDate - noSchedule - needsBank - duplicateNumber;
+    return { needsDate, noSchedule, needsBank, duplicateNumber, ready };
   }, [rows]);
 
   const canApprove =
     rows.length > 0 &&
     counts.needsDate === 0 &&
     counts.noSchedule === 0 &&
+    counts.needsBank === 0 &&
     counts.duplicateNumber === 0 &&
     rows.every(r => {
-      if (!r.chequeNumber.trim() || !r.bankName.trim()) return false;
+      if (!r.chequeNumber.trim()) return false;
       const item = extract.items.find(it => it.id === r.itemId);
       return item?.response?.image != null;
     });
@@ -369,7 +372,11 @@ export default function BulkChequeUploadFlow({ leaseId, schedules, onSuccess, on
                           <input
                             value={row.bankName}
                             onChange={e => updateRow(row.itemId, { bankName: e.target.value })}
-                            className="w-32 rounded border border-border px-1 py-0.5"
+                            aria-invalid={!row.bankName.trim()}
+                            className={
+                              "w-32 rounded border px-1 py-0.5 " +
+                              (row.bankName.trim() ? "border-border" : "border-red-500")
+                            }
                           />
                         </td>
                         <td className="pr-2">
@@ -438,6 +445,7 @@ export default function BulkChequeUploadFlow({ leaseId, schedules, onSuccess, on
                     total: rows.length,
                     needsDate: counts.needsDate,
                     noSchedule: counts.noSchedule,
+                    needsBank: counts.needsBank,
                     duplicate: counts.duplicateNumber,
                   })}
                 </p>

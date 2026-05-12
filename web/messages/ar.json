@@ -451,7 +451,7 @@
     "pickInstallment": "اختر القسط",
     "pinRow": "تثبيت / إلغاء تثبيت التعيين",
     "removeRow": "إزالة هذا الصف",
-    "statusCounts": "{total} مختار · {needsDate} يحتاج تاريخ · {noSchedule} بدون قسط · {duplicate} رقم شيك مكرر",
+    "statusCounts": "{total} مختار · {needsDate} يحتاج تاريخ · {noSchedule} بدون قسط · {needsBank} يحتاج بنك · {duplicate} رقم شيك مكرر",
     "approveAll": "اعتماد الكل ({ready}/{total})",
     "rowConflictError": "تعذر حفظ بعض الصفوف (تعارض). أعد التحميل وحاول مجددًا.",
     "networkError": "خطأ في الشبكة. يرجى المحاولة مرة أخرى.",
