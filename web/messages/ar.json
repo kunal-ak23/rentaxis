@@ -940,5 +940,34 @@
     "paidAt": "تاريخ الدفع",
     "method": "الطريقة",
     "reference": "المرجع"
+  },
+  "interactions": {
+    "panelTitle": "التفاعلات",
+    "logInteraction": "تسجيل تفاعل",
+    "noInteractions": "لا توجد تفاعلات بعد",
+    "loading": "جاري التحميل...",
+    "type": {
+      "CALL": "مكالمة",
+      "SMS": "رسالة نصية",
+      "EMAIL": "بريد إلكتروني",
+      "WHATSAPP": "واتساب",
+      "MEETING": "اجتماع",
+      "SYSTEM_INTENT": "رد المستأجر",
+      "NOTE": "ملاحظة"
+    },
+    "direction": {
+      "INBOUND": "وارد",
+      "OUTBOUND": "صادر",
+      "INTERNAL": "داخلي"
+    },
+    "outcome": {
+      "POSITIVE": "إيجابي",
+      "NEUTRAL": "محايد",
+      "NEGATIVE": "سلبي",
+      "NO_RESPONSE": "لا استجابة"
+    },
+    "followUpDueBadge": "{count} متابعات مستحقة",
+    "cannotEditSystemEntry": "لا يمكن تعديل الإدخالات التلقائية",
+    "confirmDelete": "هل تريد حذف هذا التفاعل؟"
   }
 }

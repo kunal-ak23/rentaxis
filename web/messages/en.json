@@ -940,5 +940,34 @@
     "paidAt": "Paid at",
     "method": "Method",
     "reference": "Reference"
+  },
+  "interactions": {
+    "panelTitle": "Interactions",
+    "logInteraction": "Log interaction",
+    "noInteractions": "No interactions yet",
+    "loading": "Loading...",
+    "type": {
+      "CALL": "Call",
+      "SMS": "SMS",
+      "EMAIL": "Email",
+      "WHATSAPP": "WhatsApp",
+      "MEETING": "Meeting",
+      "SYSTEM_INTENT": "Renter response",
+      "NOTE": "Note"
+    },
+    "direction": {
+      "INBOUND": "Inbound",
+      "OUTBOUND": "Outbound",
+      "INTERNAL": "Internal"
+    },
+    "outcome": {
+      "POSITIVE": "Positive",
+      "NEUTRAL": "Neutral",
+      "NEGATIVE": "Negative",
+      "NO_RESPONSE": "No response"
+    },
+    "followUpDueBadge": "{count} follow-ups due",
+    "cannotEditSystemEntry": "System entries cannot be edited",
+    "confirmDelete": "Delete this interaction?"
   }
 }
