@@ -21,4 +21,8 @@ public class RenterPaymentScheduleDTO {
     private int daysOverdue;
     private int gracePeriodDays;
     private String paymentMethod;
+    /** ISO instant when the schedule last changed status. Null until it leaves PENDING. */
+    private String statusChangedAt;
+    /** Name of {@link com.datagami.rentaxis.domain.entity.enums.ChequeFailureReason} for BOUNCED rows. */
+    private String failureReason;
 }

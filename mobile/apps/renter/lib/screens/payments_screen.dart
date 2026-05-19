@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
@@ -24,15 +23,16 @@ final _myLeasesProvider = FutureProvider.autoDispose<List<dynamic>>((ref) {
 ///
 /// Layout:
 ///   1. Header — tenancy year eyebrow + serif "Your cheques" title
-///   2. Progress card — sand-tinted "Total paid this lease" with
+///   2. Next-cheque hero — sand/red-tinted card highlighting the
+///      most-imminent unpaid cheque (OVERDUE first, else next PENDING).
+///   3. Progress card — sand-tinted "Total paid this lease" with
 ///      mono current/total and a gold gradient progress bar
-///   3. List — every cheque shown with a coloured accent bar
+///   4. List — every cheque shown with a coloured accent bar
 ///      (green = cleared, gold = pending), serif amount, due date,
-///      cheque number, and a status pill on the right.
-///
-/// Tap a PENDING row → opens the Pay Rent flow with that payment
-/// pre-selected (existing route /payments/pay; payment-screen
-/// handles which one to focus).
+///      cheque number, status pill, and a status-specific subtitle
+///      (deposited/bounced/overdue). Cards are non-interactive — the
+///      renter app is informational; cheque submission is handled
+///      offline.
 class PaymentsScreen extends ConsumerWidget {
   const PaymentsScreen({super.key});
 
@@ -58,6 +58,8 @@ class PaymentsScreen extends ConsumerWidget {
             physics: const AlwaysScrollableScrollPhysics(),
             children: [
               _Header(leasesAsync: leasesAsync),
+              const SizedBox(height: 14),
+              _NextChequeHero(paymentsAsync: paymentsAsync),
               const SizedBox(height: 16),
               _ProgressCard(paymentsAsync: paymentsAsync),
               const SizedBox(height: 18),
@@ -313,24 +315,13 @@ class _ChequeCard extends StatelessWidget {
 
     final accent = _accentFor(status);
 
-    return InkWell(
-      onTap: () {
-        // PENDING / OVERDUE → open Pay Rent for this payment with the
-        // tapped paymentId pre-selected. Other statuses are read-only.
-        if (status == 'PENDING' || status == 'OVERDUE') {
-          final id = payment['id']?.toString();
-          context.push(
-              id != null ? '/payments/pay?paymentId=$id' : '/payments/pay');
-        }
-      },
-      borderRadius: BorderRadius.circular(14),
-      child: Container(
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          border: Border.all(color: AppColors.border),
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: IntrinsicHeight(
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        border: Border.all(color: AppColors.border),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: IntrinsicHeight(
           child: Row(
             children: [
               Container(
@@ -387,6 +378,21 @@ class _ChequeCard extends StatelessWidget {
                                 color: AppColors.textMuted,
                               ),
                             ),
+                            Builder(builder: (_) {
+                              final sub = _subtitleFor(status, payment, dueLabel);
+                              if (sub.isEmpty) return const SizedBox.shrink();
+                              return Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: Text(
+                                  sub,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 11,
+                                    color: AppColors.textMuted,
+                                    fontStyle: FontStyle.italic,
+                                  ),
+                                ),
+                              );
+                            }),
                           ],
                         ),
                       ),
@@ -398,7 +404,6 @@ class _ChequeCard extends StatelessWidget {
             ],
           ),
         ),
-      ),
     );
   }
 
@@ -423,6 +428,26 @@ class _ChequeCard extends StatelessWidget {
     final dt = DateTime.tryParse(iso);
     if (dt == null) return '';
     return DateFormat('d MMM yyyy').format(dt);
+  }
+
+  /// Status-specific subtitle line. Empty string → don't render.
+  String _subtitleFor(String status, Map<String, dynamic> payment, String dueLabel) {
+    final raw = payment['statusChangedAt']?.toString();
+    final formatted = _formatDate(raw);
+    final reason = payment['failureReason']?.toString();
+    switch (status) {
+      case 'COLLECTED':
+        return formatted.isEmpty ? 'Collected' : 'Collected on $formatted';
+      case 'DEPOSITED':
+        return formatted.isEmpty ? 'Deposited' : 'Deposited on $formatted';
+      case 'BOUNCED':
+        final head = formatted.isEmpty ? 'Bounced' : 'Bounced on $formatted';
+        return reason == null || reason.isEmpty ? head : '$head · $reason';
+      case 'OVERDUE':
+        return dueLabel.isEmpty ? 'Overdue' : 'Overdue since $dueLabel';
+      default:
+        return '';
+    }
   }
 }
 
@@ -500,6 +525,157 @@ class _StatusPill extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+class _NextChequeHero extends StatelessWidget {
+  final AsyncValue<List<dynamic>> paymentsAsync;
+  const _NextChequeHero({required this.paymentsAsync});
+
+  @override
+  Widget build(BuildContext context) {
+    return paymentsAsync.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, _) => const SizedBox.shrink(),
+      data: (payments) {
+        final next = _pickNext(payments);
+        if (next == null) {
+          return _buildEmpty(context);
+        }
+        return _buildHero(context, next);
+      },
+    );
+  }
+
+  Map<String, dynamic>? _pickNext(List<dynamic> payments) {
+    final candidates = payments
+        .whereType<Map<String, dynamic>>()
+        .where((p) {
+          final s = p['status']?.toString();
+          return s == 'PENDING' || s == 'OVERDUE';
+        })
+        .toList();
+    if (candidates.isEmpty) return null;
+
+    int statusRank(String? s) => s == 'OVERDUE' ? 0 : 1;
+    candidates.sort((a, b) {
+      final ra = statusRank(a['status']?.toString());
+      final rb = statusRank(b['status']?.toString());
+      if (ra != rb) return ra.compareTo(rb);
+      final ad = DateTime.tryParse(a['dueDate']?.toString() ?? '') ?? DateTime(2100);
+      final bd = DateTime.tryParse(b['dueDate']?.toString() ?? '') ?? DateTime(2100);
+      final c = ad.compareTo(bd);
+      if (c != 0) return c;
+      final ai = (a['installmentNumber'] ?? 0) as num;
+      final bi = (b['installmentNumber'] ?? 0) as num;
+      return ai.compareTo(bi);
+    });
+    return candidates.first;
+  }
+
+  Widget _buildEmpty(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        border: Border.all(color: AppColors.border),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.check_circle_outline, color: AppColors.success),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'All caught up — no cheques due right now.',
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                color: AppColors.textPrimary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHero(BuildContext context, Map<String, dynamic> p) {
+    final amount = (p['amount'] ?? 0) as num;
+    final dueRaw = p['dueDate']?.toString();
+    final dueLabel = _formatDate(dueRaw);
+    final cheque = p['chequeNumber']?.toString();
+    final property = p['propertyName']?.toString();
+    final unit = p['unitIdentifier']?.toString();
+    final installment = p['installmentNumber'];
+    final isOverdue = p['status']?.toString() == 'OVERDUE';
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: isOverdue
+              ? [AppColors.dangerLight, AppColors.surface]
+              : [AppColors.accentLight, AppColors.surface],
+        ),
+        border: Border.all(color: AppColors.border),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            isOverdue ? 'NEXT CHEQUE · OVERDUE' : 'NEXT CHEQUE DUE',
+            style: GoogleFonts.inter(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.7,
+              color: isOverdue ? AppColors.danger : AppColors.textMuted,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'AED ${NumberFormat('#,##0').format(amount)}',
+            style: GoogleFonts.sourceSerif4(
+              fontSize: 28,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+              letterSpacing: -0.4,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            [
+              if (dueLabel.isNotEmpty) 'Due $dueLabel',
+              if (installment != null) 'Cheque $installment',
+              if (cheque != null && cheque.isNotEmpty) cheque,
+            ].join(' · '),
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          if ((property != null && property.isNotEmpty) || (unit != null && unit.isNotEmpty)) ...[
+            const SizedBox(height: 2),
+            Text(
+              [property, unit].whereType<String>().where((s) => s.isNotEmpty).join(' — '),
+              style: GoogleFonts.inter(
+                fontSize: 11,
+                color: AppColors.textMuted,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  String _formatDate(String? iso) {
+    if (iso == null || iso.isEmpty) return '';
+    final dt = DateTime.tryParse(iso);
+    if (dt == null) return '';
+    return DateFormat('d MMM yyyy').format(dt);
   }
 }
 
