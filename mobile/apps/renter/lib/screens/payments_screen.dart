@@ -375,6 +375,21 @@ class _ChequeCard extends StatelessWidget {
                                 color: AppColors.textMuted,
                               ),
                             ),
+                            Builder(builder: (_) {
+                              final sub = _subtitleFor(status, payment, dueLabel);
+                              if (sub.isEmpty) return const SizedBox.shrink();
+                              return Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: Text(
+                                  sub,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 11,
+                                    color: AppColors.textMuted,
+                                    fontStyle: FontStyle.italic,
+                                  ),
+                                ),
+                              );
+                            }),
                           ],
                         ),
                       ),
@@ -410,6 +425,26 @@ class _ChequeCard extends StatelessWidget {
     final dt = DateTime.tryParse(iso);
     if (dt == null) return '';
     return DateFormat('d MMM yyyy').format(dt);
+  }
+
+  /// Status-specific subtitle line. Empty string → don't render.
+  String _subtitleFor(String status, Map<String, dynamic> payment, String dueLabel) {
+    final raw = payment['statusChangedAt']?.toString();
+    final formatted = _formatDate(raw);
+    final reason = payment['failureReason']?.toString();
+    switch (status) {
+      case 'COLLECTED':
+        return formatted.isEmpty ? 'Collected' : 'Collected on $formatted';
+      case 'DEPOSITED':
+        return formatted.isEmpty ? 'Deposited' : 'Deposited on $formatted';
+      case 'BOUNCED':
+        final head = formatted.isEmpty ? 'Bounced' : 'Bounced on $formatted';
+        return reason == null || reason.isEmpty ? head : '$head · $reason';
+      case 'OVERDUE':
+        return dueLabel.isEmpty ? 'Overdue' : 'Overdue since $dueLabel';
+      default:
+        return '';
+    }
   }
 }
 
