@@ -124,16 +124,49 @@ public class LandlordOrgService {
         // Preserve cross-tenant users: anyone whose users.tenant_id is this
         // tenant AND who has a user_tenant_memberships row pointing to a
         // DIFFERENT tenant. The cascade would otherwise hard-delete their
-        // `users` row and silently revoke their other-tenant access. NULL-ing
-        // tenant_id keeps the row; user_tenant_memberships rows for the
-        // deleted tenant are still cleaned by the regular cascade pass.
+        // `users` row and silently revoke their other-tenant access.
+        //
+        // We REPARENT them to one of their other membership tenants rather
+        // than NULL-ing tenant_id, for two reasons:
+        //   (a) tenant_id=NULL is reserved for SUPER_ADMIN — a TENANT_USER
+        //       with NULL tenant_id would violate the (role, tenant_id)
+        //       invariant that downstream code relies on (TenantAspect,
+        //       getUserTenantIds, etc.).
+        //   (b) Migration 59 added `ux_users_email_super_admin` (UNIQUE on
+        //       email WHERE tenant_id IS NULL). If two cross-tenant users
+        //       shared an email and we NULL'd both, the second deletion
+        //       would fail on the partial-unique conflict.
+        //
+        // Reparent target: the earliest-joined other-tenant membership where
+        // moving this user wouldn't violate `ux_users_tenant_email` (i.e.
+        // no other user in that tenant already owns this email). Users with
+        // no safe target are left untouched — they'll be hard-deleted by
+        // the cascade. That's a documented edge-case loss: two distinct
+        // users sharing an email AND sharing exactly one cross-tenant
+        // membership, where the first to be cleaned wins the reparent.
         int preserved = jdbcTemplate.update(
-                "UPDATE users SET tenant_id = NULL " +
-                        "WHERE tenant_id = ? AND id IN (" +
-                        "  SELECT user_id FROM user_tenant_memberships WHERE tenant_id <> ?" +
-                        ")", tenantId, tenantId);
+                "UPDATE users u SET tenant_id = (" +
+                        "  SELECT m.tenant_id FROM user_tenant_memberships m " +
+                        "  WHERE m.user_id = u.id AND m.tenant_id <> ? " +
+                        "    AND NOT EXISTS (" +
+                        "      SELECT 1 FROM users u2 " +
+                        "      WHERE u2.tenant_id = m.tenant_id " +
+                        "        AND u2.email = u.email AND u2.id <> u.id" +
+                        "    ) " +
+                        "  ORDER BY m.created_at ASC, m.tenant_id ASC LIMIT 1" +
+                        ") " +
+                        "WHERE u.tenant_id = ? AND EXISTS (" +
+                        "  SELECT 1 FROM user_tenant_memberships m " +
+                        "  WHERE m.user_id = u.id AND m.tenant_id <> ? " +
+                        "    AND NOT EXISTS (" +
+                        "      SELECT 1 FROM users u2 " +
+                        "      WHERE u2.tenant_id = m.tenant_id " +
+                        "        AND u2.email = u.email AND u2.id <> u.id" +
+                        "    )" +
+                        ")",
+                tenantId, tenantId, tenantId);
         if (preserved > 0) {
-            log.info("deleteTenant({}): detached {} cross-tenant users from this tenant", tenantId, preserved);
+            log.info("deleteTenant({}): reparented {} cross-tenant users to their other tenants", tenantId, preserved);
         }
 
         jdbcTemplate.execute((java.sql.Connection conn) -> {

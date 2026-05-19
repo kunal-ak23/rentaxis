@@ -106,9 +106,9 @@ class LandlordOrgDeleteTest {
     }
 
     @Test
-    void deleteTenant_preservesUsersWithCrossTenantMemberships() {
-        // User belongs primarily to A (users.tenant_id = A) AND has a
-        // membership row in B. Deleting A must NOT hard-delete this user.
+    void deleteTenant_reparentsUsersWithCrossTenantMembershipsToOtherTenant() {
+        // User primarily in A, also member of A (typical) AND B. Deleting A
+        // must reparent them to B, not hard-delete and not NULL their tenant_id.
         LandlordOrg a = service.provisionTenant("CrossA-" + UUID.randomUUID());
         LandlordOrg b = service.provisionTenant("CrossB-" + UUID.randomUUID());
 
@@ -121,23 +121,96 @@ class LandlordOrgDeleteTest {
         crossUser.setTenantId(a.getId());
         crossUser = userRepo.save(crossUser);
 
-        // Manual membership row pointing to B. The (user_id, tenant_id) pair
-        // is the PK; created_at defaults to now().
-        jdbc.update(
-                "INSERT INTO user_tenant_memberships (user_id, tenant_id) VALUES (?, ?)",
+        // Real-world setup: membership rows in BOTH tenants.
+        jdbc.update("INSERT INTO user_tenant_memberships (user_id, tenant_id) VALUES (?, ?)",
+                crossUser.getId(), a.getId());
+        jdbc.update("INSERT INTO user_tenant_memberships (user_id, tenant_id) VALUES (?, ?)",
                 crossUser.getId(), b.getId());
 
-        // Delete tenant A.
         service.deleteTenant(a.getId(), a.getName());
 
-        // User still exists; tenant_id detached.
+        // User survives, reparented to B.
         User survived = userRepo.findById(crossUser.getId()).orElseThrow();
-        assertThat(survived.getTenantId()).isNull();
+        assertThat(survived.getTenantId()).isEqualTo(b.getId());
 
-        // Their membership to B remains.
-        Integer memberships = jdbc.queryForObject(
+        // Membership in A is gone (cascade); B remains.
+        Integer membershipsA = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM user_tenant_memberships WHERE user_id = ? AND tenant_id = ?",
+                Integer.class, crossUser.getId(), a.getId());
+        assertThat(membershipsA).isZero();
+        Integer membershipsB = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM user_tenant_memberships WHERE user_id = ? AND tenant_id = ?",
                 Integer.class, crossUser.getId(), b.getId());
-        assertThat(memberships).isEqualTo(1);
+        assertThat(membershipsB).isEqualTo(1);
+    }
+
+    @Test
+    void deleteTenant_hardDeletesUsersWithoutCrossTenantMemberships() {
+        // Negative-case companion: a user with ONLY a membership in the
+        // tenant being deleted should be hard-deleted by the cascade. This
+        // guards against an incorrect "preserve everyone" regression.
+        LandlordOrg a = service.provisionTenant("SoloA-" + UUID.randomUUID());
+
+        User soloUser = new User();
+        soloUser.setEmail("solo-" + UUID.randomUUID() + "@test");
+        soloUser.setName("SoloUser");
+        soloUser.setRole(UserRole.TENANT_USER);
+        soloUser.setStatus(UserStatus.ACTIVE);
+        soloUser.setPasswordHash("x");
+        soloUser.setTenantId(a.getId());
+        soloUser = userRepo.save(soloUser);
+
+        jdbc.update("INSERT INTO user_tenant_memberships (user_id, tenant_id) VALUES (?, ?)",
+                soloUser.getId(), a.getId());
+
+        service.deleteTenant(a.getId(), a.getName());
+
+        assertThat(userRepo.findById(soloUser.getId())).isEmpty();
+    }
+
+    @Test
+    void deleteTenant_doesNotCollideOnEmailWhenTwoCrossTenantUsersShareEmail() {
+        // Regression for the partial-unique collision on ux_users_email_super_admin
+        // and (post-fix) on tenanted index when reparenting. Two distinct
+        // users in tenants A and B share an email; both have memberships in
+        // tenant C. Deleting A then deleting B must NOT collide.
+        LandlordOrg a = service.provisionTenant("CollA-" + UUID.randomUUID());
+        LandlordOrg b = service.provisionTenant("CollB-" + UUID.randomUUID());
+        LandlordOrg c = service.provisionTenant("CollC-" + UUID.randomUUID());
+
+        String sharedEmail = "shared-" + UUID.randomUUID() + "@test";
+
+        User uA = new User();
+        uA.setEmail(sharedEmail); uA.setName("U-A"); uA.setRole(UserRole.TENANT_USER);
+        uA.setStatus(UserStatus.ACTIVE); uA.setPasswordHash("x"); uA.setTenantId(a.getId());
+        uA = userRepo.save(uA);
+
+        User uB = new User();
+        uB.setEmail(sharedEmail); uB.setName("U-B"); uB.setRole(UserRole.TENANT_USER);
+        uB.setStatus(UserStatus.ACTIVE); uB.setPasswordHash("x"); uB.setTenantId(b.getId());
+        uB = userRepo.save(uB);
+
+        jdbc.update("INSERT INTO user_tenant_memberships (user_id, tenant_id) VALUES (?, ?)", uA.getId(), c.getId());
+        jdbc.update("INSERT INTO user_tenant_memberships (user_id, tenant_id) VALUES (?, ?)", uB.getId(), c.getId());
+
+        UUID uAid = uA.getId();
+        UUID uBid = uB.getId();
+
+        // Delete A — uA's safe-reparent check passes (no one in C has the
+        // shared email yet), so uA moves to C.
+        service.deleteTenant(a.getId(), a.getName());
+        assertThat(userRepo.findById(uAid)).isPresent();
+        assertThat(userRepo.findById(uAid).get().getTenantId()).isEqualTo(c.getId());
+
+        // Delete B — uB's safe-reparent check fails (uA now occupies C with
+        // the same email). The collision-skip leaves uB with tenant_id=B,
+        // which gets hard-deleted by the cascade. uB is GONE.
+        service.deleteTenant(b.getId(), b.getName());
+        assertThat(userRepo.findById(uBid))
+                .as("collision-losing user must be hard-deleted, not violate the index")
+                .isEmpty();
+
+        // uA still safely in C.
+        assertThat(userRepo.findById(uAid)).isPresent();
     }
 }

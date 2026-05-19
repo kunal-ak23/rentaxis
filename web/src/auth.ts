@@ -87,6 +87,14 @@ export const authOptions: NextAuthOptions = {
         },
     },
     pages: {
+        // IMPORTANT: callers must invoke signIn("credentials", { ..., redirect: false }).
+        // The credentials provider's authorize() throws `LOGIN_AMBIGUOUS:<json>`
+        // for the multi-tenant disambiguation case. If `redirect: true` (the
+        // NextAuth default) reaches this page, that error string — including
+        // tenant IDs and names — is encoded into `?error=...` in the URL and
+        // ends up in browser history, referer headers, and proxy/CDN logs.
+        // The login page at this route uses `redirect: false`; new callers
+        // must too.
         signIn: "/auth/login",
     },
     session: {
