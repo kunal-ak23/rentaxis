@@ -273,17 +273,9 @@ export default function RenterPaymentsPage() {
                                     </div>
                                 )}
 
-                                {(payment.status === "DEPOSITED" || payment.status === "COLLECTED" || payment.status === "BOUNCED" || payment.status === "OVERDUE") && (
+                                {payment.status === "OVERDUE" && (
                                     <p className="text-[11px] italic text-muted mt-1">
-                                        {payment.status === "DEPOSITED" && t("depositedOn", { date: formatDate(payment.statusChangedAt, locale) || "—" })}
-                                        {payment.status === "COLLECTED" && t("collectedOn", { date: formatDate(payment.statusChangedAt, locale) || "—" })}
-                                        {payment.status === "BOUNCED" && (
-                                            <>
-                                                {t("bouncedOn", { date: formatDate(payment.statusChangedAt, locale) || "—" })}
-                                                {payment.failureReason ? ` · ${payment.failureReason}` : ""}
-                                            </>
-                                        )}
-                                        {payment.status === "OVERDUE" && t("overdueSince", { date: formatDate(payment.dueDate, locale) || "—" })}
+                                        {t("overdueSince", { date: formatDate(payment.dueDate, locale) || "—" })}
                                     </p>
                                 )}
                             </div>
@@ -337,27 +329,29 @@ export default function RenterPaymentsPage() {
                                                 {new Date(payment.dueDate).toLocaleDateString()}
                                             </p>
                                         </div>
-                                        <button
-                                            onClick={async (e) => {
-                                                e.stopPropagation();
-                                                const res = await fetch(`/api/proxy/v1/payments/${payment.id}/receipt`);
-                                                if (res.ok) {
-                                                    const blob = await res.blob();
-                                                    const url = URL.createObjectURL(blob);
-                                                    const a = document.createElement('a');
-                                                    a.href = url;
-                                                    a.download = `receipt-${payment.installmentNumber}.pdf`;
-                                                    document.body.appendChild(a);
-                                                    a.click();
-                                                    document.body.removeChild(a);
-                                                    URL.revokeObjectURL(url);
-                                                }
-                                            }}
-                                            className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 text-primary rounded-lg text-[10px] font-semibold hover:bg-primary/20 transition-colors cursor-pointer"
-                                        >
-                                            <Download size={12} />
-                                            Receipt
-                                        </button>
+                                        {payment.status === "CLEARED" && (
+                                            <button
+                                                onClick={async (e) => {
+                                                    e.stopPropagation();
+                                                    const res = await fetch(`/api/proxy/v1/payments/${payment.id}/receipt`);
+                                                    if (res.ok) {
+                                                        const blob = await res.blob();
+                                                        const url = URL.createObjectURL(blob);
+                                                        const a = document.createElement('a');
+                                                        a.href = url;
+                                                        a.download = `receipt-${payment.installmentNumber}.pdf`;
+                                                        document.body.appendChild(a);
+                                                        a.click();
+                                                        document.body.removeChild(a);
+                                                        URL.revokeObjectURL(url);
+                                                    }
+                                                }}
+                                                className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 text-primary rounded-lg text-[10px] font-semibold hover:bg-primary/20 transition-colors cursor-pointer"
+                                            >
+                                                <Download size={12} />
+                                                Receipt
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
                                 {(payment.status === "DEPOSITED" || payment.status === "COLLECTED" || payment.status === "BOUNCED") && (
