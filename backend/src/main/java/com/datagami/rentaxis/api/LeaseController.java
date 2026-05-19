@@ -6,9 +6,13 @@ import com.datagami.rentaxis.api.dto.BulkAttachChequesResponse;
 import com.datagami.rentaxis.api.dto.ExtendLeaseDTO;
 import com.datagami.rentaxis.api.dto.SaveSettlementDTO;
 import com.datagami.rentaxis.core.service.ContractGenerationService;
+import com.datagami.rentaxis.core.service.LeaseInteractionService;
 import com.datagami.rentaxis.core.service.LeaseService;
 import com.datagami.rentaxis.core.service.PaymentScheduleService;
 import com.datagami.rentaxis.core.service.SettlementService;
+import com.datagami.rentaxis.core.service.renewal.RenewalOpportunityService;
+import com.datagami.rentaxis.domain.entity.enums.InteractionDirection;
+import com.datagami.rentaxis.domain.entity.enums.InteractionType;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -21,10 +25,12 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -36,6 +42,8 @@ public class LeaseController {
     private final ContractGenerationService contractGenerationService;
     private final SettlementService settlementService;
     private final PaymentScheduleService paymentScheduleService;
+    private final RenewalOpportunityService renewalOpportunityService;
+    private final LeaseInteractionService leaseInteractionService;
 
     @GetMapping
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
@@ -232,6 +240,34 @@ public class LeaseController {
             @Valid @RequestBody BulkAttachChequesRequest request) {
         var schedules = paymentScheduleService.bulkAttachCheques(leaseId, request.getItems());
         return ResponseEntity.ok(new BulkAttachChequesResponse(schedules));
+    }
+
+    // --- Renewal ---
+
+    @PostMapping("/{id}/renewal/mark-renewed")
+    @PreAuthorize("hasAnyAuthority('ROLE_TENANT_ADMIN','ROLE_PROPERTY_MANAGER')")
+    public ResponseEntity<Map<String, Object>> markRenewed(
+            @PathVariable UUID id,
+            @RequestBody(required = false) MarkRenewedRequest req,
+            @AuthenticationPrincipal String userIdStr) {
+        var opp = renewalOpportunityService.markRenewed(id);
+        if (req != null && req.note() != null && !req.note().isBlank()) {
+            leaseInteractionService.create(id,
+                    new CreateInteractionRequest(
+                            InteractionType.NOTE,
+                            InteractionDirection.INTERNAL,
+                            java.time.Instant.now(),
+                            req.note(),
+                            null,
+                            null),
+                    UUID.fromString(userIdStr));
+        }
+        var body = new java.util.LinkedHashMap<String, Object>();
+        body.put("id", opp.getId());
+        body.put("stage", opp.getStage().name());
+        body.put("outcome", opp.getOutcome() != null ? opp.getOutcome().name() : null);
+        body.put("closedAt", opp.getClosedAt() != null ? opp.getClosedAt().toString() : null);
+        return ResponseEntity.ok(body);
     }
 
 }

@@ -9,6 +9,7 @@ import { formatCurrencyCompact } from "@/lib/format";
 import { Link } from "@/i18n/routing";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import CreateMeetingModal from "@/app/[locale]/dashboard/meetings/CreateMeetingModal";
+import RenewalBanner from "@/components/renewals/RenewalBanner";
 
 type Lease = {
     id: string;
@@ -268,6 +269,8 @@ export default function RenterPortalPage() {
                     {t("renterPortalDesc")}
                 </p>
             </div>
+
+            <RenewalBanner />
 
             {/* Next Payment Card */}
             <Link href="/dashboard/renter-portal/payments">

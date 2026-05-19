@@ -6,6 +6,7 @@ import { Link } from "@/i18n/routing";
 import { formatCurrencyCompact } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { Activity, Calendar, Download, Plus, TrendingDown, TrendingUp } from "lucide-react";
+import FollowUpsWidget from "@/components/dashboard/FollowUpsWidget";
 
 type DashboardSummary = {
   totalProperties: number;
@@ -264,6 +265,8 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      <FollowUpsWidget />
 
       <div className="bg-surface border border-border rounded-[var(--radius-lg)] p-5">
         <div className="font-serif text-[20px] font-semibold text-foreground mb-3">Recent activity</div>

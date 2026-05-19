@@ -33,7 +33,7 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/v1/auth/**", "/api/auth/**", "/api/webhooks/**", "/actuator/health", "/error", "/api/v1/assets/serve/**", "/public/**", "/api/v1/email/unsubscribe").permitAll()
+                        .requestMatchers("/api/v1/auth/**", "/api/auth/**", "/api/webhooks/**", "/actuator/health", "/error", "/api/v1/assets/serve/**", "/public/**", "/api/v1/public/**", "/api/v1/email/unsubscribe").permitAll()
                         .anyRequest().authenticated())
                 // Order matters: rate limit MUST run before auth so abusive IPs are
                 // throttled before any token parsing / DB lookups happen.

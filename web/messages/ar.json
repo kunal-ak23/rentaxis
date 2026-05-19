@@ -940,5 +940,90 @@
     "paidAt": "تاريخ الدفع",
     "method": "الطريقة",
     "reference": "المرجع"
+  },
+  "interactions": {
+    "panelTitle": "التفاعلات",
+    "logInteraction": "تسجيل تفاعل",
+    "noInteractions": "لا توجد تفاعلات بعد",
+    "loading": "جاري التحميل...",
+    "type": {
+      "CALL": "مكالمة",
+      "SMS": "رسالة نصية",
+      "EMAIL": "بريد إلكتروني",
+      "WHATSAPP": "واتساب",
+      "MEETING": "اجتماع",
+      "SYSTEM_INTENT": "رد المستأجر",
+      "NOTE": "ملاحظة"
+    },
+    "direction": {
+      "INBOUND": "وارد",
+      "OUTBOUND": "صادر",
+      "INTERNAL": "داخلي"
+    },
+    "outcome": {
+      "POSITIVE": "إيجابي",
+      "NEUTRAL": "محايد",
+      "NEGATIVE": "سلبي",
+      "NO_RESPONSE": "لا استجابة"
+    },
+    "followUpDueBadge": "{count} متابعات مستحقة",
+    "cannotEditSystemEntry": "لا يمكن تعديل الإدخالات التلقائية",
+    "confirmDelete": "هل تريد حذف هذا التفاعل؟",
+    "fields": {
+      "type": "النوع",
+      "direction": "الاتجاه",
+      "occurredAt": "حدث في",
+      "summary": "الملخص",
+      "outcome": "النتيجة",
+      "outcomeNone": "(بدون)",
+      "followUpDate": "تاريخ المتابعة",
+      "optional": "(اختياري)",
+      "followUpLabel": "متابعة"
+    },
+    "actions": {
+      "cancel": "إلغاء",
+      "save": "حفظ",
+      "saving": "جاري الحفظ…",
+      "close": "إغلاق"
+    },
+    "errors": {
+      "summaryRequired": "الملخص مطلوب.",
+      "saveFailed": "فشل تسجيل التفاعل."
+    }
+  },
+  "followUpsWidget": {
+    "title": "المتابعات المستحقة",
+    "empty": "لا توجد متابعات اليوم",
+    "linkLabel": "فتح العقد"
+  },
+  "renewals": {
+    "pageTitle": "التجديدات",
+    "within30": "خلال 30 يومًا",
+    "within60": "خلال 60 يومًا",
+    "within90": "خلال 90 يومًا",
+    "beyond90": "أكثر من 90 يومًا",
+    "beyond90Hint": "ستبدأ تذكيرات التجديد عندما يكون العقد خلال 90 يومًا من انتهائه.",
+    "endDateLine": "ينتهي {date} · {days} يومًا متبقية",
+    "renew": "أريد التجديد",
+    "moveOut": "أخطط للمغادرة",
+    "discuss": "أريد المناقشة",
+    "statusNoResponseYet": "لا يوجد رد بعد",
+    "statusYouSelected": "لقد اخترت: {intent}",
+    "changeYourMind": "تغيير رأيي:",
+    "remindersSentLabel": "التذكيرات المُرسَلة",
+    "loading": "جاري التحميل...",
+    "emptyBucket": "(لا توجد عقود في هذه النافذة)",
+    "confirmIntent": "تأكيد اختيارك",
+    "confirm": "تأكيد",
+    "captured": "تم — لقد سجّلنا اختيارك. جاري إعادة التوجيه...",
+    "tokenExpired": "هذا الرابط لم يعد صالحًا. يرجى تسجيل الدخول لتحديث تفضيل التجديد.",
+    "genericError": "حدث خطأ ما. يرجى المحاولة مرة أخرى.",
+    "bannerMessage": "أحد عقودك على وشك التجديد خلال {days} يومًا.",
+    "bannerCta": "أخبرنا بخطتك",
+    "intent": {
+      "RENEW": "تجديد",
+      "MOVE_OUT": "المغادرة",
+      "DISCUSS": "مناقشة"
+    }
   }
 }
