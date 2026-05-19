@@ -107,6 +107,11 @@ public class RenewalReminderService {
                 String moveOut = tokenService.sign(o.getId(), RenewalIntent.MOVE_OUT, o.getLease().getEndDate());
                 String discuss = tokenService.sign(o.getId(), RenewalIntent.DISCUSS, o.getLease().getEndDate());
 
+                String unitNumber = o.getLease().getUnit() != null
+                        ? o.getLease().getUnit().getUnitNumber() : "";
+                String propertyNameEn = (o.getLease().getUnit() != null && o.getLease().getUnit().getProperty() != null)
+                        ? o.getLease().getUnit().getProperty().getNameEn() : "";
+
                 events.publishEvent(new EmailEvent(this,
                         EmailEventType.LEASE_RENEWAL_REMINDER,
                         o.getTenantId(),
@@ -117,7 +122,9 @@ public class RenewalReminderService {
                                 o.getLease().getEndDate().toString(),
                                 (int) slot,
                                 renew, moveOut, discuss,
-                                portalBaseUrl),
+                                portalBaseUrl,
+                                unitNumber,
+                                propertyNameEn),
                         "LEASE_RENEWAL_REMINDER:" + o.getId() + ":" + slot));
             } else {
                 UUID renterUserId = o.getLease().getRenter().getUserId();

@@ -119,7 +119,7 @@ export default function LogInteractionDialog({ leaseId, onClose, onSuccess }: Pr
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!summary.trim()) {
-      setError("Summary is required.");
+      setError(t("errors.summaryRequired"));
       return;
     }
     setSubmitting(true);
@@ -145,7 +145,7 @@ export default function LogInteractionDialog({ leaseId, onClose, onSuccess }: Pr
       }
       onSuccess();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to log interaction.");
+      setError(err instanceof Error ? err.message : t("errors.saveFailed"));
     } finally {
       setSubmitting(false);
       submittingRef.current = false;
@@ -176,7 +176,7 @@ export default function LogInteractionDialog({ leaseId, onClose, onSuccess }: Pr
             type="button"
             onClick={onClose}
             disabled={submitting}
-            aria-label="Close"
+            aria-label={t("actions.close")}
             className="rounded p-1 text-muted hover:bg-input/40 disabled:opacity-50"
           >
             <X size={16} />
@@ -188,8 +188,7 @@ export default function LogInteractionDialog({ leaseId, onClose, onSuccess }: Pr
           {/* Type */}
           <div>
             <label htmlFor="log-type" className="mb-1 block text-sm font-medium">
-              {t("type.CALL").replace("Call", "Type")}
-              {/* Generic label — use a dedicated key if added later */}
+              {t("fields.type")}
             </label>
             <select
               id="log-type"
@@ -208,7 +207,7 @@ export default function LogInteractionDialog({ leaseId, onClose, onSuccess }: Pr
 
           {/* Direction */}
           <fieldset>
-            <legend className="mb-1 text-sm font-medium">Direction</legend>
+            <legend className="mb-1 text-sm font-medium">{t("fields.direction")}</legend>
             <div className="flex gap-4">
               {DIRECTIONS.map(dir => (
                 <label key={dir} className="flex items-center gap-1.5 text-sm">
@@ -229,7 +228,7 @@ export default function LogInteractionDialog({ leaseId, onClose, onSuccess }: Pr
           {/* Occurred At */}
           <div>
             <label htmlFor="log-occurred-at" className="mb-1 block text-sm font-medium">
-              Occurred at
+              {t("fields.occurredAt")}
             </label>
             <input
               id="log-occurred-at"
@@ -244,7 +243,7 @@ export default function LogInteractionDialog({ leaseId, onClose, onSuccess }: Pr
           {/* Summary */}
           <div>
             <label htmlFor="log-summary" className="mb-1 block text-sm font-medium">
-              Summary
+              {t("fields.summary")}
             </label>
             <textarea
               id="log-summary"
@@ -259,7 +258,7 @@ export default function LogInteractionDialog({ leaseId, onClose, onSuccess }: Pr
           {/* Outcome (optional) */}
           <div>
             <label htmlFor="log-outcome" className="mb-1 block text-sm font-medium">
-              Outcome <span className="text-muted text-xs">(optional)</span>
+              {t("fields.outcome")} <span className="text-muted text-xs">{t("fields.optional")}</span>
             </label>
             <select
               id="log-outcome"
@@ -267,7 +266,7 @@ export default function LogInteractionDialog({ leaseId, onClose, onSuccess }: Pr
               onChange={e => setOutcome(e.target.value as Outcome | "")}
               className="w-full rounded border border-border bg-background px-3 py-2 text-sm"
             >
-              <option value="">(none)</option>
+              <option value="">{t("fields.outcomeNone")}</option>
               {OUTCOMES.map(o => (
                 <option key={o} value={o}>
                   {t(`outcome.${o}` as Parameters<typeof t>[0])}
@@ -279,7 +278,7 @@ export default function LogInteractionDialog({ leaseId, onClose, onSuccess }: Pr
           {/* Follow-up Date (optional) */}
           <div>
             <label htmlFor="log-follow-up" className="mb-1 block text-sm font-medium">
-              Follow-up date <span className="text-muted text-xs">(optional)</span>
+              {t("fields.followUpDate")} <span className="text-muted text-xs">{t("fields.optional")}</span>
             </label>
             <input
               id="log-follow-up"
@@ -306,14 +305,14 @@ export default function LogInteractionDialog({ leaseId, onClose, onSuccess }: Pr
               disabled={submitting}
               className="rounded px-4 py-2 text-sm hover:bg-input/40 disabled:opacity-50"
             >
-              Cancel
+              {t("actions.cancel")}
             </button>
             <button
               type="submit"
               disabled={submitting}
               className="rounded bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
             >
-              {submitting ? "Saving…" : "Save"}
+              {submitting ? t("actions.saving") : t("actions.save")}
             </button>
           </div>
         </form>

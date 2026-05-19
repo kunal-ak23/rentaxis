@@ -57,7 +57,7 @@ export default function LeaseInteractionsPanel({ leaseId }: { leaseId: string })
                   <p className="text-[11px] text-muted mt-1">
                     {i.outcome ? `${t(`outcome.${i.outcome}` as any)}` : ""}
                     {i.outcome && i.followUpDate ? " · " : ""}
-                    {i.followUpDate ? `Follow-up: ${i.followUpDate}` : ""}
+                    {i.followUpDate ? `${t("fields.followUpLabel")}: ${i.followUpDate}` : ""}
                   </p>
                 )}
               </li>

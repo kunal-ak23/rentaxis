@@ -968,7 +968,28 @@
     },
     "followUpDueBadge": "{count} follow-ups due",
     "cannotEditSystemEntry": "System entries cannot be edited",
-    "confirmDelete": "Delete this interaction?"
+    "confirmDelete": "Delete this interaction?",
+    "fields": {
+      "type": "Type",
+      "direction": "Direction",
+      "occurredAt": "Occurred at",
+      "summary": "Summary",
+      "outcome": "Outcome",
+      "outcomeNone": "(none)",
+      "followUpDate": "Follow-up date",
+      "optional": "(optional)",
+      "followUpLabel": "Follow-up"
+    },
+    "actions": {
+      "cancel": "Cancel",
+      "save": "Save",
+      "saving": "Saving…",
+      "close": "Close"
+    },
+    "errors": {
+      "summaryRequired": "Summary is required.",
+      "saveFailed": "Failed to log interaction."
+    }
   },
   "followUpsWidget": {
     "title": "Follow-ups due",

@@ -11,5 +11,7 @@ public record LeaseRenewalReminderPayload(
         String renewToken,
         String moveOutToken,
         String discussToken,
-        String portalBaseUrl
+        String portalBaseUrl,
+        String unitNumber,
+        String propertyNameEn
 ) {}
