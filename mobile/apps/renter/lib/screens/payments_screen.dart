@@ -23,15 +23,16 @@ final _myLeasesProvider = FutureProvider.autoDispose<List<dynamic>>((ref) {
 ///
 /// Layout:
 ///   1. Header — tenancy year eyebrow + serif "Your cheques" title
-///   2. Progress card — sand-tinted "Total paid this lease" with
+///   2. Next-cheque hero — sand/red-tinted card highlighting the
+///      most-imminent unpaid cheque (OVERDUE first, else next PENDING).
+///   3. Progress card — sand-tinted "Total paid this lease" with
 ///      mono current/total and a gold gradient progress bar
-///   3. List — every cheque shown with a coloured accent bar
+///   4. List — every cheque shown with a coloured accent bar
 ///      (green = cleared, gold = pending), serif amount, due date,
-///      cheque number, and a status pill on the right.
-///
-/// Tap a PENDING row → opens the Pay Rent flow with that payment
-/// pre-selected (existing route /payments/pay; payment-screen
-/// handles which one to focus).
+///      cheque number, status pill, and a status-specific subtitle
+///      (deposited/bounced/overdue). Cards are non-interactive — the
+///      renter app is informational; cheque submission is handled
+///      offline.
 class PaymentsScreen extends ConsumerWidget {
   const PaymentsScreen({super.key});
 

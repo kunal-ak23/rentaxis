@@ -456,10 +456,8 @@ class _HeroBalanceCard extends StatelessWidget {
                   children: [
                     Expanded(
                       child: _PrimaryButton(
-                        label: 'Pay now',
-                        onTap: next == null
-                            ? null
-                            : () => context.push('/payments/pay'),
+                        label: 'View cheques',
+                        onTap: () => context.push('/payments'),
                       ),
                     ),
                     const SizedBox(width: 10),
