@@ -87,7 +87,21 @@ public class UserService {
             user.setInviteTokenExpiresAt(java.time.Instant.now().plus(java.time.Duration.ofDays(7)));
         }
 
-        User saved = userRepository.save(user);
+        // The existsBy check above is a happy-path message-quality guard, but
+        // it's TOCTOU against the DB-level partial unique indexes added in
+        // migration 59. Catch the race here and translate the
+        // DataIntegrityViolationException so callers see the same 400-friendly
+        // IllegalArgumentException instead of a 500.
+        User saved;
+        try {
+            saved = userRepository.save(user);
+        } catch (org.springframework.dao.DataIntegrityViolationException e) {
+            throw new IllegalArgumentException(
+                    tenantUuid == null
+                            ? "A SUPER_ADMIN with this email already exists."
+                            : "A user with this email already exists in this tenant.",
+                    e);
+        }
 
         // Auto-create tenant membership for tenant-scoped roles
         if (tenantId != null && !tenantId.isBlank()
@@ -144,19 +158,26 @@ public class UserService {
     }
 
     /**
-     * Marks a user as welcomed (sets welcomedAt) and publishes USER_WELCOMED within
-     * a single transaction so the entity write and event publish share the same
-     * commit boundary (TransactionalEventListener fires on commit).
+     * Mark a user as welcomed (first successful login) and publish USER_WELCOMED.
+     *
+     * <p>Takes a userId rather than a User so the entity is re-fetched inside
+     * this transaction. Saving a detached User loaded earlier would issue an
+     * UPDATE of every column with the loaded values, racing any concurrent
+     * password/profile mutation. By fetching here, JPA dirty-tracking issues
+     * an UPDATE only for `welcomed_at`.
      */
     @Transactional
-    public void markWelcomed(User user) {
-        user.setWelcomedAt(Instant.now());
-        userRepository.save(user);
-        events.publishEvent(new EmailEvent(this,
-                EmailEventType.USER_WELCOMED,
-                user.getTenantId(),
-                new UserWelcomedPayload(user.getId(), user.getName(), "/dashboard"),
-                "USER_WELCOMED:" + user.getId()));
+    public void markWelcomed(UUID userId) {
+        userRepository.findById(userId).ifPresent(user -> {
+            if (user.getWelcomedAt() != null) return; // idempotent
+            user.setWelcomedAt(Instant.now());
+            // No explicit save() — dirty tracking will flush at txn commit.
+            events.publishEvent(new EmailEvent(this,
+                    EmailEventType.USER_WELCOMED,
+                    user.getTenantId(),
+                    new UserWelcomedPayload(user.getId(), user.getName(), "/dashboard"),
+                    "USER_WELCOMED:" + user.getId()));
+        });
     }
 
     public enum InviteResult { OK, NOT_FOUND, EXPIRED, ALREADY_USED, WEAK_PASSWORD }

@@ -121,6 +121,21 @@ public class LandlordOrgService {
 
         log.info("deleteTenant({}): purging {} tenanted tables", tenantId, tenantedTables.size());
 
+        // Preserve cross-tenant users: anyone whose users.tenant_id is this
+        // tenant AND who has a user_tenant_memberships row pointing to a
+        // DIFFERENT tenant. The cascade would otherwise hard-delete their
+        // `users` row and silently revoke their other-tenant access. NULL-ing
+        // tenant_id keeps the row; user_tenant_memberships rows for the
+        // deleted tenant are still cleaned by the regular cascade pass.
+        int preserved = jdbcTemplate.update(
+                "UPDATE users SET tenant_id = NULL " +
+                        "WHERE tenant_id = ? AND id IN (" +
+                        "  SELECT user_id FROM user_tenant_memberships WHERE tenant_id <> ?" +
+                        ")", tenantId, tenantId);
+        if (preserved > 0) {
+            log.info("deleteTenant({}): detached {} cross-tenant users from this tenant", tenantId, preserved);
+        }
+
         jdbcTemplate.execute((java.sql.Connection conn) -> {
             List<String> remaining = new java.util.ArrayList<>(tenantedTables);
             for (int pass = 1; pass <= 6 && !remaining.isEmpty(); pass++) {

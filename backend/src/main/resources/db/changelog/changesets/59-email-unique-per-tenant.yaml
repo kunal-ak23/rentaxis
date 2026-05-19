@@ -35,12 +35,8 @@ databaseChangeLog:
               CREATE UNIQUE INDEX ux_users_email_super_admin
                 ON users (email)
                 WHERE tenant_id IS NULL;
-      rollback:
-        - sql:
-            sql: |
-              DROP INDEX IF EXISTS ux_users_tenant_email;
-              DROP INDEX IF EXISTS ux_users_email_super_admin;
-        - addUniqueConstraint:
-            tableName: users
-            columnNames: email
-            constraintName: users_email_key
+      # Forward-only: no rollback block. Rollback would re-add the global
+      # UNIQUE(email) constraint, which fails mid-migration if any duplicate-
+      # email rows exist post-deploy (turning a recoverable rollback into a
+      # partial-applied state). If a true revert is needed, do it manually:
+      # confirm no duplicate emails exist, then run the SQL by hand.

@@ -13,13 +13,19 @@ export const authOptions: NextAuthOptions = {
                 if (!credentials?.email || !credentials?.password) return null;
 
                 try {
+                    // tenantId is optional; the login page resubmits with it
+                    // set after the user picks an org from the 409 picker.
+                    const body: Record<string, string> = {
+                        email: credentials.email,
+                        password: credentials.password,
+                    };
+                    if ((credentials as { tenantId?: string }).tenantId) {
+                        body.tenantId = (credentials as { tenantId: string }).tenantId;
+                    }
                     const res = await fetch(`${process.env.BACKEND_URL || "http://localhost:8080"}/api/auth/login`, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            email: credentials.email,
-                            password: credentials.password
-                        })
+                        body: JSON.stringify(body),
                     });
 
                     if (res.ok) {
@@ -34,7 +40,25 @@ export const authOptions: NextAuthOptions = {
                             tenantIds: user.tenantIds || [],
                         };
                     }
+
+                    // 409 — email is registered in multiple tenants and the
+                    // submitted password matched in more than one. The body
+                    // carries the candidate list; surface it to the login
+                    // page so the user can pick a tenant. NextAuth's
+                    // credentials provider can't return structured data, so
+                    // we encode the picker payload in the thrown error
+                    // message — the login page parses it back out.
+                    if (res.status === 409) {
+                        const body = await res.json().catch(() => ({ tenants: [] }));
+                        // Error code prefix recognized by /auth/login page.
+                        throw new Error("LOGIN_AMBIGUOUS:" + JSON.stringify(body.tenants ?? []));
+                    }
                 } catch (e) {
+                    // Re-throw the structured ambiguous-login signal; swallow
+                    // anything else (network, JSON parse) as a generic 401.
+                    if (e instanceof Error && e.message.startsWith("LOGIN_AMBIGUOUS:")) {
+                        throw e;
+                    }
                     console.error("Auth Exception:", e);
                 }
 
