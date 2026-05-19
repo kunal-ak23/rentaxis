@@ -96,6 +96,12 @@ public class OnlinePaymentService {
                 dto.setPenaltyAmount(penalty);
                 dto.setDaysOverdue(daysOverdue);
                 dto.setTotalPayable(schedule.getAmount().add(penalty));
+                dto.setStatusChangedAt(schedule.getStatusChangedAt() != null
+                        ? schedule.getStatusChangedAt().toString()
+                        : null);
+                dto.setFailureReason(schedule.getFailureReason() != null
+                        ? schedule.getFailureReason().name()
+                        : null);
 
                 result.add(dto);
             }
