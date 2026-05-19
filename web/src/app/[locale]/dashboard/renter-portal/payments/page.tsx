@@ -1,28 +1,17 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useTranslations } from "next-intl";
+import { useTranslations, useLocale } from "next-intl";
 import {
     CreditCard,
     Calendar,
     DollarSign,
-    Loader2,
     CheckCircle,
-    XCircle,
     AlertTriangle,
-    Clock,
-    AlertCircle,
     Download,
 } from "lucide-react";
-import { useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import { formatCurrencyCompact } from "@/lib/format";
-
-declare global {
-    interface Window {
-        Razorpay: any;
-    }
-}
 
 type Payment = {
     id: string;
@@ -39,25 +28,76 @@ type Payment = {
     totalPayable: number;
     daysOverdue: number;
     gracePeriodDays: number;
+    statusChangedAt: string | null;
+    failureReason: string | null;
 };
 
-type GatewayConfig = {
-    id: string;
-    gatewayCode: string;
-    gatewayName: string;
-    isActive: boolean;
-    isTestMode: boolean;
-} | null;
+function pickNextCheque(payments: Payment[]): Payment | null {
+    const candidates = payments.filter(p => p.status === "PENDING" || p.status === "OVERDUE");
+    if (candidates.length === 0) return null;
+    const rank = (s: string) => (s === "OVERDUE" ? 0 : 1);
+    candidates.sort((a, b) => {
+        const r = rank(a.status) - rank(b.status);
+        if (r !== 0) return r;
+        const d = new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+        if (d !== 0) return d;
+        return a.installmentNumber - b.installmentNumber;
+    });
+    return candidates[0];
+}
+
+function formatDate(iso: string | null | undefined, locale: string): string {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
+    return d.toLocaleDateString(locale === "ar" ? "ar-AE" : "en-GB", {
+        day: "numeric", month: "short", year: "numeric",
+    });
+}
+
+function NextChequeHero({ payments, t, locale }: { payments: Payment[]; t: (k: string, v?: Record<string, string | number>) => string; locale: string }) {
+    const next = pickNextCheque(payments);
+    if (!next) {
+        return (
+            <div className="bg-surface border border-border rounded-2xl p-5 mb-6 flex items-center gap-3">
+                <CheckCircle size={20} className="text-success" />
+                <p className="text-sm text-foreground">{t("allCaughtUp")}</p>
+            </div>
+        );
+    }
+    const isOverdue = next.status === "OVERDUE";
+    return (
+        <div className={cn(
+            "rounded-2xl p-5 mb-6 border",
+            isOverdue ? "bg-error/5 border-error/20" : "bg-accent/5 border-accent/20"
+        )}>
+            <p className={cn(
+                "text-[10px] font-bold tracking-widest uppercase mb-2",
+                isOverdue ? "text-error" : "text-muted"
+            )}>
+                {isOverdue ? t("nextChequeOverdue") : t("nextChequeDue")}
+            </p>
+            <p className="text-2xl font-bold text-foreground mb-1">
+                AED {next.amount.toLocaleString()}
+            </p>
+            <p className="text-xs text-muted">
+                {[
+                    `${t("dueDate")}: ${formatDate(next.dueDate, locale)}`,
+                    t("cheque", { n: next.installmentNumber }),
+                    next.chequeNumber,
+                    next.propertyName,
+                    next.unitIdentifier,
+                ].filter(Boolean).join(" · ")}
+            </p>
+        </div>
+    );
+}
 
 export default function RenterPaymentsPage() {
     const t = useTranslations("OnlinePayments");
+    const locale = useLocale();
     const [payments, setPayments] = useState<Payment[]>([]);
     const [loading, setLoading] = useState(true);
-    const [gatewayConfig, setGatewayConfig] = useState<GatewayConfig>(null);
-    const [processingPaymentId, setProcessingPaymentId] = useState<string | null>(null);
-    const [successModal, setSuccessModal] = useState(false);
-    const [errorMessage, setErrorMessage] = useState<string | null>(null);
-    const { data: session } = useSession();
 
     const fetchPayments = useCallback(async () => {
         try {
@@ -75,128 +115,14 @@ export default function RenterPaymentsPage() {
         }
     }, []);
 
-    const fetchGatewayConfig = useCallback(async () => {
-        try {
-            const res = await fetch("/api/proxy/v1/gateway-config");
-            if (res.ok) {
-                const data = await res.json();
-                setGatewayConfig(data);
-            }
-        } catch (err) {
-            console.error(err);
-        }
-    }, []);
-
     useEffect(() => {
         fetchPayments();
-        fetchGatewayConfig();
-    }, [fetchPayments, fetchGatewayConfig]);
-
-    const loadRazorpayScript = (sdkJsUrl: string): Promise<void> => {
-        return new Promise((resolve, reject) => {
-            if (window.Razorpay) {
-                resolve();
-                return;
-            }
-            const script = document.createElement("script");
-            script.src = sdkJsUrl;
-            script.onload = () => resolve();
-            script.onerror = () => reject(new Error("Failed to load payment SDK"));
-            document.body.appendChild(script);
-        });
-    };
-
-    const handlePayNow = async (payment: Payment) => {
-        setProcessingPaymentId(payment.id);
-        setErrorMessage(null);
-
-        try {
-            // Step 1: Create order
-            const orderRes = await fetch("/api/proxy/v1/online-payments/create-order", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ paymentScheduleId: payment.id }),
-            });
-
-            if (!orderRes.ok) {
-                throw new Error("Failed to create payment order");
-            }
-
-            const orderData = await orderRes.json();
-
-            // Step 2: Load Razorpay SDK dynamically
-            await loadRazorpayScript(orderData.sdkJsUrl);
-
-            // Step 3: Open Razorpay checkout
-            const options = {
-                key: orderData.gatewayKey,
-                amount: orderData.amount,
-                currency: orderData.currency,
-                order_id: orderData.orderId,
-                name: "RentAxis",
-                prefill: {
-                    name: orderData.renterName,
-                    email: orderData.renterEmail,
-                },
-                handler: async (response: any) => {
-                    // Step 4: Verify payment
-                    try {
-                        const verifyRes = await fetch("/api/proxy/v1/online-payments/verify", {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({
-                                gatewayOrderId: response.razorpay_order_id,
-                                gatewayPaymentId: response.razorpay_payment_id,
-                                gatewaySignature: response.razorpay_signature,
-                            }),
-                        });
-
-                        if (verifyRes.ok) {
-                            setSuccessModal(true);
-                        } else {
-                            setErrorMessage(t("paymentFailed"));
-                        }
-                    } catch {
-                        setErrorMessage(t("paymentFailed"));
-                    } finally {
-                        setProcessingPaymentId(null);
-                        fetchPayments();
-                    }
-                },
-                modal: {
-                    ondismiss: async () => {
-                        // Revert ONLINE_PENDING back to PENDING
-                        try {
-                            await fetch(`/api/proxy/v1/online-payments/cancel/${payment.id}`, { method: "POST" });
-                        } catch {}
-                        setProcessingPaymentId(null);
-                        fetchPayments();
-                    },
-                },
-            };
-
-            const rzp = new window.Razorpay(options);
-            rzp.on("payment.failed", async () => {
-                try {
-                    await fetch(`/api/proxy/v1/online-payments/cancel/${payment.id}`, { method: "POST" });
-                } catch {}
-                setErrorMessage(t("paymentFailed"));
-                setProcessingPaymentId(null);
-                fetchPayments();
-            });
-            rzp.open();
-        } catch (err) {
-            console.error(err);
-            setErrorMessage(t("paymentFailed"));
-            setProcessingPaymentId(null);
-            fetchPayments();
-        }
-    };
+    }, [fetchPayments]);
 
     const pendingPayments = payments.filter(
-        (p) => p.status === "PENDING" || p.status === "ONLINE_PENDING"
+        (p) => p.status === "PENDING" || p.status === "OVERDUE"
     );
-    const completedPayments = payments.filter((p) => p.status === "CLEARED");
+    const completedPayments = payments.filter((p) => p.status === "CLEARED" || p.status === "DEPOSITED" || p.status === "COLLECTED" || p.status === "BOUNCED");
 
     if (loading) {
         return (
@@ -225,9 +151,6 @@ export default function RenterPaymentsPage() {
                                     </div>
                                 ))}
                             </div>
-                            <div className="border-t border-border pt-4">
-                                <div className="h-9 w-28 bg-input rounded-xl" />
-                            </div>
                         </div>
                     ))}
                 </div>
@@ -247,29 +170,9 @@ export default function RenterPaymentsPage() {
                 </p>
             </div>
 
-            {/* Error Message */}
-            {errorMessage && (
-                <div className="mb-6 bg-error/10 border border-error/20 rounded-xl p-4 flex items-center gap-3">
-                    <XCircle size={18} className="text-error shrink-0" />
-                    <p className="text-sm font-semibold text-error">{errorMessage}</p>
-                    <button
-                        onClick={() => setErrorMessage(null)}
-                        className="ml-auto text-error/60 hover:text-error cursor-pointer transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-error/30 rounded-full p-1"
-                        aria-label="Dismiss error"
-                    >
-                        <XCircle size={16} />
-                    </button>
-                </div>
-            )}
-
-            {/* Gateway not configured warning */}
-            {!gatewayConfig?.isActive && (
-                <div className="mb-6 bg-warning/10 border border-warning/20 rounded-xl p-4 flex items-center gap-3">
-                    <AlertTriangle size={18} className="text-warning shrink-0" />
-                    <p className="text-sm font-semibold text-warning">
-                        {t("gatewayNotConfigured")}
-                    </p>
-                </div>
+            {/* Next Cheque Hero */}
+            {!loading && payments.length > 0 && (
+                <NextChequeHero payments={payments} t={t} locale={locale} />
             )}
 
             {/* Pending Payments */}
@@ -277,8 +180,6 @@ export default function RenterPaymentsPage() {
                 <div className="space-y-4 mb-10">
                     {pendingPayments.map((payment) => {
                         const isOverdue = payment.daysOverdue > 0;
-                        const isOnlinePending = payment.status === "ONLINE_PENDING";
-                        const isProcessing = processingPaymentId === payment.id;
 
                         return (
                             <div
@@ -292,7 +193,7 @@ export default function RenterPaymentsPage() {
                                         </div>
                                         <div>
                                             <h3 className="text-sm font-bold text-foreground tracking-tight">
-                                                Installment #{payment.installmentNumber}
+                                                {t("cheque", { n: payment.installmentNumber })}
                                             </h3>
                                             <p className="text-[10px] font-bold text-muted">
                                                 {payment.propertyName} - {payment.unitIdentifier}
@@ -303,12 +204,6 @@ export default function RenterPaymentsPage() {
                                         <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-[9px] font-bold uppercase tracking-widest bg-error/10 text-error border border-error/20">
                                             <AlertTriangle size={10} />
                                             {payment.daysOverdue} {t("daysOverdue")}
-                                        </span>
-                                    )}
-                                    {isOnlinePending && (
-                                        <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-[9px] font-bold uppercase tracking-widest bg-warning/10 text-warning border border-warning/20">
-                                            <Loader2 size={10} className="animate-spin" />
-                                            {t("onlinePending")}
                                         </span>
                                     )}
                                 </div>
@@ -378,34 +273,19 @@ export default function RenterPaymentsPage() {
                                     </div>
                                 )}
 
-                                <div className="flex gap-3 border-t border-border pt-4">
-                                    {isOnlinePending ? (
-                                        <div className="flex items-center gap-2 text-xs text-warning font-medium">
-                                            <Loader2 size={14} className="animate-spin" />
-                                            {t("paymentProcessing")}
-                                        </div>
-                                    ) : (
-                                        <button
-                                            onClick={() => handlePayNow(payment)}
-                                            disabled={
-                                                isProcessing || !gatewayConfig?.isActive
-                                            }
-                                            className={cn(
-                                                "flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-semibold transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-accent/30",
-                                                isProcessing || !gatewayConfig?.isActive
-                                                    ? "bg-input text-muted cursor-not-allowed"
-                                                    : "bg-accent text-accent-foreground hover:brightness-110 active:scale-95 cursor-pointer"
-                                            )}
-                                        >
-                                            {isProcessing ? (
-                                                <Loader2 size={14} className="animate-spin" />
-                                            ) : (
-                                                <CreditCard size={14} />
-                                            )}
-                                            {t("payNow")}
-                                        </button>
-                                    )}
-                                </div>
+                                {(payment.status === "DEPOSITED" || payment.status === "COLLECTED" || payment.status === "BOUNCED" || payment.status === "OVERDUE") && (
+                                    <p className="text-[11px] italic text-muted mt-1">
+                                        {payment.status === "DEPOSITED" && t("depositedOn", { date: formatDate(payment.statusChangedAt, locale) || "—" })}
+                                        {payment.status === "COLLECTED" && t("collectedOn", { date: formatDate(payment.statusChangedAt, locale) || "—" })}
+                                        {payment.status === "BOUNCED" && (
+                                            <>
+                                                {t("bouncedOn", { date: formatDate(payment.statusChangedAt, locale) || "—" })}
+                                                {payment.failureReason ? ` · ${payment.failureReason}` : ""}
+                                            </>
+                                        )}
+                                        {payment.status === "OVERDUE" && t("overdueSince", { date: formatDate(payment.dueDate, locale) || "—" })}
+                                    </p>
+                                )}
                             </div>
                         );
                     })}
@@ -432,77 +312,68 @@ export default function RenterPaymentsPage() {
                         {completedPayments.map((payment) => (
                             <div
                                 key={payment.id}
-                                className="bg-surface rounded-xl p-4 border border-border hover:shadow-md transition-all duration-200 flex items-center justify-between"
+                                className="bg-surface rounded-xl p-4 border border-border hover:shadow-md transition-all duration-200"
                             >
-                                <div className="flex items-center gap-4">
-                                    <div className="w-10 h-10 bg-success/10 rounded-xl flex items-center justify-center text-success border border-success/20">
-                                        <CheckCircle size={18} />
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-4">
+                                        <div className="w-10 h-10 bg-success/10 rounded-xl flex items-center justify-center text-success border border-success/20">
+                                            <CheckCircle size={18} />
+                                        </div>
+                                        <div>
+                                            <h4 className="text-xs font-bold text-foreground">
+                                                {t("cheque", { n: payment.installmentNumber })}
+                                            </h4>
+                                            <p className="text-[10px] font-bold text-muted">
+                                                {payment.propertyName} - {payment.unitIdentifier}
+                                            </p>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <h4 className="text-xs font-bold text-foreground">
-                                            Installment #{payment.installmentNumber}
-                                        </h4>
-                                        <p className="text-[10px] font-bold text-muted">
-                                            {payment.propertyName} - {payment.unitIdentifier}
-                                        </p>
+                                    <div className="flex items-center gap-4">
+                                        <div className="text-right">
+                                            <p className="text-sm font-bold text-foreground tabular-nums">
+                                                {formatCurrencyCompact(payment.amount)}
+                                            </p>
+                                            <p className="text-[10px] font-bold text-muted">
+                                                {new Date(payment.dueDate).toLocaleDateString()}
+                                            </p>
+                                        </div>
+                                        <button
+                                            onClick={async (e) => {
+                                                e.stopPropagation();
+                                                const res = await fetch(`/api/proxy/v1/payments/${payment.id}/receipt`);
+                                                if (res.ok) {
+                                                    const blob = await res.blob();
+                                                    const url = URL.createObjectURL(blob);
+                                                    const a = document.createElement('a');
+                                                    a.href = url;
+                                                    a.download = `receipt-${payment.installmentNumber}.pdf`;
+                                                    document.body.appendChild(a);
+                                                    a.click();
+                                                    document.body.removeChild(a);
+                                                    URL.revokeObjectURL(url);
+                                                }
+                                            }}
+                                            className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 text-primary rounded-lg text-[10px] font-semibold hover:bg-primary/20 transition-colors cursor-pointer"
+                                        >
+                                            <Download size={12} />
+                                            Receipt
+                                        </button>
                                     </div>
                                 </div>
-                                <div className="flex items-center gap-4">
-                                    <div className="text-right">
-                                        <p className="text-sm font-bold text-foreground tabular-nums">
-                                            {formatCurrencyCompact(payment.amount)}
-                                        </p>
-                                        <p className="text-[10px] font-bold text-muted">
-                                            {new Date(payment.dueDate).toLocaleDateString()}
-                                        </p>
-                                    </div>
-                                    <button
-                                        onClick={async (e) => {
-                                            e.stopPropagation();
-                                            const res = await fetch(`/api/proxy/v1/payments/${payment.id}/receipt`);
-                                            if (res.ok) {
-                                                const blob = await res.blob();
-                                                const url = URL.createObjectURL(blob);
-                                                const a = document.createElement('a');
-                                                a.href = url;
-                                                a.download = `receipt-${payment.installmentNumber}.pdf`;
-                                                document.body.appendChild(a);
-                                                a.click();
-                                                document.body.removeChild(a);
-                                                URL.revokeObjectURL(url);
-                                            }
-                                        }}
-                                        className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 text-primary rounded-lg text-[10px] font-semibold hover:bg-primary/20 transition-colors cursor-pointer"
-                                    >
-                                        <Download size={12} />
-                                        Receipt
-                                    </button>
-                                </div>
+                                {(payment.status === "DEPOSITED" || payment.status === "COLLECTED" || payment.status === "BOUNCED") && (
+                                    <p className="text-[11px] italic text-muted mt-2">
+                                        {payment.status === "DEPOSITED" && t("depositedOn", { date: formatDate(payment.statusChangedAt, locale) || "—" })}
+                                        {payment.status === "COLLECTED" && t("collectedOn", { date: formatDate(payment.statusChangedAt, locale) || "—" })}
+                                        {payment.status === "BOUNCED" && (
+                                            <>
+                                                {t("bouncedOn", { date: formatDate(payment.statusChangedAt, locale) || "—" })}
+                                                {payment.failureReason ? ` · ${payment.failureReason}` : ""}
+                                            </>
+                                        )}
+                                    </p>
+                                )}
                             </div>
                         ))}
-                    </div>
-                </div>
-            )}
-
-            {/* Success Modal */}
-            {successModal && (
-                <div className="fixed inset-0 bg-foreground/40 z-50 flex items-center justify-center p-4">
-                    <div className="bg-surface rounded-xl p-8 max-w-sm w-full text-center shadow-xl border border-border">
-                        <div className="w-16 h-16 bg-success/10 rounded-xl flex items-center justify-center text-success mx-auto mb-6">
-                            <CheckCircle size={36} />
-                        </div>
-                        <h3 className="text-lg font-bold text-foreground mb-2">
-                            {t("paymentSuccessful")}
-                        </h3>
-                        <p className="text-xs text-muted mb-6">
-                            {t("allPaid")}
-                        </p>
-                        <button
-                            onClick={() => setSuccessModal(false)}
-                            className="bg-primary text-primary-foreground px-6 py-2.5 rounded-xl text-xs font-bold hover:opacity-90 transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30"
-                        >
-                            OK
-                        </button>
                     </div>
                 </div>
             )}
