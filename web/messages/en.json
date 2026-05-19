@@ -431,7 +431,11 @@
     "paymentSaved": "Vendor payment recorded.",
     "paymentFailed": "Failed to record vendor payment.",
     "vatApplicable": "VAT Applicable",
-    "vatRate": "VAT Rate (%)"
+    "vatRate": "VAT Rate (%)",
+    "descriptionLabel": "Description",
+    "descriptionPlaceholder": "e.g. Plumbing repair invoice INV-2026-014",
+    "descriptionRequired": "Please add a short description",
+    "defaultDescription": "Payment to {name}"
   },
   "BankAccounts": {
     "title": "Bank Accounts",

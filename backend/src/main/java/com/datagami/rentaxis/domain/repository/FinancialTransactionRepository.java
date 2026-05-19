@@ -38,6 +38,8 @@ public interface FinancialTransactionRepository extends JpaRepository<FinancialT
 
     List<FinancialTransaction> findByVendorIdAndDateBetween(UUID vendorId, LocalDate start, LocalDate end);
 
+    boolean existsByVendorId(UUID vendorId);
+
     List<FinancialTransaction> findByStaffId(UUID staffId);
 
     // Split transaction queries: exclude child transactions (parent_transaction_id IS NULL)

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useTranslations } from "next-intl";
+import { useTranslations, useLocale } from "next-intl";
 import { X, Loader2, Wallet } from "lucide-react";
 
 type Account = {
@@ -40,9 +40,15 @@ const DIALOG_TITLE_ID = "vendor-payment-dialog-title";
 
 export default function VendorPaymentDialog({ open, onClose, onSuccess, vendor, vendors }: Props) {
     const t = useTranslations("Vendors");
+    const locale = useLocale();
     const dialogRef = useRef<HTMLDivElement | null>(null);
     const onCloseRef = useRef(onClose);
     const submittingRef = useRef(false);
+
+    const vendorDisplayName = (v: { nameEn?: string | null; nameAr?: string | null } | null | undefined) => {
+        if (!v) return "";
+        return locale === "ar" ? (v.nameAr || v.nameEn || "") : (v.nameEn || v.nameAr || "");
+    };
 
     const [accounts, setAccounts] = useState<Account[]>([]);
     const [vendorList, setVendorList] = useState<Vendor[]>(vendors ?? []);
@@ -73,14 +79,18 @@ export default function VendorPaymentDialog({ open, onClose, onSuccess, vendor, 
         setAccountId("");
         setDate(new Date().toISOString().split("T")[0]);
         setAmount("");
-        setDescription(vendor ? `Payment to ${vendor.nameEn}` : "");
+        const name = vendorDisplayName(vendor);
+        setDescription(name ? t("defaultDescription", { name }) : "");
         setPropertyId("");
         setUnitId("");
         setVatApplicable(false);
         setVatRate("5");
         setNotes("");
         setError(null);
-    }, [open, vendor]);
+        // vendorDisplayName + t are stable per render — deps focused on the
+        // signals that should drive a reset.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open, vendor, locale]);
 
     // Fetch reference data once dialog opens.
     useEffect(() => {
@@ -162,6 +172,9 @@ export default function VendorPaymentDialog({ open, onClose, onSuccess, vendor, 
         const amt = Number(amount);
         if (!amt || amt <= 0) { setError(t("amountRequired")); return; }
 
+        const trimmedDescription = description.trim();
+        if (!trimmedDescription) { setError(t("descriptionRequired")); return; }
+
         setSubmitting(true);
         try {
             const netAmount = amt;
@@ -173,7 +186,7 @@ export default function VendorPaymentDialog({ open, onClose, onSuccess, vendor, 
 
             const body: Record<string, unknown> = {
                 date,
-                description: description || `Vendor payment`,
+                description: trimmedDescription,
                 account: { id: accountId },
                 debit: amt,
                 credit: 0,
@@ -239,7 +252,7 @@ export default function VendorPaymentDialog({ open, onClose, onSuccess, vendor, 
                         {lockedVendor ? (
                             <input
                                 readOnly
-                                value={vendor?.nameEn ?? ""}
+                                value={vendorDisplayName(vendor)}
                                 className="w-full border border-border rounded-lg bg-input p-3 text-xs text-foreground"
                             />
                         ) : (
@@ -251,7 +264,7 @@ export default function VendorPaymentDialog({ open, onClose, onSuccess, vendor, 
                             >
                                 <option value="">{t("selectVendor")}</option>
                                 {vendorList.map(v => (
-                                    <option key={v.id} value={v.id}>{v.nameEn}</option>
+                                    <option key={v.id} value={v.id}>{vendorDisplayName(v)}</option>
                                 ))}
                             </select>
                         )}
@@ -338,12 +351,13 @@ export default function VendorPaymentDialog({ open, onClose, onSuccess, vendor, 
 
                     <div className="col-span-2">
                         <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 ml-1">
-                            Description
+                            {t("descriptionLabel")}
                         </label>
                         <input
+                            required
                             value={description}
                             onChange={ev => setDescription(ev.target.value)}
-                            placeholder="e.g. Plumbing repair invoice INV-2026-014"
+                            placeholder={t("descriptionPlaceholder")}
                             className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none"
                         />
                     </div>

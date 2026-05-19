@@ -431,7 +431,11 @@
     "paymentSaved": "تم تسجيل دفعة المورد.",
     "paymentFailed": "فشل تسجيل دفعة المورد.",
     "vatApplicable": "خاضع لضريبة القيمة المضافة",
-    "vatRate": "نسبة ضريبة القيمة المضافة (%)"
+    "vatRate": "نسبة ضريبة القيمة المضافة (%)",
+    "descriptionLabel": "الوصف",
+    "descriptionPlaceholder": "مثال: فاتورة إصلاح سباكة INV-2026-014",
+    "descriptionRequired": "يرجى إضافة وصف مختصر",
+    "defaultDescription": "دفعة إلى {name}"
   },
   "BankAccounts": {
     "title": "الحسابات البنكية",

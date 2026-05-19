@@ -59,7 +59,7 @@ public class VendorService {
         if (!repository.existsById(id)) {
             throw new NotFoundException("Vendor not found");
         }
-        if (!transactionRepository.findByVendorId(id).isEmpty()) {
+        if (transactionRepository.existsByVendorId(id)) {
             throw new BusinessRuleViolationException("Cannot delete vendor with existing transactions");
         }
         repository.deleteById(id);
