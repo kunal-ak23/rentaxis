@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
@@ -313,24 +312,13 @@ class _ChequeCard extends StatelessWidget {
 
     final accent = _accentFor(status);
 
-    return InkWell(
-      onTap: () {
-        // PENDING / OVERDUE → open Pay Rent for this payment with the
-        // tapped paymentId pre-selected. Other statuses are read-only.
-        if (status == 'PENDING' || status == 'OVERDUE') {
-          final id = payment['id']?.toString();
-          context.push(
-              id != null ? '/payments/pay?paymentId=$id' : '/payments/pay');
-        }
-      },
-      borderRadius: BorderRadius.circular(14),
-      child: Container(
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          border: Border.all(color: AppColors.border),
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: IntrinsicHeight(
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        border: Border.all(color: AppColors.border),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: IntrinsicHeight(
           child: Row(
             children: [
               Container(
@@ -398,7 +386,6 @@ class _ChequeCard extends StatelessWidget {
             ],
           ),
         ),
-      ),
     );
   }
 
