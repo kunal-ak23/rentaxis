@@ -2,6 +2,7 @@ package com.datagami.rentaxis.api;
 
 import com.datagami.rentaxis.core.service.VendorService;
 import com.datagami.rentaxis.domain.entity.Vendor;
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -30,12 +31,12 @@ public class VendorController {
     }
 
     @PostMapping
-    public ResponseEntity<Vendor> createVendor(@RequestBody Vendor vendor) {
+    public ResponseEntity<Vendor> createVendor(@Valid @RequestBody Vendor vendor) {
         return ResponseEntity.ok(service.createVendor(vendor));
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<Vendor> updateVendor(@PathVariable UUID id, @RequestBody Vendor vendor) {
+    public ResponseEntity<Vendor> updateVendor(@PathVariable UUID id, @Valid @RequestBody Vendor vendor) {
         return ResponseEntity.ok(service.updateVendor(id, vendor));
     }
 

@@ -214,6 +214,19 @@ public class FinancialTransactionService {
             txn.setAccountCode(fullAccount.getCode());
             txn.setAccountType(fullAccount.getAccountType());
         }
+        // Resolve vendor + staff if present so Jackson-deserialized id-only stubs
+        // become managed entities — without this Hibernate would throw
+        // TransientObjectException at flush.
+        if (txn.getVendor() != null && txn.getVendor().getId() != null) {
+            Vendor fullVendor = vendorRepository.findById(txn.getVendor().getId())
+                    .orElseThrow(() -> new RuntimeException("Vendor not found: " + txn.getVendor().getId()));
+            txn.setVendor(fullVendor);
+        }
+        if (txn.getStaff() != null && txn.getStaff().getId() != null) {
+            Staff fullStaff = staffRepository.findById(txn.getStaff().getId())
+                    .orElseThrow(() -> new RuntimeException("Staff not found: " + txn.getStaff().getId()));
+            txn.setStaff(fullStaff);
+        }
         return repository.save(txn);
     }
 

@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from "react";
 import { useTranslations, useLocale } from "next-intl";
-import { Users, Plus, Pencil, Trash2, X, Loader2, Package, Search } from "lucide-react";
+import { Users, Plus, Pencil, Trash2, X, Loader2, Package, Search, Wallet } from "lucide-react";
 import { Pagination } from "@/components/ui/Pagination";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import VendorPaymentDialog from "@/components/vendors/VendorPaymentDialog";
 
 type Account = {
     id: string;
@@ -68,6 +69,8 @@ export default function VendorsPage() {
         isDestructive: boolean;
         onConfirm: () => void;
     } | null>(null);
+    const [paymentVendor, setPaymentVendor] = useState<Vendor | null>(null);
+    const [paymentBanner, setPaymentBanner] = useState<string | null>(null);
 
     useEffect(() => {
         fetchVendors();
@@ -333,6 +336,16 @@ export default function VendorsPage() {
                                         </td>
                                         <td className="px-5 py-3">
                                             <div className="flex items-center gap-2">
+                                                <button
+                                                    onClick={() => setPaymentVendor(vendor)}
+                                                    disabled={!vendor.active}
+                                                    className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-primary border border-primary/30 rounded-lg hover:bg-primary/5 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                                    aria-label={t("vendorPayment")}
+                                                    title={vendor.active ? t("vendorPayment") : t("inactive")}
+                                                >
+                                                    <Wallet size={12} />
+                                                    {t("payVendor")}
+                                                </button>
                                                 <button
                                                     onClick={() => openEditModal(vendor)}
                                                     className="p-1.5 text-muted hover:text-primary rounded-lg hover:bg-primary/5 transition-all cursor-pointer"
@@ -620,6 +633,22 @@ export default function VendorsPage() {
                 confirmText={confirmDialog?.confirmText || "Confirm"}
                 isDestructive={confirmDialog?.isDestructive || false}
             />
+
+            <VendorPaymentDialog
+                open={paymentVendor !== null}
+                vendor={paymentVendor}
+                onClose={() => setPaymentVendor(null)}
+                onSuccess={() => {
+                    setPaymentBanner(t("paymentSaved"));
+                    setPaymentVendor(null);
+                    setTimeout(() => setPaymentBanner(null), 3500);
+                }}
+            />
+            {paymentBanner && (
+                <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[110] bg-success/10 border border-success/30 text-success px-4 py-2 rounded-lg text-xs font-semibold shadow-lg">
+                    {paymentBanner}
+                </div>
+            )}
         </div>
     );
 }
