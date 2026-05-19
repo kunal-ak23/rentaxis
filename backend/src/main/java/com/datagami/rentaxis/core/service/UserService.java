@@ -57,8 +57,18 @@ public class UserService {
     public User createUser(String email, String rawPassword, String name, UserRole role, String tenantId,
             String phoneNumber, String addedByContext) {
         String normalizedEmail = email.toLowerCase().trim();
-        if (userRepository.findByEmail(normalizedEmail).isPresent()) {
-            throw new IllegalArgumentException("User with this email already exists.");
+        UUID tenantUuid = (tenantId != null && !tenantId.isBlank()) ? UUID.fromString(tenantId) : null;
+
+        // Post-migration 59: emails are unique per tenant, with SUPER_ADMINs
+        // (tenant_id IS NULL) globally unique among themselves.
+        boolean emailTaken = (tenantUuid == null)
+                ? userRepository.existsByEmailAndTenantIdIsNull(normalizedEmail)
+                : userRepository.existsByTenantIdAndEmail(tenantUuid, normalizedEmail);
+        if (emailTaken) {
+            throw new IllegalArgumentException(
+                    tenantUuid == null
+                            ? "A SUPER_ADMIN with this email already exists."
+                            : "A user with this email already exists in this tenant.");
         }
 
         User user = new User();
@@ -67,7 +77,7 @@ public class UserService {
         user.setName(name);
         user.setRole(role);
         user.setPhoneNumber(phoneNumber);
-        user.setTenantId(tenantId != null && !tenantId.isBlank() ? UUID.fromString(tenantId) : null);
+        user.setTenantId(tenantUuid);
 
         boolean issuesInviteToken = role == UserRole.RENTER
                 || role == UserRole.PROPERTY_MANAGER
@@ -77,7 +87,21 @@ public class UserService {
             user.setInviteTokenExpiresAt(java.time.Instant.now().plus(java.time.Duration.ofDays(7)));
         }
 
-        User saved = userRepository.save(user);
+        // The existsBy check above is a happy-path message-quality guard, but
+        // it's TOCTOU against the DB-level partial unique indexes added in
+        // migration 59. Catch the race here and translate the
+        // DataIntegrityViolationException so callers see the same 400-friendly
+        // IllegalArgumentException instead of a 500.
+        User saved;
+        try {
+            saved = userRepository.save(user);
+        } catch (org.springframework.dao.DataIntegrityViolationException e) {
+            throw new IllegalArgumentException(
+                    tenantUuid == null
+                            ? "A SUPER_ADMIN with this email already exists."
+                            : "A user with this email already exists in this tenant.",
+                    e);
+        }
 
         // Auto-create tenant membership for tenant-scoped roles
         if (tenantId != null && !tenantId.isBlank()
@@ -111,8 +135,13 @@ public class UserService {
         return saved;
     }
 
-    public Optional<User> findByEmail(String email) {
-        return userRepository.findByEmail(email);
+    /**
+     * Find all users with this email across all tenants. Post-migration 59,
+     * an email can appear in multiple tenants. Callers must disambiguate
+     * (typically by password match during login).
+     */
+    public List<User> findAllByEmail(String email) {
+        return userRepository.findAllByEmail(email.toLowerCase().trim());
     }
 
     public Optional<User> findByInviteToken(String token) {
@@ -129,19 +158,26 @@ public class UserService {
     }
 
     /**
-     * Marks a user as welcomed (sets welcomedAt) and publishes USER_WELCOMED within
-     * a single transaction so the entity write and event publish share the same
-     * commit boundary (TransactionalEventListener fires on commit).
+     * Mark a user as welcomed (first successful login) and publish USER_WELCOMED.
+     *
+     * <p>Takes a userId rather than a User so the entity is re-fetched inside
+     * this transaction. Saving a detached User loaded earlier would issue an
+     * UPDATE of every column with the loaded values, racing any concurrent
+     * password/profile mutation. By fetching here, JPA dirty-tracking issues
+     * an UPDATE only for `welcomed_at`.
      */
     @Transactional
-    public void markWelcomed(User user) {
-        user.setWelcomedAt(Instant.now());
-        userRepository.save(user);
-        events.publishEvent(new EmailEvent(this,
-                EmailEventType.USER_WELCOMED,
-                user.getTenantId(),
-                new UserWelcomedPayload(user.getId(), user.getName(), "/dashboard"),
-                "USER_WELCOMED:" + user.getId()));
+    public void markWelcomed(UUID userId) {
+        userRepository.findById(userId).ifPresent(user -> {
+            if (user.getWelcomedAt() != null) return; // idempotent
+            user.setWelcomedAt(Instant.now());
+            // No explicit save() — dirty tracking will flush at txn commit.
+            events.publishEvent(new EmailEvent(this,
+                    EmailEventType.USER_WELCOMED,
+                    user.getTenantId(),
+                    new UserWelcomedPayload(user.getId(), user.getName(), "/dashboard"),
+                    "USER_WELCOMED:" + user.getId()));
+        });
     }
 
     public enum InviteResult { OK, NOT_FOUND, EXPIRED, ALREADY_USED, WEAK_PASSWORD }
@@ -213,8 +249,18 @@ public class UserService {
         User user = userRepository.findById(id).orElseThrow(() -> new IllegalArgumentException("User not found"));
 
         String normalizedEmail = email.toLowerCase().trim();
-        if (!user.getEmail().equals(normalizedEmail) && userRepository.findByEmail(normalizedEmail).isPresent()) {
-            throw new IllegalArgumentException("User with this email already exists.");
+        if (!user.getEmail().equals(normalizedEmail)) {
+            // Per-tenant uniqueness for tenanted users; global among SUPER_ADMINs.
+            UUID currentTenant = user.getTenantId();
+            boolean taken = (currentTenant == null)
+                    ? userRepository.existsByEmailAndTenantIdIsNull(normalizedEmail)
+                    : userRepository.existsByTenantIdAndEmail(currentTenant, normalizedEmail);
+            if (taken) {
+                throw new IllegalArgumentException(
+                        currentTenant == null
+                                ? "A SUPER_ADMIN with this email already exists."
+                                : "A user with this email already exists in this tenant.");
+            }
         }
 
         UserRole previousRole = user.getRole();

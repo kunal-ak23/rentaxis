@@ -13,7 +13,29 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface UserRepository extends JpaRepository<User, UUID> {
-    Optional<User> findByEmail(String email);
+    /**
+     * Returns ALL users sharing this email. Post-migration 59, the same email
+     * may exist as multiple User rows (one per tenant). Callers must handle
+     * the multi-match case explicitly — usually by tie-breaking on password
+     * (login flow) or by scoping to a tenant (creation flow).
+     */
+    List<User> findAllByEmail(String email);
+
+    /**
+     * Per-tenant email lookup. Returns the single user matching (tenantId, email)
+     * if any. Use this in tenanted flows where you have tenant context.
+     */
+    Optional<User> findByTenantIdAndEmail(UUID tenantId, String email);
+
+    /**
+     * Lookup for SUPER_ADMIN identity (tenant_id IS NULL). Email is globally
+     * unique within this scope per migration 59's partial index.
+     */
+    Optional<User> findByEmailAndTenantIdIsNull(String email);
+
+    boolean existsByTenantIdAndEmail(UUID tenantId, String email);
+
+    boolean existsByEmailAndTenantIdIsNull(String email);
 
     Optional<User> findByInviteToken(String token);
 

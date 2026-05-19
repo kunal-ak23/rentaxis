@@ -20,7 +20,11 @@ public class User extends BaseTenantEntity {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(nullable = false, unique = true)
+    // Uniqueness is enforced at the DB level (migration 59) via two partial
+    // indexes: (tenant_id, email) for tenanted users and (email) for
+    // SUPER_ADMINs. We deliberately omit `unique = true` here so JPA doesn't
+    // re-add the global constraint on schema generation.
+    @Column(nullable = false)
     private String email;
 
     @Column(nullable = false)

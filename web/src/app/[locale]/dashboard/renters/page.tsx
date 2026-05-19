@@ -39,7 +39,7 @@ export default function RentersPage() {
         email: "",
         phone: "",
         primaryLanguage: "EN",
-        createPortalAccount: false
+        createPortalAccount: true
     });
 
     useEffect(() => {
@@ -91,7 +91,7 @@ export default function RentersPage() {
                     email: "",
                     phone: "",
                     primaryLanguage: "EN",
-                    createPortalAccount: false
+                    createPortalAccount: true
                 });
             }
         } catch (err) {

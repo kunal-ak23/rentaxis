@@ -19,5 +19,11 @@ public class CreateRenterDTO {
 
     private Language primaryLanguage = Language.EN;
 
-    private boolean createPortalAccount;
+    /**
+     * Whether to auto-create a portal User account for this renter, with the
+     * same name + email. Defaults to true — every renter gets portal access
+     * unless explicitly opted out. Requires `email`; if blank the portal
+     * account creation is silently skipped.
+     */
+    private boolean createPortalAccount = true;
 }

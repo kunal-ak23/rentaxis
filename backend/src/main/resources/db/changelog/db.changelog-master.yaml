@@ -123,3 +123,5 @@ databaseChangeLog:
       file: db/changelog/changesets/57-cascade-renters-user.yaml
   - include:
       file: db/changelog/changesets/58-lease-renewal.yaml
+  - include:
+      file: db/changelog/changesets/59-email-unique-per-tenant.yaml

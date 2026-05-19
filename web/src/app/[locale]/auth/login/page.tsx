@@ -17,35 +17,75 @@ export default function LoginPage() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
     const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
+    // Tenant picker — populated when the backend returns 409 (email exists in
+    // multiple tenants and password matched in more than one). User picks one
+    // and we resubmit with `tenantId` set.
+    const [tenantCandidates, setTenantCandidates] = useState<Array<{ tenantId: string; tenantName: string }>>([]);
+
+    const attemptSignIn = async (tenantId?: string) => {
+        return signIn("credentials", {
+            email,
+            password,
+            ...(tenantId ? { tenantId } : {}),
+            redirect: false,
+        });
+    };
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
         setError("");
         setFieldErrors({});
+        setTenantCandidates([]);
 
         try {
-            const res = await signIn("credentials", {
-                email,
-                password,
-                redirect: false,
-            });
+            const res = await attemptSignIn();
+            await handleSignInResult(res);
+        } catch (err) {
+            setError("Something went wrong. Please try again later.");
+            setLoading(false);
+        }
+    };
 
-            if (res?.error) {
-                setError("Invalid email or password. Please try again.");
-                setFieldErrors({ email: "Check your email", password: "Check your password" });
+    const handleSignInResult = async (res: { error?: string | null; ok?: boolean } | undefined) => {
+        // LOGIN_AMBIGUOUS:[{tenantId, tenantName}, ...] — show tenant picker.
+        if (res?.error?.startsWith("LOGIN_AMBIGUOUS:")) {
+            try {
+                const json = res.error.slice("LOGIN_AMBIGUOUS:".length);
+                const candidates = JSON.parse(json) as Array<{ tenantId: string; tenantName: string }>;
+                setTenantCandidates(candidates);
+                setError("");
                 setLoading(false);
-            } else {
-                // Fetch session to check role for redirect
-                const { getSession } = await import("next-auth/react");
-                const session = await getSession();
-                const role = session?.user?.role;
-                if (role === "RENTER") {
-                    router.push("/dashboard/renter-portal");
-                } else {
-                    router.push("/dashboard");
-                }
+                return;
+            } catch {
+                // Fall through to generic error.
             }
+        }
+
+        if (res?.error) {
+            setError("Invalid email or password. Please try again.");
+            setFieldErrors({ email: "Check your email", password: "Check your password" });
+            setLoading(false);
+            return;
+        }
+
+        // Fetch session to check role for redirect
+        const { getSession } = await import("next-auth/react");
+        const session = await getSession();
+        const role = session?.user?.role;
+        if (role === "RENTER") {
+            router.push("/dashboard/renter-portal");
+        } else {
+            router.push("/dashboard");
+        }
+    };
+
+    const handlePickTenant = async (tenantId: string) => {
+        setLoading(true);
+        setError("");
+        try {
+            const res = await attemptSignIn(tenantId);
+            await handleSignInResult(res);
         } catch (err) {
             setError("Something went wrong. Please try again later.");
             setLoading(false);
@@ -134,6 +174,29 @@ export default function LoginPage() {
                             className="bg-error/10 text-error p-3 rounded-xl text-[10px] font-bold text-center border border-error/20"
                         >
                             {error}
+                        </motion.div>
+                    )}
+
+                    {tenantCandidates.length > 0 && (
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            className="bg-surface border border-border rounded-xl p-4 space-y-2"
+                        >
+                            <p className="text-xs font-bold text-foreground mb-2">
+                                This email is registered in multiple organizations. Pick one:
+                            </p>
+                            {tenantCandidates.map((t) => (
+                                <button
+                                    key={t.tenantId}
+                                    type="button"
+                                    onClick={() => handlePickTenant(t.tenantId)}
+                                    disabled={loading}
+                                    className="w-full text-left bg-input hover:bg-input/70 border border-border rounded-lg px-3 py-2 text-xs font-bold text-foreground transition-colors disabled:opacity-60"
+                                >
+                                    {t.tenantName}
+                                </button>
+                            ))}
                         </motion.div>
                     )}
 
