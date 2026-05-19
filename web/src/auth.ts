@@ -15,13 +15,15 @@ export const authOptions: NextAuthOptions = {
                 try {
                     // tenantId is optional; the login page resubmits with it
                     // set after the user picks an org from the 409 picker.
+                    // NextAuth's CredentialsConfig types `credentials` from
+                    // the `credentials:` field above (email, password) — we
+                    // accept an extra field at runtime via an unknown cast.
+                    const tenantId = (credentials as unknown as { tenantId?: string }).tenantId;
                     const body: Record<string, string> = {
                         email: credentials.email,
                         password: credentials.password,
                     };
-                    if ((credentials as { tenantId?: string }).tenantId) {
-                        body.tenantId = (credentials as { tenantId: string }).tenantId;
-                    }
+                    if (tenantId) body.tenantId = tenantId;
                     const res = await fetch(`${process.env.BACKEND_URL || "http://localhost:8080"}/api/auth/login`, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
