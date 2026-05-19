@@ -1,5 +1,7 @@
 package com.datagami.rentaxis.core.service;
 
+import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
+import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.domain.entity.Vendor;
 import com.datagami.rentaxis.domain.repository.FinancialTransactionRepository;
 import com.datagami.rentaxis.domain.repository.VendorRepository;
@@ -24,7 +26,7 @@ public class VendorService {
     @Transactional(readOnly = true)
     public Vendor getVendorById(UUID id) {
         return repository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Vendor not found"));
+                .orElseThrow(() -> new NotFoundException("Vendor not found"));
     }
 
     @Transactional
@@ -54,8 +56,11 @@ public class VendorService {
 
     @Transactional
     public void deleteVendor(UUID id) {
+        if (!repository.existsById(id)) {
+            throw new NotFoundException("Vendor not found");
+        }
         if (!transactionRepository.findByVendorId(id).isEmpty()) {
-            throw new IllegalStateException("Cannot delete vendor with existing transactions");
+            throw new BusinessRuleViolationException("Cannot delete vendor with existing transactions");
         }
         repository.deleteById(id);
     }

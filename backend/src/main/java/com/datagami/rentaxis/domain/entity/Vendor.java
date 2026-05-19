@@ -1,6 +1,9 @@
 package com.datagami.rentaxis.domain.entity;
 
 import jakarta.persistence.*;
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.Setter;
 import java.util.UUID;
@@ -15,6 +18,7 @@ public class Vendor extends BaseTenantEntity {
     @GeneratedValue(strategy = GenerationType.AUTO)
     private UUID id;
 
+    @NotBlank(message = "Vendor name (English) is required")
     @Column(name = "name_en", nullable = false)
     private String nameEn;
 
@@ -27,9 +31,11 @@ public class Vendor extends BaseTenantEntity {
     @Column(name = "trn", length = 20)
     private String trn;
 
+    @Email(message = "Email must be a valid address")
     @Column(length = 100)
     private String email;
 
+    @Size(max = 20, message = "Phone must be 20 characters or fewer")
     @Column(length = 20)
     private String phone;
 

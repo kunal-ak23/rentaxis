@@ -3,10 +3,11 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useTranslations } from "next-intl";
 import {
-    Receipt, Plus, X, Filter, Calendar, Building2, Home, ChevronDown, Loader2, LayoutList, BookOpen, ChevronLeft, ChevronRight
+    Receipt, Plus, X, Filter, Calendar, Building2, Home, ChevronDown, Loader2, LayoutList, BookOpen, ChevronLeft, ChevronRight, Wallet
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatCurrency, formatCurrencyCompact, formatNumber } from "@/lib/format";
+import VendorPaymentDialog from "@/components/vendors/VendorPaymentDialog";
 
 type Account = {
     id: string;
@@ -71,6 +72,9 @@ export default function TransactionsPage() {
     const [currentPage, setCurrentPage] = useState(1);
     const [expandedSplits, setExpandedSplits] = useState<Set<string>>(new Set());
     const [submitError, setSubmitError] = useState("");
+    const [showVendorPayment, setShowVendorPayment] = useState(false);
+    const [vendorPaymentBanner, setVendorPaymentBanner] = useState<string | null>(null);
+    const tVendor = useTranslations("Vendors");
 
     const toggleSplitExpand = async (txnId: string) => {
         const next = new Set(expandedSplits);
@@ -468,6 +472,13 @@ export default function TransactionsPage() {
                     >
                         <Filter size={14} />
                         {t("filter")}
+                    </button>
+                    <button
+                        onClick={() => setShowVendorPayment(true)}
+                        className="flex items-center gap-2 bg-surface text-foreground border border-border px-4 py-2.5 rounded-full text-xs font-bold hover:bg-input transition-all duration-200 shadow-sm active:scale-95 cursor-pointer focus:ring-2 focus:ring-primary/20 focus:outline-none"
+                    >
+                        <Wallet size={14} />
+                        {tVendor("vendorPayment")}
                     </button>
                     <button
                         onClick={() => setShowForm(true)}
@@ -1062,6 +1073,22 @@ export default function TransactionsPage() {
             {transactions.length === 0 && !loading && (
                 <div className="text-center py-16 text-xs text-muted font-medium">
                     No transactions found. Add your first transaction to get started.
+                </div>
+            )}
+
+            <VendorPaymentDialog
+                open={showVendorPayment}
+                onClose={() => setShowVendorPayment(false)}
+                onSuccess={() => {
+                    setShowVendorPayment(false);
+                    setVendorPaymentBanner(tVendor("paymentSaved"));
+                    fetchTransactions();
+                    setTimeout(() => setVendorPaymentBanner(null), 3500);
+                }}
+            />
+            {vendorPaymentBanner && (
+                <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[110] bg-success/10 border border-success/30 text-success px-4 py-2 rounded-lg text-xs font-semibold shadow-lg">
+                    {vendorPaymentBanner}
                 </div>
             )}
         </div>
