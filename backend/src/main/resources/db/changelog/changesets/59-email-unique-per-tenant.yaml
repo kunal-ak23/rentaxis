@@ -1,0 +1,46 @@
+databaseChangeLog:
+  - changeSet:
+      id: 59-email-unique-per-tenant
+      author: rentaxis
+      comment: >
+        Relax users.email from globally unique to per-tenant unique. The same
+        email can now exist as separate User rows in different tenants — e.g.
+        kunal@example.com can be a tenant_admin in OrgA and a renter in OrgB
+        with independent passwords. Resolves the test-account-creation friction
+        where Kunal currently has to use Gmail +aliases to seed renters across
+        tenants.
+
+        SUPER_ADMINs (tenant_id IS NULL) keep the global-unique invariant
+        because login can't disambiguate by tenant for them.
+
+        Implementation: drop the legacy users_email_key constraint, replace
+        with two partial unique indexes:
+          - ux_users_tenant_email     WHERE tenant_id IS NOT NULL  → per-tenant
+          - ux_users_email_super_admin WHERE tenant_id IS NULL      → global for super admins
+
+        Existing data: prod currently has zero email duplicates (since the
+        old constraint was global), so the new constraint applies cleanly
+        with no precondition needed.
+      changes:
+        - dropUniqueConstraint:
+            tableName: users
+            constraintName: users_email_key
+        - sql:
+            comment: Partial unique indexes — per-tenant for tenanted users, global for SUPER_ADMINs.
+            splitStatements: true
+            sql: |
+              CREATE UNIQUE INDEX ux_users_tenant_email
+                ON users (tenant_id, email)
+                WHERE tenant_id IS NOT NULL;
+              CREATE UNIQUE INDEX ux_users_email_super_admin
+                ON users (email)
+                WHERE tenant_id IS NULL;
+      rollback:
+        - sql:
+            sql: |
+              DROP INDEX IF EXISTS ux_users_tenant_email;
+              DROP INDEX IF EXISTS ux_users_email_super_admin;
+        - addUniqueConstraint:
+            tableName: users
+            columnNames: email
+            constraintName: users_email_key

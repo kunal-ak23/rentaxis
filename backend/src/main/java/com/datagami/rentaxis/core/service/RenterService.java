@@ -52,27 +52,31 @@ public class RenterService {
 
         String generatedPassword = null;
 
-        // Auto-create portal user account if requested
-        if (dto.isCreatePortalAccount() && dto.getEmail() != null && !dto.getEmail().isBlank()) {
-            try {
-                UUID tenantId = TenantContextHolder.getTenantId();
-                generatedPassword = "Renter@" + saved.getId().toString().substring(0, 6);
-                User user = userService.createUser(
-                        dto.getEmail(),
-                        generatedPassword,
-                        dto.getNameEn(),
-                        UserRole.RENTER,
-                        tenantId != null ? tenantId.toString() : null,
-                        dto.getPhone(),
-                        "system"
-                );
-                saved.setUserId(user.getId());
-                renterRepository.save(saved);
-                // USER_INVITED is now fired by UserService.createUser for RENTER role — no duplicate needed.
-            } catch (Exception e) {
-                generatedPassword = null;
-                System.err.println("Failed to create portal account for renter " + saved.getId() + ": " + e.getMessage());
-            }
+        // Auto-create portal User account by default. Skip only when:
+        //   (a) the caller explicitly opts out (createPortalAccount=false), or
+        //   (b) no email was provided — login requires an email identifier.
+        //
+        // Failure to create the portal account aborts the whole txn — both
+        // renter and portal user are atomically created (or neither). This
+        // replaces the prior swallow-and-log behavior, which left orphan
+        // renter rows with no portal access and made debugging painful.
+        boolean shouldCreatePortal = dto.isCreatePortalAccount()
+                && dto.getEmail() != null && !dto.getEmail().isBlank();
+        if (shouldCreatePortal) {
+            UUID tenantId = TenantContextHolder.getTenantId();
+            generatedPassword = "Renter@" + saved.getId().toString().substring(0, 6);
+            User user = userService.createUser(
+                    dto.getEmail(),
+                    generatedPassword,
+                    dto.getNameEn(),
+                    UserRole.RENTER,
+                    tenantId != null ? tenantId.toString() : null,
+                    dto.getPhone(),
+                    "system"
+            );
+            saved.setUserId(user.getId());
+            renterRepository.save(saved);
+            // USER_INVITED is fired by UserService.createUser for RENTER role.
         }
 
         RenterDTO result = mapToDTO(saved);

@@ -42,31 +42,46 @@ public class AuthController {
 
     @PostMapping("/login")
     public ResponseEntity<AuthResponse> login(@RequestBody LoginRequest request) {
-        Optional<User> userOpt = userService.findByEmail(request.email().toLowerCase().trim());
-        if (userOpt.isPresent()) {
-            User user = userOpt.get();
-            if (passwordEncoder.matches(request.password(), user.getPasswordHash())) {
-                // Get all tenant memberships for the user
-                List<String> tenantIds = userService.getUserTenantIds(user.getId())
-                        .stream().map(UUID::toString).toList();
+        // Post-migration 59 the same email can exist in multiple tenants.
+        // Look up every candidate row, then disambiguate by which one's
+        // password hash matches the submitted password.
+        List<User> candidates = userService.findAllByEmail(request.email());
 
-                // USER_WELCOMED: emit on first successful login (welcomedAt null).
-                // markWelcomed is @Transactional — the entity write and event publish
-                // share the same transaction, so TransactionalEventListener fires on commit.
-                if (user.getWelcomedAt() == null) {
-                    userService.markWelcomed(user);
-                }
-
-                return ResponseEntity.ok(new AuthResponse(
-                        user.getId().toString(),
-                        user.getEmail(),
-                        user.getName(),
-                        user.getRole().name(),
-                        user.getTenantId() != null ? user.getTenantId().toString() : null,
-                        tenantIds));
+        User authed = null;
+        int passwordMatches = 0;
+        for (User u : candidates) {
+            if (passwordEncoder.matches(request.password(), u.getPasswordHash())) {
+                authed = u;
+                passwordMatches++;
             }
         }
-        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+
+        if (passwordMatches == 0) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+
+        if (passwordMatches > 1) {
+            // Same email + same password reused across tenants. Can't
+            // safely pick one — return 409 so the frontend can render a
+            // tenant picker. Until that UI exists, surface as conflict.
+            // Phase B: include the candidate tenant list in the body.
+            return ResponseEntity.status(HttpStatus.CONFLICT).build();
+        }
+
+        List<String> tenantIds = userService.getUserTenantIds(authed.getId())
+                .stream().map(UUID::toString).toList();
+
+        if (authed.getWelcomedAt() == null) {
+            userService.markWelcomed(authed);
+        }
+
+        return ResponseEntity.ok(new AuthResponse(
+                authed.getId().toString(),
+                authed.getEmail(),
+                authed.getName(),
+                authed.getRole().name(),
+                authed.getTenantId() != null ? authed.getTenantId().toString() : null,
+                tenantIds));
     }
 
     @PostMapping("/register")

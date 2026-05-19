@@ -57,8 +57,18 @@ public class UserService {
     public User createUser(String email, String rawPassword, String name, UserRole role, String tenantId,
             String phoneNumber, String addedByContext) {
         String normalizedEmail = email.toLowerCase().trim();
-        if (userRepository.findByEmail(normalizedEmail).isPresent()) {
-            throw new IllegalArgumentException("User with this email already exists.");
+        UUID tenantUuid = (tenantId != null && !tenantId.isBlank()) ? UUID.fromString(tenantId) : null;
+
+        // Post-migration 59: emails are unique per tenant, with SUPER_ADMINs
+        // (tenant_id IS NULL) globally unique among themselves.
+        boolean emailTaken = (tenantUuid == null)
+                ? userRepository.existsByEmailAndTenantIdIsNull(normalizedEmail)
+                : userRepository.existsByTenantIdAndEmail(tenantUuid, normalizedEmail);
+        if (emailTaken) {
+            throw new IllegalArgumentException(
+                    tenantUuid == null
+                            ? "A SUPER_ADMIN with this email already exists."
+                            : "A user with this email already exists in this tenant.");
         }
 
         User user = new User();
@@ -67,7 +77,7 @@ public class UserService {
         user.setName(name);
         user.setRole(role);
         user.setPhoneNumber(phoneNumber);
-        user.setTenantId(tenantId != null && !tenantId.isBlank() ? UUID.fromString(tenantId) : null);
+        user.setTenantId(tenantUuid);
 
         boolean issuesInviteToken = role == UserRole.RENTER
                 || role == UserRole.PROPERTY_MANAGER
@@ -111,8 +121,13 @@ public class UserService {
         return saved;
     }
 
-    public Optional<User> findByEmail(String email) {
-        return userRepository.findByEmail(email);
+    /**
+     * Find all users with this email across all tenants. Post-migration 59,
+     * an email can appear in multiple tenants. Callers must disambiguate
+     * (typically by password match during login).
+     */
+    public List<User> findAllByEmail(String email) {
+        return userRepository.findAllByEmail(email.toLowerCase().trim());
     }
 
     public Optional<User> findByInviteToken(String token) {
@@ -213,8 +228,18 @@ public class UserService {
         User user = userRepository.findById(id).orElseThrow(() -> new IllegalArgumentException("User not found"));
 
         String normalizedEmail = email.toLowerCase().trim();
-        if (!user.getEmail().equals(normalizedEmail) && userRepository.findByEmail(normalizedEmail).isPresent()) {
-            throw new IllegalArgumentException("User with this email already exists.");
+        if (!user.getEmail().equals(normalizedEmail)) {
+            // Per-tenant uniqueness for tenanted users; global among SUPER_ADMINs.
+            UUID currentTenant = user.getTenantId();
+            boolean taken = (currentTenant == null)
+                    ? userRepository.existsByEmailAndTenantIdIsNull(normalizedEmail)
+                    : userRepository.existsByTenantIdAndEmail(currentTenant, normalizedEmail);
+            if (taken) {
+                throw new IllegalArgumentException(
+                        currentTenant == null
+                                ? "A SUPER_ADMIN with this email already exists."
+                                : "A user with this email already exists in this tenant.");
+            }
         }
 
         UserRole previousRole = user.getRole();

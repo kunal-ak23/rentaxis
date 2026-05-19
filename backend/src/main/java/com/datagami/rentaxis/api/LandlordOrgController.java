@@ -74,6 +74,33 @@ public class LandlordOrgController {
         return ResponseEntity.ok(service.save(org));
     }
 
+    /**
+     * Hard-delete a tenant and all of its data (every row in every table that
+     * has a {@code tenant_id} column matching this id). Irreversible.
+     *
+     * <p>Safety: caller must supply {@code confirmName} matching the tenant's
+     * current name exactly. SUPER_ADMIN role is already enforced at the class
+     * level. Intended for E2E test cleanup and rare ops operations — there is
+     * no UI surface for this and there should not be one.
+     *
+     * <p>Returns 204 on success, 400 if confirmName doesn't match, 404 if the
+     * tenant doesn't exist.
+     */
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteTenant(
+            @PathVariable UUID id,
+            @RequestParam("confirmName") String confirmName) {
+        if (service.findById(id).isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        try {
+            service.deleteTenant(id, confirmName);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().build();
+        }
+        return ResponseEntity.noContent().build();
+    }
+
     @GetMapping("/{id}/features")
     public ResponseEntity<List<FeatureToggleDTO>> getFeatures(@PathVariable UUID id) {
         if (service.findById(id).isEmpty()) {

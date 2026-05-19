@@ -27,3 +27,12 @@ Thumbs.db
 data/contracts/
 backend/data/
 graphify-out/
+
+# Prod E2E artifacts
+web/e2e-prod/.auth/
+web/e2e-prod/.test-context.json
+web/e2e-prod/.env.local
+web/e2e-prod/playwright-report/
+web/e2e-prod/test-results/
+# Keep the template even though web/.gitignore matches .env*
+!web/e2e-prod/.env.local.example
