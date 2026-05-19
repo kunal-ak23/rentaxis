@@ -95,10 +95,29 @@ public class LandlordOrgService {
                             + " actual=" + org.getName());
         }
 
+        // IMPORTANT — convention coupling: this discovery query only finds
+        // tables whose tenant-scope column is literally named `tenant_id`.
+        // If a future feature adds a tenanted table with a different column
+        // name (e.g. `owning_tenant_id`), or stores tenant-scoped data
+        // outside the DB (blob storage, S3 prefixes, search indexes, etc.),
+        // that data will NOT be deleted by this method. Either rename the
+        // column to match the convention, or extend this method to call
+        // feature-specific cleanup hooks.
         List<String> tenantedTables = jdbcTemplate.queryForList(
                 "SELECT table_name FROM information_schema.columns " +
                         "WHERE column_name = 'tenant_id' AND table_schema = 'public'",
                 String.class);
+
+        // Defensive: if discovery returns nothing, refuse to proceed. An empty
+        // list is virtually always a schema-introspection misconfiguration
+        // (wrong schema name, missing grant) — not "the DB has no tenanted
+        // tables." Failing closed here prevents silently deleting only the
+        // landlord_org row while leaving orphaned tenant data everywhere.
+        if (tenantedTables.isEmpty()) {
+            throw new IllegalStateException(
+                    "deleteTenant: information_schema returned zero tenanted tables. " +
+                            "Refusing to proceed (would orphan data). Check schema=public visibility.");
+        }
 
         log.info("deleteTenant({}): purging {} tenanted tables", tenantId, tenantedTables.size());
 
@@ -108,8 +127,17 @@ public class LandlordOrgService {
                 List<String> stillBlocked = new java.util.ArrayList<>();
                 for (String table : remaining) {
                     java.sql.Savepoint sp = conn.setSavepoint("del_" + table.replaceAll("\\W", "_"));
+                    // Quote the table identifier — names come from information_schema
+                    // (not user input), but mixed-case or reserved words would break
+                    // without quoting. Embedded double-quote is rejected as a safety
+                    // net against any future schema-introspection surprise.
+                    if (table.contains("\"")) {
+                        throw new IllegalStateException(
+                                "Refusing to delete from table with double-quote in name: " + table);
+                    }
+                    String quoted = "\"" + table + "\"";
                     try (var ps = conn.prepareStatement(
-                            "DELETE FROM " + table + " WHERE tenant_id = ?")) {
+                            "DELETE FROM " + quoted + " WHERE tenant_id = ?")) {
                         ps.setObject(1, tenantId);
                         int rows = ps.executeUpdate();
                         log.debug("  pass {}: deleted {} rows from {}", pass, rows, table);

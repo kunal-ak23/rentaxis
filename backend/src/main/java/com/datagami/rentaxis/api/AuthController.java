@@ -30,7 +30,13 @@ public class AuthController {
         this.passwordEncoder = passwordEncoder;
     }
 
-    public record LoginRequest(String email, String password) {
+    /**
+     * Login payload. `tenantId` is optional and only meaningful when an email
+     * is reused across tenants (post-migration 59). When absent, the server
+     * uses the email's lone match, or returns 409 with the candidate tenants
+     * if there are several.
+     */
+    public record LoginRequest(String email, String password, String tenantId) {
     }
 
     public record RegisterRequest(String fullName, String companyName, String email, String password) {
@@ -40,47 +46,98 @@ public class AuthController {
             List<String> tenantIds) {
     }
 
+    /**
+     * Response body for 409 CONFLICT on login: the email exists in multiple
+     * tenants and the client must re-submit with `tenantId` set to one of
+     * these. The userId is included so a future tenant-picker UI can render
+     * the name/role per candidate.
+     */
+    public record LoginAmbiguousResponse(List<TenantCandidate> tenants) {
+    }
+
+    public record TenantCandidate(String tenantId, String tenantName) {
+    }
+
+    /**
+     * Constant-time-ish dummy bcrypt hash used to absorb a password-match
+     * round when no real user exists for the submitted email. Prevents the
+     * trivial timing oracle of "instant 401 → email not registered" vs
+     * "~100ms 401 → email exists, wrong password". This is bcrypt of the
+     * literal string "absent" with cost 10 — sentinel only, never matches
+     * any real password.
+     */
+    private static final String DUMMY_HASH =
+            "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy";
+
     @PostMapping("/login")
-    public ResponseEntity<AuthResponse> login(@RequestBody LoginRequest request) {
-        // Post-migration 59 the same email can exist in multiple tenants.
-        // Look up every candidate row, then disambiguate by which one's
-        // password hash matches the submitted password.
+    public ResponseEntity<?> login(@RequestBody LoginRequest request) {
+        // Post-migration 59, the same email can exist as separate User rows
+        // in different tenants. The login flow disambiguates as follows:
+        //
+        //   1 candidate    → bcrypt once; success or 401.
+        //   0 candidates   → bcrypt once against a dummy hash for constant
+        //                    timing; return 401. This hides whether the
+        //                    email is registered from external probes.
+        //   >1 candidates  → if request.tenantId is set, narrow to that one.
+        //                    If absent, return 409 with the candidate tenant
+        //                    list so the client can render a picker.
+        //
+        // Bcrypt is run at most ONCE per login attempt regardless of how many
+        // candidates exist. Running it per-candidate would leak the tenant
+        // count for an email via response time.
         List<User> candidates = userService.findAllByEmail(request.email());
 
-        User authed = null;
-        int passwordMatches = 0;
-        for (User u : candidates) {
-            if (passwordEncoder.matches(request.password(), u.getPasswordHash())) {
-                authed = u;
-                passwordMatches++;
+        // Narrow when a tenantId disambiguator was provided.
+        if (request.tenantId() != null && !request.tenantId().isBlank()) {
+            UUID requested;
+            try {
+                requested = UUID.fromString(request.tenantId());
+            } catch (IllegalArgumentException e) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
             }
+            candidates = candidates.stream()
+                    .filter(u -> u.getTenantId() != null && u.getTenantId().equals(requested))
+                    .toList();
         }
 
-        if (passwordMatches == 0) {
+        // Ambiguous: multiple tenants and no disambiguator.
+        if (candidates.size() > 1) {
+            List<TenantCandidate> tenants = candidates.stream()
+                    .filter(u -> u.getTenantId() != null)
+                    .map(u -> {
+                        String tname = orgService.findById(u.getTenantId())
+                                .map(LandlordOrg::getName)
+                                .orElse("(unknown)");
+                        return new TenantCandidate(u.getTenantId().toString(), tname);
+                    })
+                    .toList();
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(new LoginAmbiguousResponse(tenants));
+        }
+
+        // Always run exactly one bcrypt to keep timing constant across the
+        // "email registered" / "email not registered" paths.
+        User candidate = candidates.isEmpty() ? null : candidates.get(0);
+        String hashToCheck = candidate != null ? candidate.getPasswordHash() : DUMMY_HASH;
+        boolean matched = passwordEncoder.matches(request.password(), hashToCheck);
+
+        if (candidate == null || !matched) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
 
-        if (passwordMatches > 1) {
-            // Same email + same password reused across tenants. Can't
-            // safely pick one — return 409 so the frontend can render a
-            // tenant picker. Until that UI exists, surface as conflict.
-            // Phase B: include the candidate tenant list in the body.
-            return ResponseEntity.status(HttpStatus.CONFLICT).build();
-        }
-
-        List<String> tenantIds = userService.getUserTenantIds(authed.getId())
+        List<String> tenantIds = userService.getUserTenantIds(candidate.getId())
                 .stream().map(UUID::toString).toList();
 
-        if (authed.getWelcomedAt() == null) {
-            userService.markWelcomed(authed);
+        if (candidate.getWelcomedAt() == null) {
+            userService.markWelcomed(candidate);
         }
 
         return ResponseEntity.ok(new AuthResponse(
-                authed.getId().toString(),
-                authed.getEmail(),
-                authed.getName(),
-                authed.getRole().name(),
-                authed.getTenantId() != null ? authed.getTenantId().toString() : null,
+                candidate.getId().toString(),
+                candidate.getEmail(),
+                candidate.getName(),
+                candidate.getRole().name(),
+                candidate.getTenantId() != null ? candidate.getTenantId().toString() : null,
                 tenantIds));
     }
 
