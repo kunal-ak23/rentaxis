@@ -26,14 +26,18 @@ test('renter portal payments page shows expected widgets', async ({ browser }) =
   const page = await ctxBrowser.newPage();
 
   await page.goto('/en/auth/login');
-  await page.getByLabel(/email/i).fill(ctx.renter.email);
-  await page.getByLabel(/password/i).fill(renterPwd);
+  // Use ID-based locators — the login page has both a password input AND a
+  // "Show password" toggle button, so a label-based query is ambiguous.
+  await page.locator('#login-email').fill(ctx.renter.email);
+  await page.locator('#login-password').fill(renterPwd);
   await page.getByRole('button', { name: /sign in|log in/i }).click();
 
-  await page.waitForURL(/\/renter\b/);
-  await page.goto('/en/renter/payments');
+  // Login redirects RENTERs to /dashboard/renter-portal.
+  await page.waitForURL(/\/dashboard\/renter-portal/);
+  await page.goto('/en/dashboard/renter-portal/payments');
 
-  // Hero showing next cheque (provisioning created 4 quarterly rows).
+  // Hero showing next cheque (provisioning created 4 quarterly rows; 02 left
+  // 2 still PENDING for the hero to pick). Translated label: "Next cheque due".
   await expect(page.getByText(/next cheque/i)).toBeVisible();
   // No Pay Now CTA on prod — online payments are PM-initiated.
   await expect(page.getByRole('button', { name: /pay now/i })).toHaveCount(0);

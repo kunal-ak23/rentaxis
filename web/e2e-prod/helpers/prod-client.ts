@@ -182,14 +182,19 @@ export const api = {
     }
   },
 
-  // Property + Unit
+  // Property + Unit — payload shapes match web/src/app/[locale]/dashboard/properties/page.tsx
+  // (handleProjectSubmit + handlePropertySubmit) exactly. Sending fewer
+  // fields than the real form risks hiding drift in @NotNull defaults or
+  // validators added later.
   createProperty: (pctx: ProdContext, p: { nameEn: string; emirate?: string; type?: string }) =>
     postJson<{ id: string; nameEn: string }>(pctx, '/v1/properties', {
       nameEn: p.nameEn,
       nameAr: p.nameEn,
-      address: '123 TEST-E2E Blvd',
       emirate: p.emirate ?? 'DUBAI',
+      address: '123 TEST-E2E Blvd',
+      makaniNumber: '',
       type: p.type ?? 'RESIDENTIAL',
+      fixedExpenses: 0,
     }),
   createUnit: (
     pctx: ProdContext,
@@ -201,6 +206,9 @@ export const api = {
       type: u.type ?? 'BHK1',
       sizeSqft: 600,
       expectedRent: u.expectedRent ?? 5000,
+      actualRent: 0,
+      status: 'VACANT',
+      currentTenantName: '',
     }),
 
   // Renter + Lease
@@ -219,19 +227,45 @@ export const api = {
         ...(r.createPortalAccount === false ? { createPortalAccount: false } : {}),
       },
     ),
+  // Lease — payload mirrors LeaseWizard.tsx exactly. The frontend wizard
+  // computes `rentAmount = monthlyRent * monthsBetween` so the lease total
+  // is the lifetime rent, not the monthly rent. We mimic that, otherwise the
+  // resulting lease has a tiny `rentAmount` and downstream tests behave
+  // differently than a real lease.
   createLease: (
     pctx: ProdContext,
     l: { unitId: string; renterId: string; startDate: string; endDate: string; rentAmount: number },
-  ) =>
-    postJson<{ id: string; status: string }>(pctx, '/v1/leases', {
+  ) => {
+    const start = new Date(l.startDate);
+    const end = new Date(l.endDate);
+    const months = Math.max(
+      1,
+      (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth()),
+    );
+    return postJson<{ id: string; status: string }>(pctx, '/v1/leases', {
       unitId: l.unitId,
       renterId: l.renterId,
       startDate: l.startDate,
       endDate: l.endDate,
-      rentAmount: l.rentAmount,
+      rentAmount: l.rentAmount * months, // lifetime — matches wizard
+      monthlyRent: l.rentAmount,
       depositAmount: 5000,
+      ejariNumber: null,
       paymentTerms: 4,
-    }),
+      paymentMethod: 'CHEQUE',
+      depositPaymentMethod: 'CHEQUE',
+      paymentReferenceNumber: null,
+      agreementDate: null,
+      adminFee: 0,
+      parkingRemoteFee: 0,
+      rentVatApplicable: false,
+      adminFeeVatApplicable: false,
+      securityDepositVatApplicable: false,
+      parkingRemoteVatApplicable: false,
+    });
+  },
+  // The leases page calls PUT /activate with no body at all (no Content-Type).
+  // Our helper sends `{}` which is functionally equivalent.
   activateLease: (pctx: ProdContext, leaseId: string) =>
     putJson<{ id: string; status: string }>(pctx, `/v1/leases/${leaseId}/activate`, {}),
 
@@ -256,28 +290,49 @@ export const api = {
   bouncePayment: (pctx: ProdContext, paymentScheduleId: string, dto: { notes?: string } = {}) =>
     putJson<{ id: string; status: string }>(pctx, `/v1/payments/${paymentScheduleId}/bounce`, dto),
 
-  // Vendor + vendor payment
+  // Vendor — payload matches the finance/vendors page (handleSubmit). The
+  // entity does NOT have `category`, `contactEmail`, or `contactPhone`
+  // fields — those would be silently ignored by the backend. Real fields
+  // are nameEn/nameAr, tradeLicenseNumber, trn, email, phone, contactPerson,
+  // address, bank details, notes, active.
   createVendor: (pctx: ProdContext, v: { name: string; category?: string }) =>
-    postJson<{ id: string; name: string }>(pctx, '/v1/vendors', {
-      name: v.name,
-      category: v.category ?? 'MAINTENANCE',
-      contactEmail: 'vendor@test.example',
-      contactPhone: '+971500000001',
+    postJson<{ id: string; nameEn: string }>(pctx, '/v1/vendors', {
+      nameEn: v.name,
+      nameAr: v.name,
+      tradeLicenseNumber: '',
+      trn: '',
+      email: 'vendor-e2e@test.example',
+      phone: '+971500000001',
+      contactPerson: 'E2E Test Contact',
+      address: '',
+      bankName: '',
+      bankAccountNumber: '',
+      iban: '',
+      notes: '',
+      active: true,
     }),
 
-  // Interactions
+  // Interactions — payload matches LogInteractionDialog.tsx exactly:
+  // {type, direction, occurredAt, summary, outcome (null), followUpDate (null)}.
   logInteraction: (
     pctx: ProdContext,
     leaseId: string,
-    i: { type: string; notes: string; occurredAt?: string },
+    i: { type: string; direction: string; summary: string; occurredAt?: string },
   ) =>
-    postJson<{ id: string; type: string }>(pctx, `/v1/leases/${leaseId}/interactions`, {
-      type: i.type,
-      notes: i.notes,
-      occurredAt: i.occurredAt ?? new Date().toISOString(),
-    }),
+    postJson<{ id: string; type: string; summary: string }>(
+      pctx,
+      `/v1/leases/${leaseId}/interactions`,
+      {
+        type: i.type,
+        direction: i.direction,
+        occurredAt: i.occurredAt ?? new Date().toISOString(),
+        summary: i.summary,
+        outcome: null,
+        followUpDate: null,
+      },
+    ),
   listInteractions: (pctx: ProdContext, leaseId: string) =>
-    getJson<Array<{ id: string; type: string; notes: string }>>(
+    getJson<Array<{ id: string; type: string; summary: string }>>(
       pctx,
       `/v1/leases/${leaseId}/interactions`,
     ),
