@@ -85,13 +85,18 @@ public class PaymentScheduleService {
         long totalMonths = java.time.temporal.ChronoUnit.MONTHS.between(lease.getStartDate(), lease.getEndDate());
         if (totalMonths < 1) totalMonths = 1;
 
-        BigDecimal monthlyRent;
+        // Prefer monthlyRent × months when set so the wizard's "monthly × N months"
+        // total is exactly reproduced. Fall back to rentAmount as the total
+        // directly — using it avoids a divide-then-multiply roundtrip that lost
+        // up to N×0.005 AED on totals that don't divide evenly by month count
+        // (e.g. 31000 / 12 → 2583.33 × 12 = 30999.96).
+        BigDecimal totalRent;
         if (lease.getMonthlyRent() != null && lease.getMonthlyRent().compareTo(BigDecimal.ZERO) > 0) {
-            monthlyRent = lease.getMonthlyRent();
+            totalRent = lease.getMonthlyRent().multiply(BigDecimal.valueOf(totalMonths));
         } else if (lease.getRentAmount() != null && lease.getRentAmount().compareTo(BigDecimal.ZERO) > 0) {
-            monthlyRent = lease.getRentAmount().divide(BigDecimal.valueOf(totalMonths), 2, RoundingMode.HALF_UP);
+            totalRent = lease.getRentAmount();
         } else {
-            monthlyRent = BigDecimal.ZERO;
+            totalRent = BigDecimal.ZERO;
         }
 
         // Honor lease.paymentTerms — N installments distributed across the lease
@@ -106,7 +111,13 @@ public class PaymentScheduleService {
         if (n > totalMonths) n = (int) totalMonths;
         if (n < 1) n = 1;
 
-        BigDecimal totalRent = monthlyRent.multiply(BigDecimal.valueOf(totalMonths));
+        // No-rent leases (e.g. employee housing fixtures) used to produce N rows
+        // of amount=0 under the legacy divide path. Skip generation entirely
+        // rather than throwing IllegalArgumentException from the calculator;
+        // that preserves the prior no-throw contract for upstream callers.
+        if (totalRent.signum() <= 0) {
+            return existing;
+        }
         // Clean-denomination split: non-last cheques are floored to AED 1,000 (or
         // 500/100/cents on fallback), last cheque absorbs the residual. The
         // deposit acts as a safety cap on the last cheque so we always retain

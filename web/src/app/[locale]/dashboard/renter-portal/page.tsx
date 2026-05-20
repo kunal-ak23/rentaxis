@@ -406,7 +406,7 @@ export default function RenterPortalPage() {
                                     >
                                         <span className="flex items-center gap-2">
                                             <CreditCard size={14} className="text-primary" />
-                                            Payment Plan ({plan.length} cheque{plan.length > 1 ? 's' : ''})
+                                            {t("paymentPlan")} ({t("paymentPlanCheques", { count: plan.length })})
                                         </span>
                                         <ChevronDown size={14} className={cn("transition-transform", isExpanded && "rotate-180")} />
                                     </button>
@@ -416,9 +416,9 @@ export default function RenterPortalPage() {
                                                 <thead className="bg-input/70">
                                                     <tr className="text-[10px] font-semibold text-muted uppercase tracking-wider">
                                                         <th className="px-3 py-2 text-start">#</th>
-                                                        <th className="px-3 py-2 text-start">Due Date</th>
-                                                        <th className="px-3 py-2 text-end">Amount</th>
-                                                        <th className="px-3 py-2 text-start">Method</th>
+                                                        <th className="px-3 py-2 text-start">{t("paymentPlanDueDate")}</th>
+                                                        <th className="px-3 py-2 text-end">{t("paymentPlanAmount")}</th>
+                                                        <th className="px-3 py-2 text-start">{t("paymentPlanMethod")}</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody>
@@ -437,7 +437,7 @@ export default function RenterPortalPage() {
                                             </table>
                                             {hasResidualLast && (
                                                 <p className="px-3 py-2 text-[10px] text-muted border-t border-border bg-input/30">
-                                                    The final cheque is larger because it absorbs the rounding remainder. It stays at or below your deposit ({formatCurrencyCompact(lease.depositAmount)}) so the deposit covers any damages if you leave early.
+                                                    {t("paymentPlanDepositNote", { deposit: formatCurrencyCompact(lease.depositAmount) })}
                                                 </p>
                                             )}
                                         </div>
