@@ -1,0 +1,89 @@
+databaseChangeLog:
+  - changeSet:
+      id: 60a-dedupe-property-names
+      author: rentaxis
+      comment: >
+        Auto-reconcile any pre-existing duplicate (tenant_id, LOWER(name_en))
+        property rows before the unique-index changeset adds the partial
+        index. For each duplicate group, the OLDEST row (min created_at,
+        tie-break by min id) keeps the bare name; subsequent duplicates
+        get the last 8 hex chars of their id appended:
+
+            "Marina Heights" → "Marina Heights (a1b2c3d4)"
+
+        This is a one-time auto-fix; no rows are deleted, so units / leases
+        / payments / etc. that reference these properties via FK remain
+        intact. The renamed properties are still findable in the UI by
+        partial-name search and operators can re-rename them post-deploy
+        if the auto-suffix isn't desirable.
+
+        Idempotent: if there are no duplicates, the UPDATE affects 0 rows.
+      changes:
+        - sql:
+            comment: Append id suffix to every duplicate row except the oldest in each group.
+            splitStatements: false
+            sql: |
+              WITH dupes AS (
+                SELECT tenant_id, LOWER(name_en) AS lname
+                FROM properties
+                WHERE tenant_id IS NOT NULL
+                GROUP BY tenant_id, LOWER(name_en)
+                HAVING COUNT(*) > 1
+              ),
+              keepers AS (
+                SELECT DISTINCT ON (p.tenant_id, LOWER(p.name_en)) p.id
+                FROM properties p
+                JOIN dupes d ON p.tenant_id = d.tenant_id AND LOWER(p.name_en) = d.lname
+                ORDER BY p.tenant_id, LOWER(p.name_en),
+                         p.created_at ASC NULLS LAST, p.id ASC
+              )
+              UPDATE properties p
+              SET name_en = p.name_en || ' (' || RIGHT(p.id::text, 8) || ')'
+              FROM dupes d
+              WHERE p.tenant_id = d.tenant_id
+                AND LOWER(p.name_en) = d.lname
+                AND p.id NOT IN (SELECT id FROM keepers);
+
+  - changeSet:
+      id: 60b-property-name-unique-per-tenant
+      author: rentaxis
+      comment: >
+        Enforce within-tenant uniqueness of properties.name_en (case-
+        insensitive). Cross-tenant duplicates remain allowed — two
+        tenants can each have their own "Marina Heights" — matching
+        standard multi-tenant SaaS naming semantics.
+
+        Companion to the bulk-import validator fix that scopes existence
+        checks to the current tenant. Before this migration the regular
+        POST /api/v1/properties path had ZERO collision check at all —
+        a TENANT_ADMIN could create two "Marina Heights" rows in the
+        same tenant via the dashboard form. The constraint here closes
+        that gap at the source-of-truth (DB) level. Companion to
+        PropertyService.createProperty which now catches the resulting
+        DataIntegrityViolationException and translates it to a 400 with
+        a friendly message.
+
+        Pre-existing duplicates are reconciled in 60a (runs immediately
+        before). The preCondition below is the belt-and-suspenders
+        safety net.
+      preConditions:
+        - onFail: HALT
+        - sqlCheck:
+            expectedResult: 0
+            sql: >
+              SELECT COUNT(*) FROM (
+                SELECT tenant_id, LOWER(name_en) AS name
+                FROM properties WHERE tenant_id IS NOT NULL
+                GROUP BY tenant_id, LOWER(name_en)
+                HAVING COUNT(*) > 1
+              ) dupes
+      changes:
+        - sql:
+            comment: Partial unique index, case-insensitive, scoped per tenant.
+            splitStatements: false
+            sql: |
+              CREATE UNIQUE INDEX ux_properties_tenant_name_en_lower
+                ON properties (tenant_id, LOWER(name_en))
+                WHERE tenant_id IS NOT NULL;
+      # Forward-only: rollback would only succeed on never-used DBs and is
+      # unsafe to attempt once duplicates have been allowed back in.

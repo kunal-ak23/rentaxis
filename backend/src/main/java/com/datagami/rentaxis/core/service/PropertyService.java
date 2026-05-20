@@ -49,7 +49,25 @@ public class PropertyService {
 
     @Transactional
     public Property createProperty(Property property) {
-        return repository.save(property);
+        // Within-tenant uniqueness on name_en is enforced by the partial
+        // unique index added in migration 60. Catch the DataIntegrityViolation
+        // and translate it to a user-friendly IllegalArgumentException so
+        // controllers can surface a 400 with a clear message instead of a
+        // 500 with a Postgres error string.
+        try {
+            return repository.save(property);
+        } catch (org.springframework.dao.DataIntegrityViolationException e) {
+            String msg = e.getMostSpecificCause() != null
+                    ? e.getMostSpecificCause().getMessage() : "";
+            if (msg.contains("ux_properties_tenant_name_en_lower")) {
+                throw new IllegalArgumentException(
+                        "A property named '" + property.getNameEn()
+                                + "' already exists in this tenant. " +
+                                "Property names must be unique within an organization.",
+                        e);
+            }
+            throw e;
+        }
     }
 
     @Transactional(readOnly = true)
