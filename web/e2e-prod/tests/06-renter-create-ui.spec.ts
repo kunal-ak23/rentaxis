@@ -67,7 +67,7 @@ test('TENANT_ADMIN creates a renter via the dashboard UI', async ({ browser }) =
   const [createResponse] = await Promise.all([
     page.waitForResponse(
       (r) =>
-        r.url().endsWith('/api/proxy/v1/renters') &&
+        /\/api\/proxy\/v1\/renters(\?|$)/.test(r.url()) &&
         r.request().method() === 'POST',
       { timeout: 15_000 },
     ),

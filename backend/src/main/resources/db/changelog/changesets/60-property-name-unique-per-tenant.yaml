@@ -22,9 +22,32 @@ databaseChangeLog:
 
         Edge case: if a tenant happens to ALREADY own a property named
         e.g. "Marina Heights #2" before this migration, the rename here
-        would collide on that name and the next changeset's index
-        creation would HALT. Vanishingly rare for real data, but worth
-        the manual reconciliation if it happens.
+        would collide on that name. The preCondition below catches this
+        case upfront and HALTs with a clear actionable message,
+        BEFORE running the UPDATE — operator reconciles manually.
+        Vanishingly rare for real data; the early HALT is just to make
+        the failure mode loud.
+      preConditions:
+        - onFail: HALT
+        - sqlCheck:
+            expectedResult: 0
+            sql: >
+              WITH ranked AS (
+                SELECT id, tenant_id, name_en,
+                       ROW_NUMBER() OVER (
+                         PARTITION BY tenant_id, LOWER(name_en)
+                         ORDER BY created_at ASC NULLS LAST, id ASC
+                       ) AS rn
+                FROM properties
+                WHERE tenant_id IS NOT NULL
+              )
+              SELECT COUNT(*) FROM ranked r
+              WHERE r.rn > 1
+                AND EXISTS (
+                  SELECT 1 FROM properties p2
+                  WHERE p2.tenant_id = r.tenant_id
+                    AND LOWER(p2.name_en) = LOWER(r.name_en || ' #' || r.rn)
+                )
       changes:
         - sql:
             comment: Append "#N" suffix to every non-first row in each duplicate group.

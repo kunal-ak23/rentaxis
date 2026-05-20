@@ -104,9 +104,11 @@ test('TENANT_ADMIN creates a lease via the wizard UI', async ({ browser }) => {
 
   // Step 5 (finalize): Save draft.
   await Promise.all([
+    // Match path-with-or-without query string — endsWith('/leases') would
+    // break the moment the wizard adds e.g. ?action=draft to the request.
     page.waitForResponse(
       (r) =>
-        r.url().endsWith('/api/proxy/v1/leases') &&
+        /\/api\/proxy\/v1\/leases(\?|$)/.test(r.url()) &&
         r.request().method() === 'POST',
       { timeout: 20_000 },
     ),
