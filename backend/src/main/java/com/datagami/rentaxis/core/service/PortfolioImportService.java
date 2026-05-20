@@ -560,20 +560,39 @@ public class PortfolioImportService {
     }
 
     private void validateDbConflicts(Set<String> propertyNames, Set<String> renterEmails, List<ImportErrorDTO> errors) {
-        // Check existing properties by name
-        List<Property> existingProperties = propertyRepository.findByNameEnIn(propertyNames);
+        // Tenant-scoped existence checks. Previously these used
+        // findByNameEnIn / findByEmailIn which rely on the Hibernate
+        // tenantFilter being enabled by TenantAspect — fragile under
+        // @Async where AOP + ThreadLocal propagation isn't guaranteed and
+        // a missing filter would leak cross-tenant existence to users.
+        // The explicit findByTenantIdAndXxxIn variants are tenant-scoped
+        // at the SQL level and stay correct regardless of filter state.
+        UUID tenantId = TenantContextHolder.getTenantId();
+        if (tenantId == null) {
+            // Should never happen — the async dispatcher sets the context
+            // before this method runs. Fail loudly rather than silently
+            // running an unscoped query.
+            throw new IllegalStateException(
+                    "validateDbConflicts called without a tenant context; refusing to run unscoped queries");
+        }
+
+        // Check existing properties by name, scoped to THIS tenant only.
+        List<Property> existingProperties = propertyRepository.findByTenantIdAndNameEnIn(tenantId, propertyNames);
         Set<String> existingPropertyNames = existingProperties.stream()
                 .map(Property::getNameEn)
                 .collect(Collectors.toSet());
 
         for (String name : propertyNames) {
             if (existingPropertyNames.contains(name)) {
-                errors.add(new ImportErrorDTO("Properties", 0, "PropertyName", "Property '" + name + "' already exists in the system"));
+                // Wording updated: "in this tenant" is accurate; the old
+                // "in the system" was misleading regardless of which path
+                // produced it.
+                errors.add(new ImportErrorDTO("Properties", 0, "PropertyName", "Property '" + name + "' already exists in this tenant"));
             }
         }
 
-        // Check existing renters by email
-        List<Renter> existingRenters = renterRepository.findByEmailIn(renterEmails);
+        // Check existing renters by email, scoped to THIS tenant.
+        List<Renter> existingRenters = renterRepository.findByTenantIdAndEmailIn(tenantId, renterEmails);
         Set<String> existingEmails = existingRenters.stream()
                 .filter(r -> r.getEmail() != null)
                 .map(r -> r.getEmail().toLowerCase())
@@ -581,7 +600,7 @@ public class PortfolioImportService {
 
         for (String email : renterEmails) {
             if (existingEmails.contains(email.toLowerCase())) {
-                errors.add(new ImportErrorDTO("Renters", 0, "Email", "Renter with email '" + email + "' already exists in the system"));
+                errors.add(new ImportErrorDTO("Renters", 0, "Email", "Renter with email '" + email + "' already exists in this tenant"));
             }
         }
     }

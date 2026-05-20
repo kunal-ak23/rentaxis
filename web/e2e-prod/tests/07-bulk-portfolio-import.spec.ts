@@ -114,16 +114,17 @@ test('bulk portfolio import — upload template, poll status, verify ingested en
       expect(err).toHaveProperty('message');
       expect(typeof err.message).toBe('string');
     }
-    // Document why this path fires: the canned template's example data
-    // collides with prior runs (property names "Marina Heights" /
-    // "Business Central" are globally checked) and has an internal sum
-    // mismatch (4 × 21250 = 85000 but the matching lease is 84000).
-    // Both are template-fixture issues, not regressions in the importer.
+    // After the validator fix (PR adding findByTenantIdAndNameEnIn /
+    // findByTenantIdAndEmailIn), the cross-tenant "property already exists"
+    // errors should no longer fire on a fresh tenant. The remaining failure
+    // mode is the template's internal cheque/rent sum mismatch
+    // (4 × 21250 = 85000 ≠ lease total 84000 for sara@email.com / 102).
+    // That's a template-fixture issue we accept here.
     test.info().annotations.push({
       type: 'note',
       description:
-        'Template fixture has known issues (cross-tenant property name ' +
-        'collision + cheque/rent sum mismatch). Test verifies the ' +
+        'Template fixture has a known internal cheque/rent sum mismatch ' +
+        '(4 × 21250 = 85000, lease total 84000). Test verifies the ' +
         'validation envelope shape rather than the happy path. To exercise ' +
         'the happy path, replace the template upload with a per-run ' +
         'generated xlsx using exceljs (TODO).',

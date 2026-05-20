@@ -15,5 +15,17 @@ public interface RenterRepository extends JpaRepository<Renter, UUID> {
 
     Optional<Renter> findByUserId(UUID userId);
 
+    /**
+     * @deprecated Same tenant-filter-dependency caveat as
+     *     {@link PropertyRepository#findByNameEnIn(Collection)}. Prefer
+     *     {@link #findByTenantIdAndEmailIn(UUID, Collection)}.
+     */
+    @Deprecated
     List<Renter> findByEmailIn(Collection<String> emails);
+
+    /**
+     * Explicit tenant-scoped variant. Use in async / non-AOP-wrapped paths
+     * where the Hibernate {@code tenantFilter} may not be enabled.
+     */
+    List<Renter> findByTenantIdAndEmailIn(UUID tenantId, Collection<String> emails);
 }
