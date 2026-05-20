@@ -166,10 +166,12 @@ class PortfolioImportPersistEndToEndTest {
                 "DepositPaymentMethod", "AgreementDate", "Status",
                 "BookingDeposit_Amount", "BookingDeposit_Number", "BookingDeposit_Date", "BookingDeposit_Bank");
         // Scenario 1: auto-distribute, paymentTerms=4, no cheques sheet rows.
+        // Deposit set to match the per-cheque amount (60000/4 = 15000) so the
+        // schedule generator's deposit cap on the final cheque is satisfied.
         writeRow(leases, 1,
                 "Marina Heights", "Tower A", "101", "tenant1@email.com",
                 "2026-01-01", "2026-12-31",
-                "60000", "5000", "4", "CHEQUE", "EJ-1",
+                "60000", "15000", "4", "CHEQUE", "EJ-1",
                 "", "", "",
                 "", "", "", "",
                 "", "", "ACTIVE",
@@ -183,20 +185,22 @@ class PortfolioImportPersistEndToEndTest {
                 "", "", "", "",
                 "", "", "ACTIVE",
                 "", "", "", "");
-        // Scenario 3: Status=DRAFT, unit must stay VACANT.
+        // Scenario 3: Status=DRAFT, unit must stay VACANT. Deposit matches
+        // per-cheque (15000) so the auto-distribute path's cap is satisfied.
         writeRow(leases, 3,
                 "Marina Heights", "Tower A", "103", "tenant3@email.com",
                 "2026-01-01", "2026-12-31",
-                "60000", "5000", "4", "CHEQUE", "EJ-3",
+                "60000", "15000", "4", "CHEQUE", "EJ-3",
                 "", "", "",
                 "", "", "", "",
                 "", "", "DRAFT",
                 "", "", "", "");
-        // Scenario 4: booking deposit + ACTIVE.
+        // Scenario 4: booking deposit + ACTIVE. Deposit matches per-cheque
+        // (15000) so the auto-distribute path's cap is satisfied.
         writeRow(leases, 4,
                 "Marina Heights", "Tower A", "104", "tenant4@email.com",
                 "2026-01-01", "2026-12-31",
-                "60000", "5000", "4", "CHEQUE", "EJ-4",
+                "60000", "15000", "4", "CHEQUE", "EJ-4",
                 "", "", "",
                 "", "", "", "",
                 "", "", "ACTIVE",
