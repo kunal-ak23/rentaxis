@@ -30,6 +30,16 @@ import java.util.stream.Collectors;
 @Service
 public class PropertyService {
 
+    /**
+     * Name of the partial unique index added in migration 60b. Kept as a
+     * constant so the catch-block in {@link #createProperty(Property)} stays
+     * in sync if the index is ever renamed in a future migration. If you
+     * rename the index, update both this constant AND the migration; ideally
+     * extract the constant into a shared `IndexNames` class colocated with
+     * migrations so the coupling is explicit at code-search time.
+     */
+    static final String UX_NAME_EN_LOWER = "ux_properties_tenant_name_en_lower";
+
     private final PropertyRepository repository;
     private final UnitRepository unitRepository;
     private final BuildingRepository buildingRepository;
@@ -49,7 +59,25 @@ public class PropertyService {
 
     @Transactional
     public Property createProperty(Property property) {
-        return repository.save(property);
+        // Within-tenant uniqueness on name_en is enforced by the partial
+        // unique index added in migration 60. Catch the DataIntegrityViolation
+        // and translate it to a user-friendly IllegalArgumentException so
+        // controllers can surface a 400 with a clear message instead of a
+        // 500 with a Postgres error string.
+        try {
+            return repository.save(property);
+        } catch (org.springframework.dao.DataIntegrityViolationException e) {
+            String msg = e.getMostSpecificCause() != null
+                    ? e.getMostSpecificCause().getMessage() : "";
+            if (msg.contains(UX_NAME_EN_LOWER)) {
+                throw new IllegalArgumentException(
+                        "A property named '" + property.getNameEn()
+                                + "' already exists in this tenant. " +
+                                "Property names must be unique within an organization.",
+                        e);
+            }
+            throw e;
+        }
     }
 
     @Transactional(readOnly = true)

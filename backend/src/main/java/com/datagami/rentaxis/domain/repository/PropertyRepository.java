@@ -10,5 +10,20 @@ import java.util.UUID;
 
 @Repository
 public interface PropertyRepository extends JpaRepository<Property, UUID> {
+    /**
+     * @deprecated Relies on the {@code tenantFilter} Hibernate filter being
+     *     enabled by {@code TenantAspect} on the current session. That works
+     *     in the typical request path but is fragile under {@code @Async} or
+     *     any code path where the aspect doesn't fire. Prefer
+     *     {@link #findByTenantIdAndNameEnIn(UUID, Collection)} which makes
+     *     the tenant scope explicit at the SQL level.
+     */
+    @Deprecated
     List<Property> findByNameEnIn(Collection<String> names);
+
+    /**
+     * Explicit tenant-scoped variant. Doesn't depend on the Hibernate
+     * filter, so it stays correct under async/AOP-bypass paths.
+     */
+    List<Property> findByTenantIdAndNameEnIn(UUID tenantId, Collection<String> names);
 }
