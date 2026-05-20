@@ -26,7 +26,6 @@ test('vendor create + interaction log + interaction list', async () => {
   // --- Vendor --------------------------------------------------------------
   const vendor = await api.createVendor(taCtx, {
     name: `TEST-Vendor ${ctx.runSuffix}`,
-    category: 'MAINTENANCE',
   });
   expect(vendor.id).toBeTruthy();
 

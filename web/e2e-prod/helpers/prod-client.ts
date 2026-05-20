@@ -232,6 +232,10 @@ export const api = {
   // is the lifetime rent, not the monthly rent. We mimic that, otherwise the
   // resulting lease has a tiny `rentAmount` and downstream tests behave
   // differently than a real lease.
+  //
+  // Note: the same monthsBetween calculation lives in LeaseMetadataEditor.tsx
+  // (line ~201). If those two diverge from each other in the future, this
+  // helper will silently desync from one of them.
   createLease: (
     pctx: ProdContext,
     l: { unitId: string; renterId: string; startDate: string; endDate: string; rentAmount: number },
@@ -295,7 +299,7 @@ export const api = {
   // fields — those would be silently ignored by the backend. Real fields
   // are nameEn/nameAr, tradeLicenseNumber, trn, email, phone, contactPerson,
   // address, bank details, notes, active.
-  createVendor: (pctx: ProdContext, v: { name: string; category?: string }) =>
+  createVendor: (pctx: ProdContext, v: { name: string }) =>
     postJson<{ id: string; nameEn: string }>(pctx, '/v1/vendors', {
       nameEn: v.name,
       nameAr: v.name,
