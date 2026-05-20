@@ -26,7 +26,16 @@ test('provision tenant + property + unit + renter + active lease', async () => {
   const tenant = await api.createTenant(pctx, `TEST-E2E ${new Date().toISOString().slice(0, 10)} ${suffix}`);
   expect(tenant.id).toBeTruthy();
 
-  // 2. Pivot SUPER_ADMIN's effective tenant for subsequent scoped calls.
+  // 2. Enable EMAIL_NOTIFICATIONS on the new tenant. Defaults to false per
+  //    TenantFeature.EMAIL_NOTIFICATIONS (phased-rollout pattern), which
+  //    would otherwise cause EmailDispatcher to skip every event with
+  //    `email.dispatch.skipped reason=feature_disabled`. Without this,
+  //    no USER_INVITED / USER_WELCOMED / etc. emails are dispatched to
+  //    the renter's gmail +alias and the operator can't manually verify
+  //    the SMTP pipeline end-to-end.
+  await api.setTenantFeature(pctx, tenant.id, 'EMAIL_NOTIFICATIONS', true);
+
+  // 3. Pivot SUPER_ADMIN's effective tenant for subsequent scoped calls.
   await setActiveTenant(pctx, tenant.id);
 
   // 3. Tenant admin + property manager. In production, SUPER_ADMIN provisions
