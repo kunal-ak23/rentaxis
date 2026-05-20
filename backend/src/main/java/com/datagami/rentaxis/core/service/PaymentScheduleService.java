@@ -107,7 +107,13 @@ public class PaymentScheduleService {
         if (n < 1) n = 1;
 
         BigDecimal totalRent = monthlyRent.multiply(BigDecimal.valueOf(totalMonths));
-        BigDecimal perInstallment = totalRent.divide(BigDecimal.valueOf(n), 2, RoundingMode.HALF_UP);
+        // Clean-denomination split: non-last cheques are floored to AED 1,000 (or
+        // 500/100/cents on fallback), last cheque absorbs the residual. The
+        // deposit acts as a safety cap on the last cheque so we always retain
+        // funds to cover damages if the tenant defaults on the final payment.
+        List<BigDecimal> chequeAmounts = ChequeRoundingCalculator
+                .distribute(totalRent, n, lease.getDepositAmount())
+                .amounts();
 
         // Honor the property-level RentCollectionSettings.dueDayOfMonth so every
         // cheque lands on the conventional payment day for the property (e.g.
@@ -127,7 +133,6 @@ public class PaymentScheduleService {
         // For 12 months / 4 cheques → offsets [0, 3, 6, 9].
         // For 13 months / 4 cheques → offsets [0, 3, 6, 9] (last covers 4 months).
         List<PaymentSchedule> schedules = new ArrayList<>();
-        BigDecimal accumulated = BigDecimal.ZERO;
         for (int i = 0; i < n; i++) {
             long monthOffset = (long) Math.floor((double) i * totalMonths / n);
             LocalDate dueDate = lease.getStartDate().plusMonths(monthOffset);
@@ -136,9 +141,7 @@ public class PaymentScheduleService {
                 dueDate = dueDate.withDayOfMonth(clamped);
             }
 
-            // Last installment carries the rounding remainder so the sum equals totalRent exactly.
-            BigDecimal amount = (i == n - 1) ? totalRent.subtract(accumulated) : perInstallment;
-            accumulated = accumulated.add(amount);
+            BigDecimal amount = chequeAmounts.get(i);
 
             PaymentSchedule ps = new PaymentSchedule();
             ps.setLease(lease);
@@ -853,7 +856,7 @@ public class PaymentScheduleService {
      * produce — N installments evenly distributed across the lease tenure,
      * snapped to the property's RentCollectionSettings.dueDayOfMonth.
      */
-    public PaymentPreviewDTO previewSchedule(UUID propertyId, LocalDate startDate, LocalDate endDate, BigDecimal monthlyRent, Integer paymentTerms) {
+    public PaymentPreviewDTO previewSchedule(UUID propertyId, LocalDate startDate, LocalDate endDate, BigDecimal monthlyRent, Integer paymentTerms, BigDecimal depositAmount) {
         if (paymentTerms == null || paymentTerms <= 0) {
             return previewSchedule(propertyId, startDate, endDate, monthlyRent);
         }
@@ -872,10 +875,9 @@ public class PaymentScheduleService {
         Integer dueDay = (settingsDueDay != null && settingsDueDay >= 1 && settingsDueDay <= 31) ? settingsDueDay : null;
 
         BigDecimal totalRent = monthlyRent.multiply(BigDecimal.valueOf(totalMonths));
-        BigDecimal perInstallment = totalRent.divide(BigDecimal.valueOf(n), 2, RoundingMode.HALF_UP);
+        List<BigDecimal> chequeAmounts = ChequeRoundingCalculator.distribute(totalRent, n, depositAmount).amounts();
 
         List<PaymentPreviewDTO.PaymentPreviewLine> lines = new ArrayList<>();
-        BigDecimal accumulated = BigDecimal.ZERO;
         for (int i = 0; i < n; i++) {
             long monthOffset = (long) Math.floor((double) i * totalMonths / n);
             LocalDate dueDate = startDate.plusMonths(monthOffset);
@@ -893,8 +895,7 @@ public class PaymentScheduleService {
                 if (dueDay != null) nextDue = nextDue.withDayOfMonth(Math.min(dueDay, nextDue.lengthOfMonth()));
                 periodEnd = nextDue.minusDays(1);
             }
-            BigDecimal amount = (i == n - 1) ? totalRent.subtract(accumulated) : perInstallment;
-            accumulated = accumulated.add(amount);
+            BigDecimal amount = chequeAmounts.get(i);
 
             PaymentPreviewDTO.PaymentPreviewLine line = new PaymentPreviewDTO.PaymentPreviewLine();
             line.setInstallmentNumber(i + 1);

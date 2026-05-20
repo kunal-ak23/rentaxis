@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useTranslations } from "next-intl";
-import { FileText, Calendar, DollarSign, Home, CheckCircle, XCircle, Download, Clock, AlertCircle, CreditCard, CalendarDays, Plus, Eye, ChevronLeft, ChevronRight } from "lucide-react";
+import { FileText, Calendar, DollarSign, Home, CheckCircle, XCircle, Download, Clock, AlertCircle, CreditCard, CalendarDays, Plus, Eye, ChevronLeft, ChevronRight, ChevronDown } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import { formatCurrencyCompact } from "@/lib/format";
@@ -57,6 +57,8 @@ export default function RenterPortalPage() {
     const [leases, setLeases] = useState<Lease[]>([]);
     const [loading, setLoading] = useState(true);
     const [nextPayment, setNextPayment] = useState<{ dueDate: string; amount: number; daysUntilDue: number; isOverdue: boolean } | null>(null);
+    const [paymentsByLease, setPaymentsByLease] = useState<Record<string, Array<{ id: string; installmentNumber: number; dueDate: string; amount: number; status: string; paymentMethod: string }>>>({});
+    const [expandedPlanLeaseId, setExpandedPlanLeaseId] = useState<string | null>(null);
     const [confirmDialog, setConfirmDialog] = useState<{
         title: string;
         description: string;
@@ -119,6 +121,19 @@ export default function RenterPortalPage() {
             const res = await fetch("/api/proxy/v1/online-payments/my-payments");
             if (res.ok) {
                 const payments = await res.json();
+
+                // Group all payments by lease so we can show the full schedule on
+                // the PENDING_SIGNATURE acceptance card before the renter signs.
+                const grouped: Record<string, any[]> = {};
+                payments.forEach((p: any) => {
+                    if (!grouped[p.leaseId]) grouped[p.leaseId] = [];
+                    grouped[p.leaseId].push(p);
+                });
+                Object.values(grouped).forEach(arr =>
+                    arr.sort((a, b) => a.installmentNumber - b.installmentNumber)
+                );
+                setPaymentsByLease(grouped);
+
                 const pending = payments
                     .filter((p: any) => p.status === "PENDING" || p.status === "ONLINE_PENDING")
                     .sort((a: any, b: any) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
@@ -375,6 +390,61 @@ export default function RenterPortalPage() {
                                 </div>
                             )}
                         </div>
+
+                        {lease.status === 'PENDING_SIGNATURE' && paymentsByLease[lease.id]?.length > 0 && (() => {
+                            const plan = paymentsByLease[lease.id];
+                            const isExpanded = expandedPlanLeaseId === lease.id;
+                            const lastAmount = plan[plan.length - 1].amount;
+                            const firstAmount = plan[0].amount;
+                            const hasResidualLast = plan.length > 1 && lastAmount > firstAmount;
+                            return (
+                                <div className="border-t border-border pt-4 mb-4">
+                                    <button
+                                        type="button"
+                                        onClick={() => setExpandedPlanLeaseId(isExpanded ? null : lease.id)}
+                                        className="w-full flex items-center justify-between text-xs font-bold text-foreground hover:text-primary transition-colors cursor-pointer"
+                                    >
+                                        <span className="flex items-center gap-2">
+                                            <CreditCard size={14} className="text-primary" />
+                                            Payment Plan ({plan.length} cheque{plan.length > 1 ? 's' : ''})
+                                        </span>
+                                        <ChevronDown size={14} className={cn("transition-transform", isExpanded && "rotate-180")} />
+                                    </button>
+                                    {isExpanded && (
+                                        <div className="mt-3 bg-input/40 rounded-xl border border-border overflow-hidden">
+                                            <table className="w-full text-xs">
+                                                <thead className="bg-input/70">
+                                                    <tr className="text-[10px] font-semibold text-muted uppercase tracking-wider">
+                                                        <th className="px-3 py-2 text-start">#</th>
+                                                        <th className="px-3 py-2 text-start">Due Date</th>
+                                                        <th className="px-3 py-2 text-end">Amount</th>
+                                                        <th className="px-3 py-2 text-start">Method</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {plan.map((p, idx) => {
+                                                        const isLast = idx === plan.length - 1;
+                                                        return (
+                                                            <tr key={p.id} className={cn("border-t border-border", isLast && hasResidualLast && "bg-primary/5 font-semibold")}>
+                                                                <td className="px-3 py-2 tabular-nums">{p.installmentNumber}</td>
+                                                                <td className="px-3 py-2 tabular-nums">{new Date(p.dueDate).toLocaleDateString()}</td>
+                                                                <td className="px-3 py-2 text-end tabular-nums">{formatCurrencyCompact(p.amount)}</td>
+                                                                <td className="px-3 py-2 text-muted">{p.paymentMethod || 'CHEQUE'}</td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                            {hasResidualLast && (
+                                                <p className="px-3 py-2 text-[10px] text-muted border-t border-border bg-input/30">
+                                                    The final cheque is larger because it absorbs the rounding remainder. It stays at or below your deposit ({formatCurrencyCompact(lease.depositAmount)}) so the deposit covers any damages if you leave early.
+                                                </p>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })()}
 
                         <div className="flex gap-3 border-t border-border pt-4">
                             {lease.status === 'DRAFT' && (
