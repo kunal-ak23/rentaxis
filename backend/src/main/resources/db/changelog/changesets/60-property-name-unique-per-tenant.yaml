@@ -5,44 +5,44 @@ databaseChangeLog:
       comment: >
         Auto-reconcile any pre-existing duplicate (tenant_id, LOWER(name_en))
         property rows before the unique-index changeset adds the partial
-        index. For each duplicate group, the OLDEST row (min created_at,
-        tie-break by min id) keeps the bare name; subsequent duplicates
-        get the last 8 hex chars of their id appended:
+        index. For each duplicate group, ranked by created_at (tie-break
+        by id), the OLDEST row keeps the bare name; subsequent duplicates
+        get a "#N" suffix matching their position in the group:
 
-            "Marina Heights" → "Marina Heights (a1b2c3d4)"
+            "Marina Heights" (oldest) → "Marina Heights"
+            "Marina Heights" (2nd)    → "Marina Heights #2"
+            "Marina Heights" (3rd)    → "Marina Heights #3"
+            ...
 
-        This is a one-time auto-fix; no rows are deleted, so units / leases
-        / payments / etc. that reference these properties via FK remain
-        intact. The renamed properties are still findable in the UI by
-        partial-name search and operators can re-rename them post-deploy
-        if the auto-suffix isn't desirable.
+        No rows are deleted, so units / leases / payments etc. that
+        reference these properties via FK remain intact. Operators can
+        re-rename via the dashboard post-deploy.
 
         Idempotent: if there are no duplicates, the UPDATE affects 0 rows.
+
+        Edge case: if a tenant happens to ALREADY own a property named
+        e.g. "Marina Heights #2" before this migration, the rename here
+        would collide on that name and the next changeset's index
+        creation would HALT. Vanishingly rare for real data, but worth
+        the manual reconciliation if it happens.
       changes:
         - sql:
-            comment: Append id suffix to every duplicate row except the oldest in each group.
+            comment: Append "#N" suffix to every non-first row in each duplicate group.
             splitStatements: false
             sql: |
-              WITH dupes AS (
-                SELECT tenant_id, LOWER(name_en) AS lname
+              WITH ranked AS (
+                SELECT id,
+                       ROW_NUMBER() OVER (
+                         PARTITION BY tenant_id, LOWER(name_en)
+                         ORDER BY created_at ASC NULLS LAST, id ASC
+                       ) AS rn
                 FROM properties
                 WHERE tenant_id IS NOT NULL
-                GROUP BY tenant_id, LOWER(name_en)
-                HAVING COUNT(*) > 1
-              ),
-              keepers AS (
-                SELECT DISTINCT ON (p.tenant_id, LOWER(p.name_en)) p.id
-                FROM properties p
-                JOIN dupes d ON p.tenant_id = d.tenant_id AND LOWER(p.name_en) = d.lname
-                ORDER BY p.tenant_id, LOWER(p.name_en),
-                         p.created_at ASC NULLS LAST, p.id ASC
               )
               UPDATE properties p
-              SET name_en = p.name_en || ' (' || RIGHT(p.id::text, 8) || ')'
-              FROM dupes d
-              WHERE p.tenant_id = d.tenant_id
-                AND LOWER(p.name_en) = d.lname
-                AND p.id NOT IN (SELECT id FROM keepers);
+              SET name_en = p.name_en || ' #' || r.rn
+              FROM ranked r
+              WHERE p.id = r.id AND r.rn > 1;
 
   - changeSet:
       id: 60b-property-name-unique-per-tenant
