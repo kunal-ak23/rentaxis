@@ -168,6 +168,32 @@ export const api = {
     tenantId: string,
     u: { name: string; email: string; password: string; role: string },
   ) => postJson<{ id: string; email: string; role: string }>(pctx, '/admin/users', { ...u, tenantId }),
+  /**
+   * Enable a per-tenant feature toggle. SUPER_ADMIN only.
+   * Used by 01-provision to flip EMAIL_NOTIFICATIONS on for the test tenant —
+   * otherwise the EmailDispatcher skips every event with
+   * `email.dispatch.skipped reason=feature_disabled` (the toggle defaults
+   * to false per TenantFeature.EMAIL_NOTIFICATIONS, phased-rollout pattern).
+   */
+  setTenantFeature: async (
+    pctx: ProdContext,
+    tenantId: string,
+    feature: 'EMAIL_NOTIFICATIONS' | 'LISTINGS' | 'MEETINGS',
+    enabled: boolean,
+  ): Promise<void> => {
+    const res = await pctx.request.put(
+      `/api/proxy/admin/tenants/${tenantId}/features/${feature}`,
+      {
+        data: { enabled },
+        headers: { 'Content-Type': 'application/json' },
+        failOnStatusCode: false,
+      },
+    );
+    if (!res.ok()) {
+      throw new Error(`PUT feature ${feature}=${enabled} → ${res.status()}: ${(await res.text().catch(() => '')).slice(0, 400)}`);
+    }
+  },
+
   // Hard-deletes the tenant and every tenant-scoped row. Requires confirmName
   // to match the tenant's current name exactly — safety gate against deleting
   // the wrong UUID. Returns 204 on success.
