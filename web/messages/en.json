@@ -107,7 +107,13 @@
     "agreementDate": "Agreement Date",
     "generatePreview": "Preview Contract",
     "confirmAndSave": "Confirm & Save",
-    "purposeLabel": "In Favour Of"
+    "purposeLabel": "In Favour Of",
+    "paymentPlan": "Payment Plan",
+    "paymentPlanCheques": "{count, plural, one {# cheque} other {# cheques}}",
+    "paymentPlanDueDate": "Due Date",
+    "paymentPlanAmount": "Amount",
+    "paymentPlanMethod": "Method",
+    "paymentPlanDepositNote": "The final cheque is larger because it absorbs the rounding remainder. It stays at or below your deposit ({deposit}) so the deposit covers any damages if you leave early."
   },
   "LandlordOrg": {
     "phone": "Phone",

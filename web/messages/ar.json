@@ -107,7 +107,13 @@
     "agreementDate": "تاريخ الاتفاقية",
     "generatePreview": "معاينة العقد",
     "confirmAndSave": "تأكيد وحفظ",
-    "purposeLabel": "لصالح"
+    "purposeLabel": "لصالح",
+    "paymentPlan": "خطة الدفع",
+    "paymentPlanCheques": "{count, plural, one {# شيك} other {# شيكات}}",
+    "paymentPlanDueDate": "تاريخ الاستحقاق",
+    "paymentPlanAmount": "المبلغ",
+    "paymentPlanMethod": "طريقة الدفع",
+    "paymentPlanDepositNote": "الشيك الأخير أكبر لأنه يستوعب باقي التقريب. يبقى عند أو أقل من تأمينك ({deposit}) حتى يغطي التأمين أي أضرار إذا غادرت مبكراً."
   },
   "LandlordOrg": {
     "phone": "الهاتف",
