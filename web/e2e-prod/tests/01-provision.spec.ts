@@ -68,7 +68,12 @@ test('provision tenant + property + unit + renter + active lease', async () => {
 
   // 6. Renter (TA). Backend defaults createPortalAccount=true and returns
   //    the generated portal password on the response.
-  const renterEmail = `test-renter-${suffix}@e2e.rentaxis.test`;
+  //
+  //    Gmail +alias so the USER_INVITED email actually delivers to a real
+  //    inbox the operator can verify (kunalsharma.ks13@gmail.com). Per-tenant
+  //    email uniqueness (migration 59) means re-runs across tenants don't
+  //    collide.
+  const renterEmail = `kunalsharma.ks13+e2e-renter-${suffix}@gmail.com`;
   const renter = await api.createRenter(taCtx, {
     nameEn: `TEST-Renter ${suffix}`,
     email: renterEmail,
