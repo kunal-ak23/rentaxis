@@ -212,6 +212,12 @@ export default function LeasesPage() {
             if (formData.paymentTerms && formData.paymentTerms > 0) {
                 params.set("paymentTerms", String(formData.paymentTerms));
             }
+            // Pass deposit so the preview honors the same last-cheque cap the
+            // schedule generator will enforce on save — otherwise the admin
+            // would see a clean preview and then get a hard error at create.
+            if (formData.depositAmount && Number(formData.depositAmount) > 0) {
+                params.set("depositAmount", String(formData.depositAmount));
+            }
 
             setPreviewLoading(true);
             fetch(`/api/proxy/v1/payments/preview?${params}`)
@@ -236,7 +242,7 @@ export default function LeasesPage() {
         }, 500);
 
         return () => clearTimeout(timer);
-    }, [formData.startDate, formData.endDate, formData.rentAmount, formData.unitId, formData.paymentTerms, units]);
+    }, [formData.startDate, formData.endDate, formData.rentAmount, formData.unitId, formData.paymentTerms, formData.depositAmount, units]);
 
     const fetchLeases = async () => {
         setLoading(true);
