@@ -1,6 +1,7 @@
 package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.dto.ImportErrorDTO;
+import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.repository.ImportJobRepository;
 import com.datagami.rentaxis.domain.repository.PropertyRepository;
 import com.datagami.rentaxis.domain.repository.RenterRepository;
@@ -9,6 +10,7 @@ import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -17,8 +19,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.Mockito.lenient;
 
@@ -35,8 +39,17 @@ class PortfolioImportServiceTest {
     @BeforeEach
     void setUp() {
         service = new PortfolioImportService(importJobRepository, propertyRepository, renterRepository, persistService);
-        lenient().when(propertyRepository.findByNameEnIn(anyCollection())).thenReturn(Collections.emptyList());
-        lenient().when(renterRepository.findByEmailIn(anyCollection())).thenReturn(Collections.emptyList());
+        // validateDbConflicts (called by validateAll) now uses the explicit
+        // tenant-scoped repository methods and refuses to run without a
+        // tenant context — set one up so the validator can proceed.
+        TenantContextHolder.setTenantId(UUID.randomUUID());
+        lenient().when(propertyRepository.findByTenantIdAndNameEnIn(any(), anyCollection())).thenReturn(Collections.emptyList());
+        lenient().when(renterRepository.findByTenantIdAndEmailIn(any(), anyCollection())).thenReturn(Collections.emptyList());
+    }
+
+    @AfterEach
+    void tearDown() {
+        TenantContextHolder.clear();
     }
 
     @Test

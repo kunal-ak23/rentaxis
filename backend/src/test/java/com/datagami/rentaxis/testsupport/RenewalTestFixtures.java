@@ -30,7 +30,11 @@ public class RenewalTestFixtures {
         r = renterRepo.save(r);
 
         Property p = new Property();
-        p.setNameEn("Test Property");
+        // Unique per fixture invocation so the new per-tenant uniqueness
+        // index (ux_properties_tenant_name_en_lower, migration 60) doesn't
+        // collide when a test calls createActiveLease more than once in the
+        // same tenant.
+        p.setNameEn("Test Property " + UUID.randomUUID().toString().substring(0, 8));
         p.setEmirate(Emirate.DUBAI);
         p.setTenantId(tenantId);
         p = propertyRepo.save(p);
