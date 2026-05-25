@@ -598,7 +598,7 @@ export default function LeaseDetailPage() {
     const pendingCount = payments.filter(p => p.status === "PENDING" || p.status === "ONLINE_PENDING").length;
     const hasPending = payments.some(p => p.status === "PENDING");
     const totalPaid = payments.filter(p => p.status === "CLEARED").reduce((sum, p) => sum + p.amount, 0);
-    const leaseTabs = ["Overview", "Payment schedule", "Penalties", "Contract", "Maintenance", "Documents"];
+    const leaseTabs = ["Overview", "Payment schedule", "Penalties", "Contract", "Maintenance", "Documents", "Interactions"];
 
     return (
         <>
@@ -988,12 +988,14 @@ export default function LeaseDetailPage() {
                         </div>
                     </div>
 
-                    {lease && lease.status !== "DRAFT" && lease.status !== "PENDING_SIGNATURE" && (
-                        <LeaseInteractionsPanel leaseId={leaseId} />
-                    )}
                 </div>
                 )} {/* end right column conditional */}
             </div>
+
+            {/* ── Tab: Interactions (manager ↔ client conversation log) ── */}
+            {activeTab === "Interactions" && (
+                <LeaseInteractionsPanel leaseId={leaseId} />
+            )}
 
             {/* ── Tab: Contract ──────────────────────────────────────── */}
             {activeTab === "Contract" && (
