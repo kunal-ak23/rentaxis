@@ -3,7 +3,8 @@ package com.datagami.rentaxis.domain.entity.enums;
 public enum TenantFeature {
     LISTINGS(false),             // premium — off by default for all tenants
     MEETINGS(false),             // premium — off by default for all tenants
-    EMAIL_NOTIFICATIONS(false);  // off by default — flipped on per-tenant during phased rollout
+    EMAIL_NOTIFICATIONS(false),  // off by default — flipped on per-tenant during phased rollout
+    LEASE_RENEWALS(false);       // renewal reminders (90/60/30) + CRM — off by default, per-tenant rollout
 
     private final boolean defaultEnabled;
 

@@ -72,6 +72,7 @@ public class TenantFeatureService {
             case LISTINGS -> "Listings (Marketplace)";
             case MEETINGS -> "Meetings & Scheduling";
             case EMAIL_NOTIFICATIONS -> "Email Notifications";
+            case LEASE_RENEWALS -> "Lease Renewals & Reminders";
         };
     }
 }

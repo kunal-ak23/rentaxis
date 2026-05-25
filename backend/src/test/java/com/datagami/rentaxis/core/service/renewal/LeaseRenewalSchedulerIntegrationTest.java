@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.core.service.renewal;
 
+import com.datagami.rentaxis.core.service.TenantFeatureService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.*;
 import com.datagami.rentaxis.domain.entity.enums.*;
@@ -35,6 +36,7 @@ class LeaseRenewalSchedulerIntegrationTest {
     @Autowired RenterRepository renterRepo;
     @Autowired PropertyRepository propertyRepo;
     @Autowired UnitRepository unitRepo;
+    @Autowired TenantFeatureService tenantFeatureService;
 
     @AfterEach
     void tearDown() { TenantContextHolder.clear(); }
@@ -45,6 +47,10 @@ class LeaseRenewalSchedulerIntegrationTest {
 
         LandlordOrg orgA = new LandlordOrg(); orgA.setName("OrgA-" + UUID.randomUUID()); orgA = orgRepo.save(orgA);
         LandlordOrg orgB = new LandlordOrg(); orgB.setName("OrgB-" + UUID.randomUUID()); orgB = orgRepo.save(orgB);
+
+        // Renewals are gated per-tenant; opt both orgs in.
+        tenantFeatureService.setEnabled(orgA.getId(), TenantFeature.LEASE_RENEWALS, true);
+        tenantFeatureService.setEnabled(orgB.getId(), TenantFeature.LEASE_RENEWALS, true);
 
         TenantContextHolder.setTenantId(orgA.getId());
         RenewalTestFixtures.createActiveLease(orgRepo, userRepo, renterRepo, propertyRepo, unitRepo, leaseRepo, orgA.getId(), today.minusYears(1), today.plusDays(85));
@@ -70,6 +76,7 @@ class LeaseRenewalSchedulerIntegrationTest {
         LocalDate today = LocalDate.of(2026, 6, 1);
         LandlordOrg org = new LandlordOrg(); org.setName("Org-" + UUID.randomUUID()); org = orgRepo.save(org);
         UUID tenantId = org.getId();
+        tenantFeatureService.setEnabled(tenantId, TenantFeature.LEASE_RENEWALS, true);
         TenantContextHolder.setTenantId(tenantId);
         Lease lease = RenewalTestFixtures.createActiveLease(orgRepo, userRepo, renterRepo, propertyRepo, unitRepo, leaseRepo, tenantId, today.minusYears(1), today.plusDays(50));
         TenantContextHolder.clear();
@@ -90,5 +97,22 @@ class LeaseRenewalSchedulerIntegrationTest {
         var closed = oppRepo.findByTenantIdAndStageIn(tenantId, List.of(RenewalStage.CLOSED_LOST));
         assertThat(closed).hasSize(1);
         assertThat(closed.get(0).getOutcome()).isEqualTo(RenewalOutcome.MOVED_OUT);
+    }
+
+    @Test
+    void feature_disabled_tenant_is_skipped() {
+        LocalDate today = LocalDate.of(2026, 6, 1);
+        LandlordOrg org = new LandlordOrg(); org.setName("OptOut-" + UUID.randomUUID()); org = orgRepo.save(org);
+        UUID tenantId = org.getId();
+        // Deliberately do NOT enable LEASE_RENEWALS for this tenant.
+        TenantContextHolder.setTenantId(tenantId);
+        RenewalTestFixtures.createActiveLease(orgRepo, userRepo, renterRepo, propertyRepo, unitRepo, leaseRepo, tenantId, today.minusYears(1), today.plusDays(85));
+        TenantContextHolder.clear();
+
+        scheduler.runNow(today);
+
+        // No opportunity opened, no reminders fired — the tenant opted out.
+        var opps = oppRepo.findByTenantIdAndStageIn(tenantId, List.of(RenewalStage.OPEN));
+        assertThat(opps).isEmpty();
     }
 }
