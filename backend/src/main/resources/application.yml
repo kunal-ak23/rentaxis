@@ -74,4 +74,6 @@ app:
     scheduler:
       enabled: ${APP_RENEWAL_SCHEDULER_ENABLED:false}
     token-secret: ${APP_RENEWAL_TOKEN_SECRET:dev-only-please-rotate-in-prod-min-32-bytes-please}
-    portal-base-url: ${APP_RENEWAL_PORTAL_BASE_URL:http://localhost:3000}
+    # Falls back to the public app URL (set on prod) so renewal-email CTAs are absolute,
+    # not localhost. Local dev (no NEXT_PUBLIC_API_URL) still resolves to localhost:3000.
+    portal-base-url: ${APP_RENEWAL_PORTAL_BASE_URL:${NEXT_PUBLIC_API_URL:http://localhost:3000}}
