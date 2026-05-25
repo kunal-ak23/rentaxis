@@ -1,9 +1,11 @@
 package com.datagami.rentaxis.core.service.renewal;
 
+import com.datagami.rentaxis.core.service.TenantFeatureService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
 import com.datagami.rentaxis.domain.entity.RenewalOpportunity;
 import com.datagami.rentaxis.domain.entity.enums.RenewalStage;
+import com.datagami.rentaxis.domain.entity.enums.TenantFeature;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
 import com.datagami.rentaxis.domain.repository.RenewalOpportunityRepository;
 import lombok.RequiredArgsConstructor;
@@ -25,6 +27,7 @@ public class LeaseRenewalScheduler {
     private final RenewalOpportunityRepository opportunityRepository;
     private final RenewalOpportunityService opportunityService;
     private final RenewalReminderService reminderService;
+    private final TenantFeatureService tenantFeatureService;
 
     @Value("${app.renewal.scheduler.enabled:false}")
     private boolean enabled;
@@ -54,6 +57,12 @@ public class LeaseRenewalScheduler {
     }
 
     private void processTenant(UUID tenantId, LocalDate today) {
+        // Per-tenant gate: only process companies that have opted into renewals during phased
+        // rollout. Mirrors the EMAIL_NOTIFICATIONS kill-switch so the org-wide run-now is safe.
+        if (!tenantFeatureService.isEnabled(tenantId, TenantFeature.LEASE_RENEWALS)) {
+            log.debug("renewal.skipped reason=feature_disabled tenant_id={}", tenantId);
+            return;
+        }
         TenantContextHolder.setTenantId(tenantId);
         try {
             int opened = opportunityService.openOpportunitiesForCurrentTenant(today);
