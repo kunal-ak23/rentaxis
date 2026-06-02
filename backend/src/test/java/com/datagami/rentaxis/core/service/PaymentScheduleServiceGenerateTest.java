@@ -39,6 +39,7 @@ class PaymentScheduleServiceGenerateTest {
 
     private PaymentScheduleRepository paymentScheduleRepository;
     private RentCollectionSettingsRepository rentCollectionSettingsRepository;
+    private com.datagami.rentaxis.domain.repository.LeaseChargeRepository leaseChargeRepository;
     private PaymentScheduleService service;
 
     @BeforeEach
@@ -50,7 +51,7 @@ class PaymentScheduleServiceGenerateTest {
         when(paymentScheduleRepository.saveAll(any())).thenAnswer(inv -> inv.getArgument(0));
         when(rentCollectionSettingsRepository.findByPropertyId(any())).thenReturn(Optional.empty());
 
-        com.datagami.rentaxis.domain.repository.LeaseChargeRepository leaseChargeRepository =
+        leaseChargeRepository =
                 mock(com.datagami.rentaxis.domain.repository.LeaseChargeRepository.class);
         when(leaseChargeRepository.findByLeaseId(any())).thenReturn(List.of());
 
@@ -135,6 +136,40 @@ class PaymentScheduleServiceGenerateTest {
         List<PaymentSchedule> result = service.generateScheduleForLease(lease);
 
         assertThat(result).isEmpty();
+    }
+
+    @Test
+    void noRentLeaseWithPerInstallmentCharge_generatesChargeOnlyInstallments() {
+        // Blocker 2: a no-rent lease that carries a PER_INSTALLMENT charge must
+        // still produce installment rows so the charge money is collected, not
+        // silently dropped. Expect n=4 rows, each = the folded per-installment
+        // charge (incl additive VAT), labelled by the charge name (no "RENT -"
+        // prefix because there is no rent).
+        com.datagami.rentaxis.domain.entity.LeaseCharge maintenance =
+                new com.datagami.rentaxis.domain.entity.LeaseCharge();
+        maintenance.setName("Maintenance");
+        maintenance.setAmount(new BigDecimal("200"));
+        maintenance.setVatApplicable(true);
+        maintenance.setFrequency(com.datagami.rentaxis.domain.entity.enums.ChargeFrequency.PER_INSTALLMENT);
+        when(leaseChargeRepository.findByLeaseId(any())).thenReturn(List.of(maintenance));
+
+        Lease lease = buildLease(
+                BigDecimal.ZERO,           // no rent
+                new BigDecimal("5000"),
+                4,
+                LocalDate.of(2026, 1, 1),
+                LocalDate.of(2027, 1, 1));
+
+        List<PaymentSchedule> result = service.generateScheduleForLease(lease);
+
+        assertThat(result).hasSize(4);
+        assertThat(result).extracting(PaymentSchedule::getAmount).allSatisfy(amt ->
+                // 200 * 1.05 = 210.00 (no rent share)
+                assertThat(amt).isEqualByComparingTo("210.00"));
+        assertThat(result).extracting(PaymentSchedule::getPurposeLabel).allSatisfy(label ->
+                assertThat(label).isEqualTo("Maintenance"));
+        assertThat(result).extracting(PaymentSchedule::getInstallmentNumber)
+                .containsExactly(1, 2, 3, 4);
     }
 
     @Test

@@ -152,4 +152,78 @@ class LeaseChargesGenerationIT {
                     assertThat(r.getAmount()).isEqualByComparingTo("15000");
                 });
     }
+
+    @Test
+    void updateDraftLease_doesNotDuplicateCollectedSecurityDepositOrChargeRows() {
+        Property property = new Property();
+        property.setNameEn("Update IT Property");
+        property.setEmirate(Emirate.DUBAI);
+        property.setType(PropertyType.RESIDENTIAL);
+        property = propertyRepository.save(property);
+
+        Unit unit = new Unit();
+        unit.setProperty(property);
+        unit.setUnitNumber("UIT-1");
+        unit = unitRepository.save(unit);
+
+        Renter renter = new Renter();
+        renter.setNameEn("Update IT Renter");
+        renter.setEmail("update-it@example.com");
+        renter = renterRepository.save(renter);
+
+        CreateLeaseDTO dto = new CreateLeaseDTO();
+        dto.setUnitId(unit.getId());
+        dto.setRenterId(renter.getId());
+        dto.setStartDate(LocalDate.of(2026, 1, 1));
+        dto.setEndDate(LocalDate.of(2026, 7, 1)); // 6 months
+        dto.setRentAmount(new BigDecimal("30000"));
+        dto.setMonthlyRent(new BigDecimal("5000"));
+        dto.setDepositAmount(new BigDecimal("15000"));
+        dto.setPaymentTerms(6);
+
+        LeaseChargeDTO adminFee = new LeaseChargeDTO();
+        adminFee.setName("Admin Fee");
+        adminFee.setAmount(new BigDecimal("1000"));
+        adminFee.setVatApplicable(true);
+        adminFee.setFrequency(ChargeFrequency.ONE_TIME);
+        dto.setCharges(List.of(adminFee));
+
+        LeaseDTO created = leaseService.createDraftLease(dto);
+
+        // Simulate the SD row and the one-time charge row having been COLLECTED,
+        // so the update path's "delete PENDING non-booking rows" step leaves them
+        // in place. Without idempotency, the unconditional recreation would add a
+        // duplicate PENDING SD / charge row.
+        List<PaymentSchedule> beforeUpdate = paymentScheduleRepository.findByLeaseId(created.getId());
+        beforeUpdate.stream().filter(PaymentSchedule::isSecurityDeposit).forEach(r -> {
+            r.setStatus(com.datagami.rentaxis.domain.entity.enums.PaymentStatus.COLLECTED);
+            paymentScheduleRepository.save(r);
+        });
+        beforeUpdate.stream().filter(PaymentSchedule::isCharge).forEach(r -> {
+            r.setStatus(com.datagami.rentaxis.domain.entity.enums.PaymentStatus.COLLECTED);
+            paymentScheduleRepository.save(r);
+        });
+
+        // Edit the lease (a lighter edit; charges left unchanged by sending the
+        // same payload).
+        dto.setRentAmount(new BigDecimal("36000"));
+        dto.setMonthlyRent(new BigDecimal("6000"));
+        leaseService.updateDraftLease(created.getId(), dto);
+
+        List<PaymentSchedule> afterUpdate = paymentScheduleRepository.findByLeaseId(created.getId());
+
+        // Exactly one SD row and one charge row remain — both the originally
+        // collected ones, no PENDING duplicates.
+        assertThat(afterUpdate.stream().filter(PaymentSchedule::isSecurityDeposit))
+                .singleElement()
+                .satisfies(r -> assertThat(r.getStatus())
+                        .isEqualTo(com.datagami.rentaxis.domain.entity.enums.PaymentStatus.COLLECTED));
+        assertThat(afterUpdate.stream().filter(PaymentSchedule::isCharge))
+                .singleElement()
+                .satisfies(r -> {
+                    assertThat(r.getPurposeLabel()).isEqualTo("Admin Fee");
+                    assertThat(r.getStatus())
+                            .isEqualTo(com.datagami.rentaxis.domain.entity.enums.PaymentStatus.COLLECTED);
+                });
+    }
 }

@@ -275,29 +275,18 @@ public class PortfolioImportPersistService {
             // One-time charge schedule rows (additive VAT) + the security
             // deposit row (refundable, never VAT) — mirrors LeaseService.
             if (adminFee.signum() > 0) {
-                saveChargeScheduleRow(savedLease, unit, "Admin Fee",
+                saveChargeScheduleRow(savedLease, "Admin Fee",
                         PaymentScheduleService.withVat(adminFee, adminFeeVat));
                 schedulesCreated++;
             }
             if (parkingRemoteFee.signum() > 0) {
-                saveChargeScheduleRow(savedLease, unit, "Parking / Remote",
+                saveChargeScheduleRow(savedLease, "Parking / Remote",
                         PaymentScheduleService.withVat(parkingRemoteFee, parkingRemoteVat));
                 schedulesCreated++;
             }
             if (savedLease.getDepositAmount() != null && savedLease.getDepositAmount().signum() > 0) {
-                PaymentSchedule sd = new PaymentSchedule();
-                sd.setLease(savedLease);
-                sd.setUnit(unit);
-                sd.setProperty(unit.getProperty());
-                sd.setInstallmentNumber(0);
-                sd.setDueDate(savedLease.getStartDate());
-                sd.setAmount(savedLease.getDepositAmount());
-                sd.setStatus(PaymentStatus.PENDING);
-                sd.setPaymentMethod(savedLease.getDepositPaymentMethod() != null
-                        ? savedLease.getDepositPaymentMethod().name() : "CHEQUE");
-                sd.setPurposeLabel("SECURITY DEPOSIT");
-                sd.setSecurityDeposit(true);
-                paymentScheduleRepository.save(sd);
+                paymentScheduleRepository.save(PaymentScheduleService
+                        .newSecurityDepositRow(savedLease, savedLease.getDepositAmount()));
                 schedulesCreated++;
             }
 
@@ -467,8 +456,6 @@ public class PortfolioImportPersistService {
     private record ChequeRow(int installmentNo, LocalDate dueDate, LocalDate chequeOrPaymentDate,
                              String uniqueId, String bank, BigDecimal amount, String method) {}
 
-    private static BigDecimal nz(BigDecimal v) { return v == null ? BigDecimal.ZERO : v; }
-
     /** Persist a one-time {@link LeaseCharge} row for an imported fee column. */
     private void saveImportCharge(Lease lease, String name, BigDecimal amount, boolean vat) {
         LeaseCharge charge = new LeaseCharge();
@@ -482,19 +469,9 @@ public class PortfolioImportPersistService {
     }
 
     /** Emit a one-time-charge schedule row (amount already VAT-adjusted). */
-    private void saveChargeScheduleRow(Lease lease, Unit unit, String label, BigDecimal amount) {
-        PaymentSchedule row = new PaymentSchedule();
-        row.setLease(lease);
-        row.setUnit(unit);
-        row.setProperty(unit.getProperty());
-        row.setInstallmentNumber(0);
-        row.setDueDate(lease.getStartDate());
-        row.setAmount(amount);
-        row.setStatus(PaymentStatus.PENDING);
-        row.setPaymentMethod(lease.getPaymentMethod() != null ? lease.getPaymentMethod().name() : "CHEQUE");
-        row.setPurposeLabel(label);
-        row.setCharge(true);
-        paymentScheduleRepository.save(row);
+    private void saveChargeScheduleRow(Lease lease, String label, BigDecimal amount) {
+        paymentScheduleRepository.save(
+                PaymentScheduleService.newOneTimeChargeRow(lease, label, amount));
     }
 
     /**

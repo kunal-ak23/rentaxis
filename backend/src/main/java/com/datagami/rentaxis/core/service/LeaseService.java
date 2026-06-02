@@ -700,39 +700,43 @@ public class LeaseService {
      * Emit a schedule row per ONE_TIME charge (additive VAT baked in) and one
      * row for the refundable security deposit (never VAT). Per-installment
      * charges are folded into the rent rows by PaymentScheduleService instead.
+     * <p>
+     * Idempotent: this runs both on create and on every draft edit (where only
+     * PENDING non-booking rows are dropped beforehand). A SECURITY DEPOSIT row
+     * or a one-time charge row that already exists in a non-PENDING state (e.g.
+     * already collected) is NOT recreated, so editing a lease never duplicates a
+     * deposit / charge that's already been paid. Matching is by row kind
+     * (is_security_deposit / is_charge + purposeLabel), across all statuses.
      */
     private void createOneTimeChargeAndDepositRows(Lease lease, List<LeaseChargeDTO> charges) {
+        List<PaymentSchedule> existingRows = paymentScheduleRepository.findByLeaseId(lease.getId());
+        java.util.Set<String> existingChargeLabels = existingRows.stream()
+                .filter(PaymentSchedule::isCharge)
+                .map(PaymentSchedule::getPurposeLabel)
+                .collect(Collectors.toSet());
+        boolean depositRowExists = existingRows.stream().anyMatch(PaymentSchedule::isSecurityDeposit);
+
         if (charges != null) {
             for (LeaseChargeDTO c : charges) {
                 if (c.getFrequency() != ChargeFrequency.ONE_TIME) continue;
-                PaymentSchedule row = new PaymentSchedule();
-                row.setLease(lease);
-                row.setUnit(lease.getUnit());
-                row.setProperty(lease.getUnit().getProperty());
-                row.setInstallmentNumber(0);
-                row.setDueDate(lease.getStartDate());
-                row.setAmount(PaymentScheduleService.withVat(c.getAmount(), c.isVatApplicable()));
-                row.setStatus(PaymentStatus.PENDING);
-                row.setPaymentMethod(lease.getPaymentMethod() != null ? lease.getPaymentMethod().name() : "CHEQUE");
-                row.setPurposeLabel(c.getName());
-                row.setCharge(true);
+                // Skip a one-time charge that already has a row for this lease
+                // (any status) — avoids duplicating a charge already collected.
+                if (existingChargeLabels.contains(c.getName())) continue;
+                PaymentSchedule row = PaymentScheduleService.newOneTimeChargeRow(
+                        lease, c.getName(),
+                        PaymentScheduleService.withVat(c.getAmount(), c.isVatApplicable()));
                 paymentScheduleRepository.save(row);
+                // Guard against duplicate names within the same charges payload.
+                existingChargeLabels.add(c.getName());
             }
         }
 
-        if (lease.getDepositAmount() != null && lease.getDepositAmount().signum() > 0) {
-            PaymentSchedule sd = new PaymentSchedule();
-            sd.setLease(lease);
-            sd.setUnit(lease.getUnit());
-            sd.setProperty(lease.getUnit().getProperty());
-            sd.setInstallmentNumber(0);
-            sd.setDueDate(lease.getStartDate());
-            sd.setAmount(lease.getDepositAmount());
-            sd.setStatus(PaymentStatus.PENDING);
-            sd.setPaymentMethod(lease.getDepositPaymentMethod() != null ? lease.getDepositPaymentMethod().name() : "CHEQUE");
-            sd.setPurposeLabel("SECURITY DEPOSIT");
-            sd.setSecurityDeposit(true);
-            paymentScheduleRepository.save(sd);
+        // Only create the SD row when there's a deposit AND no SD row already
+        // exists for this lease (any status) — never duplicate a collected SD.
+        if (!depositRowExists
+                && lease.getDepositAmount() != null && lease.getDepositAmount().signum() > 0) {
+            paymentScheduleRepository.save(
+                    PaymentScheduleService.newSecurityDepositRow(lease, lease.getDepositAmount()));
         }
     }
 
