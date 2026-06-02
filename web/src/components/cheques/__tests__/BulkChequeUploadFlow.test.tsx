@@ -116,4 +116,39 @@ describe("BulkChequeUploadFlow", () => {
     const approve = screen.getByText(/^approveAll/) as HTMLButtonElement;
     expect(approve.closest("button")).toBeDisabled();
   });
+
+  it("shows mismatch chip when cheque amount differs from installment amount, approve stays enabled", async () => {
+    const fetchMock = vi.fn()
+      // extract call: cheque amount 4500, but installment s1 is 5000
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          image: { url: "u1", blobPath: "b1", uploadedAt: "2026-05-07T00:00:00Z" },
+          extracted: { chequeNumber: "C-1", bankName: "ENBD", payerName: "R", chequeDate: "2026-06-04", amount: 4500, confidence: "HIGH" },
+          warnings: [],
+        }),
+      })
+      // bulk-attach call:
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ schedules: [] }),
+      });
+    global.fetch = fetchMock;
+
+    const onSuccess = vi.fn();
+    render(<BulkChequeUploadFlow leaseId="L1" schedules={schedules} onSuccess={onSuccess} onClose={() => {}} />);
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    Object.defineProperty(input, "files", { value: [makeFile("c1.png")], configurable: true });
+    fireEvent.change(input);
+    fireEvent.click(screen.getByText("continueToExtract"));
+
+    await waitFor(() => screen.getByText("colChequeNumber"));
+
+    // Mismatch chip should appear (4500 ≠ 5000)
+    expect(screen.getByText(/≠/)).toBeInTheDocument();
+
+    // Approve button should still be enabled (mismatch is non-blocking)
+    const approve = screen.getByText(/^approveAll/) as HTMLButtonElement;
+    expect(approve.closest("button")).not.toBeDisabled();
+  });
 });

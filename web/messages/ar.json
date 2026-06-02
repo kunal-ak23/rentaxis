@@ -489,6 +489,7 @@
     "colBank": "البنك",
     "colPayer": "الساحب",
     "colChequeDate": "تاريخ الشيك",
+    "colAmount": "المبلغ",
     "colInstallment": "القسط",
     "pickInstallment": "اختر القسط",
     "pinRow": "تثبيت / إلغاء تثبيت التعيين",

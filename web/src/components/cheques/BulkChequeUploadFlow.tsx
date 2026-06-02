@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { Camera, Loader2, X, Check, AlertTriangle, Trash2, Pin } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { formatCurrency } from "@/lib/format";
 import { autoMapChequesToSchedules } from "./autoMapChequesToSchedules";
 import { useBulkChequeExtract, buildItemsFromFiles, type BulkExtractItem } from "./useBulkChequeExtract";
 import DueDateDelta from "@/components/payments/DueDateDelta";
@@ -29,6 +30,7 @@ type RowState = {
   bankName: string;
   payerName: string;
   chequeDate: string | null;
+  amount: number | null;
   scheduleId: string | null;
   pinned: boolean;
 };
@@ -149,6 +151,7 @@ export default function BulkChequeUploadFlow({ leaseId, schedules, onSuccess, on
         bankName: ex?.bankName ?? "",
         payerName: ex?.payerName ?? "",
         chequeDate: ex?.chequeDate ?? null,
+        amount: ex?.amount ?? null,
         scheduleId: null,
         pinned: false,
       };
@@ -357,6 +360,7 @@ export default function BulkChequeUploadFlow({ leaseId, schedules, onSuccess, on
                     <th>{t("colBank")}</th>
                     <th>{t("colPayer")}</th>
                     <th>{t("colChequeDate")}</th>
+                    <th>{t("colAmount")}</th>
                     <th>{t("colInstallment")}</th>
                     <th>&#916;</th>
                     <th></th>
@@ -412,6 +416,14 @@ export default function BulkChequeUploadFlow({ leaseId, schedules, onSuccess, on
                             onChange={e => updateRow(row.itemId, { chequeDate: e.target.value || null })}
                             className="rounded border border-border px-1 py-0.5"
                           />
+                        </td>
+                        <td className="pr-2">
+                          <span className="tabular-nums">{row.amount != null ? formatCurrency(row.amount) : "—"}</span>
+                          {sched && row.amount != null && Math.round(row.amount * 100) !== Math.round(Number(sched.amount) * 100) && (
+                            <span className="ml-2 inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-800">
+                              Cheque {formatCurrency(row.amount)} ≠ installment {formatCurrency(Number(sched.amount))}
+                            </span>
+                          )}
                         </td>
                         <td className="pr-2">
                           <select

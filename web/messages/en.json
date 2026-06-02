@@ -489,6 +489,7 @@
     "colBank": "Bank",
     "colPayer": "Payer",
     "colChequeDate": "Cheque date",
+    "colAmount": "Amount",
     "colInstallment": "Installment",
     "pickInstallment": "Pick an installment",
     "pinRow": "Pin / unpin assignment",
