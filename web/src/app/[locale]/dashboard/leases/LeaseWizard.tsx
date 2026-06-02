@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useRouter } from "@/i18n/routing";
 import { ArrowLeft, ArrowRight, X, Check, Loader2, Sparkles, AlertTriangle, Building2, User, Calendar, DollarSign, CreditCard, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatDate } from "@/lib/format";
 import PaymentScheduleEditor from "./PaymentScheduleEditor";
 import ChequeScanner from "@/components/cheques/ChequeScanner";
 import BulkChequeUploadFlow from "@/components/cheques/BulkChequeUploadFlow";
@@ -28,6 +28,7 @@ import BulkChequeUploadFlow from "@/components/cheques/BulkChequeUploadFlow";
  */
 
 type ChargeFrequency = "ONE_TIME" | "PER_INSTALLMENT";
+type InstallmentDistribution = "UNIFORM" | "FIRST_LARGER" | "LAST_LARGER" | "FIRST_AND_LAST_LARGER";
 type ChargeRow = { name: string; amount: number; vatApplicable: boolean; frequency: ChargeFrequency };
 
 type Unit = {
@@ -60,6 +61,7 @@ type WizardData = {
     charges: ChargeRow[];
     bookingDepositOpen: boolean;
     bookingDeposit: { amount: number; chequeNumber: string; chequeDate: string; bankName: string; scannedAmount: number | null };
+    installmentDistribution: InstallmentDistribution;
 };
 
 const initialData: WizardData = {
@@ -79,6 +81,7 @@ const initialData: WizardData = {
     charges: [],
     bookingDepositOpen: false,
     bookingDeposit: { amount: 0, chequeNumber: "", chequeDate: "", bankName: "", scannedAmount: null },
+    installmentDistribution: "LAST_LARGER",
 };
 
 const STEPS = [
@@ -111,6 +114,13 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
     const [wizardSchedules, setWizardSchedules] = useState<any[]>([]);
     const [scheduleRefreshKey, setScheduleRefreshKey] = useState(0);
 
+    // Preview state for Payment Plan step
+    type PreviewLine = { installmentNumber: number; dueDate: string; amount: number };
+    const [previewLines, setPreviewLines] = useState<PreviewLine[] | null>(null);
+    const [previewError, setPreviewError] = useState<string | null>(null);
+    const [previewLoading, setPreviewLoading] = useState(false);
+    const previewReqRef = useRef(0);
+
     const reset = useCallback(() => {
         setStepIdx(0);
         setData(initialData);
@@ -121,6 +131,10 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
         setBulkOpen(false);
         setWizardSchedules([]);
         setScheduleRefreshKey(0);
+        setPreviewLines(null);
+        setPreviewError(null);
+        setPreviewLoading(false);
+        previewReqRef.current = 0;
     }, []);
 
     const loadWizardSchedules = async (leaseId: string) => {
@@ -136,6 +150,73 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
     }, [open, reset]);
 
     const selectedUnit = useMemo(() => units.find((u) => u.id === data.unitId), [units, data.unitId]);
+
+    // Debounced live preview — fires when on the "plan" step and all required fields are valid
+    useEffect(() => {
+        const propertyId = selectedUnit?.property?.id;
+        if (
+            stepIdx !== 3 ||  // only run on the "plan" step (index 3)
+            !propertyId ||
+            !data.startDate ||
+            !data.endDate ||
+            !data.rentAmount || data.rentAmount <= 0 ||
+            !data.paymentTerms || data.paymentTerms < 1
+        ) {
+            setPreviewLines(null);
+            setPreviewError(null);
+            setPreviewLoading(false);
+            return;
+        }
+
+        setPreviewLoading(true);
+        const reqId = ++previewReqRef.current;
+
+        const timer = setTimeout(async () => {
+            const params = new URLSearchParams({
+                propertyId,
+                startDate: data.startDate,
+                endDate: data.endDate,
+                monthlyRent: String(data.rentAmount),
+                paymentTerms: String(data.paymentTerms),
+                depositAmount: String(data.depositAmount || 0),
+                strategy: data.installmentDistribution,
+            });
+
+            try {
+                const res = await fetch(`/api/proxy/v1/payments/preview?${params.toString()}`);
+                if (previewReqRef.current !== reqId) return; // stale response — discard
+
+                if (res.ok) {
+                    const json = await res.json();
+                    setPreviewLines(json.lines ?? []);
+                    setPreviewError(null);
+                } else {
+                    let msg = `Error ${res.status}`;
+                    try { const j = await res.json(); msg = j?.error || msg; } catch { /* ignore */ }
+                    setPreviewLines(null);
+                    setPreviewError(msg);
+                }
+            } catch {
+                if (previewReqRef.current !== reqId) return;
+                setPreviewLines(null);
+                setPreviewError("Network error fetching preview");
+            } finally {
+                if (previewReqRef.current === reqId) setPreviewLoading(false);
+            }
+        }, 300);
+
+        return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [
+        stepIdx,
+        selectedUnit?.property?.id,
+        data.startDate,
+        data.endDate,
+        data.rentAmount,
+        data.paymentTerms,
+        data.depositAmount,
+        data.installmentDistribution,
+    ]);
     const selectedRenter = useMemo(() => renters.find((r) => r.id === data.renterId), [renters, data.renterId]);
     const isCommercial = selectedUnit?.property?.type === "COMMERCIAL";
 
@@ -233,6 +314,7 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                 agreementDate: data.agreementDate || null,
                 rentVatApplicable: data.rentVatApplicable,
                 charges: data.charges,
+                installmentDistribution: data.installmentDistribution,
             };
             if (data.bookingDepositOpen && data.bookingDeposit.amount > 0) {
                 body.bookingDeposit = {
@@ -424,11 +506,21 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
 
                     {currentStep.key === "plan" && (
                         <div className="space-y-5">
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
                                 <Field label="Number of installments *" hint="Rent will be split equally across this many payments">
                                     <input type="number" min={1} max={36} value={data.paymentTerms}
                                         onChange={(e) => update({ paymentTerms: Number(e.target.value) })}
                                         className="w-full bg-input border border-border p-3 rounded-xl text-xs" />
+                                </Field>
+                                <Field label="Remainder distribution" hint="Where the rounding remainder goes">
+                                    <select value={data.installmentDistribution}
+                                        onChange={(e) => update({ installmentDistribution: e.target.value as InstallmentDistribution })}
+                                        className="w-full bg-input border border-border p-3 rounded-xl text-xs">
+                                        <option value="UNIFORM">Uniform</option>
+                                        <option value="FIRST_LARGER">First larger</option>
+                                        <option value="LAST_LARGER">Last larger</option>
+                                        <option value="FIRST_AND_LAST_LARGER">Both larger</option>
+                                    </select>
                                 </Field>
                                 <Field label="Default payment method">
                                     <select value={data.paymentMethod} onChange={(e) => update({ paymentMethod: e.target.value })}
@@ -505,6 +597,59 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                                         </Field>
                                     </div>
                                 )}
+                            </div>
+
+                            {/* Live installment preview */}
+                            <div className="border border-border rounded-xl p-4 bg-input/30">
+                                <h3 className="text-xs font-semibold text-foreground mb-3">Installment preview</h3>
+                                {previewLoading && (
+                                    <div className="flex items-center gap-2 text-[11px] text-muted py-2">
+                                        <Loader2 size={12} className="animate-spin" /> Calculating…
+                                    </div>
+                                )}
+                                {!previewLoading && previewError && (
+                                    <p className="text-[11px] text-error">{previewError}</p>
+                                )}
+                                {!previewLoading && !previewError && !previewLines && (
+                                    <p className="text-[11px] text-muted">Fill in dates, monthly rent, and installment count above to see a preview.</p>
+                                )}
+                                {!previewLoading && !previewError && previewLines && (() => {
+                                    const perInstallmentChargeTotal = data.charges
+                                        .filter((c) => c.frequency === "PER_INSTALLMENT")
+                                        .reduce((sum, c) => sum + c.amount * (c.vatApplicable ? 1.05 : 1), 0);
+                                    return (
+                                        <table className="w-full text-[11px]">
+                                            <thead>
+                                                <tr className="text-muted border-b border-border">
+                                                    <th className="text-left py-1 pr-3 font-semibold">#</th>
+                                                    <th className="text-left py-1 pr-3 font-semibold">Due date</th>
+                                                    <th className="text-right py-1 font-semibold">Amount</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {previewLines.map((line) => (
+                                                    <tr key={line.installmentNumber} className="border-b border-border/50">
+                                                        <td className="py-1 pr-3 text-muted">{line.installmentNumber}</td>
+                                                        <td className="py-1 pr-3">{formatDate(line.dueDate)}</td>
+                                                        <td className="py-1 text-right font-medium">{formatCurrency(line.amount + perInstallmentChargeTotal)}</td>
+                                                    </tr>
+                                                ))}
+                                                {data.charges.filter((c) => c.frequency === "ONE_TIME").map((c, i) => (
+                                                    <tr key={`ot-${i}`} className="border-b border-border/50 text-muted">
+                                                        <td className="py-1 pr-3" colSpan={2}>{c.name || "One-time charge"}</td>
+                                                        <td className="py-1 text-right">{formatCurrency(c.amount * (c.vatApplicable ? 1.05 : 1))}</td>
+                                                    </tr>
+                                                ))}
+                                                {data.depositAmount > 0 && (
+                                                    <tr className="text-muted">
+                                                        <td className="py-1 pr-3" colSpan={2}>Security deposit</td>
+                                                        <td className="py-1 text-right">{formatCurrency(data.depositAmount)}</td>
+                                                    </tr>
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    );
+                                })()}
                             </div>
                         </div>
                     )}
