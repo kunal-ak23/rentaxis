@@ -15,14 +15,16 @@ import { cn } from "@/lib/utils";
  *   - unitId, renterId
  *   - startDate, endDate
  *   - rentAmount (monthly) + rentVatApplicable
- *   - depositAmount + securityDepositVatApplicable
+ *   - depositAmount
  *   - ejariNumber, paymentReferenceNumber
  *   - paymentMethod, paymentTerms, depositPaymentMethod
  *   - agreementDate
- *   - adminFee + adminFeeVatApplicable
- *   - parkingRemoteFee + parkingRemoteVatApplicable
+ *   - charges (dynamic repeater: name / amount / frequency / VAT)
  *   - bookingDeposit (collapsible add-form for leases without one yet)
  */
+
+type ChargeFrequency = "ONE_TIME" | "PER_INSTALLMENT";
+type ChargeRow = { name: string; amount: number; vatApplicable: boolean; frequency: ChargeFrequency };
 
 type Unit = {
     id: string;
@@ -52,12 +54,8 @@ type Lease = {
     depositPaymentMethod?: string | null;
     paymentReferenceNumber?: string | null;
     agreementDate?: string | null;
-    adminFee?: number | null;
-    parkingRemoteFee?: number | null;
     rentVatApplicable?: boolean | null;
-    adminFeeVatApplicable?: boolean | null;
-    securityDepositVatApplicable?: boolean | null;
-    parkingRemoteVatApplicable?: boolean | null;
+    charges?: ChargeRow[] | null;
     status: string;
     hasBookingDeposit?: boolean;
 };
@@ -81,12 +79,8 @@ type FormShape = {
     depositPaymentMethod: string;
     paymentReferenceNumber: string;
     agreementDate: string;
-    adminFee: number;
-    parkingRemoteFee: number;
     rentVatApplicable: boolean;
-    adminFeeVatApplicable: boolean;
-    securityDepositVatApplicable: boolean;
-    parkingRemoteVatApplicable: boolean;
+    charges: ChargeRow[];
 };
 
 type BookingDepositShape = {
@@ -117,12 +111,8 @@ function leaseToForm(lease: Lease): FormShape {
         depositPaymentMethod: lease.depositPaymentMethod ?? "CHEQUE",
         paymentReferenceNumber: lease.paymentReferenceNumber ?? "",
         agreementDate: (lease.agreementDate ?? "").substring(0, 10),
-        adminFee: lease.adminFee ?? 0,
-        parkingRemoteFee: lease.parkingRemoteFee ?? 0,
         rentVatApplicable: !!lease.rentVatApplicable,
-        adminFeeVatApplicable: !!lease.adminFeeVatApplicable,
-        securityDepositVatApplicable: !!lease.securityDepositVatApplicable,
-        parkingRemoteVatApplicable: !!lease.parkingRemoteVatApplicable,
+        charges: lease.charges ?? [],
     };
 }
 
@@ -181,17 +171,16 @@ export default function LeaseMetadataEditor({ lease, onSaved, className }: Props
     const onPickUnit = (unitId: string) => {
         const u = units.find((x) => x.id === unitId);
         const commercial = u?.property?.type === "COMMERCIAL";
-        // Carry over commercial-VAT defaults when the unit changes — same as
-        // the wizard's behavior on step 1.
+        // Carry over commercial-VAT default for rent when the unit changes.
         setForm((prev) => ({
             ...prev,
             unitId,
             rentVatApplicable: commercial,
-            adminFeeVatApplicable: commercial,
-            securityDepositVatApplicable: commercial,
-            parkingRemoteVatApplicable: commercial,
         }));
     };
+
+    const updateCharge = (i: number, patch: Partial<ChargeRow>) =>
+        setForm((prev) => ({ ...prev, charges: prev.charges.map((c, j) => (j === i ? { ...c, ...patch } : c)) }));
 
     const handleSave = async () => {
         if (!editable) return;
@@ -222,12 +211,8 @@ export default function LeaseMetadataEditor({ lease, onSaved, className }: Props
                 depositPaymentMethod: form.depositPaymentMethod,
                 paymentReferenceNumber: form.paymentReferenceNumber || null,
                 agreementDate: form.agreementDate || null,
-                adminFee: form.adminFee || 0,
-                parkingRemoteFee: form.parkingRemoteFee || 0,
                 rentVatApplicable: form.rentVatApplicable,
-                adminFeeVatApplicable: form.adminFeeVatApplicable,
-                securityDepositVatApplicable: form.securityDepositVatApplicable,
-                parkingRemoteVatApplicable: form.parkingRemoteVatApplicable,
+                charges: form.charges,
             };
             if (bookingOpen && bookingDeposit.amount > 0) {
                 body.bookingDeposit = {
@@ -322,10 +307,7 @@ export default function LeaseMetadataEditor({ lease, onSaved, className }: Props
                             </div>
                         </Field>
                         <Field label="Security deposit (AED)">
-                            <div className="flex items-center gap-2">
-                                <input type="number" min={0} step={0.01} value={form.depositAmount} onChange={(e) => setForm({ ...form, depositAmount: Number(e.target.value) })} className="flex-1 bg-input border border-border p-3 rounded-xl text-xs" />
-                                <VatToggle value={form.securityDepositVatApplicable} onChange={(v) => setForm({ ...form, securityDepositVatApplicable: v })} />
-                            </div>
+                            <input type="number" min={0} step={0.01} value={form.depositAmount} onChange={(e) => setForm({ ...form, depositAmount: Number(e.target.value) })} className="w-full bg-input border border-border p-3 rounded-xl text-xs" />
                         </Field>
                         <Field label="Ejari #">
                             <input value={form.ejariNumber} onChange={(e) => setForm({ ...form, ejariNumber: e.target.value })} className="w-full bg-input border border-border p-3 rounded-xl text-xs" placeholder="EJAR-12345" />
@@ -349,18 +331,36 @@ export default function LeaseMetadataEditor({ lease, onSaved, className }: Props
                         <Field label="Agreement date">
                             <input type="date" value={form.agreementDate} onChange={(e) => setForm({ ...form, agreementDate: e.target.value })} className="w-full bg-input border border-border p-3 rounded-xl text-xs" />
                         </Field>
-                        <Field label="Admin fee (AED)">
-                            <div className="flex items-center gap-2">
-                                <input type="number" min={0} step={0.01} value={form.adminFee} onChange={(e) => setForm({ ...form, adminFee: Number(e.target.value) })} className="flex-1 bg-input border border-border p-3 rounded-xl text-xs" />
-                                <VatToggle value={form.adminFeeVatApplicable} onChange={(v) => setForm({ ...form, adminFeeVatApplicable: v })} />
+                    </div>
+
+                    <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                            <h3 className="text-xs font-semibold">Other charges</h3>
+                            <button type="button"
+                                onClick={() => setForm((prev) => ({ ...prev, charges: [...prev.charges, { name: "", amount: 0, vatApplicable: false, frequency: "ONE_TIME" as ChargeFrequency }] }))}
+                                className="rounded border border-border px-2 py-1 text-xs">+ Add charge</button>
+                        </div>
+                        {form.charges.length === 0 && <p className="text-[11px] text-muted">No extra charges. Add admin fee, parking, maintenance, etc.</p>}
+                        {form.charges.map((c, i) => (
+                            <div key={i} className="grid grid-cols-1 md:grid-cols-[1fr_120px_120px_auto_32px] gap-2 items-end">
+                                <Field label="Name"><input type="text" value={c.name}
+                                    onChange={(e) => updateCharge(i, { name: e.target.value })}
+                                    className="w-full bg-input border border-border p-2 rounded-lg text-xs" /></Field>
+                                <Field label="Amount (AED)"><input type="number" min={0} step={0.01} value={c.amount}
+                                    onChange={(e) => updateCharge(i, { amount: Number(e.target.value) })}
+                                    className="w-full bg-input border border-border p-2 rounded-lg text-xs" /></Field>
+                                <Field label="Frequency">
+                                    <select value={c.frequency} onChange={(e) => updateCharge(i, { frequency: e.target.value as ChargeFrequency })}
+                                        className="w-full bg-input border border-border p-2 rounded-lg text-xs">
+                                        <option value="ONE_TIME">One-time</option>
+                                        <option value="PER_INSTALLMENT">Per installment</option>
+                                    </select>
+                                </Field>
+                                <VatToggle value={c.vatApplicable} onChange={(v) => updateCharge(i, { vatApplicable: v })} />
+                                <button type="button" onClick={() => setForm((prev) => ({ ...prev, charges: prev.charges.filter((_, j) => j !== i) }))}
+                                    className="rounded border border-border p-2 text-xs">✕</button>
                             </div>
-                        </Field>
-                        <Field label="Parking / remote fee (AED)">
-                            <div className="flex items-center gap-2">
-                                <input type="number" min={0} step={0.01} value={form.parkingRemoteFee} onChange={(e) => setForm({ ...form, parkingRemoteFee: Number(e.target.value) })} className="flex-1 bg-input border border-border p-3 rounded-xl text-xs" />
-                                <VatToggle value={form.parkingRemoteVatApplicable} onChange={(v) => setForm({ ...form, parkingRemoteVatApplicable: v })} />
-                            </div>
-                        </Field>
+                        ))}
                     </div>
 
                     {hasExistingBookingDeposit ? (

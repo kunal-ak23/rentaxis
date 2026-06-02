@@ -32,6 +32,8 @@ type ScheduleRow = {
     chequeImageUploadedAt: string | null;
     purposeLabel: string | null;
     isBookingDeposit?: boolean;
+    isSecurityDeposit?: boolean;
+    isCharge?: boolean;
 };
 
 type Props = {
@@ -100,8 +102,11 @@ export default function PaymentScheduleEditor({ leaseId, leaseStatus, canManage,
                 const mine: ScheduleRow[] = list
                     .filter((p: ScheduleRow) => p.leaseId === leaseId)
                     .sort((a: ScheduleRow, b: ScheduleRow) => {
-                        // Booking deposit rows last; regular installments by number ascending.
-                        if (!!a.isBookingDeposit !== !!b.isBookingDeposit) return a.isBookingDeposit ? 1 : -1;
+                        // Non-rent rows (booking deposit, security deposit, charges) sort last;
+                        // regular rent installments sort first by installment number ascending.
+                        const aNon = !!a.isBookingDeposit || !!a.isSecurityDeposit || !!a.isCharge;
+                        const bNon = !!b.isBookingDeposit || !!b.isSecurityDeposit || !!b.isCharge;
+                        if (aNon !== bNon) return aNon ? 1 : -1;
                         return (a.installmentNumber ?? 0) - (b.installmentNumber ?? 0);
                     });
                 setRows(mine);
@@ -268,8 +273,8 @@ export default function PaymentScheduleEditor({ leaseId, leaseStatus, canManage,
                             };
                             return (
                                 <tr key={r.id} className="border-t border-border align-top">
-                                    <td className="px-3 py-2 tabular-nums">{r.isBookingDeposit ? "B" : r.installmentNumber}</td>
-                                    <td className="px-3 py-2 text-muted">{r.purposeLabel || (r.isBookingDeposit ? "Booking Deposit" : "")}</td>
+                                    <td className="px-3 py-2 tabular-nums">{r.isBookingDeposit ? "B" : r.isSecurityDeposit ? "S" : r.isCharge ? "C" : r.installmentNumber}</td>
+                                    <td className="px-3 py-2 text-muted">{r.purposeLabel || (r.isSecurityDeposit ? "Security Deposit" : r.isBookingDeposit ? "Booking Deposit" : "")}</td>
                                     <td className="px-3 py-2">
                                         <input
                                             type="date"
