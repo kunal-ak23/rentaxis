@@ -58,7 +58,7 @@ type WizardData = {
     rentVatApplicable: boolean;
     charges: ChargeRow[];
     bookingDepositOpen: boolean;
-    bookingDeposit: { amount: number; chequeNumber: string; chequeDate: string; bankName: string };
+    bookingDeposit: { amount: number; chequeNumber: string; chequeDate: string; bankName: string; scannedAmount: number | null };
 };
 
 const initialData: WizardData = {
@@ -77,7 +77,7 @@ const initialData: WizardData = {
     rentVatApplicable: false,
     charges: [],
     bookingDepositOpen: false,
-    bookingDeposit: { amount: 0, chequeNumber: "", chequeDate: "", bankName: "" },
+    bookingDeposit: { amount: 0, chequeNumber: "", chequeDate: "", bankName: "", scannedAmount: null },
 };
 
 const STEPS = [
@@ -456,6 +456,7 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                                                             chequeNumber: result.chequeNumber ?? data.bookingDeposit.chequeNumber,
                                                             chequeDate: result.chequeDate ?? data.bookingDeposit.chequeDate,
                                                             bankName: result.bankName ?? data.bookingDeposit.bankName,
+                                                            scannedAmount: result.amount ?? null,
                                                         },
                                                     })
                                                 }
@@ -465,6 +466,13 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                                             <input type="number" min={0} step={0.01} value={data.bookingDeposit.amount}
                                                 onChange={(e) => update({ bookingDeposit: { ...data.bookingDeposit, amount: Number(e.target.value) } })}
                                                 className="w-full bg-surface border border-border p-3 rounded-xl text-xs" />
+                                            {data.bookingDeposit.scannedAmount != null && data.bookingDeposit.scannedAmount !== data.bookingDeposit.amount && (
+                                                <button type="button"
+                                                    onClick={() => update({ bookingDeposit: { ...data.bookingDeposit, amount: data.bookingDeposit.scannedAmount! } })}
+                                                    className="mt-1 inline-flex items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-[11px] text-primary">
+                                                    From cheque: AED {data.bookingDeposit.scannedAmount} · Apply
+                                                </button>
+                                            )}
                                         </Field>
                                         <Field label="Cheque number">
                                             <input type="text" value={data.bookingDeposit.chequeNumber}
