@@ -49,6 +49,7 @@ class LeaseInteractionControllerTest {
 
     private UUID tenantId;
     private UUID managerUserId;
+    private UUID superAdminUserId;
     private Lease lease;
 
     @BeforeEach
@@ -70,6 +71,17 @@ class LeaseInteractionControllerTest {
         manager = userRepo.save(manager);
         managerUserId = manager.getId();
 
+        // A real SUPER_ADMIN user (interaction.created_by has an FK to users).
+        User superAdmin = new User();
+        superAdmin.setEmail("sa+" + UUID.randomUUID() + "@test");
+        superAdmin.setName("System Admin");
+        superAdmin.setRole(UserRole.SUPER_ADMIN);
+        superAdmin.setStatus(UserStatus.ACTIVE);
+        superAdmin.setPasswordHash("ph");
+        superAdmin.setTenantId(tenantId);
+        superAdmin = userRepo.save(superAdmin);
+        superAdminUserId = superAdmin.getId();
+
         lease = RenewalTestFixtures.createActiveLease(
                 orgRepo, userRepo, renterRepo, propertyRepo, unitRepo, leaseRepo,
                 tenantId,
@@ -89,6 +101,16 @@ class LeaseInteractionControllerTest {
                 .baseUrl("http://localhost:" + port)
                 .defaultHeader("X-User-Id", managerUserId.toString())
                 .defaultHeader("X-User-Role", "PROPERTY_MANAGER")
+                .defaultHeader("X-Tenant-Id", tenantId.toString())
+                .defaultHeader("X-User-Tenant-Id", tenantId.toString())
+                .build();
+    }
+
+    private RestClient superAdminClient() {
+        return RestClient.builder()
+                .baseUrl("http://localhost:" + port)
+                .defaultHeader("X-User-Id", superAdminUserId.toString())
+                .defaultHeader("X-User-Role", "SUPER_ADMIN")
                 .defaultHeader("X-Tenant-Id", tenantId.toString())
                 .defaultHeader("X-User-Tenant-Id", tenantId.toString())
                 .build();
@@ -126,6 +148,27 @@ class LeaseInteractionControllerTest {
         assertThat(body.get("id")).isNotNull();
         assertThat(body.get("type")).isEqualTo("CALL");
         assertThat(body.get("leaseId")).isEqualTo(lease.getId().toString());
+    }
+
+    @Test
+    void super_admin_can_create_and_list() {
+        // Regression: interactions endpoints previously omitted SUPER_ADMIN from
+        // @PreAuthorize, 403-ing the system admin.
+        Map<?, ?> created = superAdminClient().post()
+                .uri("/api/v1/leases/" + lease.getId() + "/interactions")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(createPayload())
+                .retrieve()
+                .body(Map.class);
+        assertThat(created).isNotNull();
+        assertThat(created.get("id")).isNotNull();
+
+        Map<?, ?> listed = superAdminClient().get()
+                .uri("/api/v1/leases/" + lease.getId() + "/interactions")
+                .retrieve()
+                .body(Map.class);
+        assertThat(listed).isNotNull();
+        assertThat((List<?>) listed.get("content")).isNotEmpty();
     }
 
     @Test
