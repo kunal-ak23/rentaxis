@@ -14,7 +14,12 @@ export type BulkExtractItem = {
   error: string | null;
 };
 
-const MAX_CONCURRENT = 2;
+// Sequential (1): the backend Azure OpenAI client is built on azure-core-http-netty,
+// which is not safe for concurrent sync calls — concurrency triggers
+// "IllegalStateException: channel not registered to an event loop" and the cheque
+// comes back unextracted. Serialize extraction until the backend HTTP client is
+// swapped off Netty (then this can go back to >1).
+const MAX_CONCURRENT = 1;
 const ALLOWED_TYPES = new Set([
   "image/jpeg",
   "image/jpg",
