@@ -89,7 +89,11 @@ export default function PaymentScheduleEditor({ leaseId, leaseStatus, canManage,
         setLoading(true);
         setError(null);
         try {
-            const res = await fetch(`/api/proxy/v1/payments?leaseId=${leaseId}`);
+            // Lease-scoped endpoint returns the FULL schedule for one lease as a
+            // plain List (no pagination). The tenant-wide `/payments?leaseId=` is
+            // paginated and ignores leaseId, so a lease's rows could fall outside
+            // the first page and silently vanish from the editor.
+            const res = await fetch(`/api/proxy/v1/payments/lease/${leaseId}`);
             if (res.ok) {
                 const data = await res.json();
                 const list = Array.isArray(data) ? data : (data.content ?? []);
