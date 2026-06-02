@@ -3,7 +3,6 @@ package com.datagami.rentaxis.api;
 import com.datagami.rentaxis.api.dto.AgingReportDTO;
 import com.datagami.rentaxis.api.dto.MarkFailedRequestDTO;
 import com.datagami.rentaxis.api.dto.MarkFailedResponseDTO;
-import com.datagami.rentaxis.api.dto.PaymentPreviewDTO;
 import com.datagami.rentaxis.api.dto.PaymentScheduleDTO;
 import com.datagami.rentaxis.api.dto.LeasePaymentStatsDTO;
 import com.datagami.rentaxis.api.dto.PaymentSummaryDTO;
