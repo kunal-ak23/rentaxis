@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { Camera, Loader2, X, Check, AlertTriangle, Trash2, Pin } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatDate } from "@/lib/format";
 import { autoMapChequesToSchedules } from "./autoMapChequesToSchedules";
 import { useBulkChequeExtract, buildItemsFromFiles, type BulkExtractItem } from "./useBulkChequeExtract";
 import DueDateDelta from "@/components/payments/DueDateDelta";
@@ -436,7 +436,7 @@ export default function BulkChequeUploadFlow({ leaseId, schedules, onSuccess, on
                               .filter(s => !usedSchedIds.has(s.id) || s.id === row.scheduleId)
                               .map(s => (
                                 <option key={s.id} value={s.id}>
-                                  #{s.installmentNumber} · {s.dueDate}
+                                  #{s.installmentNumber} · {formatDate(s.dueDate)}
                                 </option>
                               ))}
                           </select>
