@@ -430,6 +430,9 @@ public class LeaseService {
         leaseDocumentRepository.deleteAll(leaseDocumentRepository.findByLeaseId(leaseId));
         leaseAttachmentRepository.deleteAll(leaseAttachmentRepository.findByLeaseId(leaseId));
         paymentScheduleRepository.deleteAll(paymentScheduleRepository.findByLeaseId(leaseId));
+        // lease_charges FK is NO ACTION (like payment_schedules); remove the
+        // lease's charges before deleting the lease or the FK constraint blocks it.
+        leaseChargeRepository.deleteAll(leaseChargeRepository.findByLeaseId(leaseId));
         leaseEventRepository.deleteAll(leaseEventRepository.findByLeaseIdOrderByCreatedAtDesc(leaseId));
         leaseRepository.delete(lease);
     }
