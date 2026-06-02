@@ -1,0 +1,9 @@
+databaseChangeLog:
+  - changeSet:
+      id: 62-installment-distribution
+      author: rentaxis-system
+      changes:
+        - addColumn:
+            tableName: leases
+            columns:
+              - column: { name: installment_distribution, type: varchar(30), constraints: { nullable: false }, defaultValue: "LAST_LARGER" }

@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.domain.entity;
 
+import com.datagami.rentaxis.domain.entity.enums.InstallmentDistribution;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.PaymentMethod;
 import jakarta.persistence.*;
@@ -52,6 +53,10 @@ public class Lease extends BaseTenantEntity {
 
     @Column(name = "payment_terms")
     private Integer paymentTerms;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "installment_distribution", nullable = false, length = 30)
+    private InstallmentDistribution installmentDistribution = InstallmentDistribution.LAST_LARGER;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "payment_method", length = 20)
