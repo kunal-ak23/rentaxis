@@ -60,14 +60,26 @@ public final class ChequeRoundingCalculator {
      *   <li>UNIFORM — even per-cheque amount; the cent remainder is spread one
      *       cent at a time across the earliest cheques so the sum is exact.</li>
      *   <li>LAST_LARGER (default) — non-last cheques floored to a clean step;
-     *       the remainder lands on the last cheque. Byte-identical to the legacy
-     *       behavior.</li>
+     *       the remainder lands on the last cheque.</li>
      *   <li>FIRST_LARGER — remainder on the first cheque.</li>
      *   <li>FIRST_AND_LAST_LARGER — remainder split across first + last.</li>
      * </ul>
      *
-     * The deposit cap (when active) applies to the largest cheque. When no clean
-     * step keeps the largest cheque within the cap, distribution is rejected.
+     * <p><b>Zero-value cheque guard:</b> for the stepped strategies
+     * (LAST_LARGER, FIRST_LARGER, FIRST_AND_LAST_LARGER), any candidate step
+     * whose floored per-cheque base evaluates to zero (i.e.
+     * {@code floor(totalRent/n, step) ≤ 0}) is skipped. This prevents the
+     * legacy {@code [0, 0, …, total]} output that occurred when the average
+     * per-cheque rent was smaller than the candidate step (e.g. totalRent=1500,
+     * n=4 with a 1000-step would floor to 0). The algorithm falls through to
+     * finer steps until it finds one that yields a positive base amount,
+     * producing a clean split such as {@code [300, 300, 300, 600]} instead.
+     * Note: existing persisted schedules are not affected by this change; it
+     * applies only to newly generated schedules.
+     *
+     * <p>The deposit cap (when active) applies to the largest cheque. When no
+     * clean step keeps the largest cheque within the cap, distribution is
+     * rejected with a {@link com.datagami.rentaxis.api.exception.BusinessRuleViolationException}.
      *
      * @param totalRent total amount to distribute (must be > 0).
      * @param n number of cheques (>= 1).

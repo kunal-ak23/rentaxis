@@ -37,4 +37,28 @@ class ChequeRoundingCalculatorStrategyTest {
         var r = ChequeRoundingCalculator.distribute(new BigDecimal("35000"), 1, null, InstallmentDistribution.UNIFORM).amounts();
         assertThat(r).containsExactly(new BigDecimal("35000"));
     }
+
+    /**
+     * Verifies the zero-value cheque guard: when the per-cheque average is smaller
+     * than the largest candidate step, the algorithm skips that step instead of
+     * emitting zero-value cheques (legacy would have produced [0,0,0,total]).
+     *
+     * 1500 / 4 = 375 → step 1000 floors to 0 (skip), step 500 floors to 0 (skip),
+     *   step 100 → per=300, last=600. No zeros; last is largest; sum=1500.
+     *
+     * 2000 / 4 = 500 → step 1000 floors to 0 (skip), step 500 → per=500, last=500.
+     *   All equal; sum=2000.
+     */
+    @Test void lastLarger_lowPerCheque_noZeroCheques() {
+        // Case 1: 1500 / 4 — must not produce any zero-value cheque
+        var r1 = ChequeRoundingCalculator.distribute(new BigDecimal("1500"), 4, null, InstallmentDistribution.LAST_LARGER).amounts();
+        assertThat(sum(r1)).isEqualByComparingTo("1500");
+        assertThat(r1).doesNotContain(BigDecimal.ZERO).noneMatch(a -> a.signum() == 0);
+        assertThat(r1.get(r1.size() - 1)).isEqualByComparingTo(r1.stream().max(BigDecimal::compareTo).get()); // last is largest
+
+        // Case 2: 2000 / 4 — divides cleanly into 500s
+        var r2 = ChequeRoundingCalculator.distribute(new BigDecimal("2000"), 4, null, InstallmentDistribution.LAST_LARGER).amounts();
+        assertThat(sum(r2)).isEqualByComparingTo("2000");
+        assertThat(r2).hasSize(4).allSatisfy(a -> assertThat(a).isEqualByComparingTo("500"));
+    }
 }
