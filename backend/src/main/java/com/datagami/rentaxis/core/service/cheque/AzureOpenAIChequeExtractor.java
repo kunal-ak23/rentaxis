@@ -12,6 +12,7 @@ import com.azure.ai.openai.models.ChatMessageTextContentItem;
 import com.azure.ai.openai.models.ChatRequestMessage;
 import com.azure.ai.openai.models.ChatRequestSystemMessage;
 import com.azure.ai.openai.models.ChatRequestUserMessage;
+import com.azure.core.exception.ResourceNotFoundException;
 import com.azure.core.util.BinaryData;
 import com.datagami.rentaxis.api.dto.ExtractedChequeDTO;
 import com.datagami.rentaxis.core.config.AzureOpenAIConfig;
@@ -112,12 +113,70 @@ public class AzureOpenAIChequeExtractor implements ChequeExtractor {
                                 .setSchema(BinaryData.fromString(SCHEMA))
                 ));
 
-        ChatCompletions completions = openAIClient.getChatCompletions(config.getDeployment(), options);
+        ChatCompletions completions = callWithTransientRetry(options);
         if (completions == null || completions.getChoices() == null || completions.getChoices().isEmpty()
                 || completions.getChoices().get(0).getMessage() == null) {
             return null;
         }
         return completions.getChoices().get(0).getMessage().getContent();
+    }
+
+    /**
+     * Calls the Azure OpenAI SDK with up to 3 attempts, retrying only on transient
+     * Netty channel-registration errors (IllegalStateException / message contains
+     * "channel not registered to an event loop"). Non-transient exceptions such as
+     * {@link ResourceNotFoundException} (bad deployment name, auth errors) are
+     * rethrown immediately so the caller's @CircuitBreaker can register them.
+     */
+    private ChatCompletions callWithTransientRetry(ChatCompletionsOptions options) {
+        final int maxAttempts = 3;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                return openAIClient.getChatCompletions(config.getDeployment(), options);
+            } catch (RuntimeException ex) {
+                if (!isTransient(ex)) {
+                    throw ex;
+                }
+                if (attempt == maxAttempts) {
+                    log.warn("Cheque OCR SDK call failed after {} attempts (transient), rethrowing: {}",
+                            maxAttempts, ex.getMessage());
+                    throw ex;
+                }
+                log.debug("Cheque OCR SDK transient error on attempt {}/{}, retrying in {}ms: {}",
+                        attempt, maxAttempts, attempt * 300L, ex.getMessage());
+                try {
+                    Thread.sleep(attempt * 300L);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw ex;
+                }
+            }
+        }
+        // unreachable — loop always returns or throws
+        throw new IllegalStateException("callWithTransientRetry: unexpected loop exit");
+    }
+
+    /**
+     * Returns true iff the exception is a known transient Netty channel-registration
+     * failure that can safely be retried.
+     */
+    private static boolean isTransient(RuntimeException ex) {
+        if (ex instanceof ResourceNotFoundException) {
+            return false;
+        }
+        return containsTransientMessage(ex);
+    }
+
+    private static boolean containsTransientMessage(Throwable t) {
+        if (t == null) return false;
+        String msg = t.getMessage();
+        if (msg != null && (msg.contains("channel not registered to an event loop"))) {
+            return true;
+        }
+        if (t instanceof IllegalStateException) {
+            return true;
+        }
+        return containsTransientMessage(t.getCause());
     }
 
     ExtractionResult parseResponse(String content) {

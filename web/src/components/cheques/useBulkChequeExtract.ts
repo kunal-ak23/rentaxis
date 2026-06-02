@@ -14,7 +14,7 @@ export type BulkExtractItem = {
   error: string | null;
 };
 
-const MAX_CONCURRENT = 4;
+const MAX_CONCURRENT = 2;
 const ALLOWED_TYPES = new Set([
   "image/jpeg",
   "image/jpg",
