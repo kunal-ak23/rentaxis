@@ -93,6 +93,7 @@ export default function PaymentScheduleEditor({ leaseId, leaseStatus, canManage,
     const [saved, setSaved] = useState(false);
     const [dirty, setDirty] = useState(false);
     const [extractedFields, setExtractedFields] = useState<Set<string>>(new Set());
+    const [scannedAmounts, setScannedAmounts] = useState<Record<string, number | null>>({});
 
     const editable = canManage && EDITABLE_STATUSES.has(leaseStatus);
 
@@ -276,6 +277,9 @@ export default function PaymentScheduleEditor({ leaseId, leaseStatus, canManage,
                                     if (typeof data.chequeDate !== "undefined") next.add(`${r.id}:chequeDate`);
                                     return next;
                                 });
+                                if (typeof data.amount !== "undefined") {
+                                    setScannedAmounts(prev => ({ ...prev, [r.id]: data.amount ?? null }));
+                                }
                                 setDirty(true);
                                 setSaved(false);
                                 setError(null);
@@ -381,6 +385,11 @@ export default function PaymentScheduleEditor({ leaseId, leaseStatus, canManage,
                                             className="border border-border rounded px-2 py-1 text-xs bg-surface w-28 text-right tabular-nums disabled:bg-input/40 disabled:cursor-not-allowed"
                                         />
                                         <div className="text-[10px] text-muted mt-0.5">{formatCurrency(r.amount || 0)}</div>
+                                        {scannedAmounts[r.id] != null && Math.round(scannedAmounts[r.id]! * 100) !== Math.round(r.amount * 100) && (
+                                            <span className="ml-2 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-800">
+                                                Cheque {formatCurrency(scannedAmounts[r.id]!)} ≠ {formatCurrency(r.amount)}
+                                            </span>
+                                        )}
                                     </td>
                                     <td className="px-3 py-2 text-muted">{r.status}</td>
                                 </tr>
