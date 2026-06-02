@@ -21,13 +21,13 @@ public class LeaseInteractionController {
     private final LeaseInteractionService service;
 
     @GetMapping
-    @PreAuthorize("hasAnyAuthority('ROLE_TENANT_ADMIN','ROLE_PROPERTY_MANAGER')")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_TENANT_ADMIN','ROLE_PROPERTY_MANAGER')")
     public Page<InteractionDTO> list(@PathVariable UUID leaseId, Pageable pageable) {
         return service.list(leaseId, pageable);
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyAuthority('ROLE_TENANT_ADMIN','ROLE_PROPERTY_MANAGER')")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_TENANT_ADMIN','ROLE_PROPERTY_MANAGER')")
     public ResponseEntity<InteractionDTO> create(@PathVariable UUID leaseId,
                                                   @Valid @RequestBody CreateInteractionRequest req,
                                                   @AuthenticationPrincipal String userIdStr) {
@@ -35,13 +35,13 @@ public class LeaseInteractionController {
     }
 
     @PatchMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_TENANT_ADMIN','ROLE_PROPERTY_MANAGER')")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_TENANT_ADMIN','ROLE_PROPERTY_MANAGER')")
     public InteractionDTO update(@PathVariable UUID id, @Valid @RequestBody UpdateInteractionRequest req) {
         return service.update(id, req);
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority('ROLE_TENANT_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_TENANT_ADMIN')")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         service.softDelete(id);
         return ResponseEntity.noContent().build();
