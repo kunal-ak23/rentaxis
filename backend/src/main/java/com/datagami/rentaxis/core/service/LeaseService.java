@@ -15,6 +15,7 @@ import com.datagami.rentaxis.domain.entity.*;
 import com.datagami.rentaxis.domain.entity.enums.ChargeFrequency;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Lazy;
+import com.datagami.rentaxis.domain.entity.enums.InstallmentDistribution;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.PaymentMethod;
 import com.datagami.rentaxis.domain.entity.enums.PaymentStatus;
@@ -157,6 +158,8 @@ public class LeaseService {
         lease.setDepositAmount(dto.getDepositAmount());
         lease.setEjariNumber(dto.getEjariNumber());
         lease.setPaymentTerms(dto.getPaymentTerms());
+        lease.setInstallmentDistribution(dto.getInstallmentDistribution() != null
+                ? dto.getInstallmentDistribution() : InstallmentDistribution.LAST_LARGER);
         if (dto.getPaymentMethod() != null) {
             lease.setPaymentMethod(PaymentMethod.valueOf(dto.getPaymentMethod()));
         }
@@ -275,6 +278,8 @@ public class LeaseService {
         lease.setDepositAmount(dto.getDepositAmount());
         lease.setEjariNumber(dto.getEjariNumber());
         lease.setPaymentTerms(dto.getPaymentTerms());
+        lease.setInstallmentDistribution(dto.getInstallmentDistribution() != null
+                ? dto.getInstallmentDistribution() : InstallmentDistribution.LAST_LARGER);
         if (dto.getPaymentMethod() != null) {
             lease.setPaymentMethod(PaymentMethod.valueOf(dto.getPaymentMethod()));
         }
@@ -643,6 +648,7 @@ public class LeaseService {
         dto.setDepositAmount(lease.getDepositAmount());
         dto.setEjariNumber(lease.getEjariNumber());
         dto.setPaymentTerms(lease.getPaymentTerms());
+        dto.setInstallmentDistribution(lease.getInstallmentDistribution());
         dto.setPaymentMethod(lease.getPaymentMethod());
         dto.setDepositPaymentMethod(lease.getDepositPaymentMethod());
         dto.setPaymentReferenceNumber(lease.getPaymentReferenceNumber());

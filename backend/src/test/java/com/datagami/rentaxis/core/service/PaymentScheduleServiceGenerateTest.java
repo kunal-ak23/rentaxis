@@ -233,6 +233,38 @@ class PaymentScheduleServiceGenerateTest {
         assertThat(totalRent).isEqualByComparingTo(new BigDecimal("60000"));
     }
 
+    @Test
+    void firstLargerVsLastLargerPlaceRemainderOnOppositeEnds() {
+        // 31000 / 6 cheques, deposit 10000 → per=5000, remainder 6000.
+        // LAST_LARGER puts 6000 on the last cheque; FIRST_LARGER on the first.
+        Lease lastLargerLease = buildLease(
+                new BigDecimal("31000"), new BigDecimal("10000"), 6,
+                LocalDate.of(2026, 1, 1), LocalDate.of(2027, 1, 1));
+        lastLargerLease.setInstallmentDistribution(
+                com.datagami.rentaxis.domain.entity.enums.InstallmentDistribution.LAST_LARGER);
+
+        Lease firstLargerLease = buildLease(
+                new BigDecimal("31000"), new BigDecimal("10000"), 6,
+                LocalDate.of(2026, 1, 1), LocalDate.of(2027, 1, 1));
+        firstLargerLease.setInstallmentDistribution(
+                com.datagami.rentaxis.domain.entity.enums.InstallmentDistribution.FIRST_LARGER);
+
+        List<PaymentSchedule> lastLarger = service.generateScheduleForLease(lastLargerLease);
+        List<PaymentSchedule> firstLarger = service.generateScheduleForLease(firstLargerLease);
+
+        // LAST_LARGER: first is the small 5000, last is the big 6000.
+        assertThat(lastLarger.get(0).getAmount()).isEqualByComparingTo("5000");
+        assertThat(lastLarger.get(5).getAmount()).isEqualByComparingTo("6000");
+        // FIRST_LARGER: first is the big 6000, last is the small 5000.
+        assertThat(firstLarger.get(0).getAmount()).isEqualByComparingTo("6000");
+        assertThat(firstLarger.get(5).getAmount()).isEqualByComparingTo("5000");
+        // The two strategies differ on both ends for the same lease inputs.
+        assertThat(firstLarger.get(0).getAmount())
+                .isNotEqualByComparingTo(lastLarger.get(0).getAmount());
+        assertThat(firstLarger.get(5).getAmount())
+                .isNotEqualByComparingTo(lastLarger.get(5).getAmount());
+    }
+
     /** Builds a lease driven by monthlyRent so the inclusive month count sets the total. */
     private Lease buildMonthlyLease(BigDecimal monthlyRent, BigDecimal deposit, int paymentTerms,
                                     LocalDate start, LocalDate end) {

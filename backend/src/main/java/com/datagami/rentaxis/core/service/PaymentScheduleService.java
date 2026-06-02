@@ -17,6 +17,7 @@ import com.datagami.rentaxis.core.util.DateMath;
 import com.datagami.rentaxis.domain.entity.*;
 import com.datagami.rentaxis.domain.entity.enums.ChargeFrequency;
 import com.datagami.rentaxis.domain.entity.enums.ChequeFailureReason;
+import com.datagami.rentaxis.domain.entity.enums.InstallmentDistribution;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.PaymentStatus;
 import com.datagami.rentaxis.domain.entity.enums.TransactionNature;
@@ -158,7 +159,7 @@ public class PaymentScheduleService {
             // retain funds to cover damages if the tenant defaults on the final
             // payment.
             chequeAmounts = ChequeRoundingCalculator
-                    .distribute(totalRent, n, lease.getDepositAmount())
+                    .distribute(totalRent, n, lease.getDepositAmount(), lease.getInstallmentDistribution())
                     .amounts();
         } else {
             chequeAmounts = java.util.Collections.nCopies(n, BigDecimal.ZERO);
@@ -964,6 +965,12 @@ public class PaymentScheduleService {
      * snapped to the property's RentCollectionSettings.dueDayOfMonth.
      */
     public PaymentPreviewDTO previewSchedule(UUID propertyId, LocalDate startDate, LocalDate endDate, BigDecimal monthlyRent, Integer paymentTerms, BigDecimal depositAmount) {
+        return previewSchedule(propertyId, startDate, endDate, monthlyRent, paymentTerms, depositAmount, InstallmentDistribution.LAST_LARGER);
+    }
+
+    @Transactional(readOnly = true)
+    public PaymentPreviewDTO previewSchedule(UUID propertyId, LocalDate startDate, LocalDate endDate, BigDecimal monthlyRent, Integer paymentTerms, BigDecimal depositAmount, InstallmentDistribution strategy) {
+        if (strategy == null) strategy = InstallmentDistribution.LAST_LARGER;
         if (paymentTerms == null || paymentTerms <= 0) {
             return previewSchedule(propertyId, startDate, endDate, monthlyRent);
         }
@@ -982,7 +989,7 @@ public class PaymentScheduleService {
         Integer dueDay = (settingsDueDay != null && settingsDueDay >= 1 && settingsDueDay <= 31) ? settingsDueDay : null;
 
         BigDecimal totalRent = monthlyRent.multiply(BigDecimal.valueOf(totalMonths));
-        List<BigDecimal> chequeAmounts = ChequeRoundingCalculator.distribute(totalRent, n, depositAmount).amounts();
+        List<BigDecimal> chequeAmounts = ChequeRoundingCalculator.distribute(totalRent, n, depositAmount, strategy).amounts();
 
         List<PaymentPreviewDTO.PaymentPreviewLine> lines = new ArrayList<>();
         for (int i = 0; i < n; i++) {

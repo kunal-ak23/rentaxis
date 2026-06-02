@@ -8,10 +8,12 @@ import com.datagami.rentaxis.api.dto.PaymentScheduleDTO;
 import com.datagami.rentaxis.api.dto.LeasePaymentStatsDTO;
 import com.datagami.rentaxis.api.dto.PaymentSummaryDTO;
 import com.datagami.rentaxis.api.dto.UpdatePaymentStatusDTO;
+import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.core.service.MarkFailedResult;
 import com.datagami.rentaxis.core.service.PaymentScheduleService;
 import com.datagami.rentaxis.core.service.RentReceiptService;
 import com.datagami.rentaxis.domain.entity.PaymentPenalty;
+import com.datagami.rentaxis.domain.entity.enums.InstallmentDistribution;
 import com.datagami.rentaxis.domain.entity.enums.PaymentStatus;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +23,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -153,8 +156,22 @@ public class PaymentScheduleController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
             @RequestParam BigDecimal monthlyRent,
             @RequestParam(required = false) Integer paymentTerms,
-            @RequestParam(required = false) BigDecimal depositAmount) {
-        return ResponseEntity.ok(paymentScheduleService.previewSchedule(propertyId, startDate, endDate, monthlyRent, paymentTerms, depositAmount));
+            @RequestParam(required = false) BigDecimal depositAmount,
+            @RequestParam(required = false) InstallmentDistribution strategy) {
+        return ResponseEntity.ok(paymentScheduleService.previewSchedule(
+                propertyId, startDate, endDate, monthlyRent, paymentTerms, depositAmount, strategy));
+    }
+
+    /**
+     * Controller-local override of {@link GlobalExceptionHandler}'s 400 mapping
+     * for distribution cap violations. The live preview surfaces this as an
+     * inline message, so it returns 422 with a flat {@code {"error": msg}} body
+     * the wizard can render directly.
+     */
+    @ExceptionHandler(BusinessRuleViolationException.class)
+    public ResponseEntity<java.util.Map<String, String>> handleDistributionRejected(BusinessRuleViolationException ex) {
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .body(java.util.Map.of("error", ex.getMessage()));
     }
 
 }

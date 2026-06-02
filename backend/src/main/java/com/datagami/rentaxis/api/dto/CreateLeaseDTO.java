@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.api.dto;
 
+import com.datagami.rentaxis.domain.entity.enums.InstallmentDistribution;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
@@ -37,6 +38,8 @@ public class CreateLeaseDTO {
 
     @Min(1)
     private Integer paymentTerms;
+
+    private InstallmentDistribution installmentDistribution;
 
     private String paymentMethod; // CHEQUE or ONLINE
 
