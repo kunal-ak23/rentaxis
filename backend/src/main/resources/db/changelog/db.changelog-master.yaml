@@ -131,3 +131,5 @@ databaseChangeLog:
       file: db/changelog/changesets/61-lease-charges.yaml
   - include:
       file: db/changelog/changesets/62-installment-distribution.yaml
+  - include:
+      file: db/changelog/changesets/63-payment-schedule-vat-amount.yaml

@@ -130,6 +130,14 @@ public class PaymentScheduleService {
                 .filter(c -> c.getFrequency() == ChargeFrequency.PER_INSTALLMENT)
                 .map(c -> withVat(c.getAmount(), c.isVatApplicable()))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
+        // VAT portion of the per-installment charges folded into every rent row.
+        // Additive 5%: only the VAT-applicable charges contribute (amount * 0.05),
+        // computed per-charge at 2dp HALF_UP so the sum lines up with what was
+        // billed via withVat().
+        BigDecimal perInstallmentChargeVat = charges.stream()
+                .filter(c -> c.getFrequency() == ChargeFrequency.PER_INSTALLMENT)
+                .map(c -> vatOf(c.getAmount(), c.isVatApplicable()))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
         String recurringLabel = charges.stream()
                 .filter(c -> c.getFrequency() == ChargeFrequency.PER_INSTALLMENT)
                 .map(LeaseCharge::getName)
@@ -155,11 +163,24 @@ public class PaymentScheduleService {
         if (hasRent) {
             // Clean-denomination split: non-last cheques are floored to AED 1,000
             // (or 500/100/cents on fallback), last cheque absorbs the residual.
-            // The deposit acts as a safety cap on the last cheque so we always
+            // The deposit acts as a safety cap on the largest cheque so we always
             // retain funds to cover damages if the tenant defaults on the final
             // payment.
+            //
+            // The per-installment charge is folded into every cheque AFTER
+            // distribution, so the actual largest cheque is (rent + charge). To
+            // keep that within the deposit, shrink the cap passed to distribute by
+            // the folded charge. If the adjusted cap would go <= 0, pass null
+            // (cap disabled) rather than throwing — the deposit is now collected
+            // as its own schedule row, so this cap is only a soft safety net and
+            // a spurious BusinessRuleViolationException here would be wrong.
+            BigDecimal depositCap = lease.getDepositAmount();
+            if (depositCap != null && perInstallmentCharge.signum() > 0) {
+                BigDecimal adjusted = depositCap.subtract(perInstallmentCharge);
+                depositCap = adjusted.signum() > 0 ? adjusted : null;
+            }
             chequeAmounts = ChequeRoundingCalculator
-                    .distribute(totalRent, n, lease.getDepositAmount(), lease.getInstallmentDistribution())
+                    .distribute(totalRent, n, depositCap, lease.getInstallmentDistribution())
                     .amounts();
         } else {
             chequeAmounts = java.util.Collections.nCopies(n, BigDecimal.ZERO);
@@ -191,7 +212,20 @@ public class PaymentScheduleService {
                 dueDate = dueDate.withDayOfMonth(clamped);
             }
 
-            BigDecimal amount = chequeAmounts.get(i).add(perInstallmentCharge);
+            BigDecimal rentShare = chequeAmounts.get(i);
+            BigDecimal amount = rentShare.add(perInstallmentCharge);
+
+            // Authoritative per-row VAT (B1). Rent VAT is INCLUSIVE — extracted
+            // from the rent-only cheque as rentShare * 5/105. The folded
+            // per-installment charge VAT is ADDITIVE and already computed once
+            // (constant across rows). Total stored VAT = rent VAT + charge VAT so
+            // the credit-leg VAT stamped at clear time matches what was billed,
+            // even when the charge's VAT status differs from rent's.
+            BigDecimal rentVat = lease.isRentVatApplicable()
+                    ? rentShare.multiply(new BigDecimal("5"))
+                            .divide(new BigDecimal("105"), 2, RoundingMode.HALF_UP)
+                    : BigDecimal.ZERO;
+            BigDecimal rowVat = rentVat.add(perInstallmentChargeVat);
 
             PaymentSchedule ps = new PaymentSchedule();
             ps.setLease(lease);
@@ -200,6 +234,7 @@ public class PaymentScheduleService {
             ps.setInstallmentNumber(i + 1);
             ps.setDueDate(dueDate);
             ps.setAmount(amount);
+            ps.setVatAmount(rowVat);
             ps.setStatus(PaymentStatus.PENDING);
 
             // With rent: "RENT - 1ST INSTALLMENT (+ Maintenance)". Without rent
@@ -228,10 +263,22 @@ public class PaymentScheduleService {
 
     private static final BigDecimal VAT_MULTIPLIER = new BigDecimal("1.05");
 
+    private static final BigDecimal VAT_RATE = new BigDecimal("0.05");
+
     /** Additive 5% VAT: returns amount*1.05 (2dp) when vat applies, else amount. */
     static BigDecimal withVat(BigDecimal amount, boolean vat) {
         BigDecimal a = nz(amount);
         return vat ? a.multiply(VAT_MULTIPLIER).setScale(2, java.math.RoundingMode.HALF_UP) : a;
+    }
+
+    /**
+     * Additive 5% VAT portion: returns amount*0.05 (2dp HALF_UP) when vat
+     * applies, else zero. This is the VAT slice that {@link #withVat} adds on
+     * top of the base amount — used to stamp {@code vatAmount} on schedule rows.
+     */
+    static BigDecimal vatOf(BigDecimal amount, boolean vat) {
+        BigDecimal a = nz(amount);
+        return vat ? a.multiply(VAT_RATE).setScale(2, java.math.RoundingMode.HALF_UP) : BigDecimal.ZERO;
     }
 
     /**
@@ -250,6 +297,7 @@ public class PaymentScheduleService {
         sd.setInstallmentNumber(0);
         sd.setDueDate(lease.getStartDate());
         sd.setAmount(depositAmount);
+        sd.setVatAmount(BigDecimal.ZERO); // refundable deposit never carries VAT
         sd.setStatus(PaymentStatus.PENDING);
         sd.setPaymentMethod(lease.getDepositPaymentMethod() != null
                 ? lease.getDepositPaymentMethod().name() : "CHEQUE");
@@ -262,9 +310,12 @@ public class PaymentScheduleService {
      * Single source of truth for a one-time-charge schedule row. Used by both
      * {@code LeaseService} and {@code PortfolioImportPersistService}. The amount
      * passed in must already be VAT-adjusted via {@link #withVat} (additive 5%);
-     * the row uses the lease's rent payment method and {@code is_charge=true}.
+     * {@code vatAmount} is the additive VAT slice (via {@link #vatOf}) baked into
+     * that amount. The row uses the lease's rent payment method and
+     * {@code is_charge=true}.
      */
-    public static PaymentSchedule newOneTimeChargeRow(Lease lease, String label, BigDecimal vatAdjustedAmount) {
+    public static PaymentSchedule newOneTimeChargeRow(Lease lease, String label,
+                                                      BigDecimal vatAdjustedAmount, BigDecimal vatAmount) {
         PaymentSchedule row = new PaymentSchedule();
         row.setLease(lease);
         row.setUnit(lease.getUnit());
@@ -272,6 +323,7 @@ public class PaymentScheduleService {
         row.setInstallmentNumber(0);
         row.setDueDate(lease.getStartDate());
         row.setAmount(vatAdjustedAmount);
+        row.setVatAmount(nz(vatAmount));
         row.setStatus(PaymentStatus.PENDING);
         row.setPaymentMethod(lease.getPaymentMethod() != null ? lease.getPaymentMethod().name() : "CHEQUE");
         row.setPurposeLabel(label);
@@ -644,28 +696,26 @@ public class PaymentScheduleService {
         creditTxn.setProperty(payment.getProperty());
         creditTxn.setUnit(payment.getUnit());
 
-        // Stamp VAT fields based on the lease's rent VAT toggle (UAE 5% standard rate).
-        // The cheque amount is gross (face value); we extract VAT as gross * 5/105.
-        // Only the credit (rental-income) leg is stamped — VAT is tracked on income lines,
-        // not on the bank/cash debit leg.
-        // Note: only rent installments stamp VAT here via the lease's rent VAT
-        // toggle. Charge / security-deposit rows are now separate schedule rows
-        // with their VAT already baked into the amount at generation time.
-        boolean rentVatApplicable = payment.getLease().isRentVatApplicable();
-        if (rentVatApplicable) {
+        // Stamp VAT fields from the AUTHORITATIVE per-row vatAmount recorded at
+        // generation (B1). The row's amount is gross (face value); vatAmount was
+        // computed per-component when the schedule was built — inclusive rent VAT
+        // (gross*5/105) PLUS additive per-installment charge VAT, or the charge's
+        // own additive VAT for one-time-charge rows. This makes recorded VAT match
+        // exactly what was billed even when a charge's VAT status differs from
+        // rent's. Only the credit (rental-income) leg is stamped — VAT is tracked
+        // on income lines, not on the bank/cash debit leg.
+        BigDecimal rowVat = payment.getVatAmount();
+        if (rowVat != null && rowVat.signum() > 0) {
             BigDecimal gross = payment.getAmount();
-            BigDecimal vatAmount = gross
-                    .multiply(new BigDecimal("5"))
-                    .divide(new BigDecimal("105"), 2, RoundingMode.HALF_UP);
-            BigDecimal netAmount = gross.subtract(vatAmount);
             creditTxn.setVatApplicable(true);
             creditTxn.setVatRate(new BigDecimal("5.00"));
-            creditTxn.setVatAmount(vatAmount);
+            creditTxn.setVatAmount(rowVat);
             creditTxn.setGrossAmount(gross);
-            creditTxn.setNetAmount(netAmount);
+            creditTxn.setNetAmount(gross.subtract(rowVat));
         }
-        // else: leave defaults (vatApplicable=false, vatRate=0, vatAmount=0,
-        // grossAmount=0, netAmount=0) matching pre-M9 behavior for residential leases.
+        // else: no VAT on this row → leave defaults (vatApplicable=false,
+        // vatRate=0, vatAmount=0, grossAmount=0, netAmount=0), matching pre-M9
+        // behavior for VAT-exempt residential leases.
 
         financialTransactionService.createTransaction(creditTxn);
 

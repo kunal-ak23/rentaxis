@@ -154,6 +154,239 @@ class LeaseChargesGenerationIT {
     }
 
     @Test
+    void vatExemptRent_withVatApplicablePerInstallmentCharge_recordsOnlyChargeVatOnRentRows() {
+        Property property = new Property();
+        property.setNameEn("VAT IT Property");
+        property.setEmirate(Emirate.DUBAI);
+        property.setType(PropertyType.RESIDENTIAL);
+        property = propertyRepository.save(property);
+
+        Unit unit = new Unit();
+        unit.setProperty(property);
+        unit.setUnitNumber("VIT-1");
+        unit = unitRepository.save(unit);
+
+        Renter renter = new Renter();
+        renter.setNameEn("VAT IT Renter");
+        renter.setEmail("vat-it@example.com");
+        renter = renterRepository.save(renter);
+
+        CreateLeaseDTO dto = new CreateLeaseDTO();
+        dto.setUnitId(unit.getId());
+        dto.setRenterId(renter.getId());
+        dto.setStartDate(LocalDate.of(2026, 1, 1));
+        dto.setEndDate(LocalDate.of(2026, 7, 1)); // 6 months
+        dto.setRentAmount(new BigDecimal("30000")); // 5000/mo * 6
+        dto.setMonthlyRent(new BigDecimal("5000"));
+        dto.setDepositAmount(new BigDecimal("15000"));
+        dto.setPaymentTerms(6);
+        dto.setRentVatApplicable(false); // VAT-EXEMPT rent
+
+        // PER_INSTALLMENT charge that IS VAT-applicable.
+        LeaseChargeDTO maintenance = new LeaseChargeDTO();
+        maintenance.setName("Maintenance");
+        maintenance.setAmount(new BigDecimal("200"));
+        maintenance.setVatApplicable(true);
+        maintenance.setFrequency(ChargeFrequency.PER_INSTALLMENT);
+
+        // ONE_TIME charge that IS VAT-applicable.
+        LeaseChargeDTO adminFee = new LeaseChargeDTO();
+        adminFee.setName("Admin Fee");
+        adminFee.setAmount(new BigDecimal("1000"));
+        adminFee.setVatApplicable(true);
+        adminFee.setFrequency(ChargeFrequency.ONE_TIME);
+
+        dto.setCharges(List.of(maintenance, adminFee));
+
+        LeaseDTO created = leaseService.createDraftLease(dto);
+        List<PaymentSchedule> rows = paymentScheduleRepository.findByLeaseId(created.getId());
+
+        // Rent rows: rent is VAT-exempt, so the row's vatAmount must equal ONLY
+        // the folded charge VAT (200 * 0.05 = 10.00), NOT gross*5/105 (which
+        // would be 5210*5/105 = 248.10 — the bug B1 fixes).
+        List<PaymentSchedule> rentRows = rows.stream()
+                .filter(r -> !r.isCharge() && !r.isSecurityDeposit() && !r.isBookingDeposit())
+                .toList();
+        assertThat(rentRows).hasSize(6);
+        assertThat(rentRows).allSatisfy(r -> {
+            assertThat(r.getAmount()).isEqualByComparingTo("5210.00"); // 5000 + 200*1.05
+            assertThat(r.getVatAmount()).isEqualByComparingTo("10.00"); // charge VAT only
+        });
+
+        // One-time Admin Fee row: vatAmount = 1000 * 0.05 = 50.00 (additive).
+        assertThat(rows.stream().filter(PaymentSchedule::isCharge))
+                .singleElement()
+                .satisfies(r -> {
+                    assertThat(r.getAmount()).isEqualByComparingTo("1050.00");
+                    assertThat(r.getVatAmount()).isEqualByComparingTo("50.00");
+                });
+
+        // Security deposit row: never VAT.
+        assertThat(rows.stream().filter(PaymentSchedule::isSecurityDeposit))
+                .singleElement()
+                .satisfies(r -> assertThat(r.getVatAmount()).isEqualByComparingTo("0"));
+    }
+
+    @Test
+    void vatInclusiveRent_withVatExemptCharge_recordsOnlyRentVat() {
+        Property property = new Property();
+        property.setNameEn("VAT2 IT Property");
+        property.setEmirate(Emirate.DUBAI);
+        property.setType(PropertyType.COMMERCIAL);
+        property = propertyRepository.save(property);
+
+        Unit unit = new Unit();
+        unit.setProperty(property);
+        unit.setUnitNumber("V2IT-1");
+        unit = unitRepository.save(unit);
+
+        Renter renter = new Renter();
+        renter.setNameEn("VAT2 IT Renter");
+        renter.setEmail("vat2-it@example.com");
+        renter = renterRepository.save(renter);
+
+        CreateLeaseDTO dto = new CreateLeaseDTO();
+        dto.setUnitId(unit.getId());
+        dto.setRenterId(renter.getId());
+        dto.setStartDate(LocalDate.of(2026, 1, 1));
+        dto.setEndDate(LocalDate.of(2026, 7, 1)); // 6 months
+        dto.setRentAmount(new BigDecimal("30000"));
+        dto.setMonthlyRent(new BigDecimal("5000"));
+        dto.setDepositAmount(new BigDecimal("15000"));
+        dto.setPaymentTerms(6);
+        dto.setRentVatApplicable(true); // VAT-INCLUSIVE rent
+
+        // PER_INSTALLMENT charge that is VAT-EXEMPT.
+        LeaseChargeDTO maintenance = new LeaseChargeDTO();
+        maintenance.setName("Maintenance");
+        maintenance.setAmount(new BigDecimal("200"));
+        maintenance.setVatApplicable(false);
+        maintenance.setFrequency(ChargeFrequency.PER_INSTALLMENT);
+        dto.setCharges(List.of(maintenance));
+
+        LeaseDTO created = leaseService.createDraftLease(dto);
+        List<PaymentSchedule> rows = paymentScheduleRepository.findByLeaseId(created.getId());
+
+        // Rent rows: rent VAT inclusive on the rent-only share (5000), charge VAT
+        // zero. 5000*5/105 = 238.10 (HALF_UP). Amount = 5000 + 200 = 5200.00.
+        List<PaymentSchedule> rentRows = rows.stream()
+                .filter(r -> !r.isCharge() && !r.isSecurityDeposit() && !r.isBookingDeposit())
+                .toList();
+        assertThat(rentRows).hasSize(6);
+        assertThat(rentRows).allSatisfy(r -> {
+            assertThat(r.getAmount()).isEqualByComparingTo("5200.00");
+            assertThat(r.getVatAmount()).isEqualByComparingTo("238.10");
+        });
+    }
+
+    @Test
+    void perInstallmentChargePlusRent_staysWithinDepositCap_noSpuriousViolation() {
+        Property property = new Property();
+        property.setNameEn("Cap IT Property");
+        property.setEmirate(Emirate.DUBAI);
+        property.setType(PropertyType.RESIDENTIAL);
+        property = propertyRepository.save(property);
+
+        Unit unit = new Unit();
+        unit.setProperty(property);
+        unit.setUnitNumber("CAPIT-1");
+        unit = unitRepository.save(unit);
+
+        Renter renter = new Renter();
+        renter.setNameEn("Cap IT Renter");
+        renter.setEmail("cap-it@example.com");
+        renter = renterRepository.save(renter);
+
+        // Rent 11000 over 2 cheques, deposit 6000. With the cap checked on rent
+        // only (old behavior), the 1000-step split [5000, 6000] passes (6000 <=
+        // 6000), but folding a 500 charge yields [5500, 6500] — the largest
+        // cheque (6500) then EXCEEDS the deposit. B3 shrinks the cap passed to
+        // distribute to 6000-500=5500, forcing the 500-step split [5500, 5500];
+        // folding the charge gives [6000, 6000], both within the 6000 deposit and
+        // with no spurious BusinessRuleViolationException.
+        CreateLeaseDTO dto = new CreateLeaseDTO();
+        dto.setUnitId(unit.getId());
+        dto.setRenterId(renter.getId());
+        dto.setStartDate(LocalDate.of(2026, 1, 1));
+        dto.setEndDate(LocalDate.of(2026, 3, 1)); // 2 months
+        dto.setRentAmount(new BigDecimal("11000"));
+        dto.setMonthlyRent(new BigDecimal("5500"));
+        dto.setDepositAmount(new BigDecimal("6000"));
+        dto.setPaymentTerms(2);
+
+        LeaseChargeDTO maintenance = new LeaseChargeDTO();
+        maintenance.setName("Maintenance");
+        maintenance.setAmount(new BigDecimal("500"));
+        maintenance.setVatApplicable(false);
+        maintenance.setFrequency(ChargeFrequency.PER_INSTALLMENT);
+        dto.setCharges(List.of(maintenance));
+
+        // Must not throw a BusinessRuleViolationException.
+        LeaseDTO created = leaseService.createDraftLease(dto);
+        List<PaymentSchedule> rentRows = paymentScheduleRepository.findByLeaseId(created.getId()).stream()
+                .filter(r -> !r.isCharge() && !r.isSecurityDeposit() && !r.isBookingDeposit())
+                .toList();
+        assertThat(rentRows).hasSize(2);
+        // Every cheque (rent + folded 500 charge) must stay within the 6000 deposit.
+        assertThat(rentRows).allSatisfy(r ->
+                assertThat(r.getAmount()).isLessThanOrEqualTo(new BigDecimal("6000.00")));
+        // Sum integrity: total rent + total folded charge preserved.
+        BigDecimal total = rentRows.stream().map(PaymentSchedule::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        assertThat(total).isEqualByComparingTo("12000.00"); // 11000 rent + 2*500 charge
+    }
+
+    @Test
+    void adjustedDepositCapNonPositive_disablesCapGracefully_noViolation() {
+        Property property = new Property();
+        property.setNameEn("Cap0 IT Property");
+        property.setEmirate(Emirate.DUBAI);
+        property.setType(PropertyType.RESIDENTIAL);
+        property = propertyRepository.save(property);
+
+        Unit unit = new Unit();
+        unit.setProperty(property);
+        unit.setUnitNumber("CAP0IT-1");
+        unit = unitRepository.save(unit);
+
+        Renter renter = new Renter();
+        renter.setNameEn("Cap0 IT Renter");
+        renter.setEmail("cap0-it@example.com");
+        renter = renterRepository.save(renter);
+
+        // Deposit (300) is smaller than the per-installment charge (500), so the
+        // adjusted cap 300-500 = -200 <= 0. B3 disables the cap (passes null)
+        // rather than throwing — the deposit is collected as its own row anyway,
+        // so the cap is only a soft safety net.
+        CreateLeaseDTO dto = new CreateLeaseDTO();
+        dto.setUnitId(unit.getId());
+        dto.setRenterId(renter.getId());
+        dto.setStartDate(LocalDate.of(2026, 1, 1));
+        dto.setEndDate(LocalDate.of(2026, 3, 1)); // 2 months
+        dto.setRentAmount(new BigDecimal("11000"));
+        dto.setMonthlyRent(new BigDecimal("5500"));
+        dto.setDepositAmount(new BigDecimal("300"));
+        dto.setPaymentTerms(2);
+
+        LeaseChargeDTO maintenance = new LeaseChargeDTO();
+        maintenance.setName("Maintenance");
+        maintenance.setAmount(new BigDecimal("500"));
+        maintenance.setVatApplicable(false);
+        maintenance.setFrequency(ChargeFrequency.PER_INSTALLMENT);
+        dto.setCharges(List.of(maintenance));
+
+        // Must not throw — cap disabled gracefully.
+        LeaseDTO created = leaseService.createDraftLease(dto);
+        List<PaymentSchedule> rentRows = paymentScheduleRepository.findByLeaseId(created.getId()).stream()
+                .filter(r -> !r.isCharge() && !r.isSecurityDeposit() && !r.isBookingDeposit())
+                .toList();
+        assertThat(rentRows).hasSize(2);
+        BigDecimal total = rentRows.stream().map(PaymentSchedule::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        assertThat(total).isEqualByComparingTo("12000.00"); // 11000 rent + 2*500 charge
+    }
+
+    @Test
     void updateDraftLease_doesNotDuplicateCollectedSecurityDepositOrChargeRows() {
         Property property = new Property();
         property.setNameEn("Update IT Property");

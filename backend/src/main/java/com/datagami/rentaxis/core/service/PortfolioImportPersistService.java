@@ -276,12 +276,14 @@ public class PortfolioImportPersistService {
             // deposit row (refundable, never VAT) — mirrors LeaseService.
             if (adminFee.signum() > 0) {
                 saveChargeScheduleRow(savedLease, "Admin Fee",
-                        PaymentScheduleService.withVat(adminFee, adminFeeVat));
+                        PaymentScheduleService.withVat(adminFee, adminFeeVat),
+                        PaymentScheduleService.vatOf(adminFee, adminFeeVat));
                 schedulesCreated++;
             }
             if (parkingRemoteFee.signum() > 0) {
                 saveChargeScheduleRow(savedLease, "Parking / Remote",
-                        PaymentScheduleService.withVat(parkingRemoteFee, parkingRemoteVat));
+                        PaymentScheduleService.withVat(parkingRemoteFee, parkingRemoteVat),
+                        PaymentScheduleService.vatOf(parkingRemoteFee, parkingRemoteVat));
                 schedulesCreated++;
             }
             if (savedLease.getDepositAmount() != null && savedLease.getDepositAmount().signum() > 0) {
@@ -468,10 +470,10 @@ public class PortfolioImportPersistService {
         leaseChargeRepository.save(charge);
     }
 
-    /** Emit a one-time-charge schedule row (amount already VAT-adjusted). */
-    private void saveChargeScheduleRow(Lease lease, String label, BigDecimal amount) {
+    /** Emit a one-time-charge schedule row (amount already VAT-adjusted; vat = additive VAT slice). */
+    private void saveChargeScheduleRow(Lease lease, String label, BigDecimal amount, BigDecimal vat) {
         paymentScheduleRepository.save(
-                PaymentScheduleService.newOneTimeChargeRow(lease, label, amount));
+                PaymentScheduleService.newOneTimeChargeRow(lease, label, amount, vat));
     }
 
     /**

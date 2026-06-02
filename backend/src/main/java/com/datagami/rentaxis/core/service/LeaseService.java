@@ -733,7 +733,8 @@ public class LeaseService {
                 if (existingChargeLabels.contains(c.getName())) continue;
                 PaymentSchedule row = PaymentScheduleService.newOneTimeChargeRow(
                         lease, c.getName(),
-                        PaymentScheduleService.withVat(c.getAmount(), c.isVatApplicable()));
+                        PaymentScheduleService.withVat(c.getAmount(), c.isVatApplicable()),
+                        PaymentScheduleService.vatOf(c.getAmount(), c.isVatApplicable()));
                 paymentScheduleRepository.save(row);
                 // Guard against duplicate names within the same charges payload.
                 existingChargeLabels.add(c.getName());

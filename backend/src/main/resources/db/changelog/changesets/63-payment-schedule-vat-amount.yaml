@@ -1,0 +1,9 @@
+databaseChangeLog:
+  - changeSet:
+      id: 63-payment-schedule-vat-amount
+      author: rentaxis-system
+      changes:
+        - addColumn:
+            tableName: payment_schedules
+            columns:
+              - column: { name: vat_amount, type: "decimal(12,2)", constraints: { nullable: false }, defaultValueNumeric: 0 }

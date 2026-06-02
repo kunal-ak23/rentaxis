@@ -51,6 +51,7 @@ public class CreateLeaseDTO {
 
     private Boolean rentVatApplicable;
 
+    @jakarta.validation.Valid
     private java.util.List<LeaseChargeDTO> charges;
 
     private BookingDepositDTO bookingDeposit;
