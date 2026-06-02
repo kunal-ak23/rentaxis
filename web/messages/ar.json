@@ -498,7 +498,8 @@
     "approveAll": "اعتماد الكل ({ready}/{total})",
     "rowConflictError": "تعذر حفظ بعض الصفوف (تعارض). أعد التحميل وحاول مجددًا.",
     "networkError": "خطأ في الشبكة. يرجى المحاولة مرة أخرى.",
-    "genericError": "تعذر الحفظ. حاول مرة أخرى."
+    "genericError": "تعذر الحفظ. حاول مرة أخرى.",
+    "chequeMismatch": "شيك {cheque} ≠ قسط {installment}"
   },
   "Staff": {
     "title": "إدارة الموظفين",

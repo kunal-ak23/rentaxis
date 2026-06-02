@@ -137,7 +137,7 @@ public class AzureOpenAIChequeExtractor implements ChequeExtractor {
 
             BigDecimal amount = null;
             if (root.hasNonNull("amount")) {
-                amount = BigDecimal.valueOf(root.get("amount").asDouble());
+                amount = new BigDecimal(root.get("amount").asText());
             }
 
             ExtractedChequeDTO.Confidence confidence = ExtractedChequeDTO.Confidence.MEDIUM;

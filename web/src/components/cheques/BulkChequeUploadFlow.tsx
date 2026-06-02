@@ -421,7 +421,7 @@ export default function BulkChequeUploadFlow({ leaseId, schedules, onSuccess, on
                           <span className="tabular-nums">{row.amount != null ? formatCurrency(row.amount) : "—"}</span>
                           {sched && row.amount != null && Math.round(row.amount * 100) !== Math.round(Number(sched.amount) * 100) && (
                             <span className="ml-2 inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-800">
-                              Cheque {formatCurrency(row.amount)} ≠ installment {formatCurrency(Number(sched.amount))}
+                              {t("chequeMismatch", { cheque: formatCurrency(row.amount), installment: formatCurrency(Number(sched.amount)) })}
                             </span>
                           )}
                         </td>

@@ -144,8 +144,9 @@ describe("BulkChequeUploadFlow", () => {
 
     await waitFor(() => screen.getByText("colChequeNumber"));
 
-    // Mismatch chip should appear (4500 ≠ 5000)
-    expect(screen.getByText(/≠/)).toBeInTheDocument();
+    // Mismatch chip should appear (4500 ≠ 5000).
+    // The mock renders the key + vars as JSON, so we match on the key name.
+    expect(screen.getByText(/chequeMismatch/)).toBeInTheDocument();
 
     // Approve button should still be enabled (mismatch is non-blocking)
     const approve = screen.getByText(/^approveAll/) as HTMLButtonElement;

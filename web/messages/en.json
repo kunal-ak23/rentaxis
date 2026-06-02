@@ -498,7 +498,8 @@
     "approveAll": "Approve all ({ready}/{total})",
     "rowConflictError": "Some rows could not be saved (conflict). Reload and try again.",
     "networkError": "Network error. Please try again.",
-    "genericError": "Could not save. Please try again."
+    "genericError": "Could not save. Please try again.",
+    "chequeMismatch": "Cheque {cheque} ≠ installment {installment}"
   },
   "Staff": {
     "title": "Staff Management",
