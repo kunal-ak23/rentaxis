@@ -50,8 +50,13 @@ class PaymentScheduleServiceGenerateTest {
         when(paymentScheduleRepository.saveAll(any())).thenAnswer(inv -> inv.getArgument(0));
         when(rentCollectionSettingsRepository.findByPropertyId(any())).thenReturn(Optional.empty());
 
+        com.datagami.rentaxis.domain.repository.LeaseChargeRepository leaseChargeRepository =
+                mock(com.datagami.rentaxis.domain.repository.LeaseChargeRepository.class);
+        when(leaseChargeRepository.findByLeaseId(any())).thenReturn(List.of());
+
         service = new PaymentScheduleService(
                 paymentScheduleRepository,
+                leaseChargeRepository,
                 mock(LeaseRepository.class),
                 mock(AccountRepository.class),
                 mock(FinancialTransactionService.class),
