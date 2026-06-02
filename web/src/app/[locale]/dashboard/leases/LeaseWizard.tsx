@@ -212,7 +212,9 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
             const monthsBetween = (() => {
                 const s = new Date(data.startDate);
                 const e = new Date(data.endDate);
-                const months = (e.getFullYear() - s.getFullYear()) * 12 + (e.getMonth() - s.getMonth());
+                // End date is the inclusive last day of tenancy, so +1: Jun→Dec = 7,
+                // Jan→Dec = 12. Matches backend DateMath.monthsInclusive.
+                const months = (e.getFullYear() - s.getFullYear()) * 12 + (e.getMonth() - s.getMonth()) + 1;
                 return Math.max(months, 1);
             })();
             const body: Record<string, unknown> = {

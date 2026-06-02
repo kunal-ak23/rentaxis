@@ -189,6 +189,59 @@ class PaymentScheduleServiceGenerateTest {
                 assertThat(amt).isEqualByComparingTo(new BigDecimal("6000")));
     }
 
+    @Test
+    void inclusiveEndDateDrivesTotalRent_juneToDecemberIsSevenMonths() {
+        // Bug fix: end date is the inclusive last day of tenancy. Jun 1 → Dec 31
+        // is 7 months, so monthlyRent 5000 with paymentTerms = 7 must total 35000
+        // (7 × 5000) with each installment exactly 5000. The old exclusive count
+        // (6 months) dropped the final month's rent.
+        Lease lease = buildMonthlyLease(
+                new BigDecimal("5000"),    // monthly rent
+                new BigDecimal("10000"),   // deposit
+                7,                          // cheque count == months
+                LocalDate.of(2026, 6, 1),
+                LocalDate.of(2026, 12, 31));
+
+        List<PaymentSchedule> result = service.generateScheduleForLease(lease);
+
+        assertThat(result).hasSize(7);
+        assertThat(result).extracting(PaymentSchedule::getAmount).allSatisfy(amt ->
+                assertThat(amt).isEqualByComparingTo(new BigDecimal("5000")));
+        BigDecimal totalRent = result.stream()
+                .map(PaymentSchedule::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        assertThat(totalRent).isEqualByComparingTo(new BigDecimal("35000"));
+    }
+
+    @Test
+    void inclusiveEndDateDrivesTotalRent_januaryToDecemberIsTwelveMonths() {
+        // Jan 1 → Dec 31 is a full 12-month lease (not 11). monthlyRent 5000 over
+        // 12 cheques totals 60000.
+        Lease lease = buildMonthlyLease(
+                new BigDecimal("5000"),
+                new BigDecimal("10000"),
+                12,
+                LocalDate.of(2026, 1, 1),
+                LocalDate.of(2026, 12, 31));
+
+        List<PaymentSchedule> result = service.generateScheduleForLease(lease);
+
+        assertThat(result).hasSize(12);
+        BigDecimal totalRent = result.stream()
+                .map(PaymentSchedule::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        assertThat(totalRent).isEqualByComparingTo(new BigDecimal("60000"));
+    }
+
+    /** Builds a lease driven by monthlyRent so the inclusive month count sets the total. */
+    private Lease buildMonthlyLease(BigDecimal monthlyRent, BigDecimal deposit, int paymentTerms,
+                                    LocalDate start, LocalDate end) {
+        Lease lease = buildLease(BigDecimal.ZERO, deposit, paymentTerms, start, end);
+        lease.setRentAmount(null);
+        lease.setMonthlyRent(monthlyRent);
+        return lease;
+    }
+
     private Lease buildLease(BigDecimal totalRent, BigDecimal deposit, int paymentTerms,
                              LocalDate start, LocalDate end) {
         Property property = new Property();

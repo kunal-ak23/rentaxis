@@ -193,7 +193,9 @@ export default function LeaseMetadataEditor({ lease, onSaved, className }: Props
             const monthsBetween = (() => {
                 const s = new Date(form.startDate);
                 const e = new Date(form.endDate);
-                const months = (e.getFullYear() - s.getFullYear()) * 12 + (e.getMonth() - s.getMonth());
+                // End date is the inclusive last day of tenancy, so +1: Jun→Dec = 7,
+                // Jan→Dec = 12. Matches backend DateMath.monthsInclusive.
+                const months = (e.getFullYear() - s.getFullYear()) * 12 + (e.getMonth() - s.getMonth()) + 1;
                 return Math.max(months, 1);
             })();
 

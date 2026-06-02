@@ -2,6 +2,7 @@ package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.dto.ImportErrorDTO;
 import com.datagami.rentaxis.api.dto.PortfolioImportJobDetailsDTO;
+import com.datagami.rentaxis.core.util.DateMath;
 import com.datagami.rentaxis.domain.entity.*;
 import com.datagami.rentaxis.domain.entity.enums.*;
 import com.datagami.rentaxis.domain.repository.*;
@@ -17,7 +18,6 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
-import java.time.temporal.ChronoUnit;
 import java.util.*;
 
 @Slf4j
@@ -475,13 +475,11 @@ public class PortfolioImportPersistService {
     }
 
     /**
-     * End-date-inclusive month count. {@code MONTHS.between(2026-01-01, 2026-12-31)}
-     * is 11; admins entering a "1-year lease" with those dates expect 12, so we step
-     * end forward by one day before counting whole months. Floors at 1 to avoid
-     * divide-by-zero downstream.
+     * End-date-inclusive month count. Delegates to {@link DateMath#monthsInclusive}
+     * so there is a single definition shared with the lease scheduling path.
      */
     static long monthsInclusive(LocalDate startDate, LocalDate endDate) {
-        return Math.max(ChronoUnit.MONTHS.between(startDate, endDate.plusDays(1)), 1);
+        return DateMath.monthsInclusive(startDate, endDate);
     }
 
     /** Mirrors PaymentScheduleService.ordinalOf; duplicated locally to avoid widening visibility. */

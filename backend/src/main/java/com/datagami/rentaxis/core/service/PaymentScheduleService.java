@@ -13,6 +13,7 @@ import com.datagami.rentaxis.core.email.EmailEventType;
 import com.datagami.rentaxis.core.email.event.EmailEvent;
 import com.datagami.rentaxis.core.email.event.payload.ChequePayload;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
+import com.datagami.rentaxis.core.util.DateMath;
 import com.datagami.rentaxis.domain.entity.*;
 import com.datagami.rentaxis.domain.entity.enums.ChargeFrequency;
 import com.datagami.rentaxis.domain.entity.enums.ChequeFailureReason;
@@ -86,8 +87,10 @@ public class PaymentScheduleService {
             return existing;
         }
 
-        long totalMonths = java.time.temporal.ChronoUnit.MONTHS.between(lease.getStartDate(), lease.getEndDate());
-        if (totalMonths < 1) totalMonths = 1;
+        // End date is the inclusive last day of tenancy, so a Jun 1 → Dec 31 lease
+        // is 7 months and Jan 1 → Dec 31 is 12 — DateMath.monthsInclusive handles
+        // the +1 day and floors at 1 (covers the old totalMonths < 1 clamp).
+        long totalMonths = DateMath.monthsInclusive(lease.getStartDate(), lease.getEndDate());
 
         // Prefer monthlyRent × months when set so the wizard's "monthly × N months"
         // total is exactly reproduced. Fall back to rentAmount as the total
@@ -967,8 +970,8 @@ public class PaymentScheduleService {
         if (!endDate.isAfter(startDate)) throw new RuntimeException("End date must be after start date");
         if (monthlyRent == null || monthlyRent.compareTo(BigDecimal.ZERO) <= 0) throw new RuntimeException("Monthly rent must be greater than zero");
 
-        long totalMonths = java.time.temporal.ChronoUnit.MONTHS.between(startDate, endDate);
-        if (totalMonths < 1) totalMonths = 1;
+        // Inclusive end-date month count so the preview matches generateScheduleForLease.
+        long totalMonths = DateMath.monthsInclusive(startDate, endDate);
 
         int n = paymentTerms;
         if (n > totalMonths) n = (int) totalMonths;
