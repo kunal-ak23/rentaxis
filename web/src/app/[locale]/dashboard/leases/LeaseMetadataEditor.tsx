@@ -149,7 +149,10 @@ export default function LeaseMetadataEditor({ lease, onSaved, className }: Props
                 const [uRes, rRes, sRes] = await Promise.all([
                     fetch("/api/proxy/v1/units"),
                     fetch("/api/proxy/v1/renters"),
-                    fetch(`/api/proxy/v1/payments?leaseId=${lease.id}`),
+                    // Lease-scoped (full, unpaginated) list — the tenant-wide
+                    // `/payments?leaseId=` is paginated and ignores leaseId, so the
+                    // booking-deposit row could be off-page and missed here.
+                    fetch(`/api/proxy/v1/payments/lease/${lease.id}`),
                 ]);
                 if (cancelled) return;
                 if (uRes.ok) setUnits(await uRes.json());
