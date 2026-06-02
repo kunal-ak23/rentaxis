@@ -13,8 +13,8 @@ import ChequeScanner from "@/components/cheques/ChequeScanner";
  *
  * 1. Parties — unit, renter, agreement date
  * 2. Terms — dates, rent, deposit, ejari/payment ref
- * 3. Charges & VAT — admin / parking fees + 4 VAT toggles
- *    (auto-on when the unit's property is COMMERCIAL)
+ * 3. Charges & VAT — other charges repeater (name/amount/frequency/VAT) + rent VAT toggle
+ *    (charges default VAT-on when the unit's property is COMMERCIAL)
  * 4. Payment plan — # of cheques, default method, deposit method,
  *    optional booking-deposit subform
  * 5. Schedule & finalize — Save Draft creates the lease and the
@@ -25,6 +25,9 @@ import ChequeScanner from "@/components/cheques/ChequeScanner";
  * Edit on an existing draft keeps using the inline form on the leases
  * list page; this wizard is for the create path only.
  */
+
+type ChargeFrequency = "ONE_TIME" | "PER_INSTALLMENT";
+type ChargeRow = { name: string; amount: number; vatApplicable: boolean; frequency: ChargeFrequency };
 
 type Unit = {
     id: string;
@@ -52,12 +55,8 @@ type WizardData = {
     paymentTerms: number;
     paymentMethod: string;
     depositPaymentMethod: string;
-    adminFee: number;
-    parkingRemoteFee: number;
     rentVatApplicable: boolean;
-    adminFeeVatApplicable: boolean;
-    securityDepositVatApplicable: boolean;
-    parkingRemoteVatApplicable: boolean;
+    charges: ChargeRow[];
     bookingDepositOpen: boolean;
     bookingDeposit: { amount: number; chequeNumber: string; chequeDate: string; bankName: string };
 };
@@ -75,12 +74,8 @@ const initialData: WizardData = {
     paymentTerms: 4,
     paymentMethod: "CHEQUE",
     depositPaymentMethod: "CHEQUE",
-    adminFee: 0,
-    parkingRemoteFee: 0,
     rentVatApplicable: false,
-    adminFeeVatApplicable: false,
-    securityDepositVatApplicable: false,
-    parkingRemoteVatApplicable: false,
+    charges: [],
     bookingDepositOpen: false,
     bookingDeposit: { amount: 0, chequeNumber: "", chequeDate: "", bankName: "" },
 };
@@ -144,11 +139,11 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
         update({
             unitId,
             rentVatApplicable: commercial,
-            adminFeeVatApplicable: commercial,
-            securityDepositVatApplicable: commercial,
-            parkingRemoteVatApplicable: commercial,
         });
     };
+
+    const updateCharge = (i: number, patch: Partial<ChargeRow>) =>
+        update({ charges: data.charges.map((c, j) => (j === i ? { ...c, ...patch } : c)) });
 
     // --- per-step validation -----------------------------------------------
     const stepError = (idx: number): string | null => {
@@ -163,10 +158,13 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                 if (!data.rentAmount || data.rentAmount <= 0) return "Monthly rent must be greater than 0";
                 if (data.depositAmount < 0) return "Deposit cannot be negative";
                 return null;
-            case "charges":
-                if (data.adminFee < 0) return "Admin fee cannot be negative";
-                if (data.parkingRemoteFee < 0) return "Parking remote fee cannot be negative";
+            case "charges": {
+                for (const c of data.charges) {
+                    if (!c.name.trim()) return "Each charge must have a name";
+                    if (c.amount < 0) return "Charge amounts cannot be negative";
+                }
                 return null;
+            }
             case "plan":
                 if (!data.paymentTerms || data.paymentTerms < 1) return "Number of cheques must be at least 1";
                 if (data.bookingDepositOpen) {
@@ -219,12 +217,8 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                 depositPaymentMethod: data.depositPaymentMethod,
                 paymentReferenceNumber: data.paymentReferenceNumber || null,
                 agreementDate: data.agreementDate || null,
-                adminFee: data.adminFee || 0,
-                parkingRemoteFee: data.parkingRemoteFee || 0,
                 rentVatApplicable: data.rentVatApplicable,
-                adminFeeVatApplicable: data.adminFeeVatApplicable,
-                securityDepositVatApplicable: data.securityDepositVatApplicable,
-                parkingRemoteVatApplicable: data.parkingRemoteVatApplicable,
+                charges: data.charges,
             };
             if (data.bookingDepositOpen && data.bookingDeposit.amount > 0) {
                 body.bookingDeposit = {
@@ -383,32 +377,34 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
 
                     {currentStep.key === "charges" && (
                         <div className="space-y-5">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <Field label="Admin fee (AED)">
-                                    <input type="number" min={0} step={0.01} value={data.adminFee}
-                                        onChange={(e) => update({ adminFee: Number(e.target.value) })}
-                                        className="w-full bg-input border border-border p-3 rounded-xl text-xs" />
-                                </Field>
-                                <Field label="Parking / remote fee (AED)">
-                                    <input type="number" min={0} step={0.01} value={data.parkingRemoteFee}
-                                        onChange={(e) => update({ parkingRemoteFee: Number(e.target.value) })}
-                                        className="w-full bg-input border border-border p-3 rounded-xl text-xs" />
-                                </Field>
+                            <div className="flex items-center justify-between">
+                                <h3 className="text-xs font-semibold">Other charges</h3>
+                                <button type="button"
+                                    onClick={() => update({ charges: [...data.charges, { name: "", amount: 0, vatApplicable: isCommercial, frequency: "ONE_TIME" }] })}
+                                    className="rounded border border-border px-2 py-1 text-xs">+ Add charge</button>
                             </div>
-                            <div>
-                                <h3 className="text-xs font-semibold text-foreground mb-2">VAT</h3>
-                                <p className="text-[11px] text-muted mb-3">
-                                    {isCommercial
-                                        ? "This unit is on a COMMERCIAL property — VAT is enabled by default. Toggle off any line you want exempt."
-                                        : "Residential property — defaults to exempt. Toggle on per line if VAT applies."}
-                                </p>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                                    <VatToggle label="Rent" value={data.rentVatApplicable} onChange={(v) => update({ rentVatApplicable: v })} />
-                                    <VatToggle label="Admin fee" value={data.adminFeeVatApplicable} onChange={(v) => update({ adminFeeVatApplicable: v })} />
-                                    <VatToggle label="Security deposit" value={data.securityDepositVatApplicable} onChange={(v) => update({ securityDepositVatApplicable: v })} />
-                                    <VatToggle label="Parking / remote" value={data.parkingRemoteVatApplicable} onChange={(v) => update({ parkingRemoteVatApplicable: v })} />
+                            {data.charges.length === 0 && <p className="text-[11px] text-muted">No extra charges. Add admin fee, parking, maintenance, etc.</p>}
+                            {data.charges.map((c, i) => (
+                                <div key={i} className="grid grid-cols-1 md:grid-cols-[1fr_120px_120px_110px_32px] gap-2 items-end">
+                                    <Field label="Name"><input type="text" value={c.name}
+                                        onChange={(e) => updateCharge(i, { name: e.target.value })}
+                                        className="w-full bg-input border border-border p-2 rounded-lg text-xs" /></Field>
+                                    <Field label="Amount (AED)"><input type="number" min={0} step={0.01} value={c.amount}
+                                        onChange={(e) => updateCharge(i, { amount: Number(e.target.value) })}
+                                        className="w-full bg-input border border-border p-2 rounded-lg text-xs" /></Field>
+                                    <Field label="Frequency">
+                                        <select value={c.frequency} onChange={(e) => updateCharge(i, { frequency: e.target.value as ChargeFrequency })}
+                                            className="w-full bg-input border border-border p-2 rounded-lg text-xs">
+                                            <option value="ONE_TIME">One-time</option>
+                                            <option value="PER_INSTALLMENT">Per installment</option>
+                                        </select>
+                                    </Field>
+                                    <VatToggle label="VAT" value={c.vatApplicable} onChange={(v) => updateCharge(i, { vatApplicable: v })} />
+                                    <button type="button" onClick={() => update({ charges: data.charges.filter((_, j) => j !== i) })}
+                                        className="rounded border border-border p-2 text-xs">✕</button>
                                 </div>
-                            </div>
+                            ))}
+                            <VatToggle label="Rent VAT" value={data.rentVatApplicable} onChange={(v) => update({ rentVatApplicable: v })} />
                         </div>
                     )}
 
@@ -503,16 +499,9 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                                             <Summary label="Period" value={`${data.startDate || "—"} → ${data.endDate || "—"}`} />
                                             <Summary label="Monthly rent" value={formatCurrency(data.rentAmount)} />
                                             <Summary label="Deposit" value={formatCurrency(data.depositAmount)} />
-                                            <Summary label="Admin / parking" value={`${formatCurrency(data.adminFee)} / ${formatCurrency(data.parkingRemoteFee)}`} />
+                                            <Summary label="Other charges" value={data.charges.length > 0 ? data.charges.map((c) => `${c.name} (${c.frequency === "ONE_TIME" ? "one-time" : "per installment"})`).join(", ") : "None"} />
                                             <Summary label="Installments" value={`${data.paymentTerms} × ${data.paymentMethod}`} />
-                                            <Summary label="VAT" value={
-                                                [
-                                                    data.rentVatApplicable && "rent",
-                                                    data.adminFeeVatApplicable && "admin",
-                                                    data.securityDepositVatApplicable && "deposit",
-                                                    data.parkingRemoteVatApplicable && "parking",
-                                                ].filter(Boolean).join(", ") || "exempt on all"
-                                            } />
+                                            <Summary label="Rent VAT" value={data.rentVatApplicable ? "VAT 5%" : "Exempt"} />
                                             {data.bookingDepositOpen && (
                                                 <Summary label="Booking deposit" value={`${formatCurrency(data.bookingDeposit.amount)} • ${data.bookingDeposit.bankName || "—"}`} />
                                             )}
