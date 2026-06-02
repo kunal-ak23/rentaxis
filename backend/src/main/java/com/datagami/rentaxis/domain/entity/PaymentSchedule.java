@@ -90,4 +90,10 @@ public class PaymentSchedule extends BaseTenantEntity {
 
     @Column(name = "is_booking_deposit", nullable = false)
     private boolean isBookingDeposit = false;
+
+    @Column(name = "is_security_deposit", nullable = false)
+    private boolean isSecurityDeposit = false;
+
+    @Column(name = "is_charge", nullable = false)
+    private boolean isCharge = false;
 }

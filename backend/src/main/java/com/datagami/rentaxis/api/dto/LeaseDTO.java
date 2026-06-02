@@ -31,10 +31,6 @@ public class LeaseDTO {
     private boolean hasContract;
     private Long contractNumber;
     private LocalDate agreementDate;
-    private BigDecimal adminFee;
-    private BigDecimal parkingRemoteFee;
     private Boolean rentVatApplicable;
-    private Boolean adminFeeVatApplicable;
-    private Boolean securityDepositVatApplicable;
-    private Boolean parkingRemoteVatApplicable;
+    private java.util.List<LeaseChargeDTO> charges;
 }

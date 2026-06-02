@@ -70,23 +70,8 @@ public class Lease extends BaseTenantEntity {
     @Column(name = "agreement_date")
     private LocalDate agreementDate;
 
-    @Column(name = "admin_fee", nullable = false)
-    private BigDecimal adminFee = BigDecimal.ZERO;
-
-    @Column(name = "parking_remote_fee", nullable = false)
-    private BigDecimal parkingRemoteFee = BigDecimal.ZERO;
-
     @Column(name = "rent_vat_applicable", nullable = false)
     private boolean rentVatApplicable = false;
-
-    @Column(name = "admin_fee_vat_applicable", nullable = false)
-    private boolean adminFeeVatApplicable = false;
-
-    @Column(name = "security_deposit_vat_applicable", nullable = false)
-    private boolean securityDepositVatApplicable = false;
-
-    @Column(name = "parking_remote_vat_applicable", nullable = false)
-    private boolean parkingRemoteVatApplicable = false;
 
     @Version
     private Long version;

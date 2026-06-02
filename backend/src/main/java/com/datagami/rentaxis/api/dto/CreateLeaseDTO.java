@@ -46,19 +46,9 @@ public class CreateLeaseDTO {
 
     private LocalDate agreementDate;
 
-    @Min(0)
-    private BigDecimal adminFee;
-
-    @Min(0)
-    private BigDecimal parkingRemoteFee;
-
     private Boolean rentVatApplicable;
 
-    private Boolean adminFeeVatApplicable;
-
-    private Boolean securityDepositVatApplicable;
-
-    private Boolean parkingRemoteVatApplicable;
+    private java.util.List<LeaseChargeDTO> charges;
 
     private BookingDepositDTO bookingDeposit;
 

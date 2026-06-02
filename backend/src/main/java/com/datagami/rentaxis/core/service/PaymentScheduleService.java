@@ -14,12 +14,14 @@ import com.datagami.rentaxis.core.email.event.EmailEvent;
 import com.datagami.rentaxis.core.email.event.payload.ChequePayload;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.*;
+import com.datagami.rentaxis.domain.entity.enums.ChargeFrequency;
 import com.datagami.rentaxis.domain.entity.enums.ChequeFailureReason;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.PaymentStatus;
 import com.datagami.rentaxis.domain.entity.enums.TransactionNature;
 import com.datagami.rentaxis.api.dto.PaymentPreviewDTO;
 import com.datagami.rentaxis.domain.repository.AccountRepository;
+import com.datagami.rentaxis.domain.repository.LeaseChargeRepository;
 import com.datagami.rentaxis.domain.repository.LeaseEventRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.PaymentPenaltyRepository;
@@ -58,6 +60,7 @@ import java.util.stream.Collectors;
 public class PaymentScheduleService {
 
     private final PaymentScheduleRepository paymentScheduleRepository;
+    private final LeaseChargeRepository leaseChargeRepository;
     private final LeaseRepository leaseRepository;
     private final AccountRepository accountRepository;
     private final FinancialTransactionService financialTransactionService;
@@ -77,7 +80,8 @@ public class PaymentScheduleService {
         List<PaymentSchedule> existing = paymentScheduleRepository.findByLeaseId(lease.getId());
         // Booking-deposit rows are created up-front during draft creation and must
         // not block normal installment generation on activation.
-        boolean hasInstallments = existing.stream().anyMatch(p -> !p.isBookingDeposit());
+        boolean hasInstallments = existing.stream()
+                .anyMatch(p -> !p.isBookingDeposit() && !p.isSecurityDeposit() && !p.isCharge());
         if (hasInstallments) {
             return existing;
         }
@@ -140,6 +144,19 @@ public class PaymentScheduleService {
                 ? settingsDueDay
                 : null;
 
+        // Per-installment charges fold into every rent installment (additive 5%
+        // VAT where applicable). One-time charges + the security deposit are
+        // emitted as separate schedule rows by LeaseService, not here.
+        List<LeaseCharge> charges = leaseChargeRepository.findByLeaseId(lease.getId());
+        BigDecimal perInstallmentCharge = charges.stream()
+                .filter(c -> c.getFrequency() == ChargeFrequency.PER_INSTALLMENT)
+                .map(c -> withVat(c.getAmount(), c.isVatApplicable()))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        String recurringLabel = charges.stream()
+                .filter(c -> c.getFrequency() == ChargeFrequency.PER_INSTALLMENT)
+                .map(LeaseCharge::getName)
+                .collect(Collectors.joining(", "));
+
         // Even spacing: due date i = startDate + floor(i * months / n) months.
         // For 12 months / 4 cheques → offsets [0, 3, 6, 9].
         // For 13 months / 4 cheques → offsets [0, 3, 6, 9] (last covers 4 months).
@@ -152,7 +169,7 @@ public class PaymentScheduleService {
                 dueDate = dueDate.withDayOfMonth(clamped);
             }
 
-            BigDecimal amount = chequeAmounts.get(i);
+            BigDecimal amount = chequeAmounts.get(i).add(perInstallmentCharge);
 
             PaymentSchedule ps = new PaymentSchedule();
             ps.setLease(lease);
@@ -164,13 +181,8 @@ public class PaymentScheduleService {
             ps.setStatus(PaymentStatus.PENDING);
 
             String label = "RENT - " + ordinalOf(i + 1) + " INSTALLMENT";
-            if (i == 0) {
-                boolean hasBundledCharges = nz(lease.getAdminFee()).signum() > 0
-                        || nz(lease.getDepositAmount()).signum() > 0
-                        || nz(lease.getParkingRemoteFee()).signum() > 0;
-                if (hasBundledCharges) {
-                    label += "/ADMIN/SD/REMOTE";
-                }
+            if (!recurringLabel.isEmpty()) {
+                label += " (+ " + recurringLabel + ")";
             }
             ps.setPurposeLabel(label);
             ps.setPaymentMethod(lease.getPaymentMethod() != null ? lease.getPaymentMethod().name() : "CHEQUE");
@@ -181,6 +193,14 @@ public class PaymentScheduleService {
     }
 
     private static BigDecimal nz(BigDecimal v) { return v == null ? BigDecimal.ZERO : v; }
+
+    private static final BigDecimal VAT_MULTIPLIER = new BigDecimal("1.05");
+
+    /** Additive 5% VAT: returns amount*1.05 (2dp) when vat applies, else amount. */
+    static BigDecimal withVat(BigDecimal amount, boolean vat) {
+        BigDecimal a = nz(amount);
+        return vat ? a.multiply(VAT_MULTIPLIER).setScale(2, java.math.RoundingMode.HALF_UP) : a;
+    }
 
     @Transactional(readOnly = true)
     public List<PaymentScheduleDTO> getPaymentsForLease(UUID leaseId) {
@@ -551,9 +571,9 @@ public class PaymentScheduleService {
         // The cheque amount is gross (face value); we extract VAT as gross * 5/105.
         // Only the credit (rental-income) leg is stamped — VAT is tracked on income lines,
         // not on the bank/cash debit leg.
-        // Note: bundled first cheques (admin fee / SD / parking remote rolled into installment 1)
-        // are treated as rent here. A future enhancement could split them per-component using
-        // lease.isAdminFeeVatApplicable / isSecurityDepositVatApplicable / isParkingRemoteVatApplicable.
+        // Note: only rent installments stamp VAT here via the lease's rent VAT
+        // toggle. Charge / security-deposit rows are now separate schedule rows
+        // with their VAT already baked into the amount at generation time.
         boolean rentVatApplicable = payment.getLease().isRentVatApplicable();
         if (rentVatApplicable) {
             BigDecimal gross = payment.getAmount();
@@ -1099,6 +1119,8 @@ public class PaymentScheduleService {
         dto.setReplacedById(ps.getReplacedBy() != null ? ps.getReplacedBy().getId() : null);
         dto.setPurposeLabel(ps.getPurposeLabel());
         dto.setIsBookingDeposit(ps.isBookingDeposit());
+        dto.setIsSecurityDeposit(ps.isSecurityDeposit());
+        dto.setIsCharge(ps.isCharge());
         dto.setPaymentMethod(ps.getPaymentMethod());
         return dto;
     }
