@@ -1,0 +1,28 @@
+databaseChangeLog:
+  - changeSet:
+      id: 61-lease-charges
+      author: rentaxis-system
+      changes:
+        - createTable:
+            tableName: lease_charges
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: lease_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_lease_charge_lease, referencedTableName: leases, referencedColumnNames: id } }
+              - column: { name: name, type: varchar(120), constraints: { nullable: false } }
+              - column: { name: amount, type: "decimal(12,2)", constraints: { nullable: false }, defaultValueNumeric: 0 }
+              - column: { name: vat_applicable, type: boolean, constraints: { nullable: false }, defaultValueBoolean: false }
+              - column: { name: frequency, type: varchar(20), constraints: { nullable: false } }
+              - column: { name: created_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
+        - createIndex: { tableName: lease_charges, indexName: idx_lease_charge_lease, columns: [ { column: { name: lease_id } } ] }
+        - createIndex: { tableName: lease_charges, indexName: idx_lease_charge_tenant, columns: [ { column: { name: tenant_id } } ] }
+        - addColumn:
+            tableName: payment_schedules
+            columns:
+              - column: { name: is_security_deposit, type: boolean, constraints: { nullable: false }, defaultValueBoolean: false }
+              - column: { name: is_charge, type: boolean, constraints: { nullable: false }, defaultValueBoolean: false }
+        - dropColumn: { tableName: leases, columnName: admin_fee }
+        - dropColumn: { tableName: leases, columnName: admin_fee_vat_applicable }
+        - dropColumn: { tableName: leases, columnName: parking_remote_fee }
+        - dropColumn: { tableName: leases, columnName: parking_remote_vat_applicable }
+        - dropColumn: { tableName: leases, columnName: security_deposit_vat_applicable }

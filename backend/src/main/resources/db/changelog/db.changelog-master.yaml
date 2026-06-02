@@ -127,3 +127,5 @@ databaseChangeLog:
       file: db/changelog/changesets/59-email-unique-per-tenant.yaml
   - include:
       file: db/changelog/changesets/60-property-name-unique-per-tenant.yaml
+  - include:
+      file: db/changelog/changesets/61-lease-charges.yaml
