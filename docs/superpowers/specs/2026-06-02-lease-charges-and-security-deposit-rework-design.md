@@ -53,15 +53,15 @@ The lease schema hardcodes two fee columns — `admin_fee` and `parking_remote_f
 - `is_security_deposit` BOOLEAN NOT NULL DEFAULT false
 - `is_charge` BOOLEAN NOT NULL DEFAULT false
 
-**`leases`** — drop (same changeset): `admin_fee`, `admin_fee_vat_applicable`, `parking_remote_fee`, `parking_remote_vat_applicable`.
-**Keep**: `deposit_amount`, `security_deposit_vat_applicable`, `rent_vat_applicable`.
+**`leases`** — drop (same changeset): `admin_fee`, `admin_fee_vat_applicable`, `parking_remote_fee`, `parking_remote_vat_applicable`, `security_deposit_vat_applicable` (the security deposit is refundable → never VAT).
+**Keep**: `deposit_amount`, `rent_vat_applicable`.
 
 **Entities/repos**: `LeaseCharge` entity + `ChargeFrequency` enum (`ONE_TIME`, `PER_INSTALLMENT`) + `LeaseChargeRepository`. Add `isSecurityDeposit` / `isCharge` to `PaymentSchedule`. Remove the four dropped fields from `Lease`.
 
 ### DTOs
 
 - `LeaseChargeDTO { String name; BigDecimal amount; boolean vatApplicable; ChargeFrequency frequency; }`
-- `CreateLeaseDTO`: remove `adminFee`, `parkingRemoteFee`, `adminFeeVatApplicable`, `parkingRemoteVatApplicable`; add `List<LeaseChargeDTO> charges`. Keep `depositAmount`, `rentVatApplicable`, `securityDepositVatApplicable`.
+- `CreateLeaseDTO`: remove `adminFee`, `parkingRemoteFee`, `adminFeeVatApplicable`, `parkingRemoteVatApplicable`, `securityDepositVatApplicable`; add `List<LeaseChargeDTO> charges`. Keep `depositAmount`, `rentVatApplicable`.
 - `LeaseDTO`: same — expose `List<LeaseChargeDTO> charges`.
 - `PaymentScheduleDTO` / `mapToDTO`: add `isSecurityDeposit`, `isCharge`.
 
@@ -85,6 +85,7 @@ Edge cases: `deposit_amount = 0` → no SD row. Empty `charges` → no charge ro
 
 - Charges: **additive** — collected amount includes 5% when `vat_applicable`.
 - Rent: unchanged (existing `rentVatApplicable` inclusive reporting at `PaymentScheduleService:557-563`).
+- Security deposit: **never VAT** (refundable); collected amount = `deposit_amount` as-is. The `security_deposit_vat_applicable` flag is dropped.
 - This intentional asymmetry (rent inclusive, charges additive) is documented in code comments.
 
 ### Contract generation (`ContractGenerationService`)
@@ -99,7 +100,7 @@ Edge cases: `deposit_amount = 0` → no SD row. Empty `charges` → no charge ro
 
 ### Frontend (web)
 
-- **`LeaseWizard`** (Charges & VAT step): replace the fixed Admin Fee / Parking Remote inputs + their VAT toggles with a dynamic **"Other charges"** repeater — each row: `name` (text), `amount` (number), `VAT` (toggle), `frequency` (select: One-time / Per installment), with add/remove. Keep Rent (+ rent VAT) and Security Deposit (+ SD VAT). Submit `charges: [...]`. Update the step's summary line.
+- **`LeaseWizard`** (Charges & VAT step): replace the fixed Admin Fee / Parking Remote inputs + their VAT toggles with a dynamic **"Other charges"** repeater — each row: `name` (text), `amount` (number), `VAT` (toggle), `frequency` (select: One-time / Per installment), with add/remove. Keep Rent (+ rent VAT) and Security Deposit (no VAT toggle — refundable). Submit `charges: [...]`. Update the step's summary line.
 - **`LeaseMetadataEditor`**: same charges repeater for DRAFT leases; remove the legacy fee fields. Reads/writes `charges`.
 - **`PaymentScheduleEditor`**: add `isSecurityDeposit` / `isCharge` to `ScheduleRow`; sort all non-rent rows (booking, SD, charges) last; show row markers — `B` (booking), `S` (security deposit), `C` (charge); fallback labels; per-installment charges visible via the installment's `purposeLabel`. Amount + cheque fields editable; per-row Scan Cheque works as today.
 - Types: add `LeaseChargeDTO` shape; update lease create/edit payloads.
