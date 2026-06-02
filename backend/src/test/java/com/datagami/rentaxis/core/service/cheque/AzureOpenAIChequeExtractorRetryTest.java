@@ -3,7 +3,9 @@ package com.datagami.rentaxis.core.service.cheque;
 import com.azure.ai.openai.OpenAIClient;
 import com.azure.ai.openai.models.ChatCompletions;
 import com.azure.ai.openai.models.ChatCompletionsOptions;
+import com.azure.core.exception.HttpResponseException;
 import com.azure.core.exception.ResourceNotFoundException;
+import com.azure.core.http.HttpResponse;
 import com.azure.json.JsonProviders;
 import com.datagami.rentaxis.core.config.AzureOpenAIConfig;
 import org.junit.jupiter.api.BeforeEach;
@@ -119,11 +121,11 @@ class AzureOpenAIChequeExtractorRetryTest {
     }
 
     // -------------------------------------------------------------------------
-    // All 3 attempts fail → rethrow on final attempt
+    // All attempts fail → rethrow on final attempt (maxAttempts = 4)
     // -------------------------------------------------------------------------
 
     @Test
-    void extract_allThreeAttemptsTransient_rethrowsOnFinalAttempt() {
+    void extract_allAttemptsTransient_rethrowsOnFinalAttempt() {
         OpenAIClient mockClient = mock(OpenAIClient.class);
 
         when(mockClient.getChatCompletions(anyString(), any(ChatCompletionsOptions.class)))
@@ -135,7 +137,56 @@ class AzureOpenAIChequeExtractorRetryTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("channel not registered to an event loop");
 
-        // SDK attempted 3 times before giving up
-        verify(mockClient, times(3)).getChatCompletions(anyString(), any(ChatCompletionsOptions.class));
+        // SDK attempted 4 times before giving up
+        verify(mockClient, times(4)).getChatCompletions(anyString(), any(ChatCompletionsOptions.class));
+    }
+
+    // -------------------------------------------------------------------------
+    // 429 rate limit IS transient → retried, then succeeds
+    // -------------------------------------------------------------------------
+
+    @Test
+    void extract_rateLimit429_isRetried_thenSucceeds() throws IOException {
+        OpenAIClient mockClient = mock(OpenAIClient.class);
+        ChatCompletions validResponse = buildValidCompletions();
+
+        HttpResponse resp429 = mock(HttpResponse.class);
+        when(resp429.getStatusCode()).thenReturn(429);
+        HttpResponseException tooMany = new HttpResponseException("Too Many Requests", resp429);
+
+        when(mockClient.getChatCompletions(anyString(), any(ChatCompletionsOptions.class)))
+                .thenThrow(tooMany)
+                .thenReturn(validResponse);
+
+        AzureOpenAIChequeExtractor extractor = new AzureOpenAIChequeExtractor(mockClient, config);
+
+        ChequeExtractor.ExtractionResult result = extractor.extract(new byte[]{1, 2, 3}, "image/jpeg");
+
+        verify(mockClient, times(2)).getChatCompletions(anyString(), any(ChatCompletionsOptions.class));
+        assertThat(result.extracted()).isNotNull();
+        assertThat(result.extracted().chequeNumber()).isEqualTo("CHQ-999");
+    }
+
+    // -------------------------------------------------------------------------
+    // Non-429 HttpResponseException (e.g. 400) is NOT retried
+    // -------------------------------------------------------------------------
+
+    @Test
+    void extract_http400_notRetried() {
+        OpenAIClient mockClient = mock(OpenAIClient.class);
+        HttpResponse resp400 = mock(HttpResponse.class);
+        when(resp400.getStatusCode()).thenReturn(400);
+        HttpResponseException badRequest = new HttpResponseException("Bad Request", resp400);
+
+        when(mockClient.getChatCompletions(anyString(), any(ChatCompletionsOptions.class)))
+                .thenThrow(badRequest);
+
+        AzureOpenAIChequeExtractor extractor = new AzureOpenAIChequeExtractor(mockClient, config);
+
+        // Non-transient → propagated immediately (the @CircuitBreaker fallback would
+        // soft-fail it in the Spring context; the plain extractor rethrows). No retry.
+        assertThatThrownBy(() -> extractor.extract(new byte[]{1}, "image/jpeg"))
+                .isInstanceOf(HttpResponseException.class);
+        verify(mockClient, times(1)).getChatCompletions(anyString(), any(ChatCompletionsOptions.class));
     }
 }

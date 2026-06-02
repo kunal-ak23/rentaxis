@@ -12,6 +12,7 @@ import com.azure.ai.openai.models.ChatMessageTextContentItem;
 import com.azure.ai.openai.models.ChatRequestMessage;
 import com.azure.ai.openai.models.ChatRequestSystemMessage;
 import com.azure.ai.openai.models.ChatRequestUserMessage;
+import com.azure.core.exception.HttpResponseException;
 import com.azure.core.exception.ResourceNotFoundException;
 import com.azure.core.util.BinaryData;
 import com.datagami.rentaxis.api.dto.ExtractedChequeDTO;
@@ -122,14 +123,16 @@ public class AzureOpenAIChequeExtractor implements ChequeExtractor {
     }
 
     /**
-     * Calls the Azure OpenAI SDK with up to 3 attempts, retrying only on transient
-     * Netty channel-registration errors (IllegalStateException / message contains
-     * "channel not registered to an event loop"). Non-transient exceptions such as
-     * {@link ResourceNotFoundException} (bad deployment name, auth errors) are
-     * rethrown immediately so the caller's @CircuitBreaker can register them.
+     * Calls the Azure OpenAI SDK with up to 4 attempts, retrying only on transient
+     * errors: Azure rate limiting (HTTP 429) and Netty channel-registration blips
+     * (IllegalStateException / "channel not registered to an event loop"). With the
+     * OkHttp client the Netty blip should no longer occur; 429 under bulk load is
+     * the main case. Non-transient exceptions such as {@link ResourceNotFoundException}
+     * (bad deployment name, auth) are rethrown immediately so the caller's
+     * @CircuitBreaker can register them.
      */
     private ChatCompletions callWithTransientRetry(ChatCompletionsOptions options) {
-        final int maxAttempts = 3;
+        final int maxAttempts = 4;
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
                 return openAIClient.getChatCompletions(config.getDeployment(), options);
@@ -142,10 +145,11 @@ public class AzureOpenAIChequeExtractor implements ChequeExtractor {
                             maxAttempts, ex.getMessage());
                     throw ex;
                 }
+                long backoffMs = attempt * 500L;
                 log.debug("Cheque OCR SDK transient error on attempt {}/{}, retrying in {}ms: {}",
-                        attempt, maxAttempts, attempt * 300L, ex.getMessage());
+                        attempt, maxAttempts, backoffMs, ex.getMessage());
                 try {
-                    Thread.sleep(attempt * 300L);
+                    Thread.sleep(backoffMs);
                 } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt();
                     throw ex;
@@ -163,6 +167,11 @@ public class AzureOpenAIChequeExtractor implements ChequeExtractor {
     private static boolean isTransient(RuntimeException ex) {
         if (ex instanceof ResourceNotFoundException) {
             return false;
+        }
+        // Azure OpenAI rate limiting (HTTP 429) — recovers on retry with backoff.
+        if (ex instanceof HttpResponseException hre
+                && hre.getResponse() != null && hre.getResponse().getStatusCode() == 429) {
+            return true;
         }
         return containsTransientMessage(ex);
     }
