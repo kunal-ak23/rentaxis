@@ -15,6 +15,9 @@ type Schedule = {
   dueDate: string;
   amount: string | number;
   status: string; // "PENDING" only enters the dropdown
+  isCharge?: boolean;
+  isSecurityDeposit?: boolean;
+  isBookingDeposit?: boolean;
 };
 
 type Props = {
@@ -156,9 +159,10 @@ export default function BulkChequeUploadFlow({ leaseId, schedules, onSuccess, on
         pinned: false,
       };
     });
+    const rentSchedules = pendingSchedules.filter(s => !s.isCharge && !s.isSecurityDeposit && !s.isBookingDeposit);
     const map = autoMapChequesToSchedules(
       initialRows.map(r => ({ id: r.itemId, chequeDate: r.chequeDate, pinned: r.pinned, assignedScheduleId: r.scheduleId })),
-      pendingSchedules.map(s => ({ id: s.id, dueDate: s.dueDate }))
+      rentSchedules.map(s => ({ id: s.id, dueDate: s.dueDate }))
     );
     setRows(initialRows.map(r => ({ ...r, scheduleId: map.get(r.itemId) ?? null })));
     setStep(3);
@@ -169,9 +173,10 @@ export default function BulkChequeUploadFlow({ leaseId, schedules, onSuccess, on
       const next = prev.map(r => (r.itemId === itemId ? { ...r, ...patch } : r));
       // If this was a non-pin date change, re-run auto-map for non-pinned rows.
       if ("chequeDate" in patch && !next.find(r => r.itemId === itemId)?.pinned) {
+        const rentSchedules = pendingSchedules.filter(s => !s.isCharge && !s.isSecurityDeposit && !s.isBookingDeposit);
         const map = autoMapChequesToSchedules(
           next.map(r => ({ id: r.itemId, chequeDate: r.chequeDate, pinned: r.pinned, assignedScheduleId: r.scheduleId })),
-          pendingSchedules.map(s => ({ id: s.id, dueDate: s.dueDate }))
+          rentSchedules.map(s => ({ id: s.id, dueDate: s.dueDate }))
         );
         return next.map(r => (r.pinned ? r : { ...r, scheduleId: map.get(r.itemId) ?? null }));
       }

@@ -701,6 +701,9 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                                                 dueDate: p.dueDate,
                                                 amount: p.amount,
                                                 status: p.status,
+                                                isCharge: p.isCharge,
+                                                isSecurityDeposit: p.isSecurityDeposit,
+                                                isBookingDeposit: p.isBookingDeposit,
                                             }))}
                                             onSuccess={() => { setBulkOpen(false); setScheduleRefreshKey(k => k + 1); }}
                                             onClose={() => setBulkOpen(false)}

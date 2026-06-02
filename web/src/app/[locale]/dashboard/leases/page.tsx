@@ -84,7 +84,6 @@ export default function LeasesPage() {
     const [leases, setLeases] = useState<Lease[]>([]);
     const [units, setUnits] = useState<Unit[]>([]);
     const [renters, setRenters] = useState<Renter[]>([]);
-    const [showForm, setShowForm] = useState(false);
     const [wizardOpen, setWizardOpen] = useState(false);
     const [viewMode, setViewMode] = useState<'table' | 'cards' | 'board'>('table');
     const [currentPage, setCurrentPage] = useState(1);
@@ -95,16 +94,7 @@ export default function LeasesPage() {
     const [paymentStatsMap, setPaymentStatsMap] = useState<Record<string, PaymentStats>>({});
     const [paymentStatsLoading, setPaymentStatsLoading] = useState(false);
     const [loading, setLoading] = useState(true);
-    const [submitting, setSubmitting] = useState(false);
     const [actionLoading, setActionLoading] = useState<string | null>(null);
-    const [paymentPreview, setPaymentPreview] = useState<{
-        lines: { installmentNumber: number; dueDate: string; periodStart: string; periodEnd: string; amount: number; proRata: boolean }[];
-        totalAmount: number;
-        totalPayments: number;
-        dueDayOfMonth: number;
-        defaultPaymentMethod: string;
-    } | null>(null);
-    const [previewLoading, setPreviewLoading] = useState(false);
     const [editingLeaseId, setEditingLeaseId] = useState<string | null>(null);
     const [attachments, setAttachments] = useState<LeaseAttachment[]>([]);
     const [uploadingDoc, setUploadingDoc] = useState(false);
@@ -124,31 +114,6 @@ export default function LeasesPage() {
     const { data: session } = useSession();
     const userRole = session?.user?.role as UserRole | undefined;
     const canManageLeases = hasPermission(userRole, 'canManageLeases');
-
-    const [formData, setFormData] = useState({
-        unitId: "",
-        renterId: "",
-        startDate: "",
-        endDate: "",
-        rentAmount: 0,
-        depositAmount: 0,
-        ejariNumber: "",
-        paymentTerms: 1,
-        paymentMethod: "CHEQUE",
-        depositPaymentMethod: "CHEQUE",
-        paymentReferenceNumber: "",
-        agreementDate: "",
-        rentVatApplicable: false,
-    });
-
-    // Booking deposit section (collapsed by default)
-    const [bookingDepositOpen, setBookingDepositOpen] = useState(false);
-    const [bookingDeposit, setBookingDeposit] = useState({
-        amount: 0,
-        chequeNumber: "",
-        chequeDate: "",
-        bankName: "",
-    });
 
     useEffect(() => {
         fetchUnits();
@@ -175,63 +140,6 @@ export default function LeasesPage() {
             fetchPaymentStats(leases);
         }
     }, [leases]);
-
-    useEffect(() => {
-        if (!formData.startDate || !formData.endDate || !formData.rentAmount || !formData.unitId) {
-            setPaymentPreview(null);
-            return;
-        }
-        const selectedUnit = units.find(u => u.id === formData.unitId);
-        const propertyId = selectedUnit?.property?.id;
-        if (!propertyId) {
-            setPaymentPreview(null);
-            return;
-        }
-
-        const timer = setTimeout(() => {
-            const params = new URLSearchParams({
-                propertyId,
-                startDate: formData.startDate,
-                endDate: formData.endDate,
-                monthlyRent: String(formData.rentAmount),
-            });
-            // Honor the cheque count the admin picked. Without paymentTerms the
-            // backend falls back to monthly cadence with pro-rata, which is
-            // never what we want once the admin has explicitly chosen N.
-            if (formData.paymentTerms && formData.paymentTerms > 0) {
-                params.set("paymentTerms", String(formData.paymentTerms));
-            }
-            // Pass deposit so the preview honors the same last-cheque cap the
-            // schedule generator will enforce on save — otherwise the admin
-            // would see a clean preview and then get a hard error at create.
-            if (formData.depositAmount && Number(formData.depositAmount) > 0) {
-                params.set("depositAmount", String(formData.depositAmount));
-            }
-
-            setPreviewLoading(true);
-            fetch(`/api/proxy/v1/payments/preview?${params}`)
-                .then(res => res.ok ? res.json() : null)
-                .then(data => {
-                    setPaymentPreview(data);
-                    if (data) {
-                        setFormData(prev => ({
-                            ...prev,
-                            paymentMethod: prev.paymentMethod || data.defaultPaymentMethod || 'CHEQUE',
-                            // Don't overwrite a paymentTerms the admin explicitly set; only
-                            // adopt the preview's totalPayments when paymentTerms hasn't
-                            // been chosen yet (== 0/undefined).
-                            paymentTerms: prev.paymentTerms && prev.paymentTerms > 0
-                                ? prev.paymentTerms
-                                : (data.totalPayments || prev.paymentTerms),
-                        }));
-                    }
-                })
-                .catch(() => setPaymentPreview(null))
-                .finally(() => setPreviewLoading(false));
-        }, 500);
-
-        return () => clearTimeout(timer);
-    }, [formData.startDate, formData.endDate, formData.rentAmount, formData.unitId, formData.paymentTerms, formData.depositAmount, units]);
 
     const fetchLeases = async () => {
         setLoading(true);
@@ -313,56 +221,6 @@ export default function LeasesPage() {
         // editor (mirroring all the inline form fields), the schedule editor,
         // attachments, documents, and contract-generation in one place.
         router.push(`/dashboard/leases/${lease.id}`);
-    };
-
-    const handleSubmit = async (ev: React.FormEvent) => {
-        ev.preventDefault();
-        setSubmitting(true);
-        try {
-            // Send both total rent (from preview) and monthly rent to backend
-            const submitData: Record<string, unknown> = {
-                ...formData,
-                monthlyRent: formData.rentAmount,
-                rentAmount: paymentPreview ? paymentPreview.totalAmount : formData.rentAmount,
-                agreementDate: formData.agreementDate || null,
-            };
-            // Include bookingDeposit if amount > 0
-            if (bookingDeposit.amount > 0) {
-                submitData.bookingDeposit = {
-                    amount: bookingDeposit.amount,
-                    chequeNumber: bookingDeposit.chequeNumber || null,
-                    chequeDate: bookingDeposit.chequeDate || null,
-                    bankName: bookingDeposit.bankName || null,
-                };
-            }
-            const url = editingLeaseId
-                ? `/api/proxy/v1/leases/${editingLeaseId}`
-                : "/api/proxy/v1/leases";
-            const method = editingLeaseId ? "PUT" : "POST";
-            const res = await fetch(url, {
-                method,
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(submitData)
-            });
-            if (res.ok) {
-                setShowForm(false);
-                setEditingLeaseId(null);
-                fetchLeases();
-                fetchUnits();
-                setFormData({
-                    unitId: "", renterId: "", startDate: "", endDate: "",
-                    rentAmount: 0, depositAmount: 0, ejariNumber: "", paymentTerms: 1,
-                    paymentMethod: "CHEQUE", depositPaymentMethod: "CHEQUE", paymentReferenceNumber: "",
-                    agreementDate: "", rentVatApplicable: false,
-                });
-                setBookingDeposit({ amount: 0, chequeNumber: "", chequeDate: "", bankName: "" });
-                setBookingDepositOpen(false);
-            }
-        } catch (err) {
-            console.error(err);
-        } finally {
-            setSubmitting(false);
-        }
     };
 
     const handleDeleteDraft = (id: string) => {
@@ -451,17 +309,6 @@ export default function LeasesPage() {
             }
         });
         setConfirmOpen(true);
-    };
-
-    const handleUnitChange = (unitId: string) => {
-        const selectedUnit = units.find(u => u.id === unitId);
-        // Auto-set VAT toggle if property is COMMERCIAL
-        const isCommercial = selectedUnit?.property?.type === "COMMERCIAL";
-        setFormData(prev => ({
-            ...prev,
-            unitId,
-            rentVatApplicable: isCommercial,
-        }));
     };
 
     const handleGenerateContract = async (id: string) => {
@@ -1053,7 +900,7 @@ export default function LeasesPage() {
                 </>
             )}
 
-            {!loading && leases.length === 0 && !showForm && (
+            {!loading && leases.length === 0 && (
                 <div className="text-center py-24 bg-background border border-dashed border-border rounded-xl flex flex-col items-center">
                     <div className="w-16 h-16 bg-surface rounded-xl flex items-center justify-center text-muted shadow-sm mb-6">
                         <AlertCircle size={32} />

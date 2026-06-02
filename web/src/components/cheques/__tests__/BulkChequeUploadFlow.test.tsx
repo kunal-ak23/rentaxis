@@ -22,6 +22,13 @@ const schedules = [
   { id: "s2", installmentNumber: 2, dueDate: "2026-07-05", amount: 5000, status: "PENDING" },
 ];
 
+// Schedules that include a charge/SD row at lease-start, same date as the first rent cheque.
+const schedulesWithCharge = [
+  { id: "sd1", installmentNumber: 0, dueDate: "2026-06-01", amount: 10000, status: "PENDING", isSecurityDeposit: true },
+  { id: "s1", installmentNumber: 1, dueDate: "2026-06-05", amount: 5000, status: "PENDING" },
+  { id: "s2", installmentNumber: 2, dueDate: "2026-07-05", amount: 5000, status: "PENDING" },
+];
+
 function makeFile(name: string): File {
   return new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], name, { type: "image/png" });
 }
@@ -115,6 +122,45 @@ describe("BulkChequeUploadFlow", () => {
     await waitFor(() => screen.getByText(/^approveAll/));
     const approve = screen.getByText(/^approveAll/) as HTMLButtonElement;
     expect(approve.closest("button")).toBeDisabled();
+  });
+
+  it("auto-map skips SD/charge rows — cheque dated at lease-start maps to rent installment, not security deposit", async () => {
+    const fetchMock = vi.fn()
+      // extract call: cheque dated 2026-06-01, same as the SD row's dueDate
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          image: { url: "u1", blobPath: "b1", uploadedAt: "2026-06-01T00:00:00Z" },
+          extracted: { chequeNumber: "C-1", bankName: "ENBD", payerName: "R", chequeDate: "2026-06-01", confidence: "HIGH" },
+          warnings: [],
+        }),
+      });
+    global.fetch = fetchMock;
+
+    render(
+      <BulkChequeUploadFlow
+        leaseId="L2"
+        schedules={schedulesWithCharge}
+        onSuccess={() => {}}
+        onClose={() => {}}
+      />
+    );
+
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    Object.defineProperty(input, "files", { value: [makeFile("c1.png")], configurable: true });
+    fireEvent.change(input);
+    fireEvent.click(screen.getByText("continueToExtract"));
+
+    await waitFor(() => screen.getByText("colChequeNumber"));
+
+    // The single cheque (dated 2026-06-01) should auto-map to s1 (2026-06-05),
+    // NOT to sd1 (2026-06-01 — the security deposit row).
+    const selects = document.querySelectorAll("select");
+    expect((selects[0] as HTMLSelectElement).value).toBe("s1");
+
+    // The SD row (sd1) must still be visible in the dropdown for manual selection.
+    const options = Array.from((selects[0] as HTMLSelectElement).options).map(o => o.value);
+    expect(options).toContain("sd1");
   });
 
   it("shows mismatch chip when cheque amount differs from installment amount, approve stays enabled", async () => {

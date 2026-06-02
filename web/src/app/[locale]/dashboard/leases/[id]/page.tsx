@@ -35,6 +35,7 @@ type Lease = {
 type Payment = {
     id: string; installmentNumber: number; dueDate: string; amount: number;
     status: string; chequeNumber: string; chequeDate: string | null; bankName: string; payerName: string;
+    isCharge?: boolean; isSecurityDeposit?: boolean; isBookingDeposit?: boolean;
 };
 
 type Renter = {
@@ -1552,6 +1553,9 @@ export default function LeaseDetailPage() {
                     dueDate: p.dueDate,
                     amount: p.amount,
                     status: p.status,
+                    isCharge: p.isCharge,
+                    isSecurityDeposit: p.isSecurityDeposit,
+                    isBookingDeposit: p.isBookingDeposit,
                 }))}
                 onClose={() => setBulkOpen(false)}
                 onSuccess={() => {
