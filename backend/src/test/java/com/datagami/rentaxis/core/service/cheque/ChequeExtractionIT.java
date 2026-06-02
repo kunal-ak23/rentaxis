@@ -52,7 +52,7 @@ class ChequeExtractionIT {
                 .thenReturn(new BlobStorageService.UploadResult("https://blob/cheques/a.jpg", "cheques/a.jpg"));
         when(chequeExtractor.extract(any(), eq(MediaType.IMAGE_JPEG_VALUE)))
                 .thenReturn(new ChequeExtractor.ExtractionResult(
-                        new ExtractedChequeDTO("123456", "ENBD", "Acme", LocalDate.of(2026, 6, 1), ExtractedChequeDTO.Confidence.HIGH),
+                        new ExtractedChequeDTO("123456", "ENBD", "Acme", LocalDate.of(2026, 6, 1), null, ExtractedChequeDTO.Confidence.HIGH),
                         List.of()
                 ));
 

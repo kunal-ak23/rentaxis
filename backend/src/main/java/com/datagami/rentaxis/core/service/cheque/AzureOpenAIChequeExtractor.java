@@ -20,6 +20,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import lombok.extern.slf4j.Slf4j;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -33,6 +34,7 @@ public class AzureOpenAIChequeExtractor implements ChequeExtractor {
             Return only JSON matching the provided schema. Use null when a field is unreadable.
             chequeDate must be ISO-8601 yyyy-MM-dd. confidence must be HIGH, MEDIUM, or LOW.
             Add short warnings for obscured, missing, or uncertain fields.
+            amount is the numeric cheque value from the figures (AED) box; cross-check it against the amount in words. Return a plain number with no thousands separators or currency symbol. Use null if unreadable.
             """;
 
     private static final String SCHEMA = """
@@ -44,13 +46,14 @@ public class AzureOpenAIChequeExtractor implements ChequeExtractor {
                 "bankName": { "type": ["string", "null"] },
                 "payerName": { "type": ["string", "null"] },
                 "chequeDate": { "type": ["string", "null"] },
+                "amount": { "type": ["number", "null"] },
                 "confidence": { "type": "string", "enum": ["HIGH", "MEDIUM", "LOW"] },
                 "warnings": {
                   "type": "array",
                   "items": { "type": "string" }
                 }
               },
-              "required": ["chequeNumber", "bankName", "payerName", "chequeDate", "confidence", "warnings"]
+              "required": ["chequeNumber", "bankName", "payerName", "chequeDate", "amount", "confidence", "warnings"]
             }
             """;
 
@@ -117,7 +120,7 @@ public class AzureOpenAIChequeExtractor implements ChequeExtractor {
         return completions.getChoices().get(0).getMessage().getContent();
     }
 
-    private ExtractionResult parseResponse(String content) {
+    ExtractionResult parseResponse(String content) {
         try {
             JsonNode root = objectMapper.readTree(content);
             List<String> warnings = new ArrayList<>();
@@ -132,6 +135,11 @@ public class AzureOpenAIChequeExtractor implements ChequeExtractor {
                 chequeDate = LocalDate.parse(root.get("chequeDate").asText());
             }
 
+            BigDecimal amount = null;
+            if (root.hasNonNull("amount")) {
+                amount = BigDecimal.valueOf(root.get("amount").asDouble());
+            }
+
             ExtractedChequeDTO.Confidence confidence = ExtractedChequeDTO.Confidence.MEDIUM;
             if (root.hasNonNull("confidence")) {
                 confidence = ExtractedChequeDTO.Confidence.valueOf(root.get("confidence").asText().toUpperCase());
@@ -142,6 +150,7 @@ public class AzureOpenAIChequeExtractor implements ChequeExtractor {
                     textOrNull(root, "bankName"),
                     textOrNull(root, "payerName"),
                     chequeDate,
+                    amount,
                     confidence
             );
             return new ExtractionResult(dto, warnings);

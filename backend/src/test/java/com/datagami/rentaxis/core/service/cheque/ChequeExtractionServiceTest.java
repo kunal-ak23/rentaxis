@@ -46,7 +46,7 @@ class ChequeExtractionServiceTest {
                 .thenReturn(new BlobStorageService.UploadResult("https://x", "cheques/a.jpg"));
         when(chequeExtractor.extract(any(), any()))
                 .thenReturn(new ChequeExtractor.ExtractionResult(
-                        new ExtractedChequeDTO("123", "ENBD", "Acme", LocalDate.of(2026, 6, 1), ExtractedChequeDTO.Confidence.HIGH),
+                        new ExtractedChequeDTO("123", "ENBD", "Acme", LocalDate.of(2026, 6, 1), null, ExtractedChequeDTO.Confidence.HIGH),
                         List.of()
                 ));
 
