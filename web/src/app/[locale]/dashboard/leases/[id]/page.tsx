@@ -35,6 +35,7 @@ type Lease = {
 type Payment = {
     id: string; installmentNumber: number; dueDate: string; amount: number;
     status: string; chequeNumber: string; chequeDate: string | null; bankName: string; payerName: string;
+    isCharge?: boolean; isSecurityDeposit?: boolean; isBookingDeposit?: boolean;
 };
 
 type Renter = {
@@ -824,13 +825,23 @@ export default function LeaseDetailPage() {
                         cheque/bank/method per row before contract finalization. */}
                     {lease && (lease.status === "DRAFT" || lease.status === "PENDING_SIGNATURE") && (
                         <div className="bg-surface rounded-xl border border-border">
-                            <div className="px-5 py-3.5 border-b border-border">
+                            <div className="px-5 py-3.5 border-b border-border flex items-center justify-between gap-3">
                                 <h2 className="text-xs font-semibold text-muted uppercase tracking-wider flex items-center gap-2">
                                     <CreditCard size={13} /> Payment Schedule
                                     <span className="ml-2 px-2 py-0.5 rounded-full text-[9px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
                                         Editable while {lease.status.replace("_", " ")}
                                     </span>
                                 </h2>
+                                {isAdmin && (
+                                    <button
+                                        type="button"
+                                        disabled={!hasPending}
+                                        onClick={() => setBulkOpen(true)}
+                                        className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-xs hover:bg-input/40 disabled:opacity-50"
+                                    >
+                                        {tBulk("entryButton")}
+                                    </button>
+                                )}
                             </div>
                             <div className="px-5 py-4">
                                 <PaymentScheduleEditor
@@ -1542,6 +1553,9 @@ export default function LeaseDetailPage() {
                     dueDate: p.dueDate,
                     amount: p.amount,
                     status: p.status,
+                    isCharge: p.isCharge,
+                    isSecurityDeposit: p.isSecurityDeposit,
+                    isBookingDeposit: p.isBookingDeposit,
                 }))}
                 onClose={() => setBulkOpen(false)}
                 onSuccess={() => {

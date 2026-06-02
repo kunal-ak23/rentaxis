@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.api.dto;
 
+import com.datagami.rentaxis.domain.entity.enums.InstallmentDistribution;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.PaymentMethod;
 import lombok.Data;
@@ -22,6 +23,7 @@ public class LeaseDTO {
     private BigDecimal depositAmount;
     private String ejariNumber;
     private Integer paymentTerms;
+    private InstallmentDistribution installmentDistribution;
     private PaymentMethod paymentMethod;
     private PaymentMethod depositPaymentMethod;
     private String paymentReferenceNumber;
@@ -31,10 +33,6 @@ public class LeaseDTO {
     private boolean hasContract;
     private Long contractNumber;
     private LocalDate agreementDate;
-    private BigDecimal adminFee;
-    private BigDecimal parkingRemoteFee;
     private Boolean rentVatApplicable;
-    private Boolean adminFeeVatApplicable;
-    private Boolean securityDepositVatApplicable;
-    private Boolean parkingRemoteVatApplicable;
+    private java.util.List<LeaseChargeDTO> charges;
 }

@@ -156,7 +156,7 @@ class PortfolioImportIT {
                 .filter(l -> tenant2RenterId.equals(l.getRenter().getId()))
                 .findFirst().orElseThrow().getId();
         List<PaymentSchedule> chequeRows = paymentScheduleRepository.findAll().stream()
-                .filter(p -> !p.isBookingDeposit())
+                .filter(p -> !p.isBookingDeposit() && !p.isSecurityDeposit() && !p.isCharge())
                 .filter(p -> tenant2LeaseId.equals(p.getLease().getId()))
                 .toList();
         assertThat(chequeRows).hasSize(4);

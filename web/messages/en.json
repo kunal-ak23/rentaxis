@@ -181,6 +181,7 @@
       "fieldBankName": "Bank name",
       "fieldPayerName": "Payer name",
       "fieldChequeDate": "Cheque date",
+      "fieldAmount": "Amount (AED)",
       "back": "Back",
       "next": "Next",
       "useValues": "Use these values",
@@ -488,6 +489,7 @@
     "colBank": "Bank",
     "colPayer": "Payer",
     "colChequeDate": "Cheque date",
+    "colAmount": "Amount",
     "colInstallment": "Installment",
     "pickInstallment": "Pick an installment",
     "pinRow": "Pin / unpin assignment",
@@ -496,7 +498,8 @@
     "approveAll": "Approve all ({ready}/{total})",
     "rowConflictError": "Some rows could not be saved (conflict). Reload and try again.",
     "networkError": "Network error. Please try again.",
-    "genericError": "Could not save. Please try again."
+    "genericError": "Could not save. Please try again.",
+    "chequeMismatch": "Cheque {cheque} ≠ installment {installment}"
   },
   "Staff": {
     "title": "Staff Management",

@@ -32,6 +32,8 @@ type ScheduleRow = {
     chequeImageUploadedAt: string | null;
     purposeLabel: string | null;
     isBookingDeposit?: boolean;
+    isSecurityDeposit?: boolean;
+    isCharge?: boolean;
 };
 
 type Props = {
@@ -60,16 +62,25 @@ function normalizeMethod(m: string | null | undefined): PaymentMethod {
     return "CHEQUE";
 }
 
+function rowLabel(r: ScheduleRow): string {
+    if (r.purposeLabel) return r.purposeLabel;
+    if (r.isSecurityDeposit) return "Security Deposit";
+    if (r.isBookingDeposit) return "Booking Deposit";
+    if (r.isCharge) return "Charge";
+    return `Installment ${r.installmentNumber}`;
+}
+
 function clientValidate(rows: ScheduleRow[]): { ok: boolean; firstError?: string } {
     for (const r of rows) {
         const m = normalizeMethod(r.paymentMethod);
-        if (!r.dueDate) return { ok: false, firstError: `Row ${r.installmentNumber}: due date is required` };
+        const label = rowLabel(r);
+        if (!r.dueDate) return { ok: false, firstError: `${label}: due date is required` };
         if (r.amount == null || Number.isNaN(r.amount) || r.amount < 0)
-            return { ok: false, firstError: `Row ${r.installmentNumber}: amount must be a non-negative number` };
+            return { ok: false, firstError: `${label}: amount must be a non-negative number` };
         if (m === "CHEQUE" && (!r.chequeNumber || !r.chequeDate || !r.bankName))
-            return { ok: false, firstError: `Row ${r.installmentNumber}: cheque rows need cheque #, cheque date and bank` };
+            return { ok: false, firstError: `${label}: cheque rows need cheque #, cheque date and bank` };
         if ((m === "BANK_TRANSFER" || m === "ONLINE") && (!r.bankName || !r.chequeDate))
-            return { ok: false, firstError: `Row ${r.installmentNumber}: ${m === "ONLINE" ? "online" : "transfer"} rows need bank and date` };
+            return { ok: false, firstError: `${label}: ${m === "ONLINE" ? "online" : "transfer"} rows need bank and date` };
     }
     return { ok: true };
 }
@@ -82,6 +93,7 @@ export default function PaymentScheduleEditor({ leaseId, leaseStatus, canManage,
     const [saved, setSaved] = useState(false);
     const [dirty, setDirty] = useState(false);
     const [extractedFields, setExtractedFields] = useState<Set<string>>(new Set());
+    const [scannedAmounts, setScannedAmounts] = useState<Record<string, number | null>>({});
 
     const editable = canManage && EDITABLE_STATUSES.has(leaseStatus);
 
@@ -89,15 +101,22 @@ export default function PaymentScheduleEditor({ leaseId, leaseStatus, canManage,
         setLoading(true);
         setError(null);
         try {
-            const res = await fetch(`/api/proxy/v1/payments?leaseId=${leaseId}`);
+            // Lease-scoped endpoint returns the FULL schedule for one lease as a
+            // plain List (no pagination). The tenant-wide `/payments?leaseId=` is
+            // paginated and ignores leaseId, so a lease's rows could fall outside
+            // the first page and silently vanish from the editor.
+            const res = await fetch(`/api/proxy/v1/payments/lease/${leaseId}`);
             if (res.ok) {
                 const data = await res.json();
                 const list = Array.isArray(data) ? data : (data.content ?? []);
                 const mine: ScheduleRow[] = list
                     .filter((p: ScheduleRow) => p.leaseId === leaseId)
                     .sort((a: ScheduleRow, b: ScheduleRow) => {
-                        // Booking deposit rows last; regular installments by number ascending.
-                        if (!!a.isBookingDeposit !== !!b.isBookingDeposit) return a.isBookingDeposit ? 1 : -1;
+                        // Non-rent rows (booking deposit, security deposit, charges) sort last;
+                        // regular rent installments sort first by installment number ascending.
+                        const aNon = !!a.isBookingDeposit || !!a.isSecurityDeposit || !!a.isCharge;
+                        const bNon = !!b.isBookingDeposit || !!b.isSecurityDeposit || !!b.isCharge;
+                        if (aNon !== bNon) return aNon ? 1 : -1;
                         return (a.installmentNumber ?? 0) - (b.installmentNumber ?? 0);
                     });
                 setRows(mine);
@@ -258,14 +277,17 @@ export default function PaymentScheduleEditor({ leaseId, leaseStatus, canManage,
                                     if (typeof data.chequeDate !== "undefined") next.add(`${r.id}:chequeDate`);
                                     return next;
                                 });
+                                if (typeof data.amount !== "undefined") {
+                                    setScannedAmounts(prev => ({ ...prev, [r.id]: data.amount ?? null }));
+                                }
                                 setDirty(true);
                                 setSaved(false);
                                 setError(null);
                             };
                             return (
                                 <tr key={r.id} className="border-t border-border align-top">
-                                    <td className="px-3 py-2 tabular-nums">{r.isBookingDeposit ? "B" : r.installmentNumber}</td>
-                                    <td className="px-3 py-2 text-muted">{r.purposeLabel || (r.isBookingDeposit ? "Booking Deposit" : "")}</td>
+                                    <td className="px-3 py-2 tabular-nums">{r.isBookingDeposit ? "B" : r.isSecurityDeposit ? "S" : r.isCharge ? "C" : r.installmentNumber}</td>
+                                    <td className="px-3 py-2 text-muted">{r.purposeLabel || (r.isSecurityDeposit ? "Security Deposit" : r.isBookingDeposit ? "Booking Deposit" : "")}</td>
                                     <td className="px-3 py-2">
                                         <input
                                             type="date"
@@ -363,6 +385,11 @@ export default function PaymentScheduleEditor({ leaseId, leaseStatus, canManage,
                                             className="border border-border rounded px-2 py-1 text-xs bg-surface w-28 text-right tabular-nums disabled:bg-input/40 disabled:cursor-not-allowed"
                                         />
                                         <div className="text-[10px] text-muted mt-0.5">{formatCurrency(r.amount || 0)}</div>
+                                        {scannedAmounts[r.id] != null && Math.round(scannedAmounts[r.id]! * 100) !== Math.round(r.amount * 100) && (
+                                            <span className="ml-2 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-800">
+                                                Cheque {formatCurrency(scannedAmounts[r.id]!)} ≠ {formatCurrency(r.amount)}
+                                            </span>
+                                        )}
                                     </td>
                                     <td className="px-3 py-2 text-muted">{r.status}</td>
                                 </tr>

@@ -77,7 +77,7 @@ class ChequeExtractionControllerTest {
     void extract_happyPath_returns200WithBody() throws Exception {
         var resp = new ChequeExtractionResponseDTO(
                 new ChequeImageMetaDTO("https://blob", "cheques/abc.jpg", OffsetDateTime.parse("2026-05-04T10:23:00Z")),
-                new ExtractedChequeDTO("123", "ENBD", "Acme", LocalDate.of(2026, 6, 1), ExtractedChequeDTO.Confidence.HIGH),
+                new ExtractedChequeDTO("123", "ENBD", "Acme", LocalDate.of(2026, 6, 1), null, ExtractedChequeDTO.Confidence.HIGH),
                 List.of()
         );
         when(service.extractAndStore(eq(tenantId), any())).thenReturn(resp);

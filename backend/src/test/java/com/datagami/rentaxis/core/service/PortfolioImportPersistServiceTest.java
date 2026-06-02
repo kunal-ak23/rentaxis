@@ -45,6 +45,7 @@ class PortfolioImportPersistServiceTest {
     @Mock LeaseRepository leaseRepository;
     @Mock PaymentScheduleService paymentScheduleService;
     @Mock PaymentScheduleRepository paymentScheduleRepository;
+    @Mock LeaseChargeRepository leaseChargeRepository;
     @Mock ImportJobRepository importJobRepository;
 
     PortfolioImportPersistService service;
@@ -54,7 +55,7 @@ class PortfolioImportPersistServiceTest {
         service = new PortfolioImportPersistService(
                 propertyRepository, buildingRepository, unitRepository,
                 renterRepository, leaseRepository, paymentScheduleService,
-                paymentScheduleRepository, importJobRepository);
+                paymentScheduleRepository, leaseChargeRepository, importJobRepository);
 
         // save(...) → return the input entity, simulating ID assignment.
         lenient().when(propertyRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -63,9 +64,17 @@ class PortfolioImportPersistServiceTest {
         lenient().when(renterRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(leaseRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(paymentScheduleRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        lenient().when(leaseChargeRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(importJobRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(paymentScheduleService.generateScheduleForLease(any()))
                 .thenReturn(Collections.emptyList());
+    }
+
+    /** Capture every LeaseCharge passed to leaseChargeRepository.save(). */
+    private List<LeaseCharge> captureSavedCharges() {
+        ArgumentCaptor<LeaseCharge> cap = ArgumentCaptor.forClass(LeaseCharge.class);
+        verify(leaseChargeRepository, atLeastOnce()).save(cap.capture());
+        return cap.getAllValues();
     }
 
     @Test
@@ -81,14 +90,22 @@ class PortfolioImportPersistServiceTest {
 
         Lease saved = captureSavedLease();
         assertThat(saved.getStatus()).isEqualTo(LeaseStatus.DRAFT);
-        assertThat(saved.getAdminFee()).isEqualByComparingTo("500");
-        assertThat(saved.getParkingRemoteFee()).isEqualByComparingTo("100");
         assertThat(saved.isRentVatApplicable()).isTrue();
-        assertThat(saved.isAdminFeeVatApplicable()).isTrue();
-        assertThat(saved.isSecurityDepositVatApplicable()).isFalse();
-        assertThat(saved.isParkingRemoteVatApplicable()).isFalse();
         assertThat(saved.getAgreementDate()).isEqualTo(LocalDate.parse("2026-05-01"));
         assertThat(saved.getDepositPaymentMethod()).isEqualTo(PaymentMethod.BANK_TRANSFER);
+
+        // AdminFee / ParkingRemoteFee columns now map to one-time LeaseCharge rows
+        // with their VAT intent carried from the per-fee VAT columns.
+        List<LeaseCharge> charges = captureSavedCharges();
+        assertThat(charges).extracting(LeaseCharge::getName)
+                .containsExactlyInAnyOrder("Admin Fee", "Parking / Remote");
+        LeaseCharge admin = charges.stream().filter(c -> c.getName().equals("Admin Fee")).findFirst().orElseThrow();
+        LeaseCharge parking = charges.stream().filter(c -> c.getName().equals("Parking / Remote")).findFirst().orElseThrow();
+        assertThat(admin.getAmount()).isEqualByComparingTo("500");
+        assertThat(admin.isVatApplicable()).isTrue();
+        assertThat(admin.getFrequency()).isEqualTo(ChargeFrequency.ONE_TIME);
+        assertThat(parking.getAmount()).isEqualByComparingTo("100");
+        assertThat(parking.isVatApplicable()).isFalse();
     }
 
     @Test
@@ -180,33 +197,34 @@ class PortfolioImportPersistServiceTest {
     }
 
     @Test
-    void persist_vatDefaultsFromCommercialProperty_whenTogglesBlank() {
+    void persist_rentVatDefaultsFromCommercialProperty_whenToggleBlank() {
         Workbook wb = buildWorkbookWithOneLease(b -> b
                 .propertyType("COMMERCIAL")
+                .adminFee("500").parkingRemoteFee("100")
                 .rentVat("").adminVat("").depositVat("").parkingVat(""));
 
         service.persistWorkbook(wb, newJob());
 
         Lease saved = captureSavedLease();
         assertThat(saved.isRentVatApplicable()).isTrue();
-        assertThat(saved.isAdminFeeVatApplicable()).isTrue();
-        assertThat(saved.isSecurityDepositVatApplicable()).isTrue();
-        assertThat(saved.isParkingRemoteVatApplicable()).isTrue();
+        // Charge VAT defaults to the commercial flag when the per-fee VAT column is blank.
+        List<LeaseCharge> charges = captureSavedCharges();
+        assertThat(charges).allSatisfy(c -> assertThat(c.isVatApplicable()).isTrue());
     }
 
     @Test
-    void persist_vatDefaultsFalse_forResidentialProperty_whenTogglesBlank() {
+    void persist_rentVatDefaultsFalse_forResidentialProperty_whenToggleBlank() {
         Workbook wb = buildWorkbookWithOneLease(b -> b
                 .propertyType("RESIDENTIAL")
+                .adminFee("500").parkingRemoteFee("100")
                 .rentVat("").adminVat("").depositVat("").parkingVat(""));
 
         service.persistWorkbook(wb, newJob());
 
         Lease saved = captureSavedLease();
         assertThat(saved.isRentVatApplicable()).isFalse();
-        assertThat(saved.isAdminFeeVatApplicable()).isFalse();
-        assertThat(saved.isSecurityDepositVatApplicable()).isFalse();
-        assertThat(saved.isParkingRemoteVatApplicable()).isFalse();
+        List<LeaseCharge> charges = captureSavedCharges();
+        assertThat(charges).allSatisfy(c -> assertThat(c.isVatApplicable()).isFalse());
     }
 
     @Test
@@ -239,11 +257,11 @@ class PortfolioImportPersistServiceTest {
         // generateScheduleForLease must NOT run when cheque rows exist.
         verify(paymentScheduleService, never()).generateScheduleForLease(any(Lease.class));
 
-        // 5 schedule rows (no booking deposit in this fixture).
+        // 5 cheque rows (no booking deposit in this fixture; SD/charge rows excluded).
         ArgumentCaptor<PaymentSchedule> cap = ArgumentCaptor.forClass(PaymentSchedule.class);
         verify(paymentScheduleRepository, atLeastOnce()).save(cap.capture());
         List<PaymentSchedule> rows = cap.getAllValues().stream()
-                .filter(p -> !p.isBookingDeposit())
+                .filter(p -> !p.isBookingDeposit() && !p.isSecurityDeposit() && !p.isCharge())
                 .toList();
         assertThat(rows).hasSize(5);
         assertThat(rows).extracting(PaymentSchedule::getInstallmentNumber)
@@ -274,7 +292,7 @@ class PortfolioImportPersistServiceTest {
         ArgumentCaptor<PaymentSchedule> cap = ArgumentCaptor.forClass(PaymentSchedule.class);
         verify(paymentScheduleRepository, atLeastOnce()).save(cap.capture());
         List<PaymentSchedule> rows = cap.getAllValues().stream()
-                .filter(p -> !p.isBookingDeposit())
+                .filter(p -> !p.isBookingDeposit() && !p.isSecurityDeposit() && !p.isCharge())
                 .sorted((a, b) -> Integer.compare(a.getInstallmentNumber(), b.getInstallmentNumber()))
                 .toList();
         assertThat(rows).hasSize(3);
@@ -287,7 +305,9 @@ class PortfolioImportPersistServiceTest {
     }
 
     @Test
-    void persist_chequesSheet_firstInstallmentLabelHasBundleSuffixWhenChargesPresent() {
+    void persist_chequesSheet_installmentLabelsArePlain_andChargeRowEmitted() {
+        // Imported rent installment labels are now plain (no /ADMIN/SD/REMOTE
+        // suffix); the admin fee becomes its own one-time charge schedule row.
         Workbook wb = buildWorkbookWithOneLease(b -> b
                 .adminFee("500"));
         addChequesSheet(wb,
@@ -301,15 +321,22 @@ class PortfolioImportPersistServiceTest {
         ArgumentCaptor<PaymentSchedule> cap = ArgumentCaptor.forClass(PaymentSchedule.class);
         verify(paymentScheduleRepository, atLeastOnce()).save(cap.capture());
         PaymentSchedule first = cap.getAllValues().stream()
-                .filter(p -> !p.isBookingDeposit())
+                .filter(p -> !p.isBookingDeposit() && !p.isCharge() && !p.isSecurityDeposit())
                 .filter(p -> p.getInstallmentNumber() == 1)
                 .findFirst().orElseThrow();
         PaymentSchedule second = cap.getAllValues().stream()
-                .filter(p -> !p.isBookingDeposit())
+                .filter(p -> !p.isBookingDeposit() && !p.isCharge() && !p.isSecurityDeposit())
                 .filter(p -> p.getInstallmentNumber() == 2)
                 .findFirst().orElseThrow();
-        assertThat(first.getPurposeLabel()).isEqualTo("RENT - 1ST INSTALLMENT/ADMIN/SD/REMOTE");
+        assertThat(first.getPurposeLabel()).isEqualTo("RENT - 1ST INSTALLMENT");
         assertThat(second.getPurposeLabel()).isEqualTo("RENT - 2ND INSTALLMENT");
+
+        // The Admin Fee charge schedule row exists (residential → no VAT → 500.00).
+        PaymentSchedule adminRow = cap.getAllValues().stream()
+                .filter(PaymentSchedule::isCharge)
+                .findFirst().orElseThrow(() -> new AssertionError("expected an Admin Fee charge row"));
+        assertThat(adminRow.getPurposeLabel()).isEqualTo("Admin Fee");
+        assertThat(adminRow.getAmount()).isEqualByComparingTo("500");
     }
 
     @Test

@@ -14,7 +14,11 @@ export type BulkExtractItem = {
   error: string | null;
 };
 
-const MAX_CONCURRENT = 4;
+// Gentle parallelism (2): the backend now uses the OkHttp Azure client (no more
+// Netty "channel not registered" race), so concurrent calls are safe. Kept at 2
+// (not higher) to avoid Azure OpenAI 429 rate limiting under bulk load; the
+// backend additionally retries 429 with backoff.
+const MAX_CONCURRENT = 2;
 const ALLOWED_TYPES = new Set([
   "image/jpeg",
   "image/jpg",

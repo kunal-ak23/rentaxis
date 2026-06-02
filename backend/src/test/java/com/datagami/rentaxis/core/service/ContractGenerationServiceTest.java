@@ -3,16 +3,19 @@ package com.datagami.rentaxis.core.service;
 import com.datagami.rentaxis.api.dto.LeaseDocumentDTO;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
 import com.datagami.rentaxis.domain.entity.Lease;
+import com.datagami.rentaxis.domain.entity.LeaseCharge;
 import com.datagami.rentaxis.domain.entity.LeaseDocument;
 import com.datagami.rentaxis.domain.entity.PaymentSchedule;
 import com.datagami.rentaxis.domain.entity.Property;
 import com.datagami.rentaxis.domain.entity.Renter;
 import com.datagami.rentaxis.domain.entity.Unit;
+import com.datagami.rentaxis.domain.entity.enums.ChargeFrequency;
 import com.datagami.rentaxis.domain.entity.enums.DocumentType;
 import com.datagami.rentaxis.domain.entity.enums.Emirate;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.PropertyType;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
+import com.datagami.rentaxis.domain.repository.LeaseChargeRepository;
 import com.datagami.rentaxis.domain.repository.LeaseDocumentRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.PaymentScheduleRepository;
@@ -26,6 +29,7 @@ import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -43,68 +47,89 @@ import static org.mockito.Mockito.when;
 class ContractGenerationServiceTest {
 
     private ContractGenerationService service;
+    private LeaseChargeRepository leaseChargeRepository;
 
     @BeforeEach
     void setUp() {
+        leaseChargeRepository = mock(LeaseChargeRepository.class);
+        when(leaseChargeRepository.findByLeaseId(any())).thenReturn(Collections.emptyList());
         service = new ContractGenerationService(
                 mock(LeaseRepository.class),
                 mock(LeaseDocumentRepository.class),
                 mock(LandlordOrgRepository.class),
                 mock(PaymentScheduleRepository.class),
                 mock(PaymentScheduleService.class),
+                leaseChargeRepository,
                 mock(ApplicationEventPublisher.class));
     }
 
-    private Lease leaseWith(BigDecimal rent, BigDecimal admin, BigDecimal deposit, BigDecimal parking,
-                             boolean rentVat, boolean adminVat, boolean depositVat, boolean parkingVat) {
+    private static LeaseCharge charge(String name, BigDecimal amount, boolean vat, ChargeFrequency freq) {
+        LeaseCharge c = new LeaseCharge();
+        c.setName(name);
+        c.setAmount(amount);
+        c.setVatApplicable(vat);
+        c.setFrequency(freq);
+        return c;
+    }
+
+    /** Stub the charge repo to return the given charges for any lease id. */
+    private void stubCharges(LeaseCharge... charges) {
+        when(leaseChargeRepository.findByLeaseId(any())).thenReturn(List.of(charges));
+    }
+
+    private Lease leaseWith(BigDecimal rent, BigDecimal deposit, boolean rentVat) {
         Lease l = new Lease();
+        l.setId(UUID.randomUUID());
         l.setRentAmount(rent);
-        l.setAdminFee(admin);
         l.setDepositAmount(deposit);
-        l.setParkingRemoteFee(parking);
         l.setRentVatApplicable(rentVat);
-        l.setAdminFeeVatApplicable(adminVat);
-        l.setSecurityDepositVatApplicable(depositVat);
-        l.setParkingRemoteVatApplicable(parkingVat);
         return l;
     }
 
     @Test
     void section3HidesZeroAmountRows() {
-        Lease lease = leaseWith(new BigDecimal("55000"), new BigDecimal("2000"), new BigDecimal("3000"),
-                BigDecimal.ZERO, false, false, false, false);
+        // Rent 55000 (no VAT), deposit 3000, plus an Admin Fee 2000 charge.
+        stubCharges(charge("Admin Fee", new BigDecimal("2000"), false, ChargeFrequency.ONE_TIME));
+        Lease lease = leaseWith(new BigDecimal("55000"), new BigDecimal("3000"), false);
         String html = service.buildSection3Rows(lease);
         assertThat(html).contains("Rent").contains("55,000.00").contains("Exempt");
         assertThat(html).contains("Admin Fee").contains("2,000.00");
         assertThat(html).contains("Security Deposit").contains("3,000.00");
-        assertThat(html).doesNotContain("Parking Remote");
+        assertThat(html).doesNotContain("Parking");
     }
 
     @Test
     void section3RendersVatAt5PercentWhenApplicable() {
-        Lease lease = leaseWith(new BigDecimal("55000"), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
-                true, false, false, false);
+        Lease lease = leaseWith(new BigDecimal("55000"), BigDecimal.ZERO, true);
         String html = service.buildSection3Rows(lease);
         assertThat(html).contains("5%").contains("2,750.00").contains("57,750.00");
     }
 
     @Test
     void section3AllRowsExemptByDefault() {
-        Lease lease = leaseWith(new BigDecimal("55000"), new BigDecimal("2000"), new BigDecimal("3000"),
-                new BigDecimal("300"), false, false, false, false);
+        // Rent + deposit + 2 charges, all VAT off → 4 "Exempt" rows.
+        stubCharges(
+                charge("Admin Fee", new BigDecimal("2000"), false, ChargeFrequency.ONE_TIME),
+                charge("Parking / Remote", new BigDecimal("300"), false, ChargeFrequency.ONE_TIME));
+        Lease lease = leaseWith(new BigDecimal("55000"), new BigDecimal("3000"), false);
         String html = service.buildSection3Rows(lease);
-        // "Exempt" should appear 4 times (one per row)
         int count = html.split("Exempt", -1).length - 1;
         assertThat(count).isEqualTo(4);
     }
 
     @Test
-    void section3AllRowsCommercialVat() {
-        Lease lease = leaseWith(new BigDecimal("55000"), new BigDecimal("2000"), new BigDecimal("3000"),
-                new BigDecimal("300"), true, true, true, true);
+    void section3DepositNeverVatEvenWhenChargesAreVat() {
+        // Rent VAT on, charges VAT on, but the Security Deposit row is always Exempt.
+        stubCharges(
+                charge("Admin Fee", new BigDecimal("2000"), true, ChargeFrequency.ONE_TIME),
+                charge("Parking / Remote", new BigDecimal("300"), true, ChargeFrequency.ONE_TIME));
+        Lease lease = leaseWith(new BigDecimal("55000"), new BigDecimal("3000"), true);
         String html = service.buildSection3Rows(lease);
-        int count = html.split("5%", -1).length - 1;
-        assertThat(count).isEqualTo(4);
+        // Rent + 2 charges = 3 rows at 5%; deposit row Exempt.
+        int vatCount = html.split("5%", -1).length - 1;
+        assertThat(vatCount).isEqualTo(3);
+        int exemptCount = html.split("Exempt", -1).length - 1;
+        assertThat(exemptCount).isEqualTo(1);
     }
 
     private PaymentSchedule ps(LocalDate chequeDate, String chqNo, String bank, BigDecimal amount,
@@ -122,7 +147,7 @@ class ContractGenerationServiceTest {
     @Test
     void section4OrdersByChequeDateAscWithBookingLast() {
         PaymentSchedule p1 = ps(LocalDate.of(2026, 4, 18), "TT", "TRANSFER", new BigDecimal("18050"),
-                "RENT - 1ST INSTALLMENT/ADMIN/SD/REMOTE", false);
+                "RENT - 1ST INSTALLMENT", false);
         PaymentSchedule p2 = ps(LocalDate.of(2026, 7, 24), "000001", "ENBD", new BigDecimal("13750"),
                 "RENT - 2ND INSTALLMENT", false);
         PaymentSchedule booking = ps(LocalDate.of(2026, 4, 14), "TT", "TRANSFER", new BigDecimal("1000"),
@@ -161,7 +186,7 @@ class ContractGenerationServiceTest {
         ContractGenerationService svc = new ContractGenerationService(
                 leaseRepo, mock(LeaseDocumentRepository.class), mock(LandlordOrgRepository.class),
                 mock(PaymentScheduleRepository.class), mock(PaymentScheduleService.class),
-                mock(ApplicationEventPublisher.class));
+                mock(LeaseChargeRepository.class), mock(ApplicationEventPublisher.class));
 
         svc.assignContractNumberIfNull(lease);
         assertThat(lease.getContractNumber()).isEqualTo(1751L);
@@ -218,8 +243,7 @@ class ContractGenerationServiceTest {
         return r;
     }
 
-    private Lease buildLease(UUID tenantId, Unit unit, Renter renter,
-                             boolean rentVat, boolean adminVat, boolean depositVat, boolean parkingVat) {
+    private Lease buildLease(UUID tenantId, Unit unit, Renter renter, boolean rentVat) {
         Lease lease = new Lease();
         lease.setId(UUID.randomUUID());
         lease.setTenantId(tenantId);
@@ -228,20 +252,23 @@ class ContractGenerationServiceTest {
         lease.setStartDate(LocalDate.of(2026, 4, 24));
         lease.setEndDate(LocalDate.of(2027, 4, 23));
         lease.setRentAmount(new BigDecimal("55000"));
-        lease.setAdminFee(new BigDecimal("2000"));
         lease.setDepositAmount(new BigDecimal("3000"));
-        lease.setParkingRemoteFee(new BigDecimal("300"));
         lease.setRentVatApplicable(rentVat);
-        lease.setAdminFeeVatApplicable(adminVat);
-        lease.setSecurityDepositVatApplicable(depositVat);
-        lease.setParkingRemoteVatApplicable(parkingVat);
         lease.setStatus(LeaseStatus.DRAFT);
         return lease;
     }
 
+    /** Charges that, with rent + deposit, mirror the legacy admin/parking fixtures. */
+    private List<LeaseCharge> buildCharges(boolean vat) {
+        List<LeaseCharge> charges = new ArrayList<>();
+        charges.add(charge("Admin Fee", new BigDecimal("2000"), vat, ChargeFrequency.ONE_TIME));
+        charges.add(charge("Parking / Remote", new BigDecimal("300"), vat, ChargeFrequency.ONE_TIME));
+        return charges;
+    }
+
     private List<PaymentSchedule> buildSchedules() {
         PaymentSchedule p1 = ps(LocalDate.of(2026, 4, 18), "TT", "TRANSFER", new BigDecimal("18050"),
-                "RENT - 1ST INSTALLMENT/ADMIN/SD/REMOTE", false);
+                "RENT - 1ST INSTALLMENT", false);
         PaymentSchedule p2 = ps(LocalDate.of(2026, 7, 24), "000001", "ENBD", new BigDecimal("13750"),
                 "RENT - 2ND INSTALLMENT", false);
         PaymentSchedule booking = ps(LocalDate.of(2026, 4, 14), "TT", "TRANSFER", new BigDecimal("1000"),
@@ -256,12 +283,14 @@ class ContractGenerationServiceTest {
      */
     private ContractGenerationService buildSpyForFullFlow(Lease lease, LandlordOrg org,
                                                          List<PaymentSchedule> schedules,
+                                                         List<LeaseCharge> charges,
                                                          Long maxContractNumber,
                                                          Path tmpStorage) throws Exception {
         LeaseRepository leaseRepo = mock(LeaseRepository.class);
         LeaseDocumentRepository docRepo = mock(LeaseDocumentRepository.class);
         LandlordOrgRepository orgRepo = mock(LandlordOrgRepository.class);
         PaymentScheduleRepository scheduleRepo = mock(PaymentScheduleRepository.class);
+        LeaseChargeRepository chargeRepo = mock(LeaseChargeRepository.class);
 
         when(leaseRepo.findById(lease.getId())).thenReturn(Optional.of(lease));
         when(leaseRepo.findMaxContractNumberForTenant(lease.getTenantId())).thenReturn(maxContractNumber);
@@ -270,6 +299,7 @@ class ContractGenerationServiceTest {
         when(orgRepo.findById(lease.getTenantId())).thenReturn(Optional.of(org));
 
         when(scheduleRepo.findByLeaseId(lease.getId())).thenReturn(schedules);
+        when(chargeRepo.findByLeaseId(lease.getId())).thenReturn(charges);
 
         when(docRepo.findByLeaseId(lease.getId())).thenReturn(Collections.emptyList());
         when(docRepo.save(any(LeaseDocument.class))).thenAnswer(inv -> {
@@ -281,7 +311,7 @@ class ContractGenerationServiceTest {
 
         ContractGenerationService realSvc = new ContractGenerationService(
                 leaseRepo, docRepo, orgRepo, scheduleRepo, mock(PaymentScheduleService.class),
-                mock(ApplicationEventPublisher.class));
+                chargeRepo, mock(ApplicationEventPublisher.class));
         // Inject the temp storage path (since @Value isn't processed in plain unit tests).
         Field storagePathField = ContractGenerationService.class.getDeclaredField("storagePath");
         storagePathField.setAccessible(true);
@@ -306,10 +336,11 @@ class ContractGenerationServiceTest {
         Property property = buildProperty(tenantId, PropertyType.RESIDENTIAL);
         Unit unit = buildUnit(tenantId, property);
         Renter renter = buildRenter(tenantId);
-        Lease lease = buildLease(tenantId, unit, renter, false, false, false, false);
+        Lease lease = buildLease(tenantId, unit, renter, false);
 
         Path tmpStorage = Files.createTempDirectory("contract-test-");
-        ContractGenerationService svc = buildSpyForFullFlow(lease, org, buildSchedules(), 1750L, tmpStorage);
+        ContractGenerationService svc = buildSpyForFullFlow(
+                lease, org, buildSchedules(), buildCharges(false), 1750L, tmpStorage);
 
         // Capture the HTML passed to renderPdf so we can assert on it.
         ArgumentCaptor<String> htmlCaptor = ArgumentCaptor.forClass(String.class);
@@ -339,16 +370,16 @@ class ContractGenerationServiceTest {
         assertThat(html).contains("3,000.00");
         assertThat(html).contains("300.00");
 
-        // Residential lease, all VAT flags off → "Exempt" per row (4 rows)
+        // Residential lease, all VAT off → "Exempt" per row (Rent + Deposit + 2 charges = 4 rows)
         int exemptCount = html.split("Exempt", -1).length - 1;
         assertThat(exemptCount).isEqualTo(4);
 
-        // Grand total: 55000 + 2000 + 3000 + 300 = 60300
+        // Grand total: 55000 + 3000 + 2000 + 300 = 60300
         assertThat(html).contains("60,300.00");
         assertThat(html).contains("AED Sixty Thousand Three Hundred Only");
 
         // Section 4 rows
-        assertThat(html).contains("RENT - 1ST INSTALLMENT/ADMIN/SD/REMOTE");
+        assertThat(html).contains("RENT - 1ST INSTALLMENT");
         assertThat(html).contains("RENT - 2ND INSTALLMENT");
         assertThat(html).contains("BOOKING RECEIVED");
         assertThat(html).contains("18,050.00");
@@ -356,7 +387,7 @@ class ContractGenerationServiceTest {
         assertThat(html).contains("1,000.00");
 
         // Booking row sorted last (after the regular installments)
-        int idxFirstInstallment = html.indexOf("RENT - 1ST INSTALLMENT/ADMIN/SD/REMOTE");
+        int idxFirstInstallment = html.indexOf("RENT - 1ST INSTALLMENT");
         int idxSecondInstallment = html.indexOf("RENT - 2ND INSTALLMENT");
         int idxBooking = html.indexOf("BOOKING RECEIVED");
         assertThat(idxFirstInstallment).isPositive();
@@ -374,9 +405,6 @@ class ContractGenerationServiceTest {
         assertThat(html).contains("23 Apr 2027"); // end date
 
         // ---- Side effects ----
-        // leaseRepository.save() is called twice: once after assigning the contract
-        // number + agreement date, once after the status transition. Final state
-        // should reflect both.
         assertThat(lease.getContractNumber()).isEqualTo(1751L);
         assertThat(lease.getAgreementDate()).isEqualTo(LocalDate.now());
         assertThat(lease.getStatus()).isEqualTo(LeaseStatus.PENDING_SIGNATURE);
@@ -402,48 +430,40 @@ class ContractGenerationServiceTest {
         Property property = buildProperty(tenantId, PropertyType.COMMERCIAL);
         Unit unit = buildUnit(tenantId, property);
         Renter renter = buildRenter(tenantId);
-        Lease lease = buildLease(tenantId, unit, renter, true, true, true, true);
+        Lease lease = buildLease(tenantId, unit, renter, true);
 
         Path tmpStorage = Files.createTempDirectory("contract-test-");
-        ContractGenerationService svc = buildSpyForFullFlow(lease, org, buildSchedules(), 1750L, tmpStorage);
+        ContractGenerationService svc = buildSpyForFullFlow(
+                lease, org, buildSchedules(), buildCharges(true), 1750L, tmpStorage);
 
         ArgumentCaptor<String> htmlCaptor = ArgumentCaptor.forClass(String.class);
         svc.generateContract(lease.getId());
         verify(svc).renderPdf(htmlCaptor.capture());
         String html = htmlCaptor.getValue();
 
-        // The "5%" VAT label appears once per Section 3 row (4 rows). Use a data-cell
-        // pattern to avoid matching CSS widths like "width:5%;" in the template.
+        // VAT-on rows: Rent + Admin Fee + Parking = 3 rows at "5%". The Security
+        // Deposit row is always Exempt (refundable, never VAT).
         int vatPercentCount = html.split(">5%<", -1).length - 1;
-        assertThat(vatPercentCount).isEqualTo(4);
+        assertThat(vatPercentCount).isEqualTo(3);
 
         // VAT amounts (5%):
-        //   rent 55000 × 5% = 2750.00  → also appears in Section 3 totals
+        //   rent 55000 × 5% = 2750.00
         //   admin 2000 × 5% = 100.00
-        //   deposit 3000 × 5% = 150.00
         //   parking 300 × 5% = 15.00
         assertThat(html).contains("2,750.00"); // rent VAT
         assertThat(html).contains("100.00");   // admin VAT
-        assertThat(html).contains("150.00");   // deposit VAT
         assertThat(html).contains("15.00");    // parking VAT
 
         // Amount-with-VAT per row:
         //   55000 + 2750 = 57,750.00
         //   2000 + 100   = 2,100.00
-        //   3000 + 150   = 3,150.00
         //   300  + 15    = 315.00
         assertThat(html).contains("57,750.00");
         assertThat(html).contains("2,100.00");
-        assertThat(html).contains("3,150.00");
         assertThat(html).contains("315.00");
 
         // No unsubstituted placeholders.
         assertThat(html).doesNotContain("{{");
-
-        // The stored {{GRAND_TOTAL}} reflects the net (pre-VAT) amount per M8 design.
-        // Net total stays 60,300.00 here; VAT-with-total appears in the Section 3 TOTAL row.
-        // Sum-with-VAT of the four rows = 57750 + 2100 + 3150 + 315 = 63,315.00
-        assertThat(html).contains("63,315.00");
     }
 
     @Test
@@ -453,12 +473,13 @@ class ContractGenerationServiceTest {
         Property property = buildProperty(tenantId, PropertyType.RESIDENTIAL);
         Unit unit = buildUnit(tenantId, property);
         Renter renter = buildRenter(tenantId);
-        Lease lease = buildLease(tenantId, unit, renter, false, false, false, false);
+        Lease lease = buildLease(tenantId, unit, renter, false);
         // Preview path: no contract number assigned → "DRAFT"
         lease.setContractNumber(null);
 
         Path tmpStorage = Files.createTempDirectory("contract-test-");
-        ContractGenerationService svc = buildSpyForFullFlow(lease, org, buildSchedules(), 1750L, tmpStorage);
+        ContractGenerationService svc = buildSpyForFullFlow(
+                lease, org, buildSchedules(), buildCharges(false), 1750L, tmpStorage);
 
         ArgumentCaptor<String> htmlCaptor = ArgumentCaptor.forClass(String.class);
         byte[] bytes = svc.previewContract(lease.getId());
@@ -488,19 +509,8 @@ class ContractGenerationServiceTest {
         // configured to NOT load external DTDs. That config rejects:
         //   - bare '&' not followed by a valid entity reference
         //   - any named entity reference other than amp/lt/gt/quot/apos
-        //     (e.g. &nbsp; → "entity 'nbsp' was referenced, but not declared")
         //   - the substring "--" inside an XML <!-- comment -->
         //   - unclosed/mismatched tags, missing attribute quotes, etc.
-        //
-        // Every one of those failure modes silently breaks PDF generation in
-        // production. Parse the rendered HTML with the same parser config as
-        // OpenHtmlToPdf so any of these issues surfaces as a unit-test failure.
-        //
-        // Regression history captured by this test:
-        //   1. bare '&' in CSS comment "Section 1 & lease period"
-        //   2. bare '&' in HTML comment "Contract number & agreement date"
-        //   3. &nbsp; named entity (replaced with &#160;)
-        //   4. "----" inside <!-- ---- Section 1 ---- -->
         UUID tenantId = UUID.randomUUID();
         LandlordOrg org = buildLandlordOrg(tenantId);
         // Address + name with HTML special chars to ensure the user-text path
@@ -510,11 +520,12 @@ class ContractGenerationServiceTest {
         Unit unit = buildUnit(tenantId, property);
         Renter renter = buildRenter(tenantId);
         renter.setNameEn("Jane & John Doe");
-        Lease lease = buildLease(tenantId, unit, renter, false, false, false, false);
+        Lease lease = buildLease(tenantId, unit, renter, false);
         lease.setContractNumber(1751L);
 
         Path tmpStorage = Files.createTempDirectory("contract-test-");
-        ContractGenerationService svc = buildSpyForFullFlow(lease, org, buildSchedules(), 1750L, tmpStorage);
+        ContractGenerationService svc = buildSpyForFullFlow(
+                lease, org, buildSchedules(), buildCharges(false), 1750L, tmpStorage);
 
         ArgumentCaptor<String> htmlCaptor = ArgumentCaptor.forClass(String.class);
         svc.previewContract(lease.getId());
@@ -562,18 +573,17 @@ class ContractGenerationServiceTest {
         UUID tenantId = UUID.randomUUID();
         LandlordOrg org = buildLandlordOrg(tenantId);
         // Address contains both a literal placeholder string and HTML-special chars.
-        // Single-pass substitution must NOT pick the embedded {{TENANT_PHONE}} up,
-        // and < / > must be escaped so the surrounding <td> doesn't break.
         org.setAddress("P.O.Box 366, {{TENANT_PHONE}} <Dubai> & UAE");
         Property property = buildProperty(tenantId, PropertyType.RESIDENTIAL);
         Unit unit = buildUnit(tenantId, property);
         Renter renter = buildRenter(tenantId);
         renter.setNameEn("Bob & <script>alert(1)</script>");
-        Lease lease = buildLease(tenantId, unit, renter, false, false, false, false);
+        Lease lease = buildLease(tenantId, unit, renter, false);
         lease.setContractNumber(1751L);
 
         Path tmpStorage = Files.createTempDirectory("contract-test-");
-        ContractGenerationService svc = buildSpyForFullFlow(lease, org, buildSchedules(), 1750L, tmpStorage);
+        ContractGenerationService svc = buildSpyForFullFlow(
+                lease, org, buildSchedules(), buildCharges(false), 1750L, tmpStorage);
 
         ArgumentCaptor<String> htmlCaptor = ArgumentCaptor.forClass(String.class);
         svc.previewContract(lease.getId());

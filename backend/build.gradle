@@ -42,6 +42,12 @@ dependencies {
 	implementation 'com.azure:azure-storage-blob:12.29.0'
 	implementation 'com.azure:azure-ai-openai:1.0.0-beta.13'
 	implementation 'com.azure:azure-communication-email:1.0.9'
+	// OkHttp-backed Azure HTTP client. The default azure-core-http-netty client
+	// is not safe for repeated/concurrent sync calls — it throws
+	// "IllegalStateException: channel not registered to an event loop" on
+	// connection cleanup, which broke bulk cheque OCR. We set this client
+	// explicitly on the OpenAIClientBuilder (see AzureOpenAIClientConfig).
+	implementation 'com.azure:azure-core-http-okhttp:1.12.10'
 	implementation 'org.apache.poi:poi-ooxml:5.3.0'
 	implementation 'com.bucket4j:bucket4j-core:8.10.1'
 	implementation 'org.springframework.boot:spring-boot-starter-cache'

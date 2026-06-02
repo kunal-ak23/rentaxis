@@ -181,6 +181,7 @@
       "fieldBankName": "اسم البنك",
       "fieldPayerName": "اسم الدافع",
       "fieldChequeDate": "تاريخ الشيك",
+      "fieldAmount": "المبلغ (درهم)",
       "back": "رجوع",
       "next": "التالي",
       "useValues": "استخدام هذه القيم",
@@ -488,6 +489,7 @@
     "colBank": "البنك",
     "colPayer": "الساحب",
     "colChequeDate": "تاريخ الشيك",
+    "colAmount": "المبلغ",
     "colInstallment": "القسط",
     "pickInstallment": "اختر القسط",
     "pinRow": "تثبيت / إلغاء تثبيت التعيين",
@@ -496,7 +498,8 @@
     "approveAll": "اعتماد الكل ({ready}/{total})",
     "rowConflictError": "تعذر حفظ بعض الصفوف (تعارض). أعد التحميل وحاول مجددًا.",
     "networkError": "خطأ في الشبكة. يرجى المحاولة مرة أخرى.",
-    "genericError": "تعذر الحفظ. حاول مرة أخرى."
+    "genericError": "تعذر الحفظ. حاول مرة أخرى.",
+    "chequeMismatch": "شيك {cheque} ≠ قسط {installment}"
   },
   "Staff": {
     "title": "إدارة الموظفين",

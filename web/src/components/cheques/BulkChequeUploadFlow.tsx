@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { Camera, Loader2, X, Check, AlertTriangle, Trash2, Pin } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { formatCurrency, formatDate } from "@/lib/format";
 import { autoMapChequesToSchedules } from "./autoMapChequesToSchedules";
 import { useBulkChequeExtract, buildItemsFromFiles, type BulkExtractItem } from "./useBulkChequeExtract";
 import DueDateDelta from "@/components/payments/DueDateDelta";
@@ -14,6 +15,9 @@ type Schedule = {
   dueDate: string;
   amount: string | number;
   status: string; // "PENDING" only enters the dropdown
+  isCharge?: boolean;
+  isSecurityDeposit?: boolean;
+  isBookingDeposit?: boolean;
 };
 
 type Props = {
@@ -29,6 +33,7 @@ type RowState = {
   bankName: string;
   payerName: string;
   chequeDate: string | null;
+  amount: number | null;
   scheduleId: string | null;
   pinned: boolean;
 };
@@ -149,13 +154,15 @@ export default function BulkChequeUploadFlow({ leaseId, schedules, onSuccess, on
         bankName: ex?.bankName ?? "",
         payerName: ex?.payerName ?? "",
         chequeDate: ex?.chequeDate ?? null,
+        amount: ex?.amount ?? null,
         scheduleId: null,
         pinned: false,
       };
     });
+    const rentSchedules = pendingSchedules.filter(s => !s.isCharge && !s.isSecurityDeposit && !s.isBookingDeposit);
     const map = autoMapChequesToSchedules(
       initialRows.map(r => ({ id: r.itemId, chequeDate: r.chequeDate, pinned: r.pinned, assignedScheduleId: r.scheduleId })),
-      pendingSchedules.map(s => ({ id: s.id, dueDate: s.dueDate }))
+      rentSchedules.map(s => ({ id: s.id, dueDate: s.dueDate }))
     );
     setRows(initialRows.map(r => ({ ...r, scheduleId: map.get(r.itemId) ?? null })));
     setStep(3);
@@ -166,9 +173,10 @@ export default function BulkChequeUploadFlow({ leaseId, schedules, onSuccess, on
       const next = prev.map(r => (r.itemId === itemId ? { ...r, ...patch } : r));
       // If this was a non-pin date change, re-run auto-map for non-pinned rows.
       if ("chequeDate" in patch && !next.find(r => r.itemId === itemId)?.pinned) {
+        const rentSchedules = pendingSchedules.filter(s => !s.isCharge && !s.isSecurityDeposit && !s.isBookingDeposit);
         const map = autoMapChequesToSchedules(
           next.map(r => ({ id: r.itemId, chequeDate: r.chequeDate, pinned: r.pinned, assignedScheduleId: r.scheduleId })),
-          pendingSchedules.map(s => ({ id: s.id, dueDate: s.dueDate }))
+          rentSchedules.map(s => ({ id: s.id, dueDate: s.dueDate }))
         );
         return next.map(r => (r.pinned ? r : { ...r, scheduleId: map.get(r.itemId) ?? null }));
       }
@@ -202,7 +210,17 @@ export default function BulkChequeUploadFlow({ leaseId, schedules, onSuccess, on
       if (r.chequeNumber.trim()) numberSeen.set(r.chequeNumber.trim(), (numberSeen.get(r.chequeNumber.trim()) ?? 0) + 1);
     }
     for (const v of numberSeen.values()) if (v > 1) duplicateNumber += v;
-    const ready = rows.length - needsDate - noSchedule - needsBank - duplicateNumber;
+    // A row is "ready" only if it individually passes every check. The bucket
+    // counts above OVERLAP (one empty row needs date AND bank AND installment),
+    // so `total - sum(buckets)` over-subtracts and can even go negative — count
+    // the genuinely-complete rows directly instead.
+    let ready = 0;
+    for (const r of rows) {
+      const num = r.chequeNumber.trim();
+      if (r.chequeDate && r.scheduleId && r.bankName.trim() && num && (numberSeen.get(num) ?? 0) === 1) {
+        ready++;
+      }
+    }
     return { needsDate, noSchedule, needsBank, duplicateNumber, ready };
   }, [rows]);
 
@@ -357,6 +375,7 @@ export default function BulkChequeUploadFlow({ leaseId, schedules, onSuccess, on
                     <th>{t("colBank")}</th>
                     <th>{t("colPayer")}</th>
                     <th>{t("colChequeDate")}</th>
+                    <th>{t("colAmount")}</th>
                     <th>{t("colInstallment")}</th>
                     <th>&#916;</th>
                     <th></th>
@@ -414,6 +433,14 @@ export default function BulkChequeUploadFlow({ leaseId, schedules, onSuccess, on
                           />
                         </td>
                         <td className="pr-2">
+                          <span className="tabular-nums">{row.amount != null ? formatCurrency(row.amount) : "—"}</span>
+                          {sched && row.amount != null && Math.round(row.amount * 100) !== Math.round(Number(sched.amount) * 100) && (
+                            <span className="ml-2 inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-800">
+                              {t("chequeMismatch", { cheque: formatCurrency(row.amount), installment: formatCurrency(Number(sched.amount)) })}
+                            </span>
+                          )}
+                        </td>
+                        <td className="pr-2">
                           <select
                             value={row.scheduleId ?? ""}
                             onChange={e => pickSchedule(row.itemId, e.target.value || null)}
@@ -424,7 +451,7 @@ export default function BulkChequeUploadFlow({ leaseId, schedules, onSuccess, on
                               .filter(s => !usedSchedIds.has(s.id) || s.id === row.scheduleId)
                               .map(s => (
                                 <option key={s.id} value={s.id}>
-                                  #{s.installmentNumber} · {s.dueDate}
+                                  #{s.installmentNumber} · {formatDate(s.dueDate)}
                                 </option>
                               ))}
                           </select>

@@ -43,6 +43,16 @@ public class PaymentSchedule extends BaseTenantEntity {
     @Column(nullable = false)
     private BigDecimal amount;
 
+    /**
+     * Authoritative VAT amount baked into {@link #amount} at generation time, in
+     * the same currency. Recorded per-component so the credit-leg VAT stamped at
+     * clear time matches exactly what was billed (rent VAT is inclusive,
+     * per-installment charge VAT is additive). Zero for rows that carry no VAT
+     * (e.g. the refundable security deposit, booking deposits).
+     */
+    @Column(name = "vat_amount", nullable = false)
+    private BigDecimal vatAmount = BigDecimal.ZERO;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private PaymentStatus status = PaymentStatus.PENDING;
@@ -90,4 +100,10 @@ public class PaymentSchedule extends BaseTenantEntity {
 
     @Column(name = "is_booking_deposit", nullable = false)
     private boolean isBookingDeposit = false;
+
+    @Column(name = "is_security_deposit", nullable = false)
+    private boolean isSecurityDeposit = false;
+
+    @Column(name = "is_charge", nullable = false)
+    private boolean isCharge = false;
 }

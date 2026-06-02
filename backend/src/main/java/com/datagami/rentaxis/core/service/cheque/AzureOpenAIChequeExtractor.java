@@ -12,6 +12,8 @@ import com.azure.ai.openai.models.ChatMessageTextContentItem;
 import com.azure.ai.openai.models.ChatRequestMessage;
 import com.azure.ai.openai.models.ChatRequestSystemMessage;
 import com.azure.ai.openai.models.ChatRequestUserMessage;
+import com.azure.core.exception.HttpResponseException;
+import com.azure.core.exception.ResourceNotFoundException;
 import com.azure.core.util.BinaryData;
 import com.datagami.rentaxis.api.dto.ExtractedChequeDTO;
 import com.datagami.rentaxis.core.config.AzureOpenAIConfig;
@@ -20,6 +22,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import lombok.extern.slf4j.Slf4j;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -33,6 +36,7 @@ public class AzureOpenAIChequeExtractor implements ChequeExtractor {
             Return only JSON matching the provided schema. Use null when a field is unreadable.
             chequeDate must be ISO-8601 yyyy-MM-dd. confidence must be HIGH, MEDIUM, or LOW.
             Add short warnings for obscured, missing, or uncertain fields.
+            amount is the numeric cheque value from the figures (AED) box; cross-check it against the amount in words. Return a plain number with no thousands separators or currency symbol. Use null if unreadable.
             """;
 
     private static final String SCHEMA = """
@@ -44,13 +48,14 @@ public class AzureOpenAIChequeExtractor implements ChequeExtractor {
                 "bankName": { "type": ["string", "null"] },
                 "payerName": { "type": ["string", "null"] },
                 "chequeDate": { "type": ["string", "null"] },
+                "amount": { "type": ["number", "null"] },
                 "confidence": { "type": "string", "enum": ["HIGH", "MEDIUM", "LOW"] },
                 "warnings": {
                   "type": "array",
                   "items": { "type": "string" }
                 }
               },
-              "required": ["chequeNumber", "bankName", "payerName", "chequeDate", "confidence", "warnings"]
+              "required": ["chequeNumber", "bankName", "payerName", "chequeDate", "amount", "confidence", "warnings"]
             }
             """;
 
@@ -109,7 +114,7 @@ public class AzureOpenAIChequeExtractor implements ChequeExtractor {
                                 .setSchema(BinaryData.fromString(SCHEMA))
                 ));
 
-        ChatCompletions completions = openAIClient.getChatCompletions(config.getDeployment(), options);
+        ChatCompletions completions = callWithTransientRetry(options);
         if (completions == null || completions.getChoices() == null || completions.getChoices().isEmpty()
                 || completions.getChoices().get(0).getMessage() == null) {
             return null;
@@ -117,7 +122,73 @@ public class AzureOpenAIChequeExtractor implements ChequeExtractor {
         return completions.getChoices().get(0).getMessage().getContent();
     }
 
-    private ExtractionResult parseResponse(String content) {
+    /**
+     * Calls the Azure OpenAI SDK with up to 4 attempts, retrying only on transient
+     * errors: Azure rate limiting (HTTP 429) and Netty channel-registration blips
+     * (IllegalStateException / "channel not registered to an event loop"). With the
+     * OkHttp client the Netty blip should no longer occur; 429 under bulk load is
+     * the main case. Non-transient exceptions such as {@link ResourceNotFoundException}
+     * (bad deployment name, auth) are rethrown immediately so the caller's
+     * @CircuitBreaker can register them.
+     */
+    private ChatCompletions callWithTransientRetry(ChatCompletionsOptions options) {
+        final int maxAttempts = 4;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                return openAIClient.getChatCompletions(config.getDeployment(), options);
+            } catch (RuntimeException ex) {
+                if (!isTransient(ex)) {
+                    throw ex;
+                }
+                if (attempt == maxAttempts) {
+                    log.warn("Cheque OCR SDK call failed after {} attempts (transient), rethrowing: {}",
+                            maxAttempts, ex.getMessage());
+                    throw ex;
+                }
+                long backoffMs = attempt * 500L;
+                log.debug("Cheque OCR SDK transient error on attempt {}/{}, retrying in {}ms: {}",
+                        attempt, maxAttempts, backoffMs, ex.getMessage());
+                try {
+                    Thread.sleep(backoffMs);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw ex;
+                }
+            }
+        }
+        // unreachable — loop always returns or throws
+        throw new IllegalStateException("callWithTransientRetry: unexpected loop exit");
+    }
+
+    /**
+     * Returns true iff the exception is a known transient Netty channel-registration
+     * failure that can safely be retried.
+     */
+    private static boolean isTransient(RuntimeException ex) {
+        if (ex instanceof ResourceNotFoundException) {
+            return false;
+        }
+        // Azure OpenAI rate limiting (HTTP 429) — recovers on retry with backoff.
+        if (ex instanceof HttpResponseException hre
+                && hre.getResponse() != null && hre.getResponse().getStatusCode() == 429) {
+            return true;
+        }
+        return containsTransientMessage(ex);
+    }
+
+    private static boolean containsTransientMessage(Throwable t) {
+        if (t == null) return false;
+        String msg = t.getMessage();
+        if (msg != null && (msg.contains("channel not registered to an event loop"))) {
+            return true;
+        }
+        if (t instanceof IllegalStateException) {
+            return true;
+        }
+        return containsTransientMessage(t.getCause());
+    }
+
+    ExtractionResult parseResponse(String content) {
         try {
             JsonNode root = objectMapper.readTree(content);
             List<String> warnings = new ArrayList<>();
@@ -132,6 +203,11 @@ public class AzureOpenAIChequeExtractor implements ChequeExtractor {
                 chequeDate = LocalDate.parse(root.get("chequeDate").asText());
             }
 
+            BigDecimal amount = null;
+            if (root.hasNonNull("amount")) {
+                amount = new BigDecimal(root.get("amount").asText());
+            }
+
             ExtractedChequeDTO.Confidence confidence = ExtractedChequeDTO.Confidence.MEDIUM;
             if (root.hasNonNull("confidence")) {
                 confidence = ExtractedChequeDTO.Confidence.valueOf(root.get("confidence").asText().toUpperCase());
@@ -142,6 +218,7 @@ public class AzureOpenAIChequeExtractor implements ChequeExtractor {
                     textOrNull(root, "bankName"),
                     textOrNull(root, "payerName"),
                     chequeDate,
+                    amount,
                     confidence
             );
             return new ExtractionResult(dto, warnings);

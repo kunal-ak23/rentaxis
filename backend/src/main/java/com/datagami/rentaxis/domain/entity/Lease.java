@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.domain.entity;
 
+import com.datagami.rentaxis.domain.entity.enums.InstallmentDistribution;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.PaymentMethod;
 import jakarta.persistence.*;
@@ -54,6 +55,10 @@ public class Lease extends BaseTenantEntity {
     private Integer paymentTerms;
 
     @Enumerated(EnumType.STRING)
+    @Column(name = "installment_distribution", nullable = false, length = 30)
+    private InstallmentDistribution installmentDistribution = InstallmentDistribution.LAST_LARGER;
+
+    @Enumerated(EnumType.STRING)
     @Column(name = "payment_method", length = 20)
     private PaymentMethod paymentMethod = PaymentMethod.CHEQUE;
 
@@ -70,23 +75,8 @@ public class Lease extends BaseTenantEntity {
     @Column(name = "agreement_date")
     private LocalDate agreementDate;
 
-    @Column(name = "admin_fee", nullable = false)
-    private BigDecimal adminFee = BigDecimal.ZERO;
-
-    @Column(name = "parking_remote_fee", nullable = false)
-    private BigDecimal parkingRemoteFee = BigDecimal.ZERO;
-
     @Column(name = "rent_vat_applicable", nullable = false)
     private boolean rentVatApplicable = false;
-
-    @Column(name = "admin_fee_vat_applicable", nullable = false)
-    private boolean adminFeeVatApplicable = false;
-
-    @Column(name = "security_deposit_vat_applicable", nullable = false)
-    private boolean securityDepositVatApplicable = false;
-
-    @Column(name = "parking_remote_vat_applicable", nullable = false)
-    private boolean parkingRemoteVatApplicable = false;
 
     @Version
     private Long version;

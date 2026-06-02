@@ -71,6 +71,7 @@ class PaymentScheduleServiceVatTest {
 
         service = new PaymentScheduleService(
                 paymentScheduleRepository,
+                mock(com.datagami.rentaxis.domain.repository.LeaseChargeRepository.class),
                 mock(com.datagami.rentaxis.domain.repository.LeaseRepository.class),
                 accountRepository,
                 financialTransactionService,
@@ -94,7 +95,11 @@ class PaymentScheduleServiceVatTest {
 
     @Test
     void clearPayment_withRentVatApplicable_stampsVatFieldsOnCreditTxn_57750() {
+        // VAT is now sourced from the authoritative stored vatAmount (B1), set at
+        // generation time. For an all-rent VAT-inclusive cheque that equals
+        // gross*5/105 = 57750*5/105 = 2750.00.
         PaymentSchedule payment = buildDepositedPayment(new BigDecimal("57750.00"), true);
+        payment.setVatAmount(new BigDecimal("2750.00"));
         stubAccountMapping();
         when(paymentScheduleRepository.findById(payment.getId())).thenReturn(Optional.of(payment));
         when(paymentScheduleRepository.save(any(PaymentSchedule.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -111,8 +116,9 @@ class PaymentScheduleServiceVatTest {
 
     @Test
     void clearPayment_withRentVatApplicable_roundsHalfUp_13750() {
-        // 13750 * 5 / 105 = 654.7619... → HALF_UP → 654.76
+        // 13750 * 5 / 105 = 654.7619... → HALF_UP → 654.76 (stored at generation).
         PaymentSchedule payment = buildDepositedPayment(new BigDecimal("13750.00"), true);
+        payment.setVatAmount(new BigDecimal("654.76"));
         stubAccountMapping();
         when(paymentScheduleRepository.findById(payment.getId())).thenReturn(Optional.of(payment));
         when(paymentScheduleRepository.save(any(PaymentSchedule.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -146,6 +152,47 @@ class PaymentScheduleServiceVatTest {
         // Existing fields unaffected.
         assertThat(credit.getCredit()).isEqualByComparingTo(new BigDecimal("55000.00"));
         assertThat(credit.getDebit()).isEqualByComparingTo(BigDecimal.ZERO);
+    }
+
+    @Test
+    void clearPayment_stampsStoredVatAmount_evenWhenRentVatExempt_B1() {
+        // B1: rent is VAT-EXEMPT, but the row carries a stored vatAmount from a
+        // VAT-applicable per-installment charge folded into the cheque. The
+        // credit txn must record THAT stored vatAmount (charge VAT only), NOT
+        // gross*5/105 and NOT zero.
+        PaymentSchedule payment = buildDepositedPayment(new BigDecimal("5210.00"), false);
+        payment.setVatAmount(new BigDecimal("10.00")); // charge VAT (200 * 0.05)
+        stubAccountMapping();
+        when(paymentScheduleRepository.findById(payment.getId())).thenReturn(Optional.of(payment));
+        when(paymentScheduleRepository.save(any(PaymentSchedule.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.clearPayment(payment.getId(), new UpdatePaymentStatusDTO());
+
+        FinancialTransaction credit = captureCreditTransaction();
+        assertThat(credit.isVatApplicable()).isTrue();
+        assertThat(credit.getVatRate()).isEqualByComparingTo(new BigDecimal("5.00"));
+        assertThat(credit.getVatAmount()).isEqualByComparingTo(new BigDecimal("10.00"));
+        assertThat(credit.getGrossAmount()).isEqualByComparingTo(new BigDecimal("5210.00"));
+        assertThat(credit.getNetAmount()).isEqualByComparingTo(new BigDecimal("5200.00"));
+    }
+
+    @Test
+    void clearPayment_zeroStoredVatAmount_leavesVatDefaults_evenWhenRentVatApplicable_B1() {
+        // B1: even if the lease's rent VAT toggle is on, a row with zero stored
+        // vatAmount (e.g. a refundable security-deposit row) records NO VAT.
+        PaymentSchedule payment = buildDepositedPayment(new BigDecimal("15000.00"), true);
+        payment.setVatAmount(BigDecimal.ZERO);
+        stubAccountMapping();
+        when(paymentScheduleRepository.findById(payment.getId())).thenReturn(Optional.of(payment));
+        when(paymentScheduleRepository.save(any(PaymentSchedule.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.clearPayment(payment.getId(), new UpdatePaymentStatusDTO());
+
+        FinancialTransaction credit = captureCreditTransaction();
+        assertThat(credit.isVatApplicable()).isFalse();
+        assertThat(credit.getVatAmount()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(credit.getGrossAmount()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(credit.getNetAmount()).isEqualByComparingTo(BigDecimal.ZERO);
     }
 
     // --- Helpers ---------------------------------------------------------

@@ -3,15 +3,16 @@ package com.datagami.rentaxis.api;
 import com.datagami.rentaxis.api.dto.AgingReportDTO;
 import com.datagami.rentaxis.api.dto.MarkFailedRequestDTO;
 import com.datagami.rentaxis.api.dto.MarkFailedResponseDTO;
-import com.datagami.rentaxis.api.dto.PaymentPreviewDTO;
 import com.datagami.rentaxis.api.dto.PaymentScheduleDTO;
 import com.datagami.rentaxis.api.dto.LeasePaymentStatsDTO;
 import com.datagami.rentaxis.api.dto.PaymentSummaryDTO;
 import com.datagami.rentaxis.api.dto.UpdatePaymentStatusDTO;
+import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.core.service.MarkFailedResult;
 import com.datagami.rentaxis.core.service.PaymentScheduleService;
 import com.datagami.rentaxis.core.service.RentReceiptService;
 import com.datagami.rentaxis.domain.entity.PaymentPenalty;
+import com.datagami.rentaxis.domain.entity.enums.InstallmentDistribution;
 import com.datagami.rentaxis.domain.entity.enums.PaymentStatus;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +22,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -29,6 +31,7 @@ import org.springframework.web.bind.annotation.*;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -145,16 +148,34 @@ public class PaymentScheduleController {
                 .body(pdf);
     }
 
+    /**
+     * Previews an installment schedule for a prospective lease. Distribution-cap
+     * violations ({@link BusinessRuleViolationException}) are surfaced as HTTP 422
+     * with a flat {@code {"error": msg}} body so the wizard can render the message
+     * inline without treating it as a generic 400 error.
+     *
+     * <p>All other handler methods in this controller (collect, deposit, clear,
+     * replace, receipt, …) do <em>not</em> catch {@code BusinessRuleViolationException}
+     * here; they continue to fall through to {@link GlobalExceptionHandler}, which
+     * returns 400 as expected.
+     */
     @GetMapping("/preview")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
-    public ResponseEntity<PaymentPreviewDTO> previewSchedule(
+    public ResponseEntity<?> previewSchedule(
             @RequestParam UUID propertyId,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
             @RequestParam BigDecimal monthlyRent,
             @RequestParam(required = false) Integer paymentTerms,
-            @RequestParam(required = false) BigDecimal depositAmount) {
-        return ResponseEntity.ok(paymentScheduleService.previewSchedule(propertyId, startDate, endDate, monthlyRent, paymentTerms, depositAmount));
+            @RequestParam(required = false) BigDecimal depositAmount,
+            @RequestParam(required = false) InstallmentDistribution strategy) {
+        try {
+            return ResponseEntity.ok(paymentScheduleService.previewSchedule(
+                    propertyId, startDate, endDate, monthlyRent, paymentTerms, depositAmount, strategy));
+        } catch (BusinessRuleViolationException ex) {
+            return ResponseEntity.status(HttpStatusCode.valueOf(422))
+                    .body(Map.of("error", ex.getMessage()));
+        }
     }
 
 }

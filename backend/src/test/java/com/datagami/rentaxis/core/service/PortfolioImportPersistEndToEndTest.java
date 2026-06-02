@@ -50,6 +50,7 @@ class PortfolioImportPersistEndToEndTest {
     @Mock LeaseRepository leaseRepository;
     @Mock PaymentScheduleService paymentScheduleService;
     @Mock PaymentScheduleRepository paymentScheduleRepository;
+    @Mock LeaseChargeRepository leaseChargeRepository;
     @Mock ImportJobRepository importJobRepository;
 
     PortfolioImportPersistService service;
@@ -59,13 +60,14 @@ class PortfolioImportPersistEndToEndTest {
         service = new PortfolioImportPersistService(
                 propertyRepository, buildingRepository, unitRepository,
                 renterRepository, leaseRepository, paymentScheduleService,
-                paymentScheduleRepository, importJobRepository);
+                paymentScheduleRepository, leaseChargeRepository, importJobRepository);
         lenient().when(propertyRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(buildingRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(unitRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(renterRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(leaseRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(paymentScheduleRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        lenient().when(leaseChargeRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(importJobRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(paymentScheduleService.generateScheduleForLease(any()))
                 .thenAnswer(inv -> Collections.emptyList());
@@ -103,15 +105,19 @@ class PortfolioImportPersistEndToEndTest {
         assertThat(unitCap.getAllValues())
                 .anyMatch(u -> u.getStatus() == UnitStatus.OCCUPIED);
 
-        // Booking deposit + Cheques rows (scenarios 2 and 4).
+        // Booking deposit + Cheques rows (scenarios 2 and 4) + security-deposit rows.
         ArgumentCaptor<PaymentSchedule> scheduleCap = ArgumentCaptor.forClass(PaymentSchedule.class);
         verify(paymentScheduleRepository, atLeastOnce()).save(scheduleCap.capture());
         long bookingCount = scheduleCap.getAllValues().stream()
                 .filter(PaymentSchedule::isBookingDeposit).count();
         long chequeRowsFromSheet = scheduleCap.getAllValues().stream()
-                .filter(p -> !p.isBookingDeposit()).count();
+                .filter(p -> !p.isBookingDeposit() && !p.isSecurityDeposit() && !p.isCharge()).count();
+        long securityDepositRows = scheduleCap.getAllValues().stream()
+                .filter(PaymentSchedule::isSecurityDeposit).count();
         assertThat(bookingCount).isEqualTo(1);
         assertThat(chequeRowsFromSheet).isEqualTo(4);  // 4 cheque rows for scenario 2
+        // Every scenario has a positive deposit → one SD schedule row each (5 leases).
+        assertThat(securityDepositRows).isEqualTo(5);
 
         // Counters serialized into the JSONB column.
         assertThat(job.getErrors()).startsWith("{");

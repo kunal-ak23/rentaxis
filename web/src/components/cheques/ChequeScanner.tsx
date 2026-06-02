@@ -77,6 +77,7 @@ export default function ChequeScanner({ onExtracted, disabled = false }: Props) 
         bankName: extracted.bankName,
         payerName: extracted.payerName,
         chequeDate: extracted.chequeDate,
+        amount: extracted.amount,
         confidence: extracted.confidence,
         imageUrl: image.url,
         imageBlobPath: image.blobPath,
@@ -230,6 +231,7 @@ function Step1Upload({
     t("fieldBankName"),
     t("fieldPayerName"),
     t("fieldChequeDate"),
+    t("fieldAmount"),
   ];
   return (
     <div className="grid gap-4 sm:grid-cols-[1fr_220px]">
@@ -309,6 +311,7 @@ function Step2Review({
             <FieldRow label={t("fieldBankName")} value={extracted.bankName} t={t} />
             <FieldRow label={t("fieldPayerName")} value={extracted.payerName} t={t} />
             <FieldRow label={t("fieldChequeDate")} value={extracted.chequeDate} t={t} />
+            <FieldRow label={t("fieldAmount")} value={extracted.amount != null ? String(extracted.amount) : null} t={t} />
             {extracted.confidence === "LOW" && (
               <div className="rounded border border-yellow-300 bg-yellow-50 p-2 text-xs text-yellow-800">
                 <span className="inline-flex items-center gap-1">

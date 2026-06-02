@@ -34,6 +34,8 @@ public class PaymentScheduleDTO {
     private UUID replacedById;
     private String purposeLabel;
     private Boolean isBookingDeposit;
+    private Boolean isSecurityDeposit;
+    private Boolean isCharge;
     /** Per-row payment method — CHEQUE / BANK_TRANSFER / ONLINE / CASH. */
     private String paymentMethod;
 }

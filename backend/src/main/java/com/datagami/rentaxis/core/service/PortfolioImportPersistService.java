@@ -2,6 +2,7 @@ package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.dto.ImportErrorDTO;
 import com.datagami.rentaxis.api.dto.PortfolioImportJobDetailsDTO;
+import com.datagami.rentaxis.core.util.DateMath;
 import com.datagami.rentaxis.domain.entity.*;
 import com.datagami.rentaxis.domain.entity.enums.*;
 import com.datagami.rentaxis.domain.repository.*;
@@ -17,7 +18,6 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
-import java.time.temporal.ChronoUnit;
 import java.util.*;
 
 @Slf4j
@@ -32,6 +32,7 @@ public class PortfolioImportPersistService {
     private final LeaseRepository leaseRepository;
     private final PaymentScheduleService paymentScheduleService;
     private final PaymentScheduleRepository paymentScheduleRepository;
+    private final LeaseChargeRepository leaseChargeRepository;
     private final ImportJobRepository importJobRepository;
 
     private static final Set<String> VALID_BOOLS_TRUE = Set.of("true", "yes", "1");
@@ -232,17 +233,18 @@ public class PortfolioImportPersistService {
                 lease.setEjariNumber(ejariNumber);
             }
 
-            // ---- New lease-agreement fields (added 2026-05-02) ----
+            // ---- Lease-agreement fields ----
+            // AdminFee / ParkingRemoteFee columns now map to flexible LeaseCharge
+            // ONE_TIME rows (created after the lease is saved). Their VAT intent
+            // comes from the matching VAT columns if present, else the
+            // commercial default.
             BigDecimal adminFee = parseDecimalOrZero(cell(row, leaseHi, "AdminFee"));
             BigDecimal parkingRemoteFee = parseDecimalOrZero(cell(row, leaseHi, "ParkingRemoteFee"));
-            lease.setAdminFee(adminFee);
-            lease.setParkingRemoteFee(parkingRemoteFee);
 
             boolean commercialDefault = unit.getProperty().getType() == PropertyType.COMMERCIAL;
             lease.setRentVatApplicable(parseBoolOrDefault(cell(row, leaseHi, "RentVatApplicable"), commercialDefault));
-            lease.setAdminFeeVatApplicable(parseBoolOrDefault(cell(row, leaseHi, "AdminFeeVatApplicable"), commercialDefault));
-            lease.setSecurityDepositVatApplicable(parseBoolOrDefault(cell(row, leaseHi, "SecurityDepositVatApplicable"), commercialDefault));
-            lease.setParkingRemoteVatApplicable(parseBoolOrDefault(cell(row, leaseHi, "ParkingRemoteVatApplicable"), commercialDefault));
+            boolean adminFeeVat = parseBoolOrDefault(cell(row, leaseHi, "AdminFeeVatApplicable"), commercialDefault);
+            boolean parkingRemoteVat = parseBoolOrDefault(cell(row, leaseHi, "ParkingRemoteVatApplicable"), commercialDefault);
 
             String depMethod = cell(row, leaseHi, "DepositPaymentMethod").toUpperCase();
             if (!depMethod.isEmpty()) {
@@ -261,6 +263,34 @@ public class PortfolioImportPersistService {
 
             Lease savedLease = leaseRepository.save(lease);
             leasesCreated++;
+
+            // Map the fixed fee columns to flexible one-time charges.
+            if (adminFee.signum() > 0) {
+                saveImportCharge(savedLease, "Admin Fee", adminFee, adminFeeVat);
+            }
+            if (parkingRemoteFee.signum() > 0) {
+                saveImportCharge(savedLease, "Parking / Remote", parkingRemoteFee, parkingRemoteVat);
+            }
+
+            // One-time charge schedule rows (additive VAT) + the security
+            // deposit row (refundable, never VAT) — mirrors LeaseService.
+            if (adminFee.signum() > 0) {
+                saveChargeScheduleRow(savedLease, "Admin Fee",
+                        PaymentScheduleService.withVat(adminFee, adminFeeVat),
+                        PaymentScheduleService.vatOf(adminFee, adminFeeVat));
+                schedulesCreated++;
+            }
+            if (parkingRemoteFee.signum() > 0) {
+                saveChargeScheduleRow(savedLease, "Parking / Remote",
+                        PaymentScheduleService.withVat(parkingRemoteFee, parkingRemoteVat),
+                        PaymentScheduleService.vatOf(parkingRemoteFee, parkingRemoteVat));
+                schedulesCreated++;
+            }
+            if (savedLease.getDepositAmount() != null && savedLease.getDepositAmount().signum() > 0) {
+                paymentScheduleRepository.save(PaymentScheduleService
+                        .newSecurityDepositRow(savedLease, savedLease.getDepositAmount()));
+                schedulesCreated++;
+            }
 
             // Booking deposit: persist a PaymentSchedule row mirroring LeaseService.createDraftLease.
             // The Leases-sheet validator enforces all-or-nothing across the four BookingDeposit_*
@@ -318,10 +348,6 @@ public class PortfolioImportPersistService {
                 savedLease.setPaymentTerms(chequeRows.size());
                 savedLease = leaseRepository.save(savedLease);
 
-                boolean bundled = nz(savedLease.getAdminFee()).signum() > 0
-                        || nz(savedLease.getDepositAmount()).signum() > 0
-                        || nz(savedLease.getParkingRemoteFee()).signum() > 0;
-
                 for (ChequeRow ch : chequeRows) {
                     PaymentSchedule ps = new PaymentSchedule();
                     ps.setLease(savedLease);
@@ -338,11 +364,7 @@ public class PortfolioImportPersistService {
                             : (savedLease.getPaymentMethod() != null
                                     ? savedLease.getPaymentMethod().name() : "CHEQUE");
                     ps.setPaymentMethod(chMethod);
-                    String label = "RENT - " + ordinalOf(ch.installmentNo()) + " INSTALLMENT";
-                    if (ch.installmentNo() == 1 && bundled) {
-                        label += "/ADMIN/SD/REMOTE";
-                    }
-                    ps.setPurposeLabel(label);
+                    ps.setPurposeLabel("RENT - " + ordinalOf(ch.installmentNo()) + " INSTALLMENT");
                     paymentScheduleRepository.save(ps);
                 }
                 schedulesCreated += chequeRows.size();
@@ -436,16 +458,30 @@ public class PortfolioImportPersistService {
     private record ChequeRow(int installmentNo, LocalDate dueDate, LocalDate chequeOrPaymentDate,
                              String uniqueId, String bank, BigDecimal amount, String method) {}
 
-    private static BigDecimal nz(BigDecimal v) { return v == null ? BigDecimal.ZERO : v; }
+    /** Persist a one-time {@link LeaseCharge} row for an imported fee column. */
+    private void saveImportCharge(Lease lease, String name, BigDecimal amount, boolean vat) {
+        LeaseCharge charge = new LeaseCharge();
+        charge.setLease(lease);
+        charge.setTenantId(lease.getTenantId());
+        charge.setName(name);
+        charge.setAmount(amount);
+        charge.setVatApplicable(vat);
+        charge.setFrequency(ChargeFrequency.ONE_TIME);
+        leaseChargeRepository.save(charge);
+    }
+
+    /** Emit a one-time-charge schedule row (amount already VAT-adjusted; vat = additive VAT slice). */
+    private void saveChargeScheduleRow(Lease lease, String label, BigDecimal amount, BigDecimal vat) {
+        paymentScheduleRepository.save(
+                PaymentScheduleService.newOneTimeChargeRow(lease, label, amount, vat));
+    }
 
     /**
-     * End-date-inclusive month count. {@code MONTHS.between(2026-01-01, 2026-12-31)}
-     * is 11; admins entering a "1-year lease" with those dates expect 12, so we step
-     * end forward by one day before counting whole months. Floors at 1 to avoid
-     * divide-by-zero downstream.
+     * End-date-inclusive month count. Delegates to {@link DateMath#monthsInclusive}
+     * so there is a single definition shared with the lease scheduling path.
      */
     static long monthsInclusive(LocalDate startDate, LocalDate endDate) {
-        return Math.max(ChronoUnit.MONTHS.between(startDate, endDate.plusDays(1)), 1);
+        return DateMath.monthsInclusive(startDate, endDate);
     }
 
     /** Mirrors PaymentScheduleService.ordinalOf; duplicated locally to avoid widening visibility. */

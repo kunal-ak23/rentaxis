@@ -12,6 +12,7 @@ import com.datagami.rentaxis.domain.entity.*;
 import com.datagami.rentaxis.domain.entity.enums.DocumentType;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
+import com.datagami.rentaxis.domain.repository.LeaseChargeRepository;
 import com.datagami.rentaxis.domain.repository.LeaseDocumentRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.PaymentScheduleRepository;
@@ -64,6 +65,7 @@ public class ContractGenerationService {
     private final LandlordOrgRepository landlordOrgRepository;
     private final PaymentScheduleRepository paymentScheduleRepository;
     private final PaymentScheduleService paymentScheduleService;
+    private final LeaseChargeRepository leaseChargeRepository;
     private final ApplicationEventPublisher events;
 
     @Value("${rentaxis.contracts.storage-path:./data/contracts}")
@@ -80,12 +82,14 @@ public class ContractGenerationService {
                                      LandlordOrgRepository landlordOrgRepository,
                                      PaymentScheduleRepository paymentScheduleRepository,
                                      PaymentScheduleService paymentScheduleService,
+                                     LeaseChargeRepository leaseChargeRepository,
                                      ApplicationEventPublisher events) {
         this.leaseRepository = leaseRepository;
         this.leaseDocumentRepository = leaseDocumentRepository;
         this.landlordOrgRepository = landlordOrgRepository;
         this.paymentScheduleRepository = paymentScheduleRepository;
         this.paymentScheduleService = paymentScheduleService;
+        this.leaseChargeRepository = leaseChargeRepository;
         this.events = events;
     }
 
@@ -247,11 +251,12 @@ public class ContractGenerationService {
         String section3Total = buildSection3Total(lease);
         String section4Rows = buildSection4Rows(schedules);
 
-        // Grand total = rent + admin + deposit + parking
+        // Grand total = rent + deposit + sum of all flexible charges (face amounts).
         BigDecimal grandTotal = nz(lease.getRentAmount())
-                .add(nz(lease.getAdminFee()))
-                .add(nz(lease.getDepositAmount()))
-                .add(nz(lease.getParkingRemoteFee()));
+                .add(nz(lease.getDepositAmount()));
+        for (LeaseCharge c : leaseChargeRepository.findByLeaseId(lease.getId())) {
+            grandTotal = grandTotal.add(nz(c.getAmount()));
+        }
 
         String amountInWords = AmountInWordsUtil.toEnglishWords(grandTotal, "AED");
 
@@ -382,12 +387,13 @@ public class ContractGenerationService {
         BigDecimal totalVat = BigDecimal.ZERO;
         BigDecimal totalWithVat = BigDecimal.ZERO;
 
-        Object[][] rows = new Object[][]{
-                {nz(lease.getRentAmount()), lease.isRentVatApplicable()},
-                {nz(lease.getAdminFee()), lease.isAdminFeeVatApplicable()},
-                {nz(lease.getDepositAmount()), lease.isSecurityDepositVatApplicable()},
-                {nz(lease.getParkingRemoteFee()), lease.isParkingRemoteVatApplicable()}
-        };
+        List<Object[]> rows = new ArrayList<>();
+        rows.add(new Object[]{nz(lease.getRentAmount()), lease.isRentVatApplicable()});
+        // Security deposit is refundable, never VAT.
+        rows.add(new Object[]{nz(lease.getDepositAmount()), false});
+        for (LeaseCharge c : leaseChargeRepository.findByLeaseId(lease.getId())) {
+            rows.add(new Object[]{nz(c.getAmount()), c.isVatApplicable()});
+        }
         for (Object[] r : rows) {
             BigDecimal amt = (BigDecimal) r[0];
             boolean vat = (Boolean) r[1];
@@ -427,9 +433,11 @@ public class ContractGenerationService {
         int sNo = 1;
 
         sNo = appendSection3Row(sb, sNo, "Rent", lease.getRentAmount(), lease.isRentVatApplicable());
-        sNo = appendSection3Row(sb, sNo, "Admin Fee", lease.getAdminFee(), lease.isAdminFeeVatApplicable());
-        sNo = appendSection3Row(sb, sNo, "Security Deposit", lease.getDepositAmount(), lease.isSecurityDepositVatApplicable());
-        sNo = appendSection3Row(sb, sNo, "Parking Remote", lease.getParkingRemoteFee(), lease.isParkingRemoteVatApplicable());
+        // Security deposit is refundable and never carries VAT.
+        sNo = appendSection3Row(sb, sNo, "Security Deposit", lease.getDepositAmount(), false);
+        for (LeaseCharge c : leaseChargeRepository.findByLeaseId(lease.getId())) {
+            sNo = appendSection3Row(sb, sNo, c.getName(), c.getAmount(), c.isVatApplicable());
+        }
 
         return sb.toString();
     }
