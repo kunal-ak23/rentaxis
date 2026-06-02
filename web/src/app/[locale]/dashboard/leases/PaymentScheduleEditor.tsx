@@ -62,16 +62,25 @@ function normalizeMethod(m: string | null | undefined): PaymentMethod {
     return "CHEQUE";
 }
 
+function rowLabel(r: ScheduleRow): string {
+    if (r.purposeLabel) return r.purposeLabel;
+    if (r.isSecurityDeposit) return "Security Deposit";
+    if (r.isBookingDeposit) return "Booking Deposit";
+    if (r.isCharge) return "Charge";
+    return `Installment ${r.installmentNumber}`;
+}
+
 function clientValidate(rows: ScheduleRow[]): { ok: boolean; firstError?: string } {
     for (const r of rows) {
         const m = normalizeMethod(r.paymentMethod);
-        if (!r.dueDate) return { ok: false, firstError: `Row ${r.installmentNumber}: due date is required` };
+        const label = rowLabel(r);
+        if (!r.dueDate) return { ok: false, firstError: `${label}: due date is required` };
         if (r.amount == null || Number.isNaN(r.amount) || r.amount < 0)
-            return { ok: false, firstError: `Row ${r.installmentNumber}: amount must be a non-negative number` };
+            return { ok: false, firstError: `${label}: amount must be a non-negative number` };
         if (m === "CHEQUE" && (!r.chequeNumber || !r.chequeDate || !r.bankName))
-            return { ok: false, firstError: `Row ${r.installmentNumber}: cheque rows need cheque #, cheque date and bank` };
+            return { ok: false, firstError: `${label}: cheque rows need cheque #, cheque date and bank` };
         if ((m === "BANK_TRANSFER" || m === "ONLINE") && (!r.bankName || !r.chequeDate))
-            return { ok: false, firstError: `Row ${r.installmentNumber}: ${m === "ONLINE" ? "online" : "transfer"} rows need bank and date` };
+            return { ok: false, firstError: `${label}: ${m === "ONLINE" ? "online" : "transfer"} rows need bank and date` };
     }
     return { ok: true };
 }

@@ -337,7 +337,7 @@ export default function LeaseMetadataEditor({ lease, onSaved, className }: Props
                         <div className="flex items-center justify-between">
                             <h3 className="text-xs font-semibold">Other charges</h3>
                             <button type="button"
-                                onClick={() => setForm((prev) => ({ ...prev, charges: [...prev.charges, { name: "", amount: 0, vatApplicable: false, frequency: "ONE_TIME" as ChargeFrequency }] }))}
+                                onClick={() => setForm((prev) => ({ ...prev, charges: [...prev.charges, { name: "", amount: 0, vatApplicable: selectedUnit?.property?.type === "COMMERCIAL", frequency: "ONE_TIME" as ChargeFrequency }] }))}
                                 className="rounded border border-border px-2 py-1 text-xs">+ Add charge</button>
                         </div>
                         {form.charges.length === 0 && <p className="text-[11px] text-muted">No extra charges. Add admin fee, parking, maintenance, etc.</p>}

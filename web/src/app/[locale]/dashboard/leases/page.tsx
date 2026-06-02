@@ -34,12 +34,7 @@ type Lease = {
     hasContract: boolean;
     contractNumber?: number | null;
     agreementDate?: string | null;
-    adminFee?: number | null;
-    parkingRemoteFee?: number | null;
     rentVatApplicable?: boolean | null;
-    adminFeeVatApplicable?: boolean | null;
-    securityDepositVatApplicable?: boolean | null;
-    parkingRemoteVatApplicable?: boolean | null;
 };
 
 type Unit = {
@@ -142,14 +137,8 @@ export default function LeasesPage() {
         paymentMethod: "CHEQUE",
         depositPaymentMethod: "CHEQUE",
         paymentReferenceNumber: "",
-        // New fields for M11
         agreementDate: "",
-        adminFee: 0,
-        parkingRemoteFee: 0,
         rentVatApplicable: false,
-        adminFeeVatApplicable: false,
-        securityDepositVatApplicable: false,
-        parkingRemoteVatApplicable: false,
     });
 
     // Booking deposit section (collapsed by default)
@@ -336,8 +325,6 @@ export default function LeasesPage() {
                 monthlyRent: formData.rentAmount,
                 rentAmount: paymentPreview ? paymentPreview.totalAmount : formData.rentAmount,
                 agreementDate: formData.agreementDate || null,
-                adminFee: formData.adminFee || 0,
-                parkingRemoteFee: formData.parkingRemoteFee || 0,
             };
             // Include bookingDeposit if amount > 0
             if (bookingDeposit.amount > 0) {
@@ -366,9 +353,7 @@ export default function LeasesPage() {
                     unitId: "", renterId: "", startDate: "", endDate: "",
                     rentAmount: 0, depositAmount: 0, ejariNumber: "", paymentTerms: 1,
                     paymentMethod: "CHEQUE", depositPaymentMethod: "CHEQUE", paymentReferenceNumber: "",
-                    agreementDate: "", adminFee: 0, parkingRemoteFee: 0,
-                    rentVatApplicable: false, adminFeeVatApplicable: false,
-                    securityDepositVatApplicable: false, parkingRemoteVatApplicable: false,
+                    agreementDate: "", rentVatApplicable: false,
                 });
                 setBookingDeposit({ amount: 0, chequeNumber: "", chequeDate: "", bankName: "" });
                 setBookingDepositOpen(false);
@@ -470,15 +455,12 @@ export default function LeasesPage() {
 
     const handleUnitChange = (unitId: string) => {
         const selectedUnit = units.find(u => u.id === unitId);
-        // Auto-set VAT toggles if property is COMMERCIAL
+        // Auto-set VAT toggle if property is COMMERCIAL
         const isCommercial = selectedUnit?.property?.type === "COMMERCIAL";
         setFormData(prev => ({
             ...prev,
             unitId,
             rentVatApplicable: isCommercial,
-            adminFeeVatApplicable: isCommercial,
-            securityDepositVatApplicable: isCommercial,
-            parkingRemoteVatApplicable: isCommercial,
         }));
     };
 

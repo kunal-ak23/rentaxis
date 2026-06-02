@@ -143,7 +143,7 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
     };
 
     const updateCharge = (i: number, patch: Partial<ChargeRow>) =>
-        update({ charges: data.charges.map((c, j) => (j === i ? { ...c, ...patch } : c)) });
+        setData((prev) => ({ ...prev, charges: prev.charges.map((c, j) => (j === i ? { ...c, ...patch } : c)) }));
 
     // --- per-step validation -----------------------------------------------
     const stepError = (idx: number): string | null => {
@@ -380,7 +380,7 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                             <div className="flex items-center justify-between">
                                 <h3 className="text-xs font-semibold">Other charges</h3>
                                 <button type="button"
-                                    onClick={() => update({ charges: [...data.charges, { name: "", amount: 0, vatApplicable: isCommercial, frequency: "ONE_TIME" }] })}
+                                    onClick={() => setData((prev) => ({ ...prev, charges: [...prev.charges, { name: "", amount: 0, vatApplicable: isCommercial, frequency: "ONE_TIME" as ChargeFrequency }] }))}
                                     className="rounded border border-border px-2 py-1 text-xs">+ Add charge</button>
                             </div>
                             {data.charges.length === 0 && <p className="text-[11px] text-muted">No extra charges. Add admin fee, parking, maintenance, etc.</p>}
@@ -400,7 +400,7 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                                         </select>
                                     </Field>
                                     <VatToggle label="VAT" value={c.vatApplicable} onChange={(v) => updateCharge(i, { vatApplicable: v })} />
-                                    <button type="button" onClick={() => update({ charges: data.charges.filter((_, j) => j !== i) })}
+                                    <button type="button" onClick={() => setData((prev) => ({ ...prev, charges: prev.charges.filter((_, j) => j !== i) }))}
                                         className="rounded border border-border p-2 text-xs">✕</button>
                                 </div>
                             ))}
