@@ -210,7 +210,17 @@ export default function BulkChequeUploadFlow({ leaseId, schedules, onSuccess, on
       if (r.chequeNumber.trim()) numberSeen.set(r.chequeNumber.trim(), (numberSeen.get(r.chequeNumber.trim()) ?? 0) + 1);
     }
     for (const v of numberSeen.values()) if (v > 1) duplicateNumber += v;
-    const ready = rows.length - needsDate - noSchedule - needsBank - duplicateNumber;
+    // A row is "ready" only if it individually passes every check. The bucket
+    // counts above OVERLAP (one empty row needs date AND bank AND installment),
+    // so `total - sum(buckets)` over-subtracts and can even go negative — count
+    // the genuinely-complete rows directly instead.
+    let ready = 0;
+    for (const r of rows) {
+      const num = r.chequeNumber.trim();
+      if (r.chequeDate && r.scheduleId && r.bankName.trim() && num && (numberSeen.get(num) ?? 0) === 1) {
+        ready++;
+      }
+    }
     return { needsDate, noSchedule, needsBank, duplicateNumber, ready };
   }, [rows]);
 

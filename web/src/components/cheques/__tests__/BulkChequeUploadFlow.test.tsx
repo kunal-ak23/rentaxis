@@ -102,6 +102,42 @@ describe("BulkChequeUploadFlow", () => {
     expect(lastCall[0]).toBe("/api/proxy/v1/leases/L1/cheques/bulk-attach");
   });
 
+  it("ready count = only fully-complete rows (overlapping buckets must not be double-subtracted)", async () => {
+    const fetchMock = vi.fn()
+      // row 1: extracts fully → auto-maps to s1
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          image: { url: "u1", blobPath: "b1", uploadedAt: "2026-05-07T00:00:00Z" },
+          extracted: { chequeNumber: "C-1", bankName: "ENBD", payerName: "R", chequeDate: "2026-06-04", amount: 5000, confidence: "HIGH" },
+          warnings: [],
+        }),
+      })
+      // row 2: OCR failed → empty row (needs date AND bank AND installment — overlapping buckets)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          image: { url: "u2", blobPath: "b2", uploadedAt: "2026-05-07T00:00:01Z" },
+          extracted: null,
+          warnings: ["Extraction failed"],
+        }),
+      });
+    global.fetch = fetchMock;
+
+    render(<BulkChequeUploadFlow leaseId="L1" schedules={schedules} onSuccess={() => {}} onClose={() => {}} />);
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    Object.defineProperty(input, "files", { value: [makeFile("a.png"), makeFile("b.png")], configurable: true });
+    fireEvent.change(input);
+    fireEvent.click(screen.getByText("continueToExtract"));
+
+    await waitFor(() => screen.getByText(/^approveAll/));
+    // 1 complete + 1 empty row → ready must be 1, total 2 (old bug subtracted 3
+    // overlapping buckets from the total and produced -1).
+    const approve = screen.getByText(/^approveAll/);
+    expect(approve.textContent).toContain('"ready":1');
+    expect(approve.textContent).toContain('"total":2');
+  });
+
   it("disables approve when a row is missing a schedule", async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce({
       ok: true,
