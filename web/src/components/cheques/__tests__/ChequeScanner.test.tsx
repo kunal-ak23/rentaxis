@@ -82,6 +82,7 @@ const happyResponse: ChequeExtractionResponse = {
     bankName: "Emirates NBD",
     payerName: "RentAxis Property Mgmt LLC",
     chequeDate: "2026-06-01",
+    amount: 15000,
     confidence: "HIGH",
   },
   warnings: [],

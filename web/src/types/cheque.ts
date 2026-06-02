@@ -5,6 +5,7 @@ export type ExtractedCheque = {
   bankName: string | null;
   payerName: string | null;
   chequeDate: string | null;
+  amount: number | null;
   confidence: ChequeConfidence;
 };
 
