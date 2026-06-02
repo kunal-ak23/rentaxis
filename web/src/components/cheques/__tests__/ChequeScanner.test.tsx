@@ -24,6 +24,7 @@ vi.mock("next-intl", () => ({
       fieldBankName: "Bank name",
       fieldPayerName: "Payer name",
       fieldChequeDate: "Cheque date",
+      fieldAmount: "Amount (AED)",
       back: "Back",
       next: "Next",
       useValues: "Use these values",

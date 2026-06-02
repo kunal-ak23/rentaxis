@@ -181,6 +181,7 @@
       "fieldBankName": "اسم البنك",
       "fieldPayerName": "اسم الدافع",
       "fieldChequeDate": "تاريخ الشيك",
+      "fieldAmount": "المبلغ (درهم)",
       "back": "رجوع",
       "next": "التالي",
       "useValues": "استخدام هذه القيم",
