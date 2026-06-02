@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/format";
 import PaymentScheduleEditor from "./PaymentScheduleEditor";
 import ChequeScanner from "@/components/cheques/ChequeScanner";
+import BulkChequeUploadFlow from "@/components/cheques/BulkChequeUploadFlow";
 
 /**
  * Five-step wizard for creating a new draft lease.
@@ -106,6 +107,9 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
     const [savedLeaseStatus, setSavedLeaseStatus] = useState<string | null>(null);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [bulkOpen, setBulkOpen] = useState(false);
+    const [wizardSchedules, setWizardSchedules] = useState<any[]>([]);
+    const [scheduleRefreshKey, setScheduleRefreshKey] = useState(0);
 
     const reset = useCallback(() => {
         setStepIdx(0);
@@ -114,7 +118,15 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
         setSavedLeaseStatus(null);
         setSubmitting(false);
         setError(null);
+        setBulkOpen(false);
+        setWizardSchedules([]);
+        setScheduleRefreshKey(0);
     }, []);
+
+    const loadWizardSchedules = async (leaseId: string) => {
+        const res = await fetch(`/api/proxy/v1/payments/lease/${leaseId}`);
+        if (res.ok) setWizardSchedules(await res.json());
+    };
 
     useEffect(() => {
         if (open) {
@@ -524,10 +536,34 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                                     <div className="rounded-xl bg-success/10 border border-success/30 p-3 text-[11px] text-success">
                                         Draft lease created. Adjust the schedule below — change dates, cheque numbers, banks, or per-row methods. Click <strong>Save schedule</strong> to persist edits.
                                     </div>
+                                    <div className="flex items-center justify-end">
+                                        <button
+                                            type="button"
+                                            onClick={async () => { await loadWizardSchedules(savedLeaseId); setBulkOpen(true); }}
+                                            className="rounded border border-border px-3 py-1 text-xs"
+                                        >
+                                            Bulk upload cheques
+                                        </button>
+                                    </div>
+                                    {bulkOpen && savedLeaseId && (
+                                        <BulkChequeUploadFlow
+                                            leaseId={savedLeaseId}
+                                            schedules={wizardSchedules.map(p => ({
+                                                id: p.id,
+                                                installmentNumber: p.installmentNumber,
+                                                dueDate: p.dueDate,
+                                                amount: p.amount,
+                                                status: p.status,
+                                            }))}
+                                            onSuccess={() => { setBulkOpen(false); setScheduleRefreshKey(k => k + 1); }}
+                                            onClose={() => setBulkOpen(false)}
+                                        />
+                                    )}
                                     <PaymentScheduleEditor
                                         leaseId={savedLeaseId}
                                         leaseStatus={savedLeaseStatus || "DRAFT"}
                                         canManage={true}
+                                        refreshKey={scheduleRefreshKey}
                                     />
                                 </>
                             )}
