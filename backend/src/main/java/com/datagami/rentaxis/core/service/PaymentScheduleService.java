@@ -339,16 +339,24 @@ public class PaymentScheduleService {
     }
 
     @Transactional(readOnly = true)
-    public Page<PaymentScheduleDTO> getPaymentsForProperty(UUID propertyId, PaymentStatus status, String renterName, Pageable pageable) {
+    public Page<PaymentScheduleDTO> getPaymentsForProperty(UUID propertyId, PaymentStatus status, String renterName, boolean overdue, Pageable pageable) {
         String normalizedRenterName = (renterName == null || renterName.trim().isEmpty()) ? null : renterName.trim();
+        // "overdue" is a computed view (PENDING/COLLECTED + dueDate < today), not a
+        // stored status, so it takes precedence over and ignores the status param.
+        LocalDate today = LocalDate.now();
         if (normalizedRenterName == null) {
-            Page<PaymentSchedule> payments = paymentScheduleRepository.findFiltered(propertyId, status, pageable);
+            Page<PaymentSchedule> payments = overdue
+                    ? paymentScheduleRepository.findOverdueFiltered(propertyId, today, pageable)
+                    : paymentScheduleRepository.findFiltered(propertyId, status, pageable);
             return payments.map(this::mapToDTO);
         }
 
         // Avoid DB text operations on renter names because some prod datasets store this value in binary-compatible columns.
         String searchToken = normalizedRenterName.toLowerCase(Locale.ROOT);
-        List<PaymentScheduleDTO> filtered = paymentScheduleRepository.findForRenterSearch(propertyId, status).stream()
+        List<PaymentSchedule> searchBase = overdue
+                ? paymentScheduleRepository.findOverdueForRenterSearch(propertyId, today)
+                : paymentScheduleRepository.findForRenterSearch(propertyId, status);
+        List<PaymentScheduleDTO> filtered = searchBase.stream()
                 .map(this::mapToDTO)
                 .filter(dto -> dto.getRenterName() != null && dto.getRenterName().toLowerCase(Locale.ROOT).contains(searchToken))
                 .collect(Collectors.toList());

@@ -48,8 +48,9 @@ public class PaymentScheduleController {
             @RequestParam(required = false) UUID propertyId,
             @RequestParam(required = false) PaymentStatus status,
             @RequestParam(required = false) String renterName,
+            @RequestParam(required = false, defaultValue = "false") boolean overdue,
             @PageableDefault(size = 25, sort = "dueDate", direction = Sort.Direction.DESC) Pageable pageable) {
-        return ResponseEntity.ok(paymentScheduleService.getPaymentsForProperty(propertyId, status, renterName, pageable));
+        return ResponseEntity.ok(paymentScheduleService.getPaymentsForProperty(propertyId, status, renterName, overdue, pageable));
     }
 
     @GetMapping("/lease/{leaseId}")

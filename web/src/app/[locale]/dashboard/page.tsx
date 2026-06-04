@@ -241,15 +241,21 @@ export default function DashboardPage() {
           sparkData={[88, 89, 90, 91, 92, 93, 94, 94.3]}
           sparkColor="var(--teal-600)"
         />
-        <StatCard
-          label="Overdue"
-          value={formatCurrencyCompact(summary.overdueAmount)}
-          delta="-2.1%"
-          deltaPos
-          sub="Requires follow-up"
-          sparkData={[140, 128, 118, 110, 102, 98, 92, 87]}
-          sparkColor="var(--red-600)"
-        />
+        <Link
+          href="/dashboard/finance/payments?status=OVERDUE"
+          aria-label="View overdue payments"
+          className="block rounded-[var(--radius-lg)] transition-all hover:border-primary hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/30 [&>div]:hover:border-primary"
+        >
+          <StatCard
+            label="Overdue"
+            value={formatCurrencyCompact(summary.overdueAmount)}
+            delta="-2.1%"
+            deltaPos
+            sub="Requires follow-up"
+            sparkData={[140, 128, 118, 110, 102, 98, 92, 87]}
+            sparkColor="var(--red-600)"
+          />
+        </Link>
       </div>
 
       <div className="grid gap-3.5" style={{ gridTemplateColumns: "1.6fr 1fr" }}>
