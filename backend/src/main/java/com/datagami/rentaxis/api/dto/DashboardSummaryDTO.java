@@ -21,7 +21,8 @@ public class DashboardSummaryDTO {
     // Financial
     private BigDecimal totalRentRevenue; // sum of active lease rent amounts
     private BigDecimal collectedAmount; // CLEARED payments
-    private BigDecimal pendingAmount; // PENDING payments
+    private BigDecimal pendingAmount; // PENDING payments (all time)
+    private BigDecimal pendingThisMonthAmount; // PENDING payments due in the current month
     private BigDecimal overdueAmount; // overdue payments
 
     // Recent Activity

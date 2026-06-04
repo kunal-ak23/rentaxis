@@ -19,7 +19,7 @@ import DashboardPage from "../page";
 const SUMMARY = {
     totalProperties: 1, totalUnits: 10, occupiedUnits: 8, vacantUnits: 2, occupancyRate: 80,
     activeLeases: 8, draftLeases: 1, expiringLeases: 0, totalRentRevenue: 100000,
-    collectedAmount: 50000, pendingAmount: 20000, overdueAmount: 12000, recentActivity: [],
+    collectedAmount: 50000, pendingAmount: 20000, pendingThisMonthAmount: 7500, overdueAmount: 12000, recentActivity: [],
 };
 
 const MONTHLY = Array.from({ length: 12 }, (_, i) => ({
@@ -54,6 +54,12 @@ describe("DashboardPage charts use real data", () => {
         await waitFor(() => expect(screen.getByText("12-month performance")).toBeTruthy());
         expect(monthlyFetched).toBe(true);
         expect(screen.queryByText(/no collection data yet/i)).toBeNull();
+    });
+
+    it("shows 'Pending this month' (scoped) instead of all-time pending", async () => {
+        render(<DashboardPage />);
+        await waitFor(() => expect(screen.getByText("Pending this month")).toBeTruthy());
+        expect(screen.getByText("Due this month, unpaid")).toBeTruthy();
     });
 
     it("renders the occupancy donut with real occupied/vacant counts", async () => {
