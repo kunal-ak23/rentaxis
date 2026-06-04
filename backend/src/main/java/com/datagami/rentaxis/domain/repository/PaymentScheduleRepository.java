@@ -83,6 +83,39 @@ public interface PaymentScheduleRepository extends JpaRepository<PaymentSchedule
             @Param("propertyId") UUID propertyId,
             @Param("status") PaymentStatus status);
 
+    /**
+     * Paged "overdue" listing. Mirrors the overdue predicate used by the
+     * dashboard summary and {@link #findOverdue(LocalDate)}: a payment is
+     * overdue when it is still PENDING or COLLECTED (i.e. not deposited/cleared
+     * and not yet failed) and its due date is strictly before {@code today}.
+     * Keeping this definition in one shape guarantees the payments page filter
+     * returns exactly the population the dashboard "Overdue" card counts.
+     */
+    @Query("""
+        SELECT ps
+        FROM PaymentSchedule ps
+        WHERE (:propertyId IS NULL OR ps.property.id = :propertyId)
+          AND ps.status IN ('PENDING', 'COLLECTED')
+          AND ps.dueDate < :today
+        """)
+    Page<PaymentSchedule> findOverdueFiltered(
+            @Param("propertyId") UUID propertyId,
+            @Param("today") LocalDate today,
+            Pageable pageable);
+
+    /** Unpaged overdue variant for the in-memory renter-name search path. */
+    @Query("""
+        SELECT ps
+        FROM PaymentSchedule ps
+        WHERE (:propertyId IS NULL OR ps.property.id = :propertyId)
+          AND ps.status IN ('PENDING', 'COLLECTED')
+          AND ps.dueDate < :today
+        ORDER BY ps.dueDate DESC
+        """)
+    List<PaymentSchedule> findOverdueForRenterSearch(
+            @Param("propertyId") UUID propertyId,
+            @Param("today") LocalDate today);
+
     @Query("""
         SELECT new com.datagami.rentaxis.domain.repository.ChequeImagePurgeRow(
             ps.id, ps.tenantId, ps.chequeImageBlobPath

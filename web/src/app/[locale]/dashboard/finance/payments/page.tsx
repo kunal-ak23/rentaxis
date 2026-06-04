@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useSession } from "next-auth/react";
 import {
@@ -65,9 +66,14 @@ const STATUS_COLORS: Record<string, string> = {
     CLEARED: "bg-success/10 text-success border border-success/20",
     BOUNCED: "bg-error/10 text-error border border-error/20",
     REPLACED: "bg-info/10 text-info border border-info/20",
+    OVERDUE: "bg-error/10 text-error border border-error/20",
 };
 
 const ALL_STATUSES = ["PENDING", "COLLECTED", "DEPOSITED", "CLEARED", "BOUNCED", "REPLACED"];
+
+// Sentinel filter value: "overdue" is a computed view (PENDING/COLLECTED past due),
+// not a stored status, so it is sent to the API as `overdue=true` rather than `status`.
+const OVERDUE_FILTER = "OVERDUE";
 
 export default function PaymentsPage() {
     const t = useTranslations("Payments");
@@ -80,8 +86,16 @@ export default function PaymentsPage() {
     const [properties, setProperties] = useState<Property[]>([]);
     const [loading, setLoading] = useState(true);
 
+    // Allow the dashboard "Overdue" card (and shareable URLs) to deep-link into a
+    // pre-selected status filter via ?status=… (e.g. ?status=OVERDUE).
+    const searchParams = useSearchParams();
+    const initialStatusParam = searchParams.get("status") ?? "";
+    const initialStatus = [...ALL_STATUSES, OVERDUE_FILTER].includes(initialStatusParam)
+        ? initialStatusParam
+        : "";
+
     const [selectedProperty, setSelectedProperty] = useState("");
-    const [selectedStatus, setSelectedStatus] = useState("");
+    const [selectedStatus, setSelectedStatus] = useState(initialStatus);
     const [searchRenterName, setSearchRenterName] = useState("");
     const [debouncedSearchRenterName, setDebouncedSearchRenterName] = useState("");
     const [currentPage, setCurrentPage] = useState(1);
@@ -146,7 +160,11 @@ export default function PaymentsPage() {
         try {
             const params = new URLSearchParams();
             if (selectedProperty) params.set("propertyId", selectedProperty);
-            if (selectedStatus) params.set("status", selectedStatus);
+            if (selectedStatus === OVERDUE_FILTER) {
+                params.set("overdue", "true");
+            } else if (selectedStatus) {
+                params.set("status", selectedStatus);
+            }
             if (debouncedSearchRenterName) params.set("renterName", debouncedSearchRenterName);
             params.set("page", String(Math.max(currentPage - 1, 0)));
             params.set("size", String(itemsPerPage));
@@ -306,6 +324,7 @@ export default function PaymentsPage() {
             CLEARED: t("cleared"),
             BOUNCED: t("bounced"),
             REPLACED: t("replaced"),
+            OVERDUE: t("overdue"),
         };
         return map[status] || status;
     };
@@ -408,6 +427,7 @@ export default function PaymentsPage() {
                         onChange={(ev) => setSelectedStatus(ev.target.value)}
                     >
                         <option value="">{t("allStatuses")}</option>
+                        <option value={OVERDUE_FILTER}>{t("overdue")}</option>
                         {ALL_STATUSES.map((s) => (
                             <option key={s} value={s}>
                                 {getStatusLabel(s)}
