@@ -244,7 +244,7 @@ export default function DashboardPage() {
         <Link
           href="/dashboard/finance/payments?status=OVERDUE"
           aria-label="View overdue payments"
-          className="block rounded-[var(--radius-lg)] transition-all hover:border-primary hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/30 [&>div]:hover:border-primary"
+          className="block rounded-[var(--radius-lg)] transition-all hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/30 [&>div]:hover:border-primary"
         >
           <StatCard
             label="Overdue"
