@@ -75,6 +75,10 @@ const ALL_STATUSES = ["PENDING", "COLLECTED", "DEPOSITED", "CLEARED", "BOUNCED",
 // not a stored status, so it is sent to the API as `overdue=true` rather than `status`.
 const OVERDUE_FILTER = "OVERDUE";
 
+// Sentinel filter value: "cheques to deposit" is a computed view (COLLECTED with
+// a post-dated chequeDate that has arrived), served by a dedicated endpoint.
+const TO_DEPOSIT_FILTER = "TO_DEPOSIT";
+
 export default function PaymentsPage() {
     const t = useTranslations("Payments");
     const { data: session } = useSession();
@@ -90,7 +94,7 @@ export default function PaymentsPage() {
     // pre-selected status filter via ?status=… (e.g. ?status=OVERDUE).
     const searchParams = useSearchParams();
     const initialStatusParam = searchParams.get("status") ?? "";
-    const initialStatus = [...ALL_STATUSES, OVERDUE_FILTER].includes(initialStatusParam)
+    const initialStatus = [...ALL_STATUSES, OVERDUE_FILTER, TO_DEPOSIT_FILTER].includes(initialStatusParam)
         ? initialStatusParam
         : "";
 
@@ -160,16 +164,24 @@ export default function PaymentsPage() {
         try {
             const params = new URLSearchParams();
             if (selectedProperty) params.set("propertyId", selectedProperty);
-            if (selectedStatus === OVERDUE_FILTER) {
-                params.set("overdue", "true");
-            } else if (selectedStatus) {
-                params.set("status", selectedStatus);
-            }
-            if (debouncedSearchRenterName) params.set("renterName", debouncedSearchRenterName);
             params.set("page", String(Math.max(currentPage - 1, 0)));
             params.set("size", String(itemsPerPage));
 
-            const res = await fetch(`/api/proxy/v1/payments?${params.toString()}`);
+            // "Cheques to deposit" is its own endpoint; all other filters use the
+            // main listing endpoint (status / overdue / renter-name search).
+            let endpoint = "/api/proxy/v1/payments";
+            if (selectedStatus === TO_DEPOSIT_FILTER) {
+                endpoint = "/api/proxy/v1/payments/to-deposit";
+            } else {
+                if (selectedStatus === OVERDUE_FILTER) {
+                    params.set("overdue", "true");
+                } else if (selectedStatus) {
+                    params.set("status", selectedStatus);
+                }
+                if (debouncedSearchRenterName) params.set("renterName", debouncedSearchRenterName);
+            }
+
+            const res = await fetch(`${endpoint}?${params.toString()}`);
             if (res.ok) {
                 const data = await res.json();
                 if (Array.isArray(data)) {
@@ -325,6 +337,7 @@ export default function PaymentsPage() {
             BOUNCED: t("bounced"),
             REPLACED: t("replaced"),
             OVERDUE: t("overdue"),
+            TO_DEPOSIT: "To deposit",
         };
         return map[status] || status;
     };
@@ -396,16 +409,19 @@ export default function PaymentsPage() {
 
             {/* Filter chips + search */}
             <div className="flex items-center gap-2 flex-wrap">
-                <div className="relative w-full sm:max-w-xs">
-                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ink-500)]" />
-                    <input
-                        type="text"
-                        value={searchRenterName}
-                        onChange={(ev) => setSearchRenterName(ev.target.value)}
-                        placeholder="Search renter name"
-                        className="w-full bg-surface border border-border pl-9 pr-3 h-9 rounded-[var(--radius)] text-[13px] focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all"
-                    />
-                </div>
+                {/* Renter-name search isn't supported by the "to deposit" endpoint, so hide it in that mode. */}
+                {selectedStatus !== TO_DEPOSIT_FILTER && (
+                    <div className="relative w-full sm:max-w-xs">
+                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ink-500)]" />
+                        <input
+                            type="text"
+                            value={searchRenterName}
+                            onChange={(ev) => setSearchRenterName(ev.target.value)}
+                            placeholder="Search renter name"
+                            className="w-full bg-surface border border-border pl-9 pr-3 h-9 rounded-[var(--radius)] text-[13px] focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all"
+                        />
+                    </div>
+                )}
                 <div className="relative">
                     <select
                         className="appearance-none bg-surface border border-border pl-3 pr-7 h-9 rounded-full text-[12.5px] font-medium cursor-pointer focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all"
@@ -428,6 +444,7 @@ export default function PaymentsPage() {
                     >
                         <option value="">{t("allStatuses")}</option>
                         <option value={OVERDUE_FILTER}>{t("overdue")}</option>
+                        <option value={TO_DEPOSIT_FILTER}>To deposit</option>
                         {ALL_STATUSES.map((s) => (
                             <option key={s} value={s}>
                                 {getStatusLabel(s)}

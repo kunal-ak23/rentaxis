@@ -367,6 +367,18 @@ public class PaymentScheduleService {
         return new PageImpl<>(pageContent, pageable, filtered.size());
     }
 
+    /**
+     * Cheques in hand awaiting deposit whose post-dated date has arrived
+     * (status COLLECTED, chequeDate <= today). Powers the dashboard
+     * "cheques to deposit" widget. Oldest banking date first.
+     */
+    @Transactional(readOnly = true)
+    public Page<PaymentScheduleDTO> getChequesToDeposit(UUID propertyId, Pageable pageable) {
+        return paymentScheduleRepository
+                .findChequesToDeposit(propertyId, LocalDate.now(), pageable)
+                .map(this::mapToDTO);
+    }
+
     @Transactional(readOnly = true)
     public PaymentSummaryDTO getSummary(UUID propertyId) {
         List<PaymentSchedule> payments;
