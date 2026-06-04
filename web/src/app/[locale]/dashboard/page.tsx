@@ -30,6 +30,13 @@ type DashboardSummary = {
   }[];
 };
 
+type MonthlyPoint = {
+  month: string;
+  ym: string;
+  expected: number;
+  collected: number;
+};
+
 function formatTimeAgo(timestamp: string): string {
   const now = new Date();
   const date = new Date(timestamp);
@@ -106,11 +113,21 @@ function StatCard({
   );
 }
 
-function CollectionChart() {
-  const months = ["Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May"];
-  const expected = [1850, 1900, 1920, 1950, 1980, 2000, 2010, 2050, 2080, 2090, 2100, 2100];
-  const collected = [1780, 1810, 1850, 1890, 1920, 1940, 1950, 1990, 2010, 2040, 2050, 1840];
-  const max = 2200;
+function CollectionChart({ data }: { data: MonthlyPoint[] }) {
+  if (data.length === 0) {
+    return (
+      <div className="bg-surface border border-border rounded-[var(--radius-lg)] p-5">
+        <div className="text-[13px] text-[var(--ink-500)] mb-0.5">Collection vs expected</div>
+        <div className="font-serif text-[20px] font-semibold text-foreground mb-3">12-month performance</div>
+        <p className="text-sm text-[var(--ink-500)] py-16 text-center">No collection data yet</p>
+      </div>
+    );
+  }
+  const months = data.map((d) => d.month);
+  const expected = data.map((d) => d.expected);
+  const collected = data.map((d) => d.collected);
+  // Headroom above the largest value so the lines don't touch the top edge.
+  const max = Math.max(1, ...expected, ...collected) * 1.1;
   const w = 600;
   const h = 200;
   const p = { l: 40, r: 12, t: 12, b: 28 };
@@ -140,18 +157,72 @@ function CollectionChart() {
   );
 }
 
+function OccupancyDonut({ occupied, vacant, rate }: { occupied: number; vacant: number; rate: number }) {
+  const total = occupied + vacant;
+  const size = 128;
+  const stroke = 16;
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const occFrac = total > 0 ? occupied / total : 0;
+  const cx = size / 2;
+  const cy = size / 2;
+  return (
+    <div className="flex items-center gap-5">
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="shrink-0">
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--ink-500)" strokeOpacity="0.16" strokeWidth={stroke} />
+        {total > 0 && (
+          <circle
+            cx={cx}
+            cy={cy}
+            r={r}
+            fill="none"
+            stroke="var(--teal-600)"
+            strokeWidth={stroke}
+            strokeLinecap="round"
+            strokeDasharray={`${occFrac * c} ${c}`}
+            transform={`rotate(-90 ${cx} ${cy})`}
+          />
+        )}
+        <text x={cx} y={cy - 1} textAnchor="middle" className="fill-foreground" style={{ fontSize: 22, fontWeight: 600 }}>
+          {rate.toFixed(0)}%
+        </text>
+        <text x={cx} y={cy + 16} textAnchor="middle" className="fill-[var(--ink-500)]" style={{ fontSize: 10 }}>
+          occupied
+        </text>
+      </svg>
+      <div className="space-y-2 text-[13px] min-w-[120px]">
+        <div className="flex items-center gap-2">
+          <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: "var(--teal-600)" }} />
+          <span className="text-[var(--ink-500)]">Occupied</span>
+          <span className="font-semibold ml-auto">{occupied}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: "var(--ink-500)", opacity: 0.45 }} />
+          <span className="text-[var(--ink-500)]">Vacant</span>
+          <span className="font-semibold ml-auto">{vacant}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const { data: session } = useSession();
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
+  const [monthly, setMonthly] = useState<MonthlyPoint[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchSummary = async () => {
+    const load = async () => {
       try {
-        const res = await fetch("/api/proxy/v1/dashboard/summary");
-        if (res.ok) {
-          const data = await res.json();
-          setSummary(data);
+        const [summaryRes, monthlyRes] = await Promise.all([
+          fetch("/api/proxy/v1/dashboard/summary"),
+          fetch("/api/proxy/v1/dashboard/monthly-collections"),
+        ]);
+        if (summaryRes.ok) setSummary(await summaryRes.json());
+        if (monthlyRes.ok) {
+          const data = await monthlyRes.json();
+          setMonthly(Array.isArray(data) ? data : []);
         }
       } catch (err) {
         console.error(err);
@@ -160,7 +231,7 @@ export default function DashboardPage() {
       }
     };
 
-    fetchSummary();
+    load();
   }, []);
 
   if (loading) {
@@ -188,6 +259,20 @@ export default function DashboardPage() {
     month: "short",
     year: "numeric",
   });
+
+  // Collected card derives from the real monthly series (current month + MoM trend).
+  const thisMonth = monthly.length ? monthly[monthly.length - 1] : null;
+  const prevMonth = monthly.length > 1 ? monthly[monthly.length - 2] : null;
+  const collectedThisMonth = thisMonth ? thisMonth.collected : summary.collectedAmount;
+  const expectedThisMonth = thisMonth ? thisMonth.expected : summary.totalRentRevenue;
+  const collectedSpark = monthly.map((m) => m.collected);
+  let collectedDelta: string | undefined;
+  let collectedDeltaPos = true;
+  if (thisMonth && prevMonth && prevMonth.collected > 0) {
+    const pct = ((thisMonth.collected - prevMonth.collected) / prevMonth.collected) * 100;
+    collectedDeltaPos = pct >= 0;
+    collectedDelta = `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%`;
+  }
 
   return (
     <div className="flex flex-col gap-5">
@@ -217,31 +302,23 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3.5">
         <StatCard
           label="Collected this month"
-          value={formatCurrencyCompact(summary.collectedAmount)}
-          delta="+12.4%"
-          deltaPos
-          sub={`of ${formatCurrencyCompact(summary.totalRentRevenue)} expected`}
-          sparkData={[20, 28, 24, 32, 30, 38, 42, 40, 48, 52, 49, 58]}
+          value={formatCurrencyCompact(collectedThisMonth)}
+          delta={collectedDelta}
+          deltaPos={collectedDeltaPos}
+          sub={`of ${formatCurrencyCompact(expectedThisMonth)} expected`}
+          sparkData={collectedSpark.length ? collectedSpark : undefined}
           sparkColor="var(--green-600)"
         />
         <StatCard
           label="Pending payments"
           value={formatCurrencyCompact(summary.pendingAmount)}
-          delta="+3.0%"
-          deltaPos={false}
           sub="Awaiting collection"
-          sparkData={[8, 10, 9, 12, 15, 14, 16, 18]}
-          sparkColor="var(--gold-600)"
         />
         <StatCard
           label="Occupancy"
           value={summary.occupancyRate.toFixed(1)}
           unit="%"
-          delta="+1.2%"
-          deltaPos
           sub={`${summary.occupiedUnits} of ${summary.totalUnits} units leased`}
-          sparkData={[88, 89, 90, 91, 92, 93, 94, 94.3]}
-          sparkColor="var(--teal-600)"
         />
         <Link
           href="/dashboard/finance/payments?status=OVERDUE"
@@ -251,20 +328,19 @@ export default function DashboardPage() {
           <StatCard
             label="Overdue"
             value={formatCurrencyCompact(summary.overdueAmount)}
-            delta="-2.1%"
-            deltaPos
             sub="Requires follow-up"
-            sparkData={[140, 128, 118, 110, 102, 98, 92, 87]}
-            sparkColor="var(--red-600)"
           />
         </Link>
       </div>
 
       <div className="grid gap-3.5" style={{ gridTemplateColumns: "1.6fr 1fr" }}>
-        <CollectionChart />
+        <CollectionChart data={monthly} />
         <div className="bg-surface border border-border rounded-[var(--radius-lg)] p-5">
           <div className="text-[13px] text-[var(--ink-500)]">Portfolio snapshot</div>
           <div className="font-serif text-[20px] font-semibold text-foreground mb-3">Current totals</div>
+          <div className="mb-4 pb-4 border-b border-border">
+            <OccupancyDonut occupied={summary.occupiedUnits} vacant={summary.vacantUnits} rate={summary.occupancyRate} />
+          </div>
           <div className="space-y-2.5 text-[13px]">
             <div className="flex justify-between"><span className="text-[var(--ink-500)]">Properties</span><span className="font-semibold">{summary.totalProperties}</span></div>
             <div className="flex justify-between"><span className="text-[var(--ink-500)]">Active leases</span><span className="font-semibold">{summary.activeLeases}</span></div>

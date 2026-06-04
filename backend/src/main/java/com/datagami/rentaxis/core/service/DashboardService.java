@@ -1,6 +1,7 @@
 package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.dto.DashboardSummaryDTO;
+import com.datagami.rentaxis.api.dto.MonthlyCollectionDTO;
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.PaymentSchedule;
 import com.datagami.rentaxis.domain.entity.Property;
@@ -18,9 +19,14 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.YearMonth;
+import java.time.format.TextStyle;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -135,6 +141,37 @@ public class DashboardService {
         summary.setRecentActivity(activityItems);
 
         return summary;
+    }
+
+    /**
+     * Last 12 calendar months (oldest → current) of expected vs collected,
+     * zero-filling any months without schedules so the chart always has a
+     * contiguous 12-point series.
+     */
+    @Transactional(readOnly = true)
+    public List<MonthlyCollectionDTO> getMonthlyCollections() {
+        YearMonth current = YearMonth.from(LocalDate.now());
+        YearMonth start = current.minusMonths(11);
+        LocalDate from = start.atDay(1);
+        LocalDate toExclusive = current.plusMonths(1).atDay(1);
+
+        Map<String, BigDecimal[]> byYm = new HashMap<>();
+        for (Object[] row : paymentScheduleRepository.aggregateMonthlyCollection(from, toExclusive)) {
+            String ym = (String) row[0];
+            BigDecimal expected = row[1] != null ? (BigDecimal) row[1] : BigDecimal.ZERO;
+            BigDecimal collected = row[2] != null ? (BigDecimal) row[2] : BigDecimal.ZERO;
+            byYm.put(ym, new BigDecimal[]{expected, collected});
+        }
+
+        List<MonthlyCollectionDTO> series = new ArrayList<>(12);
+        for (int i = 0; i < 12; i++) {
+            YearMonth ym = start.plusMonths(i);
+            String key = String.format("%04d-%02d", ym.getYear(), ym.getMonthValue());
+            BigDecimal[] vals = byYm.getOrDefault(key, new BigDecimal[]{BigDecimal.ZERO, BigDecimal.ZERO});
+            String label = ym.getMonth().getDisplayName(TextStyle.SHORT, Locale.ENGLISH);
+            series.add(new MonthlyCollectionDTO(label, key, vals[0], vals[1]));
+        }
+        return series;
     }
 
     private String buildPaymentDescription(PaymentSchedule ps) {

@@ -12,6 +12,8 @@ vi.mock("@/i18n/routing", () => ({
     ),
 }));
 vi.mock("@/components/dashboard/FollowUpsWidget", () => ({ default: () => null }));
+vi.mock("@/components/dashboard/OverduePaymentsWidget", () => ({ default: () => null }));
+vi.mock("@/components/dashboard/ChequesToDepositWidget", () => ({ default: () => null }));
 
 import DashboardPage from "../page";
 
