@@ -120,8 +120,10 @@ public interface PaymentScheduleRepository extends JpaRepository<PaymentSchedule
      * Cheques in hand that are due (or overdue) for bank deposit: status is
      * COLLECTED (received from the renter, not yet deposited) and the post-dated
      * {@code chequeDate} has arrived (on/before {@code today}). Rows with a null
-     * chequeDate are excluded — there is no banking date to act on. Ordered
-     * oldest-first so the most overdue-for-deposit cheques surface at the top.
+     * chequeDate are excluded — there is no banking date to act on. Ordering is
+     * driven by the {@link Pageable} (controller defaults to chequeDate ASC, so
+     * the most overdue-for-deposit cheques surface first) — mirrors
+     * {@link #findOverdueFiltered} and avoids a redundant JPQL ORDER BY.
      */
     @Query("""
         SELECT ps
@@ -130,7 +132,6 @@ public interface PaymentScheduleRepository extends JpaRepository<PaymentSchedule
           AND ps.status = 'COLLECTED'
           AND ps.chequeDate IS NOT NULL
           AND ps.chequeDate <= :today
-        ORDER BY ps.chequeDate ASC
         """)
     Page<PaymentSchedule> findChequesToDeposit(
             @Param("propertyId") UUID propertyId,

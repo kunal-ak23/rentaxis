@@ -409,16 +409,19 @@ export default function PaymentsPage() {
 
             {/* Filter chips + search */}
             <div className="flex items-center gap-2 flex-wrap">
-                <div className="relative w-full sm:max-w-xs">
-                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ink-500)]" />
-                    <input
-                        type="text"
-                        value={searchRenterName}
-                        onChange={(ev) => setSearchRenterName(ev.target.value)}
-                        placeholder="Search renter name"
-                        className="w-full bg-surface border border-border pl-9 pr-3 h-9 rounded-[var(--radius)] text-[13px] focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all"
-                    />
-                </div>
+                {/* Renter-name search isn't supported by the "to deposit" endpoint, so hide it in that mode. */}
+                {selectedStatus !== TO_DEPOSIT_FILTER && (
+                    <div className="relative w-full sm:max-w-xs">
+                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ink-500)]" />
+                        <input
+                            type="text"
+                            value={searchRenterName}
+                            onChange={(ev) => setSearchRenterName(ev.target.value)}
+                            placeholder="Search renter name"
+                            className="w-full bg-surface border border-border pl-9 pr-3 h-9 rounded-[var(--radius)] text-[13px] focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all"
+                        />
+                    </div>
+                )}
                 <div className="relative">
                     <select
                         className="appearance-none bg-surface border border-border pl-3 pr-7 h-9 rounded-full text-[12.5px] font-medium cursor-pointer focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all"

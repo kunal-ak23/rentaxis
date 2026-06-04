@@ -19,6 +19,7 @@ import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabas
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -53,7 +54,9 @@ class PaymentScheduleRepositoryDepositTest {
     @Autowired LandlordOrgRepository landlordOrgRepository;
 
     private final LocalDate today = LocalDate.now();
-    private final Pageable page = PageRequest.of(0, 50);
+    // Ordering is driven by the Pageable (the controller's @PageableDefault),
+    // so the test exercises the production path: query + sorted Pageable.
+    private final Pageable page = PageRequest.of(0, 50, Sort.by("chequeDate").ascending());
 
     private Property property;
     private Unit unit;
