@@ -7,6 +7,8 @@ import { formatCurrencyCompact } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { Activity, Calendar, Download, Plus, TrendingDown, TrendingUp } from "lucide-react";
 import FollowUpsWidget from "@/components/dashboard/FollowUpsWidget";
+import OverduePaymentsWidget from "@/components/dashboard/OverduePaymentsWidget";
+import ChequesToDepositWidget from "@/components/dashboard/ChequesToDepositWidget";
 
 type DashboardSummary = {
   totalProperties: number;
@@ -270,6 +272,11 @@ export default function DashboardPage() {
             <div className="flex justify-between"><span className="text-[var(--ink-500)]">Vacant units</span><span className="font-semibold">{summary.vacantUnits}</span></div>
           </div>
         </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+        <OverduePaymentsWidget />
+        <ChequesToDepositWidget />
       </div>
 
       <FollowUpsWidget />

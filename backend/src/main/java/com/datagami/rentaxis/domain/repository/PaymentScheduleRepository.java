@@ -116,6 +116,27 @@ public interface PaymentScheduleRepository extends JpaRepository<PaymentSchedule
             @Param("propertyId") UUID propertyId,
             @Param("today") LocalDate today);
 
+    /**
+     * Cheques in hand that are due (or overdue) for bank deposit: status is
+     * COLLECTED (received from the renter, not yet deposited) and the post-dated
+     * {@code chequeDate} has arrived (on/before {@code today}). Rows with a null
+     * chequeDate are excluded — there is no banking date to act on. Ordered
+     * oldest-first so the most overdue-for-deposit cheques surface at the top.
+     */
+    @Query("""
+        SELECT ps
+        FROM PaymentSchedule ps
+        WHERE (:propertyId IS NULL OR ps.property.id = :propertyId)
+          AND ps.status = 'COLLECTED'
+          AND ps.chequeDate IS NOT NULL
+          AND ps.chequeDate <= :today
+        ORDER BY ps.chequeDate ASC
+        """)
+    Page<PaymentSchedule> findChequesToDeposit(
+            @Param("propertyId") UUID propertyId,
+            @Param("today") LocalDate today,
+            Pageable pageable);
+
     @Query("""
         SELECT new com.datagami.rentaxis.domain.repository.ChequeImagePurgeRow(
             ps.id, ps.tenantId, ps.chequeImageBlobPath

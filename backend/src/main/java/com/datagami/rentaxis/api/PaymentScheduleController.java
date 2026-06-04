@@ -66,6 +66,19 @@ public class PaymentScheduleController {
         return ResponseEntity.ok(paymentScheduleService.getSummary(propertyId));
     }
 
+    /**
+     * Cheques in hand due (or overdue) for bank deposit today: status COLLECTED
+     * with a post-dated chequeDate on/before today. Powers the dashboard
+     * "cheques to deposit" widget.
+     */
+    @GetMapping("/to-deposit")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
+    public ResponseEntity<Page<PaymentScheduleDTO>> getChequesToDeposit(
+            @RequestParam(required = false) UUID propertyId,
+            @PageableDefault(size = 25, sort = "chequeDate", direction = Sort.Direction.ASC) Pageable pageable) {
+        return ResponseEntity.ok(paymentScheduleService.getChequesToDeposit(propertyId, pageable));
+    }
+
     @PutMapping("/{id}/collect")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
     public ResponseEntity<PaymentScheduleDTO> collectPayment(
