@@ -138,6 +138,26 @@ public interface PaymentScheduleRepository extends JpaRepository<PaymentSchedule
             @Param("today") LocalDate today,
             Pageable pageable);
 
+    /**
+     * Monthly "collection vs expected" aggregation for the dashboard chart.
+     * Grouped by the due-date month: expected = all amounts due that month;
+     * collected = the subset already received (COLLECTED / DEPOSITED / CLEARED).
+     * JPQL (not native) so the tenant Hibernate filter still applies. Returns
+     * rows only for months that have schedules — the service zero-fills gaps.
+     * Each row is [ym(String "yyyy-MM"), expected(BigDecimal), collected(BigDecimal)].
+     */
+    @Query("""
+        SELECT FUNCTION('to_char', ps.dueDate, 'YYYY-MM') AS ym,
+               SUM(ps.amount) AS expected,
+               SUM(CASE WHEN ps.status IN ('COLLECTED', 'DEPOSITED', 'CLEARED') THEN ps.amount ELSE 0 END) AS collected
+        FROM PaymentSchedule ps
+        WHERE ps.dueDate >= :from AND ps.dueDate < :to
+        GROUP BY FUNCTION('to_char', ps.dueDate, 'YYYY-MM')
+        """)
+    List<Object[]> aggregateMonthlyCollection(
+            @Param("from") LocalDate from,
+            @Param("to") LocalDate to);
+
     @Query("""
         SELECT new com.datagami.rentaxis.domain.repository.ChequeImagePurgeRow(
             ps.id, ps.tenantId, ps.chequeImageBlobPath
