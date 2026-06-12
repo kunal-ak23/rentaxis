@@ -417,8 +417,8 @@ class _ListingListView extends ConsumerWidget {
     this.serverCount = 0,
   });
 
-  Future<void> _toggleWishlist(
-      WidgetRef ref, String listingId, bool isWishlisted) async {
+  Future<void> _toggleWishlist(BuildContext context, WidgetRef ref,
+      String listingId, bool isWishlisted) async {
     final notifier = ref.read(wishlistIdsProvider.notifier);
     final service = ref.read(_listingApiProvider);
     try {
@@ -430,11 +430,18 @@ class _ListingListView extends ConsumerWidget {
         await service.addInterest(listingId);
       }
     } catch (_) {
-      // Roll back
+      // Roll back — and tell the user; a silent rollback looks like the
+      // save simply never happened.
       if (isWishlisted) {
         notifier.add(listingId);
       } else {
         notifier.remove(listingId);
+      }
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('Could not update wishlist — please try again')),
+        );
       }
     }
   }
@@ -473,7 +480,7 @@ class _ListingListView extends ConsumerWidget {
               isWishlisted: isWishlisted,
               onWishlistToggle: id.isEmpty
                   ? null
-                  : () => _toggleWishlist(ref, id, isWishlisted),
+                  : () => _toggleWishlist(context, ref, id, isWishlisted),
             ),
           ),
         );

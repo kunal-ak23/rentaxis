@@ -243,6 +243,20 @@ class _ProgressCard extends StatelessWidget {
   }
 }
 
+/// The backend stores past-due rows as PENDING until the penalty batch flips
+/// them to OVERDUE — derive the renter-facing status either way (same rule
+/// as the dashboard and manager app).
+String effectivePaymentStatus(Map<String, dynamic> p) {
+  final stored = p['status']?.toString() ?? 'PENDING';
+  if (stored != 'PENDING') return stored;
+  final due = DateTime.tryParse(p['dueDate']?.toString() ?? '');
+  if (due == null) return stored;
+  final now = DateTime.now();
+  return due.isBefore(DateTime(now.year, now.month, now.day))
+      ? 'OVERDUE'
+      : stored;
+}
+
 // ─── Cheques list ───────────────────────────────────────────────────────────
 
 class _ChequesList extends StatelessWidget {
@@ -313,7 +327,7 @@ class _ChequeCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final status = payment['status']?.toString() ?? 'PENDING';
+    final status = effectivePaymentStatus(payment);
     final amount = (payment['amount'] ?? 0) as num;
     final n = payment['installmentNumber'];
     final dueRaw = payment['dueDate']?.toString();
@@ -581,7 +595,7 @@ class _NextChequeHero extends StatelessWidget {
     final candidates = payments
         .whereType<Map<String, dynamic>>()
         .where((p) {
-          final s = p['status']?.toString();
+          final s = effectivePaymentStatus(p);
           return s == 'PENDING' || s == 'OVERDUE';
         })
         .toList();
@@ -589,8 +603,8 @@ class _NextChequeHero extends StatelessWidget {
 
     int statusRank(String? s) => s == 'OVERDUE' ? 0 : 1;
     candidates.sort((a, b) {
-      final ra = statusRank(a['status']?.toString());
-      final rb = statusRank(b['status']?.toString());
+      final ra = statusRank(effectivePaymentStatus(a));
+      final rb = statusRank(effectivePaymentStatus(b));
       if (ra != rb) return ra.compareTo(rb);
       final ad = DateTime.tryParse(a['dueDate']?.toString() ?? '') ?? DateTime(2100);
       final bd = DateTime.tryParse(b['dueDate']?.toString() ?? '') ?? DateTime(2100);
@@ -637,7 +651,7 @@ class _NextChequeHero extends StatelessWidget {
     final property = p['propertyName']?.toString();
     final unit = p['unitIdentifier']?.toString();
     final installment = p['installmentNumber'];
-    final isOverdue = p['status']?.toString() == 'OVERDUE';
+    final isOverdue = effectivePaymentStatus(p) == 'OVERDUE';
 
     return Container(
       padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),

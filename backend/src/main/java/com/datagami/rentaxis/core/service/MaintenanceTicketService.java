@@ -175,7 +175,7 @@ public class MaintenanceTicketService {
         }
 
         // Resolve names for descriptive history
-        String assigneeName = userRepository.findById(assignTo).map(User::getName).orElse("Unknown");
+        String assigneeName = userRepository.findDisplayNameById(assignTo).orElse("Unknown");
         String action = previousAssignee == null ? "ASSIGNED" : "REASSIGNED";
         String notes = previousAssignee == null
                 ? "Ticket assigned to " + assigneeName
@@ -336,8 +336,9 @@ public class MaintenanceTicketService {
         MaintenanceTicket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new NotFoundException("Ticket not found"));
 
-        // Resolve user name from ID
-        String resolvedName = userRepository.findById(userId).map(User::getName).orElse("Unknown");
+        // Resolve user name from ID (filter-bypassing: superadmins have
+        // tenant_id = NULL and are invisible to the tenant-filtered findById)
+        String resolvedName = userRepository.findDisplayNameById(userId).orElse("Unknown");
 
         TicketReply reply = new TicketReply();
         reply.setTicket(ticket);
@@ -575,14 +576,14 @@ public class MaintenanceTicketService {
             // Lazy loading issue — skip
         }
 
-        // Reporter name
-        userRepository.findById(ticket.getReportedBy())
-                .ifPresent(user -> dto.setReporterName(user.getName()));
+        // Reporter / assignee names — filter-bypassing lookup so superadmin
+        // actors (tenant_id = NULL) don't render as blank/Unknown.
+        userRepository.findDisplayNameById(ticket.getReportedBy())
+                .ifPresent(dto::setReporterName);
 
-        // Assignee name
         if (ticket.getAssignedTo() != null) {
-            userRepository.findById(ticket.getAssignedTo())
-                    .ifPresent(user -> dto.setAssigneeName(user.getName()));
+            userRepository.findDisplayNameById(ticket.getAssignedTo())
+                    .ifPresent(dto::setAssigneeName);
         }
 
         dto.setReplyCount(replyRepository.countByTicketId(ticket.getId()));
