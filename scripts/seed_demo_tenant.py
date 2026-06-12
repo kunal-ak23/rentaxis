@@ -133,6 +133,72 @@ def log(msg):
     print(f"  • {msg}", flush=True)
 
 
+# Royalty-free Unsplash photos (hotlink-permitted CDN), curated per listing.
+# Each entry: (photo id, caption). Downloaded once into /tmp and validated.
+_PHOTO_SETS = {
+    "Bright 2BR in Al Barsha": [
+        ("photo-1522708323590-d24dbb6b0267", "Living room"),
+        ("photo-1560185007-cde436f6a4d0", "Master bedroom"),
+        ("photo-1556912173-3bb406ef7e77", "Kitchen"),
+        ("photo-1493809842364-78817add7ffb", "Dining area"),
+        ("photo-1512917774080-9991f1c4c750", "Building exterior"),
+    ],
+    "Cozy Studio near Mall of the Emirates": [
+        ("photo-1502672260266-1c1ef2d93688", "Studio living space"),
+        ("photo-1484154218962-a197022b5858", "Kitchenette"),
+        ("photo-1505693416388-ac5ce068fe85", "Sleeping area"),
+        ("photo-1554995207-c18c203602cb", "Lounge corner"),
+    ],
+    "Luxury Marina Penthouse with Sea View": [
+        ("photo-1512453979798-5ea266f8880c", "Dubai Marina view"),
+        ("photo-1567767292278-a4f21aa2d36e", "Living room"),
+        ("photo-1571902943202-507ec2618e8f", "Infinity pool"),
+        ("photo-1540518614846-7eded433c457", "Master suite"),
+        ("photo-1613490493576-7fde63acd811", "Terrace at dusk"),
+    ],
+    "Marina 1BR with Partial Sea View": [
+        ("photo-1546412414-e1885259563a", "Marina skyline"),
+        ("photo-1522771739844-6a9f6d5f14af", "Living area"),
+        ("photo-1560185127-6ed189bf02f4", "Bedroom"),
+        ("photo-1556909114-f6e7ad7d3136", "Kitchen"),
+    ],
+}
+
+_LISTING_COORDS = {
+    "Bright 2BR in Al Barsha": (25.1124, 55.1965),
+    "Cozy Studio near Mall of the Emirates": (25.1181, 55.2004),
+    "Luxury Marina Penthouse with Sea View": (25.0805, 55.1403),
+    "Marina 1BR with Partial Sea View": (25.0772, 55.1385),
+}
+
+
+def _curated_photos(title):
+    """Download the curated photo set for a listing into /tmp (cached).
+    Returns [(path, caption)] with only successfully validated images."""
+    out_dir = Path("/tmp/rentaxis-listing-photos")
+    out_dir.mkdir(exist_ok=True)
+    results = []
+    for photo_id, caption in _PHOTO_SETS.get(title, []):
+        p = out_dir / f"{photo_id}.jpg"
+        if not p.exists() or p.stat().st_size < 30_000:
+            url = f"https://images.unsplash.com/{photo_id}?w=1600&q=80&fm=jpg"
+            try:
+                r = requests.get(url, timeout=60)
+                if (r.status_code == 200
+                        and r.headers.get("content-type", "").startswith("image")
+                        and len(r.content) > 30_000):
+                    p.write_bytes(r.content)
+                else:
+                    print(f"  ! photo {photo_id} unavailable "
+                          f"({r.status_code}), skipping")
+                    continue
+            except requests.RequestException as e:
+                print(f"  ! photo {photo_id} failed: {e}")
+                continue
+        results.append((str(p), caption))
+    return results
+
+
 def _listing_images(title, listing_id):
     """Generate two presentable placeholder photos (cover skyline + interior)
     for a listing. Pure-PIL, deterministic per listing id."""
@@ -666,20 +732,45 @@ def main():
             })
             log(f"SEO set: {title}")
 
-        if not detail.get("media"):
-            for i, path in enumerate(_listing_images(title, lid)):
+        # Real coordinates so the listing Location tab has a pin.
+        if not detail.get("lat") and title in _LISTING_COORDS:
+            lat, lng = _LISTING_COORDS[title]
+            api.put(f"{LISTINGS}/{lid}", headers={}, json={"lat": lat, "lng": lng})
+            log(f"coordinates set: {title} ({lat}, {lng})")
+
+        # Real curated photos (4-5 per listing). If the listing only has the
+        # old generated placeholders (<4 photos), replace them wholesale.
+        photos = _curated_photos(title)
+        if len(photos) >= 4 and len(detail.get("media") or []) < 4:
+            for m in detail.get("media") or []:
+                api.call("DELETE", f"{LISTINGS}/{lid}/media/{m['id']}",
+                         headers={})
+            for i, (path, caption) in enumerate(photos):
                 with open(path, "rb") as fh:
                     r = api.s.post(
+                        f"{api.base}{LISTINGS}/{lid}/media",
+                        files={"file": (os.path.basename(path), fh, "image/jpeg")},
+                        data={"isCover": "true" if i == 0 else "false",
+                              "caption": caption},
+                        timeout=120,
+                    )
+                    if r.status_code not in (200, 201):
+                        log(f"WARN media upload failed for {title}: "
+                            f"{r.status_code} {r.text[:120]}")
+            log(f"media uploaded: {title} ({len(photos)} photos)")
+        elif len(photos) < 4 and len(detail.get("media") or []) < 4:
+            # Network/photo failures: fall back to generated placeholders so
+            # the listing is never left bare.
+            for i, path in enumerate(_listing_images(title, lid)):
+                with open(path, "rb") as fh:
+                    api.s.post(
                         f"{api.base}{LISTINGS}/{lid}/media",
                         files={"file": (os.path.basename(path), fh, "image/jpeg")},
                         data={"isCover": "true" if i == 0 else "false",
                               "caption": "Exterior view" if i == 0 else "Living area"},
                         timeout=120,
                     )
-                    if r.status_code not in (200, 201):
-                        log(f"WARN media upload failed for {title}: "
-                            f"{r.status_code} {r.text[:120]}")
-            log(f"media uploaded: {title}")
+            log(f"media uploaded (fallback placeholders): {title}")
 
     # ── 6b. Vendors + split expenses ─────────────────────────────────────────
     # Demonstrates the split-transaction capability: one vendor invoice

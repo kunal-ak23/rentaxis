@@ -3,8 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/services/notification_service.dart';
 import 'auth_provider.dart';
 
-final notificationApiServiceProvider =
-    Provider<NotificationApiService>((ref) {
+final notificationApiServiceProvider = Provider<NotificationApiService>((ref) {
   final client = ref.watch(apiClientProvider);
   return NotificationApiService(client.dio);
 });
@@ -20,8 +19,11 @@ class NotificationState {
     this.isLoading = false,
   });
 
-  NotificationState copyWith(
-      {int? unreadCount, List<dynamic>? notifications, bool? isLoading}) {
+  NotificationState copyWith({
+    int? unreadCount,
+    List<dynamic>? notifications,
+    bool? isLoading,
+  }) {
     return NotificationState(
       unreadCount: unreadCount ?? this.unreadCount,
       notifications: notifications ?? this.notifications,
@@ -58,10 +60,19 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
   Future<void> fetchNotifications({int page = 0, int size = 20}) async {
     state = state.copyWith(isLoading: true);
     try {
-      final notifications =
-          await _service.getNotifications(page: page, size: size);
-      state =
-          state.copyWith(notifications: notifications, isLoading: false);
+      final fetched = await _service.getNotifications(page: page, size: size);
+      // Page 0 refreshes the list; later pages APPEND (deduped by id).
+      // Replacing wholesale made notifications vanish when infinite scroll
+      // pulled an empty or partial next page.
+      final merged = page == 0
+          ? fetched
+          : [
+              ...state.notifications,
+              ...fetched.where(
+                (n) => !state.notifications.any((e) => e['id'] == n['id']),
+              ),
+            ];
+      state = state.copyWith(notifications: merged, isLoading: false);
     } catch (_) {
       state = state.copyWith(isLoading: false);
     }
@@ -82,8 +93,9 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
     await _service.markAllAsRead();
     state = state.copyWith(
       unreadCount: 0,
-      notifications:
-          state.notifications.map((n) => {...n, 'isRead': true}).toList(),
+      notifications: state.notifications
+          .map((n) => {...n, 'isRead': true})
+          .toList(),
     );
   }
 
@@ -96,6 +108,6 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
 
 final notificationProvider =
     StateNotifierProvider<NotificationNotifier, NotificationState>((ref) {
-  final service = ref.watch(notificationApiServiceProvider);
-  return NotificationNotifier(service);
-});
+      final service = ref.watch(notificationApiServiceProvider);
+      return NotificationNotifier(service);
+    });

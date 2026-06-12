@@ -29,62 +29,74 @@ class _ShellScreenState extends ConsumerState<ShellScreen> {
     final notifState = ref.watch(notificationProvider);
     final selectedIndex = _calculateIndex(location);
 
-    return Scaffold(
-      extendBody: true, // Content extends behind the floating nav
-      appBar: AppBar(
-        backgroundColor: AppColors.surface,
-        elevation: 0,
-        scrolledUnderElevation: 0.5,
-        title: Image.asset(
-          'assets/logo_horizontal.png',
-          height: 32,
-          fit: BoxFit.contain,
-        ),
-        actions: [
-          IconButton(
-            onPressed: () => context.push('/notifications'),
-            icon: Badge(
-              isLabelVisible: notifState.unreadCount > 0,
-              label: Text(
-                notifState.unreadCount > 9
-                    ? '9+'
-                    : '${notifState.unreadCount}',
-                style: const TextStyle(fontSize: 9, color: Colors.white),
+    // System back from a non-home tab returns to Home instead of exiting
+    // the app; back on Home exits as usual (standard Android tab UX).
+    return PopScope(
+      canPop: selectedIndex == 0,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) context.go('/');
+      },
+      child: Scaffold(
+        extendBody: true, // Content extends behind the floating nav
+        appBar: AppBar(
+          backgroundColor: AppColors.surface,
+          elevation: 0,
+          scrolledUnderElevation: 0.5,
+          title: Image.asset(
+            'assets/logo_horizontal.png',
+            height: 32,
+            fit: BoxFit.contain,
+          ),
+          actions: [
+            IconButton(
+              onPressed: () => context.push('/notifications'),
+              icon: Badge(
+                isLabelVisible: notifState.unreadCount > 0,
+                label: Text(
+                  notifState.unreadCount > 9
+                      ? '9+'
+                      : '${notifState.unreadCount}',
+                  style: const TextStyle(fontSize: 9, color: Colors.white),
+                ),
+                backgroundColor: AppColors.danger,
+                child: const Icon(
+                  Icons.notifications_outlined,
+                  color: AppColors.navyDark,
+                ),
               ),
-              backgroundColor: AppColors.danger,
-              child: const Icon(Icons.notifications_outlined,
-                  color: AppColors.navyDark),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: IconButton(
-              onPressed: () => context.push('/profile'),
-              icon: const Icon(Icons.person_outline_rounded,
-                  color: AppColors.navyDark),
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: IconButton(
+                onPressed: () => context.push('/profile'),
+                icon: const Icon(
+                  Icons.person_outline_rounded,
+                  color: AppColors.navyDark,
+                ),
+              ),
             ),
-          ),
-        ],
-      ),
-      body: widget.child,
-      bottomNavigationBar: _FrostedBottomNav(
-        selectedIndex: selectedIndex,
-        onTap: (index) {
-          switch (index) {
-            case 0:
-              context.go('/');
-            case 1:
-              context.go('/browse');
-            case 2:
-              context.go('/wishlist');
-            case 3:
-              context.go('/meetings');
-            case 4:
-              context.go('/payments');
-            case 5:
-              context.go('/tickets');
-          }
-        },
+          ],
+        ),
+        body: widget.child,
+        bottomNavigationBar: _FrostedBottomNav(
+          selectedIndex: selectedIndex,
+          onTap: (index) {
+            switch (index) {
+              case 0:
+                context.go('/');
+              case 1:
+                context.go('/browse');
+              case 2:
+                context.go('/wishlist');
+              case 3:
+                context.go('/meetings');
+              case 4:
+                context.go('/payments');
+              case 5:
+                context.go('/tickets');
+            }
+          },
+        ),
       ),
     );
   }
@@ -103,18 +115,31 @@ class _FrostedBottomNav extends StatelessWidget {
   final int selectedIndex;
   final ValueChanged<int> onTap;
 
-  const _FrostedBottomNav({
-    required this.selectedIndex,
-    required this.onTap,
-  });
+  const _FrostedBottomNav({required this.selectedIndex, required this.onTap});
 
   static const _items = [
     (icon: Icons.home_outlined, activeIcon: Icons.home_rounded, label: 'Home'),
-    (icon: Icons.search_outlined, activeIcon: Icons.search_rounded, label: 'Browse'),
+    (
+      icon: Icons.search_outlined,
+      activeIcon: Icons.search_rounded,
+      label: 'Browse',
+    ),
     (icon: Icons.favorite_border, activeIcon: Icons.favorite, label: 'Saved'),
-    (icon: Icons.event_outlined, activeIcon: Icons.event_rounded, label: 'Meetings'),
-    (icon: Icons.payment_outlined, activeIcon: Icons.payment_rounded, label: 'Payments'),
-    (icon: Icons.handyman_outlined, activeIcon: Icons.handyman_rounded, label: 'Tickets'),
+    (
+      icon: Icons.event_outlined,
+      activeIcon: Icons.event_rounded,
+      label: 'Meetings',
+    ),
+    (
+      icon: Icons.payment_outlined,
+      activeIcon: Icons.payment_rounded,
+      label: 'Payments',
+    ),
+    (
+      icon: Icons.handyman_outlined,
+      activeIcon: Icons.handyman_rounded,
+      label: 'Tickets',
+    ),
   ];
 
   @override
