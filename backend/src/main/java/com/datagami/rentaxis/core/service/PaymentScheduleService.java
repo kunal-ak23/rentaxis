@@ -398,6 +398,7 @@ public class PaymentScheduleService {
         summary.setOverdueAmount(BigDecimal.ZERO);
 
         int pendingCount = 0, collectedCount = 0, depositedCount = 0, clearedCount = 0, bouncedCount = 0, overdueCount = 0;
+        int countedPayments = 0;
         BigDecimal totalAmount = BigDecimal.ZERO;
         BigDecimal pendingAmount = BigDecimal.ZERO;
         BigDecimal collectedAmount = BigDecimal.ZERO;
@@ -407,6 +408,13 @@ public class PaymentScheduleService {
         LocalDate today = LocalDate.now();
 
         for (PaymentSchedule ps : payments) {
+            // Unsigned leases owe nothing yet — keep their schedules out of the
+            // summary cards, matching the dashboard and the overdue list filter.
+            LeaseStatus leaseStatus = ps.getLease() != null ? ps.getLease().getStatus() : null;
+            if (leaseStatus == LeaseStatus.DRAFT || leaseStatus == LeaseStatus.PENDING_SIGNATURE) {
+                continue;
+            }
+            countedPayments++;
             totalAmount = totalAmount.add(ps.getAmount());
 
             switch (ps.getStatus()) {
@@ -427,15 +435,19 @@ public class PaymentScheduleService {
                 default -> { }
             }
 
-            // Overdue: status is PENDING or COLLECTED and dueDate is before today
-            if ((ps.getStatus() == PaymentStatus.PENDING || ps.getStatus() == PaymentStatus.COLLECTED)
+            // Overdue: PENDING/COLLECTED past due, or already flagged OVERDUE
+            // by the penalty batch job — same definition as findOverdueFiltered.
+            if ((ps.getStatus() == PaymentStatus.PENDING
+                    || ps.getStatus() == PaymentStatus.COLLECTED
+                    || ps.getStatus() == PaymentStatus.OVERDUE)
+                    && ps.getDueDate() != null
                     && ps.getDueDate().isBefore(today)) {
                 overdueCount++;
                 overdueAmount = overdueAmount.add(ps.getAmount());
             }
         }
 
-        summary.setTotalPayments(payments.size());
+        summary.setTotalPayments(countedPayments);
         summary.setPendingCount(pendingCount);
         summary.setCollectedCount(collectedCount);
         summary.setDepositedCount(depositedCount);
