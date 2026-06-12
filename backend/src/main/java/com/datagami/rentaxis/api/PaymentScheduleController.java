@@ -123,7 +123,8 @@ public class PaymentScheduleController {
     public ResponseEntity<MarkFailedResponseDTO> markFailed(
             @PathVariable UUID id,
             @Valid @RequestBody MarkFailedRequestDTO body) {
-        MarkFailedResult result = paymentScheduleService.markFailed(id, body.failureReason(), body.notes());
+        MarkFailedResult result = paymentScheduleService.markFailed(
+                id, body.failureReason(), body.notes(), body.effectiveDate());
         PaymentPenalty p = result.penalty();
         var penaltyDto = new MarkFailedResponseDTO.PenaltySummaryDTO(
                 p.getId(), p.getPenaltyType(), p.getPenaltyAmount(),

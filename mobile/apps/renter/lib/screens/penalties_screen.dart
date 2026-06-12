@@ -132,7 +132,7 @@ class _PenaltyTabBody extends ConsumerWidget {
                 ],
               )
             : ListView(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
+                padding: EdgeInsets.fromLTRB(16, 16, 16, AppInsets.bottomNav(context)),
                 children: [
                   ...penalties.asMap().entries.map(
                         (entry) => AnimatedListItem(

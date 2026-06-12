@@ -92,7 +92,7 @@ class _VendorsScreenState extends ConsumerState<VendorsScreen> {
                   color: AppColors.primary,
                   child: ListView.builder(
                     physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 80),
+                    padding: EdgeInsets.fromLTRB(16, 0, 16, AppInsets.bottomNav(context)),
                     itemCount: filtered.length,
                     itemBuilder: (context, index) {
                       final vendor = filtered[index];

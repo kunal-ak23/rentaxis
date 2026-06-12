@@ -219,7 +219,8 @@ class PaymentScheduleServiceMarkFailedTest {
                 .hasMessageContaining("Can only mark payments in DEPOSITED status as failed");
 
         verify(paymentPenaltyRepository, never()).save(any());
-        verify(financialTransactionService, never()).recordChequeBounce(any());
+        verify(financialTransactionService, never())
+                .recordChequeBounce(any(), any(java.time.LocalDate.class));
     }
 
     @Test
@@ -325,7 +326,8 @@ class PaymentScheduleServiceMarkFailedTest {
 
         service.markFailed(payment.getId(), ChequeFailureReason.BOUNCE, null);
 
-        verify(financialTransactionService, times(1)).recordChequeBounce(any(PaymentSchedule.class));
+        verify(financialTransactionService, times(1))
+                .recordChequeBounce(any(PaymentSchedule.class), any(java.time.LocalDate.class));
     }
 
     // ---------- Robustness: null lease.status + FT-failure propagation ----------
@@ -360,7 +362,8 @@ class PaymentScheduleServiceMarkFailedTest {
         // full rollback of the schedule update + penalty + audit. Swallowing
         // it would leave the books inconsistent with the schedule state.
         org.mockito.Mockito.doThrow(new RuntimeException("ledger down"))
-                .when(financialTransactionService).recordChequeBounce(any(PaymentSchedule.class));
+                .when(financialTransactionService)
+                .recordChequeBounce(any(PaymentSchedule.class), any(java.time.LocalDate.class));
 
         assertThatThrownBy(() -> service.markFailed(payment.getId(), ChequeFailureReason.BOUNCE, null))
                 .isInstanceOf(RuntimeException.class)

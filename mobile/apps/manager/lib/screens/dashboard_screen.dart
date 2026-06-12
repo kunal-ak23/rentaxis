@@ -52,7 +52,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       color: AppColors.primary,
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 130),
+        padding: EdgeInsets.fromLTRB(20, 12, 20, AppInsets.bottomNav(context)),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

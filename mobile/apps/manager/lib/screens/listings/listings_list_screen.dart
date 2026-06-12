@@ -38,7 +38,7 @@ class ListingsListScreen extends ConsumerWidget {
       ),
       body: listingsAsync.when(
         loading: () => ListView.builder(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+          padding: EdgeInsets.fromLTRB(16, 16, 16, AppInsets.bottomNav(context)),
           itemCount: 5,
           itemBuilder: (_, __) => Padding(
             padding: const EdgeInsets.only(bottom: 14),
@@ -61,7 +61,7 @@ class ListingsListScreen extends ConsumerWidget {
           return RefreshIndicator(
             onRefresh: () async => ref.invalidate(_listingsProvider),
             child: ListView.builder(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+              padding: EdgeInsets.fromLTRB(16, 16, 16, AppInsets.bottomNav(context)),
               itemCount: items.length + (truncated ? 1 : 0),
               itemBuilder: (_, i) {
                 if (truncated && i == items.length) {

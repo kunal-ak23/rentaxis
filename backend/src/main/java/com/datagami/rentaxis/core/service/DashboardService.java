@@ -18,8 +18,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.time.ZoneId;
 import java.time.format.TextStyle;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -31,6 +33,9 @@ import java.util.Map;
 @Service
 @RequiredArgsConstructor
 public class DashboardService {
+
+    /** Tenant-facing timezone — RentAxis serves UAE landlords. */
+    private static final ZoneId UAE_ZONE = ZoneId.of("Asia/Dubai");
 
     private final PropertyRepository propertyRepository;
     private final UnitRepository unitRepository;
@@ -108,6 +113,13 @@ public class DashboardService {
         List<PaymentSchedule> recentPayments = new ArrayList<>();
 
         for (PaymentSchedule ps : allPayments) {
+            // Unsigned leases (DRAFT / PENDING_SIGNATURE) have schedules too,
+            // but no money is owed until the lease is signed — keep them out
+            // of every financial aggregate.
+            LeaseStatus leaseStatus = ps.getLease() != null ? ps.getLease().getStatus() : null;
+            if (leaseStatus == LeaseStatus.DRAFT || leaseStatus == LeaseStatus.PENDING_SIGNATURE) {
+                continue;
+            }
             switch (ps.getStatus()) {
                 case CLEARED -> clearedAmount = clearedAmount.add(ps.getAmount());
                 case PENDING -> {
@@ -122,8 +134,12 @@ public class DashboardService {
                 default -> { }
             }
 
-            // Overdue: PENDING or COLLECTED payments where dueDate < today
-            if ((ps.getStatus() == PaymentStatus.PENDING || ps.getStatus() == PaymentStatus.COLLECTED)
+            // Overdue: PENDING/COLLECTED past due, or already flagged OVERDUE
+            // by the penalty batch job.
+            if ((ps.getStatus() == PaymentStatus.PENDING
+                    || ps.getStatus() == PaymentStatus.COLLECTED
+                    || ps.getStatus() == PaymentStatus.OVERDUE)
+                    && ps.getDueDate() != null
                     && ps.getDueDate().isBefore(today)) {
                 overdueAmount = overdueAmount.add(ps.getAmount());
             }
@@ -138,6 +154,20 @@ public class DashboardService {
         summary.setPendingAmount(pendingAmount);
         summary.setPendingThisMonthAmount(pendingThisMonthAmount);
         summary.setOverdueAmount(overdueAmount);
+
+        // --- Cash received this month / last month (by status-change time) ---
+        // Anchor month windows to UAE local time, not the JVM default (the
+        // prod VM runs UTC; without this, receipts in the first 4h of a UAE
+        // month would bucket into the previous month).
+        ZoneId zone = UAE_ZONE;
+        YearMonth currentMonth = YearMonth.from(today);
+        Instant receiptsFrom = currentMonth.atDay(1).atStartOfDay(zone).toInstant();
+        Instant receiptsTo = currentMonth.plusMonths(1).atDay(1).atStartOfDay(zone).toInstant();
+        Instant prevReceiptsFrom = currentMonth.minusMonths(1).atDay(1).atStartOfDay(zone).toInstant();
+        summary.setReceivedThisMonth(
+                paymentScheduleRepository.sumReceivedBetween(receiptsFrom, receiptsTo));
+        summary.setReceivedLastMonth(
+                paymentScheduleRepository.sumReceivedBetween(prevReceiptsFrom, receiptsFrom));
 
         // --- Recent Activity ---
         recentPayments.sort(Comparator.comparing(PaymentSchedule::getStatusChangedAt).reversed());

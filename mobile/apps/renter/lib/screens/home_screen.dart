@@ -66,7 +66,7 @@ class HomeScreen extends ConsumerWidget {
         color: AppColors.primary,
         onRefresh: refresh,
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 130),
+          padding: EdgeInsets.fromLTRB(20, 12, 20, AppInsets.bottomNav(context)),
           physics: const AlwaysScrollableScrollPhysics(),
           children: [
             leasesAsync.when(

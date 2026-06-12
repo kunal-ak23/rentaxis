@@ -111,7 +111,7 @@ class _MeetingsScreenState extends ConsumerState<MeetingsScreen> {
                             onRefresh: _load,
                             color: AppColors.primary,
                             child: ListView.separated(
-                              padding: const EdgeInsets.fromLTRB(16, 4, 16, 100),
+                              padding: EdgeInsets.fromLTRB(16, 4, 16, AppInsets.bottomNav(context)),
                               itemCount: _meetings.length,
                               separatorBuilder: (_, __) =>
                                   const SizedBox(height: 8),

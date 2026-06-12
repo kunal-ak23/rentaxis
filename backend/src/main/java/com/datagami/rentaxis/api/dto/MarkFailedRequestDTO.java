@@ -8,4 +8,8 @@ import jakarta.validation.constraints.NotNull;
  * reason drives which fine amount is applied (BOUNCE / SIGNATURE_MISMATCH /
  * ACCOUNT_CLOSED) — it isn't optional.
  */
-public record MarkFailedRequestDTO(@NotNull ChequeFailureReason failureReason, String notes) {}
+public record MarkFailedRequestDTO(
+        @NotNull ChequeFailureReason failureReason,
+        String notes,
+        /** Optional value date for historical entries; defaults to today. */
+        java.time.LocalDate effectiveDate) {}

@@ -181,14 +181,32 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
                     return false;
                   }
                   final status = p['status'] ?? '';
+                  // Overdue exists in two forms: a stored OVERDUE status (set
+                  // by the penalty batch job) and a computed view (PENDING /
+                  // COLLECTED rows past their due date, before the batch
+                  // runs). Honour both, like the dashboard does.
+                  final due =
+                      DateTime.tryParse(p['dueDate']?.toString() ?? '');
+                  final now = DateTime.now();
+                  final isOverdue = status == 'OVERDUE' ||
+                      ((status == 'PENDING' || status == 'COLLECTED') &&
+                          due != null &&
+                          due.isBefore(
+                              DateTime(now.year, now.month, now.day)));
                   switch (_tabController.index) {
-                    case 0: // Upcoming
+                    case 0: // Upcoming — pending dues in the current month only
                       if (status != 'PENDING' && status != 'ONLINE_PENDING') {
+                        return false;
+                      }
+                      if (isOverdue) return false;
+                      if (due == null ||
+                          due.year != now.year ||
+                          due.month != now.month) {
                         return false;
                       }
                       break;
                     case 1: // Overdue
-                      if (status != 'OVERDUE') return false;
+                      if (!isOverdue) return false;
                       break;
                     case 2: // Paid
                       if (status != 'CLEARED') return false;

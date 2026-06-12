@@ -149,7 +149,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
                         _ticketRepliesProvider(widget.ticketId));
                   },
                   child: ListView(
-                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 150),
+                    padding: EdgeInsets.fromLTRB(20, 16, 20, AppInsets.bottomNav(context)),
                     children: [
                       // Status timeline
                       AnimatedListItem(

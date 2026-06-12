@@ -219,7 +219,9 @@ class _MeetingDetailScreenState extends ConsumerState<MeetingDetailScreen> {
           color: AppColors.primary,
           child: SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+            // Bottom inset clears the floating bottom nav (same convention
+            // as meetings_screen / create_meeting_screen).
+            padding: EdgeInsets.fromLTRB(16, 16, 16, AppInsets.bottomNav(context)),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [

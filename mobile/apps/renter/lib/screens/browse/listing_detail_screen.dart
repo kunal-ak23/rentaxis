@@ -123,7 +123,7 @@ class _ListingDetailViewState extends ConsumerState<_ListingDetailView> {
                 child: _HeroCarousel(photos: _photos, listing: l),
               ),
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(16, 20, 16, 120),
+                padding: EdgeInsets.fromLTRB(16, 20, 16, AppInsets.bottomNav(context)),
                 sliver: SliverList(
                   delegate: SliverChildListDelegate([
                     _QuickFacts(listing: l),

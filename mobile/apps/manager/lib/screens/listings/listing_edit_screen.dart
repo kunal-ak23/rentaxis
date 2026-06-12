@@ -394,7 +394,7 @@ class _DetailsTabState extends State<_DetailsTab> {
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 100),
+      padding: EdgeInsets.fromLTRB(16, 20, 16, AppInsets.bottomNav(context)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -487,7 +487,7 @@ class _PricingTabState extends State<_PricingTab> {
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 100),
+      padding: EdgeInsets.fromLTRB(16, 20, 16, AppInsets.bottomNav(context)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -610,7 +610,7 @@ class _LocationTabState extends State<_LocationTab> {
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 100),
+      padding: EdgeInsets.fromLTRB(16, 20, 16, AppInsets.bottomNav(context)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -688,7 +688,7 @@ class _AmenitiesTabState extends State<_AmenitiesTab> {
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 100),
+      padding: EdgeInsets.fromLTRB(16, 20, 16, AppInsets.bottomNav(context)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -768,7 +768,7 @@ class _MediaTabState extends State<_MediaTab> {
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 100),
+      padding: EdgeInsets.fromLTRB(16, 20, 16, AppInsets.bottomNav(context)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

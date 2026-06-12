@@ -36,8 +36,10 @@ import requests
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 TENANT_NAME = "Al Ashram Demo Account"
-ADMIN_EMAIL = "demo.admin@alashram-demo.ae"
-ADMIN_PASSWORD = "AlAshram@Demo2026"
+# One easy password everywhere — this is throwaway demo data.
+DEMO_PASSWORD = "Demo@1234"
+ADMIN_EMAIL = "admin@alashramdemo.com"
+ADMIN_PASSWORD = DEMO_PASSWORD
 OUT_FILE = REPO_ROOT / "scripts" / "seed_demo_tenant.out.json"
 
 TODAY = dt.date.today()
@@ -131,6 +133,71 @@ def log(msg):
     print(f"  • {msg}", flush=True)
 
 
+def _listing_images(title, listing_id):
+    """Generate two presentable placeholder photos (cover skyline + interior)
+    for a listing. Pure-PIL, deterministic per listing id."""
+    from PIL import Image, ImageDraw, ImageFont
+
+    out_dir = Path("/tmp/rentaxis-listing-media")
+    out_dir.mkdir(exist_ok=True)
+    seed_val = int(str(listing_id).replace("-", "")[:8], 16)
+
+    def font(size, bold=False):
+        path = ("/System/Library/Fonts/Supplemental/Arial Bold.ttf" if bold
+                else "/System/Library/Fonts/Supplemental/Arial.ttf")
+        try:
+            return ImageFont.truetype(path, size)
+        except OSError:
+            return ImageFont.load_default()
+
+    paths = []
+    palettes = [
+        ((16, 42, 84), (120, 170, 215)),    # cover: navy → sky
+        ((242, 236, 226), (196, 178, 150)), # interior: warm neutrals
+    ]
+    for idx, (top, bottom) in enumerate(palettes):
+        w, h = 1200, 800
+        img = Image.new("RGB", (w, h))
+        d = ImageDraw.Draw(img)
+        for y in range(h):  # vertical gradient
+            t = y / h
+            d.line([(0, y), (w, y)], fill=tuple(
+                int(top[c] + (bottom[c] - top[c]) * t) for c in range(3)))
+        if idx == 0:
+            # simple skyline silhouette
+            x = 0
+            n = seed_val
+            while x < w:
+                n = (n * 1103515245 + 12345) % (2 ** 31)
+                bw = 60 + n % 120
+                bh = 180 + (n >> 8) % 320
+                d.rectangle([x, h - bh, x + bw, h], fill=(10, 24, 48))
+                for wy in range(h - bh + 20, h - 20, 36):
+                    for wx in range(x + 10, x + bw - 10, 28):
+                        if (wx + wy + n) % 3 == 0:
+                            d.rectangle([wx, wy, wx + 10, wy + 14],
+                                        fill=(235, 200, 120))
+                x += bw + 14
+        else:
+            # interior: floor line + window + furniture blocks
+            d.rectangle([0, 540, w, h], fill=(168, 144, 112))
+            d.rectangle([120, 120, 520, 460], fill=(200, 224, 240),
+                        outline=(120, 110, 95), width=8)
+            d.line([(320, 120), (320, 460)], fill=(120, 110, 95), width=8)
+            d.rectangle([640, 380, 1080, 560], fill=(94, 76, 60))
+            d.rectangle([660, 300, 1060, 390], fill=(120, 98, 78))
+        band_h = 96
+        d.rectangle([0, h - band_h, w, h], fill=(12, 28, 56))
+        d.text((30, h - band_h + 16), title[:48], font=font(34, bold=True),
+               fill=(255, 255, 255))
+        d.text((30, h - band_h + 58), "Al Ashram Properties · Dubai",
+               font=font(22), fill=(220, 190, 120))
+        p = out_dir / f"{listing_id}-{idx}.jpg"
+        img.save(p, "JPEG", quality=88)
+        paths.append(str(p))
+    return paths
+
+
 def iso(d):
     return d.isoformat()
 
@@ -160,6 +227,16 @@ def main():
     existing = [
         t for t in (sa.get("/api/admin/tenants") or []) if t["name"] == TENANT_NAME
     ]
+    if existing and "--reset" in sys.argv:
+        old_id = existing[0]["id"]
+        sa.s.delete(
+            f"{sa.base}/api/admin/tenants/{old_id}",
+            params={"confirmName": TENANT_NAME},
+            headers=sa.headers,
+            timeout=120,
+        ).raise_for_status()
+        log(f"tenant wiped for reseed: {old_id}")
+        existing = []
     if existing:
         tenant = existing[0]
         log(f"tenant already exists, resuming: {tenant['id']}")
@@ -285,40 +362,53 @@ def main():
     }
 
     def make_renter(name_en, name_ar, email, phone):
-        if email in existing_renters:
-            log(f"renter {name_en} already exists (password unchanged)")
-            return existing_renters[email]
-        r = api.post(
-            "/api/v1/renters",
-            json={
-                "nameEn": name_en,
-                "nameAr": name_ar,
-                "email": email,
-                "phone": phone,
-                "primaryLanguage": "EN",
-                "createPortalAccount": True,
-            },
-        )
-        log(f"renter {name_en}: portal {email} / {r.get('portalPassword')}")
+        r = existing_renters.get(email)
+        if r is None:
+            r = api.post(
+                "/api/v1/renters",
+                json={
+                    "nameEn": name_en,
+                    "nameAr": name_ar,
+                    "email": email,
+                    "phone": phone,
+                    "primaryLanguage": "EN",
+                    "createPortalAccount": True,
+                },
+            )
+        # Reset the auto-generated portal password to the shared demo one.
+        # updateUser overwrites every field, so resend the full identity.
+        if r.get("userId"):
+            api.put(
+                f"/api/admin/users/{r['userId']}",
+                json={
+                    "email": email,
+                    "password": DEMO_PASSWORD,
+                    "name": name_en,
+                    "role": "RENTER",
+                    "tenantId": tenant_id,
+                    "phoneNumber": phone,
+                },
+            )
+        log(f"renter {name_en}: portal {email} / {DEMO_PASSWORD}")
         return r
 
     ahmed = make_renter(
-        "Ahmed Hassan", "أحمد حسن", "ahmed.hassan@alashram-demo.ae", "+971501234001"
+        "Ahmed Hassan", "أحمد حسن", "ahmed@alashramdemo.com", "+971501234001"
     )
     fatima = make_renter(
-        "Fatima Al Zaabi", "فاطمة الزعابي", "fatima.alzaabi@alashram-demo.ae",
+        "Fatima Al Zaabi", "فاطمة الزعابي", "fatima@alashramdemo.com",
         "+971501234002",
     )
     rajesh = make_renter(
-        "Rajesh Kumar", "راجيش كومار", "rajesh.kumar@alashram-demo.ae",
+        "Rajesh Kumar", "راجيش كومار", "rajesh@alashramdemo.com",
         "+971501234003",
     )
     sara = make_renter(
-        "Sara Mansour", "سارة منصور", "sara.mansour@alashram-demo.ae",
+        "Sara Mansour", "سارة منصور", "sara@alashramdemo.com",
         "+971501234004",
     )
     out["renterLogins"] = [
-        {"name": r["nameEn"], "email": r["email"], "password": r.get("portalPassword")}
+        {"name": r["nameEn"], "email": r["email"], "password": DEMO_PASSWORD}
         for r in (ahmed, fatima, rajesh, sara)
     ]
 
@@ -413,25 +503,37 @@ def main():
 
     def advance(row, target, body):
         """Walk a schedule row PENDING→COLLECTED→DEPOSITED→CLEARED/BOUNCED,
-        skipping transitions already done (safe to re-run)."""
+        skipping transitions already done (safe to re-run). Each transition
+        carries a realistic value date derived from the cheque date (handed
+        over on the cheque date, banked next day, cleared/bounced a few days
+        later) — never in the future."""
         rank = {"PENDING": 0, "COLLECTED": 1, "DEPOSITED": 2,
                 "CLEARED": 3, "BOUNCED": 3}
         status = row.get("status", "PENDING")
         if status in ("BOUNCED", "CLEARED") or status == target:
             return
         pid = row["id"]
+        cheque_date = dt.date.fromisoformat(body["chequeDate"])
+
+        def eff(days_after):
+            return iso(min(cheque_date + dt.timedelta(days=days_after), TODAY))
+
         if status == "PENDING" and rank[target] >= 1:
-            api.put(f"/api/v1/payments/{pid}/collect", json=body)
+            api.put(f"/api/v1/payments/{pid}/collect",
+                    json={**body, "effectiveDate": eff(0)})
             status = "COLLECTED"
         if status == "COLLECTED" and rank[target] >= 2:
-            api.put(f"/api/v1/payments/{pid}/deposit", json={})
+            api.put(f"/api/v1/payments/{pid}/deposit",
+                    json={"effectiveDate": eff(1)})
             status = "DEPOSITED"
         if status == "DEPOSITED" and target == "CLEARED":
-            api.put(f"/api/v1/payments/{pid}/clear", json={})
+            api.put(f"/api/v1/payments/{pid}/clear",
+                    json={"effectiveDate": eff(4)})
         if status == "DEPOSITED" and target == "BOUNCED":
             api.post(f"/api/v1/payments/{pid}/mark-failed",
                      json={"failureReason": "BOUNCE",
-                           "notes": "Insufficient funds"})
+                           "notes": "Insufficient funds",
+                           "effectiveDate": eff(5)})
 
     # Ahmed: Q1 cleared, Q2 deposited, Q3 collected (banking date arrived →
     # shows in "Cheques to deposit"), Q4 pending.
@@ -464,6 +566,24 @@ def main():
                 cheque_body(f"4003{i:02d}", "Dubai Islamic Bank", d,
                             "Rajesh Kumar"))
     log("Rajesh: 5 cleared monthly cheques; June installment overdue")
+
+    # Security deposits, booking deposit and charges on the ACTIVE leases were
+    # handed over at signing — clear them so the dashboard collection trend
+    # tracks expected. (Rent rows above keep their scripted lifecycle; Sara's
+    # PENDING_SIGNATURE lease is intentionally untouched.)
+    banks = {lease_ahmed["id"]: ("Emirates NBD", "Ahmed Hassan"),
+             lease_fatima["id"]: ("FAB", "Fatima Al Zaabi"),
+             lease_rajesh["id"]: ("Dubai Islamic Bank", "Rajesh Kumar")}
+    seq = 900001
+    for lease_id, (bank, payer) in banks.items():
+        for row in api.get(f"/api/v1/payments/lease/{lease_id}") or []:
+            non_rent = (row.get("isBookingDeposit") or row.get("isSecurityDeposit")
+                        or row.get("isCharge"))
+            if not non_rent:
+                continue
+            advance(row, "CLEARED", cheque_body(str(seq), bank, year_start, payer))
+            seq += 1
+    log("deposit / charge rows cleared for active leases")
 
     # ── 6. Marketplace listings for vacant units ─────────────────────────────
     # Caddy doesn't route /api/listings to the backend (only /api/v1 and
@@ -520,6 +640,109 @@ def main():
                  publish=False)
     log("4 listings created (3 published, 1 draft)")
 
+    # SEO metadata + placeholder photos for every listing that lacks them.
+    page = api.get(f"{LISTINGS}?page=0&size=100", headers={}) or {}
+    for summary in page.get("content", []):
+        lid = summary["id"]
+        detail = api.get(f"{LISTINGS}/{lid}", headers={}) or {}
+        title = detail.get("titleEn") or summary.get("title") or "Dubai Apartment"
+
+        if not detail.get("seoTitle"):
+            beds = detail.get("bedrooms")
+            beds_label = "Studio" if beds in (0, None) else f"{beds}BR"
+            api.put(f"{LISTINGS}/{lid}", headers={}, json={
+                "seoTitle": f"{title} | Al Ashram Properties Dubai",
+                "seoDescription": (
+                    f"{beds_label} for rent in Dubai — {title}. "
+                    f"Annual rent AED {detail.get('annualRent') or ''}. "
+                    "Managed by Al Ashram Properties; flexible cheques, "
+                    "well-maintained building, quick move-in."
+                )[:300],
+                "seoKeywords": ", ".join(filter(None, [
+                    "dubai apartment for rent", beds_label.lower(),
+                    (detail.get("furnishing") or "").replace("_", " ").lower(),
+                    "al ashram properties",
+                ])),
+            })
+            log(f"SEO set: {title}")
+
+        if not detail.get("media"):
+            for i, path in enumerate(_listing_images(title, lid)):
+                with open(path, "rb") as fh:
+                    r = api.s.post(
+                        f"{api.base}{LISTINGS}/{lid}/media",
+                        files={"file": (os.path.basename(path), fh, "image/jpeg")},
+                        data={"isCover": "true" if i == 0 else "false",
+                              "caption": "Exterior view" if i == 0 else "Living area"},
+                        timeout=120,
+                    )
+                    if r.status_code not in (200, 201):
+                        log(f"WARN media upload failed for {title}: "
+                            f"{r.status_code} {r.text[:120]}")
+            log(f"media uploaded: {title}")
+
+    # ── 6b. Vendors + split expenses ─────────────────────────────────────────
+    # Demonstrates the split-transaction capability: one vendor invoice
+    # allocated across multiple properties / units.
+    existing_vendors = {
+        v.get("nameEn"): v for v in (api.get("/api/v1/vendors") or [])
+        if isinstance(v, dict)
+    }
+
+    def make_vendor(name_en, name_ar, contact, phone):
+        if name_en in existing_vendors:
+            return existing_vendors[name_en]
+        return api.post("/api/v1/vendors", json={
+            "nameEn": name_en, "nameAr": name_ar,
+            "contactPerson": contact, "phone": phone,
+        })
+
+    fm_vendor = make_vendor("Emirates Facility Management", "إدارة المرافق",
+                            "Imran Shaikh", "+97143330001")
+    cleaning_vendor = make_vendor("Gulf Cleaning Services", "خدمات الخليج للتنظيف",
+                                  "Maria Santos", "+97143330002")
+
+    def account_id(code):
+        return api.get(f"/api/v1/finance/accounts/code/{code}")["id"]
+
+    existing_txn_descriptions = {
+        t.get("description")
+        for t in (api.get("/api/v1/finance/transactions") or [])
+        if isinstance(t, dict)
+    }
+
+    def split_expense(description, code, date, vendor, splits):
+        if description in existing_txn_descriptions:
+            return
+        api.post("/api/v1/finance/transactions/split", json={
+            "date": iso(date),
+            "description": description,
+            "accountId": account_id(code),
+            "debit": float(sum(s["amount"] for s in splits)),
+            "vendorId": vendor["id"],
+            "splits": splits,
+        })
+        log(f"split expense: {description}")
+
+    split_expense(
+        "Fire safety AMC 2026 — both towers", "D-01-08",
+        dt.date(TODAY.year, 2, 10), fm_vendor,
+        [{"propertyId": tower["id"], "amount": 5000.0},
+         {"propertyId": marina["id"], "amount": 4000.0}],
+    )
+    split_expense(
+        "Q1 common-area deep cleaning", "D-01-04",
+        dt.date(TODAY.year, 4, 5), cleaning_vendor,
+        [{"propertyId": tower["id"], "amount": 3500.0},
+         {"propertyId": marina["id"], "amount": 2500.0}],
+    )
+    split_expense(
+        "AC compressor repairs — units A-101 / A-103", "D-01-03",
+        dt.date(TODAY.year, 5, 18), fm_vendor,
+        [{"propertyId": tower["id"], "unitId": a101["id"], "amount": 1200.0},
+         {"propertyId": tower["id"], "unitId": a103["id"], "amount": 1600.0}],
+    )
+
     # ── 7. Meetings ──────────────────────────────────────────────────────────
     def at_hour(days_ahead, hour):
         d = dt.datetime.combine(
@@ -528,9 +751,11 @@ def main():
         # UAE is UTC+4; send as UTC instant.
         return (d - dt.timedelta(hours=4)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
+    meetings_raw = api.get("/api/v1/meetings?page=0&size=100") or []
+    if isinstance(meetings_raw, dict):
+        meetings_raw = meetings_raw.get("content", [])
     existing_meetings = {
-        m.get("title") for m in (api.get("/api/v1/meetings") or [])
-        if isinstance(m, dict)
+        m.get("title") for m in meetings_raw if isinstance(m, dict)
     }
 
     def meeting_exists(title):

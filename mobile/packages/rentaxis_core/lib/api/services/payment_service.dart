@@ -30,12 +30,20 @@ class PaymentService {
 
   // PM endpoints
   Future<List<dynamic>> getPayments(
-      {String? propertyId, String? status}) async {
+      {String? propertyId, String? status, int page = 0, int size = 500}) async {
     final response = await _dio.get('/v1/payments', queryParameters: {
       if (propertyId != null) 'propertyId': propertyId,
       if (status != null) 'status': status,
+      'page': page,
+      'size': size,
     });
-    return response.data;
+    // Backend returns a Spring Page ({content: [...]}); older versions
+    // returned a bare list — unwrap either shape (same as MeetingService).
+    final data = response.data;
+    if (data is Map && data['content'] is List) {
+      return data['content'] as List<dynamic>;
+    }
+    return data as List<dynamic>;
   }
 
   Future<Map<String, dynamic>> getSummary({String? propertyId}) async {

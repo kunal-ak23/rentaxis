@@ -46,6 +46,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -463,8 +464,24 @@ public class PaymentScheduleService {
                 payment,
                 dto.getChequeNumber(), dto.getBankName(), dto.getPayerName(), dto.getChequeDate(),
                 dto.getChequeImageUrl(), dto.getChequeImageBlobPath(), resolveChequeImageUploadedAt(dto),
-                Instant.now(), TenantContextHolder.getTenantId());
+                effectiveInstant(dto.getEffectiveDate()), TenantContextHolder.getTenantId());
         return mapToDTO(saved);
+    }
+
+    /** Tenant-facing timezone — RentAxis serves UAE landlords. */
+    private static final ZoneId UAE_ZONE = ZoneId.of("Asia/Dubai");
+
+    /** Status-change instant for a transition: the supplied value date (start
+     * of day, UAE time) for historical entries, otherwise now. */
+    private Instant effectiveInstant(LocalDate effectiveDate) {
+        return effectiveDate != null
+                ? effectiveDate.atStartOfDay(UAE_ZONE).toInstant()
+                : Instant.now();
+    }
+
+    /** Ledger posting date: the supplied value date, otherwise today. */
+    private LocalDate effectiveDateOrToday(LocalDate effectiveDate) {
+        return effectiveDate != null ? effectiveDate : LocalDate.now();
     }
 
     /**
@@ -640,7 +657,7 @@ public class PaymentScheduleService {
         if (dto.getNotes() != null) {
             payment.setNotes(dto.getNotes());
         }
-        payment.setStatusChangedAt(Instant.now());
+        payment.setStatusChangedAt(effectiveInstant(dto.getEffectiveDate()));
         PaymentSchedule deposited = paymentScheduleRepository.save(payment);
 
         // Structured email event: CHEQUE_DEPOSITED
@@ -675,7 +692,7 @@ public class PaymentScheduleService {
         }
 
         payment.setStatus(PaymentStatus.CLEARED);
-        payment.setStatusChangedAt(Instant.now());
+        payment.setStatusChangedAt(effectiveInstant(dto.getEffectiveDate()));
         paymentScheduleRepository.save(payment);
 
         // Auto-create financial transactions
@@ -698,7 +715,7 @@ public class PaymentScheduleService {
         }
 
         FinancialTransaction debitTxn = new FinancialTransaction();
-        debitTxn.setDate(LocalDate.now());
+        debitTxn.setDate(effectiveDateOrToday(dto.getEffectiveDate()));
         debitTxn.setDescription("Cheque cleared - Lease installment #" + payment.getInstallmentNumber());
         debitTxn.setAccount(bankAccount);
         debitTxn.setDebit(payment.getAmount());
@@ -708,7 +725,7 @@ public class PaymentScheduleService {
         financialTransactionService.createTransaction(debitTxn);
 
         FinancialTransaction creditTxn = new FinancialTransaction();
-        creditTxn.setDate(LocalDate.now());
+        creditTxn.setDate(effectiveDateOrToday(dto.getEffectiveDate()));
         creditTxn.setDescription("Rental income - Lease installment #" + payment.getInstallmentNumber());
         creditTxn.setAccount(rentalIncomeAccount);
         creditTxn.setDebit(BigDecimal.ZERO);
@@ -778,6 +795,12 @@ public class PaymentScheduleService {
      */
     @Transactional
     public MarkFailedResult markFailed(UUID paymentId, ChequeFailureReason reason, String notes) {
+        return markFailed(paymentId, reason, notes, null);
+    }
+
+    @Transactional
+    public MarkFailedResult markFailed(UUID paymentId, ChequeFailureReason reason, String notes,
+                                       LocalDate effectiveDate) {
         PaymentSchedule s = paymentScheduleRepository.findById(paymentId)
                 .orElseThrow(() -> new NotFoundException("Payment not found"));
 
@@ -788,7 +811,7 @@ public class PaymentScheduleService {
 
         s.setStatus(PaymentStatus.BOUNCED);
         s.setFailureReason(reason);
-        s.setStatusChangedAt(Instant.now());
+        s.setStatusChangedAt(effectiveInstant(effectiveDate));
         if (notes != null && !notes.isBlank()) {
             s.setNotes(notes);
         }
@@ -817,7 +840,7 @@ public class PaymentScheduleService {
         // confusing TransactionSystemException. Letting it propagate triggers
         // proper rollback of the status change + penalty + audit so the books
         // stay consistent with the schedule state.
-        financialTransactionService.recordChequeBounce(saved);
+        financialTransactionService.recordChequeBounce(saved, effectiveDateOrToday(effectiveDate));
 
         // Renter notifications — both PAYMENT_BOUNCED (existing template) and
         // PENALTY_INCURRED (extracted to NotificationService.sendPenaltyIncurred
