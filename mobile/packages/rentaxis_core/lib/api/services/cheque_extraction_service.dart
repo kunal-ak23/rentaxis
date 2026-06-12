@@ -17,6 +17,16 @@ class ChequeExtractionResult {
     required this.warnings,
   });
 
+  /// OCR-extracted cheque amount in AED, or null if unreadable.
+  num? get amount {
+    final raw = extracted?['amount'];
+    if (raw == null) return null;
+    return raw is num ? raw : num.tryParse(raw.toString());
+  }
+
+  /// Extraction confidence: HIGH | MEDIUM | LOW, or null.
+  String? get confidence => extracted?['confidence']?.toString();
+
   factory ChequeExtractionResult.fromJson(Map<String, dynamic> json) {
     final image = Map<String, dynamic>.from(json['image'] as Map);
     return ChequeExtractionResult(

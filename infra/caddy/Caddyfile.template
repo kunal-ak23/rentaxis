@@ -42,6 +42,15 @@
         reverse_proxy backend:8080
     }
 
+    # Listings management + renter marketplace (mobile apps call these
+    # directly; without these routes they fall through to Next.js and 404)
+    handle /api/listings* {
+        reverse_proxy backend:8080
+    }
+    handle /api/marketplace/* {
+        reverse_proxy backend:8080
+    }
+
     # Health check
     handle /actuator/* {
         reverse_proxy backend:8080

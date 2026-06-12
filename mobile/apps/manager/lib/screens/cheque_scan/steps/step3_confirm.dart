@@ -135,6 +135,34 @@ class _Step3ConfirmState extends State<Step3Confirm> {
       _chequeDate != null &&
       !widget.submitting;
 
+  /// Human list of what still blocks the confirm button (empty when ready).
+  List<String> get _missingItems => [
+        if (widget.matchedPayment == null) 'pick a payment',
+        if (_chequeNumberCtrl.text.isEmpty) 'cheque number',
+        if (_bankNameCtrl.text.isEmpty) 'bank name',
+        if (_chequeDate == null) 'cheque date',
+        if (_payerNameCtrl.text.isEmpty) 'payer name',
+      ];
+
+  num? get _scannedAmount => widget.result.amount;
+
+  num? get _expectedAmount {
+    final raw = widget.matchedPayment?['amount'];
+    if (raw == null) return null;
+    return raw is num ? raw : num.tryParse(raw.toString());
+  }
+
+  /// Non-blocking, exact-to-the-cent comparison — mirrors the web's
+  /// PaymentScheduleEditor mismatch chip.
+  bool get _amountMismatch {
+    final scanned = _scannedAmount;
+    final expected = _expectedAmount;
+    if (scanned == null || expected == null) return false;
+    return (scanned * 100).round() != (expected * 100).round();
+  }
+
+  String _formatAed(num n) => 'AED ${NumberFormat('#,##0.##').format(n)}';
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -156,6 +184,14 @@ class _Step3ConfirmState extends State<Step3Confirm> {
                   matchedPayment: widget.matchedPayment,
                   onPick: widget.onPickPayment,
                 ),
+                if (widget.result.confidence == 'LOW' ||
+                    widget.result.warnings.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  _WarningsCard(
+                    lowConfidence: widget.result.confidence == 'LOW',
+                    warnings: widget.result.warnings,
+                  ),
+                ],
                 const SizedBox(height: 18),
                 _SectionLabel(text: 'Cheque details · tap to edit'),
                 const SizedBox(height: 8),
@@ -192,11 +228,24 @@ class _Step3ConfirmState extends State<Step3Confirm> {
                             ? 'Not detected'
                             : _payerNameCtrl.text,
                         onTap: () => _editField('Payer name', _payerNameCtrl),
-                        isLast: true,
+                        isLast: _scannedAmount == null,
                       ),
+                      if (_scannedAmount != null)
+                        _StaticRow(
+                          label: 'Amount (scanned)',
+                          value: _formatAed(_scannedAmount!),
+                          isLast: true,
+                        ),
                     ],
                   ),
                 ),
+                if (_amountMismatch) ...[
+                  const SizedBox(height: 8),
+                  _MismatchChip(
+                    text:
+                        'Cheque ${_formatAed(_scannedAmount!)} ≠ expected ${_formatAed(_expectedAmount!)}',
+                  ),
+                ],
                 const SizedBox(height: 18),
                 _SectionLabel(text: 'What to do next'),
                 const SizedBox(height: 8),
@@ -250,6 +299,14 @@ class _Step3ConfirmState extends State<Step3Confirm> {
                       style: GoogleFonts.inter(
                           fontSize: 12, color: AppColors.danger),
                     ),
+                  ),
+                ],
+                if (!widget.submitting && _missingItems.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    'To continue, add: ${_missingItems.join(' · ')}',
+                    style: GoogleFonts.inter(
+                        fontSize: 12, color: AppColors.textMuted),
                   ),
                 ],
                 const SizedBox(height: 18),
@@ -495,6 +552,126 @@ class _SectionLabel extends StatelessWidget {
         fontWeight: FontWeight.w600,
         letterSpacing: 0.6,
         color: AppColors.textMuted,
+      ),
+    );
+  }
+}
+
+/// Amber, non-blocking banner mirroring the web scanner's low-confidence
+/// banner + warning list.
+class _WarningsCard extends StatelessWidget {
+  final bool lowConfidence;
+  final List<String> warnings;
+
+  const _WarningsCard({required this.lowConfidence, required this.warnings});
+
+  @override
+  Widget build(BuildContext context) {
+    final lines = <String>[
+      if (lowConfidence)
+        "AI couldn't read this clearly — please double-check the values.",
+      ...warnings,
+    ];
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBEB),
+        border: Border.all(color: const Color(0xFFFCD34D)),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (var i = 0; i < lines.length; i++) ...[
+            if (i > 0) const SizedBox(height: 6),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.warning_amber_rounded,
+                    size: 15, color: Color(0xFF92400E)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    lines[i],
+                    style: GoogleFonts.inter(
+                        fontSize: 12, color: const Color(0xFF92400E)),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Read-only detail row (no chevron / tap target).
+class _StaticRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final bool isLast;
+  const _StaticRow({
+    required this.label,
+    required this.value,
+    this.isLast = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+      decoration: BoxDecoration(
+        border: isLast
+            ? null
+            : const Border(bottom: BorderSide(color: AppColors.border)),
+      ),
+      child: Row(
+        children: [
+          Text(
+            label,
+            style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted),
+          ),
+          const Spacer(),
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.end,
+              style: GoogleFonts.jetBrainsMono(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w500,
+                color: AppColors.textPrimary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Amber pill matching the web's amount-mismatch chip. Informational only —
+/// it never blocks the confirm action.
+class _MismatchChip extends StatelessWidget {
+  final String text;
+  const _MismatchChip({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFFBEB),
+          border: Border.all(color: const Color(0xFFFCD34D)),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Text(
+          text,
+          style:
+              GoogleFonts.inter(fontSize: 11, color: const Color(0xFF92400E)),
+        ),
       ),
     );
   }

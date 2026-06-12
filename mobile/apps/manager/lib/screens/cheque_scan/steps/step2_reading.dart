@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
 import '../widgets/step_header.dart';
@@ -116,7 +117,9 @@ class _Step2ReadingState extends State<Step2Reading>
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          'Searching for matching lease…',
+                          widget.result == null
+                              ? 'Reading cheque…'
+                              : 'Preparing confirmation…',
                           style: GoogleFonts.inter(
                             fontSize: 12,
                             color: AppColors.textMuted,
@@ -148,11 +151,14 @@ class _FieldsList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final extracted = result?.extracted;
+    final amount = result?.amount;
     final rows = <_Row>[
       _Row('Bank', extracted?['bankName']?.toString()),
       _Row('Cheque #', extracted?['chequeNumber']?.toString()),
       _Row('Date', extracted?['chequeDate']?.toString()),
       _Row('Payer', extracted?['payerName']?.toString()),
+      _Row('Amount',
+          amount == null ? null : 'AED ${NumberFormat('#,##0.##').format(amount)}'),
     ];
     return Container(
       padding: const EdgeInsets.all(4),

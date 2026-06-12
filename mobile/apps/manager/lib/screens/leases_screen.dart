@@ -71,7 +71,7 @@ class _LeasesScreenState extends ConsumerState<LeasesScreen> {
     final q = _searchQuery.toLowerCase();
     return [
       lease['renterName'],
-      lease['unitNumber'],
+      lease['unitIdentifier'] ?? lease['unitNumber'],
       lease['propertyName'],
     ].whereType<String>().any((s) => s.toLowerCase().contains(q));
   }
@@ -366,7 +366,8 @@ class _LeaseCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final renterName = (lease['renterName'] ?? 'Unknown').toString();
-    final unitNumber = (lease['unitNumber'] ?? '').toString();
+    final unitNumber =
+        (lease['unitIdentifier'] ?? lease['unitNumber'] ?? '').toString();
     final propertyName = (lease['propertyName'] ?? '').toString();
     final unitLine = [propertyName, if (unitNumber.isNotEmpty) unitNumber]
         .where((s) => s.isNotEmpty)

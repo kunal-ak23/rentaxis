@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -441,9 +442,22 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
       }
     } catch (e) {
       if (mounted) {
+        // Surface the backend's message (same pattern as the
+        // mark-cheque-failed dialog) instead of a generic failure string.
+        String message = 'Action failed';
+        if (e is DioException) {
+          final data = e.response?.data;
+          if (data is Map && data['message'] != null) {
+            message = data['message'].toString();
+          } else if (data is Map && data['error'] is String) {
+            message = data['error'].toString();
+          } else if (data is String && data.isNotEmpty) {
+            message = data;
+          }
+        }
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text('Action failed')));
+        ).showSnackBar(SnackBar(content: Text(message)));
       }
     }
   }

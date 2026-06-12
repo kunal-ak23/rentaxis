@@ -318,9 +318,12 @@ class _PaymentPickerSheetState extends State<_PaymentPickerSheet> {
                     ),
                   );
                 }
+                // Collectable statuses — matches the payments screen action
+                // sheet, which offers "Collect" for PENDING and OVERDUE.
                 final pending = (snap.data ?? const [])
                     .whereType<Map<String, dynamic>>()
-                    .where((p) => p['status'] == 'PENDING')
+                    .where((p) =>
+                        p['status'] == 'PENDING' || p['status'] == 'OVERDUE')
                     .toList();
                 if (pending.isEmpty) {
                   return Center(
