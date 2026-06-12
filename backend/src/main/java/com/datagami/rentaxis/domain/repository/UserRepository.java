@@ -22,6 +22,16 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     List<User> findAllByEmail(String email);
 
     /**
+     * Display-name lookup that bypasses the tenant Hibernate filter (native
+     * SQL). Needed for audit/comment attribution: a SUPER_ADMIN acting inside
+     * a tenant has {@code tenant_id = NULL}, so the filtered
+     * {@link #findById} can't see them and names degrade to "Unknown".
+     * Exposes nothing but the name — safe across tenants.
+     */
+    @Query(value = "SELECT name FROM users WHERE id = :id", nativeQuery = true)
+    Optional<String> findDisplayNameById(@Param("id") UUID id);
+
+    /**
      * Per-tenant email lookup. Returns the single user matching (tenantId, email)
      * if any. Use this in tenanted flows where you have tenant context.
      */

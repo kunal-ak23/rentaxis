@@ -204,7 +204,7 @@ public class MeetingService {
 
         // Notify both parties
         try {
-            String cancellerName = userRepository.findById(cancelledByUserId).map(User::getName).orElse("Someone");
+            String cancellerName = userRepository.findDisplayNameById(cancelledByUserId).orElse("Someone");
             String msg = cancellerName + " cancelled the meeting: " + (saved.getTitle() != null ? saved.getTitle() : saved.getPurpose().name());
             notificationService.notify(saved.getTenantId(), saved.getHostUserId(),
                     "MEETING_CANCELLED", "Meeting Cancelled", msg, "MEETING", saved.getId());
@@ -397,18 +397,19 @@ public class MeetingService {
         dto.setCreatedAt(meeting.getCreatedAt());
         dto.setUpdatedAt(meeting.getUpdatedAt());
 
-        // Enrich host name
+        // Enrich host / requester names. Filter-bypassing lookup: superadmin
+        // actors have tenant_id = NULL and are invisible to the tenant-
+        // filtered findById, which degraded these names to blank.
         try {
-            userRepository.findById(meeting.getHostUserId())
-                    .ifPresent(u -> dto.setHostName(u.getName()));
+            userRepository.findDisplayNameById(meeting.getHostUserId())
+                    .ifPresent(dto::setHostName);
         } catch (Exception e) {
             log.debug("Could not enrich host name for meeting {}", meeting.getId());
         }
 
-        // Enrich requester name
         try {
-            userRepository.findById(meeting.getRequesterUserId())
-                    .ifPresent(u -> dto.setRequesterName(u.getName()));
+            userRepository.findDisplayNameById(meeting.getRequesterUserId())
+                    .ifPresent(dto::setRequesterName);
         } catch (Exception e) {
             log.debug("Could not enrich requester name for meeting {}", meeting.getId());
         }
