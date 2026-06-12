@@ -77,9 +77,34 @@ class Api:
             self.headers["X-User-Tenant-Id"] = str(u["tenantId"])
         return u
 
+    def login_nextauth(self, email, password):
+        """NextAuth credentials login — needed for /api/proxy/* paths
+        (Caddy only routes /api/v1 + /api/admin directly to the backend)."""
+        csrf = self.s.get(f"{self.base}/api/auth/csrf", timeout=30).json()[
+            "csrfToken"
+        ]
+        r = self.s.post(
+            f"{self.base}/api/auth/callback/credentials",
+            data={
+                "csrfToken": csrf,
+                "email": email,
+                "password": password,
+                "callbackUrl": f"{self.base}/",
+                "json": "true",
+            },
+            timeout=30,
+            allow_redirects=False,
+        )
+        if r.status_code >= 400:
+            raise RuntimeError(f"NextAuth login failed ({r.status_code})")
+        sess = self.s.get(f"{self.base}/api/auth/session", timeout=30).json()
+        if not (sess or {}).get("user"):
+            raise RuntimeError("NextAuth session has no user after login")
+
     def call(self, method, path, expect=(200, 201, 204), **kw):
+        headers = kw.pop("headers", self.headers)
         r = self.s.request(
-            method, f"{self.base}{path}", headers=self.headers, timeout=60, **kw
+            method, f"{self.base}{path}", headers=headers, timeout=60, **kw
         )
         if r.status_code not in expect:
             raise RuntimeError(
@@ -136,15 +161,13 @@ def main():
         t for t in (sa.get("/api/admin/tenants") or []) if t["name"] == TENANT_NAME
     ]
     if existing:
-        sys.exit(
-            f"Tenant '{TENANT_NAME}' already exists (id={existing[0]['id']}). "
-            "Delete it first or use a different name — aborting to stay idempotent."
-        )
-
-    tenant = sa.post("/api/admin/tenants", json={"name": TENANT_NAME})
+        tenant = existing[0]
+        log(f"tenant already exists, resuming: {tenant['id']}")
+    else:
+        tenant = sa.post("/api/admin/tenants", json={"name": TENANT_NAME})
+        log(f"tenant created: {tenant['id']} (slug {tenant['slug']})")
     tenant_id = tenant["id"]
     out["tenant"] = {"id": tenant_id, "name": TENANT_NAME, "slug": tenant["slug"]}
-    log(f"tenant created: {tenant_id} (slug {tenant['slug']})")
 
     sa.put(
         f"/api/admin/tenants/{tenant_id}",
@@ -161,36 +184,53 @@ def main():
         )
     log("features enabled: LISTINGS, MEETINGS, LEASE_RENEWALS")
 
-    sa.post(
-        "/api/admin/users",
-        json={
-            "email": ADMIN_EMAIL,
-            "password": ADMIN_PASSWORD,
-            "name": "Al Ashram Demo Admin",
-            "role": "TENANT_ADMIN",
-            "tenantId": tenant_id,
-            "phoneNumber": "+971501110000",
-        },
-    )
+    try:
+        sa.post(
+            "/api/admin/users",
+            json={
+                "email": ADMIN_EMAIL,
+                "password": ADMIN_PASSWORD,
+                "name": "Al Ashram Demo Admin",
+                "role": "TENANT_ADMIN",
+                "tenantId": tenant_id,
+                "phoneNumber": "+971501110000",
+            },
+        )
+        log(f"tenant admin created: {ADMIN_EMAIL}")
+    except RuntimeError:
+        log(f"tenant admin already exists: {ADMIN_EMAIL}")
     out["adminLogin"] = {"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD}
-    log(f"tenant admin created: {ADMIN_EMAIL}")
 
     # ── 2. Tenant admin: properties + units ─────────────────────────────────
     api = Api(base)
     admin_user = api.login(ADMIN_EMAIL, ADMIN_PASSWORD)
     admin_user_id = admin_user["id"]
 
+    # Chart of accounts + account mappings — required before cheque
+    # clear/deposit postings work. Idempotent (no-op if accounts exist).
+    api.post("/api/v1/finance/accounts/seed")
+    log("chart of accounts seeded")
+
+    # GET /api/v1/properties returns summaries: {"property": {...}, vacancies...}
+    existing_props = {
+        s["property"]["nameEn"]: s["property"]
+        for s in (api.get("/api/v1/properties") or [])
+        if isinstance(s, dict) and s.get("property")
+    }
+
     def make_property(name_en, name_ar, address):
-        p = api.post(
-            "/api/v1/properties",
-            json={
-                "nameEn": name_en,
-                "nameAr": name_ar,
-                "type": "RESIDENTIAL",
-                "emirate": "DUBAI",
-                "address": address,
-            },
-        )
+        p = existing_props.get(name_en)
+        if not p:
+            p = api.post(
+                "/api/v1/properties",
+                json={
+                    "nameEn": name_en,
+                    "nameAr": name_ar,
+                    "type": "RESIDENTIAL",
+                    "emirate": "DUBAI",
+                    "address": address,
+                },
+            )
         api.post(
             f"/api/v1/rent-settings/{p['id']}",
             json={
@@ -214,6 +254,9 @@ def main():
     log(f"properties: {tower['nameEn']}, {marina['nameEn']}")
 
     def make_unit(prop, number, utype, sqft, rent):
+        for u in api.get(f"/api/v1/units/property/{prop['id']}") or []:
+            if u.get("unitNumber") == number:
+                return u
         return api.post(
             "/api/v1/units",
             json={
@@ -237,7 +280,14 @@ def main():
     log("8 units created (3 will stay vacant for listings + 1 draft listing)")
 
     # ── 3. Renters with portal accounts ─────────────────────────────────────
+    existing_renters = {
+        r.get("email"): r for r in (api.get("/api/v1/renters") or [])
+    }
+
     def make_renter(name_en, name_ar, email, phone):
+        if email in existing_renters:
+            log(f"renter {name_en} already exists (password unchanged)")
+            return existing_renters[email]
         r = api.post(
             "/api/v1/renters",
             json={
@@ -276,8 +326,14 @@ def main():
     year_start = dt.date(TODAY.year, 1, 1)
     year_end = dt.date(TODAY.year, 12, 31)
 
+    existing_leases = {
+        l.get("unitId"): l for l in (api.get("/api/v1/leases") or [])
+    }
+
     def make_lease(unit, renter, rent, terms, distribution, deposit, charges=None,
                    booking=None, activate=True):
+        if unit["id"] in existing_leases:
+            return existing_leases[unit["id"]]
         body = {
             "unitId": unit["id"],
             "renterId": renter["id"],
@@ -301,30 +357,35 @@ def main():
             api.put(f"/api/v1/leases/{lease['id']}/activate")
         return lease
 
+    # Note: business rule — no cheque may exceed depositAmount, so deposits
+    # here are >= the largest cheque in each plan.
     lease_ahmed = make_lease(
-        a101, ahmed, 85000, 4, "LAST_LARGER", 8500,
+        a101, ahmed, 85000, 4, "LAST_LARGER", 22000,
         charges=[{"name": "Admin Fee", "amount": 1500.0, "vatApplicable": True,
                   "frequency": "ONE_TIME"}],
         booking={"amount": 5000.0, "chequeNumber": "100001",
                  "chequeDate": iso(year_start - dt.timedelta(days=12)),
                  "bankName": "Emirates NBD"},
     )
-    lease_fatima = make_lease(a102, fatima, 62000, 4, "UNIFORM", 6200)
+    lease_fatima = make_lease(a102, fatima, 62000, 4, "UNIFORM", 16000)
+    # Deposit covers cheque (10,000 rent + 250 folded parking charge).
     lease_rajesh = make_lease(
-        a103, rajesh, 120000, 12, "UNIFORM", 10000,
+        a103, rajesh, 120000, 12, "UNIFORM", 12000,
         charges=[{"name": "Parking", "amount": 250.0, "vatApplicable": False,
                   "frequency": "PER_INSTALLMENT"}],
     )
     log("3 active leases (quarterly LAST_LARGER, quarterly UNIFORM, monthly)")
 
     # PENDING_SIGNATURE lease — shows payment plan before acceptance.
-    lease_sara = make_lease(m1501, sara, 110000, 4, "LAST_LARGER", 11000,
+    lease_sara = make_lease(m1501, sara, 110000, 4, "LAST_LARGER", 30000,
                             activate=False)
-    try:
-        api.post(f"/api/v1/leases/{lease_sara['id']}/generate-contract")
-        log("Sara's lease moved to PENDING_SIGNATURE (accept it live in the demo)")
-    except RuntimeError as e:
-        log(f"WARN generate-contract failed ({e}); lease left in DRAFT")
+    if lease_sara.get("status") in (None, "DRAFT"):
+        try:
+            api.post(f"/api/v1/leases/{lease_sara['id']}/generate-contract")
+            log("Sara's lease moved to PENDING_SIGNATURE "
+                "(accept it live in the demo)")
+        except RuntimeError as e:
+            log(f"WARN generate-contract failed ({e}); lease left in DRAFT")
     out["leases"] = {
         "ahmed": lease_ahmed["id"],
         "fatima": lease_fatima["id"],
@@ -350,56 +411,78 @@ def main():
             "chequeDate": iso(date),
         }
 
+    def advance(row, target, body):
+        """Walk a schedule row PENDING→COLLECTED→DEPOSITED→CLEARED/BOUNCED,
+        skipping transitions already done (safe to re-run)."""
+        rank = {"PENDING": 0, "COLLECTED": 1, "DEPOSITED": 2,
+                "CLEARED": 3, "BOUNCED": 3}
+        status = row.get("status", "PENDING")
+        if status in ("BOUNCED", "CLEARED") or status == target:
+            return
+        pid = row["id"]
+        if status == "PENDING" and rank[target] >= 1:
+            api.put(f"/api/v1/payments/{pid}/collect", json=body)
+            status = "COLLECTED"
+        if status == "COLLECTED" and rank[target] >= 2:
+            api.put(f"/api/v1/payments/{pid}/deposit", json={})
+            status = "DEPOSITED"
+        if status == "DEPOSITED" and target == "CLEARED":
+            api.put(f"/api/v1/payments/{pid}/clear", json={})
+        if status == "DEPOSITED" and target == "BOUNCED":
+            api.post(f"/api/v1/payments/{pid}/mark-failed",
+                     json={"failureReason": "BOUNCE",
+                           "notes": "Insufficient funds"})
+
     # Ahmed: Q1 cleared, Q2 deposited, Q3 collected (banking date arrived →
     # shows in "Cheques to deposit"), Q4 pending.
     rows = rent_rows(lease_ahmed["id"])
-    api.put(f"/api/v1/payments/{rows[0]['id']}/collect",
-            json=cheque_body("200101", "Emirates NBD", year_start, "Ahmed Hassan"))
-    api.put(f"/api/v1/payments/{rows[0]['id']}/deposit", json={})
-    api.put(f"/api/v1/payments/{rows[0]['id']}/clear", json={})
-    api.put(f"/api/v1/payments/{rows[1]['id']}/collect",
-            json=cheque_body("200102", "Emirates NBD", dt.date(TODAY.year, 4, 1),
-                             "Ahmed Hassan"))
-    api.put(f"/api/v1/payments/{rows[1]['id']}/deposit", json={})
-    api.put(f"/api/v1/payments/{rows[2]['id']}/collect",
-            json=cheque_body("200103", "Emirates NBD",
-                             TODAY - dt.timedelta(days=2), "Ahmed Hassan"))
+    advance(rows[0], "CLEARED",
+            cheque_body("200101", "Emirates NBD", year_start, "Ahmed Hassan"))
+    advance(rows[1], "DEPOSITED",
+            cheque_body("200102", "Emirates NBD", dt.date(TODAY.year, 4, 1),
+                        "Ahmed Hassan"))
+    advance(rows[2], "COLLECTED",
+            cheque_body("200103", "Emirates NBD", TODAY - dt.timedelta(days=2),
+                        "Ahmed Hassan"))
     log("Ahmed: cleared + deposited + collected-awaiting-deposit cheques")
 
     # Fatima: Q1 cleared; Q2 bounced (mark-failed → penalty).
     rows = rent_rows(lease_fatima["id"])
-    api.put(f"/api/v1/payments/{rows[0]['id']}/collect",
-            json=cheque_body("300201", "FAB", year_start, "Fatima Al Zaabi"))
-    api.put(f"/api/v1/payments/{rows[0]['id']}/deposit", json={})
-    api.put(f"/api/v1/payments/{rows[0]['id']}/clear", json={})
-    api.put(f"/api/v1/payments/{rows[1]['id']}/collect",
-            json=cheque_body("300202", "FAB", dt.date(TODAY.year, 4, 1),
-                             "Fatima Al Zaabi"))
-    api.put(f"/api/v1/payments/{rows[1]['id']}/deposit", json={})
-    bounce = api.post(
-        f"/api/v1/payments/{rows[1]['id']}/mark-failed",
-        json={"failureReason": "BOUNCE", "notes": "Insufficient funds"},
-    )
+    advance(rows[0], "CLEARED",
+            cheque_body("300201", "FAB", year_start, "Fatima Al Zaabi"))
+    advance(rows[1], "BOUNCED",
+            cheque_body("300202", "FAB", dt.date(TODAY.year, 4, 1),
+                        "Fatima Al Zaabi"))
     bounced_payment_id = rows[1]["id"]
-    log(f"Fatima: bounced cheque + penalty AED "
-        f"{bounce.get('penalty', {}).get('penaltyAmount')}")
+    log("Fatima: bounced Q2 cheque (penalty auto-created)")
 
     # Rajesh: Jan–May cleared, June left pending → overdue with penalty accruing.
     rows = rent_rows(lease_rajesh["id"])
     for i, row in enumerate(rows[:5]):
         d = dt.date(TODAY.year, i + 1, 1)
-        api.put(f"/api/v1/payments/{row['id']}/collect",
-                json=cheque_body(f"4003{i:02d}", "Dubai Islamic Bank", d,
-                                 "Rajesh Kumar"))
-        api.put(f"/api/v1/payments/{row['id']}/deposit", json={})
-        api.put(f"/api/v1/payments/{row['id']}/clear", json={})
+        advance(row, "CLEARED",
+                cheque_body(f"4003{i:02d}", "Dubai Islamic Bank", d,
+                            "Rajesh Kumar"))
     log("Rajesh: 5 cleared monthly cheques; June installment overdue")
 
     # ── 6. Marketplace listings for vacant units ─────────────────────────────
+    # Caddy doesn't route /api/listings to the backend (only /api/v1 and
+    # /api/admin), so go through the Next.js proxy with a NextAuth session.
+    api.login_nextauth(ADMIN_EMAIL, ADMIN_PASSWORD)
+    LISTINGS = "/api/proxy/listings"
+
+    listed_units = set()
+    page = api.get(f"{LISTINGS}?page=0&size=100", headers={}) or {}
+    for l in page.get("content", []):
+        listed_units.add(l.get("title"))
+
     def make_listing(unit, title, beds, baths, rent, furnishing, view, amenities,
                      publish=True, description=None):
+        if title in listed_units:
+            return None
         listing = api.post(
-            "/api/listings",
+            LISTINGS,
+            headers={},
             json={
                 "unitId": unit["id"],
                 "titleEn": title,
@@ -420,7 +503,7 @@ def main():
             },
         )
         if publish:
-            api.post(f"/api/listings/{listing['id']}/publish")
+            api.post(f"{LISTINGS}/{listing['id']}/publish", headers={})
         return listing
 
     make_listing(a201, "Bright 2BR in Al Barsha", 2, 2, 88000,
@@ -445,36 +528,46 @@ def main():
         # UAE is UTC+4; send as UTC instant.
         return (d - dt.timedelta(hours=4)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    m1 = api.post(
-        "/api/v1/meetings",
-        json={
-            "type": "OFFICE_VISIT",
-            "purpose": "CHEQUE_REPLACEMENT",
-            "title": "Replacement cheque — Fatima Al Zaabi (A-102)",
-            "notes": "Bounced Q2 cheque; renter bringing a replacement.",
-            "slotStart": at_hour(1, 10),
-            "hostUserId": admin_user_id,
-            "leaseId": lease_fatima["id"],
-            "propertyId": tower["id"],
-            "unitId": a102["id"],
-            "paymentScheduleIds": [bounced_payment_id],
-        },
-    )
-    api.put(f"/api/v1/meetings/{m1['id']}/approve")
-    api.post(
-        "/api/v1/meetings",
-        json={
-            "type": "PROPERTY_VISIT",
-            "purpose": "PROPERTY_VIEWING",
-            "title": "Penthouse viewing — M-1502",
-            "notes": "Prospect viewing for the marina penthouse listing.",
-            "slotStart": at_hour(2, 15),
-            "hostUserId": admin_user_id,
-            "propertyId": marina["id"],
-            "unitId": m1502["id"],
-        },
-    )
-    log("2 meetings created (cheque replacement approved, viewing requested)")
+    existing_meetings = {
+        m.get("title") for m in (api.get("/api/v1/meetings") or [])
+        if isinstance(m, dict)
+    }
+
+    def meeting_exists(title):
+        return title in existing_meetings
+
+    if not meeting_exists("Replacement cheque — Fatima Al Zaabi (A-102)"):
+        m1 = api.post(
+            "/api/v1/meetings",
+            json={
+                "type": "OFFICE_VISIT",
+                "purpose": "CHEQUE_REPLACEMENT",
+                "title": "Replacement cheque — Fatima Al Zaabi (A-102)",
+                "notes": "Bounced Q2 cheque; renter bringing a replacement.",
+                "slotStart": at_hour(1, 10),
+                "hostUserId": admin_user_id,
+                "leaseId": lease_fatima["id"],
+                "propertyId": tower["id"],
+                "unitId": a102["id"],
+                "paymentScheduleIds": [bounced_payment_id],
+            },
+        )
+        api.put(f"/api/v1/meetings/{m1['id']}/approve")
+    if not meeting_exists("Penthouse viewing — M-1502"):
+        api.post(
+            "/api/v1/meetings",
+            json={
+                "type": "PROPERTY_VISIT",
+                "purpose": "PROPERTY_VIEWING",
+                "title": "Penthouse viewing — M-1502",
+                "notes": "Prospect viewing for the marina penthouse listing.",
+                "slotStart": at_hour(2, 15),
+                "hostUserId": admin_user_id,
+                "propertyId": marina["id"],
+                "unitId": m1502["id"],
+            },
+        )
+    log("2 meetings ensured (cheque replacement approved, viewing requested)")
 
     # ── Done ─────────────────────────────────────────────────────────────────
     OUT_FILE.write_text(json.dumps(out, indent=2))
