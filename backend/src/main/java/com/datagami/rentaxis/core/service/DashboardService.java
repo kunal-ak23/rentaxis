@@ -99,14 +99,26 @@ public class DashboardService {
 
         BigDecimal clearedAmount = BigDecimal.ZERO;
         BigDecimal pendingAmount = BigDecimal.ZERO;
+        BigDecimal pendingThisMonthAmount = BigDecimal.ZERO;
         BigDecimal overdueAmount = BigDecimal.ZERO;
+
+        LocalDate monthStart = today.withDayOfMonth(1);
+        LocalDate nextMonthStart = monthStart.plusMonths(1);
 
         List<PaymentSchedule> recentPayments = new ArrayList<>();
 
         for (PaymentSchedule ps : allPayments) {
             switch (ps.getStatus()) {
                 case CLEARED -> clearedAmount = clearedAmount.add(ps.getAmount());
-                case PENDING -> pendingAmount = pendingAmount.add(ps.getAmount());
+                case PENDING -> {
+                    pendingAmount = pendingAmount.add(ps.getAmount());
+                    // Pending due within the current calendar month (excludes prior
+                    // unpaid months — those surface under "overdue").
+                    LocalDate due = ps.getDueDate();
+                    if (due != null && !due.isBefore(monthStart) && due.isBefore(nextMonthStart)) {
+                        pendingThisMonthAmount = pendingThisMonthAmount.add(ps.getAmount());
+                    }
+                }
                 default -> { }
             }
 
@@ -124,6 +136,7 @@ public class DashboardService {
 
         summary.setCollectedAmount(clearedAmount);
         summary.setPendingAmount(pendingAmount);
+        summary.setPendingThisMonthAmount(pendingThisMonthAmount);
         summary.setOverdueAmount(overdueAmount);
 
         // --- Recent Activity ---

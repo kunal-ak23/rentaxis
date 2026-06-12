@@ -22,6 +22,7 @@ type DashboardSummary = {
   totalRentRevenue: number;
   collectedAmount: number;
   pendingAmount: number;
+  pendingThisMonthAmount: number;
   overdueAmount: number;
   recentActivity: {
     type: string;
@@ -310,9 +311,9 @@ export default function DashboardPage() {
           sparkColor="var(--green-600)"
         />
         <StatCard
-          label="Pending payments"
-          value={formatCurrencyCompact(summary.pendingAmount)}
-          sub="Awaiting collection"
+          label="Pending this month"
+          value={formatCurrencyCompact(summary.pendingThisMonthAmount)}
+          sub="Due this month, unpaid"
         />
         <StatCard
           label="Occupancy"
