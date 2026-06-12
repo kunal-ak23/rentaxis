@@ -83,6 +83,12 @@ public class OnlinePaymentService {
                 dto.setRenterName(renter.getNameEn());
                 dto.setLeaseId(lease.getId());
                 dto.setPaymentMethod(schedule.getPaymentMethod());
+                dto.setChequeNumber(schedule.getChequeNumber());
+                dto.setBankName(schedule.getBankName());
+                dto.setPurposeLabel(schedule.getPurposeLabel());
+                dto.setIsBookingDeposit(schedule.isBookingDeposit());
+                dto.setIsSecurityDeposit(schedule.isSecurityDeposit());
+                dto.setIsCharge(schedule.isCharge());
                 dto.setGracePeriodDays(gracePeriodDays);
 
                 BigDecimal penalty = BigDecimal.ZERO;

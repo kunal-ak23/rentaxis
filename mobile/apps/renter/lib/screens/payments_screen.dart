@@ -287,16 +287,23 @@ class _ChequesList extends StatelessWidget {
       );
     }
 
-    final total = list.length;
+    // Deposits and charges carry their own purpose label; only rent rows
+    // count toward "CHEQUE n OF total".
+    final rentTotal = list.where((p) => !_isNonRent(p)).length;
     return Column(
       children: list
           .map((p) => Padding(
                 padding: const EdgeInsets.only(bottom: 10),
-                child: _ChequeCard(payment: p, totalCount: total),
+                child: _ChequeCard(payment: p, totalCount: rentTotal),
               ))
           .toList(),
     );
   }
+
+  static bool _isNonRent(Map<String, dynamic> p) =>
+      p['isBookingDeposit'] == true ||
+      p['isSecurityDeposit'] == true ||
+      p['isCharge'] == true;
 }
 
 class _ChequeCard extends StatelessWidget {
@@ -311,7 +318,12 @@ class _ChequeCard extends StatelessWidget {
     final n = payment['installmentNumber'];
     final dueRaw = payment['dueDate']?.toString();
     final cheque = payment['chequeNumber']?.toString();
+    final bank = payment['bankName']?.toString();
     final dueLabel = _formatDate(dueRaw);
+    final isNonRent = _ChequesList._isNonRent(payment);
+    final purposeLabel = payment['purposeLabel']?.toString();
+    final penalty = (payment['penaltyAmount'] ?? 0) as num;
+    final totalPayable = (payment['totalPayable'] ?? amount) as num;
 
     final accent = _accentFor(status);
 
@@ -346,9 +358,13 @@ class _ChequeCard extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              n != null
-                                  ? 'CHEQUE $n OF $totalCount'
-                                  : 'CHEQUE',
+                              isNonRent &&
+                                      purposeLabel != null &&
+                                      purposeLabel.isNotEmpty
+                                  ? purposeLabel.toUpperCase()
+                                  : n != null
+                                      ? 'CHEQUE $n OF $totalCount'
+                                      : 'CHEQUE',
                               style: GoogleFonts.inter(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w600,
@@ -372,12 +388,26 @@ class _ChequeCard extends StatelessWidget {
                                 if (dueLabel.isNotEmpty) 'Due $dueLabel',
                                 if (cheque != null && cheque.isNotEmpty)
                                   cheque,
+                                if (bank != null && bank.isNotEmpty) bank,
                               ].join(' · '),
                               style: GoogleFonts.inter(
                                 fontSize: 11.5,
                                 color: AppColors.textMuted,
                               ),
                             ),
+                            if (penalty > 0)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: Text(
+                                  '+ AED ${NumberFormat('#,##0').format(penalty)} penalty · '
+                                  'AED ${NumberFormat('#,##0').format(totalPayable)} total payable',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.danger,
+                                  ),
+                                ),
+                              ),
                             Builder(builder: (_) {
                               final sub = _subtitleFor(status, payment, dueLabel);
                               if (sub.isEmpty) return const SizedBox.shrink();

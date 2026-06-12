@@ -20,6 +20,7 @@ void main() {
           'bankName': 'ENBD',
           'payerName': 'Acme',
           'chequeDate': '2026-06-01',
+          'amount': 12500.50,
           'confidence': 'HIGH',
         },
         'warnings': <String>[],
@@ -29,8 +30,30 @@ void main() {
       expect(result.imageBlobPath, 'cheques/abc.jpg');
       expect(result.uploadedAt.toIso8601String(), '2026-05-04T10:23:00.000Z');
       expect(result.extracted?['chequeNumber'], '123');
-      expect(result.extracted?['confidence'], 'HIGH');
+      expect(result.amount, 12500.50);
+      expect(result.confidence, 'HIGH');
       expect(result.warnings, isEmpty);
+    });
+
+    test('amount getter handles string, null and missing values', () {
+      ChequeExtractionResult build(Map<String, dynamic>? extracted) =>
+          ChequeExtractionResult.fromJson({
+            'image': {
+              'url': 'https://x',
+              'blobPath': 'cheques/abc.jpg',
+              'uploadedAt': '2026-05-04T10:23:00Z',
+            },
+            'extracted': extracted,
+            'warnings': <String>[],
+          });
+
+      expect(build({'amount': '5000.00'}).amount, 5000.00);
+      expect(build({'amount': 5000}).amount, 5000);
+      expect(build({'amount': null}).amount, isNull);
+      expect(build({}).amount, isNull);
+      expect(build(null).amount, isNull);
+      expect(build(null).confidence, isNull);
+      expect(build({'confidence': 'LOW'}).confidence, 'LOW');
     });
 
     test('preserves null extracted when extraction fails', () {
@@ -85,8 +108,6 @@ void main() {
         },
       );
       dio.httpClientAdapter = adapter;
-
-      final svc = ChequeExtractionService(dio);
 
       // Use a bytes-backed MultipartFile so we don't need a real file on disk.
       final form = FormData.fromMap({

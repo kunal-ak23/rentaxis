@@ -561,7 +561,7 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
           _HeaderInfo(
             icon: Icons.apartment_outlined,
             text:
-                '${lease['propertyName'] ?? '-'} - Unit ${lease['unitNumber'] ?? '-'}',
+                '${lease['propertyName'] ?? '-'} - Unit ${lease['unitIdentifier'] ?? lease['unitNumber'] ?? '-'}',
           ),
           const SizedBox(height: 6),
           _HeaderInfo(

@@ -114,11 +114,18 @@ Map<String, dynamic>? _findActiveLease(List<dynamic> leases) {
 Map<String, dynamic>? _nextPaymentFor(
     List<dynamic> payments, String? leaseId) {
   if (leaseId == null) return null;
+  // OVERDUE takes priority, then PENDING, then ONLINE_PENDING (checkout in
+  // flight) — mirrors the web renter portal's nextPayment selection.
+  const statusPriority = {'OVERDUE': 0, 'PENDING': 1, 'ONLINE_PENDING': 2};
   final mine = payments
       .whereType<Map<String, dynamic>>()
-      .where((p) => p['leaseId'] == leaseId && p['status'] == 'PENDING')
+      .where((p) =>
+          p['leaseId'] == leaseId && statusPriority.containsKey(p['status']))
       .toList()
     ..sort((a, b) {
+      final ap = statusPriority[a['status']] ?? 9;
+      final bp = statusPriority[b['status']] ?? 9;
+      if (ap != bp) return ap.compareTo(bp);
       final ad = (a['installmentNumber'] ?? 0) as num;
       final bd = (b['installmentNumber'] ?? 0) as num;
       return ad.compareTo(bd);
@@ -336,6 +343,9 @@ class _HeroBalanceCard extends StatelessWidget {
     final installmentNumber = next?['installmentNumber'];
     final installmentTotal = totalCount;
     final daysToDue = _daysUntil(dueRaw);
+    final status = next?['status']?.toString();
+    final isOverdue = status == 'OVERDUE' || daysToDue == 'overdue';
+    final isInFlight = status == 'ONLINE_PENDING';
     // If the schedule sum is unavailable (e.g. payments not loaded), fall
     // back to lease.rentAmount so the totals slot isn't empty.
     final totalAmount =
@@ -376,7 +386,13 @@ class _HeroBalanceCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  next == null ? 'NO PAYMENTS DUE' : 'NEXT PAYMENT DUE',
+                  next == null
+                      ? 'NO PAYMENTS DUE'
+                      : isOverdue
+                          ? 'PAYMENT OVERDUE'
+                          : isInFlight
+                              ? 'PAYMENT IN PROGRESS'
+                              : 'NEXT PAYMENT DUE',
                   style: GoogleFonts.inter(
                     fontSize: 11.5,
                     fontWeight: FontWeight.w600,
@@ -410,13 +426,26 @@ class _HeroBalanceCard extends StatelessWidget {
                         ),
                         if (installmentTotal > 0)
                           TextSpan(text: ' of $installmentTotal'),
-                        const TextSpan(text: ' · due in '),
                         TextSpan(
-                          text: daysToDue,
+                            text: isOverdue
+                                ? ' · '
+                                : isInFlight
+                                    ? ' · payment '
+                                    : daysToDue == 'today'
+                                        ? ' · due '
+                                        : ' · due in '),
+                        TextSpan(
+                          text: isOverdue
+                              ? 'overdue'
+                              : isInFlight
+                                  ? 'processing'
+                                  : daysToDue,
                           style: GoogleFonts.inter(
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
-                            color: AppColors.gold400,
+                            color: isOverdue
+                                ? const Color(0xFFFCA5A5)
+                                : AppColors.gold400,
                           ),
                         ),
                       ],
@@ -488,7 +517,7 @@ class _HeroBalanceCard extends StatelessWidget {
   String _daysUntil(String? iso) {
     if (iso == null || iso.isEmpty) return '—';
     try {
-      final dt = DateTime.parse(iso);
+      final dt = DateTime.parse(iso).toLocal();
       final days = dt.difference(DateTime.now()).inDays;
       if (days < 0) return 'overdue';
       if (days == 0) return 'today';

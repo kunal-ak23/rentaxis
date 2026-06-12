@@ -266,7 +266,7 @@ class _CreateMeetingScreenState extends ConsumerState<CreateMeetingScreen> {
                           return DropdownMenuItem<String>(
                             value: l['id'],
                             child: Text(
-                              '${l['renterName'] ?? '-'} · Unit ${l['unitNumber'] ?? '-'}',
+                              '${l['renterName'] ?? '-'} · Unit ${l['unitIdentifier'] ?? l['unitNumber'] ?? '-'}',
                               overflow: TextOverflow.ellipsis,
                             ),
                           );
