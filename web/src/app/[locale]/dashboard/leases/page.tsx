@@ -503,7 +503,19 @@ export default function LeasesPage() {
     );
 
     const renderLeaseCard = (lease: Lease, compact = false) => (
-        <div key={lease.id} className={cn("bg-surface rounded-xl p-5 border border-border hover:shadow-md transition-all duration-200 flex flex-col justify-between", compact && "p-4")}>
+        <div
+            key={lease.id}
+            role="button"
+            tabIndex={0}
+            aria-label={`${t("unit")} ${lease.unitIdentifier} — ${lease.renterName}`}
+            onClick={() => router.push(`/dashboard/leases/${lease.id}`)}
+            onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    router.push(`/dashboard/leases/${lease.id}`);
+                }
+            }}
+            className={cn("bg-surface rounded-xl p-5 border border-border hover:shadow-md hover:border-primary/40 transition-all duration-200 flex flex-col justify-between cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30", compact && "p-4")}>
             <div>
                 <div className="flex justify-between items-start mb-4">
                     <div className="flex items-center gap-3">
@@ -551,7 +563,7 @@ export default function LeasesPage() {
             </div>
 
             {canManageLeases && (
-                <div className={cn("flex gap-2 border-t border-border mt-auto", compact ? "pt-3 flex-wrap" : "pt-4")}>
+                <div onClick={(e) => e.stopPropagation()} className={cn("flex gap-2 border-t border-border mt-auto", compact ? "pt-3 flex-wrap" : "pt-4")}>
                     {lease.status === 'DRAFT' && (
                         <button
                             onClick={() => handleEditDraft(lease)}
@@ -750,7 +762,11 @@ export default function LeasesPage() {
                                     {filteredLeases.map(lease => {
                                         const monthlyRent = lease.monthlyRent || lease.rentAmount;
                                         return (
-                                            <tr key={lease.id} className="border-b border-border hover:bg-input/30 transition-colors">
+                                            <tr
+                                                key={lease.id}
+                                                onClick={() => router.push(`/dashboard/leases/${lease.id}`)}
+                                                className="border-b border-border hover:bg-input/30 transition-colors cursor-pointer"
+                                            >
                                                 <td className="px-4 py-3 text-xs font-medium text-foreground">{lease.unitIdentifier}</td>
                                                 <td className="px-4 py-3 text-xs text-foreground">{lease.renterName}</td>
                                                 <td className="px-4 py-3 text-xs text-muted">{lease.propertyName}</td>
@@ -762,7 +778,7 @@ export default function LeasesPage() {
                                                         {lease.status.replace('_', ' ')}
                                                     </span>
                                                 </td>
-                                                <td className="px-4 py-3 text-center">
+                                                <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                                                     <div className="flex items-center justify-center gap-1.5">
                                                         {lease.status === 'DRAFT' && canManageLeases && (
                                                             <button
