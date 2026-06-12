@@ -73,6 +73,12 @@ public class FinancialTransactionService {
      */
     @Transactional
     public void recordChequeBounce(PaymentSchedule payment) {
+        recordChequeBounce(payment, LocalDate.now());
+    }
+
+    /** Variant with an explicit posting date for historical/backdated entries. */
+    @Transactional
+    public void recordChequeBounce(PaymentSchedule payment, LocalDate postingDate) {
         AccountMapping mapping = accountMappingRepository
                 .findByTransactionNature(TransactionNature.CHEQUE_BOUNCED)
                 .orElse(null);
@@ -93,7 +99,7 @@ public class FinancialTransactionService {
         // Reverse the rental-income side: debit income (cancel previously
         // recognised earnings) and credit bank (cancel the deposit).
         FinancialTransaction debitTxn = new FinancialTransaction();
-        debitTxn.setDate(LocalDate.now());
+        debitTxn.setDate(postingDate);
         debitTxn.setDescription("Cheque bounced - Lease installment #" + payment.getInstallmentNumber());
         debitTxn.setAccount(debitAccount);
         debitTxn.setDebit(payment.getAmount());
@@ -103,7 +109,7 @@ public class FinancialTransactionService {
         createTransaction(debitTxn);
 
         FinancialTransaction creditTxn = new FinancialTransaction();
-        creditTxn.setDate(LocalDate.now());
+        creditTxn.setDate(postingDate);
         creditTxn.setDescription("Cheque bounced - Lease installment #" + payment.getInstallmentNumber());
         creditTxn.setAccount(creditAccount);
         creditTxn.setDebit(BigDecimal.ZERO);

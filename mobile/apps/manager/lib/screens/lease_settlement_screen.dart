@@ -6,6 +6,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:rentaxis_core/api/services/settlement_service.dart';
 import 'package:rentaxis_core/providers/auth_provider.dart';
 import 'package:rentaxis_core/theme/app_theme.dart';
+import 'package:rentaxis_core/theme/insets.dart';
 import 'package:rentaxis_core/utils/formatters.dart';
 
 final _settlementServiceProvider = Provider<SettlementService>((ref) {
@@ -662,7 +663,7 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
 
   Widget _buildFinalizedBody() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+      padding: EdgeInsets.fromLTRB(16, 16, 16, AppInsets.bottomNav(context)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -795,7 +796,7 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
 
   Widget _buildEditableBody() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+      padding: EdgeInsets.fromLTRB(16, 16, 16, AppInsets.bottomNav(context)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

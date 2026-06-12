@@ -142,7 +142,7 @@ class _LeasesScreenState extends ConsumerState<LeasesScreen> {
                     }
                     return ListView.separated(
                       physics: const AlwaysScrollableScrollPhysics(),
-                      padding: const EdgeInsets.fromLTRB(20, 4, 20, 110),
+                      padding: EdgeInsets.fromLTRB(20, 4, 20, AppInsets.bottomNav(context)),
                       itemCount: filtered.length,
                       separatorBuilder: (_, _) => const SizedBox(height: 8),
                       itemBuilder: (context, i) => _LeaseCard(
@@ -506,7 +506,7 @@ class _LeasesShimmer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(20, 4, 20, 110),
+      padding: EdgeInsets.fromLTRB(20, 4, 20, AppInsets.bottomNav(context)),
       itemCount: 6,
       separatorBuilder: (_, _) => const SizedBox(height: 8),
       itemBuilder: (_, _) => const ShimmerLoading(

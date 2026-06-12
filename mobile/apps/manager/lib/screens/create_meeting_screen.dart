@@ -214,7 +214,7 @@ class _CreateMeetingScreenState extends ConsumerState<CreateMeetingScreen> {
       body: LoadingOverlay(
         isLoading: _isSubmitting,
         child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+          padding: EdgeInsets.fromLTRB(16, 16, 16, AppInsets.bottomNav(context)),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

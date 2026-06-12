@@ -24,6 +24,8 @@ public class DashboardSummaryDTO {
     private BigDecimal pendingAmount; // PENDING payments (all time)
     private BigDecimal pendingThisMonthAmount; // PENDING payments due in the current month
     private BigDecimal overdueAmount; // overdue payments
+    private BigDecimal receivedThisMonth; // cash received this month (collect/deposit/clear)
+    private BigDecimal receivedLastMonth; // cash received the previous month
 
     // Recent Activity
     private List<RecentActivityItem> recentActivity;

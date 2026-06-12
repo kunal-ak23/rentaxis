@@ -46,7 +46,7 @@ class _WishlistScreenState extends ConsumerState<WishlistScreen> {
       ),
       body: wishlistAsync.when(
         loading: () => ListView.builder(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+          padding: EdgeInsets.fromLTRB(16, 16, 16, AppInsets.bottomNav(context)),
           itemCount: 4,
           itemBuilder: (_, __) => Padding(
             padding: const EdgeInsets.only(bottom: 14),
@@ -79,7 +79,7 @@ class _WishlistScreenState extends ConsumerState<WishlistScreen> {
               ref.invalidate(_wishlistProvider);
             },
             child: ListView.builder(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+              padding: EdgeInsets.fromLTRB(16, 16, 16, AppInsets.bottomNav(context)),
               itemCount: visible.length + (truncated ? 1 : 0),
               itemBuilder: (_, i) {
                 if (truncated && i == visible.length) {

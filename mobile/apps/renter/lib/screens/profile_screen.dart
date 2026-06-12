@@ -197,7 +197,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
     return Scaffold(
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 150),
+        padding: EdgeInsets.fromLTRB(20, 12, 20, AppInsets.bottomNav(context)),
         children: [
           // Page title
           Text(

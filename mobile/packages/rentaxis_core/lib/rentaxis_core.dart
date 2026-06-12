@@ -40,6 +40,7 @@ export 'providers/wishlist_provider.dart';
 
 // Theme
 export 'theme/app_theme.dart';
+export 'theme/insets.dart';
 export 'theme/status_helpers.dart';
 
 // Utils

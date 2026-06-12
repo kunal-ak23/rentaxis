@@ -70,6 +70,28 @@ describe("DashboardPage charts use real data", () => {
         expect(screen.getByText("80%")).toBeTruthy();
     });
 
+    it("prefers cash received this month (and its MoM delta) for the collected card", async () => {
+        global.fetch = vi.fn(async (url: unknown) => {
+            const u = String(url);
+            if (u.includes("/dashboard/monthly-collections")) {
+                return { ok: true, json: async () => MONTHLY } as Response;
+            }
+            return {
+                ok: true,
+                json: async () => ({
+                    ...SUMMARY,
+                    receivedThisMonth: 12500,
+                    receivedLastMonth: 10000,
+                }),
+            } as Response;
+        }) as unknown as typeof fetch;
+
+        render(<DashboardPage />);
+        await waitFor(() => expect(screen.getByText("12-month performance")).toBeTruthy());
+        // Delta derives from receipts (12500 vs 10000), not the due-month series.
+        expect(screen.getByText("+25.0%")).toBeTruthy();
+    });
+
     it("does not render the old hardcoded mock deltas", async () => {
         render(<DashboardPage />);
         await waitFor(() => expect(screen.getByText("12-month performance")).toBeTruthy());

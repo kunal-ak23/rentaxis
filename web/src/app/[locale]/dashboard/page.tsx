@@ -24,6 +24,8 @@ type DashboardSummary = {
   pendingAmount: number;
   pendingThisMonthAmount: number;
   overdueAmount: number;
+  receivedThisMonth?: number | null;
+  receivedLastMonth?: number | null;
   recentActivity: {
     type: string;
     description: string;
@@ -261,16 +263,19 @@ export default function DashboardPage() {
     year: "numeric",
   });
 
-  // Collected card derives from the real monthly series (current month + MoM trend).
+  // Collected card = cash actually received this month (matches the
+  // Transactions ledger), against this month's dues for context. Falls back
+  // to the due-month series for older backends without receivedThisMonth.
   const thisMonth = monthly.length ? monthly[monthly.length - 1] : null;
-  const prevMonth = monthly.length > 1 ? monthly[monthly.length - 2] : null;
-  const collectedThisMonth = thisMonth ? thisMonth.collected : summary.collectedAmount;
+  const collectedThisMonth =
+    summary.receivedThisMonth ?? (thisMonth ? thisMonth.collected : summary.collectedAmount);
   const expectedThisMonth = thisMonth ? thisMonth.expected : summary.totalRentRevenue;
   const collectedSpark = monthly.map((m) => m.collected);
   let collectedDelta: string | undefined;
   let collectedDeltaPos = true;
-  if (thisMonth && prevMonth && prevMonth.collected > 0) {
-    const pct = ((thisMonth.collected - prevMonth.collected) / prevMonth.collected) * 100;
+  if (summary.receivedThisMonth != null && (summary.receivedLastMonth ?? 0) > 0) {
+    const last = summary.receivedLastMonth as number;
+    const pct = ((collectedThisMonth - last) / last) * 100;
     collectedDeltaPos = pct >= 0;
     collectedDelta = `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%`;
   }

@@ -122,7 +122,7 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
                   color: AppColors.primary,
                   onRefresh: () async => ref.invalidate(ticketsProvider),
                   child: ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 150),
+                    padding: EdgeInsets.fromLTRB(20, 8, 20, AppInsets.bottomNav(context)),
                     itemCount: filtered.length,
                     itemBuilder: (context, index) {
                       final ticket = filtered[index];

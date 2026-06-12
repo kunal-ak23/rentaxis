@@ -11,6 +11,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
@@ -95,8 +97,9 @@ public interface PaymentScheduleRepository extends JpaRepository<PaymentSchedule
         SELECT ps
         FROM PaymentSchedule ps
         WHERE (:propertyId IS NULL OR ps.property.id = :propertyId)
-          AND ps.status IN ('PENDING', 'COLLECTED')
+          AND ps.status IN ('PENDING', 'COLLECTED', 'OVERDUE')
           AND ps.dueDate < :today
+          AND ps.lease.status NOT IN ('DRAFT', 'PENDING_SIGNATURE')
         """)
     Page<PaymentSchedule> findOverdueFiltered(
             @Param("propertyId") UUID propertyId,
@@ -108,8 +111,9 @@ public interface PaymentScheduleRepository extends JpaRepository<PaymentSchedule
         SELECT ps
         FROM PaymentSchedule ps
         WHERE (:propertyId IS NULL OR ps.property.id = :propertyId)
-          AND ps.status IN ('PENDING', 'COLLECTED')
+          AND ps.status IN ('PENDING', 'COLLECTED', 'OVERDUE')
           AND ps.dueDate < :today
+          AND ps.lease.status NOT IN ('DRAFT', 'PENDING_SIGNATURE')
         ORDER BY ps.dueDate DESC
         """)
     List<PaymentSchedule> findOverdueForRenterSearch(
@@ -152,11 +156,29 @@ public interface PaymentScheduleRepository extends JpaRepository<PaymentSchedule
                SUM(CASE WHEN ps.status IN ('COLLECTED', 'DEPOSITED', 'CLEARED') THEN ps.amount ELSE 0 END) AS collected
         FROM PaymentSchedule ps
         WHERE ps.dueDate >= :from AND ps.dueDate < :to
+          AND ps.lease.status NOT IN ('DRAFT', 'PENDING_SIGNATURE')
         GROUP BY FUNCTION('to_char', ps.dueDate, 'YYYY-MM')
         """)
     List<Object[]> aggregateMonthlyCollection(
             @Param("from") LocalDate from,
             @Param("to") LocalDate to);
+
+    /**
+     * Cash actually received in a time window: sum of schedule amounts whose
+     * latest status transition (collect/deposit/clear) happened inside
+     * [from, to). Powers the dashboard "Collected this month" stat so it
+     * matches the Transactions ledger view, independent of due dates.
+     */
+    @Query("""
+        SELECT COALESCE(SUM(ps.amount), 0)
+        FROM PaymentSchedule ps
+        WHERE ps.status IN ('COLLECTED', 'DEPOSITED', 'CLEARED')
+          AND ps.statusChangedAt >= :from AND ps.statusChangedAt < :to
+          AND ps.lease.status NOT IN ('DRAFT', 'PENDING_SIGNATURE')
+        """)
+    BigDecimal sumReceivedBetween(
+            @Param("from") Instant from,
+            @Param("to") Instant to);
 
     @Query("""
         SELECT new com.datagami.rentaxis.domain.repository.ChequeImagePurgeRow(

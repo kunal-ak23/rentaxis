@@ -450,7 +450,7 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
           color: AppColors.primary,
           child: SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+            padding: EdgeInsets.fromLTRB(16, 16, 16, AppInsets.bottomNav(context)),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [

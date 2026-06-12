@@ -6,7 +6,28 @@ class PropertyService {
 
   Future<List<dynamic>> getProperties() async {
     final response = await _dio.get('/v1/properties');
-    return response.data;
+    final data = response.data as List<dynamic>;
+    // Backend returns summaries: {property: {id, nameEn, ...}, vacancies, ...}.
+    // Flatten so callers can read id/name at the top level regardless of
+    // shape, while keeping the summary extras (vacancies, propertyCount, …)
+    // and the nested `property` key for callers that still unwrap manually.
+    return data.map((item) {
+      if (item is Map && item['property'] is Map) {
+        final property = Map<String, dynamic>.from(item['property'] as Map);
+        return <String, dynamic>{
+          ...Map<String, dynamic>.from(item),
+          ...property,
+          'name': property['nameEn'] ?? property['name'],
+        };
+      }
+      if (item is Map && item['name'] == null) {
+        return <String, dynamic>{
+          ...Map<String, dynamic>.from(item),
+          'name': item['nameEn'],
+        };
+      }
+      return item;
+    }).toList();
   }
 
   Future<Map<String, dynamic>> getPropertyById(String id) async {
