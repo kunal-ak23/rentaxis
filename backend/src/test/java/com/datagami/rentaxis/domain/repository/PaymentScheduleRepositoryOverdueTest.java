@@ -81,18 +81,19 @@ class PaymentScheduleRepositoryOverdueTest {
     void findOverdueFiltered_returnsOnlyPendingOrCollectedStrictlyBeforeToday() {
         PaymentSchedule pendingPast = schedule(property, lease, unit, PaymentStatus.PENDING, today.minusDays(5));
         PaymentSchedule collectedPast = schedule(property, lease, unit, PaymentStatus.COLLECTED, today.minusDays(1));
+        // The penalty batch job persists OVERDUE — those rows must show too.
+        PaymentSchedule storedOverdue = schedule(property, lease, unit, PaymentStatus.OVERDUE, today.minusDays(5));
         // Excluded:
         schedule(property, lease, unit, PaymentStatus.PENDING, today);            // due today -> not strictly before
         schedule(property, lease, unit, PaymentStatus.PENDING, today.plusDays(3)); // future
         schedule(property, lease, unit, PaymentStatus.CLEARED, today.minusDays(5));
         schedule(property, lease, unit, PaymentStatus.DEPOSITED, today.minusDays(5));
         schedule(property, lease, unit, PaymentStatus.BOUNCED, today.minusDays(5));
-        schedule(property, lease, unit, PaymentStatus.OVERDUE, today.minusDays(5)); // literal enum is NOT matched
 
         List<PaymentSchedule> result = repo.findOverdueFiltered(null, today, page).getContent();
 
         assertThat(result).extracting(PaymentSchedule::getId)
-                .containsExactlyInAnyOrder(pendingPast.getId(), collectedPast.getId());
+                .containsExactlyInAnyOrder(pendingPast.getId(), collectedPast.getId(), storedOverdue.getId());
     }
 
     @Test
