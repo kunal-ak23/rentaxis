@@ -28,6 +28,29 @@ export const PERMISSIONS = {
 export type Permission = keyof typeof PERMISSIONS;
 
 /**
+ * Role privilege ranking — lower number == more privileged.
+ * Mirrors the backend hierarchy enforced in UserController.
+ */
+const ROLE_RANK: Record<UserRole, number> = {
+    SUPER_ADMIN: 0,
+    TENANT_ADMIN: 1,
+    PROPERTY_MANAGER: 2,
+    TENANT_USER: 3,
+    RENTER: 4,
+};
+
+/**
+ * Roles a user with the given role is allowed to create/assign: their own
+ * level and anything below it. A TENANT_ADMIN therefore cannot provision a
+ * SUPER_ADMIN. Mirrors the server-side check in UserController.
+ */
+export function assignableRoles(role: UserRole | undefined): UserRole[] {
+    if (!role) return [];
+    const callerRank = ROLE_RANK[role];
+    return (Object.keys(ROLE_RANK) as UserRole[]).filter((r) => ROLE_RANK[r] >= callerRank);
+}
+
+/**
  * Check if a role has a specific permission
  */
 export function hasPermission(role: UserRole | undefined, permission: Permission): boolean {
