@@ -26,4 +26,11 @@ public interface PropertyRepository extends JpaRepository<Property, UUID> {
      * filter, so it stays correct under async/AOP-bypass paths.
      */
     List<Property> findByTenantIdAndNameEnIn(UUID tenantId, Collection<String> names);
+
+    /**
+     * Explicit tenant-scoped existence check. Used to verify a property
+     * belongs to a given tenant before assigning it to a user, without
+     * relying on the {@code tenantFilter} aspect.
+     */
+    boolean existsByIdAndTenantId(UUID id, UUID tenantId);
 }

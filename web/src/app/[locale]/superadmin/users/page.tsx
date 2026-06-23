@@ -7,7 +7,7 @@ import { Plus, X, Users, Search, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Pagination } from "@/components/ui/Pagination";
-import { assignableRoles, type UserRole } from "@/lib/rbac";
+import { assignableRoles, getRoleLabel, type UserRole } from "@/lib/rbac";
 
 const ALL_ROLE_OPTIONS: { value: UserRole; label: string }[] = [
     { value: "SUPER_ADMIN", label: "Super Admin" },
@@ -24,8 +24,6 @@ export default function SuperAdminUsersPage() {
     const currentRole = session?.user?.role as UserRole | undefined;
     const currentTenantId = (session?.user?.tenantId as string | undefined) || "";
     const isSuperAdmin = currentRole === "SUPER_ADMIN";
-    // Only roles at or below the signed-in admin's level may be provisioned.
-    const roleOptions = ALL_ROLE_OPTIONS.filter((o) => assignableRoles(currentRole).includes(o.value));
     const [users, setUsers] = useState<User[]>([]);
     const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(false);
@@ -47,6 +45,19 @@ export default function SuperAdminUsersPage() {
     const [role, setRole] = useState("TENANT_USER");
     const [tenantId, setTenantId] = useState("");
     const [phoneNumber, setPhoneNumber] = useState("");
+
+    // Roles at or below the signed-in admin's level may be provisioned. The
+    // currently-selected role is always included so the <select> never renders
+    // a value with no matching <option> — covers both the session-loading
+    // window (currentRole undefined) and editing a user whose existing role
+    // (e.g. RENTER) isn't normally provisionable from this page.
+    const roleOptions = (() => {
+        const allowed = ALL_ROLE_OPTIONS.filter((o) => assignableRoles(currentRole).includes(o.value));
+        if (role && !allowed.some((o) => o.value === role)) {
+            return [...allowed, { value: role as UserRole, label: getRoleLabel(role) }];
+        }
+        return allowed;
+    })();
 
     type Tenant = { id: string; name: string };
     const [tenants, setTenants] = useState<Tenant[]>([]);
@@ -169,7 +180,9 @@ export default function SuperAdminUsersPage() {
         setName(user.name);
         setEmail(user.email);
         setRole(user.role);
-        setTenantId(user.tenantId || "");
+        // Non-super-admins can only operate within their own tenant; never let an
+        // edited user's stored tenantId override that scope.
+        setTenantId(isSuperAdmin ? (user.tenantId || "") : currentTenantId);
         setPhoneNumber((user as any).phoneNumber || "");
         setPassword("");
 

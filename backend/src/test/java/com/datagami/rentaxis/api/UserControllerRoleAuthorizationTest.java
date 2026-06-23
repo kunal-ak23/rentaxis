@@ -1,10 +1,13 @@
 package com.datagami.rentaxis.api;
 
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
+import com.datagami.rentaxis.domain.entity.Property;
 import com.datagami.rentaxis.domain.entity.User;
+import com.datagami.rentaxis.domain.entity.enums.Emirate;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
 import com.datagami.rentaxis.domain.entity.enums.UserStatus;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
+import com.datagami.rentaxis.domain.repository.PropertyRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,6 +24,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -45,6 +49,7 @@ class UserControllerRoleAuthorizationTest {
     @LocalServerPort int port;
     @Autowired UserRepository userRepo;
     @Autowired LandlordOrgRepository orgRepo;
+    @Autowired PropertyRepository propertyRepo;
     @Autowired PasswordEncoder passwordEncoder;
 
     private RestClient client() {
@@ -96,6 +101,14 @@ class UserControllerRoleAuthorizationTest {
                     .header("X-User-Tenant-Id", caller.getTenantId().toString());
         }
         return req.body(body).retrieve().body(Map.class);
+    }
+
+    private Property makeProperty(LandlordOrg org) {
+        Property p = new Property();
+        p.setNameEn("Prop-" + UUID.randomUUID());
+        p.setEmirate(Emirate.DUBAI);
+        p.setTenantId(org.getId());
+        return propertyRepo.save(p);
     }
 
     private Map<String, Object> userBody(String role, String tenantId) {
@@ -203,5 +216,37 @@ class UserControllerRoleAuthorizationTest {
         Map<?, ?> resp = createAs(superAdmin, userBody("SUPER_ADMIN", null));
         assertThat(resp.get("role")).isEqualTo("SUPER_ADMIN");
         assertThat(resp.get("tenantId")).isNull();
+    }
+
+    @Test
+    void tenantAdminCannotAssignPropertyFromAnotherTenant() {
+        LandlordOrg own = makeOrg("propown");
+        LandlordOrg other = makeOrg("propother");
+        User tenantAdmin = makeAdmin(own, UserRole.TENANT_ADMIN);
+        Property foreignProperty = makeProperty(other);
+
+        Map<String, Object> body = userBody("PROPERTY_MANAGER", own.getId().toString());
+        body.put("propertyIds", List.of(foreignProperty.getId().toString()));
+
+        try {
+            createAs(tenantAdmin, body);
+            throw new AssertionError("expected a 4xx");
+        } catch (HttpStatusCodeException e) {
+            assertThat(e.getStatusCode().is4xxClientError()).isTrue();
+        }
+    }
+
+    @Test
+    void tenantAdminCanAssignPropertyFromOwnTenant() {
+        LandlordOrg own = makeOrg("propok");
+        User tenantAdmin = makeAdmin(own, UserRole.TENANT_ADMIN);
+        Property ownProperty = makeProperty(own);
+
+        Map<String, Object> body = userBody("PROPERTY_MANAGER", own.getId().toString());
+        body.put("propertyIds", List.of(ownProperty.getId().toString()));
+
+        Map<?, ?> resp = createAs(tenantAdmin, body);
+        assertThat(resp.get("role")).isEqualTo("PROPERTY_MANAGER");
+        assertThat(resp.get("tenantId")).isEqualTo(own.getId().toString());
     }
 }
