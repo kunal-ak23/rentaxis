@@ -11,6 +11,7 @@ import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.UserPropertyAssignment;
 import com.datagami.rentaxis.domain.entity.UserTenantMembership;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
+import com.datagami.rentaxis.domain.repository.PropertyRepository;
 import com.datagami.rentaxis.domain.repository.UserPropertyAssignmentRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
 import com.datagami.rentaxis.domain.repository.UserTenantMembershipRepository;
@@ -31,16 +32,19 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
     private final UserPropertyAssignmentRepository propertyAssignmentRepository;
     private final UserTenantMembershipRepository tenantMembershipRepository;
+    private final PropertyRepository propertyRepository;
     private final ApplicationEventPublisher events;
 
     public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder,
             UserPropertyAssignmentRepository propertyAssignmentRepository,
             UserTenantMembershipRepository tenantMembershipRepository,
+            PropertyRepository propertyRepository,
             ApplicationEventPublisher events) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.propertyAssignmentRepository = propertyAssignmentRepository;
         this.tenantMembershipRepository = tenantMembershipRepository;
+        this.propertyRepository = propertyRepository;
         this.events = events;
     }
 
@@ -310,6 +314,16 @@ public class UserService {
     public void assignPropertyToUser(UUID userId, UUID propertyId) {
         if (propertyAssignmentRepository.existsByUserIdAndPropertyId(userId, propertyId)) {
             return; // Already assigned
+        }
+        // Enforce tenant isolation: a user may only be assigned properties that
+        // live in their own tenant. Guards against a caller supplying a foreign
+        // property UUID directly to the API. Uses an explicit tenant-scoped
+        // query so it holds even if the tenantFilter aspect isn't active.
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+        if (user.getTenantId() == null
+                || !propertyRepository.existsByIdAndTenantId(propertyId, user.getTenantId())) {
+            throw new IllegalArgumentException("Property does not belong to the user's tenant.");
         }
         UserPropertyAssignment assignment = new UserPropertyAssignment();
         assignment.setUserId(userId);

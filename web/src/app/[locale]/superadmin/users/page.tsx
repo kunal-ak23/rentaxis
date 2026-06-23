@@ -2,15 +2,28 @@
 
 import { useState, useEffect } from "react";
 import { useTranslations } from "next-intl";
+import { useSession } from "next-auth/react";
 import { Plus, X, Users, Search, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Pagination } from "@/components/ui/Pagination";
+import { assignableRoles, getRoleLabel, type UserRole } from "@/lib/rbac";
+
+const ALL_ROLE_OPTIONS: { value: UserRole; label: string }[] = [
+    { value: "SUPER_ADMIN", label: "Super Admin" },
+    { value: "TENANT_ADMIN", label: "Tenant Admin" },
+    { value: "PROPERTY_MANAGER", label: "Property Manager" },
+    { value: "TENANT_USER", label: "Tenant User" },
+];
 
 type User = { id: string; name: string; email: string; role: string; tenantId: string };
 
 export default function SuperAdminUsersPage() {
     const t = useTranslations("Index"); // Or custom namespace
+    const { data: session } = useSession();
+    const currentRole = session?.user?.role as UserRole | undefined;
+    const currentTenantId = (session?.user?.tenantId as string | undefined) || "";
+    const isSuperAdmin = currentRole === "SUPER_ADMIN";
     const [users, setUsers] = useState<User[]>([]);
     const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(false);
@@ -32,6 +45,19 @@ export default function SuperAdminUsersPage() {
     const [role, setRole] = useState("TENANT_USER");
     const [tenantId, setTenantId] = useState("");
     const [phoneNumber, setPhoneNumber] = useState("");
+
+    // Roles at or below the signed-in admin's level may be provisioned. The
+    // currently-selected role is always included so the <select> never renders
+    // a value with no matching <option> — covers both the session-loading
+    // window (currentRole undefined) and editing a user whose existing role
+    // (e.g. RENTER) isn't normally provisionable from this page.
+    const roleOptions = (() => {
+        const allowed = ALL_ROLE_OPTIONS.filter((o) => assignableRoles(currentRole).includes(o.value));
+        if (role && !allowed.some((o) => o.value === role)) {
+            return [...allowed, { value: role as UserRole, label: getRoleLabel(role) }];
+        }
+        return allowed;
+    })();
 
     type Tenant = { id: string; name: string };
     const [tenants, setTenants] = useState<Tenant[]>([]);
@@ -87,7 +113,8 @@ export default function SuperAdminUsersPage() {
 
     const resetForm = () => {
         setEditingUserId(null);
-        setEmail(""); setPassword(""); setName(""); setTenantId(""); setRole("TENANT_USER"); setSelectedPropertyIds([]);
+        // Non-super-admins can only provision into their own tenant.
+        setEmail(""); setPassword(""); setName(""); setTenantId(isSuperAdmin ? "" : currentTenantId); setRole("TENANT_USER"); setSelectedPropertyIds([]);
         setPhoneNumber("");
     };
 
@@ -153,7 +180,9 @@ export default function SuperAdminUsersPage() {
         setName(user.name);
         setEmail(user.email);
         setRole(user.role);
-        setTenantId(user.tenantId || "");
+        // Non-super-admins can only operate within their own tenant; never let an
+        // edited user's stored tenantId override that scope.
+        setTenantId(isSuperAdmin ? (user.tenantId || "") : currentTenantId);
         setPhoneNumber((user as any).phoneNumber || "");
         setPassword("");
 
@@ -381,10 +410,9 @@ export default function SuperAdminUsersPage() {
                                         onChange={(e) => setRole(e.target.value)}
                                         className="w-full border border-border rounded-lg bg-surface text-foreground p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:outline-none focus:border-primary transition-all duration-200 font-medium"
                                     >
-                                        <option value="SUPER_ADMIN">Super Admin</option>
-                                        <option value="TENANT_ADMIN">Tenant Admin</option>
-                                        <option value="PROPERTY_MANAGER">Property Manager</option>
-                                        <option value="TENANT_USER">Tenant User</option>
+                                        {roleOptions.map((o) => (
+                                            <option key={o.value} value={o.value}>{o.label}</option>
+                                        ))}
                                     </select>
                                 </div>
                                 {role === 'PROPERTY_MANAGER' && (
@@ -430,19 +458,30 @@ export default function SuperAdminUsersPage() {
                                         </div>
                                     </div>
                                 )}
-                                <div>
-                                    <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-2 ml-1">Tenant (Organization)</label>
-                                    <select
-                                        value={tenantId}
-                                        onChange={(e) => setTenantId(e.target.value)}
-                                        className="w-full border border-border rounded-lg bg-surface text-foreground p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:outline-none focus:border-primary transition-all duration-200 font-medium"
-                                    >
-                                        <option value="">None (Super Admin Context)</option>
-                                        {tenants.map((t) => (
-                                            <option key={t.id} value={t.id}>{t.name}</option>
-                                        ))}
-                                    </select>
-                                </div>
+                                {isSuperAdmin ? (
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-2 ml-1">Tenant (Organization)</label>
+                                        <select
+                                            value={tenantId}
+                                            onChange={(e) => setTenantId(e.target.value)}
+                                            className="w-full border border-border rounded-lg bg-surface text-foreground p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:outline-none focus:border-primary transition-all duration-200 font-medium"
+                                        >
+                                            <option value="">None (Super Admin Context)</option>
+                                            {tenants.map((t) => (
+                                                <option key={t.id} value={t.id}>{t.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                ) : (
+                                    // Tenant admins can only provision within their own tenant; the
+                                    // field is shown read-only and the server enforces the same scope.
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-2 ml-1">Tenant (Organization)</label>
+                                        <div className="w-full border border-border rounded-lg bg-input text-muted p-3 text-xs font-medium">
+                                            {tenants.find((t) => t.id === (tenantId || currentTenantId))?.name || "Your organization"}
+                                        </div>
+                                    </div>
+                                )}
                             </form>
                         </div>
 
