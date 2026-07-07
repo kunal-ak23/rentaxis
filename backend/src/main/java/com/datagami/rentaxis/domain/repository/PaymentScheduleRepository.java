@@ -3,11 +3,13 @@ package com.datagami.rentaxis.domain.repository;
 import com.datagami.rentaxis.domain.entity.PaymentSchedule;
 import com.datagami.rentaxis.domain.entity.enums.PaymentStatus;
 import jakarta.persistence.LockModeType;
+import jakarta.persistence.QueryHint;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
@@ -37,8 +39,15 @@ public interface PaymentScheduleRepository extends JpaRepository<PaymentSchedule
      * observe PENDING under {@code READ_COMMITTED} and both flip to
      * COLLECTED, blowing the invariant and emitting duplicate
      * CHEQUE_RECEIVED events.
+     *
+     * <p>5s lock-wait timeout: without a bound, a stuck holder (crashed
+     * connection, GC pause) would leave every other caller touching these
+     * rows waiting forever on the shared connection pool. Callers should
+     * catch {@link jakarta.persistence.PessimisticLockException} and surface
+     * a "try again" error rather than let the raw timeout escape.
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "5000"))
     @Query("SELECT ps FROM PaymentSchedule ps WHERE ps.id IN :ids")
     List<PaymentSchedule> findAllByIdForUpdate(@Param("ids") Collection<UUID> ids);
 
@@ -51,8 +60,11 @@ public interface PaymentScheduleRepository extends JpaRepository<PaymentSchedule
      * their precondition guard, posting conflicting financial transactions
      * (a "Rental income" credit AND a "Cheque bounced" reversal) for the same
      * payment.
+     *
+     * <p>5s lock-wait timeout — see {@link #findAllByIdForUpdate} for why.
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "5000"))
     @Query("SELECT ps FROM PaymentSchedule ps WHERE ps.id = :id")
     Optional<PaymentSchedule> findByIdForUpdate(@Param("id") UUID id);
 
