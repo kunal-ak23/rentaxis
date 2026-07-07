@@ -79,7 +79,7 @@ public interface PaymentScheduleRepository extends JpaRepository<PaymentSchedule
         FROM PaymentSchedule ps
         WHERE (:propertyId IS NULL OR ps.property.id = :propertyId)
           AND (:status IS NULL OR ps.status = :status)
-        ORDER BY ps.dueDate DESC
+        ORDER BY ps.dueDate DESC, ps.id DESC
         """)
     List<PaymentSchedule> findForRenterSearch(
             @Param("propertyId") UUID propertyId,
@@ -114,7 +114,7 @@ public interface PaymentScheduleRepository extends JpaRepository<PaymentSchedule
           AND ps.status IN ('PENDING', 'COLLECTED', 'OVERDUE')
           AND ps.dueDate < :today
           AND ps.lease.status NOT IN ('DRAFT', 'PENDING_SIGNATURE')
-        ORDER BY ps.dueDate DESC
+        ORDER BY ps.dueDate DESC, ps.id DESC
         """)
     List<PaymentSchedule> findOverdueForRenterSearch(
             @Param("propertyId") UUID propertyId,

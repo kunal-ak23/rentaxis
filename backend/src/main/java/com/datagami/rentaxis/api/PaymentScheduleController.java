@@ -49,7 +49,12 @@ public class PaymentScheduleController {
             @RequestParam(required = false) PaymentStatus status,
             @RequestParam(required = false) String renterName,
             @RequestParam(required = false, defaultValue = "false") boolean overdue,
-            @PageableDefault(size = 25, sort = "dueDate", direction = Sort.Direction.DESC) Pageable pageable) {
+            // "id" is a tiebreaker, not a meaningful ordering — dueDate alone is not
+            // unique (many installments share a due date), so without it, rows with
+            // the same dueDate have no defined relative order and can visibly swap
+            // position between requests (e.g. right after marking one paid, which
+            // triggers a full refetch) even though nothing about their sort key changed.
+            @PageableDefault(size = 25, sort = {"dueDate", "id"}, direction = Sort.Direction.DESC) Pageable pageable) {
         return ResponseEntity.ok(paymentScheduleService.getPaymentsForProperty(propertyId, status, renterName, overdue, pageable));
     }
 
