@@ -45,6 +45,12 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -178,6 +184,108 @@ class ChequeFailurePenaltyIT {
         boolean hasFailedEvent = events.stream()
                 .anyMatch(e -> e.getNotes() != null && e.getNotes().contains("PAYMENT_FAILED_BOUNCE"));
         assertThat(hasFailedEvent).isTrue();
+    }
+
+    /**
+     * Regression test for the "rent received even though the cheque bounced"
+     * bug: {@link PaymentScheduleService#clearPayment} and {@link
+     * PaymentScheduleService#markFailed} both read-check-write the same
+     * {@code DEPOSITED} guard with no row lock. Two requests racing on the
+     * same schedule (e.g. a double-click, or a staff member clicking "Mark
+     * Failed" right as another tab's "Clear" is in flight) could both
+     * observe {@code DEPOSITED}, both pass their precondition, and both post
+     * financial transactions — a "Rental income" credit AND a "Cheque
+     * bounced" reversal for the same cheque.
+     *
+     * <p>With {@code findByIdForUpdate}'s pessimistic write lock, the second
+     * caller blocks until the first commits, re-reads the now-updated
+     * status, and is correctly rejected by the guard. Exactly one side's
+     * transaction pair must exist afterward — never both.</p>
+     */
+    @Test
+    void clearAndMarkFailed_concurrentRace_onlyOneTransitionPersistsTransactions() throws Exception {
+        // clearPayment's fallback account lookup needs A-01-01 (bank/cash) in
+        // addition to the C-01-01 / A-02-02 pair seeded in setUp() for the
+        // bounce reversal.
+        seedAccount("A-01-01", "Bank/Cash", AccountType.ASSET);
+
+        UUID scheduleId = depositedSchedule.getId();
+        UUID raceTenantId = tenantId;
+
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch go = new CountDownLatch(1);
+
+        Callable<Throwable> clearTask = () -> {
+            TenantContextHolder.setTenantId(raceTenantId);
+            try {
+                ready.countDown();
+                go.await(5, TimeUnit.SECONDS);
+                paymentScheduleService.clearPayment(scheduleId, new UpdatePaymentStatusDTO());
+                return null;
+            } catch (Throwable t) {
+                return t;
+            } finally {
+                TenantContextHolder.clear();
+            }
+        };
+        Callable<Throwable> markFailedTask = () -> {
+            TenantContextHolder.setTenantId(raceTenantId);
+            try {
+                ready.countDown();
+                go.await(5, TimeUnit.SECONDS);
+                paymentScheduleService.markFailed(scheduleId, ChequeFailureReason.BOUNCE, "race test");
+                return null;
+            } catch (Throwable t) {
+                return t;
+            } finally {
+                TenantContextHolder.clear();
+            }
+        };
+
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            Future<Throwable> clearFuture = pool.submit(clearTask);
+            Future<Throwable> markFailedFuture = pool.submit(markFailedTask);
+            assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+            go.countDown();
+            Throwable clearOutcome = clearFuture.get(15, TimeUnit.SECONDS);
+            Throwable markFailedOutcome = markFailedFuture.get(15, TimeUnit.SECONDS);
+
+            boolean clearWon = clearOutcome == null;
+            boolean markFailedWon = markFailedOutcome == null;
+
+            assertThat(clearWon ^ markFailedWon)
+                    .as("exactly one of clear/markFailed must win the race on schedule %s; "
+                            + "clearOutcome=%s markFailedOutcome=%s", scheduleId, clearOutcome, markFailedOutcome)
+                    .isTrue();
+            if (!clearWon) {
+                assertThat(clearOutcome).isInstanceOf(BusinessRuleViolationException.class);
+            }
+            if (!markFailedWon) {
+                assertThat(markFailedOutcome).isInstanceOf(BusinessRuleViolationException.class);
+            }
+
+            List<FinancialTransaction> txns = financialTransactionRepository.findAll();
+            long rentReceivedCount = txns.stream()
+                    .filter(t -> raceTenantId.equals(t.getTenantId()))
+                    .filter(t -> t.getDescription() != null && t.getDescription().contains("Rental income"))
+                    .count();
+            long bouncedCount = txns.stream()
+                    .filter(t -> raceTenantId.equals(t.getTenantId()))
+                    .filter(t -> t.getDescription() != null && t.getDescription().contains("Cheque bounced"))
+                    .count();
+
+            if (clearWon) {
+                assertThat(rentReceivedCount).as("cleared side should post its debit+credit pair").isEqualTo(2);
+                assertThat(bouncedCount).as("losing markFailed must NOT post a bounce transaction").isEqualTo(0);
+            } else {
+                assertThat(bouncedCount).as("bounced side should post its debit+credit pair").isEqualTo(2);
+                assertThat(rentReceivedCount).as("losing clearPayment must NOT post a rent-received transaction")
+                        .isEqualTo(0);
+            }
+        } finally {
+            pool.shutdown();
+        }
     }
 
     @Test

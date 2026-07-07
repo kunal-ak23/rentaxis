@@ -696,7 +696,11 @@ public class PaymentScheduleService {
 
     @Transactional
     public PaymentScheduleDTO clearPayment(UUID paymentId, UpdatePaymentStatusDTO dto) {
-        PaymentSchedule payment = paymentScheduleRepository.findById(paymentId)
+        // Pessimistic lock: without it, a concurrent markFailed() on the same
+        // row can both observe DEPOSITED and both pass their guard, posting a
+        // rent-received transaction AND a cheque-bounced transaction for the
+        // same cheque.
+        PaymentSchedule payment = paymentScheduleRepository.findByIdForUpdate(paymentId)
                 .orElseThrow(() -> new NotFoundException("Payment not found"));
 
         if (payment.getStatus() != PaymentStatus.DEPOSITED) {
@@ -813,7 +817,11 @@ public class PaymentScheduleService {
     @Transactional
     public MarkFailedResult markFailed(UUID paymentId, ChequeFailureReason reason, String notes,
                                        LocalDate effectiveDate) {
-        PaymentSchedule s = paymentScheduleRepository.findById(paymentId)
+        // Pessimistic lock: without it, a concurrent clearPayment() on the
+        // same row can both observe DEPOSITED and both pass their guard,
+        // posting a rent-received transaction AND a cheque-bounced
+        // transaction for the same cheque.
+        PaymentSchedule s = paymentScheduleRepository.findByIdForUpdate(paymentId)
                 .orElseThrow(() -> new NotFoundException("Payment not found"));
 
         if (s.getStatus() != PaymentStatus.DEPOSITED) {

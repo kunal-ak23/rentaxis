@@ -101,7 +101,7 @@ class PaymentScheduleServiceVatTest {
         PaymentSchedule payment = buildDepositedPayment(new BigDecimal("57750.00"), true);
         payment.setVatAmount(new BigDecimal("2750.00"));
         stubAccountMapping();
-        when(paymentScheduleRepository.findById(payment.getId())).thenReturn(Optional.of(payment));
+        when(paymentScheduleRepository.findByIdForUpdate(payment.getId())).thenReturn(Optional.of(payment));
         when(paymentScheduleRepository.save(any(PaymentSchedule.class))).thenAnswer(inv -> inv.getArgument(0));
 
         service.clearPayment(payment.getId(), new UpdatePaymentStatusDTO());
@@ -120,7 +120,7 @@ class PaymentScheduleServiceVatTest {
         PaymentSchedule payment = buildDepositedPayment(new BigDecimal("13750.00"), true);
         payment.setVatAmount(new BigDecimal("654.76"));
         stubAccountMapping();
-        when(paymentScheduleRepository.findById(payment.getId())).thenReturn(Optional.of(payment));
+        when(paymentScheduleRepository.findByIdForUpdate(payment.getId())).thenReturn(Optional.of(payment));
         when(paymentScheduleRepository.save(any(PaymentSchedule.class))).thenAnswer(inv -> inv.getArgument(0));
 
         service.clearPayment(payment.getId(), new UpdatePaymentStatusDTO());
@@ -137,7 +137,7 @@ class PaymentScheduleServiceVatTest {
     void clearPayment_withRentVatNotApplicable_leavesVatDefaults() {
         PaymentSchedule payment = buildDepositedPayment(new BigDecimal("55000.00"), false);
         stubAccountMapping();
-        when(paymentScheduleRepository.findById(payment.getId())).thenReturn(Optional.of(payment));
+        when(paymentScheduleRepository.findByIdForUpdate(payment.getId())).thenReturn(Optional.of(payment));
         when(paymentScheduleRepository.save(any(PaymentSchedule.class))).thenAnswer(inv -> inv.getArgument(0));
 
         service.clearPayment(payment.getId(), new UpdatePaymentStatusDTO());
@@ -163,7 +163,7 @@ class PaymentScheduleServiceVatTest {
         PaymentSchedule payment = buildDepositedPayment(new BigDecimal("5210.00"), false);
         payment.setVatAmount(new BigDecimal("10.00")); // charge VAT (200 * 0.05)
         stubAccountMapping();
-        when(paymentScheduleRepository.findById(payment.getId())).thenReturn(Optional.of(payment));
+        when(paymentScheduleRepository.findByIdForUpdate(payment.getId())).thenReturn(Optional.of(payment));
         when(paymentScheduleRepository.save(any(PaymentSchedule.class))).thenAnswer(inv -> inv.getArgument(0));
 
         service.clearPayment(payment.getId(), new UpdatePaymentStatusDTO());
@@ -183,7 +183,7 @@ class PaymentScheduleServiceVatTest {
         PaymentSchedule payment = buildDepositedPayment(new BigDecimal("15000.00"), true);
         payment.setVatAmount(BigDecimal.ZERO);
         stubAccountMapping();
-        when(paymentScheduleRepository.findById(payment.getId())).thenReturn(Optional.of(payment));
+        when(paymentScheduleRepository.findByIdForUpdate(payment.getId())).thenReturn(Optional.of(payment));
         when(paymentScheduleRepository.save(any(PaymentSchedule.class))).thenAnswer(inv -> inv.getArgument(0));
 
         service.clearPayment(payment.getId(), new UpdatePaymentStatusDTO());

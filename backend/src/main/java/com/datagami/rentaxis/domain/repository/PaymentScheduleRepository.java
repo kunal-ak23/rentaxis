@@ -16,6 +16,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
@@ -40,6 +41,20 @@ public interface PaymentScheduleRepository extends JpaRepository<PaymentSchedule
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT ps FROM PaymentSchedule ps WHERE ps.id IN :ids")
     List<PaymentSchedule> findAllByIdForUpdate(@Param("ids") Collection<UUID> ids);
+
+    /**
+     * Pessimistic write lock on a single schedule row so concurrent status
+     * transitions (e.g. one caller clearing a cheque while another marks the
+     * same cheque failed) serialize their check-then-update on the current
+     * {@code status}. Without this, two parallel callers under
+     * {@code READ_COMMITTED} can both observe {@code DEPOSITED} and both pass
+     * their precondition guard, posting conflicting financial transactions
+     * (a "Rental income" credit AND a "Cheque bounced" reversal) for the same
+     * payment.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT ps FROM PaymentSchedule ps WHERE ps.id = :id")
+    Optional<PaymentSchedule> findByIdForUpdate(@Param("id") UUID id);
 
     /**
      * Returns the subset of {@code chequeNumbers} that already exist on

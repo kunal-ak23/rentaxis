@@ -212,7 +212,7 @@ class PaymentScheduleServiceMarkFailedTest {
     void markFailed_pendingSchedule_throws() {
         PaymentSchedule payment = depositedPayment(new BigDecimal("5000"));
         payment.setStatus(PaymentStatus.PENDING);
-        when(paymentScheduleRepository.findById(payment.getId())).thenReturn(Optional.of(payment));
+        when(paymentScheduleRepository.findByIdForUpdate(payment.getId())).thenReturn(Optional.of(payment));
 
         assertThatThrownBy(() -> service.markFailed(payment.getId(), ChequeFailureReason.BOUNCE, null))
                 .isInstanceOf(BusinessRuleViolationException.class)
@@ -227,7 +227,7 @@ class PaymentScheduleServiceMarkFailedTest {
     void markFailed_alreadyBounced_throws() {
         PaymentSchedule payment = depositedPayment(new BigDecimal("5000"));
         payment.setStatus(PaymentStatus.BOUNCED);
-        when(paymentScheduleRepository.findById(payment.getId())).thenReturn(Optional.of(payment));
+        when(paymentScheduleRepository.findByIdForUpdate(payment.getId())).thenReturn(Optional.of(payment));
 
         assertThatThrownBy(() -> service.markFailed(payment.getId(), ChequeFailureReason.BOUNCE, null))
                 .isInstanceOf(BusinessRuleViolationException.class)
@@ -238,7 +238,7 @@ class PaymentScheduleServiceMarkFailedTest {
     void markFailed_clearedSchedule_throws() {
         PaymentSchedule payment = depositedPayment(new BigDecimal("5000"));
         payment.setStatus(PaymentStatus.CLEARED);
-        when(paymentScheduleRepository.findById(payment.getId())).thenReturn(Optional.of(payment));
+        when(paymentScheduleRepository.findByIdForUpdate(payment.getId())).thenReturn(Optional.of(payment));
 
         assertThatThrownBy(() -> service.markFailed(payment.getId(), ChequeFailureReason.BOUNCE, null))
                 .isInstanceOf(BusinessRuleViolationException.class)
@@ -404,7 +404,7 @@ class PaymentScheduleServiceMarkFailedTest {
     }
 
     private void stubFindAndSave(PaymentSchedule payment) {
-        when(paymentScheduleRepository.findById(payment.getId())).thenReturn(Optional.of(payment));
+        when(paymentScheduleRepository.findByIdForUpdate(payment.getId())).thenReturn(Optional.of(payment));
         when(paymentScheduleRepository.save(any(PaymentSchedule.class))).thenAnswer(inv -> inv.getArgument(0));
         when(paymentPenaltyRepository.save(any(PaymentPenalty.class))).thenAnswer(inv -> {
             PaymentPenalty p = inv.getArgument(0);
