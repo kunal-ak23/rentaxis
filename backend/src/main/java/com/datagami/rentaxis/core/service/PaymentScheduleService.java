@@ -506,14 +506,19 @@ public class PaymentScheduleService {
      *
      * <p>Translates a lock-wait timeout into a caller-friendly
      * {@link BusinessRuleViolationException} rather than letting the raw
-     * {@link jakarta.persistence.PessimisticLockException} escape as a 500.
+     * exception escape as a 500. Spring Data JPA's exception translation
+     * converts the Postgres lock-timeout SQLSTATE (55P03) into
+     * {@link org.springframework.dao.PessimisticLockingFailureException}
+     * (concretely {@link org.springframework.dao.CannotAcquireLockException})
+     * before it reaches this method — the raw
+     * {@link jakarta.persistence.PessimisticLockException} never does.
      */
     private PaymentSchedule lockAndRequireStatus(UUID paymentId, PaymentStatus requiredStatus, String wrongStatusMessage) {
         PaymentSchedule payment;
         try {
             payment = paymentScheduleRepository.findByIdForUpdate(paymentId)
                     .orElseThrow(() -> new NotFoundException("Payment not found"));
-        } catch (jakarta.persistence.PessimisticLockException e) {
+        } catch (org.springframework.dao.PessimisticLockingFailureException e) {
             throw new BusinessRuleViolationException(
                     "This payment is currently being updated by another request. Please try again.");
         }
@@ -621,7 +626,13 @@ public class PaymentScheduleService {
         // Load every targeted schedule in one shot under PESSIMISTIC_WRITE so
         // concurrent bulk-attach callers can't both pass the PENDING precheck.
         List<UUID> scheduleIds = items.stream().map(BulkAttachChequeItem::getScheduleId).toList();
-        List<PaymentSchedule> schedules = paymentScheduleRepository.findAllByIdForUpdate(scheduleIds);
+        List<PaymentSchedule> schedules;
+        try {
+            schedules = paymentScheduleRepository.findAllByIdForUpdate(scheduleIds);
+        } catch (org.springframework.dao.PessimisticLockingFailureException e) {
+            throw new BusinessRuleViolationException(
+                    "One or more of these payments are currently being updated by another request. Please try again.");
+        }
         Map<UUID, PaymentSchedule> byId = schedules.stream()
                 .collect(Collectors.toMap(PaymentSchedule::getId, s -> s));
 

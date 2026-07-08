@@ -343,7 +343,7 @@ public class OnlinePaymentService {
         try {
             payment = paymentScheduleRepository.findByIdForUpdate(paymentScheduleId)
                     .orElseThrow(() -> new RuntimeException("Payment schedule not found: " + paymentScheduleId));
-        } catch (jakarta.persistence.PessimisticLockException e) {
+        } catch (org.springframework.dao.PessimisticLockingFailureException e) {
             throw new BusinessRuleViolationException(
                     "This payment is currently being updated by another request. Please try again.");
         }
