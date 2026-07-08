@@ -8,7 +8,8 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import PaymentScheduleEditor from "./PaymentScheduleEditor";
 import ChequeScanner from "@/components/cheques/ChequeScanner";
 import BulkChequeUploadFlow from "@/components/cheques/BulkChequeUploadFlow";
-import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/SearchableSelect";
+import { SearchableSelect } from "@/components/ui/SearchableSelect";
+import { useLeasePartyOptions } from "@/hooks/useLeasePartyOptions";
 
 /**
  * Five-step wizard for creating a new draft lease.
@@ -153,29 +154,7 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
 
     const selectedUnit = useMemo(() => units.find((u) => u.id === data.unitId), [units, data.unitId]);
 
-    const unitOptions = useMemo<SearchableSelectOption[]>(
-        () =>
-            units
-                .filter((u) => u.status === "VACANT" || u.id === data.unitId)
-                .map((u) => ({
-                    value: u.id,
-                    label: u.unitNumber,
-                    sublabel: `${u.property?.nameEn || "—"}${u.property?.type === "COMMERCIAL" ? " [Commercial]" : ""}`,
-                    searchText: `${u.unitNumber} ${u.property?.nameEn || ""}`.toLowerCase(),
-                })),
-        [units, data.unitId],
-    );
-
-    const renterOptions = useMemo<SearchableSelectOption[]>(
-        () =>
-            renters.map((r) => ({
-                value: r.id,
-                label: r.nameEn,
-                sublabel: r.email,
-                searchText: `${r.nameEn} ${r.nameAr || ""} ${r.email || ""}`.toLowerCase(),
-            })),
-        [renters],
-    );
+    const { unitOptions, renterOptions } = useLeasePartyOptions(units, renters, data.unitId);
 
     // Debounced live preview — fires when on the "plan" step and all required fields are valid
     useEffect(() => {

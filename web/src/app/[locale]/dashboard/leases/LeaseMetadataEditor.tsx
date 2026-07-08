@@ -3,7 +3,8 @@
 import { useEffect, useState, useMemo } from "react";
 import { Loader2, Save, RefreshCw, AlertTriangle, CheckCircle2, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/SearchableSelect";
+import { SearchableSelect } from "@/components/ui/SearchableSelect";
+import { useLeasePartyOptions } from "@/hooks/useLeasePartyOptions";
 
 /**
  * Inline metadata editor for a DRAFT lease — replaces the modal "Edit Lease"
@@ -170,28 +171,11 @@ export default function LeaseMetadataEditor({ lease, onSaved, className }: Props
 
     const selectedUnit = useMemo(() => units.find(u => u.id === form.unitId), [units, form.unitId]);
 
-    const unitOptions = useMemo<SearchableSelectOption[]>(
-        () =>
-            units
-                .filter((u) => u.status === "VACANT" || u.id === form.unitId)
-                .map((u) => ({
-                    value: u.id,
-                    label: `Unit ${u.unitNumber}`,
-                    sublabel: `${u.property?.nameEn || "—"}${u.property?.type === "COMMERCIAL" ? " [Commercial]" : ""}`,
-                    searchText: `${u.unitNumber} ${u.property?.nameEn || ""}`.toLowerCase(),
-                })),
-        [units, form.unitId],
-    );
-
-    const renterOptions = useMemo<SearchableSelectOption[]>(
-        () =>
-            renters.map((r) => ({
-                value: r.id,
-                label: r.nameEn,
-                sublabel: r.email,
-                searchText: `${r.nameEn} ${r.nameAr || ""} ${r.email || ""}`.toLowerCase(),
-            })),
-        [renters],
+    const { unitOptions, renterOptions } = useLeasePartyOptions(
+        units,
+        renters,
+        form.unitId,
+        (u) => `Unit ${u.unitNumber}`,
     );
 
     const onPickUnit = (unitId: string) => {
