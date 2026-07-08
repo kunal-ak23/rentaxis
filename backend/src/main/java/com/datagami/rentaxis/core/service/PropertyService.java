@@ -277,8 +277,19 @@ public class PropertyService {
         dto.setProperty(property);
         dto.setPropertyCount(units.size());
         dto.setVacancies(units.stream().filter(u -> u.getStatus() == UnitStatus.VACANT).count());
-        dto.setRevenueAtCapacity(units.stream().map(Unit::getExpectedRent).reduce(BigDecimal.ZERO, BigDecimal::add));
-        dto.setActualRevenue(units.stream().map(Unit::getActualRent).reduce(BigDecimal.ZERO, BigDecimal::add));
+        // Unit.expectedRent/actualRent default to BigDecimal.ZERO only for a
+        // Java-constructed Unit — Hibernate overwrites that with a literal
+        // null when the DB column is NULL (e.g. a row inserted via
+        // POST /api/v1/units, which binds the raw entity with no
+        // validation). BigDecimal.ZERO.add(null) throws NPE, which used to
+        // 500 this entire endpoint for every property whenever any single
+        // unit anywhere had a null rent value.
+        dto.setRevenueAtCapacity(units.stream()
+                .map(u -> u.getExpectedRent() != null ? u.getExpectedRent() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add));
+        dto.setActualRevenue(units.stream()
+                .map(u -> u.getActualRent() != null ? u.getActualRent() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add));
         dto.setAssignedManagers(userService.getAssignedManagers(property.getId()));
         return dto;
     }
