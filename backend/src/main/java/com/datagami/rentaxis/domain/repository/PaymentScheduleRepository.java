@@ -40,14 +40,23 @@ public interface PaymentScheduleRepository extends JpaRepository<PaymentSchedule
      * COLLECTED, blowing the invariant and emitting duplicate
      * CHEQUE_RECEIVED events.
      *
-     * <p>5s lock-wait timeout: without a bound, a stuck holder (crashed
-     * connection, GC pause) would leave every other caller touching these
-     * rows waiting forever on the shared connection pool. Callers should
-     * catch {@link jakarta.persistence.PessimisticLockException} and surface
-     * a "try again" error rather than let the raw timeout escape.
+     * <p>NOWAIT: without a bound, a stuck holder (crashed connection, GC
+     * pause) would leave every other caller touching these rows waiting
+     * forever on the shared connection pool. Fails immediately (Postgres
+     * SQLSTATE 55P03) rather than waiting at all — Postgres's connection-level
+     * {@code lock_timeout} (the previous approach here, a bounded wait rather
+     * than an immediate failure) turned out not to be honored by this stack
+     * for row-lock waits under {@code SELECT ... FOR UPDATE} despite Hibernate
+     * issuing {@code SET LOCAL lock_timeout}; NOWAIT is a query-level clause
+     * Postgres enforces directly and doesn't depend on that connection-state
+     * mechanism. Callers should catch {@link
+     * org.springframework.dao.PessimisticLockingFailureException} (the type
+     * Spring Data JPA's exception translation actually throws — not the raw
+     * {@link jakarta.persistence.PessimisticLockException}) and surface a
+     * "try again" error rather than let it escape as a 500.
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "5000"))
+    @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "0"))
     @Query("SELECT ps FROM PaymentSchedule ps WHERE ps.id IN :ids")
     List<PaymentSchedule> findAllByIdForUpdate(@Param("ids") Collection<UUID> ids);
 
@@ -61,10 +70,10 @@ public interface PaymentScheduleRepository extends JpaRepository<PaymentSchedule
      * (a "Rental income" credit AND a "Cheque bounced" reversal) for the same
      * payment.
      *
-     * <p>5s lock-wait timeout — see {@link #findAllByIdForUpdate} for why.
+     * <p>NOWAIT — see {@link #findAllByIdForUpdate} for why.
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "5000"))
+    @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "0"))
     @Query("SELECT ps FROM PaymentSchedule ps WHERE ps.id = :id")
     Optional<PaymentSchedule> findByIdForUpdate(@Param("id") UUID id);
 

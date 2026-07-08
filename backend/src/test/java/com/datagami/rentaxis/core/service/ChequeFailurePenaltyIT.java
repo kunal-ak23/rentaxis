@@ -37,6 +37,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -86,6 +87,7 @@ class ChequeFailurePenaltyIT {
     @Autowired LeaseRepository leaseRepository;
     @Autowired RentCollectionSettingsRepository rentCollectionSettingsRepository;
     @Autowired AccountRepository accountRepository;
+    @Autowired TransactionTemplate transactionTemplate;
 
     private UUID tenantId;
     private Property property;
@@ -267,6 +269,80 @@ class ChequeFailurePenaltyIT {
         } finally {
             pool.shutdown();
         }
+    }
+
+    /**
+     * Regression test for the dead catch block that previously caught
+     * {@link jakarta.persistence.PessimisticLockException} in {@code
+     * lockAndRequireStatus} — Spring Data JPA's exception translation
+     * converts the Postgres NOWAIT lock-conflict SQLSTATE (55P03) into
+     * {@link org.springframework.dao.PessimisticLockingFailureException}
+     * before it reaches service code, so the old catch clause never actually
+     * fired and the raw exception escaped as an unhandled 500.
+     *
+     * <p>Holds the row's pessimistic lock open in a separate
+     * thread/transaction (via {@link TransactionTemplate}, released on its
+     * own fixed timer independent of whatever the main thread does) and
+     * asserts a concurrent {@code clearPayment} call fails immediately with
+     * the friendly error rather than blocking. An earlier version of
+     * {@code findByIdForUpdate} used a 5s {@code jakarta.persistence.lock.timeout}
+     * (a bounded wait) instead of NOWAIT — that mechanism turned out not to
+     * be honored by this Hibernate/Postgres/HikariCP stack for row-lock
+     * waits (verified empirically: holding the lock for 8s/20s/30s in
+     * separate runs, a concurrent caller blocked for the *entire* hold
+     * duration every time rather than timing out at 5s), which is why NOWAIT
+     * — a query-level clause Postgres enforces directly — replaced it.
+     */
+    @Test
+    void clearPayment_rowAlreadyLocked_failsImmediatelyWithBusinessRuleViolation() throws Exception {
+        UUID scheduleId = depositedSchedule.getId();
+
+        CountDownLatch lockHeld = new CountDownLatch(1);
+        long holdMillis = 3000;
+
+        ExecutorService pool = Executors.newFixedThreadPool(1);
+        Future<?> holderFuture = pool.submit(() -> {
+            TenantContextHolder.setTenantId(tenantId);
+            try {
+                transactionTemplate.execute(status -> {
+                    paymentScheduleRepository.findByIdForUpdate(scheduleId).orElseThrow();
+                    lockHeld.countDown();
+                    try {
+                        Thread.sleep(holdMillis);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                    return null;
+                });
+            } finally {
+                TenantContextHolder.clear();
+            }
+        });
+
+        try {
+            assertThat(lockHeld.await(5, TimeUnit.SECONDS)).isTrue();
+
+            long start = System.nanoTime();
+            assertThatThrownBy(() ->
+                    paymentScheduleService.clearPayment(scheduleId, new UpdatePaymentStatusDTO()))
+                    .isInstanceOf(BusinessRuleViolationException.class)
+                    .hasMessageContaining("currently being updated by another request");
+            long elapsedMs = (System.nanoTime() - start) / 1_000_000;
+
+            // NOWAIT must fail near-instantly — well before the holder's own
+            // hold ends — proving this is a real conflict failure, not a
+            // race that just happens to resolve in our favor.
+            assertThat(elapsedMs)
+                    .as("NOWAIT should fail immediately, not block until the holder releases")
+                    .isLessThan(holdMillis);
+        } finally {
+            holderFuture.get(15, TimeUnit.SECONDS);
+            pool.shutdown();
+        }
+
+        // The lock holder never mutated the row, so the schedule is untouched.
+        PaymentSchedule reloaded = paymentScheduleRepository.findById(scheduleId).orElseThrow();
+        assertThat(reloaded.getStatus()).isEqualTo(PaymentStatus.DEPOSITED);
     }
 
     /**

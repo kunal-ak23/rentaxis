@@ -504,14 +504,14 @@ public class PaymentScheduleService {
      * transition method can't reintroduce that race by copy-pasting the
      * wrong (unlocked) pattern.
      *
-     * <p>Translates a lock-wait timeout into a caller-friendly
-     * {@link BusinessRuleViolationException} rather than letting the raw
-     * exception escape as a 500. Spring Data JPA's exception translation
-     * converts the Postgres lock-timeout SQLSTATE (55P03) into
-     * {@link org.springframework.dao.PessimisticLockingFailureException}
-     * (concretely {@link org.springframework.dao.CannotAcquireLockException})
-     * before it reaches this method — the raw
-     * {@link jakarta.persistence.PessimisticLockException} never does.
+     * <p>Translates a NOWAIT lock conflict (the row is already locked by
+     * another transaction) into a caller-friendly {@link
+     * BusinessRuleViolationException} rather than letting the raw exception
+     * escape as a 500. Spring Data JPA's exception translation converts the
+     * Postgres SQLSTATE (55P03) into {@link
+     * org.springframework.dao.PessimisticLockingFailureException} before it
+     * reaches this method — the raw {@link
+     * jakarta.persistence.PessimisticLockException} never does.
      */
     private PaymentSchedule lockAndRequireStatus(UUID paymentId, PaymentStatus requiredStatus, String wrongStatusMessage) {
         PaymentSchedule payment;
