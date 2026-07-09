@@ -80,7 +80,12 @@ public class PaymentScheduleController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
     public ResponseEntity<Page<PaymentScheduleDTO>> getChequesToDeposit(
             @RequestParam(required = false) UUID propertyId,
-            @PageableDefault(size = 25, sort = "chequeDate", direction = Sort.Direction.ASC) Pageable pageable) {
+            // "id" is a tiebreaker, not a meaningful ordering — chequeDate is not
+            // unique (many cheques can share a deposit date), so without it rows
+            // with the same chequeDate have no defined relative order and can swap
+            // position between requests (e.g. right after depositing one, which
+            // refetches the list) even though nothing about their sort key changed.
+            @PageableDefault(size = 25, sort = {"chequeDate", "id"}, direction = Sort.Direction.ASC) Pageable pageable) {
         return ResponseEntity.ok(paymentScheduleService.getChequesToDeposit(propertyId, pageable));
     }
 

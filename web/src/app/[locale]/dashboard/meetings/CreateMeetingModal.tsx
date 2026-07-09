@@ -179,11 +179,17 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
             if (res.ok) {
                 const data = await res.json();
                 const arr = Array.isArray(data) ? data : data.content ?? [];
-                setProperties(arr.map((p: any) => ({
-                    id: p.id,
-                    nameEn: p.nameEn ?? p.name ?? "—",
-                    managerId: p.managerId ?? p.propertyManagerId,
-                })));
+                // GET /api/v1/properties returns each property wrapped in a
+                // portfolio-summary row (PropertyStatsDTO), not a flat property —
+                // unwrap .property so id/nameEn aren't undefined (blank dropdown).
+                setProperties(arr.map((p: any) => {
+                    const prop = p.property ?? p;
+                    return {
+                        id: prop.id,
+                        nameEn: prop.nameEn ?? prop.name ?? "—",
+                        managerId: p.managerId ?? p.propertyManagerId,
+                    };
+                }));
             }
         } catch { /* ignore */ }
     }, []);

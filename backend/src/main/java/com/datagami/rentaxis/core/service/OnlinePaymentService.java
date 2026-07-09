@@ -25,6 +25,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 
@@ -112,6 +113,14 @@ public class OnlinePaymentService {
                 result.add(dto);
             }
         }
+
+        // Stable order across requests: the DTOs are assembled by iterating
+        // leases and then each lease's schedules (findByLeaseId has no ORDER BY),
+        // so without an explicit sort the renter's list can reorder between
+        // refreshes. dueDate is stored ISO (yyyy-MM-dd) so lexical == chronological;
+        // id is the unique tiebreaker for installments sharing a due date.
+        result.sort(Comparator.comparing(RenterPaymentScheduleDTO::getDueDate)
+                .thenComparing(RenterPaymentScheduleDTO::getId));
 
         return result;
     }
