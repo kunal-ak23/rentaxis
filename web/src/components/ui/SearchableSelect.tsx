@@ -67,6 +67,9 @@ export function SearchableSelect({
     const close = (returnFocus: boolean) => {
         setOpen(false);
         setQuery("");
+        // Reset the highlight so reopening starts fresh at the clear row rather
+        // than restoring a stale index from the previous session.
+        setHighlightedIndex(-1);
         if (returnFocus) triggerRef.current?.focus();
     };
 
@@ -146,7 +149,16 @@ export function SearchableSelect({
                                     aria-controls={listboxId}
                                     aria-activedescendant={highlightedIndex >= 0 ? `${listboxId}-opt-${highlightedIndex}` : undefined}
                                     value={query}
-                                    onChange={(e) => setQuery(e.target.value)}
+                                    onChange={(e) => {
+                                        setQuery(e.target.value);
+                                        // Reset the highlight on every keystroke: filtering
+                                        // shrinks the list, so a previously-highlighted index
+                                        // can fall outside it — leaving aria-activedescendant
+                                        // pointing at a nonexistent row and Enter selecting
+                                        // nothing. Resetting to -1 (the clear row) means the
+                                        // next ArrowDown lands on the first match.
+                                        setHighlightedIndex(-1);
+                                    }}
                                     onKeyDown={handleSearchKeyDown}
                                     placeholder={searchPlaceholder}
                                     className="w-full bg-input border border-border pl-7 pr-2 py-2 rounded-lg text-xs focus:ring-2 focus:ring-primary/20 focus:outline-none"

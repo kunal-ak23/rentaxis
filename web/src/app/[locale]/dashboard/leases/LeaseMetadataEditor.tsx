@@ -194,6 +194,14 @@ export default function LeaseMetadataEditor({ lease, onSaved, className }: Props
 
     const handleSave = async () => {
         if (!editable) return;
+        // Unit and renter are required. The old native <select required> blocked
+        // submit when empty; SearchableSelect has no native validation and its
+        // "— Select —" clear row can empty a pre-filled field, so guard here
+        // rather than send an empty unitId/renterId to the backend.
+        if (!form.unitId || !form.renterId) {
+            setError("Unit and renter are both required.");
+            return;
+        }
         setSaving(true);
         setError(null);
         setSaved(false);
