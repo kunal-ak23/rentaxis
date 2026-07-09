@@ -8,6 +8,8 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import PaymentScheduleEditor from "./PaymentScheduleEditor";
 import ChequeScanner from "@/components/cheques/ChequeScanner";
 import BulkChequeUploadFlow from "@/components/cheques/BulkChequeUploadFlow";
+import { SearchableSelect } from "@/components/ui/SearchableSelect";
+import { useLeasePartyOptions } from "@/hooks/useLeasePartyOptions";
 
 /**
  * Five-step wizard for creating a new draft lease.
@@ -42,6 +44,7 @@ type Renter = {
     id: string;
     nameEn: string;
     nameAr: string;
+    email?: string;
 };
 
 type WizardData = {
@@ -150,6 +153,8 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
     }, [open, reset]);
 
     const selectedUnit = useMemo(() => units.find((u) => u.id === data.unitId), [units, data.unitId]);
+
+    const { unitOptions, renterOptions } = useLeasePartyOptions(units, renters, data.unitId);
 
     // Debounced live preview — fires when on the "plan" step and all required fields are valid
     useEffect(() => {
@@ -399,18 +404,13 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                     {currentStep.key === "parties" && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <Field label="Unit *">
-                                <select
+                                <SearchableSelect
+                                    options={unitOptions}
                                     value={data.unitId}
-                                    onChange={(e) => onPickUnit(e.target.value)}
-                                    className="w-full bg-input border border-border p-3 rounded-xl text-xs"
-                                >
-                                    <option value="">— Select a unit —</option>
-                                    {units.filter(u => u.status === "VACANT" || u.id === data.unitId).map((u) => (
-                                        <option key={u.id} value={u.id}>
-                                            {u.unitNumber} • {u.property?.nameEn || "—"} {u.property?.type === "COMMERCIAL" ? "[Commercial]" : ""}
-                                        </option>
-                                    ))}
-                                </select>
+                                    onChange={onPickUnit}
+                                    placeholder="— Select a unit —"
+                                    searchPlaceholder="Search property or unit..."
+                                />
                                 {selectedUnit && (
                                     <p className="text-[11px] text-muted mt-1.5 flex items-center gap-1">
                                         <Building2 size={11} /> {selectedUnit.property?.nameEn} • {selectedUnit.property?.type || "RESIDENTIAL"}
@@ -418,16 +418,13 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                                 )}
                             </Field>
                             <Field label="Renter *">
-                                <select
+                                <SearchableSelect
+                                    options={renterOptions}
                                     value={data.renterId}
-                                    onChange={(e) => update({ renterId: e.target.value })}
-                                    className="w-full bg-input border border-border p-3 rounded-xl text-xs"
-                                >
-                                    <option value="">— Select a renter —</option>
-                                    {renters.map((r) => (
-                                        <option key={r.id} value={r.id}>{r.nameEn}{r.nameAr ? ` (${r.nameAr})` : ""}</option>
-                                    ))}
-                                </select>
+                                    onChange={(renterId) => update({ renterId })}
+                                    placeholder="— Select a renter —"
+                                    searchPlaceholder="Search name or email..."
+                                />
                             </Field>
                             <Field label="Agreement date" hint="Defaults to today on contract generation">
                                 <input

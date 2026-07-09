@@ -3,6 +3,8 @@
 import { useEffect, useState, useMemo } from "react";
 import { Loader2, Save, RefreshCw, AlertTriangle, CheckCircle2, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SearchableSelect } from "@/components/ui/SearchableSelect";
+import { useLeasePartyOptions } from "@/hooks/useLeasePartyOptions";
 
 /**
  * Inline metadata editor for a DRAFT lease — replaces the modal "Edit Lease"
@@ -37,6 +39,7 @@ type Renter = {
     id: string;
     nameEn: string;
     nameAr: string;
+    email?: string;
 };
 
 type Lease = {
@@ -168,6 +171,13 @@ export default function LeaseMetadataEditor({ lease, onSaved, className }: Props
 
     const selectedUnit = useMemo(() => units.find(u => u.id === form.unitId), [units, form.unitId]);
 
+    const { unitOptions, renterOptions } = useLeasePartyOptions(
+        units,
+        renters,
+        form.unitId,
+        (u) => `Unit ${u.unitNumber}`,
+    );
+
     const onPickUnit = (unitId: string) => {
         const u = units.find((x) => x.id === unitId);
         const commercial = u?.property?.type === "COMMERCIAL";
@@ -184,6 +194,14 @@ export default function LeaseMetadataEditor({ lease, onSaved, className }: Props
 
     const handleSave = async () => {
         if (!editable) return;
+        // Unit and renter are required. The old native <select required> blocked
+        // submit when empty; SearchableSelect has no native validation and its
+        // "— Select —" clear row can empty a pre-filled field, so guard here
+        // rather than send an empty unitId/renterId to the backend.
+        if (!form.unitId || !form.renterId) {
+            setError("Unit and renter are both required.");
+            return;
+        }
         setSaving(true);
         setError(null);
         setSaved(false);
@@ -280,21 +298,25 @@ export default function LeaseMetadataEditor({ lease, onSaved, className }: Props
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <Field label="Unit *">
-                            <select required value={form.unitId} onChange={(e) => onPickUnit(e.target.value)} className="w-full bg-input border border-border p-3 rounded-xl text-xs">
-                                <option value="">— Select a unit —</option>
-                                {units.filter(u => u.status === "VACANT" || u.id === form.unitId).map(u => (
-                                    <option key={u.id} value={u.id}>{u.property?.nameEn ? `${u.property.nameEn} — ` : ""}Unit {u.unitNumber} {u.property?.type === "COMMERCIAL" ? "[Commercial]" : ""}</option>
-                                ))}
-                            </select>
+                            <SearchableSelect
+                                options={unitOptions}
+                                value={form.unitId}
+                                onChange={onPickUnit}
+                                placeholder="— Select a unit —"
+                                searchPlaceholder="Search property or unit..."
+                            />
                             {selectedUnit?.property && (
                                 <p className="text-[11px] text-muted mt-1">{selectedUnit.property.nameEn} • {selectedUnit.property.type || "RESIDENTIAL"}</p>
                             )}
                         </Field>
                         <Field label="Renter *">
-                            <select required value={form.renterId} onChange={(e) => setForm({ ...form, renterId: e.target.value })} className="w-full bg-input border border-border p-3 rounded-xl text-xs">
-                                <option value="">— Select a renter —</option>
-                                {renters.map(r => <option key={r.id} value={r.id}>{r.nameEn}{r.nameAr ? ` (${r.nameAr})` : ""}</option>)}
-                            </select>
+                            <SearchableSelect
+                                options={renterOptions}
+                                value={form.renterId}
+                                onChange={(renterId) => setForm({ ...form, renterId })}
+                                placeholder="— Select a renter —"
+                                searchPlaceholder="Search name or email..."
+                            />
                         </Field>
                         <Field label="Start date *">
                             <input required type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} className="w-full bg-input border border-border p-3 rounded-xl text-xs" />
