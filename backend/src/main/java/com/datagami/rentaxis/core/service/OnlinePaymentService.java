@@ -20,6 +20,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -312,11 +313,23 @@ public class OnlinePaymentService {
         }
     }
 
-    // @Transactional in its own right (not just inherited from the caller's
-    // open transaction) — clearPaymentOnline now acquires a pessimistic lock,
-    // which requires an active transaction, and this method must not depend
-    // on always being invoked from within one.
-    @Transactional
+    /**
+     * Clears the schedule for a captured online payment, invoked from
+     * {@code WebhookService.processRazorpayWebhook}.
+     *
+     * <p>Runs in a {@code REQUIRES_NEW} transaction, deliberately NOT joining
+     * the webhook handler's transaction. {@link #clearPaymentOnline} can throw
+     * on a NOWAIT lock conflict or an unexpected schedule status; if it ran in
+     * the caller's transaction, that throw would mark the shared transaction
+     * rollback-only, which then (a) discards the {@code WebhookLog} audit row
+     * the handler writes in its {@code finally} — losing the record of exactly
+     * the anomaly {@code clearPaymentOnline} is trying to surface — and
+     * (b) turns the handler's clean catch-and-continue into an
+     * {@code UnexpectedRollbackException} at commit. A separate transaction
+     * confines a clearing failure to its own rollback, leaving the handler's
+     * transaction (and its audit write) intact.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void clearPaymentFromWebhook(PaymentSchedule payment) {
         clearPaymentOnline(payment.getId());
     }
