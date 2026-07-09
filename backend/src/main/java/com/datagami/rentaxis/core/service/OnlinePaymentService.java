@@ -4,6 +4,7 @@ import com.datagami.rentaxis.api.dto.CreateOrderResponseDTO;
 import com.datagami.rentaxis.api.dto.RenterPaymentScheduleDTO;
 import com.datagami.rentaxis.api.dto.VerifyPaymentRequestDTO;
 import com.datagami.rentaxis.api.dto.VerifyPaymentResponseDTO;
+import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.core.email.EmailEventType;
 import com.datagami.rentaxis.core.email.event.EmailEvent;
 import com.datagami.rentaxis.core.email.event.payload.OnlinePaymentPayload;
@@ -218,7 +219,7 @@ public class OnlinePaymentService {
             onlinePaymentRepository.save(onlinePayment);
 
             // Clear payment - same pattern as PaymentScheduleService.clearPayment()
-            clearPaymentOnline(onlinePayment.getPaymentSchedule());
+            clearPaymentOnline(onlinePayment.getPaymentSchedule().getId());
 
             response.setSuccess(true);
             response.setMessage("Payment verified and recorded successfully");
@@ -311,11 +312,51 @@ public class OnlinePaymentService {
         }
     }
 
+    // @Transactional in its own right (not just inherited from the caller's
+    // open transaction) — clearPaymentOnline now acquires a pessimistic lock,
+    // which requires an active transaction, and this method must not depend
+    // on always being invoked from within one.
+    @Transactional
     public void clearPaymentFromWebhook(PaymentSchedule payment) {
-        clearPaymentOnline(payment);
+        clearPaymentOnline(payment.getId());
     }
 
-    private void clearPaymentOnline(PaymentSchedule payment) {
+    /**
+     * Locks the schedule row and posts the "online payment cleared"
+     * financial transactions. Previously this had no status precondition at
+     * all and mutated whatever entity the caller happened to pass in —
+     * unlike the cheque-clearing path, which requires DEPOSITED under a
+     * pessimistic lock. That gap meant a redelivered/duplicate Razorpay
+     * webhook (webhook providers commonly retry) could re-enter this method
+     * on an already-CLEARED (or, in a cross-path scenario, already-BOUNCED)
+     * schedule and post a second conflicting financial transaction.
+     *
+     * <p>Re-fetches by id under {@code findByIdForUpdate} rather than
+     * trusting the caller's (possibly stale, definitely unlocked) entity.
+     * An already-CLEARED row is treated as an idempotent no-op — that's the
+     * expected shape of a duplicate webhook delivery, not an error. Any
+     * other unexpected status is rejected loudly so the anomaly surfaces in
+     * {@code WebhookLog} rather than silently corrupting the ledger.
+     */
+    private void clearPaymentOnline(UUID paymentScheduleId) {
+        PaymentSchedule payment;
+        try {
+            payment = paymentScheduleRepository.findByIdForUpdate(paymentScheduleId)
+                    .orElseThrow(() -> new RuntimeException("Payment schedule not found: " + paymentScheduleId));
+        } catch (org.springframework.dao.PessimisticLockingFailureException e) {
+            throw new BusinessRuleViolationException(
+                    "This payment is currently being updated by another request. Please try again.");
+        }
+
+        if (payment.getStatus() == PaymentStatus.CLEARED) {
+            log.info("clearPaymentOnline: schedule {} already CLEARED, ignoring duplicate call", paymentScheduleId);
+            return;
+        }
+        if (payment.getStatus() != PaymentStatus.ONLINE_PENDING) {
+            throw new BusinessRuleViolationException(
+                    "Can only clear online payments in ONLINE_PENDING status (current: " + payment.getStatus() + ")");
+        }
+
         // Set schedule status to CLEARED, paymentMethod to "ONLINE"
         payment.setStatus(PaymentStatus.CLEARED);
         payment.setPaymentMethod("ONLINE");

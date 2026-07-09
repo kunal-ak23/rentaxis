@@ -37,6 +37,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -45,6 +46,12 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -80,6 +87,7 @@ class ChequeFailurePenaltyIT {
     @Autowired LeaseRepository leaseRepository;
     @Autowired RentCollectionSettingsRepository rentCollectionSettingsRepository;
     @Autowired AccountRepository accountRepository;
+    @Autowired TransactionTemplate transactionTemplate;
 
     private UUID tenantId;
     private Property property;
@@ -178,6 +186,252 @@ class ChequeFailurePenaltyIT {
         boolean hasFailedEvent = events.stream()
                 .anyMatch(e -> e.getNotes() != null && e.getNotes().contains("PAYMENT_FAILED_BOUNCE"));
         assertThat(hasFailedEvent).isTrue();
+    }
+
+    /**
+     * Regression test for the "rent received even though the cheque bounced"
+     * bug: {@link PaymentScheduleService#clearPayment} and {@link
+     * PaymentScheduleService#markFailed} both read-check-write the same
+     * {@code DEPOSITED} guard with no row lock. Two requests racing on the
+     * same schedule (e.g. a double-click, or a staff member clicking "Mark
+     * Failed" right as another tab's "Clear" is in flight) could both
+     * observe {@code DEPOSITED}, both pass their precondition, and both post
+     * financial transactions — a "Rental income" credit AND a "Cheque
+     * bounced" reversal for the same cheque.
+     *
+     * <p>With {@code findByIdForUpdate}'s pessimistic write lock, the second
+     * caller blocks until the first commits, re-reads the now-updated
+     * status, and is correctly rejected by the guard. Exactly one side's
+     * transaction pair must exist afterward — never both.</p>
+     */
+    @Test
+    void clearAndMarkFailed_concurrentRace_onlyOneTransitionPersistsTransactions() throws Exception {
+        // clearPayment's fallback account lookup needs A-01-01 (bank/cash) in
+        // addition to the C-01-01 / A-02-02 pair seeded in setUp() for the
+        // bounce reversal.
+        seedAccount("A-01-01", "Bank/Cash", AccountType.ASSET);
+
+        UUID scheduleId = depositedSchedule.getId();
+
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch go = new CountDownLatch(1);
+
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            Future<Throwable> clearFuture = pool.submit(raceTask(ready, go,
+                    () -> paymentScheduleService.clearPayment(scheduleId, new UpdatePaymentStatusDTO())));
+            Future<Throwable> markFailedFuture = pool.submit(raceTask(ready, go,
+                    () -> paymentScheduleService.markFailed(scheduleId, ChequeFailureReason.BOUNCE, "race test")));
+            assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+            go.countDown();
+            Throwable clearOutcome = clearFuture.get(15, TimeUnit.SECONDS);
+            Throwable markFailedOutcome = markFailedFuture.get(15, TimeUnit.SECONDS);
+
+            boolean clearWon = clearOutcome == null;
+            boolean markFailedWon = markFailedOutcome == null;
+
+            assertThat(clearWon)
+                    .as("exactly one of clear/markFailed must win the race on schedule %s; "
+                            + "clearOutcome=%s markFailedOutcome=%s", scheduleId, clearOutcome, markFailedOutcome)
+                    .isNotEqualTo(markFailedWon);
+            if (!clearWon) {
+                assertThat(clearOutcome).isInstanceOf(BusinessRuleViolationException.class);
+            }
+            if (!markFailedWon) {
+                assertThat(markFailedOutcome).isInstanceOf(BusinessRuleViolationException.class);
+            }
+
+            // Match on the accounting fact (which account was debited/credited),
+            // not the English description text — clearPayment's two legs don't
+            // even share a description ("Cheque cleared..." debit vs "Rental
+            // income..." credit), so a substring match on one phrase silently
+            // undercounts the pair it's meant to verify.
+            List<FinancialTransaction> txns = financialTransactionRepository.findAll();
+            long clearedLegCount = txns.stream()
+                    .filter(t -> tenantId.equals(t.getTenantId()))
+                    .filter(t -> ("A-01-01".equals(t.getAccountCode()) && t.getDebit().signum() > 0)
+                            || ("C-01-01".equals(t.getAccountCode()) && t.getCredit().signum() > 0))
+                    .count();
+            long bouncedLegCount = txns.stream()
+                    .filter(t -> tenantId.equals(t.getTenantId()))
+                    .filter(t -> ("C-01-01".equals(t.getAccountCode()) && t.getDebit().signum() > 0)
+                            || ("A-02-02".equals(t.getAccountCode()) && t.getCredit().signum() > 0))
+                    .count();
+
+            if (clearWon) {
+                assertThat(clearedLegCount).as("cleared side should post its debit+credit pair").isEqualTo(2);
+                assertThat(bouncedLegCount).as("losing markFailed must NOT post a bounce transaction").isEqualTo(0);
+            } else {
+                assertThat(bouncedLegCount).as("bounced side should post its debit+credit pair").isEqualTo(2);
+                assertThat(clearedLegCount).as("losing clearPayment must NOT post a rent-received transaction")
+                        .isEqualTo(0);
+            }
+        } finally {
+            pool.shutdown();
+        }
+    }
+
+    /**
+     * Regression test for the dead catch block that previously caught
+     * {@link jakarta.persistence.PessimisticLockException} in {@code
+     * lockAndRequireStatus} — Spring Data JPA's exception translation
+     * converts the Postgres NOWAIT lock-conflict SQLSTATE (55P03) into
+     * {@link org.springframework.dao.PessimisticLockingFailureException}
+     * before it reaches service code, so the old catch clause never actually
+     * fired and the raw exception escaped as an unhandled 500.
+     *
+     * <p>Holds the row's pessimistic lock open in a separate
+     * thread/transaction (via {@link TransactionTemplate}, released on its
+     * own fixed timer independent of whatever the main thread does) and
+     * asserts a concurrent {@code clearPayment} call fails immediately with
+     * the friendly error rather than blocking. An earlier version of
+     * {@code findByIdForUpdate} used a 5s {@code jakarta.persistence.lock.timeout}
+     * (a bounded wait) instead of NOWAIT — that mechanism turned out not to
+     * be honored by this Hibernate/Postgres/HikariCP stack for row-lock
+     * waits (verified empirically: holding the lock for 8s/20s/30s in
+     * separate runs, a concurrent caller blocked for the *entire* hold
+     * duration every time rather than timing out at 5s), which is why NOWAIT
+     * — a query-level clause Postgres enforces directly — replaced it.
+     */
+    @Test
+    void clearPayment_rowAlreadyLocked_failsImmediatelyWithBusinessRuleViolation() throws Exception {
+        UUID scheduleId = depositedSchedule.getId();
+
+        CountDownLatch lockHeld = new CountDownLatch(1);
+        long holdMillis = 3000;
+
+        ExecutorService pool = Executors.newFixedThreadPool(1);
+        Future<?> holderFuture = pool.submit(() -> {
+            TenantContextHolder.setTenantId(tenantId);
+            try {
+                transactionTemplate.execute(status -> {
+                    paymentScheduleRepository.findByIdForUpdate(scheduleId).orElseThrow();
+                    lockHeld.countDown();
+                    try {
+                        Thread.sleep(holdMillis);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                    return null;
+                });
+            } finally {
+                TenantContextHolder.clear();
+            }
+        });
+
+        try {
+            assertThat(lockHeld.await(5, TimeUnit.SECONDS)).isTrue();
+
+            long start = System.nanoTime();
+            assertThatThrownBy(() ->
+                    paymentScheduleService.clearPayment(scheduleId, new UpdatePaymentStatusDTO()))
+                    .isInstanceOf(BusinessRuleViolationException.class)
+                    .hasMessageContaining("currently being updated by another request");
+            long elapsedMs = (System.nanoTime() - start) / 1_000_000;
+
+            // NOWAIT must fail near-instantly — well before the holder's own
+            // hold ends — proving this is a real conflict failure, not a
+            // race that just happens to resolve in our favor.
+            assertThat(elapsedMs)
+                    .as("NOWAIT should fail immediately, not block until the holder releases")
+                    .isLessThan(holdMillis);
+        } finally {
+            holderFuture.get(15, TimeUnit.SECONDS);
+            pool.shutdown();
+        }
+
+        // The lock holder never mutated the row, so the schedule is untouched.
+        PaymentSchedule reloaded = paymentScheduleRepository.findById(scheduleId).orElseThrow();
+        assertThat(reloaded.getStatus()).isEqualTo(PaymentStatus.DEPOSITED);
+    }
+
+    /**
+     * Regression test for the sibling race in {@link PaymentScheduleService#replacePayment}
+     * — same unlocked read-check-write shape as the clear/mark-failed race
+     * above, but on the {@code BOUNCED} guard. Left unfixed, two concurrent
+     * replace calls on the same bounced cheque could both pass the guard and
+     * both persist a new PENDING replacement schedule, silently orphaning
+     * one of them (never referenced by {@code replacedBy}, but still a real
+     * rent obligation sitting in the DB). Exactly one replacement must
+     * persist afterward.
+     */
+    @Test
+    void replacePayment_concurrentRace_onlyOneReplacementPersists() throws Exception {
+        paymentScheduleService.markFailed(depositedSchedule.getId(), ChequeFailureReason.BOUNCE, "to replace (race)");
+        UUID scheduleId = depositedSchedule.getId();
+
+        UpdatePaymentStatusDTO dtoA = new UpdatePaymentStatusDTO();
+        dtoA.setChequeNumber("REPLACE-A");
+        dtoA.setBankName("Bank-A");
+        dtoA.setPayerName("IT-Renter");
+        dtoA.setChequeDate(LocalDate.now().plusDays(7));
+
+        UpdatePaymentStatusDTO dtoB = new UpdatePaymentStatusDTO();
+        dtoB.setChequeNumber("REPLACE-B");
+        dtoB.setBankName("Bank-B");
+        dtoB.setPayerName("IT-Renter");
+        dtoB.setChequeDate(LocalDate.now().plusDays(7));
+
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch go = new CountDownLatch(1);
+
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            Future<Throwable> replaceAFuture = pool.submit(raceTask(ready, go,
+                    () -> paymentScheduleService.replacePayment(scheduleId, dtoA)));
+            Future<Throwable> replaceBFuture = pool.submit(raceTask(ready, go,
+                    () -> paymentScheduleService.replacePayment(scheduleId, dtoB)));
+            assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+            go.countDown();
+            Throwable outcomeA = replaceAFuture.get(15, TimeUnit.SECONDS);
+            Throwable outcomeB = replaceBFuture.get(15, TimeUnit.SECONDS);
+
+            boolean aWon = outcomeA == null;
+            boolean bWon = outcomeB == null;
+            assertThat(aWon)
+                    .as("exactly one replace call must win the race on schedule %s; outcomeA=%s outcomeB=%s",
+                            scheduleId, outcomeA, outcomeB)
+                    .isNotEqualTo(bWon);
+            Throwable losingOutcome = aWon ? outcomeB : outcomeA;
+            assertThat(losingOutcome).isInstanceOf(BusinessRuleViolationException.class);
+
+            List<PaymentSchedule> leaseSchedules = paymentScheduleRepository.findByLeaseId(lease.getId());
+            List<PaymentSchedule> pendingReplacements = leaseSchedules.stream()
+                    .filter(ps -> ps.getStatus() == PaymentStatus.PENDING)
+                    .filter(ps -> "REPLACE-A".equals(ps.getChequeNumber()) || "REPLACE-B".equals(ps.getChequeNumber()))
+                    .toList();
+            assertThat(pendingReplacements)
+                    .as("exactly one replacement schedule should be persisted, not one per racer")
+                    .hasSize(1);
+
+            PaymentSchedule oldReloaded = paymentScheduleRepository.findById(scheduleId).orElseThrow();
+            assertThat(oldReloaded.getReplacedBy()).isNotNull();
+            assertThat(oldReloaded.getReplacedBy().getId()).isEqualTo(pendingReplacements.get(0).getId());
+        } finally {
+            pool.shutdown();
+        }
+    }
+
+    /**
+     * Wraps a racing transition call with the countdown-latch synchronization
+     * (both tasks signal ready, then wait for the shared {@code go} release
+     * so they hit the DB at the same instant) and tenant-context setup/teardown.
+     * Shared by every race test so the harness plumbing lives in one place.
+     */
+    private Callable<Throwable> raceTask(CountDownLatch ready, CountDownLatch go, Runnable action) {
+        return () -> {
+            TenantContextHolder.setTenantId(tenantId);
+            try {
+                ready.countDown();
+                go.await(5, TimeUnit.SECONDS);
+                action.run();
+                return null;
+            } catch (Throwable t) {
+                return t;
+            } finally {
+                TenantContextHolder.clear();
+            }
+        };
     }
 
     @Test

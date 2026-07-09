@@ -465,12 +465,8 @@ public class PaymentScheduleService {
 
     @Transactional
     public PaymentScheduleDTO collectPayment(UUID paymentId, UpdatePaymentStatusDTO dto) {
-        PaymentSchedule payment = paymentScheduleRepository.findById(paymentId)
-                .orElseThrow(() -> new NotFoundException("Payment not found"));
-
-        if (payment.getStatus() != PaymentStatus.PENDING) {
-            throw new BusinessRuleViolationException("Can only collect payments in PENDING status");
-        }
+        PaymentSchedule payment = lockAndRequireStatus(paymentId, PaymentStatus.PENDING,
+                "Can only collect payments in PENDING status");
 
         PaymentSchedule saved = applyChequeReceived(
                 payment,
@@ -494,6 +490,42 @@ public class PaymentScheduleService {
     /** Ledger posting date: the supplied value date, otherwise today. */
     private LocalDate effectiveDateOrToday(LocalDate effectiveDate) {
         return effectiveDate != null ? effectiveDate : LocalDate.now();
+    }
+
+    /**
+     * Locks the schedule row ({@link PaymentScheduleRepository#findByIdForUpdate})
+     * and verifies it is in {@code requiredStatus} before returning it. Every
+     * status-transition method (collect/deposit/clear/mark-failed/replace)
+     * must go through this rather than a plain {@code findById} — an unlocked
+     * read-check-write lets two concurrent callers both observe the same
+     * pre-transition status and both pass their guard, e.g. one clearing a
+     * cheque while another marks it failed, posting conflicting financial
+     * transactions for the same payment. Centralizing here means a future
+     * transition method can't reintroduce that race by copy-pasting the
+     * wrong (unlocked) pattern.
+     *
+     * <p>Translates a NOWAIT lock conflict (the row is already locked by
+     * another transaction) into a caller-friendly {@link
+     * BusinessRuleViolationException} rather than letting the raw exception
+     * escape as a 500. Spring Data JPA's exception translation converts the
+     * Postgres SQLSTATE (55P03) into {@link
+     * org.springframework.dao.PessimisticLockingFailureException} before it
+     * reaches this method — the raw {@link
+     * jakarta.persistence.PessimisticLockException} never does.
+     */
+    private PaymentSchedule lockAndRequireStatus(UUID paymentId, PaymentStatus requiredStatus, String wrongStatusMessage) {
+        PaymentSchedule payment;
+        try {
+            payment = paymentScheduleRepository.findByIdForUpdate(paymentId)
+                    .orElseThrow(() -> new NotFoundException("Payment not found"));
+        } catch (org.springframework.dao.PessimisticLockingFailureException e) {
+            throw new BusinessRuleViolationException(
+                    "This payment is currently being updated by another request. Please try again.");
+        }
+        if (payment.getStatus() != requiredStatus) {
+            throw new BusinessRuleViolationException(wrongStatusMessage + " (current: " + payment.getStatus() + ")");
+        }
+        return payment;
     }
 
     /**
@@ -594,7 +626,13 @@ public class PaymentScheduleService {
         // Load every targeted schedule in one shot under PESSIMISTIC_WRITE so
         // concurrent bulk-attach callers can't both pass the PENDING precheck.
         List<UUID> scheduleIds = items.stream().map(BulkAttachChequeItem::getScheduleId).toList();
-        List<PaymentSchedule> schedules = paymentScheduleRepository.findAllByIdForUpdate(scheduleIds);
+        List<PaymentSchedule> schedules;
+        try {
+            schedules = paymentScheduleRepository.findAllByIdForUpdate(scheduleIds);
+        } catch (org.springframework.dao.PessimisticLockingFailureException e) {
+            throw new BusinessRuleViolationException(
+                    "One or more of these payments are currently being updated by another request. Please try again.");
+        }
         Map<UUID, PaymentSchedule> byId = schedules.stream()
                 .collect(Collectors.toMap(PaymentSchedule::getId, s -> s));
 
@@ -658,12 +696,8 @@ public class PaymentScheduleService {
 
     @Transactional
     public PaymentScheduleDTO depositPayment(UUID paymentId, UpdatePaymentStatusDTO dto) {
-        PaymentSchedule payment = paymentScheduleRepository.findById(paymentId)
-                .orElseThrow(() -> new NotFoundException("Payment not found"));
-
-        if (payment.getStatus() != PaymentStatus.COLLECTED) {
-            throw new BusinessRuleViolationException("Can only deposit payments in COLLECTED status");
-        }
+        PaymentSchedule payment = lockAndRequireStatus(paymentId, PaymentStatus.COLLECTED,
+                "Can only deposit payments in COLLECTED status");
 
         payment.setStatus(PaymentStatus.DEPOSITED);
         if (dto.getNotes() != null) {
@@ -696,12 +730,8 @@ public class PaymentScheduleService {
 
     @Transactional
     public PaymentScheduleDTO clearPayment(UUID paymentId, UpdatePaymentStatusDTO dto) {
-        PaymentSchedule payment = paymentScheduleRepository.findById(paymentId)
-                .orElseThrow(() -> new NotFoundException("Payment not found"));
-
-        if (payment.getStatus() != PaymentStatus.DEPOSITED) {
-            throw new BusinessRuleViolationException("Can only clear payments in DEPOSITED status");
-        }
+        PaymentSchedule payment = lockAndRequireStatus(paymentId, PaymentStatus.DEPOSITED,
+                "Can only clear payments in DEPOSITED status");
 
         payment.setStatus(PaymentStatus.CLEARED);
         payment.setStatusChangedAt(effectiveInstant(dto.getEffectiveDate()));
@@ -813,13 +843,8 @@ public class PaymentScheduleService {
     @Transactional
     public MarkFailedResult markFailed(UUID paymentId, ChequeFailureReason reason, String notes,
                                        LocalDate effectiveDate) {
-        PaymentSchedule s = paymentScheduleRepository.findById(paymentId)
-                .orElseThrow(() -> new NotFoundException("Payment not found"));
-
-        if (s.getStatus() != PaymentStatus.DEPOSITED) {
-            throw new BusinessRuleViolationException(
-                    "Can only mark payments in DEPOSITED status as failed (current: " + s.getStatus() + ")");
-        }
+        PaymentSchedule s = lockAndRequireStatus(paymentId, PaymentStatus.DEPOSITED,
+                "Can only mark payments in DEPOSITED status as failed");
 
         s.setStatus(PaymentStatus.BOUNCED);
         s.setFailureReason(reason);
@@ -914,12 +939,8 @@ public class PaymentScheduleService {
 
     @Transactional
     public PaymentScheduleDTO replacePayment(UUID paymentId, UpdatePaymentStatusDTO dto) {
-        PaymentSchedule oldPayment = paymentScheduleRepository.findById(paymentId)
-                .orElseThrow(() -> new NotFoundException("Payment not found"));
-
-        if (oldPayment.getStatus() != PaymentStatus.BOUNCED) {
-            throw new BusinessRuleViolationException("Can only replace payments in BOUNCED status");
-        }
+        PaymentSchedule oldPayment = lockAndRequireStatus(paymentId, PaymentStatus.BOUNCED,
+                "Can only replace payments in BOUNCED status");
 
         // Create new replacement payment
         PaymentSchedule newPayment = new PaymentSchedule();
