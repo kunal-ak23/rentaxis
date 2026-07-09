@@ -49,7 +49,12 @@ public class PaymentScheduleController {
             @RequestParam(required = false) PaymentStatus status,
             @RequestParam(required = false) String renterName,
             @RequestParam(required = false, defaultValue = "false") boolean overdue,
-            @PageableDefault(size = 25, sort = "dueDate", direction = Sort.Direction.DESC) Pageable pageable) {
+            // "id" is a tiebreaker, not a meaningful ordering — dueDate alone is not
+            // unique (many installments share a due date), so without it, rows with
+            // the same dueDate have no defined relative order and can visibly swap
+            // position between requests (e.g. right after marking one paid, which
+            // triggers a full refetch) even though nothing about their sort key changed.
+            @PageableDefault(size = 25, sort = {"dueDate", "id"}, direction = Sort.Direction.DESC) Pageable pageable) {
         return ResponseEntity.ok(paymentScheduleService.getPaymentsForProperty(propertyId, status, renterName, overdue, pageable));
     }
 
@@ -75,7 +80,12 @@ public class PaymentScheduleController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
     public ResponseEntity<Page<PaymentScheduleDTO>> getChequesToDeposit(
             @RequestParam(required = false) UUID propertyId,
-            @PageableDefault(size = 25, sort = "chequeDate", direction = Sort.Direction.ASC) Pageable pageable) {
+            // "id" is a tiebreaker, not a meaningful ordering — chequeDate is not
+            // unique (many cheques can share a deposit date), so without it rows
+            // with the same chequeDate have no defined relative order and can swap
+            // position between requests (e.g. right after depositing one, which
+            // refetches the list) even though nothing about their sort key changed.
+            @PageableDefault(size = 25, sort = {"chequeDate", "id"}, direction = Sort.Direction.ASC) Pageable pageable) {
         return ResponseEntity.ok(paymentScheduleService.getChequesToDeposit(propertyId, pageable));
     }
 

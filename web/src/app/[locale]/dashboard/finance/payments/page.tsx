@@ -54,9 +54,14 @@ type PaymentSummary = {
     overdueAmount: number;
 };
 
-type Property = {
-    id: string;
-    nameEn: string;
+// GET /api/v1/properties returns each property wrapped in a portfolio-summary
+// row (property + assignedManagers + occupancy stats), not a flat property
+// object — mirrors PropertyStats in finance/transactions/page.tsx.
+type PropertySummary = {
+    property: {
+        id: string;
+        nameEn: string;
+    };
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -87,7 +92,7 @@ export default function PaymentsPage() {
 
     const [payments, setPayments] = useState<Payment[]>([]);
     const [summary, setSummary] = useState<PaymentSummary | null>(null);
-    const [properties, setProperties] = useState<Property[]>([]);
+    const [properties, setProperties] = useState<PropertySummary[]>([]);
     const [loading, setLoading] = useState(true);
 
     // Allow the dashboard "Overdue" card (and shareable URLs) to deep-link into a
@@ -430,8 +435,8 @@ export default function PaymentsPage() {
                     >
                         <option value="">{t("allProperties")}</option>
                         {properties.map((p) => (
-                            <option key={p.id} value={p.id}>
-                                {p.nameEn}
+                            <option key={p.property.id} value={p.property.id}>
+                                {p.property.nameEn}
                             </option>
                         ))}
                     </select>

@@ -30,10 +30,15 @@ type Ticket = {
     updatedAt: string;
 };
 
+// GET /api/v1/properties returns each property wrapped in a portfolio-summary
+// row (PropertyStatsDTO: property + assignedManagers + occupancy stats), not a
+// flat property object. Accessing p.id/p.nameEn directly yielded undefined —
+// the dropdown rendered blank options.
 type Property = {
-    id: string;
-    nameEn: string;
-    nameAr: string;
+    property: {
+        id: string;
+        nameEn: string;
+    };
 };
 
 type Unit = {
@@ -481,7 +486,7 @@ export default function TicketsPage() {
                                         >
                                             <option value="">General (no specific property)</option>
                                             {properties.map((p) => (
-                                                <option key={p.id} value={p.id}>{p.nameEn}</option>
+                                                <option key={p.property.id} value={p.property.id}>{p.property.nameEn}</option>
                                             ))}
                                         </select>
                                     </div>
