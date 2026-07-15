@@ -37,8 +37,21 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   - >1 candidates, no tenantId  → 409 with the candidate list in the body
  *   - >1 candidates, with valid tenantId → 200
  *   - >1 candidates, with bogus tenantId → 401
+ *
+ * <p>Also covers the SECURITY_GUARD exclusion from this endpoint entirely — see
+ * {@link #securityGuardWithAKnownPasswordCannotLogIn} for why that is a security
+ * boundary and not a routing preference.
+ *
+ * <p>{@code gatepass.otp.dev-fixed-code} pins every issued OTP to a known
+ * constant (see {@code FixedOtpCodeGenerator}), which is what lets
+ * {@link #securityGuardCanStillLogInViaOtp} drive the real HTTP OTP flow rather
+ * than asserting against the service. That test is the other half of the guard
+ * exclusion: without it, "guards are rejected by /login" is indistinguishable
+ * from "guards cannot log in at all".
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(
+        webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        properties = "gatepass.otp.dev-fixed-code=424242")
 @Testcontainers
 class AuthControllerLoginTest {
 
@@ -207,6 +220,155 @@ class AuthControllerLoginTest {
             assertThat(body).contains(a.getId().toString());
             assertThat(body).contains(b.getId().toString());
         }
+    }
+
+    // ------------------------------------------------- SECURITY_GUARD exclusion
+
+    /** A guard row as the manager app provisions one: E.164 phone, active, no invite. */
+    private User makeGuard(LandlordOrg org, String email, String rawPassword, String phone) {
+        User u = new User();
+        u.setEmail(email);
+        u.setName("Guard " + UUID.randomUUID());
+        u.setRole(UserRole.SECURITY_GUARD);
+        u.setStatus(UserStatus.ACTIVE);
+        u.setPasswordHash(passwordEncoder.encode(rawPassword));
+        u.setPhoneNumber(phone);
+        u.setTenantId(org.getId());
+        return userRepo.save(u);
+    }
+
+    /** Unique per call: uq_users_guard_phone is global across tenants. */
+    private static String freshGuardPhone() {
+        return "+9715" + String.format("%08d", Math.abs(UUID.randomUUID().hashCode() % 100_000_000));
+    }
+
+    /**
+     * The bypass this endpoint's guard exclusion exists to close.
+     *
+     * <p>{@code UserService.createUser} hashes whatever password it is handed, so
+     * every SECURITY_GUARD row carries a real, matchable {@code password_hash}. Until
+     * this rejection existed, the only thing keeping a guard off {@code /login} was
+     * that the manager app happens to generate a random secret and throw it away — a
+     * client-side accident propping up a server-side guarantee. Any other caller
+     * provisioning a guard through the API with a password it knows got an
+     * unthrottled login that skips the entire OTP design: the atomic attempt claim,
+     * the per-phone failure cap, the IP throttle and the anti-enumeration responses.
+     *
+     * <p>This test creates exactly that situation — a guard whose password is known —
+     * and requires a 401 anyway.
+     */
+    @Test
+    void securityGuardWithAKnownPasswordCannotLogIn() {
+        LandlordOrg org = makeOrg("guard-pwd");
+        String email = "guard-" + UUID.randomUUID() + "@test";
+        makeGuard(org, email, "known-guard-password", freshGuardPhone());
+
+        try {
+            client().post().uri("/api/auth/login")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(Map.of("email", email, "password", "known-guard-password"))
+                    .retrieve().body(Map.class);
+            throw new AssertionError("expected 401 — a SECURITY_GUARD must not be able to use /login");
+        } catch (HttpStatusCodeException e) {
+            assertThat(e.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        }
+    }
+
+    /**
+     * The rejection must not be a role oracle.
+     *
+     * <p>{@code /login} is unauthenticated, so a response that said "guards must use
+     * OTP" — or merely differed in status or body from a wrong password — would let
+     * anyone test an email address and learn whether it belongs to a security guard.
+     * That is a target list for the phone-OTP surface, handed out for free.
+     *
+     * <p>Asserts the two responses are byte-identical, not merely both-4xx.
+     */
+    @Test
+    void guardRejectionIsIndistinguishableFromAWrongPassword() {
+        LandlordOrg org = makeOrg("indistinguishable");
+        String guardEmail = "g-" + UUID.randomUUID() + "@test";
+        String renterEmail = "r-" + UUID.randomUUID() + "@test";
+        makeGuard(org, guardEmail, "guard-pwd", freshGuardPhone());
+        makeUser(org, renterEmail, "renter-pwd");
+
+        // A guard supplying their CORRECT password.
+        HttpStatusCodeException guardFailure = attemptLoginExpectingFailure(guardEmail, "guard-pwd");
+        // A renter supplying a WRONG one — the response every caller already gets.
+        HttpStatusCodeException wrongPassword = attemptLoginExpectingFailure(renterEmail, "not-my-password");
+
+        assertThat(guardFailure.getStatusCode()).isEqualTo(wrongPassword.getStatusCode());
+        assertThat(guardFailure.getResponseBodyAsString()).isEqualTo(wrongPassword.getResponseBodyAsString());
+        // Nothing in the body may name the role or point at the OTP endpoint.
+        assertThat(guardFailure.getResponseBodyAsString().toUpperCase())
+                .doesNotContain("SECURITY_GUARD")
+                .doesNotContain("OTP");
+    }
+
+    private HttpStatusCodeException attemptLoginExpectingFailure(String email, String password) {
+        try {
+            client().post().uri("/api/auth/login")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(Map.of("email", email, "password", password))
+                    .retrieve().body(Map.class);
+            throw new AssertionError("expected a failure status for " + email);
+        } catch (HttpStatusCodeException e) {
+            return e;
+        }
+    }
+
+    /**
+     * The other half of the exclusion: guards are shut out of {@code /login}, not shut
+     * out. Drives the real HTTP OTP flow — request, then verify with the pinned dev
+     * code — and requires the same identity payload {@code /login} returns.
+     *
+     * <p>Without this test, deleting the guard's ability to authenticate at all would
+     * pass every other test in this class.
+     */
+    @Test
+    void securityGuardCanStillLogInViaOtp() {
+        LandlordOrg org = makeOrg("otp-still-works");
+        String phone = freshGuardPhone();
+        User guard = makeGuard(org, "otp-" + UUID.randomUUID() + "@test", "unused", phone);
+
+        client().post().uri("/api/auth/otp/request")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of("phone", phone))
+                .retrieve().toBodilessEntity();
+
+        Map<?, ?> resp = client().post().uri("/api/auth/otp/verify")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of("phone", phone, "code", "424242"))
+                .retrieve().body(Map.class);
+
+        assertThat(resp.get("id")).isEqualTo(guard.getId().toString());
+        assertThat(resp.get("role")).isEqualTo("SECURITY_GUARD");
+    }
+
+    /**
+     * A guard must not shadow a real user who shares their email address.
+     *
+     * <p>The exclusion drops guard rows from the candidate list, so the obvious
+     * wrong implementation — rejecting the whole request the moment any candidate is
+     * a guard — would lock a legitimate TENANT_ADMIN out of their own account because
+     * an unrelated guard in another tenant happens to use the same email. Post-
+     * migration 59 that is a supported state, not a contrived one.
+     */
+    @Test
+    void guardDoesNotBlockANonGuardSharingTheSameEmail() {
+        LandlordOrg guardOrg = makeOrg("shadow-guard");
+        LandlordOrg adminOrg = makeOrg("shadow-admin");
+        String email = "shared-role-" + UUID.randomUUID() + "@test";
+        makeGuard(guardOrg, email, "guard-pwd", freshGuardPhone());
+        makeUser(adminOrg, email, "admin-pwd");
+
+        Map<?, ?> resp = client().post().uri("/api/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of("email", email, "password", "admin-pwd"))
+                .retrieve().body(Map.class);
+
+        assertThat(resp.get("tenantId")).isEqualTo(adminOrg.getId().toString());
+        assertThat(resp.get("role")).isEqualTo("RENTER");
     }
 
     @Test

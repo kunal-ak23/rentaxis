@@ -131,6 +131,33 @@ public class UserService {
         return false;
     }
 
+    /**
+     * The password hash a SECURITY_GUARD gets: an encoding of fresh random bytes
+     * that is thrown away the moment it is computed.
+     *
+     * <p>Guards authenticate by phone OTP only — {@code AuthController.login}
+     * rejects the role outright — so a guard's password is not a credential, it is
+     * an artifact of {@code password_hash} being NOT NULL. Generating it here means
+     * no caller ever chooses it, closing the gap where an API client provisioning a
+     * guard with a password it knows created a credential that mattered. The manager
+     * app already generated a random secret client-side for exactly this reason;
+     * that made it a client's choice to keep making. Now it is the server's rule,
+     * and {@code rawPassword} is simply ignored for this role.
+     *
+     * <p>Null is deliberately not an option: the column forbids it, and a caller
+     * that "helpfully" relaxed the constraint would turn every guard row into an
+     * account with no password rather than an unusable one.
+     *
+     * <p>This is defence in depth behind the {@code /login} gate, not a substitute
+     * for it. If it were the only protection, anyone who could read a hash offline
+     * would still be attacking a real login path.
+     */
+    private static String generateUnusableGuardSecret() {
+        byte[] buf = new byte[32];
+        new java.security.SecureRandom().nextBytes(buf);
+        return java.util.Base64.getEncoder().encodeToString(buf);
+    }
+
     private static String generateInviteToken() {
         java.security.SecureRandom rng = new java.security.SecureRandom();
         byte[] buf = new byte[32];
@@ -175,7 +202,11 @@ public class UserService {
 
         User user = new User();
         user.setEmail(normalizedEmail);
-        user.setPasswordHash(passwordEncoder.encode(rawPassword));
+        // A guard's rawPassword is ignored, whatever the caller passed — see
+        // generateUnusableGuardSecret. This also makes a null rawPassword safe for
+        // the one role that has no use for one.
+        user.setPasswordHash(passwordEncoder.encode(
+                role == UserRole.SECURITY_GUARD ? generateUnusableGuardSecret() : rawPassword));
         user.setName(name);
         user.setRole(role);
         user.setPhoneNumber(normalizedPhone);

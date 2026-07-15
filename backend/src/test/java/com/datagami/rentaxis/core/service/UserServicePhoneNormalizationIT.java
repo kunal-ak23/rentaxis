@@ -379,6 +379,54 @@ class UserServicePhoneNormalizationIT {
         return sb.toString();
     }
 
+    /**
+     * A caller cannot choose a guard's password, even by passing one.
+     *
+     * <p>Defence in depth behind {@code AuthController.login}'s rejection of the
+     * role. {@code createUser} used to hash {@code rawPassword} unconditionally, so
+     * an API client that provisioned a guard with a password it knew held a working
+     * credential; the manager app only avoided that by generating a random secret
+     * and discarding it, which is a convention, not a guarantee. The server now
+     * generates the value, so the convention cannot be forgotten by the next caller.
+     *
+     * <p>Asserts the supplied password does not match the stored hash — the hash is
+     * still present and NOT NULL, just unrelated to anything the caller knows.
+     */
+    @Test
+    void createUserIgnoresTheCallersPasswordForASecurityGuard() {
+        LandlordOrg org = makeOrg();
+        String chosen = "attacker-knows-this";
+
+        User guard = userService.createUser(
+                "guard+" + UUID.randomUUID() + "@test", chosen, "Gate Guard",
+                UserRole.SECURITY_GUARD, org.getId().toString(), uniqueE164(), "admin");
+
+        assertThat(guard.getPasswordHash())
+                .as("password_hash is NOT NULL — the row must still carry a hash")
+                .isNotBlank();
+        assertThat(passwordEncoder.matches(chosen, guard.getPasswordHash()))
+                .as("the caller's chosen password must not authenticate this guard")
+                .isFalse();
+    }
+
+    /**
+     * The same rule must hold for every other role in the opposite direction: a
+     * password-authenticating user's chosen password is theirs and must still work.
+     * Without this, "ignore rawPassword" could be over-applied to the whole method
+     * and every non-guard account would be silently locked out.
+     */
+    @Test
+    void createUserStillHonoursTheChosenPasswordForPasswordRoles() {
+        LandlordOrg org = makeOrg();
+        String chosen = "correct-horse-battery";
+
+        User admin = userService.createUser(
+                "admin+" + UUID.randomUUID() + "@test", chosen, "Tenant Admin",
+                UserRole.TENANT_ADMIN, org.getId().toString(), null, "admin");
+
+        assertThat(passwordEncoder.matches(chosen, admin.getPasswordHash())).isTrue();
+    }
+
     /** Taking another guard's number on update is a conflict, and says so. */
     @Test
     void updatingAGuardOntoAnotherGuardsPhoneIsReportedAsAPhoneConflict() {

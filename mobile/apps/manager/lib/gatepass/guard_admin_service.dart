@@ -59,18 +59,27 @@ String? validateGuardEmail(String? input) {
 
 /// A password the guard will never use, and no one will ever know.
 ///
-/// `UserService.createUser` hashes `rawPassword` unconditionally, so the field
-/// cannot be omitted — but a SECURITY_GUARD is the one role that never receives
-/// an invite token (`issuesInviteToken` covers RENTER, PROPERTY_MANAGER and
-/// TENANT_USER only), so no set-password mail is ever sent and there is no flow
-/// through which a guard could learn or change one. Guards authenticate solely
-/// by phone OTP.
+/// A SECURITY_GUARD never receives an invite token (`issuesInviteToken` covers
+/// RENTER, PROPERTY_MANAGER and TENANT_USER only), so no set-password mail is
+/// ever sent and there is no flow through which a guard could learn or change
+/// one. Guards authenticate solely by phone OTP.
 ///
-/// Generating a random secret here is therefore the *safer* of the two options,
-/// not a shortcut: the alternative — prompting the manager for a password —
-/// would create a known credential for an account whose whole login path
-/// bypasses passwords, i.e. a shared secret with no purpose and a real blast
-/// radius. This value is discarded immediately and never displayed.
+/// **This is now belt to the backend's braces, and no longer the thing keeping
+/// guards off `/api/auth/login`.** It used to be: `UserService.createUser` hashed
+/// `rawPassword` unconditionally, and `/login` did not filter by role, so this
+/// client discarding the secret was the only reason a guard could not password-
+/// log-in — a client-side accident propping up a server-side guarantee. The
+/// backend now rejects SECURITY_GUARD at `/login` outright AND generates the
+/// guard's credential server-side, ignoring whatever is sent here. Sending a
+/// random value remains correct (the field is still accepted, and a *known*
+/// password would still be the wrong thing to put in a request body), but
+/// deleting this function would no longer open a login path.
+///
+/// Generating a random secret here is therefore still the *safer* of the two
+/// options, not a shortcut: the alternative — prompting the manager for a
+/// password — would create a known credential for an account whose whole login
+/// path bypasses passwords, i.e. a shared secret with no purpose. This value is
+/// discarded immediately and never displayed.
 String generateUnusedGuardPassword() {
   const alphabet =
       'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#%^&*';

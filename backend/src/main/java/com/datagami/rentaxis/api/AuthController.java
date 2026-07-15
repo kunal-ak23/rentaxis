@@ -93,7 +93,41 @@ public class AuthController {
         // "unknown email" timing close to the "wrong password" timing. Multi-
         // candidate paths still leak that N > 1 via response time, but never
         // tenant identity — an acceptable trade-off vs. the previous oracle.
-        List<User> candidates = userService.findAllByEmail(request.email());
+        //
+        // SECURITY_GUARDs are dropped here, at the candidate stage, and the
+        // placement is the whole mechanism — see below.
+        List<User> candidates = userService.findAllByEmail(request.email()).stream()
+                .filter(u -> u.getRole() != UserRole.SECURITY_GUARD)
+                .toList();
+
+        // Why guards are excluded at all: createUser hashes whatever password it
+        // is given, so every guard row has a real, matchable password_hash. The
+        // only thing that kept guards off this endpoint was the manager app
+        // choosing to generate a random secret and discard it — a client-side
+        // accident holding up a server-side guarantee. A guard who reaches this
+        // endpoint bypasses the entire OTP design: atomic attempt claim,
+        // per-phone failure cap, IP throttle, anti-enumeration. Guards
+        // authenticate at /auth/otp/verify and nowhere else.
+        //
+        // Why the filter is HERE and not a check further down:
+        //
+        //   - A guard-only email leaves candidates empty, so it falls into the
+        //     zero-candidate branch below and absorbs exactly one DUMMY_HASH
+        //     bcrypt before its 401 — the same work, the same status and the
+        //     same empty body as an unknown email, which is already engineered
+        //     to match the wrong-password path. There is no separate guard
+        //     branch to time, because there is no separate guard branch.
+        //   - An explicit "guards must use OTP" response would be a role oracle
+        //     on an unauthenticated endpoint: anyone could test an email and
+        //     learn whether it belongs to a guard, i.e. harvest a target list
+        //     for the OTP surface. Do not add one, however helpful it reads.
+        //   - Filtering rather than rejecting the whole request matters: post-
+        //     migration 59 an email can be a guard in one tenant and a real user
+        //     in another, and that user must still log in.
+        //
+        // Defence in depth, not the boundary itself: createUser now generates a
+        // guard's credential server-side so no caller can choose one. This gate
+        // is what makes that unnecessary rather than load-bearing.
 
         if (request.tenantId() != null && !request.tenantId().isBlank()) {
             UUID requested;
