@@ -75,4 +75,9 @@ dependencies {
 
 tasks.named('test') {
 	useJUnitPlatform()
+	// Gradle defaults test workers to 512m, which the full suite now exhausts:
+	// several @SpringBootTest contexts plus the Testcontainers integration tests
+	// (GatePassScanConcurrencyIT, OtpLoginRollbackIT) exceed it and the worker
+	// dies with OutOfMemoryError part-way through rather than reporting failures.
+	maxHeapSize = '2g'
 }
