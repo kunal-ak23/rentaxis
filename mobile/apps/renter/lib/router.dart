@@ -19,6 +19,9 @@ import 'screens/meetings_screen.dart';
 import 'screens/meeting_detail_screen.dart';
 import 'screens/create_meeting_screen.dart';
 import 'screens/penalties_screen.dart';
+import 'screens/gatepass/gate_pass_list_screen.dart';
+import 'screens/gatepass/gate_pass_create_screen.dart';
+import 'screens/gatepass/gate_pass_detail_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authProvider);
@@ -134,6 +137,26 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/penalties',
             builder: (context, state) => const PenaltiesScreen(),
+          ),
+          // The pass id travels in the path and the detail screen re-fetches it.
+          // Nothing is passed through `extra` here on purpose: this router
+          // rebuilds on `authProvider`, so an auth-state change mid-navigation
+          // would discard an `extra` payload and leave the screen with nothing.
+          GoRoute(
+            path: '/gatepass',
+            builder: (context, state) => const GatePassListScreen(),
+            routes: [
+              GoRoute(
+                path: 'create',
+                builder: (context, state) => const GatePassCreateScreen(),
+              ),
+              GoRoute(
+                path: ':id',
+                builder: (context, state) => GatePassDetailScreen(
+                  passId: state.pathParameters['id']!,
+                ),
+              ),
+            ],
           ),
         ],
       ),
