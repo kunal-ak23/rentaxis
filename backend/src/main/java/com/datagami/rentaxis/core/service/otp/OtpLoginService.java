@@ -8,6 +8,7 @@ import com.datagami.rentaxis.domain.entity.enums.UserStatus;
 import com.datagami.rentaxis.domain.repository.LoginOtpRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -33,26 +34,64 @@ import java.util.regex.Pattern;
  *
  * <h2>Guarantees</h2>
  * <ul>
- *   <li><b>Anti-enumeration (response content)</b> — {@link #requestOtp} returns
+ *   <li><b>Anti-enumeration (response body)</b> — {@link #requestOtp} returns
  *       200 for an unknown, inactive, or non-guard phone exactly as for a real
  *       one, and {@link #verifyOtp} throws one identical message for every
- *       failure mode. No response body or status distinguishes a registered
- *       phone from an unregistered one.</li>
+ *       failure mode. No response <em>body</em> distinguishes a registered phone
+ *       from an unregistered one. Status codes are a weaker claim than that and
+ *       are covered under Known gaps — see "429 oracle".</li>
  *   <li><b>Throttle before lookup</b> — the rate check precedes the user query,
  *       so a throttled known phone behaves like a throttled unknown one.</li>
- *   <li><b>Codes are bcrypt-hashed at rest</b> and single-use.</li>
+ *   <li><b>Codes are bcrypt-hashed at rest</b> and single-use. The plaintext
+ *       exists only in memory, in the request and in {@link OtpRequestedEvent}
+ *       until delivery — it is never written to a table, which is why delivery
+ *       is an after-commit event and not an outbox row (see
+ *       {@link OtpDeliveryListener}).</li>
  *   <li><b>Guess budget is enforced atomically</b> — see
  *       {@link LoginOtpRepository#claimAttempt}.</li>
+ *   <li><b>The issuance throttle cannot be disabled by a failing sender</b> —
+ *       delivery happens after commit, so the row that the throttle counts is
+ *       durable before any network call is attempted. See
+ *       {@link OtpDeliveryListener} for why this ordering is not optional.</li>
  * </ul>
  *
  * <h2>Known gaps — do not read the above as more than it says</h2>
  * <ul>
- *   <li><b>Timing oracle on request.</b> An unknown phone returns early; a known
- *       one does a bcrypt hash (~50-100ms) plus an insert plus a send. The
- *       response content is identical but the latency is not, so a single probe
- *       still distinguishes them. TODO(Task 6): moving delivery off the request
- *       thread is the right fix and belongs with the real sender, which would
- *       otherwise add a synchronous network call and widen this considerably.</li>
+ *   <li><b>429 oracle on status (not body).</b> The per-phone hourly cap in
+ *       {@link #verifyOtp} counts attempt rows, and an unregistered phone never
+ *       has any: it can never reach {@value #MAX_ATTEMPTS_PER_HOUR} and so always
+ *       answers 401. A registered phone can be driven to 429 in about eleven
+ *       calls (request a code, then guess). So the <em>status code</em> does
+ *       separate registered from unregistered, even though the body never does.
+ *       This is the accepted cost of capping cross-code guessing, which is the
+ *       larger risk; closing it would mean either faking 429s for unknown phones
+ *       (needs per-phone state for numbers with no rows — i.e. a store an
+ *       attacker can fill) or dropping the cap. Per-IP limiting in
+ *       {@code PublicRateLimitFilter} is what bounds mass enumeration through
+ *       this oracle.</li>
+ *   <li><b>Timing oracle on request.</b> Narrowed, not closed. Delivery no longer
+ *       contributes: it runs after commit on {@code otpExecutor}, so no network
+ *       call is on the response path regardless of channel. What remains is that
+ *       an unknown phone returns early while a known one does a bcrypt hash
+ *       (~50-100ms) plus an insert. That difference is still measurable — it is
+ *       just now bounded by local CPU rather than by ACS's latency, and it no
+ *       longer grows when the WhatsApp sender is switched on. Closing it properly
+ *       means doing equivalent work on the unknown-phone path (a dummy hash).</li>
+ *   <li><b>Guard lockout by a third party.</b> The hourly cap is per phone, not
+ *       per caller, so anyone who knows a guard's number can request two codes
+ *       and spend the {@value #MAX_ATTEMPTS_PER_HOUR} guesses on them — after
+ *       which the real guard gets 429 on every verify for up to an hour.
+ *       Requesting a fresh code does not help: a new row starts at
+ *       {@code attemptCount = 0} but the cap sums attempts across rows in the
+ *       window, and the spent ones stay in it. This is a knowing trade, not an
+ *       oversight: the alternative (per-caller counting) is keyed on
+ *       attacker-controlled input and bounds nothing. The DoS is bounded to one
+ *       hour, self-healing, costs the attacker a WARN line per lockout
+ *       ({@code "OTP verification locked for ..."}), and requires knowing the
+ *       target's number — whereas an uncapped guess budget is a standing
+ *       credential risk. Availability loses to integrity here on purpose. If
+ *       guards report lockouts in practice, the fix is alerting on that WARN,
+ *       not raising the cap.</li>
  *   <li><b>Residual brute-force exposure.</b> A 6-digit code is 10^6 wide. The
  *       caps here bound a sustained attack on a known phone to
  *       {@value #MAX_ATTEMPTS_PER_HOUR} guesses/hour (~240/day). The 5-minute TTL
@@ -105,16 +144,16 @@ public class OtpLoginService {
     private final LoginOtpRepository otpRepository;
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
-    private final OtpSender sender;
+    private final ApplicationEventPublisher events;
 
     public OtpLoginService(LoginOtpRepository otpRepository,
                            UserRepository userRepository,
                            PasswordEncoder passwordEncoder,
-                           OtpSender sender) {
+                           ApplicationEventPublisher events) {
         this.otpRepository = otpRepository;
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
-        this.sender = sender;
+        this.events = events;
     }
 
     /**
@@ -158,7 +197,12 @@ public class OtpLoginService {
         otp.setExpiresAt(Instant.now().plus(CODE_TTL_MINUTES, ChronoUnit.MINUTES));
         otpRepository.save(otp);
 
-        sender.send(normalized, code);
+        // Delivery is deliberately NOT called here. Publishing defers the send to
+        // after this transaction commits (OtpDeliveryListener): a sender that
+        // throws must not roll this row back, because the issuance throttle above
+        // counts rows and would switch itself off. Read OtpDeliveryListener before
+        // changing this line back to a direct call.
+        events.publishEvent(new OtpRequestedEvent(normalized, code));
     }
 
     /**

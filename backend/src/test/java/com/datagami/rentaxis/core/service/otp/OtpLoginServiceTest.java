@@ -13,6 +13,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -52,7 +53,7 @@ class OtpLoginServiceTest {
 
     @Mock LoginOtpRepository otpRepository;
     @Mock UserRepository userRepository;
-    @Mock OtpSender sender;
+    @Mock ApplicationEventPublisher events;
 
     private final PasswordEncoder encoder = new BCryptPasswordEncoder();
 
@@ -60,7 +61,7 @@ class OtpLoginServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new OtpLoginService(otpRepository, userRepository, encoder, sender);
+        service = new OtpLoginService(otpRepository, userRepository, encoder, events);
     }
 
     private User guard(UserStatus status) {
@@ -96,14 +97,20 @@ class OtpLoginServiceTest {
 
         ArgumentCaptor<LoginOtp> saved = ArgumentCaptor.forClass(LoginOtp.class);
         verify(otpRepository).save(saved.capture());
-        ArgumentCaptor<String> sentCode = ArgumentCaptor.forClass(String.class);
-        verify(sender).send(eq(PHONE), sentCode.capture());
 
-        assertThat(sentCode.getValue()).matches("\\d{6}");
+        // Delivery is handed to OtpDeliveryListener via an event rather than called
+        // inline — see that class for why the send must not sit inside this
+        // transaction. The code still has to reach it intact.
+        ArgumentCaptor<OtpRequestedEvent> published = ArgumentCaptor.forClass(OtpRequestedEvent.class);
+        verify(events).publishEvent(published.capture());
+        String sentCode = published.getValue().code();
+
+        assertThat(published.getValue().phoneNumber()).isEqualTo(PHONE);
+        assertThat(sentCode).matches("\\d{6}");
         // The stored hash must not be the raw code, and must genuinely verify it.
-        assertThat(saved.getValue().getCodeHash()).isNotEqualTo(sentCode.getValue());
+        assertThat(saved.getValue().getCodeHash()).isNotEqualTo(sentCode);
         assertThat(saved.getValue().getCodeHash()).startsWith("$2");
-        assertThat(encoder.matches(sentCode.getValue(), saved.getValue().getCodeHash())).isTrue();
+        assertThat(encoder.matches(sentCode, saved.getValue().getCodeHash())).isTrue();
         assertThat(saved.getValue().getPhoneNumber()).isEqualTo(PHONE);
         assertThat(saved.getValue().getExpiresAt()).isAfter(Instant.now());
         assertThat(saved.getValue().getExpiresAt()).isBefore(Instant.now().plus(6, ChronoUnit.MINUTES));
@@ -117,7 +124,7 @@ class OtpLoginServiceTest {
         service.requestOtp(PHONE); // must not throw — anti-enumeration
 
         verify(otpRepository, never()).save(any());
-        verifyNoInteractions(sender);
+        verifyNoInteractions(events);
     }
 
     @Test
@@ -128,7 +135,7 @@ class OtpLoginServiceTest {
         service.requestOtp(PHONE);
 
         verify(otpRepository, never()).save(any());
-        verifyNoInteractions(sender);
+        verifyNoInteractions(events);
     }
 
     @Test
@@ -142,7 +149,7 @@ class OtpLoginServiceTest {
 
         verify(userRepository).findByPhoneNumberAndRole(PHONE, UserRole.SECURITY_GUARD);
         verify(otpRepository, never()).save(any());
-        verifyNoInteractions(sender);
+        verifyNoInteractions(events);
     }
 
     @Test
@@ -154,7 +161,7 @@ class OtpLoginServiceTest {
                 .hasMessageContaining("429");
 
         verify(otpRepository, never()).save(any());
-        verifyNoInteractions(sender);
+        verifyNoInteractions(events);
         // Throttle must short-circuit BEFORE the user lookup, so a known and an
         // unknown phone are indistinguishable once throttled.
         verify(userRepository, never()).findByPhoneNumberAndRole(anyString(), any());
@@ -167,7 +174,7 @@ class OtpLoginServiceTest {
 
         verifyNoInteractions(otpRepository);
         verifyNoInteractions(userRepository);
-        verifyNoInteractions(sender);
+        verifyNoInteractions(events);
     }
 
     @Test
@@ -179,7 +186,9 @@ class OtpLoginServiceTest {
 
         verify(otpRepository).countByPhoneNumberAndCreatedAtAfter(eq(PHONE), any());
         verify(userRepository).findByPhoneNumberAndRole(PHONE, UserRole.SECURITY_GUARD);
-        verify(sender).send(eq(PHONE), anyString());
+        ArgumentCaptor<OtpRequestedEvent> published = ArgumentCaptor.forClass(OtpRequestedEvent.class);
+        verify(events).publishEvent(published.capture());
+        assertThat(published.getValue().phoneNumber()).isEqualTo(PHONE);
         ArgumentCaptor<LoginOtp> saved = ArgumentCaptor.forClass(LoginOtp.class);
         verify(otpRepository).save(saved.capture());
         assertThat(saved.getValue().getPhoneNumber()).isEqualTo(PHONE);

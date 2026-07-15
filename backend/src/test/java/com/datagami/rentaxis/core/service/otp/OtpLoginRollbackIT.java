@@ -15,7 +15,9 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.web.server.ResponseStatusException;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -27,15 +29,21 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 
 /**
  * Integration tests for {@link OtpLoginService} against a real Postgres — the
- * two properties the mocked unit tests structurally cannot see, because both
- * live in the database rather than in the service's control flow:
+ * properties the mocked unit tests structurally cannot see, because they live in
+ * the database and the transaction boundary rather than in the service's control
+ * flow:
  *
  * <ol>
  *   <li>the failed-attempt claim actually <em>survives</em> the thrown
@@ -44,7 +52,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *   <li>the claim is <em>atomic</em> — concurrent guesses cannot all read the
  *       same counter and collapse N increments into one. Replace
  *       {@code claimAttempt} with a read-modify-write and the mocked tests still
- *       pass, while the 5-attempt cap stops bounding anything.</li>
+ *       pass, while the 5-attempt cap stops bounding anything;</li>
+ *   <li>a <em>failing sender cannot roll back the issued OTP row</em>, and so
+ *       cannot disable the issuance throttle that counts those rows. Move
+ *       delivery back inside {@code requestOtp}'s transaction and the mocked
+ *       tests still pass, while a down ACS quietly removes a rate limit. See
+ *       {@link OtpDeliveryListener}.</li>
  * </ol>
  *
  * <p>Requires Docker on the host.
@@ -63,6 +76,16 @@ class OtpLoginRollbackIT {
     @Autowired LandlordOrgRepository landlordOrgRepository;
     @Autowired PasswordEncoder passwordEncoder;
     @Autowired TransactionTemplate transactionTemplate;
+
+    /**
+     * Replaces {@link LoggingOtpSender} so delivery can be made to fail on demand.
+     * The real sender for this channel cannot throw, which is exactly why the
+     * rollback defect stayed invisible until a network-backed one appeared.
+     */
+    @MockitoBean OtpSender sender;
+
+    /** Mirrors {@code OtpLoginService.MAX_REQUESTS_PER_WINDOW}, which is private. */
+    private static final int MAX_REQUESTS_PER_WINDOW = 3;
 
     private String phone;
 
@@ -96,6 +119,12 @@ class OtpLoginRollbackIT {
             otp.setExpiresAt(Instant.now().plus(5, ChronoUnit.MINUTES));
             return otpRepository.save(otp).getId();
         });
+    }
+
+    /** Counts this phone's OTP rows in a FRESH transaction — committed rows only. */
+    private long committedRowCount() {
+        return transactionTemplate.execute(status ->
+                otpRepository.countByPhoneNumberAndCreatedAtAfter(phone, Instant.now().minus(1, ChronoUnit.HOURS)));
     }
 
     /** Reads attemptCount back in a FRESH transaction — the committed value, not a cached one. */
@@ -201,6 +230,81 @@ class OtpLoginRollbackIT {
         assertThatThrownBy(() -> otpLoginService.verifyOtp(phone, "123456"))
                 .as("the correct code must lose once the guess budget is spent")
                 .isInstanceOf(BadCredentialsException.class);
+    }
+
+    // --- delivery is outside the transaction (Task 6) ---
+
+    /**
+     * THE regression test for the rollback defect. The issuance throttle counts
+     * {@code login_otps} rows, so if a throwing sender can roll its row back, a
+     * sender that is down — or being made to fail — silently switches the throttle
+     * off. Delivery therefore has to happen after commit.
+     *
+     * <p>Asserting the row exists would be weak. This asserts the property the row
+     * is <em>for</em>: with every single send failing, the throttle still fires.
+     */
+    @Test
+    void failingSenderCannotDisableTheIssuanceThrottle() throws InterruptedException {
+        CountDownLatch attempted = new CountDownLatch(MAX_REQUESTS_PER_WINDOW);
+        doAnswer(inv -> {
+            attempted.countDown();
+            throw new RuntimeException("ACS is down");
+        }).when(sender).send(eq(phone), anyString());
+
+        // Every one of these fails to deliver. None may throw: delivery is off the
+        // request path, so requestOtp cannot even see the failure.
+        for (int i = 0; i < MAX_REQUESTS_PER_WINDOW; i++) {
+            otpLoginService.requestOtp(phone);
+        }
+        assertThat(attempted.await(10, TimeUnit.SECONDS))
+                .as("all %d sends should have been attempted", MAX_REQUESTS_PER_WINDOW)
+                .isTrue();
+
+        // Each failed send must still have left its row behind.
+        assertThat(committedRowCount())
+                .as("a failing sender must not roll back the rows the throttle counts")
+                .isEqualTo(MAX_REQUESTS_PER_WINDOW);
+
+        // The payoff. Put the send back inside requestOtp's transaction and this
+        // throttle never engages, because there are zero rows to count.
+        assertThatThrownBy(() -> otpLoginService.requestOtp(phone))
+                .as("the throttle must still bind when every send has failed")
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("429");
+    }
+
+    /**
+     * Delivery must observe a committed row, on a pool thread. Both halves matter:
+     * AFTER_COMMIT is what protects the throttle, and {@code @Async} is what keeps
+     * ACS latency off the response (and out of the request/timing oracle).
+     */
+    @Test
+    void deliveryRunsAfterCommitAndOffTheRequestThread() throws InterruptedException {
+        String requestThread = Thread.currentThread().getName();
+        AtomicReference<String> sendThread = new AtomicReference<>();
+        AtomicBoolean rowWasVisible = new AtomicBoolean();
+        CountDownLatch sent = new CountDownLatch(1);
+
+        doAnswer(inv -> {
+            sendThread.set(Thread.currentThread().getName());
+            // Read in a FRESH transaction. An uncommitted row is invisible here, so
+            // this can only be true if requestOtp's transaction has already committed.
+            rowWasVisible.set(committedRowCount() > 0);
+            sent.countDown();
+            return null;
+        }).when(sender).send(eq(phone), anyString());
+
+        otpLoginService.requestOtp(phone);
+
+        assertThat(sent.await(10, TimeUnit.SECONDS)).as("the send should have run").isTrue();
+        assertThat(rowWasVisible.get())
+                .as("the OTP row must be committed before delivery is attempted")
+                .isTrue();
+        assertThat(sendThread.get())
+                .as("delivery must not run on the request thread — it would put ACS "
+                        + "latency back on the response")
+                .isNotEqualTo(requestThread)
+                .startsWith("otp-send-");
     }
 
     @Test
