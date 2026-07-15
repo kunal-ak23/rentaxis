@@ -99,6 +99,19 @@ class MoreScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 16),
 
+            _SectionHeader(title: 'Gate'),
+            _MenuItem(
+              icon: Icons.how_to_reg_outlined,
+              label: 'Gate Pass Approvals',
+              onTap: () => context.push('/gate-passes/approvals'),
+            ),
+            _MenuItem(
+              icon: Icons.shield_outlined,
+              label: 'Security Guards',
+              onTap: () => context.push('/gate-passes/guards'),
+            ),
+            const SizedBox(height: 16),
+
             _SectionHeader(title: 'Finance'),
             _MenuItem(
               icon: Icons.account_balance_outlined,
