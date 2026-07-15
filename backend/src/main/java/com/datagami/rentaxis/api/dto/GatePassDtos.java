@@ -4,6 +4,9 @@ import com.datagami.rentaxis.domain.entity.enums.GatePassStatus;
 import com.datagami.rentaxis.domain.entity.enums.GatePassType;
 import com.datagami.rentaxis.domain.entity.enums.ScanDirection;
 import com.datagami.rentaxis.domain.entity.enums.ScanResult;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -25,9 +28,23 @@ public final class GatePassDtos {
     /**
      * {@code propertyId} is deliberately absent: it is derived server-side from the
      * unit's active lease, never taken from the client.
+     *
+     * <p>The constraints cover exactly the fields nothing else checks. {@code unitId} is
+     * validated by the controller's active-lease rule and {@code validFrom}/{@code
+     * validTo} by {@code GatePassService.create}, so annotating them here would only
+     * duplicate a check and move its error message; the fields below had no check at all
+     * before reaching Hibernate, where a null or an over-length value surfaced as a
+     * {@code PropertyValueException} — a 500 echoing the entity class name rather than
+     * the 400 it is. Lengths mirror the column definitions on {@code GatePass}, so the
+     * DB constraint and this one cannot disagree.
      */
-    public record CreateGatePassRequest(UUID unitId, String guestName, String guestPhone, String purpose,
-                                        String vehicleNumber, GatePassType passType, Instant validFrom,
+    public record CreateGatePassRequest(UUID unitId,
+                                        @NotBlank @Size(max = 160) String guestName,
+                                        @NotBlank @Size(max = 32) String guestPhone,
+                                        @Size(max = 240) String purpose,
+                                        @Size(max = 32) String vehicleNumber,
+                                        @NotNull GatePassType passType,
+                                        Instant validFrom,
                                         Instant validTo) {
     }
 
@@ -57,8 +74,10 @@ public final class GatePassDtos {
      * properties — silently collect live codes for passes they never scan.
      *
      * <p>Also omits {@code createdByUserId} so the guard-facing paths carry no renter
-     * identity (SOW §3.1). {@code unitNumber} rather than {@code unitId} because it is
-     * for display at the gate.
+     * identity (SOW §3.1). It carries {@code unitNumber} <i>as well as</i> {@code unitId}:
+     * the number is what gets displayed at the gate, but it is only unique within a
+     * property, so clients keying on a unit still need the id. Neither is a credential
+     * and neither identifies the renter, so both are in scope for this view.
      */
     public record GatePassSummary(UUID id, UUID propertyId, UUID unitId, String unitNumber, String guestName,
                                   String guestPhone, String purpose, String vehicleNumber, GatePassType passType,

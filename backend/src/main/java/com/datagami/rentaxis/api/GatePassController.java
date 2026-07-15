@@ -31,6 +31,7 @@ import com.datagami.rentaxis.domain.repository.PropertyRepository;
 import com.datagami.rentaxis.domain.repository.RenterRepository;
 import com.datagami.rentaxis.domain.repository.UnitRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
+import jakarta.validation.Valid;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -129,7 +130,7 @@ public class GatePassController {
 
     @PostMapping
     @PreAuthorize("hasRole('RENTER')")
-    public GatePassResponse create(@RequestBody CreateGatePassRequest request) {
+    public GatePassResponse create(@Valid @RequestBody CreateGatePassRequest request) {
         UUID tenantId = tenantId();
         UUID userId = currentUserId();
 
@@ -225,7 +226,7 @@ public class GatePassController {
         if (propertyIds.isEmpty()) {
             return List.of();
         }
-        return toSummaries(gatePassRepository.findByTenantIdAndStatusAndPropertyIdIn(
+        return toSummaries(gatePassRepository.findByTenantIdAndStatusAndPropertyIdInOrderByCreatedAtDesc(
                 tenantId, GatePassStatus.PENDING_APPROVAL, propertyIds));
     }
 
@@ -467,10 +468,26 @@ public class GatePassController {
         return toSummary(pass, unitNumbers(List.of(pass.getUnitId())));
     }
 
+    /**
+     * Renders the verdict. A null pass means the scan service has decided this caller
+     * gets no guest details — either because nothing resolved, or because the guard is
+     * not posted to the pass's property (see {@code GatePassScanService.scan}). This
+     * method must keep branching on {@code pass == null} and never on
+     * {@code outcome.result()}: most REJECTED outcomes are at the guard's own gate and
+     * do carry the guest, so blinding on "rejected" would be both wrong and, in the
+     * other direction, a leak waiting for a new null-pass case to be added.
+     *
+     * <p>The {@code reason} does still separate "not found" from "not authorized for
+     * this property", which is a mild existence oracle: a guard learns a code is live
+     * somewhere in the tenant. That is accepted deliberately — the guard has to be told
+     * whether to send the guest to another gate or turn them away — and it is bounded to
+     * one bit. It reveals no guest, and the scan rate limit bounds how fast it can be
+     * asked. Do not collapse the two reasons into one without also revisiting that
+     * trade-off in {@code PublicRateLimitFilter.createScanBucket}.
+     */
     private ScanResponse toScanResponse(ScanOutcome outcome) {
         GatePass pass = outcome.pass();
         if (pass == null) {
-            // Code resolved to nothing — there is no guest to describe.
             return new ScanResponse(outcome.result(), outcome.reason(), null, null, null, null, null, null, null,
                     null);
         }

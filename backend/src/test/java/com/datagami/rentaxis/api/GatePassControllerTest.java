@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.api;
 
+import com.datagami.rentaxis.domain.entity.GatePassScan;
 import com.datagami.rentaxis.domain.entity.GuardPropertyAssignment;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
 import com.datagami.rentaxis.domain.entity.Lease;
@@ -9,8 +10,10 @@ import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.enums.Emirate;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
+import com.datagami.rentaxis.domain.entity.enums.ScanResult;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
 import com.datagami.rentaxis.domain.entity.enums.UserStatus;
+import com.datagami.rentaxis.domain.repository.GatePassScanRepository;
 import com.datagami.rentaxis.domain.repository.GuardPropertyAssignmentRepository;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
@@ -21,6 +24,9 @@ import com.datagami.rentaxis.domain.repository.UserRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
@@ -75,6 +81,7 @@ class GatePassControllerTest {
     @Autowired UnitRepository unitRepo;
     @Autowired LeaseRepository leaseRepo;
     @Autowired GuardPropertyAssignmentRepository assignmentRepo;
+    @Autowired GatePassScanRepository scanRepo;
     @Autowired ObjectMapper objectMapper;
 
     /**
@@ -329,6 +336,50 @@ class GatePassControllerTest {
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
     }
 
+    // ------------------------------------------------------- request validation
+
+    /**
+     * A missing required field is a client error, and must be reported as one. Without
+     * bean validation these nulls reached Hibernate, which threw
+     * {@code PropertyValueException} — caught by the catch-all {@code handleRuntime} and
+     * rendered as a 500 whose message echoed the entity's fully-qualified class name.
+     * Both halves are asserted: the status, and that the response says nothing about the
+     * persistence layer.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"guestName", "guestPhone", "passType"})
+    void createRejectsMissingRequiredFieldWith400NotA500(String omitted) {
+        Fixture f = makeFixture();
+        Instant now = Instant.now();
+        Map<String, Object> body = passBody(f.unit().getId(), "Guest Rho", "SINGLE_USE", now,
+                now.plus(2, ChronoUnit.HOURS));
+        body.remove(omitted);
+
+        ResponseEntity<String> res = call(HttpMethod.POST, "/api/v1/gatepass", f.renterUser(), body);
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(res.getBody()).contains(omitted);
+        // Never echo the entity class back to the client.
+        assertThat(res.getBody()).doesNotContain("com.datagami.rentaxis");
+    }
+
+    /**
+     * Length overflow is the other way a body reached Hibernate as a 500 — the column is
+     * {@code varchar(160)}, so a longer name failed at the DB, not the door.
+     */
+    @Test
+    void createRejectsOverLongGuestNameWith400() {
+        Fixture f = makeFixture();
+        Instant now = Instant.now();
+        Map<String, Object> body = passBody(f.unit().getId(), "G".repeat(161), "SINGLE_USE", now,
+                now.plus(2, ChronoUnit.HOURS));
+
+        ResponseEntity<String> res = call(HttpMethod.POST, "/api/v1/gatepass", f.renterUser(), body);
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(res.getBody()).doesNotContain("com.datagami.rentaxis");
+    }
+
     // ------------------------------------------------------------------ RBAC
 
     @Test
@@ -443,6 +494,96 @@ class GatePassControllerTest {
         assertThat(raw).doesNotContain(pass.get("numericCode").asText());
     }
 
+    /**
+     * Property assignment bounds who may <i>admit</i> a guest; it must equally bound
+     * who may <i>read</i> one. The numeric-code lookup is scoped by tenant, not by
+     * property, so a pass at any property in the tenant resolves for any guard in it —
+     * only this rejection stands between a rogue guard and the tenant's whole guest
+     * book. The rejection must therefore carry the verdict and nothing else.
+     */
+    @Test
+    void guardScanningPassAtUnassignedPropertyLearnsNothingAboutTheGuest() {
+        LandlordOrg org = makeOrg();
+        Property assigned = makeProperty(org);
+        Property elsewhere = makeProperty(org);
+        Fixture there = makeRenterWithActiveLease(org, elsewhere, "T1");
+        JsonNode pass = createPass(there, "Guest Xi", "SINGLE_USE");
+
+        // Posted to `assigned`, scanning a pass belonging to `elsewhere` — same tenant,
+        // so the code resolves; only the assignment check rejects it.
+        User guard = makeGuard(org, assigned);
+        ResponseEntity<String> res = call(HttpMethod.POST, "/api/v1/gatepass/scan", guard,
+                scanBody(null, pass.get("numericCode").asText(), "ENTRY"));
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
+        JsonNode body = json(res);
+        assertThat(body.get("result").asText()).isEqualTo("REJECTED");
+        // The reason stays specific — the guard has to know why the gate said no, and
+        // "not authorized for this property" is a property-assignment fact the guard
+        // already knows about themselves, not a fact about the pass.
+        assertThat(body.get("reason").asText()).isEqualTo("not authorized for this property");
+
+        // ...but every guest-identifying field is blinded.
+        for (String field : List.of("guestName", "guestPhone", "vehicleNumber", "purpose", "unitNumber",
+                "passType", "validFrom", "validTo")) {
+            assertThat(body.get(field).isNull())
+                    .withFailMessage("%s leaked to a guard at an unassigned property: %s", field, body.get(field))
+                    .isTrue();
+        }
+        // Belt and braces on the raw bytes, in case a field is ever renamed.
+        assertThat(res.getBody()).doesNotContain("Guest Xi");
+        assertThat(res.getBody()).doesNotContain("DXB-12345");
+        assertThat(res.getBody()).doesNotContain("+971500000000");
+    }
+
+    /**
+     * The audit trail is the reason the rejection above still loads the pass — blinding
+     * the response must not blind the {@code gate_pass_scans} row.
+     */
+    @Test
+    void unassignedPropertyRejectionIsStillAudited() {
+        LandlordOrg org = makeOrg();
+        Property assigned = makeProperty(org);
+        Property elsewhere = makeProperty(org);
+        Fixture there = makeRenterWithActiveLease(org, elsewhere, "T1");
+        JsonNode pass = createPass(there, "Guest Omicron", "SINGLE_USE");
+        UUID passId = UUID.fromString(pass.get("id").asText());
+
+        User guard = makeGuard(org, assigned);
+        call(HttpMethod.POST, "/api/v1/gatepass/scan", guard,
+                scanBody(null, pass.get("numericCode").asText(), "ENTRY"));
+
+        List<GatePassScan> scans = scanRepo.findAll().stream()
+                .filter(s -> passId.equals(s.getGatePassId()))
+                .toList();
+        assertThat(scans).hasSize(1);
+        assertThat(scans.get(0).getResult()).isEqualTo(ScanResult.REJECTED);
+        assertThat(scans.get(0).getRejectionReason()).isEqualTo("not authorized for this property");
+        assertThat(scans.get(0).getScannedByUserId()).isEqualTo(guard.getId());
+    }
+
+    /**
+     * A rejection at a property the guard IS posted to must still name the guest: the
+     * guard has to explain the refusal to the person at the barrier. This is the
+     * counterweight to the test above — it fails if the blinding is ever widened from
+     * "unassigned property" to "every rejection".
+     */
+    @Test
+    void rejectionAtAnAssignedPropertyStillNamesTheGuest() {
+        Fixture f = makeFixture();
+        User guard = makeGuard(f.org(), f.property());
+        JsonNode pass = createPass(f, "Guest Pi", "SINGLE_USE");
+        String code = pass.get("numericCode").asText();
+
+        // Burn the single-use pass, then scan it again → "already used" at an assigned gate.
+        call(HttpMethod.POST, "/api/v1/gatepass/scan", guard, scanBody(null, code, "ENTRY"));
+        JsonNode second = json(call(HttpMethod.POST, "/api/v1/gatepass/scan", guard, scanBody(null, code, "ENTRY")));
+
+        assertThat(second.get("result").asText()).isEqualTo("REJECTED");
+        assertThat(second.get("reason").asText()).isEqualTo("already used");
+        assertThat(second.get("guestName").asText()).isEqualTo("Guest Pi");
+    }
+
     // ---------------------------------------------------------- expected today
 
     @Test
@@ -476,8 +617,15 @@ class GatePassControllerTest {
 
     // ------------------------------------------------------------- approvals
 
-    @Test
-    void approvalsAreScopedForGuardsButTenantWideForManagers() {
+    /**
+     * Parameterized over both manager roles: {@code @PreAuthorize} names PROPERTY_MANAGER
+     * alongside TENANT_ADMIN on this endpoint, and the controller branches only on
+     * {@code isGuard()}, so the PROPERTY_MANAGER arm is a bare annotation literal that
+     * nothing else pins. Dropping it from the annotation must fail a test.
+     */
+    @ParameterizedTest
+    @EnumSource(value = UserRole.class, names = {"TENANT_ADMIN", "PROPERTY_MANAGER"})
+    void approvalsAreScopedForGuardsButTenantWideForManagers(UserRole managerRole) {
         LandlordOrg org = makeOrg();
         Property assigned = makeProperty(org);
         Property other = makeProperty(org);
@@ -493,9 +641,9 @@ class GatePassControllerTest {
         assertThat(guardView).hasSize(1);
         assertThat(guardView.get(0).get("guestName").asText()).isEqualTo("Guest Assigned");
 
-        User admin = makeUser(org, UserRole.TENANT_ADMIN);
-        JsonNode adminView = json(call(HttpMethod.GET, "/api/v1/gatepass/approvals", admin, null));
-        assertThat(adminView).hasSize(2);
+        User manager = makeUser(org, managerRole);
+        JsonNode managerView = json(call(HttpMethod.GET, "/api/v1/gatepass/approvals", manager, null));
+        assertThat(managerView).hasSize(2);
     }
 
     @Test
@@ -512,13 +660,14 @@ class GatePassControllerTest {
         assertThat(res.getBody()).doesNotContain("numericCode");
     }
 
-    @Test
-    void managerApprovesRecurringPass() {
+    @ParameterizedTest
+    @EnumSource(value = UserRole.class, names = {"TENANT_ADMIN", "PROPERTY_MANAGER"})
+    void managerApprovesRecurringPass(UserRole managerRole) {
         Fixture f = makeFixture();
         UUID id = UUID.fromString(createPass(f, "Guest Kappa", "RECURRING").get("id").asText());
-        User admin = makeUser(f.org(), UserRole.TENANT_ADMIN);
+        User manager = makeUser(f.org(), managerRole);
 
-        JsonNode res = json(call(HttpMethod.POST, "/api/v1/gatepass/" + id + "/approval", admin,
+        JsonNode res = json(call(HttpMethod.POST, "/api/v1/gatepass/" + id + "/approval", manager,
                 Map.of("approved", true)));
 
         assertThat(res.get("status").asText()).isEqualTo("ACTIVE");
@@ -542,14 +691,15 @@ class GatePassControllerTest {
 
     // ---------------------------------------------------------------- report
 
-    @Test
-    void reportReturnsScansJoinedToPasses() {
+    @ParameterizedTest
+    @EnumSource(value = UserRole.class, names = {"TENANT_ADMIN", "PROPERTY_MANAGER"})
+    void reportReturnsScansJoinedToPasses(UserRole managerRole) {
         Fixture f = makeFixture();
         User guard = makeGuard(f.org(), f.property());
         JsonNode pass = createPass(f, "Guest Mu", "SINGLE_USE");
         call(HttpMethod.POST, "/api/v1/gatepass/scan", guard, scanBody(pass.get("qrToken").asText(), null, "ENTRY"));
 
-        User admin = makeUser(f.org(), UserRole.TENANT_ADMIN);
+        User admin = makeUser(f.org(), managerRole);
         String window = "?from=" + Instant.now().minus(1, ChronoUnit.HOURS) + "&to="
                 + Instant.now().plus(1, ChronoUnit.HOURS);
         JsonNode rows = json(call(HttpMethod.GET, "/api/v1/gatepass/report" + window, admin, null));
@@ -589,12 +739,14 @@ class GatePassControllerTest {
 
     // ----------------------------------------------- guard property assignment
 
-    @Test
-    void managerReplacesGuardPropertyAssignments() {
+    /** Covers the PROPERTY_MANAGER arm of both the PUT and the GET on this path. */
+    @ParameterizedTest
+    @EnumSource(value = UserRole.class, names = {"TENANT_ADMIN", "PROPERTY_MANAGER"})
+    void managerReplacesGuardPropertyAssignments(UserRole managerRole) {
         LandlordOrg org = makeOrg();
         Property p1 = makeProperty(org);
         Property p2 = makeProperty(org);
-        User admin = makeUser(org, UserRole.TENANT_ADMIN);
+        User admin = makeUser(org, managerRole);
         User guard = makeGuard(org, p1);
 
         // Replace-all: p1 is kept (exercising the delete/insert flush ordering against

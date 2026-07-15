@@ -82,16 +82,29 @@ public interface GatePassRepository extends JpaRepository<GatePass, UUID> {
 
     List<GatePass> findByTenantIdAndCreatedByUserIdOrderByCreatedAtDesc(UUID tenantId, UUID userId);
 
-    @Query("select p from GatePass p where p.tenantId = :tenantId and p.propertyId in :propertyIds and p.status = :status and p.validFrom <= :windowEnd and p.validTo >= :windowStart")
+    /**
+     * The guard's expected-today board. Ordered by {@code validFrom} — this is a
+     * chronological list of who is due at the gate, so arrival order is the only
+     * ordering that reads correctly; without it the rows arrive in whatever order
+     * Postgres returns them.
+     */
+    @Query("select p from GatePass p where p.tenantId = :tenantId and p.propertyId in :propertyIds and p.status = :status and p.validFrom <= :windowEnd and p.validTo >= :windowStart order by p.validFrom")
     List<GatePass> findActiveOverlapping(@Param("tenantId") UUID tenantId, @Param("propertyIds") Collection<UUID> propertyIds,
             @Param("status") GatePassStatus status, @Param("windowStart") Instant windowStart, @Param("windowEnd") Instant windowEnd);
 
-    List<GatePass> findByTenantIdAndStatusAndPropertyIdIn(UUID tenantId, GatePassStatus status, Collection<UUID> propertyIds);
+    /**
+     * The guard view of the approvals queue, property-scoped. Ordered to match the
+     * manager view ({@link #findByTenantIdAndStatusOrderByCreatedAtDesc}) — the two feed
+     * the same screen, so an unordered guard list would make the queue's row order
+     * depend on who was looking at it.
+     */
+    List<GatePass> findByTenantIdAndStatusAndPropertyIdInOrderByCreatedAtDesc(UUID tenantId, GatePassStatus status,
+            Collection<UUID> propertyIds);
 
     /**
      * Tenant-wide status listing, used for the manager view of the approvals queue.
      * The guard view of the same queue is property-scoped and uses
-     * {@link #findByTenantIdAndStatusAndPropertyIdIn} instead.
+     * {@link #findByTenantIdAndStatusAndPropertyIdInOrderByCreatedAtDesc} instead.
      */
     List<GatePass> findByTenantIdAndStatusOrderByCreatedAtDesc(UUID tenantId, GatePassStatus status);
 

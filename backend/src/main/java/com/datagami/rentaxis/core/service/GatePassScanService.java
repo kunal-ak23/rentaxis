@@ -90,7 +90,16 @@ public class GatePassScanService {
         this.notificationService = notificationService;
     }
 
-    /** The gate's verdict, plus the pass it was reached on (null when the code resolved to nothing). */
+    /**
+     * The gate's verdict, plus the pass it was reached on.
+     *
+     * <p>{@code pass} is null when the caller must not be told anything about it, which
+     * is not the same as "no pass was found". Three cases: the code resolved to nothing,
+     * a lock conflict aborted the scan, and — the one that is a security decision rather
+     * than an absence — a guard scanning at a property they are not assigned to. The
+     * controller renders a null pass as a verdict with every guest field omitted, so
+     * this field is what blinds that response; see the assignment check in {@link #scan}.
+     */
     public record ScanOutcome(ScanResult result, String reason, GatePass pass) {}
 
     @Transactional
@@ -131,7 +140,17 @@ public class GatePassScanService {
                 .map(GuardPropertyAssignment::getPropertyId)
                 .collect(Collectors.toSet());
         if (!assignedProperties.contains(pass.getPropertyId())) {
-            return reject(tenantId, guardUserId, pass, direction, "not authorized for this property", now);
+            // Audited with the pass (the FK needs it), but returned WITHOUT it. The
+            // resolution above is scoped by tenant, not by property, so any code in the
+            // tenant resolves for any guard in it — this check is the only thing standing
+            // between a guard and the whole tenant's guest book, and it has to bound
+            // reading as well as admitting. Every other rejection below keeps the pass:
+            // those happen at a gate the guard is posted to, where they need the guest's
+            // identity to explain the refusal to the person in front of them. This one
+            // does not, so it carries the verdict and nothing else.
+            record(tenantId, guardUserId, pass, direction, ScanResult.REJECTED,
+                    "not authorized for this property", now);
+            return new ScanOutcome(ScanResult.REJECTED, "not authorized for this property", null);
         }
 
         if (direction == ScanDirection.EXIT) {
