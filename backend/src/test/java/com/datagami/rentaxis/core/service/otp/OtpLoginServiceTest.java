@@ -57,11 +57,20 @@ class OtpLoginServiceTest {
 
     private final PasswordEncoder encoder = new BCryptPasswordEncoder();
 
+    /**
+     * The real generator, not a mock: {@code requestSendsCodeForActiveGuard}
+     * asserts the issued code is six digits and that the stored hash verifies it,
+     * which a stubbed generator would make vacuous. Bean <i>selection</i> — and in
+     * particular that the fixed dev generator can never be chosen in prod — is
+     * covered separately by {@link OtpCodeGeneratorSelectionTest}.
+     */
+    private final OtpCodeGenerator codeGenerator = new SecureRandomOtpCodeGenerator();
+
     private OtpLoginService service;
 
     @BeforeEach
     void setUp() {
-        service = new OtpLoginService(otpRepository, userRepository, encoder, events);
+        service = new OtpLoginService(otpRepository, userRepository, encoder, events, codeGenerator);
     }
 
     private User guard(UserStatus status) {

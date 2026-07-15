@@ -16,7 +16,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -128,8 +127,6 @@ import java.util.regex.Pattern;
 @Slf4j
 public class OtpLoginService {
 
-    private static final SecureRandom RANDOM = new SecureRandom();
-
     /** E.164: a leading '+' then 8-15 digits. Applied after stripping spaces/hyphens. */
     private static final Pattern E164 = Pattern.compile("\\+\\d{8,15}");
 
@@ -164,15 +161,18 @@ public class OtpLoginService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final ApplicationEventPublisher events;
+    private final OtpCodeGenerator codeGenerator;
 
     public OtpLoginService(LoginOtpRepository otpRepository,
                            UserRepository userRepository,
                            PasswordEncoder passwordEncoder,
-                           ApplicationEventPublisher events) {
+                           ApplicationEventPublisher events,
+                           OtpCodeGenerator codeGenerator) {
         this.otpRepository = otpRepository;
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.events = events;
+        this.codeGenerator = codeGenerator;
     }
 
     /**
@@ -203,7 +203,12 @@ public class OtpLoginService {
             return;
         }
 
-        String code = String.format("%06d", RANDOM.nextInt(1_000_000));
+        // Injected rather than generated inline so a dev build can pin the code
+        // (FixedOtpCodeGenerator) without touching this class. In prod the only
+        // implementation that can ever be injected is SecureRandomOtpCodeGenerator —
+        // see FixedOtpCodeGenerator for why that is a profile guard and not a
+        // startup failure.
+        String code = codeGenerator.generate();
 
         // Retire any still-live codes: several can be outstanding at once, and an
         // older one becomes "top" again — and would still verify — once the newest

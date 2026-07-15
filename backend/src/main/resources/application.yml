@@ -81,6 +81,31 @@ gatepass:
     # rejected at send time with no startup signal. Config, so an en_US approval
     # is an env change rather than a redeploy.
     template-language: ${GATEPASS_OTP_TEMPLATE_LANGUAGE:en}
+    #
+    # dev-fixed-code — DEVELOPMENT ONLY. Pins every guard's login OTP to one
+    # known 6-digit value, so the guard app can be exercised without reading the
+    # backend log for each login (WhatsApp delivery is not live yet). Enable it
+    # per-developer, never in a shared or deployed environment:
+    #
+    #     GATEPASS_OTP_DEV_FIXED_CODE=123456 ./gradlew bootRun
+    #
+    # Relaxed binding maps that variable onto `gatepass.otp.dev-fixed-code`, so
+    # no key is needed here for it to work. NOTE it is intentionally absent from
+    # prod.env.template, deploy.yml and docker-compose.prod.yml: it is not a prod
+    # knob and must not read as one. Setting it in prod is harmless but useless —
+    # FixedOtpCodeGenerator is @Profile("!prod"), so prod ignores it and logs a
+    # WARN saying so (see the fail-safe/fail-loud note on that class).
+    #
+    # Left as a COMMENT on purpose — do not "restore" it as a live key:
+    #
+    #     dev-fixed-code: ${GATEPASS_OTP_DEV_FIXED_CODE:}   # <- breaks every dev boot
+    #
+    # That placeholder resolves to an EMPTY STRING when the variable is unset,
+    # and an empty value is still a *present* property to @ConditionalOnProperty
+    # (it only excludes the literal `false`). The bean would therefore load on
+    # every dev boot with code="", and its 6-digit validation would fail the
+    # context for everyone who never asked for the feature. Pinned by
+    # OtpCodeGeneratorSelectionTest#aBlankDevCodeStillActivatesTheBean...
 
 cheque-extraction:
   retention-days: 90
