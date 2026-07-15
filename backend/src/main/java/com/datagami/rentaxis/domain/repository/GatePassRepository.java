@@ -21,12 +21,8 @@ import java.util.UUID;
 @Repository
 public interface GatePassRepository extends JpaRepository<GatePass, UUID> {
 
-    Optional<GatePass> findByQrToken(String qrToken);
-
-    Optional<GatePass> findByTenantIdAndNumericCodeAndStatusIn(UUID tenantId, String numericCode, Collection<GatePassStatus> statuses);
-
     /**
-     * Locking counterpart of {@link #findByQrToken} used by the scan path, where the
+     * Locking lookup by QR token used by the scan path, where the
      * read decides a state transition. The lock must be taken by the query that first
      * loads the entity: an unlocked read followed by a locking re-read would return
      * the already-managed (stale) instance from the persistence context.

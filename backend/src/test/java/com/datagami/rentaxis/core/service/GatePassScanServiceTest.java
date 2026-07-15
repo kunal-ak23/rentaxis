@@ -330,7 +330,6 @@ class GatePassScanServiceTest {
         assertThat(outcome.result()).isEqualTo(ScanResult.ALLOWED);
         assertThat(outcome.pass()).isSameAs(pass);
         verify(gatePassRepository, never()).findByQrTokenForUpdate(any());
-        verify(gatePassRepository, never()).findByTenantIdAndNumericCodeAndStatusIn(any(), any(), any());
     }
 
     @Test
@@ -383,7 +382,6 @@ class GatePassScanServiceTest {
         // unlocked and re-loading under a lock would not re-hydrate the already-managed
         // instance, so two guards could both see ACTIVE and both be let in.
         verify(gatePassRepository, times(1)).findByQrTokenForUpdate(qrToken);
-        verify(gatePassRepository, never()).findByQrToken(any());
     }
 
     private GatePass activePass(GatePassType type) {

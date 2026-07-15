@@ -28,6 +28,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -92,6 +93,7 @@ class GatePassScanConcurrencyIT {
     @Autowired PropertyRepository propertyRepository;
     @Autowired UnitRepository unitRepository;
     @Autowired UserRepository userRepository;
+    @Autowired TransactionTemplate transactionTemplate;
 
     private UUID tenantId;
     private UUID guardUserId;
@@ -184,6 +186,80 @@ class GatePassScanConcurrencyIT {
         } finally {
             pool.shutdown();
         }
+    }
+
+    /**
+     * The race test above is probabilistic: it accepts either "already used" or
+     * "scan in progress, please retry" as the loser's reason, so it can pass by luck
+     * even if {@link GatePassScanService}'s {@code catch (PessimisticLockingFailureException)}
+     * clause were deleted and the underlying exception simply never happened to fire
+     * on that run — a dead catch block that would then let a real conflict escape as
+     * an unhandled 500. {@code ChequeFailurePenaltyIT#clearPayment_rowAlreadyLocked_failsImmediatelyWithBusinessRuleViolation}
+     * hit this exact class of bug before (the old catch clause caught the wrong
+     * exception type entirely).
+     *
+     * <p>This test forces the lock-conflict branch deterministically: a separate
+     * thread/transaction (via {@link TransactionTemplate}) takes and holds the row
+     * lock for a fixed duration, independent of the main thread, and a concurrent
+     * {@code scan()} call must fail immediately with {@code REJECTED} /
+     * "scan in progress, please retry" — not an exception, not a 500 — well before
+     * the holder releases.
+     */
+    @Test
+    void scan_rowAlreadyLocked_returnsRejectedImmediately() throws Exception {
+        GatePass pass = seedPass(GatePassType.SINGLE_USE, GatePassStatus.ACTIVE, "60000006", Instant.now());
+        String token = pass.getQrToken();
+
+        CountDownLatch lockHeld = new CountDownLatch(1);
+        long holdMillis = 3000;
+
+        ExecutorService pool = Executors.newFixedThreadPool(1);
+        Future<?> holderFuture = pool.submit(() -> {
+            TenantContextHolder.setTenantId(tenantId);
+            try {
+                transactionTemplate.execute(status -> {
+                    gatePassRepository.findByQrTokenForUpdate(token).orElseThrow();
+                    lockHeld.countDown();
+                    try {
+                        Thread.sleep(holdMillis);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                    return null;
+                });
+            } finally {
+                TenantContextHolder.clear();
+            }
+        });
+
+        try {
+            assertThat(lockHeld.await(5, TimeUnit.SECONDS)).isTrue();
+
+            long start = System.nanoTime();
+            GatePassScanService.ScanOutcome outcome =
+                    gatePassScanService.scan(tenantId, guardUserId, token, null, ScanDirection.ENTRY);
+            long elapsedMs = (System.nanoTime() - start) / 1_000_000;
+
+            assertThat(outcome.result()).isEqualTo(ScanResult.REJECTED);
+            assertThat(outcome.reason()).isEqualTo("scan in progress, please retry");
+            assertThat(outcome.pass()).isNull();
+
+            // NOWAIT must fail near-instantly — well before the holder's own hold ends
+            // — proving this is a real conflict failure, not a race that just happens
+            // to resolve in our favor.
+            assertThat(elapsedMs)
+                    .as("NOWAIT should fail immediately, not block until the holder releases")
+                    .isLessThan(holdMillis);
+        } finally {
+            holderFuture.get(15, TimeUnit.SECONDS);
+            pool.shutdown();
+        }
+
+        // The lock holder never mutated the row, and the losing scan bailed out before
+        // reaching record() — no gate_pass_scans row for the rejected attempt.
+        assertThat(gatePassRepository.findById(pass.getId()).orElseThrow().getStatus())
+                .isEqualTo(GatePassStatus.ACTIVE);
+        assertThat(gatePassScanRepository.findByGatePassIdOrderByScannedAtAsc(pass.getId())).isEmpty();
     }
 
     /**

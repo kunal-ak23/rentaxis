@@ -112,8 +112,10 @@ public class GatePassScanService {
             return new ScanOutcome(ScanResult.REJECTED, "scan in progress, please retry", null);
         }
 
-        // Defense in depth: the qr_token lookup is global (tokens are unique across
-        // tenants), so isolation is enforced here rather than by the query. Reported as
+        // The query is already tenant-scoped by Hibernate's tenantFilter on
+        // BaseTenantEntity (the real SQL includes "and gp1_0.tenant_id = ?"), so this
+        // check is redundant in the normal case. It stays as deliberate defense in
+        // depth in case that filter is ever disabled or bypassed. Reported as
         // "not found" so a guard cannot probe another tenant's passes for existence.
         GatePass pass = found.filter(p -> tenantId.equals(p.getTenantId())).orElse(null);
         if (pass == null) {
