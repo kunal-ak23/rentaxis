@@ -3,6 +3,11 @@ databaseChangeLog:
       id: 65-gate-pass
       author: rentaxis-system
       changes:
+        # fk_gate_pass_creator (created_by_user_id) deliberately RESTRICTs on user
+        # deletion (no cascade): passes are audit records of who admitted a guest.
+        # Audit retention wins — a renter/user with pass history must be
+        # deactivated (status change), not hard-deleted. Same reasoning as
+        # meetings.host_user_id in changeset 57.
         - createTable:
             tableName: gate_passes
             columns:
@@ -32,6 +37,11 @@ databaseChangeLog:
             splitStatements: false
             sql: |
               CREATE UNIQUE INDEX uq_gate_pass_numeric_active ON gate_passes (tenant_id, numeric_code) WHERE status IN ('PENDING_APPROVAL','ACTIVE');
+        # fk_scan_guard (scanned_by_user_id) deliberately RESTRICTs on user
+        # deletion (no cascade): scans are the gate audit trail. Audit retention
+        # wins — a guard with scan history must be deactivated (status change),
+        # not hard-deleted. Same reasoning as meetings.host_user_id in
+        # changeset 57.
         - createTable:
             tableName: gate_pass_scans
             columns:
@@ -45,13 +55,17 @@ databaseChangeLog:
               - column: { name: rejection_reason, type: varchar(120) }
         - createIndex: { tableName: gate_pass_scans, indexName: idx_scan_pass, columns: [ { column: { name: gate_pass_id } } ] }
         - createIndex: { tableName: gate_pass_scans, indexName: idx_scan_tenant_time, columns: [ { column: { name: tenant_id } }, { column: { name: scanned_at } } ] }
+        # fk_gpa_user / fk_gpa_property cascade on delete: assignments are pure
+        # join rows, not audit data. UserService.deleteUser hard-deletes users,
+        # so without cascade, deleting a guard would 500 on the FK (same bug
+        # class changesets 55/57 fixed).
         - createTable:
             tableName: guard_property_assignments
             columns:
               - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
               - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
-              - column: { name: user_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_gpa_user, referencedTableName: users, referencedColumnNames: id } }
-              - column: { name: property_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_gpa_property, referencedTableName: properties, referencedColumnNames: id } }
+              - column: { name: user_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_gpa_user, referencedTableName: users, referencedColumnNames: id, deleteCascade: true } }
+              - column: { name: property_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_gpa_property, referencedTableName: properties, referencedColumnNames: id, deleteCascade: true } }
               - column: { name: created_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
         - addUniqueConstraint: { tableName: guard_property_assignments, columnNames: "user_id, property_id", constraintName: uq_gpa_user_property }
         - createTable:
