@@ -1,8 +1,6 @@
-package com.datagami.rentaxis.core;
+package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.exception.NotFoundException;
-import com.datagami.rentaxis.core.service.GatePassService;
-import com.datagami.rentaxis.core.service.NotificationService;
 import com.datagami.rentaxis.domain.entity.GatePass;
 import com.datagami.rentaxis.domain.entity.enums.GatePassStatus;
 import com.datagami.rentaxis.domain.entity.enums.GatePassType;
