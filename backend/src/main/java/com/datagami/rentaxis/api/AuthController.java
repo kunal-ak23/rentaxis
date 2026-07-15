@@ -5,6 +5,7 @@ import com.datagami.rentaxis.api.dto.SetPasswordRequest;
 import com.datagami.rentaxis.core.service.LandlordOrgService;
 import com.datagami.rentaxis.core.service.UserService;
 import com.datagami.rentaxis.core.service.otp.OtpLoginService;
+import com.datagami.rentaxis.core.util.PhoneNumbers;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
 import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
@@ -338,7 +339,11 @@ public class AuthController {
             user.setName(request.name());
         }
         if (request.phoneNumber() != null) {
-            user.setPhoneNumber(request.phoneNumber());
+            // Third write path for users.phone_number, and it reaches the row via
+            // saveUser() rather than UserService.createUser/updateUser — so it does
+            // not inherit their normalization and would silently re-create the dead
+            // guard account those two now prevent. Same rule, same helper.
+            user.setPhoneNumber(PhoneNumbers.normalizeForRole(request.phoneNumber(), user.getRole()));
         }
 
         User saved = userService.saveUser(user);

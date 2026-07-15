@@ -1,6 +1,7 @@
 package com.datagami.rentaxis.core.service.otp;
 
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
+import com.datagami.rentaxis.core.util.PhoneNumbers;
 import com.datagami.rentaxis.domain.entity.LoginOtp;
 import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
@@ -20,7 +21,6 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
-import java.util.regex.Pattern;
 
 /**
  * Phone-OTP login for {@link UserRole#SECURITY_GUARD} users, backing the
@@ -126,9 +126,6 @@ import java.util.regex.Pattern;
 @Service
 @Slf4j
 public class OtpLoginService {
-
-    /** E.164: a leading '+' then 8-15 digits. Applied after stripping spaces/hyphens. */
-    private static final Pattern E164 = Pattern.compile("\\+\\d{8,15}");
 
     private static final int MAX_REQUESTS_PER_WINDOW = 3;
     private static final int THROTTLE_WINDOW_MINUTES = 15;
@@ -320,15 +317,17 @@ public class OtpLoginService {
         return active.stream().findFirst();
     }
 
+    /**
+     * Delegates to {@link PhoneNumbers#toE164} — which is where this logic now
+     * lives, and why.
+     *
+     * <p>In short: normalizing the login input here while
+     * {@code UserService.createUser} stored the phone verbatim meant the two sides
+     * of {@code findByPhoneNumberAndRole} were comparing different formats, and a
+     * guard saved as "+971 50 123 4567" could never be found. Keeping this private
+     * was the bug. Do not re-inline it.
+     */
     private String normalize(String phone) {
-        if (phone == null || phone.isBlank()) {
-            throw new BusinessRuleViolationException("Phone number is required");
-        }
-        String normalized = phone.replaceAll("[\\s-]", "");
-        if (!E164.matcher(normalized).matches()) {
-            throw new BusinessRuleViolationException(
-                    "Phone number must be in international format, e.g. +971501234567");
-        }
-        return normalized;
+        return PhoneNumbers.toE164(phone);
     }
 }

@@ -80,4 +80,36 @@ public interface UserRepository extends JpaRepository<User, UUID> {
      * same contract as {@link #findAllByEmail}.
      */
     List<User> findByPhoneNumberAndRole(String phoneNumber, UserRole role);
+
+    /**
+     * Pre-check for {@code uq_users_guard_phone} (changeset 65).
+     *
+     * <p><b>Deliberately not tenant-scoped.</b> That index is
+     * {@code ON users(phone_number) WHERE role='SECURITY_GUARD'} with no tenant
+     * predicate, so a guard phone is unique <i>globally</i>, not per tenant. A
+     * tenant-scoped pre-check would pass and then let the INSERT fail anyway,
+     * which is the whole failure mode this exists to give a decent message for.
+     * Match the index or do not bother.
+     *
+     * <p><b>This cannot be the guarantee, only the message.</b> Two things get
+     * past it, so {@code UserService} must still translate the violation the
+     * index throws:
+     * <ul>
+     *   <li>It is read-then-write, so two concurrent creates both see false.</li>
+     *   <li>{@link User} extends {@code BaseTenantEntity}, so this derived query
+     *       is subject to {@code tenantFilter} whenever {@code TenantAspect} has
+     *       enabled it — while the index is global. A TENANT_ADMIN creating a
+     *       guard whose number is already a guard's in another tenant thus sees
+     *       false here and fails at the INSERT. That is ordinary production
+     *       behaviour, not a race.</li>
+     * </ul>
+     */
+    boolean existsByPhoneNumberAndRole(String phoneNumber, UserRole role);
+
+    /**
+     * As {@link #existsByPhoneNumberAndRole}, excluding one row — the update-path
+     * variant, so a guard keeping their own number is not a conflict with
+     * themselves.
+     */
+    boolean existsByPhoneNumberAndRoleAndIdNot(String phoneNumber, UserRole role, UUID id);
 }
