@@ -21,6 +21,27 @@ class AuthService {
     return AuthResponse.fromJson(response.data);
   }
 
+  /// Requests a login code for a security guard's phone.
+  ///
+  /// Always succeeds for a well-formed phone, whether or not a guard is
+  /// registered on that number — the server will not confirm which numbers
+  /// exist. Do not present a "no such number" error off the back of this.
+  /// Throws on 400 (malformed phone) and 429 (rate-limited).
+  Future<void> requestOtp(String phone) async {
+    await _dio.post('/auth/otp/request', data: {'phone': phone});
+  }
+
+  /// Exchanges a phone + code for the same identity payload [login] returns,
+  /// so the guard app stores its session exactly like the password clients do.
+  /// Throws on 401 (any verification failure).
+  Future<AuthResponse> verifyOtp(String phone, String code) async {
+    final response = await _dio.post('/auth/otp/verify', data: {
+      'phone': phone,
+      'code': code,
+    });
+    return AuthResponse.fromJson(response.data);
+  }
+
   Future<Map<String, dynamic>> getProfile() async {
     final response = await _dio.get('/auth/me');
     return response.data;
