@@ -88,5 +88,12 @@ public interface GatePassRepository extends JpaRepository<GatePass, UUID> {
 
     List<GatePass> findByTenantIdAndStatusAndPropertyIdIn(UUID tenantId, GatePassStatus status, Collection<UUID> propertyIds);
 
+    /**
+     * Tenant-wide status listing, used for the manager view of the approvals queue.
+     * The guard view of the same queue is property-scoped and uses
+     * {@link #findByTenantIdAndStatusAndPropertyIdIn} instead.
+     */
+    List<GatePass> findByTenantIdAndStatusOrderByCreatedAtDesc(UUID tenantId, GatePassStatus status);
+
     boolean existsByTenantIdAndNumericCodeAndStatusIn(UUID tenantId, String numericCode, Collection<GatePassStatus> statuses);
 }
