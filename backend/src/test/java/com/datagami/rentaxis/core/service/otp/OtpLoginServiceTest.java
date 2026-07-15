@@ -27,6 +27,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -184,6 +185,20 @@ class OtpLoginServiceTest {
         assertThat(saved.getValue().getPhoneNumber()).isEqualTo(PHONE);
     }
 
+
+    @Test
+    void requestInvalidatesPriorOutstandingCodes() {
+        // Up to three codes can be live at once. Without retiring the older ones,
+        // consuming the newest promotes a previous code back to "top" — where it
+        // would still verify.
+        when(userRepository.findByPhoneNumberAndRole(PHONE, UserRole.SECURITY_GUARD))
+                .thenReturn(List.of(guard(UserStatus.ACTIVE)));
+
+        service.requestOtp(PHONE);
+
+        verify(otpRepository).invalidateOutstanding(eq(PHONE), any());
+    }
+
     // --- verifyOtp ---
 
     @Test
@@ -192,45 +207,78 @@ class OtpLoginServiceTest {
         LoginOtp stored = otp(encoder.encode("123456"), Instant.now().plus(5, ChronoUnit.MINUTES), 0);
         when(otpRepository.findTopByPhoneNumberAndConsumedAtIsNullOrderByCreatedAtDesc(PHONE))
                 .thenReturn(Optional.of(stored));
+        when(otpRepository.claimAttempt(stored.getId(), 5)).thenReturn(1);
+        when(otpRepository.consume(eq(stored.getId()), any())).thenReturn(1);
         when(userRepository.findByPhoneNumberAndRole(PHONE, UserRole.SECURITY_GUARD))
                 .thenReturn(List.of(g));
 
         User result = service.verifyOtp(PHONE, "123456");
 
         assertThat(result.getId()).isEqualTo(g.getId());
-        ArgumentCaptor<LoginOtp> saved = ArgumentCaptor.forClass(LoginOtp.class);
-        verify(otpRepository).save(saved.capture());
-        assertThat(saved.getValue().getConsumedAt()).isNotNull();
+        verify(otpRepository).consume(eq(stored.getId()), any());
     }
 
     @Test
-    void verifyWrongCodeIncrementsAttempts() {
+    void verifyWrongCodeClaimsAnAttempt() {
         LoginOtp stored = otp(encoder.encode("123456"), Instant.now().plus(5, ChronoUnit.MINUTES), 1);
         when(otpRepository.findTopByPhoneNumberAndConsumedAtIsNullOrderByCreatedAtDesc(PHONE))
                 .thenReturn(Optional.of(stored));
+        when(otpRepository.claimAttempt(stored.getId(), 5)).thenReturn(1);
 
         assertThatThrownBy(() -> service.verifyOtp(PHONE, "999999"))
                 .isInstanceOf(BadCredentialsException.class)
                 .hasMessage("invalid or expired code");
 
-        ArgumentCaptor<LoginOtp> saved = ArgumentCaptor.forClass(LoginOtp.class);
-        verify(otpRepository).save(saved.capture());
-        assertThat(saved.getValue().getAttemptCount()).isEqualTo(2);
-        assertThat(saved.getValue().getConsumedAt()).isNull();
+        // The attempt must be spent atomically in the DB, not via a read-modify-write
+        // on the entity — and the code must not be consumed.
+        verify(otpRepository).claimAttempt(stored.getId(), 5);
+        verify(otpRepository, never()).consume(any(), any());
+        verify(otpRepository, never()).save(any());
+    }
+
+    @Test
+    void verifyClaimsAttemptBeforeComparingCode() {
+        // Ordering is the whole point: claim-then-compare spends the budget even if
+        // the process dies mid-verify. Compare-then-claim would let an attacker
+        // abort after the compare and guess for free.
+        LoginOtp stored = otp(encoder.encode("123456"), Instant.now().plus(5, ChronoUnit.MINUTES), 0);
+        when(otpRepository.findTopByPhoneNumberAndConsumedAtIsNullOrderByCreatedAtDesc(PHONE))
+                .thenReturn(Optional.of(stored));
+        when(otpRepository.claimAttempt(stored.getId(), 5)).thenReturn(0);
+
+        assertThatThrownBy(() -> service.verifyOtp(PHONE, "123456"))
+                .isInstanceOf(BadCredentialsException.class);
+
+        verify(otpRepository).claimAttempt(stored.getId(), 5);
     }
 
     @Test
     void verifyFailsAfterFiveAttempts() {
-        // Correct code, but the attempt budget is already spent.
+        // Budget spent: claimAttempt updates 0 rows, so even the CORRECT code loses.
         LoginOtp stored = otp(encoder.encode("123456"), Instant.now().plus(5, ChronoUnit.MINUTES), 5);
         when(otpRepository.findTopByPhoneNumberAndConsumedAtIsNullOrderByCreatedAtDesc(PHONE))
                 .thenReturn(Optional.of(stored));
+        when(otpRepository.claimAttempt(stored.getId(), 5)).thenReturn(0);
 
         assertThatThrownBy(() -> service.verifyOtp(PHONE, "123456"))
                 .isInstanceOf(BadCredentialsException.class)
                 .hasMessage("invalid or expired code");
 
-        verify(otpRepository, never()).save(any());
+        verify(otpRepository, never()).consume(any(), any());
+        verifyNoInteractions(userRepository);
+    }
+
+    @Test
+    void verifyRejectedOnceHourlyCapReached() {
+        // The per-code cap is per-row, so a fresh code resets it. This cross-code
+        // cap is the only thing bounding a sustained attack.
+        when(otpRepository.countRecentAttempts(eq(PHONE), any())).thenReturn(10L);
+
+        assertThatThrownBy(() -> service.verifyOtp(PHONE, "123456"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("429");
+
+        verify(otpRepository, never()).claimAttempt(any(), anyInt());
         verifyNoInteractions(userRepository);
     }
 
@@ -244,7 +292,7 @@ class OtpLoginServiceTest {
                 .isInstanceOf(BadCredentialsException.class)
                 .hasMessage("invalid or expired code");
 
-        verify(otpRepository, never()).save(any());
+        verify(otpRepository, never()).claimAttempt(any(), anyInt());
         verifyNoInteractions(userRepository);
     }
 
@@ -258,31 +306,25 @@ class OtpLoginServiceTest {
                 .isInstanceOf(BadCredentialsException.class)
                 .hasMessage("invalid or expired code");
 
-        verify(otpRepository, never()).save(any());
+        verify(otpRepository, never()).claimAttempt(any(), anyInt());
         verifyNoInteractions(userRepository);
     }
 
-    /**
-     * Guards the {@code noRollbackFor} on verifyOtp. Everything this class
-     * asserts about the attempt counter and consumption is written through a
-     * mocked repository, so it stays green even if those writes are rolled
-     * back for real — which is exactly what Spring's default
-     * rollback-on-RuntimeException does, since every failure path here throws.
-     * That regression defeats the brute-force cap silently and was only caught
-     * by hitting a live Postgres. Hence this reflective check.
-     */
     @Test
-    void verifyOtpDoesNotRollBackSecurityWritesOnFailure() throws NoSuchMethodException {
-        org.springframework.transaction.annotation.Transactional tx =
-                OtpLoginService.class
-                        .getMethod("verifyOtp", String.class, String.class)
-                        .getAnnotation(org.springframework.transaction.annotation.Transactional.class);
+    void verifyRejectsWhenConsumeRacesAnotherVerify() {
+        // Two correct-code verifies race; only the one whose consume updates a row
+        // may log in.
+        LoginOtp stored = otp(encoder.encode("123456"), Instant.now().plus(5, ChronoUnit.MINUTES), 0);
+        when(otpRepository.findTopByPhoneNumberAndConsumedAtIsNullOrderByCreatedAtDesc(PHONE))
+                .thenReturn(Optional.of(stored));
+        when(otpRepository.claimAttempt(stored.getId(), 5)).thenReturn(1);
+        when(otpRepository.consume(eq(stored.getId()), any())).thenReturn(0);
 
-        assertThat(tx).isNotNull();
-        assertThat(tx.noRollbackFor())
-                .as("attempt-count increment and code consumption must survive the thrown "
-                        + "BadCredentialsException, or the 5-attempt cap is unenforceable")
-                .contains(BadCredentialsException.class);
+        assertThatThrownBy(() -> service.verifyOtp(PHONE, "123456"))
+                .isInstanceOf(BadCredentialsException.class)
+                .hasMessage("invalid or expired code");
+
+        verifyNoInteractions(userRepository);
     }
 
     @Test
@@ -290,6 +332,8 @@ class OtpLoginServiceTest {
         LoginOtp stored = otp(encoder.encode("123456"), Instant.now().plus(5, ChronoUnit.MINUTES), 0);
         when(otpRepository.findTopByPhoneNumberAndConsumedAtIsNullOrderByCreatedAtDesc(PHONE))
                 .thenReturn(Optional.of(stored));
+        when(otpRepository.claimAttempt(stored.getId(), 5)).thenReturn(1);
+        when(otpRepository.consume(eq(stored.getId()), any())).thenReturn(1);
         when(userRepository.findByPhoneNumberAndRole(PHONE, UserRole.SECURITY_GUARD))
                 .thenReturn(List.of(guard(UserStatus.INACTIVE)));
 

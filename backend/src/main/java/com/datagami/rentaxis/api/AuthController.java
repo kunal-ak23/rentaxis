@@ -192,10 +192,10 @@ public class AuthController {
 
     // --- Security guard phone-OTP login ---
 
-    public record OtpRequestBody(String phone) {
+    public record SendOtpRequest(String phone) {
     }
 
-    public record OtpVerifyBody(String phone, String code) {
+    public record VerifyOtpRequest(String phone, String code) {
     }
 
     /**
@@ -206,7 +206,7 @@ public class AuthController {
      * numbers are registered. 400 for a malformed phone, 429 once rate-limited.
      */
     @PostMapping("/otp/request")
-    public ResponseEntity<Void> requestOtp(@RequestBody OtpRequestBody request) {
+    public ResponseEntity<Void> requestOtp(@RequestBody SendOtpRequest request) {
         otpLoginService.requestOtp(request.phone());
         return ResponseEntity.ok().build();
     }
@@ -217,7 +217,7 @@ public class AuthController {
      * email/password clients do. 401 on any verification failure.
      */
     @PostMapping("/otp/verify")
-    public ResponseEntity<AuthResponse> verifyOtp(@RequestBody OtpVerifyBody request) {
+    public ResponseEntity<AuthResponse> verifyOtp(@RequestBody VerifyOtpRequest request) {
         User guard = otpLoginService.verifyOtp(request.phone(), request.code());
         return ResponseEntity.ok(toAuthResponse(guard));
     }

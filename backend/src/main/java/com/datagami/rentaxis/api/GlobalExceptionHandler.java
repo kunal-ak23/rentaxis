@@ -8,9 +8,11 @@ import com.datagami.rentaxis.core.service.BulkAttachValidationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -102,9 +104,8 @@ public class GlobalExceptionHandler {
      * throwing service uses one constant string for every failure mode, and
      * this handler must not reintroduce a distinction it worked to remove.
      */
-    @ExceptionHandler(org.springframework.security.authentication.BadCredentialsException.class)
-    public ResponseEntity<Map<String, Object>> handleBadCredentials(
-            org.springframework.security.authentication.BadCredentialsException ex) {
+    @ExceptionHandler(BadCredentialsException.class)
+    public ResponseEntity<Map<String, Object>> handleBadCredentials(BadCredentialsException ex) {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
                 "error", true,
                 "message", "Invalid credentials",
@@ -119,9 +120,8 @@ public class GlobalExceptionHandler {
      * of Spring's ResponseStatusExceptionResolver, so the catch-all wins
      * without an explicit handler here.
      */
-    @ExceptionHandler(org.springframework.web.server.ResponseStatusException.class)
-    public ResponseEntity<Map<String, Object>> handleResponseStatus(
-            org.springframework.web.server.ResponseStatusException ex) {
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<Map<String, Object>> handleResponseStatus(ResponseStatusException ex) {
         String reason = ex.getReason() != null ? ex.getReason() : "Request failed";
         return ResponseEntity.status(ex.getStatusCode()).body(Map.of(
                 "error", true,

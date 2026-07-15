@@ -31,20 +31,40 @@ import java.util.regex.Pattern;
  * no tenant filter is enabled and the user lookups here are deliberately
  * cross-tenant: the phone number itself resolves the guard's tenant.
  *
- * <p>Security properties worth preserving when editing:
+ * <h2>Guarantees</h2>
  * <ul>
- *   <li><b>Anti-enumeration</b> — {@link #requestOtp} returns silently for an
- *       unknown/inactive/non-guard phone. Never surface "no such guard".</li>
- *   <li><b>Throttle before lookup</b> — the rate check runs ahead of the user
- *       query so a throttled known phone behaves like a throttled unknown one.</li>
- *   <li><b>No oracle on verify</b> — every failure mode (missing, expired,
- *       spent, wrong code, deactivated guard) throws the identical message.</li>
- *   <li><b>Codes are bcrypt-hashed at rest</b>, never stored in plaintext.</li>
+ *   <li><b>Anti-enumeration (response content)</b> — {@link #requestOtp} returns
+ *       200 for an unknown, inactive, or non-guard phone exactly as for a real
+ *       one, and {@link #verifyOtp} throws one identical message for every
+ *       failure mode. No response body or status distinguishes a registered
+ *       phone from an unregistered one.</li>
+ *   <li><b>Throttle before lookup</b> — the rate check precedes the user query,
+ *       so a throttled known phone behaves like a throttled unknown one.</li>
+ *   <li><b>Codes are bcrypt-hashed at rest</b> and single-use.</li>
+ *   <li><b>Guess budget is enforced atomically</b> — see
+ *       {@link LoginOtpRepository#claimAttempt}.</li>
  * </ul>
  *
- * <p>Known platform caveat, out of scope here: the backend trusts client
- * {@code X-User-*} headers, so OTP verification is real but downstream session
- * integrity inherits that pre-existing issue.
+ * <h2>Known gaps — do not read the above as more than it says</h2>
+ * <ul>
+ *   <li><b>Timing oracle on request.</b> An unknown phone returns early; a known
+ *       one does a bcrypt hash (~50-100ms) plus an insert plus a send. The
+ *       response content is identical but the latency is not, so a single probe
+ *       still distinguishes them. TODO(Task 6): moving delivery off the request
+ *       thread is the right fix and belongs with the real sender, which would
+ *       otherwise add a synchronous network call and widen this considerably.</li>
+ *   <li><b>Residual brute-force exposure.</b> A 6-digit code is 10^6 wide. The
+ *       caps here bound a sustained attack on a known phone to
+ *       {@value #MAX_ATTEMPTS_PER_HOUR} guesses/hour (~240/day). The 5-minute TTL
+ *       is what makes that acceptable: a guess only counts against the code that
+ *       is live when it lands, so practical per-code exposure stays at
+ *       {@value #MAX_VERIFY_ATTEMPTS} in 10^6. Raising the TTL or the caps
+ *       degrades this quickly. Per-IP limiting is enforced separately, in
+ *       {@code PublicRateLimitFilter}.</li>
+ *   <li><b>Session integrity.</b> The backend trusts client {@code X-User-*}
+ *       headers, so verification here is real but what happens to the identity
+ *       afterwards inherits that pre-existing platform issue.</li>
+ * </ul>
  */
 @Service
 @Slf4j
@@ -58,7 +78,23 @@ public class OtpLoginService {
     private static final int MAX_REQUESTS_PER_WINDOW = 3;
     private static final int THROTTLE_WINDOW_MINUTES = 15;
     private static final int CODE_TTL_MINUTES = 5;
+
+    /** Per-code guess budget. Spent atomically, including by successful verifies. */
     private static final int MAX_VERIFY_ATTEMPTS = 5;
+
+    /**
+     * Cross-code guess budget per phone per rolling hour. Bounds the attack the
+     * per-code cap cannot: requesting a fresh code resets the per-row budget, so
+     * without this the real bound would be 3 codes x 5 attempts per 15 minutes =
+     * 1,440 guesses/day, well beyond what NIST SP 800-63B allows for a 6-digit
+     * secret.
+     *
+     * <p>A successful verify also spends one attempt (the claim precedes the
+     * compare, by design). Issuance is capped at {@value #MAX_REQUESTS_PER_WINDOW}
+     * per {@value #THROTTLE_WINDOW_MINUTES} minutes, so a guard cannot plausibly
+     * reach this through legitimate logins.
+     */
+    private static final int MAX_ATTEMPTS_PER_HOUR = 10;
 
     /**
      * Single message for every verification failure. Callers must not vary it —
@@ -84,8 +120,8 @@ public class OtpLoginService {
     /**
      * Issues an OTP to {@code phone} if it belongs to an active security guard.
      *
-     * <p>Returns normally whether or not a code was actually sent — an unknown
-     * phone is indistinguishable from a known one by response or behaviour.
+     * <p>Returns normally whether or not a code was actually sent — see the
+     * anti-enumeration notes on the class.
      *
      * @throws BusinessRuleViolationException if the phone is not E.164 (400)
      * @throws ResponseStatusException        429 once the per-phone rate limit is hit
@@ -94,8 +130,8 @@ public class OtpLoginService {
     public void requestOtp(String phone) {
         String normalized = normalize(phone);
 
-        // Throttle FIRST: this must not depend on whether the guard exists, or
-        // the differing work would leak existence via timing/behaviour.
+        // Throttle FIRST: this must not depend on whether the guard exists, or the
+        // differing work would leak existence.
         Instant windowStart = Instant.now().minus(THROTTLE_WINDOW_MINUTES, ChronoUnit.MINUTES);
         if (otpRepository.countByPhoneNumberAndCreatedAtAfter(normalized, windowStart) >= MAX_REQUESTS_PER_WINDOW) {
             throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,
@@ -111,6 +147,11 @@ public class OtpLoginService {
 
         String code = String.format("%06d", RANDOM.nextInt(1_000_000));
 
+        // Retire any still-live codes: several can be outstanding at once, and an
+        // older one becomes "top" again — and would still verify — once the newest
+        // is consumed.
+        otpRepository.invalidateOutstanding(normalized, Instant.now());
+
         LoginOtp otp = new LoginOtp();
         otp.setPhoneNumber(normalized);
         otp.setCodeHash(passwordEncoder.encode(code));
@@ -124,42 +165,63 @@ public class OtpLoginService {
      * Verifies {@code code} against the newest unconsumed OTP for {@code phone}
      * and returns the authenticated guard.
      *
-     * <p><b>{@code noRollbackFor} is load-bearing — do not remove it.</b> This
-     * method's two security writes (the failed-attempt increment, and marking a
-     * correct code consumed) are both followed by a thrown
-     * BadCredentialsException. Under Spring's default rollback-on-RuntimeException
-     * they would be silently reverted, which would (a) reset the attempt counter
-     * on every failure, giving an attacker unlimited guesses against the 5-try
-     * cap, and (b) un-consume a correct code used by a deactivated guard, making
-     * it replayable. Mocked-repository unit tests cannot catch either regression.
+     * <p><b>{@code noRollbackFor} is load-bearing — do not remove it.</b> Every
+     * failure path here throws, and under Spring's default
+     * rollback-on-RuntimeException the attempt claim would be reverted along with
+     * it, resetting the counter on each failure and handing an attacker unlimited
+     * guesses. Mocked-repository unit tests cannot catch that regression;
+     * {@code OtpLoginRollbackIT} can.
+     *
+     * <p>This method deliberately never mutates the loaded {@link LoginOtp}: all
+     * writes go through bulk updates, because a dirty managed entity would be
+     * flushed at commit carrying the pre-claim {@code attemptCount} and would
+     * silently undo the atomic increment.
      *
      * @throws BusinessRuleViolationException if the phone is not E.164 (400)
+     * @throws ResponseStatusException        429 once the per-phone hourly cap is hit
      * @throws BadCredentialsException        on any verification failure (401)
      */
     @Transactional(noRollbackFor = BadCredentialsException.class)
     public User verifyOtp(String phone, String code) {
         String normalized = normalize(phone);
 
+        // Cross-code cap first — cheapest check, and it must apply regardless of
+        // whether an OTP or a guard exists for this phone.
+        Instant hourAgo = Instant.now().minus(1, ChronoUnit.HOURS);
+        if (otpRepository.countRecentAttempts(normalized, hourAgo) >= MAX_ATTEMPTS_PER_HOUR) {
+            // Deliberately loud: sustained guessing against one phone is the
+            // signature worth alerting on. Never log the code itself.
+            log.warn("OTP verification locked for {}: {} or more attempts in the last hour",
+                    normalized, MAX_ATTEMPTS_PER_HOUR);
+            throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,
+                    "Too many attempts. Please request a new code later.");
+        }
+
         LoginOtp otp = otpRepository
                 .findTopByPhoneNumberAndConsumedAtIsNullOrderByCreatedAtDesc(normalized)
                 .orElseThrow(() -> new BadCredentialsException(INVALID));
 
-        // Expiry and the attempt cap are checked before the bcrypt compare, so a
-        // spent budget rejects even a correct code and burns no further CPU.
-        if (otp.getExpiresAt().isBefore(Instant.now()) || otp.getAttemptCount() >= MAX_VERIFY_ATTEMPTS) {
+        if (otp.getExpiresAt().isBefore(Instant.now())) {
+            throw new BadCredentialsException(INVALID);
+        }
+
+        // Claim BEFORE the compare: the budget is spent even if this process dies
+        // mid-verify, and 0 rows means the cap is already reached — which rejects
+        // even a correct code.
+        if (otpRepository.claimAttempt(otp.getId(), MAX_VERIFY_ATTEMPTS) == 0) {
             throw new BadCredentialsException(INVALID);
         }
 
         if (code == null || !passwordEncoder.matches(code, otp.getCodeHash())) {
-            otp.setAttemptCount(otp.getAttemptCount() + 1);
-            otpRepository.save(otp);
             throw new BadCredentialsException(INVALID);
         }
 
         // Consume before resolving the user: a correct code is single-use even if
-        // the guard turns out to be deactivated, so it cannot be replayed.
-        otp.setConsumedAt(Instant.now());
-        otpRepository.save(otp);
+        // the guard turns out to be deactivated, so it cannot be replayed. A 0 here
+        // means a concurrent verify already consumed it.
+        if (otpRepository.consume(otp.getId(), Instant.now()) == 0) {
+            throw new BadCredentialsException(INVALID);
+        }
 
         return resolveActiveGuard(normalized)
                 .orElseThrow(() -> new BadCredentialsException(INVALID));
@@ -168,10 +230,13 @@ public class OtpLoginService {
     /**
      * Resolves the single active security guard owning this phone.
      *
-     * <p>Phone numbers carry no uniqueness constraint, so the query returns a
-     * list. An ambiguous phone (two active guards, e.g. a shared gatehouse
-     * handset across tenants) is rejected rather than guessed — picking one
-     * would silently log the caller into an arbitrary tenant.
+     * <p>The repository returns a list, but changeset 65 creates
+     * {@code uq_users_guard_phone ON users(phone_number) WHERE role='SECURITY_GUARD'}
+     * and this query filters on exactly that role — so at most one row can come
+     * back and the multi-match branch below is unreachable. It stays as
+     * defense-in-depth: were that partial index dropped or its predicate widened,
+     * refusing to guess is the only safe behaviour, since picking a row
+     * arbitrarily would log the caller into an arbitrary tenant.
      */
     private Optional<User> resolveActiveGuard(String normalizedPhone) {
         List<User> active = userRepository.findByPhoneNumberAndRole(normalizedPhone, UserRole.SECURITY_GUARD)
@@ -180,8 +245,8 @@ public class OtpLoginService {
                 .toList();
 
         if (active.size() > 1) {
-            log.warn("Phone number maps to {} active security guards — refusing to guess an identity",
-                    active.size());
+            log.error("Phone number maps to {} active security guards — uq_users_guard_phone should "
+                    + "make this impossible; refusing to guess an identity", active.size());
             return Optional.empty();
         }
         return active.stream().findFirst();
