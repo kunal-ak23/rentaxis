@@ -13,7 +13,7 @@ import 'package:rentaxis_core/rentaxis_core.dart';
 /// back to "all properties", which would hand an unposted guard the whole
 /// tenant's guest book. The screens must therefore distinguish "nothing today"
 /// from "you are not posted anywhere yet", because a blank screen reads to a
-/// guard as a broken app.
+/// guard as a broken app. [myPropertiesProvider] is what tells them apart.
 
 /// Today's expected visitors at the guard's assigned properties.
 ///
@@ -23,6 +23,21 @@ final expectedTodayProvider =
     FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
   final service = ref.watch(gatePassServiceProvider);
   return _asRows(await service.expectedToday());
+});
+
+/// The guard's own posting: `{id, name}` rows, one per assigned property.
+///
+/// Read by the empty board to say *which* kind of empty it is. Empty here means
+/// the guard is posted nowhere and no amount of waiting will produce a visitor —
+/// that is a "go and ask your manager", not a quiet shift.
+///
+/// Carries the property's id and display name and nothing else, by design: the
+/// Security role must not reach the property's financial or private fields
+/// (SOW §3.1). See `GatePassApiService.myProperties`.
+final myPropertiesProvider =
+    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+  final service = ref.watch(gatePassServiceProvider);
+  return _asRows(await service.myProperties());
 });
 
 /// Passes awaiting approval at the guard's assigned properties.

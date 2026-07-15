@@ -81,8 +81,28 @@ class GatePassApiService {
 
   /// GET /v1/gatepass/expected-today — ACTIVE passes overlapping today at the
   /// guard's assigned properties, in Asia/Dubai. Empty for an unposted guard.
+  ///
+  /// **An empty list does not mean a quiet day.** It is also what an unposted
+  /// guard gets. Use [myProperties] to tell the two apart before telling a guard
+  /// nobody is expected.
   Future<List<dynamic>> expectedToday() async {
     final response = await _dio.get('/v1/gatepass/expected-today');
+    return response.data as List<dynamic>;
+  }
+
+  /// GET /v1/gatepass/my-properties — the caller's own assigned properties as
+  /// `{id, name}` rows. Guard-only; empty for an unposted guard.
+  ///
+  /// Exists so the app can distinguish "you are posted nowhere" from "nothing
+  /// expected today" — [expectedToday] answers `[]` for both, and a guard told
+  /// only "no visitors" will wait out a shift the app was never going to fill.
+  ///
+  /// **`{id, name}` and nothing else, deliberately.** The Security role must not
+  /// reach the property's financial or private fields (SOW §3.1), so the backend
+  /// returns a purpose-built payload rather than the property record. Do not
+  /// reach for an address or any other field here; it is not absent by oversight.
+  Future<List<dynamic>> myProperties() async {
+    final response = await _dio.get('/v1/gatepass/my-properties');
     return response.data as List<dynamic>;
   }
 

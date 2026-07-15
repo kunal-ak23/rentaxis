@@ -115,12 +115,11 @@ bool isBlindedRejection(Map<String, dynamic> response) =>
 
 /// Groups today's expected visitors by the property they are expected at.
 ///
-/// **Grouped by `propertyId`, which is the only property field the guard-facing
-/// payload carries** — `GatePassSummary` has no property name, and a guard
-/// cannot fetch one (`PropertyController` is admin/manager-only). So a guard
-/// posted to more than one property gets stable groups with no readable heading;
-/// see [propertyGroupLabel]. Most guards are posted to one property, where the
-/// grouping is invisible anyway.
+/// Grouped by `propertyId` because it is the stable key. `GatePassSummary` now
+/// also carries `propertyName` (the building's `nameEn`), which is what the
+/// heading should show — see [propertyGroupLabel], which does not use it yet.
+/// Most guards are posted to one property, where the grouping is invisible
+/// anyway.
 ///
 /// Ordering: groups appear in first-seen order (the backend's own ordering) and
 /// rows within a group are sorted by when the window opens, so the next arrival
@@ -147,12 +146,18 @@ List<PropertyGroup> groupByProperty(List<Map<String, dynamic>> passes) {
   }).toList();
 }
 
-/// A heading for a property the guard app cannot name.
+/// A heading built from the property's id.
 ///
 /// The short id is not meaningful to a guard — it is a discriminator, not a
 /// name. It exists so a two-property guard can at least see that these are two
-/// different gates; the moment `GatePassSummary` carries a `propertyName`, this
-/// should render that instead.
+/// different gates.
+///
+/// **Superseded but not yet replaced.** `GatePassSummary` now carries
+/// `propertyName`, so the heading a guard actually needs is available on every
+/// row; rendering it here (and dropping the id fragment) is a deliberate
+/// follow-up, kept out of the change that added the field to keep that one to
+/// the API contract. Until it lands, a multi-property guard still reads
+/// "Property 1 · A3F2E1" at the gate.
 String propertyGroupLabel(String propertyId, int index) {
   if (propertyId.isEmpty) return 'Property ${index + 1}';
   final short = propertyId.replaceAll('-', '');

@@ -100,7 +100,14 @@ class _VisitorsTab extends ConsumerWidget {
     final expected = ref.watch(expectedTodayProvider);
 
     return RefreshIndicator(
-      onRefresh: () => ref.refresh(expectedTodayProvider.future),
+      // Refreshes the postings alongside the board: a guard assigned mid-shift is
+      // pulling precisely because they expect that to have changed, and refreshing
+      // only the passes would leave "No properties assigned" on screen while the
+      // gate they were just given fills up behind it.
+      onRefresh: () {
+        ref.invalidate(myPropertiesProvider);
+        return ref.refresh(expectedTodayProvider.future);
+      },
       child: expected.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => _Scrollable(
@@ -262,18 +269,52 @@ class _VisitorRow extends StatelessWidget {
   }
 }
 
-/// The empty board.
+/// The empty board, resolved to whichever kind of empty this actually is.
 ///
-/// **Deliberately covers two situations at once**, because the app cannot tell
-/// them apart: `GET /expected-today` answers `[]` both for a posted guard with a
-/// quiet day and for a guard with no property assignments at all. There is no
-/// guard-facing endpoint that reports the assignments (`/guards/{id}/properties`
-/// is manager-only), so "no visitors" and "you are posted nowhere" are the same
-/// response on the wire. The copy therefore names the second case explicitly —
-/// an unposted guard who is only told "no visitors today" will wait out a whole
-/// shift before anyone discovers the app was never going to show them anything.
-class _NoVisitors extends StatelessWidget {
+/// `GET /expected-today` answers `[]` both for a posted guard on a quiet day and
+/// for a guard with no property assignments at all, so this used to hedge and
+/// name both cases in one message. `GET /my-properties` now separates them: an
+/// unposted guard is told plainly to go and ask, instead of being left to work a
+/// shift wondering whether the silence is real.
+///
+/// The hedged copy survives as the fallback for exactly one case — the
+/// assignments call itself failing. Knowing "nothing is expected" while not
+/// knowing why is precisely the situation the old wording was written for, so it
+/// is the honest thing to show rather than a guess in either direction.
+class _NoVisitors extends ConsumerWidget {
   const _NoVisitors();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final properties = ref.watch(myPropertiesProvider);
+
+    return properties.when(
+      // Not a spinner: the board underneath has already resolved, and flashing a
+      // loader onto a settled screen reads as a reload. The hedged copy is true
+      // in both cases, so it holds until the answer lands.
+      loading: () => const _EmptyBoardHedged(),
+      error: (_, _) => const _EmptyBoardHedged(),
+      data: (properties) => properties.isEmpty
+          ? const EmptyState(
+              icon: Icons.location_off_outlined,
+              title: 'No properties assigned',
+              subtitle: 'You are not posted to a gate yet, so no visitors will '
+                  'appear here.\n\n'
+                  'Ask your manager to assign you to a property.',
+            )
+          : const EmptyState(
+              icon: Icons.event_available,
+              title: 'No visitors expected today',
+              subtitle: 'Guests booked for your gate appear here.',
+            ),
+    );
+  }
+}
+
+/// The pre-`/my-properties` wording: correct but non-committal, for when the
+/// assignments call has not answered (yet, or at all).
+class _EmptyBoardHedged extends StatelessWidget {
+  const _EmptyBoardHedged();
 
   @override
   Widget build(BuildContext context) {

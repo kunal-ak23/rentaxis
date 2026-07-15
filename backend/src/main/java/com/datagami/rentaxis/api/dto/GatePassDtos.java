@@ -78,10 +78,40 @@ public final class GatePassDtos {
      * the number is what gets displayed at the gate, but it is only unique within a
      * property, so clients keying on a unit still need the id. Neither is a credential
      * and neither identifies the renter, so both are in scope for this view.
+     *
+     * <p>{@code propertyName} follows the same reasoning as {@code unitNumber}, and for
+     * the same reason: it is the building's display name ({@code Property.nameEn}), and
+     * a guard has no other way to get one — {@code PropertyController} is
+     * admin/manager-only. Without it a guard covering two properties reads a raw id
+     * fragment as a heading, which is a discriminator, not a name. It is neither a
+     * credential nor renter identity nor financial data, so it is in scope for this
+     * view; the property's actual sensitive fields ({@code fixedExpenses},
+     * {@code makaniNumber}, address) stay out of every guard-facing payload — see
+     * {@link GuardProperty}.
      */
-    public record GatePassSummary(UUID id, UUID propertyId, UUID unitId, String unitNumber, String guestName,
-                                  String guestPhone, String purpose, String vehicleNumber, GatePassType passType,
-                                  Instant validFrom, Instant validTo, GatePassStatus status, Instant createdAt) {
+    public record GatePassSummary(UUID id, UUID propertyId, String propertyName, UUID unitId, String unitNumber,
+                                  String guestName, String guestPhone, String purpose, String vehicleNumber,
+                                  GatePassType passType, Instant validFrom, Instant validTo, GatePassStatus status,
+                                  Instant createdAt) {
+    }
+
+    /**
+     * One property a guard is posted to — <b>id and display name, nothing else</b>.
+     *
+     * <p><b>This record is a security boundary.</b> It is the only property-shaped
+     * payload the Security role can reach, and it exists so the guard app can tell "no
+     * properties assigned" from "a quiet day" — both of which {@code expected-today}
+     * answers with {@code []}.
+     *
+     * <p>Deliberately NOT the {@code Property} entity, and deliberately not widened:
+     * SOW §3.1 requires the Security role never reach tenant financial or private
+     * information, and {@code Property} carries {@code fixedExpenses}, {@code makaniNumber}
+     * and address data — none of which a guard needs to know which gate they are on.
+     * Adding a field here is a security decision, not a formatting one;
+     * {@code GatePassControllerTest.myPropertiesCarriesNoFinancialOrPrivatePropertyFields}
+     * asserts the serialized JSON keys and will fail if this grows.
+     */
+    public record GuardProperty(UUID id, String name) {
     }
 
     /** Exactly one of {@code qrToken} / {@code numericCode} must be set — the controller enforces it. */

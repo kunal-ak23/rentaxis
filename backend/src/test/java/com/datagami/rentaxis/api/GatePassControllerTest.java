@@ -23,6 +23,9 @@ import com.datagami.rentaxis.domain.repository.UnitRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.persistence.EntityManagerFactory;
+import org.hibernate.SessionFactory;
+import org.hibernate.stat.Statistics;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -84,6 +87,7 @@ class GatePassControllerTest {
     @Autowired GuardPropertyAssignmentRepository assignmentRepo;
     @Autowired GatePassScanRepository scanRepo;
     @Autowired ObjectMapper objectMapper;
+    @Autowired EntityManagerFactory entityManagerFactory;
 
     /**
      * The scan rate limiter keys buckets on the client IP and lives in a filter bean
@@ -97,6 +101,16 @@ class GatePassControllerTest {
 
     /** Distinctive enough that finding it in a response body can only mean a leak. */
     private static final BigDecimal MONTHLY_RENT_SENTINEL = BigDecimal.valueOf(918273);
+
+    /**
+     * The property's own financial field, which SOW §3.1 keeps away from the Security
+     * role. Distinct from {@link #MONTHLY_RENT_SENTINEL} so a leak names which payload
+     * it came through.
+     */
+    private static final BigDecimal FIXED_EXPENSES_SENTINEL = BigDecimal.valueOf(736451);
+
+    /** Private property data — a Makani number locates the building, a guard needs no such thing. */
+    private static final String MAKANI_SENTINEL = "MAKANI-2648172639";
 
     private static String freshIp() {
         int n = IP_SEQ.incrementAndGet();
@@ -129,10 +143,17 @@ class GatePassControllerTest {
         return userRepo.save(u);
     }
 
+    /**
+     * Carries the sensitive fields on purpose: the guard-facing property payload is a
+     * security boundary, and a fixture with them left null would let a leak pass
+     * unnoticed.
+     */
     private Property makeProperty(LandlordOrg org) {
         Property p = new Property();
         p.setNameEn("Prop-" + UUID.randomUUID());
         p.setEmirate(Emirate.DUBAI);
+        p.setFixedExpenses(FIXED_EXPENSES_SENTINEL);
+        p.setMakaniNumber(MAKANI_SENTINEL);
         p.setTenantId(org.getId());
         return propertyRepo.save(p);
     }
@@ -602,6 +623,201 @@ class GatePassControllerTest {
 
         assertThat(res).hasSize(1);
         assertThat(res.get(0).get("guestName").asText()).isEqualTo("Guest Here");
+    }
+
+    /**
+     * The reason {@code propertyName} exists: a guard covering two buildings has to be
+     * able to read which gate a guest is expected at. {@code propertyId} alone renders
+     * as an id fragment, which is a discriminator rather than a name.
+     */
+    @Test
+    void expectedTodayNamesThePropertySoAMultiPropertyGuardCanReadTheBoard() {
+        LandlordOrg org = makeOrg();
+        Property towerA = makeProperty(org);
+        Property towerB = makeProperty(org);
+        Fixture inA = makeRenterWithActiveLease(org, towerA, "A1");
+        Fixture inB = makeRenterWithActiveLease(org, towerB, "B1");
+        createPass(inA, "Guest In A", "SINGLE_USE");
+        createPass(inB, "Guest In B", "SINGLE_USE");
+
+        User guard = makeGuard(org, towerA, towerB);
+        JsonNode res = json(call(HttpMethod.GET, "/api/v1/gatepass/expected-today", guard, null));
+
+        assertThat(res).hasSize(2);
+        Map<String, String> nameByGuest = new HashMap<>();
+        res.forEach(row -> nameByGuest.put(row.get("guestName").asText(), row.get("propertyName").asText()));
+        assertThat(nameByGuest).containsEntry("Guest In A", towerA.getNameEn());
+        assertThat(nameByGuest).containsEntry("Guest In B", towerB.getNameEn());
+    }
+
+    /**
+     * The property name must reach the approvals queue too — a guard approving a
+     * recurring pass is deciding about a specific building.
+     */
+    @Test
+    void approvalsNameTheProperty() {
+        Fixture f = makeFixture();
+        createPass(f, "Guest Sigma", "RECURRING");
+        User guard = makeGuard(f.org(), f.property());
+
+        JsonNode res = json(call(HttpMethod.GET, "/api/v1/gatepass/approvals", guard, null));
+
+        assertThat(res).hasSize(1);
+        assertThat(res.get(0).get("propertyName").asText()).isEqualTo(f.property().getNameEn());
+    }
+
+    /**
+     * The N+1 guard. {@code expected-today} returns a list, so the property lookup has
+     * to be batched — resolving per row would put one {@code properties} query behind
+     * every pass on a busy gate's board.
+     *
+     * <p>Asserted through Hibernate's own statement counter rather than by eyeballing
+     * the mapping code, because "it looks batched" is exactly how an N+1 gets
+     * reintroduced. Ten passes across two properties must cost the same number of
+     * property queries as one pass would.
+     */
+    @Test
+    void expectedTodayResolvesPropertyNamesInOneQueryNotOnePerPass() {
+        LandlordOrg org = makeOrg();
+        Property towerA = makeProperty(org);
+        Property towerB = makeProperty(org);
+        User guard = makeGuard(org, towerA, towerB);
+
+        for (int i = 0; i < 5; i++) {
+            createPass(makeRenterWithActiveLease(org, towerA, "A" + i), "Guest A" + i, "SINGLE_USE");
+            createPass(makeRenterWithActiveLease(org, towerB, "B" + i), "Guest B" + i, "SINGLE_USE");
+        }
+
+        Statistics stats = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
+        stats.setStatisticsEnabled(true);
+        stats.clear();
+
+        JsonNode res = json(call(HttpMethod.GET, "/api/v1/gatepass/expected-today", guard, null));
+        assertThat(res).hasSize(10);
+
+        // The whole endpoint: the pass query, one batched unit lookup, one batched
+        // property lookup, plus the guard's assignments. A per-row property lookup
+        // would add ten more on its own.
+        assertThat(stats.getPrepareStatementCount())
+                .as("10 passes must not cost a query per row — %d statements suggests an N+1",
+                        stats.getPrepareStatementCount())
+                .isLessThanOrEqualTo(6);
+    }
+
+    // -------------------------------------------------------- my properties
+
+    /**
+     * The guard's own posting, by name. Without this endpoint an unposted guard and a
+     * quiet gate are the same {@code []} on the wire, and a guard can work a whole
+     * shift assuming nobody is expected.
+     */
+    @Test
+    void guardSeesOnlyTheirOwnAssignedProperties() {
+        LandlordOrg org = makeOrg();
+        Property assigned = makeProperty(org);
+        Property alsoAssigned = makeProperty(org);
+        Property elsewhere = makeProperty(org);
+
+        User guard = makeGuard(org, assigned, alsoAssigned);
+        JsonNode res = json(call(HttpMethod.GET, "/api/v1/gatepass/my-properties", guard, null));
+
+        assertThat(res).hasSize(2);
+        Set<String> ids = new HashSet<>();
+        Set<String> names = new HashSet<>();
+        res.forEach(row -> {
+            ids.add(row.get("id").asText());
+            names.add(row.get("name").asText());
+        });
+        assertThat(ids).containsExactlyInAnyOrder(assigned.getId().toString(), alsoAssigned.getId().toString());
+        assertThat(names).containsExactlyInAnyOrder(assigned.getNameEn(), alsoAssigned.getNameEn());
+        // Never a fallback to every property in the tenant.
+        assertThat(ids).doesNotContain(elsewhere.getId().toString());
+        assertThat(names).doesNotContain(elsewhere.getNameEn());
+    }
+
+    /**
+     * The empty case is the whole point of the endpoint: it must answer, not 403 or
+     * 404, so the app can distinguish "posted nowhere" from "nothing today".
+     */
+    @Test
+    void unpostedGuardGetsAnEmptyListNotAnError() {
+        LandlordOrg org = makeOrg();
+        User guard = makeGuard(org); // no assignments
+
+        ResponseEntity<String> res = call(HttpMethod.GET, "/api/v1/gatepass/my-properties", guard, null);
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(json(res)).isEmpty();
+    }
+
+    /**
+     * SOW §3.1: the Security role must never reach tenant financial or private
+     * information. {@code Property} carries {@code fixedExpenses}, {@code makaniNumber}
+     * and address data; a guard needs a name to know which gate they are on and
+     * nothing more. Asserted on the serialized body rather than the record shape, so it
+     * fails if a field is ever added to GuardProperty or the entity is serialized here
+     * by accident.
+     */
+    @Test
+    void myPropertiesCarriesNoFinancialOrPrivatePropertyFields() {
+        LandlordOrg org = makeOrg();
+        Property property = makeProperty(org);
+        User guard = makeGuard(org, property);
+
+        ResponseEntity<String> res = call(HttpMethod.GET, "/api/v1/gatepass/my-properties", guard, null);
+        String raw = res.getBody();
+
+        Set<String> actual = new HashSet<>();
+        json(res).get(0).fieldNames().forEachRemaining(actual::add);
+        assertThat(actual)
+                .as("GuardProperty must stay id + name; anything else is a security decision")
+                .containsExactlyInAnyOrder("id", "name");
+
+        assertThat(raw).doesNotContain(FIXED_EXPENSES_SENTINEL.toPlainString());
+        assertThat(raw).doesNotContain(MAKANI_SENTINEL);
+        assertThat(raw).doesNotContainIgnoringCase("makani");
+        assertThat(raw).doesNotContainIgnoringCase("expense");
+        assertThat(raw).doesNotContainIgnoringCase("emirate");
+        assertThat(raw).doesNotContainIgnoringCase("address");
+    }
+
+    /**
+     * A guard must not be able to read another tenant's postings even if an assignment
+     * row somehow points across the boundary — the name lookup is tenant-scoped in SQL,
+     * so it resolves nothing rather than leaking a building name.
+     */
+    @Test
+    void myPropertiesIsTenantScoped() {
+        LandlordOrg orgA = makeOrg();
+        LandlordOrg orgB = makeOrg();
+        Property inA = makeProperty(orgA);
+        Property inB = makeProperty(orgB);
+
+        // A guard in tenant A, with a stray assignment to a property in tenant B.
+        User guard = makeGuard(orgA, inA);
+        GuardPropertyAssignment cross = new GuardPropertyAssignment();
+        cross.setTenantId(orgA.getId());
+        cross.setUserId(guard.getId());
+        cross.setPropertyId(inB.getId());
+        assignmentRepo.save(cross);
+
+        ResponseEntity<String> res = call(HttpMethod.GET, "/api/v1/gatepass/my-properties", guard, null);
+
+        assertThat(json(res)).hasSize(1);
+        assertThat(json(res).get(0).get("id").asText()).isEqualTo(inA.getId().toString());
+        assertThat(res.getBody()).doesNotContain(inB.getNameEn());
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = UserRole.class, names = {"RENTER", "TENANT_ADMIN", "PROPERTY_MANAGER"})
+    void myPropertiesIsGuardOnly(UserRole role) {
+        LandlordOrg org = makeOrg();
+        User caller = makeUser(org, role);
+
+        // Guard-only: managers have PropertyController, and this endpoint's whole
+        // contract is "the caller's own posting" — it means nothing for other roles.
+        assertThat(call(HttpMethod.GET, "/api/v1/gatepass/my-properties", caller, null).getStatusCode())
+                .isEqualTo(HttpStatus.FORBIDDEN);
     }
 
     @Test

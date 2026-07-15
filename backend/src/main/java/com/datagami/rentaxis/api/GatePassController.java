@@ -5,6 +5,7 @@ import com.datagami.rentaxis.api.dto.GatePassDtos.CreateGatePassRequest;
 import com.datagami.rentaxis.api.dto.GatePassDtos.GatePassReportRow;
 import com.datagami.rentaxis.api.dto.GatePassDtos.GatePassResponse;
 import com.datagami.rentaxis.api.dto.GatePassDtos.GatePassSummary;
+import com.datagami.rentaxis.api.dto.GatePassDtos.GuardProperty;
 import com.datagami.rentaxis.api.dto.GatePassDtos.ScanRequest;
 import com.datagami.rentaxis.api.dto.GatePassDtos.ScanResponse;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
@@ -17,6 +18,7 @@ import com.datagami.rentaxis.domain.entity.GatePass;
 import com.datagami.rentaxis.domain.entity.GatePassScan;
 import com.datagami.rentaxis.domain.entity.GuardPropertyAssignment;
 import com.datagami.rentaxis.domain.entity.Lease;
+import com.datagami.rentaxis.domain.entity.Property;
 import com.datagami.rentaxis.domain.entity.Renter;
 import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.User;
@@ -55,6 +57,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -188,6 +191,42 @@ public class GatePassController {
         ScanOutcome outcome = gatePassScanService.scan(tenantId(), currentUserId(), qrToken, numericCode,
                 request.direction());
         return toScanResponse(outcome);
+    }
+
+    /**
+     * The guard's own posting: which properties they are assigned to, by name.
+     *
+     * <p>Exists because an unposted guard and a quiet gate are indistinguishable
+     * otherwise — {@code expected-today} answers {@code []} for both, so a guard with
+     * no assignments can work an entire shift believing nobody is expected, and
+     * nothing on the device can tell them otherwise. This endpoint is what lets the
+     * app say "no properties assigned — ask your manager" instead of "no visitors".
+     *
+     * <p><b>Scope is the guard's own assignments only, never the tenant's properties.</b>
+     * The list is driven from {@code guard_property_assignments} for the authenticated
+     * user, so there is no request parameter to widen and no id to substitute — a guard
+     * cannot ask this about anyone else. {@code /guards/{userId}/properties} remains the
+     * manager-only path for reading someone else's posting, and stays that way.
+     *
+     * <p>Returns {@link GuardProperty} — id and display name, nothing else. See that
+     * record: the Security role must not reach the property's financial or private
+     * fields (SOW §3.1), which is why the entity is not serialized here.
+     */
+    @GetMapping("/my-properties")
+    @PreAuthorize("hasRole('SECURITY_GUARD')")
+    public List<GuardProperty> myProperties() {
+        List<UUID> propertyIds = assignedPropertyIds(currentUserId());
+        if (propertyIds.isEmpty()) {
+            return List.of();
+        }
+        // propertyNames() is tenant-scoped in SQL, so an assignment row pointing outside
+        // the caller's tenant resolves to nothing rather than leaking a name.
+        Map<UUID, String> names = propertyNames(propertyIds);
+        return propertyIds.stream()
+                .filter(names::containsKey)
+                .map(id -> new GuardProperty(id, names.get(id)))
+                .sorted(Comparator.comparing(GuardProperty::name, Comparator.nullsLast(String::compareToIgnoreCase)))
+                .toList();
     }
 
     @GetMapping("/expected-today")
@@ -442,6 +481,34 @@ public class GatePassController {
         return byId;
     }
 
+    /**
+     * Batch property-name lookup for display, mirroring {@link #unitNumbers}.
+     *
+     * <p>Batched rather than resolved per row because the two callers that matter —
+     * {@code expected-today} and {@code approvals} — return lists: a busy gate's board
+     * is tens of passes, and a per-row lookup would be an N+1 on {@code properties}.
+     * One query per response, whatever the row count.
+     *
+     * <p>Tenant-scoped in the SQL rather than relying on the {@code tenantFilter}
+     * aspect, matching {@code existsByIdAndTenantId} on the assignment path.
+     *
+     * <p>{@code nameEn} rather than {@code nameAr}: the guard app has no i18n
+     * mechanism at all, so there is no locale to select on and a null-safe fallback
+     * to Arabic would render an inconsistent board rather than a localized one. When
+     * the app grows one, this is the single place that chooses.
+     */
+    private Map<UUID, String> propertyNames(List<UUID> propertyIds) {
+        List<UUID> distinct = propertyIds.stream().filter(Objects::nonNull).distinct().toList();
+        if (distinct.isEmpty()) {
+            return Map.of();
+        }
+        Map<UUID, String> byId = new HashMap<>();
+        for (Property property : propertyRepository.findByTenantIdAndIdIn(tenantId(), distinct)) {
+            byId.put(property.getId(), property.getNameEn());
+        }
+        return byId;
+    }
+
     private GatePassResponse toResponse(GatePass pass) {
         return new GatePassResponse(pass.getId(), pass.getPropertyId(), pass.getUnitId(), pass.getGuestName(),
                 pass.getGuestPhone(), pass.getPurpose(), pass.getVehicleNumber(), pass.getPassType(),
@@ -449,23 +516,33 @@ public class GatePassController {
                 pass.getCreatedAt());
     }
 
+    /**
+     * Maps a whole list with exactly two extra queries — one for unit numbers, one for
+     * property names — regardless of how many passes are in it. Both lookups must stay
+     * batched here rather than moving into {@link #toSummary}: this is the path
+     * {@code expected-today} and {@code approvals} use, and per-row resolution is an
+     * N+1 on each table.
+     */
     private List<GatePassSummary> toSummaries(List<GatePass> passes) {
         Map<UUID, String> unitNumbers = unitNumbers(passes.stream().map(GatePass::getUnitId).toList());
-        return passes.stream().map(p -> toSummary(p, unitNumbers)).toList();
+        Map<UUID, String> propertyNames = propertyNames(passes.stream().map(GatePass::getPropertyId).toList());
+        return passes.stream().map(p -> toSummary(p, unitNumbers, propertyNames)).toList();
     }
 
-    private GatePassSummary toSummary(GatePass pass, Map<UUID, String> unitNumbers) {
-        // A miss means the unit row is gone or filtered out; the display name is simply
-        // absent. Re-querying here would only turn a miss into an N+1 for the same null.
+    private GatePassSummary toSummary(GatePass pass, Map<UUID, String> unitNumbers, Map<UUID, String> propertyNames) {
+        // A miss means the unit/property row is gone or filtered out; the display name is
+        // simply absent. Re-querying here would only turn a miss into an N+1 for the same
+        // null.
         String unitNumber = unitNumbers.get(pass.getUnitId());
-        return new GatePassSummary(pass.getId(), pass.getPropertyId(), pass.getUnitId(), unitNumber,
+        String propertyName = propertyNames.get(pass.getPropertyId());
+        return new GatePassSummary(pass.getId(), pass.getPropertyId(), propertyName, pass.getUnitId(), unitNumber,
                 pass.getGuestName(), pass.getGuestPhone(), pass.getPurpose(), pass.getVehicleNumber(),
                 pass.getPassType(), pass.getValidFrom(), pass.getValidTo(), pass.getStatus(), pass.getCreatedAt());
     }
 
     /** Single-pass variant, for the paths that map exactly one pass. */
     private GatePassSummary toSummary(GatePass pass) {
-        return toSummary(pass, unitNumbers(List.of(pass.getUnitId())));
+        return toSummary(pass, unitNumbers(List.of(pass.getUnitId())), propertyNames(List.of(pass.getPropertyId())));
     }
 
     /**

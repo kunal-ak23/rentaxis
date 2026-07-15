@@ -12,9 +12,13 @@ class FakeGatePassService extends GatePassApiService {
   FakeGatePassService({
     this.expectedTodayRows = const [],
     this.approvalRows = const [],
+    this.myPropertyRows = const [
+      {'id': 'p-default', 'name': 'Default Tower'},
+    ],
     this.scanResponse = const {'result': 'ALLOWED'},
     this.expectedTodayError,
     this.approvalsError,
+    this.myPropertiesError,
     this.scanError,
     this.decideError,
     this.latency,
@@ -23,12 +27,18 @@ class FakeGatePassService extends GatePassApiService {
   List<dynamic> expectedTodayRows;
   List<dynamic> approvalRows;
 
+  /// Defaults to one property — a posted guard — so that the many tests about
+  /// the visitor board are not implicitly testing the unposted empty state.
+  /// Set it to `[]` to exercise a guard with no assignments.
+  List<dynamic> myPropertyRows;
+
   /// Returned by [scan]. A test that needs entry and exit to differ can swap
   /// this between calls.
   Map<String, dynamic> scanResponse;
 
   Object? expectedTodayError;
   Object? approvalsError;
+  Object? myPropertiesError;
   Object? scanError;
   Object? decideError;
 
@@ -41,6 +51,7 @@ class FakeGatePassService extends GatePassApiService {
   final List<({String id, bool approved})> decisions = [];
   int expectedTodayCalls = 0;
   int approvalsCalls = 0;
+  int myPropertiesCalls = 0;
 
   @override
   Future<List<dynamic>> expectedToday() async {
@@ -49,6 +60,15 @@ class FakeGatePassService extends GatePassApiService {
     final error = expectedTodayError;
     if (error != null) throw error;
     return expectedTodayRows;
+  }
+
+  @override
+  Future<List<dynamic>> myProperties() async {
+    myPropertiesCalls++;
+    if (latency != null) await Future<void>.delayed(latency!);
+    final error = myPropertiesError;
+    if (error != null) throw error;
+    return myPropertyRows;
   }
 
   @override

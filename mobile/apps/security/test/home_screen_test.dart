@@ -109,13 +109,58 @@ void main() {
       expect(find.textContaining('Property 1'), findsNothing);
     });
 
-    testWidgets('an empty board names the unassigned-guard case', (tester) async {
-      await pumpHome(tester, gatePass: FakeGatePassService(expectedTodayRows: []));
+    testWidgets('an empty board on a posted guard reads as a quiet day',
+        (tester) async {
+      await pumpHome(
+        tester,
+        gatePass: FakeGatePassService(
+          expectedTodayRows: [],
+          myPropertyRows: const [
+            {'id': 'prop-1', 'name': 'Marina Heights'},
+          ],
+        ),
+      );
 
       expect(find.text('No visitors expected today'), findsOneWidget);
-      // The two situations are the same response on the wire, so the copy has to
-      // cover both — an unposted guard told only "no visitors" waits out a shift
-      // before anyone finds out the app was never going to show them anything.
+      // This guard IS posted, so the "go and ask your manager" hedge must be gone
+      // — it is the wrong advice, and it teaches guards to ignore the real one.
+      expect(find.textContaining('assigned to a property'), findsNothing);
+    });
+
+    testWidgets('an empty board on an unposted guard says so plainly',
+        (tester) async {
+      await pumpHome(
+        tester,
+        gatePass: FakeGatePassService(
+          expectedTodayRows: [],
+          myPropertyRows: const [],
+        ),
+      );
+
+      // The case that used to be indistinguishable from a quiet day. A guard with
+      // no posting will never see a visitor, and must be told to act rather than
+      // wait.
+      expect(find.text('No properties assigned'), findsOneWidget);
+      expect(find.textContaining('Ask your manager'), findsOneWidget);
+      expect(find.text('No visitors expected today'), findsNothing);
+    });
+
+    testWidgets(
+        'an empty board falls back to the hedged copy when the postings fail',
+        (tester) async {
+      await pumpHome(
+        tester,
+        gatePass: FakeGatePassService(
+          expectedTodayRows: [],
+          myPropertiesError: StateError('postings unavailable'),
+        ),
+      );
+
+      // Knowing "nothing is expected" without knowing why is exactly what the old
+      // wording was for. It must not harden into either claim on a failed call:
+      // "No properties assigned" would be a guess, and a bare "no visitors" would
+      // drop the one hint an unposted guard has.
+      expect(find.text('No visitors expected today'), findsOneWidget);
       expect(find.textContaining('assigned to a property'), findsOneWidget);
     });
 
