@@ -10,11 +10,15 @@ import com.datagami.rentaxis.domain.entity.enums.ScanResult;
 import com.datagami.rentaxis.domain.repository.GatePassRepository;
 import com.datagami.rentaxis.domain.repository.GatePassScanRepository;
 import com.datagami.rentaxis.domain.repository.GuardPropertyAssignmentRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.PessimisticLockingFailureException;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
-import java.util.EnumSet;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -28,20 +32,31 @@ import java.util.stream.Collectors;
  * than an exception — the guard's app must render a reason, and the SOW
  * requires every rejection to be audited. So {@link #scan} returns a
  * {@link ScanOutcome} and writes a {@code gate_pass_scans} row for every
- * decision, allowed or not. The single exception is an unresolvable code:
- * {@code gate_pass_scans.gate_pass_id} is a NOT NULL FK, so there is nothing
- * to point the row at.
+ * decision, allowed or not. The two exceptions are the outcomes that have no
+ * pass to point a row at ({@code gate_pass_scans.gate_pass_id} is a NOT NULL
+ * FK): an unresolvable code, and a lock conflict. Both are logged at WARN
+ * instead, so they are still auditable.
  *
  * <p><b>Concurrency.</b> Two guards scanning the same SINGLE_USE pass at once
- * would otherwise both read ACTIVE and both allow entry (a lost update). The
- * pass is therefore loaded under a {@code PESSIMISTIC_WRITE} lock taken by the
- * resolving query itself ({@code find*ForUpdate}), which serializes concurrent
- * scans of the same pass so it is consumed exactly once. A pessimistic lock is
- * chosen over an {@code @Version} column because the latter needs a schema
- * change, and because scans are low-volume and the locked section is short.
- * The lock must be acquired by the query that first loads the entity — an
- * unlocked read followed by a locking re-read would hand back the stale
- * instance already managed in the persistence context.
+ * would otherwise both read ACTIVE and both allow entry (a lost update — see
+ * {@code GatePassScanConcurrencyIT}, which reproduces exactly that when the
+ * lock is removed). The pass is therefore loaded under a
+ * {@code PESSIMISTIC_WRITE} lock taken by the resolving query itself
+ * ({@code find*ForUpdate}), which serializes concurrent scans of the same pass
+ * so it is consumed exactly once. A pessimistic lock is chosen over an
+ * {@code @Version} column because the latter needs a schema change, and because
+ * scans are low-volume and the locked section is short. The lock must be
+ * acquired by the query that first loads the entity — an unlocked read followed
+ * by a locking re-read would hand back the stale instance already managed in the
+ * persistence context. The lock is NOWAIT, so a scan that collides with one in
+ * flight is rejected with a retry hint rather than blocking a request thread.
+ *
+ * <p><b>Resolution.</b> A QR token identifies a pass globally (tokens are
+ * unique across tenants); a numeric code is per-tenant and recycled across
+ * passes, so it resolves to the newest row bearing it. Both paths accept a pass
+ * in any status — the status check below is what rejects it, which is what lets
+ * a guard be told "expired" rather than "not found", and lets a guest whose
+ * pass expired while they were inside still have their EXIT logged.
  *
  * <p>Guard RBAC ({@code @PreAuthorize}) and scan rate-limiting are the
  * controller's job (Task 7). Enforced here: tenant isolation, guard-to-property
@@ -51,14 +66,14 @@ import java.util.stream.Collectors;
 @Service
 public class GatePassScanService {
 
+    private static final Logger log = LoggerFactory.getLogger(GatePassScanService.class);
+
     /**
-     * Statuses a numeric code may resolve to. USED is included so a guest with a
-     * consumed SINGLE_USE pass gets "already used" (and can still scan out) rather
-     * than a misleading "not found". EXPIRED / CANCELLED passes release their code
-     * back to the pool, so resolving them by code could hit another live pass.
+     * Numeric-code resolution takes the newest row for the code and nothing else — see
+     * {@link GatePassRepository#findByNumericCodeForUpdate} for why that is both
+     * deterministic and correct despite code recycling.
      */
-    private static final EnumSet<GatePassStatus> SCANNABLE =
-            EnumSet.of(GatePassStatus.PENDING_APPROVAL, GatePassStatus.ACTIVE, GatePassStatus.USED);
+    private static final Pageable NEWEST_FIRST = PageRequest.of(0, 1);
 
     private final GatePassRepository gatePassRepository;
     private final GatePassScanRepository gatePassScanRepository;
@@ -80,15 +95,33 @@ public class GatePassScanService {
 
     @Transactional
     public ScanOutcome scan(UUID tenantId, UUID guardUserId, String qrToken, String numericCode, ScanDirection direction) {
-        Optional<GatePass> found = qrToken != null
-                ? gatePassRepository.findByQrTokenForUpdate(qrToken)
-                : gatePassRepository.findByNumericCodeForUpdate(tenantId, numericCode, SCANNABLE);
+        // One clock reading for the whole decision: two Instant.now() calls could
+        // straddle validTo, so the pass could pass the window check and then be stamped
+        // with a scan time outside it.
+        Instant now = Instant.now();
+        String lookup = qrToken != null ? "QR" : "NUMERIC";
+        Optional<GatePass> found;
+        try {
+            found = resolveForUpdate(tenantId, qrToken, numericCode);
+        } catch (PessimisticLockingFailureException e) {
+            // NOWAIT fired: another scan holds this pass's row lock. Better a "retry"
+            // than a 500 at the gate — or than blocking the request thread until the
+            // holder's transaction ends.
+            log.warn("Gate pass scan aborted: row lock held by a concurrent scan. "
+                    + "tenantId={} guardUserId={} direction={} lookup={}", tenantId, guardUserId, direction, lookup);
+            return new ScanOutcome(ScanResult.REJECTED, "scan in progress, please retry", null);
+        }
 
         // Defense in depth: the qr_token lookup is global (tokens are unique across
         // tenants), so isolation is enforced here rather than by the query. Reported as
         // "not found" so a guard cannot probe another tenant's passes for existence.
         GatePass pass = found.filter(p -> tenantId.equals(p.getTenantId())).orElse(null);
         if (pass == null) {
+            // The only decision that leaves no gate_pass_scans row (the FK needs a pass),
+            // so it is the one that has to be logged instead — otherwise token probing is
+            // invisible. Never log the token/code itself: it is the credential.
+            log.warn("Gate pass scan rejected: code did not resolve within tenant. "
+                    + "tenantId={} guardUserId={} direction={} lookup={}", tenantId, guardUserId, direction, lookup);
             return new ScanOutcome(ScanResult.REJECTED, "not found", null);
         }
 
@@ -96,7 +129,7 @@ public class GatePassScanService {
                 .map(GuardPropertyAssignment::getPropertyId)
                 .collect(Collectors.toSet());
         if (!assignedProperties.contains(pass.getPropertyId())) {
-            return reject(tenantId, guardUserId, pass, direction, "not authorized for this property");
+            return reject(tenantId, guardUserId, pass, direction, "not authorized for this property", now);
         }
 
         if (direction == ScanDirection.EXIT) {
@@ -105,9 +138,9 @@ public class GatePassScanService {
             // entry actually happened, so the log cannot record an exit without one.
             if (!gatePassScanRepository.existsByGatePassIdAndDirectionAndResult(
                     pass.getId(), ScanDirection.ENTRY, ScanResult.ALLOWED)) {
-                return reject(tenantId, guardUserId, pass, direction, "no entry recorded");
+                return reject(tenantId, guardUserId, pass, direction, "no entry recorded", now);
             }
-            record(tenantId, guardUserId, pass, ScanDirection.EXIT, ScanResult.ALLOWED, null);
+            record(tenantId, guardUserId, pass, ScanDirection.EXIT, ScanResult.ALLOWED, null, now);
             return new ScanOutcome(ScanResult.ALLOWED, null, pass);
         }
 
@@ -119,18 +152,17 @@ public class GatePassScanService {
             case ACTIVE -> null;
         };
         if (statusReason != null) {
-            return reject(tenantId, guardUserId, pass, direction, statusReason);
+            return reject(tenantId, guardUserId, pass, direction, statusReason, now);
         }
 
-        Instant now = Instant.now();
         if (now.isBefore(pass.getValidFrom())) {
             // Early, not expired — the pass must stay usable once the window opens.
-            return reject(tenantId, guardUserId, pass, direction, "outside validity window");
+            return reject(tenantId, guardUserId, pass, direction, "outside validity window", now);
         }
         if (now.isAfter(pass.getValidTo())) {
             pass.setStatus(GatePassStatus.EXPIRED);
             gatePassRepository.save(pass);
-            return reject(tenantId, guardUserId, pass, direction, "outside validity window");
+            return reject(tenantId, guardUserId, pass, direction, "outside validity window", now);
         }
 
         if (pass.getPassType() == GatePassType.SINGLE_USE) {
@@ -139,8 +171,15 @@ public class GatePassScanService {
         }
         // RECURRING passes stay ACTIVE — they are admission rights for the whole window.
 
-        record(tenantId, guardUserId, pass, ScanDirection.ENTRY, ScanResult.ALLOWED, null);
+        record(tenantId, guardUserId, pass, ScanDirection.ENTRY, ScanResult.ALLOWED, null, now);
 
+        // Runs inside the transaction, and therefore while still holding the pass's row
+        // lock. That is deliberate: a pessimistic lock is held until commit no matter
+        // where the call sits, so no reordering within this method shortens the hold —
+        // only a post-commit hook would, and that would trade atomicity (an arrival
+        // notification for a scan that rolled back, or a scan with no notification) for
+        // one INSERT's worth of lock time. Atomicity wins.
+        //
         // notifyInApp, not notify: NotificationService.mapLegacyType has no GATE_PASS_*
         // entry, so notify() would publish no EmailEvent anyway. Say what we mean.
         notificationService.notifyInApp(tenantId, pass.getCreatedByUserId(), "GATE_PASS_ARRIVAL",
@@ -150,19 +189,33 @@ public class GatePassScanService {
         return new ScanOutcome(ScanResult.ALLOWED, null, pass);
     }
 
-    private ScanOutcome reject(UUID tenantId, UUID guardUserId, GatePass pass, ScanDirection direction, String reason) {
-        record(tenantId, guardUserId, pass, direction, ScanResult.REJECTED, reason);
+    /**
+     * Loads the pass under the row lock. QR tokens are unique across all tenants so the
+     * token alone identifies the pass; numeric codes are per-tenant and recycled, hence
+     * the newest-first single-row resolution.
+     */
+    private Optional<GatePass> resolveForUpdate(UUID tenantId, String qrToken, String numericCode) {
+        if (qrToken != null) {
+            return gatePassRepository.findByQrTokenForUpdate(qrToken);
+        }
+        return gatePassRepository.findByNumericCodeForUpdate(tenantId, numericCode, NEWEST_FIRST)
+                .stream().findFirst();
+    }
+
+    private ScanOutcome reject(UUID tenantId, UUID guardUserId, GatePass pass, ScanDirection direction,
+                               String reason, Instant now) {
+        record(tenantId, guardUserId, pass, direction, ScanResult.REJECTED, reason, now);
         return new ScanOutcome(ScanResult.REJECTED, reason, pass);
     }
 
     private void record(UUID tenantId, UUID guardUserId, GatePass pass, ScanDirection direction,
-                        ScanResult result, String rejectionReason) {
+                        ScanResult result, String rejectionReason, Instant now) {
         GatePassScan scan = new GatePassScan();
         scan.setTenantId(tenantId);
         scan.setGatePassId(pass.getId());
         scan.setDirection(direction);
         scan.setScannedByUserId(guardUserId);
-        scan.setScannedAt(Instant.now());
+        scan.setScannedAt(now);
         scan.setResult(result);
         scan.setRejectionReason(rejectionReason);
         gatePassScanRepository.save(scan);

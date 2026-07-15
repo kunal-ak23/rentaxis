@@ -16,6 +16,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.CannotAcquireLockException;
+import org.springframework.data.domain.Pageable;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -93,7 +95,8 @@ class GatePassScanServiceTest {
         assertThat(scan.getRejectionReason()).isNull();
 
         verify(notificationService).notifyInApp(eq(tenantId), eq(createdBy), eq("GATE_PASS_ARRIVAL"),
-                any(), any(), eq("GATE_PASS"), eq(passId));
+                eq("Your guest has arrived"), eq("Guest Name was scanned in at the gate"),
+                eq("GATE_PASS"), eq(passId));
     }
 
     @Test
@@ -118,14 +121,27 @@ class GatePassScanServiceTest {
         when(gatePassRepository.findByQrTokenForUpdate(qrToken)).thenReturn(Optional.of(pass));
         guardIsAssignedTo(propertyId);
 
-        GatePassScanService.ScanOutcome outcome =
+        GatePassScanService.ScanOutcome first =
+                service.scan(tenantId, guardUserId, qrToken, null, ScanDirection.ENTRY);
+        // The point of RECURRING: the second visit must be allowed too. Scanning once
+        // would not distinguish this from SINGLE_USE.
+        GatePassScanService.ScanOutcome second =
                 service.scan(tenantId, guardUserId, qrToken, null, ScanDirection.ENTRY);
 
-        assertThat(outcome.result()).isEqualTo(ScanResult.ALLOWED);
-        // A RECURRING pass is never consumed — it must stay scannable for the next visit.
+        assertThat(first.result()).isEqualTo(ScanResult.ALLOWED);
+        assertThat(second.result()).isEqualTo(ScanResult.ALLOWED);
+        // Never consumed — it must stay scannable for the visit after this one.
         assertThat(pass.getStatus()).isEqualTo(GatePassStatus.ACTIVE);
         verify(gatePassRepository, never()).save(any());
-        assertThat(capturedScan().getResult()).isEqualTo(ScanResult.ALLOWED);
+
+        ArgumentCaptor<GatePassScan> captor = ArgumentCaptor.forClass(GatePassScan.class);
+        verify(gatePassScanRepository, times(2)).save(captor.capture());
+        assertThat(captor.getAllValues()).allSatisfy(scan -> {
+            assertThat(scan.getResult()).isEqualTo(ScanResult.ALLOWED);
+            assertThat(scan.getDirection()).isEqualTo(ScanDirection.ENTRY);
+        });
+        verify(notificationService, times(2)).notifyInApp(any(), any(), eq("GATE_PASS_ARRIVAL"),
+                any(), any(), any(), any());
     }
 
     @Test
@@ -304,8 +320,8 @@ class GatePassScanServiceTest {
     @Test
     void numericCodeLookupResolvesPass() {
         GatePass pass = activePass(GatePassType.SINGLE_USE);
-        when(gatePassRepository.findByNumericCodeForUpdate(eq(tenantId), eq("12345678"), any()))
-                .thenReturn(Optional.of(pass));
+        when(gatePassRepository.findByNumericCodeForUpdate(eq(tenantId), eq("12345678"), any(Pageable.class)))
+                .thenReturn(List.of(pass));
         guardIsAssignedTo(propertyId);
 
         GatePassScanService.ScanOutcome outcome =
@@ -315,6 +331,44 @@ class GatePassScanServiceTest {
         assertThat(outcome.pass()).isSameAs(pass);
         verify(gatePassRepository, never()).findByQrTokenForUpdate(any());
         verify(gatePassRepository, never()).findByTenantIdAndNumericCodeAndStatusIn(any(), any(), any());
+    }
+
+    @Test
+    void numericCodeResolutionAsksForOnlyTheNewestRow() {
+        GatePass pass = activePass(GatePassType.SINGLE_USE);
+        when(gatePassRepository.findByNumericCodeForUpdate(eq(tenantId), eq("12345678"), any(Pageable.class)))
+                .thenReturn(List.of(pass));
+        guardIsAssignedTo(propertyId);
+
+        service.scan(tenantId, guardUserId, null, "12345678", ScanDirection.ENTRY);
+
+        // Codes are recycled, so a code can legitimately match several rows. The query
+        // must ask Postgres for LIMIT 1 (newest, per the repository's ORDER BY) — a
+        // single-result finder would throw IncorrectResultSizeDataAccessException, i.e.
+        // a 500 at the gate.
+        ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
+        verify(gatePassRepository).findByNumericCodeForUpdate(eq(tenantId), eq("12345678"), captor.capture());
+        assertThat(captor.getValue().getPageSize()).isEqualTo(1);
+        assertThat(captor.getValue().getPageNumber()).isZero();
+    }
+
+    @Test
+    void lockedPassIsRejectedWithRetryRatherThanFailing() {
+        // Postgres NOWAIT surfaces as CannotAcquireLockException (a subtype of
+        // PessimisticLockingFailureException) once Spring translates SQLSTATE 55P03.
+        when(gatePassRepository.findByQrTokenForUpdate(qrToken))
+                .thenThrow(new CannotAcquireLockException("could not obtain lock on row"));
+
+        GatePassScanService.ScanOutcome outcome =
+                service.scan(tenantId, guardUserId, qrToken, null, ScanDirection.ENTRY);
+
+        // A concurrent scan holding the lock must produce a retryable answer at the
+        // gate, not a 500.
+        assertThat(outcome.result()).isEqualTo(ScanResult.REJECTED);
+        assertThat(outcome.reason()).isEqualTo("scan in progress, please retry");
+        assertThat(outcome.pass()).isNull();
+        verify(gatePassScanRepository, never()).save(any());
+        verifyNoInteractions(notificationService);
     }
 
     @Test
