@@ -54,6 +54,14 @@ import java.util.List;
  * ({@value #PARAM}), which is what ties the {@link MessageTemplateValue}s to the
  * template's components. A mismatch between these names and the approved
  * template is rejected by ACS at send time, not at startup.
+ *
+ * <p>The template's language tag is configurable
+ * ({@code GATEPASS_OTP_TEMPLATE_LANGUAGE}, default {@code en}) rather than
+ * hardcoded, because Meta's template editor emits {@code en} for "English" but
+ * {@code en_US} for "English (US)" — and templates are language-scoped, so
+ * picking the wrong one is a send-time rejection with no startup signal. Making
+ * it config means an {@code en_US} approval is an env change, not a redeploy.
+ * See {@code docs/runbooks/whatsapp-otp-setup.md}.
  */
 @Component
 @ConditionalOnProperty(name = "gatepass.otp.channel", havingValue = "whatsapp")
@@ -66,12 +74,10 @@ public class AcsWhatsAppOtpSender implements OtpSender {
      */
     private static final String PARAM = "otp";
 
-    /** WhatsApp authentication templates are language-scoped; the approved one is en. */
-    private static final String LANGUAGE = "en";
-
     private final String connectionString;
     private final String channelRegistrationId;
     private final String templateName;
+    private final String templateLanguage;
 
     private NotificationMessagesClient client;
 
@@ -79,10 +85,12 @@ public class AcsWhatsAppOtpSender implements OtpSender {
     public AcsWhatsAppOtpSender(
             @Value("${AZURE_COMMUNICATION_CONNECTION_STRING:}") String connectionString,
             @Value("${gatepass.otp.whatsapp-channel-id:}") String channelRegistrationId,
-            @Value("${gatepass.otp.template-name:gatepass_otp}") String templateName) {
+            @Value("${gatepass.otp.template-name:gatepass_otp}") String templateName,
+            @Value("${gatepass.otp.template-language:en}") String templateLanguage) {
         this.connectionString = connectionString;
         this.channelRegistrationId = channelRegistrationId;
         this.templateName = templateName;
+        this.templateLanguage = templateLanguage;
     }
 
     /**
@@ -91,34 +99,57 @@ public class AcsWhatsAppOtpSender implements OtpSender {
      * demands a real connection string, so this constructor is the only way to
      * exercise {@link #send} without standing up Azure.
      */
-    AcsWhatsAppOtpSender(NotificationMessagesClient client, String channelRegistrationId, String templateName) {
+    AcsWhatsAppOtpSender(NotificationMessagesClient client, String channelRegistrationId,
+                         String templateName, String templateLanguage) {
         this.connectionString = null;
         this.channelRegistrationId = channelRegistrationId;
         this.templateName = templateName;
+        this.templateLanguage = templateLanguage;
         this.client = client;
     }
 
     /**
-     * Builds the client if configured, and only warns if not — deliberately
-     * mirroring {@code AzureAcsEmailSender}. Missing ACS config must not stop the
-     * context: the gate pass module is one feature among many, and a deploy that
-     * forgot one env var should degrade to "OTPs fail, logged loudly", not
-     * "nobody can use RentAxis". Sends then fail fast in {@link #send}.
+     * Validates config at startup. The two settings are treated differently on
+     * purpose — the asymmetry is the whole point of this method.
      *
-     * <p>Note this is the opposite call from {@link LoggingOtpSender}'s
-     * {@code @Profile("!prod")} guard, and both are right: an unconfigured real
-     * sender fails visibly and delivers nothing, while a dev sender left on in
-     * prod would silently print live credentials to the log and look healthy.
+     * <h3>A blank channel id throws</h3>
+     * There is no configuration in which this bean exists and a blank channel id
+     * is survivable. It is {@code @ConditionalOnProperty(havingValue = "whatsapp")}
+     * -gated, so it only exists because a deploy explicitly asked for WhatsApp
+     * OTPs, and throwing here cannot reach any other feature. Warning instead
+     * produced the worst available outcome: {@code deploy.yml} and
+     * {@code docker-compose.prod.yml} both default the channel to {@code whatsapp}
+     * (so {@code application.yml}'s {@code :log} fallback — and with it
+     * {@link LoggingOtpSender}'s {@code @Profile("!prod")} guard — is dead through
+     * the deploy path), while an unset {@code ACS_WHATSAPP_CHANNEL_ID} secret
+     * renders empty. The context booted, every {@code POST /api/auth/otp/request}
+     * answered 200 and committed a {@code login_otps} row, and the send threw on a
+     * pool thread into {@link OtpDeliveryListener}'s catch — one WARN. No guard
+     * could log in, the API reported success, and because delivery is correctly
+     * after-commit, each retry burned an issuance slot: a guard tapping resend was
+     * throttled out having never seen a code. A dead feature that reports success
+     * is worse than a deploy that stops.
+     *
+     * <h3>A blank connection string only warns</h3>
+     * That credential is <b>shared</b> with
+     * {@link com.datagami.rentaxis.core.email.send.AzureAcsEmailSender}, so the
+     * "degrade, don't take down RentAxis" argument genuinely applies to it and the
+     * behaviour deliberately mirrors that sender's. Sends then fail in
+     * {@link #send}, which is why its null-client check stays.
      */
     @PostConstruct
     void init() {
+        if (channelRegistrationId == null || channelRegistrationId.isBlank()) {
+            throw new IllegalStateException(
+                    "gatepass.otp.whatsapp-channel-id (ACS_WHATSAPP_CHANNEL_ID) is not set, but "
+                            + "gatepass.otp.channel=whatsapp. Set the channel registration id from the "
+                            + "ACS resource's Channels tab - see docs/runbooks/whatsapp-otp-setup.md. "
+                            + "Refusing to start: without it no guard can log in, yet every OTP request "
+                            + "would still answer 200.");
+        }
         if (connectionString == null || connectionString.isBlank()) {
             log.warn("AZURE_COMMUNICATION_CONNECTION_STRING not set - WhatsApp OTPs will fail at send time");
             return;
-        }
-        if (channelRegistrationId == null || channelRegistrationId.isBlank()) {
-            log.warn("gatepass.otp.whatsapp-channel-id (ACS_WHATSAPP_CHANNEL_ID) not set "
-                    + "- WhatsApp OTPs will fail at send time");
         }
         client = new NotificationMessagesClientBuilder().connectionString(connectionString).buildClient();
     }
@@ -132,7 +163,7 @@ public class AcsWhatsAppOtpSender implements OtpSender {
             throw new IllegalStateException("ACS_WHATSAPP_CHANNEL_ID not set");
         }
 
-        MessageTemplate template = new MessageTemplate(templateName, LANGUAGE)
+        MessageTemplate template = new MessageTemplate(templateName, templateLanguage)
                 .setValues(List.of(
                         new MessageTemplateText(PARAM, code),
                         // The copy-code button carries the code as its payload; ACS maps
@@ -149,8 +180,11 @@ public class AcsWhatsAppOtpSender implements OtpSender {
         } catch (Exception e) {
             // Phone + error only. e.getMessage() is the ACS error, which does not
             // echo the template values back; do not widen this to log the request.
-            log.warn("otp.whatsapp.send_failed phone={} template={} error={}",
-                    phoneNumber, templateName, e.getMessage());
+            // Language is included because a name/language mismatch against the
+            // approved template (en vs en_US) is the likeliest cause and is
+            // otherwise invisible.
+            log.warn("otp.whatsapp.send_failed phone={} template={} lang={} error={}",
+                    phoneNumber, templateName, templateLanguage, e.getMessage());
             throw new IllegalStateException("WhatsApp OTP delivery failed for " + phoneNumber, e);
         }
     }

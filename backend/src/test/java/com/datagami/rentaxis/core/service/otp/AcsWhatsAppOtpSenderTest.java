@@ -49,6 +49,7 @@ class AcsWhatsAppOtpSenderTest {
     private static final String CODE = "428913";
     private static final String CHANNEL_ID = "8e1b0c1a-0000-4000-8000-abcdefabcdef";
     private static final String TEMPLATE = "gatepass_otp";
+    private static final String LANGUAGE = "en";
 
     @Mock NotificationMessagesClient client;
 
@@ -58,7 +59,7 @@ class AcsWhatsAppOtpSenderTest {
 
     @BeforeEach
     void setUp() {
-        sender = new AcsWhatsAppOtpSender(client, CHANNEL_ID, TEMPLATE);
+        sender = new AcsWhatsAppOtpSender(client, CHANNEL_ID, TEMPLATE, LANGUAGE);
 
         logs = new ListAppender<>();
         logs.start();
@@ -93,7 +94,20 @@ class AcsWhatsAppOtpSenderTest {
 
         MessageTemplate template = sent.getTemplate();
         assertThat(template.getName()).isEqualTo(TEMPLATE);
-        assertThat(template.getLanguage()).isEqualTo("en");
+        assertThat(template.getLanguage()).isEqualTo(LANGUAGE);
+    }
+
+    /**
+     * The language tag is config, not a constant: Meta emits {@code en} for
+     * "English" and {@code en_US} for "English (US)", and a template is scoped to
+     * exactly one. Nothing catches a mismatch before the send, so the value has to
+     * reach the request verbatim.
+     */
+    @Test
+    void templateLanguageIsConfigurableNotHardcodedToEn() {
+        new AcsWhatsAppOtpSender(client, CHANNEL_ID, TEMPLATE, "en_US").send(PHONE, CODE);
+
+        assertThat(captureSent().getTemplate().getLanguage()).isEqualTo("en_US");
     }
 
     @Test
@@ -166,9 +180,11 @@ class AcsWhatsAppOtpSenderTest {
 
     @Test
     void sendFailsFastWhenChannelIdIsMissing() {
-        // Startup only warns about this (see init()), so the send is where an
-        // unconfigured deploy has to surface — not silently succeed.
-        AcsWhatsAppOtpSender unconfigured = new AcsWhatsAppOtpSender(client, "  ", TEMPLATE);
+        // init() now throws on a blank channel id, so the Spring path can never
+        // reach send() in this state (see OtpSenderSelectionTest). This check is
+        // defence in depth for the package-private constructor below, which
+        // bypasses @PostConstruct — it must never silently succeed.
+        AcsWhatsAppOtpSender unconfigured = new AcsWhatsAppOtpSender(client, "  ", TEMPLATE, LANGUAGE);
 
         assertThatThrownBy(() -> unconfigured.send(PHONE, CODE))
                 .isInstanceOf(IllegalStateException.class)

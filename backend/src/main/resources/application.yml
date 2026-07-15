@@ -58,16 +58,29 @@ gatepass:
     # Delivery channel for security-guard login codes: log | whatsapp.
     #   log      -> LoggingOtpSender, prints the code (dev only, @Profile("!prod"))
     #   whatsapp -> AcsWhatsAppOtpSender, via the ACS resource below
-    # Prod MUST set this to whatsapp. Leaving it unset there resolves to `log`,
-    # whose sender is excluded under the prod profile — so no OtpSender bean
-    # exists and the context fails fast at startup. That is deliberate: the
-    # alternative is prod quietly logging every guard's live credential.
+    # The `:log` default below is a DEV default only — it is not what prod falls
+    # back to. Both deploy.yml and docker-compose.prod.yml default this var to
+    # `whatsapp` before it ever reaches here, so prod never resolves to `log`.
+    # If it somehow did, LoggingOtpSender is @Profile("!prod"), leaving no
+    # OtpSender bean and failing the context at startup — a backstop, not the
+    # working guard. The guard that actually fires in prod is the channel-id
+    # check below.
     channel: ${GATEPASS_OTP_CHANNEL:log}
-    # ACS channel registration id for the connected WhatsApp Business number.
-    # Unset -> the sender still starts (warns) and fails at send time.
+    # ACS channel registration id (a GUID) for the connected WhatsApp Business
+    # number. REQUIRED whenever channel=whatsapp: AcsWhatsAppOtpSender's
+    # @PostConstruct THROWS if this is blank, so the backend refuses to start.
+    # Deliberate — the sender is @ConditionalOnProperty-gated on whatsapp, so it
+    # cannot affect any other feature, and the alternative (warn, then boot) gave
+    # prod a green /api/auth/otp/request that no guard could ever log in through.
+    # See docs/runbooks/whatsapp-otp-setup.md.
     whatsapp-channel-id: ${ACS_WHATSAPP_CHANNEL_ID:}
     # Must match a Meta-APPROVED WhatsApp authentication template on that channel.
     template-name: ${GATEPASS_OTP_TEMPLATE_NAME:gatepass_otp}
+    # Language tag of that template. Meta's editor emits `en` for "English" and
+    # `en_US` for "English (US)"; templates are language-scoped, so a mismatch is
+    # rejected at send time with no startup signal. Config, so an en_US approval
+    # is an env change rather than a redeploy.
+    template-language: ${GATEPASS_OTP_TEMPLATE_LANGUAGE:en}
 
 cheque-extraction:
   retention-days: 90

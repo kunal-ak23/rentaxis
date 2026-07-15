@@ -52,14 +52,20 @@ services:
       - AZURE_OPENAI_CHEQUE_DEPLOYMENT=${AZURE_OPENAI_CHEQUE_DEPLOYMENT:-gpt-4o}
       - AZURE_COMMUNICATION_CONNECTION_STRING=${AZURE_COMMUNICATION_CONNECTION_STRING:-}
       - AZURE_EMAIL_SENDER=${AZURE_EMAIL_SENDER:-}
-      # Guard-login OTP delivery. The channel default MUST stay `whatsapp` here:
-      # this list is the only path from the deploy .env into the container, and
-      # anything else (including unset -> `log`) leaves prod with no OtpSender
-      # bean, because LoggingOtpSender is @Profile("!prod"). The backend then
-      # refuses to start — by design, but only if this var actually arrives.
+      # Guard-login OTP delivery. This `:-whatsapp` default means prod ALWAYS
+      # selects the real sender: application.yml's `log` fallback is unreachable
+      # through this path, and so is the @Profile("!prod") backstop behind it.
+      # The guard that actually protects this deploy is ACS_WHATSAPP_CHANNEL_ID
+      # below.
       - GATEPASS_OTP_CHANNEL=${GATEPASS_OTP_CHANNEL:-whatsapp}
+      # REQUIRED — must be set in the deploy .env BEFORE first deploy. With the
+      # channel defaulted to whatsapp above, an empty value here makes the
+      # backend refuse to start (AcsWhatsAppOtpSender's @PostConstruct throws).
+      # That is the intended behaviour: previously it booted and every guard OTP
+      # request returned 200 while no message was ever delivered.
       - ACS_WHATSAPP_CHANNEL_ID=${ACS_WHATSAPP_CHANNEL_ID:-}
       - GATEPASS_OTP_TEMPLATE_NAME=${GATEPASS_OTP_TEMPLATE_NAME:-gatepass_otp}
+      - GATEPASS_OTP_TEMPLATE_LANGUAGE=${GATEPASS_OTP_TEMPLATE_LANGUAGE:-en}
       - RENTAXIS_ENCRYPTION_KEY=${ENCRYPTION_KEY:-}
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
     deploy:

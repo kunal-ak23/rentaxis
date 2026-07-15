@@ -20,9 +20,22 @@ import org.springframework.stereotype.Component;
  * no message at all. Failing to start is the strictly better outcome.
  *
  * <p>So in prod the context refuses to start unless {@code gatepass.otp.channel}
- * explicitly names a real channel: no {@link OtpSender} bean exists, and
- * {@code OtpLoginService}'s constructor injection fails loudly at startup.
- * The prod profile string is {@code prod} (see {@code infra/envs/prod.env.template}
+ * names a real channel: no {@link OtpSender} bean exists, and
+ * {@link OtpDeliveryListener}'s constructor injection — the only required
+ * consumer of {@link OtpSender}, since {@code OtpLoginService} now publishes an
+ * event instead of sending — fails loudly at startup. Relaxing that injection to
+ * {@code ObjectProvider} or {@code required = false} would silently disarm this
+ * guard; {@code OtpSenderSelectionTest} registers the real listener so that
+ * change goes red.
+ *
+ * <p>Note this is a backstop, not the guard that fires on the real deploy path:
+ * {@code deploy.yml} and {@code docker-compose.prod.yml} both default the channel
+ * to {@code whatsapp}, so prod never resolves to {@code log} to begin with. The
+ * check that actually protects prod is {@link AcsWhatsAppOtpSender}'s startup
+ * validation of the channel id. This one covers an operator explicitly setting
+ * {@code GATEPASS_OTP_CHANNEL=log} in prod.
+ *
+ * <p>The prod profile string is {@code prod} (see {@code infra/envs/prod.env.template}
  * and {@code .github/workflows/deploy.yml}).
  */
 @Component

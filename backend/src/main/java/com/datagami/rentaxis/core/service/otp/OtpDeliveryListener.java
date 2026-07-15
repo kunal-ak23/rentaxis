@@ -76,12 +76,27 @@ public class OtpDeliveryListener {
      * the request thread so it contributes nothing to response latency (see the
      * timing-oracle note on {@link OtpLoginService}).
      *
-     * <p>Both are load-bearing. Dropping {@code @Async} keeps the row safe but
-     * puts a network round-trip back on the request path, re-widening the timing
-     * difference between a known and an unknown phone to something trivially
-     * measurable. Dropping {@code AFTER_COMMIT} for a plain {@code @EventListener}
-     * would fire the send before commit and reintroduce the rollback defect this
-     * class exists to prevent.
+     * <p>Both are load-bearing, and they defend different things — do not swap
+     * them in your head:
+     * <ul>
+     *   <li><b>{@code @Async} is what prevents the rollback defect.</b> The send
+     *       runs on {@code otpExecutor}, so a throwing sender cannot propagate
+     *       into the publisher's transaction. Dropping it puts the send back on
+     *       the caller's thread — and also puts a network round-trip back on the
+     *       request path, re-widening the known/unknown-phone timing difference to
+     *       something trivially measurable. (Note this holds because
+     *       {@code otpExecutor} logs and drops on saturation; a
+     *       {@code CallerRunsPolicy} there would hand the send back to the request
+     *       thread and quietly undo it.)</li>
+     *   <li><b>{@code AFTER_COMMIT} is what prevents delivering a code for a row
+     *       that is not durable.</b> Without it the send can race — or beat — the
+     *       commit, so a guard could receive a code whose {@code login_otps} row
+     *       never lands, leaving it unverifiable and uncounted by the throttle.</li>
+     * </ul>
+     * Neither substitutes for the other: with {@code @Async} but no
+     * {@code AFTER_COMMIT} the row still cannot be rolled back by a send failure,
+     * and with {@code AFTER_COMMIT} but no {@code @Async} the row is durable but
+     * the request thread pays for ACS.
      *
      * <p>Nothing is rethrown: this runs on a pool thread after the response is
      * already on its way, so there is no caller left to handle it, and letting it
