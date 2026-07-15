@@ -29,6 +29,12 @@ type GatePassReportRow = {
     result: ScanResult;
     rejectionReason: string | null;
     scannedByUserId: string;
+    /**
+     * Resolved server-side, and it has to be: PROPERTY_MANAGER may read this report
+     * but not /api/admin/users, so this page cannot turn an id into a person itself.
+     * Null when the server could not resolve the row — fall back to the id.
+     */
+    scannedByName: string | null;
     gatePassId: string;
     propertyId: string;
     unitNumber: string | null;
@@ -210,8 +216,14 @@ export default function GatePassReportPage() {
         // Exports every fetched row, not just the visible page — the pagination is a
         // reading aid, and an export that silently dropped 90% of the period would be
         // worse than no export.
+        //
+        // One column wider than the table: the guard's name AND their full id. The two
+        // answer different questions and neither replaces the other — a name is what a
+        // reader acts on, but names are not unique, so the id is what the row can still
+        // be joined and disambiguated by. This extends the divergence the CSV already
+        // had (full id vs the table's fragment) rather than inventing one.
         const csv = toCsv(
-            columns,
+            [...columns, t("colGuardId")],
             rows.map((r) => [
                 csvTimestamp(r.scannedAt),
                 t(r.direction),
@@ -224,8 +236,7 @@ export default function GatePassReportPage() {
                 r.purpose,
                 t(r.passType),
                 r.rejectionReason,
-                // Full id here, unlike the table's fragment: the CSV is the audit
-                // artifact, and a truncated id cannot be joined back to a user.
+                r.scannedByName,
                 r.scannedByUserId,
             ]),
         );
@@ -410,8 +421,17 @@ export default function GatePassReportPage() {
                                             <td className="px-4 py-2.5 text-xs text-muted max-w-[160px] truncate" title={row.rejectionReason ?? undefined}>
                                                 {row.rejectionReason || "—"}
                                             </td>
-                                            <td className="px-4 py-2.5 text-xs text-muted font-mono" dir="ltr">
-                                                {row.scannedByUserId.substring(0, 8)}
+                                            {/* The report's central question. The id fragment is only a
+                                                fallback for a row the server could not resolve — it was
+                                                previously all this column ever showed, which no reader
+                                                could act on. */}
+                                            <td className="px-4 py-2.5 text-xs text-muted max-w-[160px] truncate"
+                                                title={row.scannedByName ?? row.scannedByUserId}>
+                                                {row.scannedByName ?? (
+                                                    <span className="font-mono" dir="ltr">
+                                                        {row.scannedByUserId.substring(0, 8)}
+                                                    </span>
+                                                )}
                                             </td>
                                         </tr>
                                     ))}

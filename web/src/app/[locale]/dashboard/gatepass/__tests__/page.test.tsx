@@ -32,6 +32,7 @@ const sampleRows = [
         result: "ALLOWED",
         rejectionReason: null,
         scannedByUserId: "aaaaaaaa-1111-2222-3333-444444444444",
+        scannedByName: "Ravi Kumar",
         gatePassId: "gp1",
         propertyId: "prop-1",
         unitNumber: "A-204",
@@ -49,6 +50,9 @@ const sampleRows = [
         result: "REJECTED",
         rejectionReason: "Pass expired",
         scannedByUserId: "bbbbbbbb-1111-2222-3333-444444444444",
+        // Null on purpose: the server could not resolve this scanner, so this row
+        // exercises the id-fragment fallback the other one must never hit.
+        scannedByName: null,
         gatePassId: "gp2",
         propertyId: "prop-2",
         unitNumber: null,
@@ -116,6 +120,21 @@ describe("GatePassReportPage", () => {
 
         // The property filter is populated from the same fetch.
         expect(screen.getByRole("option", { name: "Belle Vue" })).toBeTruthy();
+    });
+
+    it("names the scanning guard rather than showing a UUID fragment", async () => {
+        // "Who scanned this" is what the report is for, and PROPERTY_MANAGER cannot
+        // resolve the id client-side (/api/admin/users excludes the role), so a
+        // fragment here is unreadable by design, not just ugly.
+        const { container } = render(<GatePassReportPage />);
+        await waitFor(() => expect(screen.getByText("Khan, Ahmed")).toBeTruthy());
+
+        const body = within(container.querySelector("tbody")!);
+        expect(body.getByText("Ravi Kumar")).toBeTruthy();
+        expect(body.queryByText("aaaaaaaa")).toBeNull();
+        // The second row's name is null — it falls back to the id fragment rather
+        // than rendering an empty cell or the string "null".
+        expect(body.getByText("bbbbbbbb")).toBeTruthy();
     });
 
     it("calls the report through the Next proxy with a Z-suffixed instant range", async () => {
@@ -222,21 +241,24 @@ describe("GatePassReportPage", () => {
 
         // BOM first — without it Excel renders the Arabic row as mojibake.
         expect(text.startsWith("﻿")).toBe(true);
-        // Header row == the columns the table renders, in order.
+        // Header row == the table's columns in order, plus the CSV-only guard id.
         expect(lines[0]).toBe(
             '﻿"colScannedAt","colDirection","colResult","colProperty","colUnit",' +
             '"colGuestName","colGuestPhone","colVehicle","colPurpose","colPassType",' +
-            '"colReason","colGuard"',
+            '"colReason","colGuard","colGuardId"',
         );
         // Every fetched row, not just the visible page.
         expect(lines).toHaveLength(1 + sampleRows.length);
         // The comma'd name stays one field; the embedded quotes are doubled.
         expect(lines[1]).toContain('"Khan, Ahmed"');
         expect(lines[1]).toContain('"Delivery — said ""back in 5"""');
-        // Full guard id, unlike the table's 8-char fragment.
-        expect(lines[1]).toContain('"aaaaaaaa-1111-2222-3333-444444444444"');
-        // Nullable columns render empty, not "null".
+        // Both guard columns: the name a reader acts on, and the full id the row can
+        // still be joined by — names are not unique, so neither replaces the other.
+        expect(lines[1]).toContain('"Ravi Kumar","aaaaaaaa-1111-2222-3333-444444444444"');
+        // Nullable columns render empty, not "null" — including an unresolved guard
+        // name, whose id must still be exported.
         expect(lines[2]).not.toContain("null");
+        expect(lines[2]).toContain('"","bbbbbbbb-1111-2222-3333-444444444444"');
         expect(lines[2]).toContain('"أحمد خان"');
     });
 });

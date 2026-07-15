@@ -137,9 +137,25 @@ public final class GatePassDtos {
     public record ApprovalDecision(boolean approved) {
     }
 
-    /** One scan joined to its pass — a row of the manager gate-traffic report, shaped for CSV export. */
+    /**
+     * One scan joined to its pass — a row of the manager gate-traffic report, shaped
+     * for CSV export.
+     *
+     * <p>{@code scannedByName} carries the guard's display name alongside
+     * {@code scannedByUserId}, and both stay: "who scanned this" is the question an
+     * audit report exists to answer, and the id alone cannot answer it for the role
+     * that most needs it. A PROPERTY_MANAGER is explicitly allowed on this report but
+     * cannot resolve a user id — {@code /api/admin/users} is SUPER_ADMIN/TENANT_ADMIN
+     * only — so before this field the manager's report displayed a UUID fragment and
+     * had no way to turn it into a person. The id remains because names are not
+     * unique and the CSV is an audit artifact that has to be joinable.
+     *
+     * <p>Null when the user row is gone or outside the tenant; clients fall back to
+     * the id. See {@code GatePassController.guardNames}.
+     */
     public record GatePassReportRow(UUID scanId, Instant scannedAt, ScanDirection direction, ScanResult result,
-                                    String rejectionReason, UUID scannedByUserId, UUID gatePassId, UUID propertyId,
+                                    String rejectionReason, UUID scannedByUserId, String scannedByName,
+                                    UUID gatePassId, UUID propertyId,
                                     String unitNumber, String guestName, String guestPhone, String vehicleNumber,
                                     String purpose, GatePassType passType) {
     }

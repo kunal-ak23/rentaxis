@@ -926,6 +926,106 @@ class GatePassControllerTest {
         assertThat(rows.get(0).get("unitNumber").asText()).isEqualTo("A1");
         assertThat(rows.get(0).get("result").asText()).isEqualTo("ALLOWED");
         assertThat(rows.get(0).get("direction").asText()).isEqualTo("ENTRY");
+        // "Who scanned this" is the report's whole purpose, and a PROPERTY_MANAGER
+        // cannot resolve the id itself — /api/admin/users excludes the role. Both arms
+        // of the @EnumSource must get the name from the row or the report is unreadable
+        // for one of the two roles allowed on it.
+        assertThat(rows.get(0).get("scannedByUserId").asText()).isEqualTo(guard.getId().toString());
+        assertThat(rows.get(0).get("scannedByName").asText()).isEqualTo(guard.getName());
+    }
+
+    /**
+     * The name lookup is tenant-scoped in SQL, so a scan pointing at a user outside the
+     * report's tenant resolves to no name rather than to that user's name.
+     *
+     * <p>This is the reachable half of "handle a missing user gracefully". The other
+     * half — a hard-deleted guard — is not reachable at all: {@code fk_scan_guard}
+     * RESTRICTs on user deletion by design (changeset 65), precisely so an audit row
+     * keeps its attribution; a guard with scan history is deactivated, never deleted.
+     * The null-safety in {@code guardNames} is therefore defence, and this is what it
+     * defends against.
+     *
+     * <p>Constructed by writing the scan row directly, because no API path produces a
+     * cross-tenant {@code scanned_by_user_id} — which is the point. The row must still
+     * appear (the scan is part of the trail) with a null name and no leaked identity.
+     */
+    @Test
+    void reportDoesNotNameAScanningUserFromAnotherTenant() {
+        Fixture f = makeFixture();
+        User guard = makeGuard(f.org(), f.property());
+        JsonNode pass = createPass(f, "Guest Nu", "SINGLE_USE");
+        call(HttpMethod.POST, "/api/v1/gatepass/scan", guard, scanBody(pass.get("qrToken").asText(), null, "ENTRY"));
+
+        // A user in a DIFFERENT tenant, with a name a leak would spell out.
+        LandlordOrg otherOrg = makeOrg();
+        User foreigner = makeUser(otherOrg, UserRole.SECURITY_GUARD);
+        foreigner.setName("Foreign Tenant Guard " + UUID.randomUUID());
+        foreigner = userRepo.save(foreigner);
+
+        // Re-point this tenant's scan at them. fk_scan_guard only requires the user to
+        // exist — it carries no tenant predicate — so this is what the SQL scope stops.
+        GatePassScan scan = scanRepo.findAll().stream()
+                .filter(s -> f.tenantId().equals(s.getTenantId()))
+                .findFirst().orElseThrow();
+        scan.setScannedByUserId(foreigner.getId());
+        scanRepo.save(scan);
+
+        User admin = makeUser(f.org(), UserRole.TENANT_ADMIN);
+        String window = "?from=" + Instant.now().minus(1, ChronoUnit.HOURS) + "&to="
+                + Instant.now().plus(1, ChronoUnit.HOURS);
+        ResponseEntity<String> response = call(HttpMethod.GET, "/api/v1/gatepass/report" + window, admin, null);
+        JsonNode rows = json(response);
+
+        assertThat(rows).as("the scan happened; an unresolvable scanner must not erase it").hasSize(1);
+        assertThat(rows.get(0).get("scannedByName").isNull()).isTrue();
+        assertThat(response.getBody())
+                .as("a cross-tenant name must never cross into this report")
+                .doesNotContain(foreigner.getName());
+    }
+
+    /**
+     * The N+1 guard for the report, mirroring
+     * {@link #expectedTodayResolvesPropertyNamesInOneQueryNotOnePerPass}.
+     *
+     * <p>Sharper than that one: the guard name is per-<i>scan</i>, not per-pass, and
+     * this endpoint's row count is a month of gate traffic rather than a day's board.
+     * A per-row lookup would be the biggest N+1 in the module and the least visible,
+     * because it only hurts at real data volumes.
+     */
+    @Test
+    void reportResolvesGuardNamesInOneQueryNotOnePerScan() {
+        LandlordOrg org = makeOrg();
+        Property property = makeProperty(org);
+        // Several guards, several scans each — a single-guard fixture would pass even
+        // with a per-row lookup that happened to be deduplicated.
+        for (int g = 0; g < 3; g++) {
+            User guard = makeGuard(org, property);
+            for (int i = 0; i < 3; i++) {
+                Fixture f = makeRenterWithActiveLease(org, property, "G" + g + "U" + i);
+                JsonNode pass = createPass(f, "Guest " + g + i, "SINGLE_USE");
+                call(HttpMethod.POST, "/api/v1/gatepass/scan", guard,
+                        scanBody(pass.get("qrToken").asText(), null, "ENTRY"));
+            }
+        }
+
+        User admin = makeUser(org, UserRole.TENANT_ADMIN);
+        String window = "?from=" + Instant.now().minus(1, ChronoUnit.HOURS) + "&to="
+                + Instant.now().plus(1, ChronoUnit.HOURS);
+
+        Statistics stats = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
+        stats.setStatisticsEnabled(true);
+        stats.clear();
+
+        JsonNode rows = json(call(HttpMethod.GET, "/api/v1/gatepass/report" + window, admin, null));
+        assertThat(rows).hasSize(9);
+
+        // The whole endpoint: the scan query, one batched pass lookup, one batched unit
+        // lookup, one batched guard-name lookup. Nine scans by three guards must cost
+        // the same as one.
+        assertThat(stats.getPrepareStatementCount())
+                .as("9 scans must not cost a query per row — %d statements suggests an N+1",
+                        stats.getPrepareStatementCount())
+                .isLessThanOrEqualTo(6);
     }
 
     @Test

@@ -1098,6 +1098,7 @@
       "colPassType": "Pass Type",
       "colReason": "Reason",
       "colGuard": "Scanned By",
+      "colGuardId": "Scanned By (ID)",
       "ENTRY": "Entry",
       "EXIT": "Exit",
       "ALLOWED": "Allowed",

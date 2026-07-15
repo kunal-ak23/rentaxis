@@ -317,6 +317,10 @@ public class GatePassController {
                 .stream()
                 .collect(Collectors.toMap(GatePass::getId, p -> p));
         Map<UUID, String> unitNumbers = unitNumbers(passes.values().stream().map(GatePass::getUnitId).toList());
+        // Third batched join, same reason as the other two: a month of gate traffic is
+        // thousands of scans, and the guard name is per-scan rather than per-pass, so a
+        // per-row lookup here would be the largest N+1 of the three.
+        Map<UUID, String> guardNames = guardNames(scans.stream().map(GatePassScan::getScannedByUserId).toList());
 
         List<GatePassReportRow> rows = new ArrayList<>();
         for (GatePassScan scan : scans) {
@@ -328,7 +332,8 @@ public class GatePassController {
                 continue;
             }
             rows.add(new GatePassReportRow(scan.getId(), scan.getScannedAt(), scan.getDirection(), scan.getResult(),
-                    scan.getRejectionReason(), scan.getScannedByUserId(), pass.getId(), pass.getPropertyId(),
+                    scan.getRejectionReason(), scan.getScannedByUserId(),
+                    guardNames.get(scan.getScannedByUserId()), pass.getId(), pass.getPropertyId(),
                     unitNumbers.get(pass.getUnitId()), pass.getGuestName(), pass.getGuestPhone(),
                     pass.getVehicleNumber(), pass.getPurpose(), pass.getPassType()));
         }
@@ -505,6 +510,43 @@ public class GatePassController {
         Map<UUID, String> byId = new HashMap<>();
         for (Property property : propertyRepository.findByTenantIdAndIdIn(tenantId(), distinct)) {
             byId.put(property.getId(), property.getNameEn());
+        }
+        return byId;
+    }
+
+    /**
+     * Batch display-name lookup for the guards who performed the scans, mirroring
+     * {@link #propertyNames}.
+     *
+     * <p>Exists because the report's central question is "who scanned this", and the
+     * row carried only a UUID. The role that most needs the answer is the one that
+     * cannot get it: {@code PROPERTY_MANAGER} is allowed on this report but not on
+     * {@code /api/admin/users} (SUPER_ADMIN/TENANT_ADMIN only), so resolving the id
+     * client-side 403s. Resolving it here is the only place a manager can be told.
+     *
+     * <p>Tenant-scoped in the SQL rather than relying on the {@code tenantFilter}
+     * aspect, matching {@link #propertyNames} and {@code existsByIdAndTenantId}. Note
+     * this rejects {@code UserRepository.findDisplayNameById}, which exists for
+     * exactly this shape of question but deliberately bypasses the filter with native
+     * SQL to attribute cross-tenant SUPER_ADMIN actions — and is single-id besides.
+     * A scan is always performed by a guard inside the tenant that owns it, so there
+     * is no cross-tenant case to serve here, and using that helper would trade one
+     * query for one per row while widening the read.
+     *
+     * <p>A miss — deleted user, or an id from outside the tenant — yields no entry, so
+     * the row's name is null and the client falls back to the id it still carries. It
+     * does not skip the row: a scan that happened is part of the audit trail whether
+     * or not the account behind it still exists, and dropping it would quietly shorten
+     * the report.
+     */
+    private Map<UUID, String> guardNames(List<UUID> userIds) {
+        List<UUID> distinct = userIds.stream().filter(Objects::nonNull).distinct().toList();
+        if (distinct.isEmpty()) {
+            return Map.of();
+        }
+        Map<UUID, String> byId = new HashMap<>();
+        for (User user : userRepository.findByTenantIdAndIdIn(tenantId(), distinct)) {
+            byId.put(user.getId(), user.getName());
         }
         return byId;
     }

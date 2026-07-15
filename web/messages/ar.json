@@ -1098,6 +1098,7 @@
       "colPassType": "نوع التصريح",
       "colReason": "السبب",
       "colGuard": "تم المسح بواسطة",
+      "colGuardId": "تم المسح بواسطة (المعرّف)",
       "ENTRY": "دخول",
       "EXIT": "خروج",
       "ALLOWED": "مسموح",

@@ -65,6 +65,26 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     List<User> findByTenantId(UUID tenantId);
 
+    /**
+     * Explicit tenant-scoped batch lookup by id, mirroring
+     * {@code PropertyRepository.findByTenantIdAndIdIn}.
+     *
+     * <p>Exists so the gate-pass report can resolve the scanning guard's name for a
+     * whole month of traffic in one query instead of one per scan row. Prefer this
+     * over {@link #findAllById(Iterable)} on any tenant-scoped path: a foreign id
+     * passed to that one is caught only by the {@code tenantFilter} aspect having
+     * fired, whereas the scope is in this SQL either way.
+     *
+     * <p>Distinct from {@link #findDisplayNameById}, and the difference is the
+     * point: that one deliberately bypasses the tenant filter with native SQL
+     * because SUPER_ADMIN attribution needs a cross-tenant read. Nothing on the
+     * report path does — a scan is always performed by a guard inside the tenant
+     * that owns it — so the report uses the scoped query and a foreign
+     * {@code scanned_by_user_id} resolves to no name at all rather than to a name
+     * from another tenant.
+     */
+    List<User> findByTenantIdAndIdIn(UUID tenantId, java.util.Collection<UUID> ids);
+
     List<User> findByRole(UserRole role);
 
     List<User> findByTenantIdAndRole(UUID tenantId, UserRole role);
