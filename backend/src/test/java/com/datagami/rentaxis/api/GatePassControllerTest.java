@@ -41,6 +41,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
+import java.net.URI;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
@@ -847,6 +848,62 @@ class GatePassControllerTest {
         assertThat(firstStatus).isEqualTo(200);
         // ...but a burst well past a busy gate's pace is.
         assertThat(throttled).isGreaterThan(0);
+    }
+
+    /**
+     * The filter must agree with the dispatcher about what path this is.
+     *
+     * <p>{@code getRequestURI()} is raw per the Servlet spec, while Spring routes on the
+     * decoded path — so a filter matching the raw URI against {@code /api/v1/gatepass/scan}
+     * misses {@code /api/v1/gatepass/%73can}, hands it to the chain with no bucket
+     * consumed, and the dispatcher then decodes {@code %73} to {@code s} and runs the
+     * handler anyway. That is the throttle being <i>absent</i>, not loosened, and it is
+     * exactly the enumeration the scan bucket exists to bound. StrictHttpFirewall permits
+     * {@code %73}, so nothing else catches this.
+     *
+     * <p>Parameterized over both spellings: the plain path proves the burst really does
+     * trip the limiter (guarding against a vacuous pass), the encoded one proves the
+     * bypass is closed.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"/api/v1/gatepass/scan", "/api/v1/gatepass/%73can"})
+    void scanIsRateLimitedRegardlessOfPercentEncoding(String rawPath) {
+        Fixture f = makeFixture();
+        User guard = makeGuard(f.org(), f.property());
+        String attackerIp = freshIp();
+
+        int throttled = 0;
+        int firstStatus = -1;
+        for (int i = 0; i < 60; i++) {
+            // URI, not a String template: RestClient would otherwise re-encode the '%'
+            // into '%25' and we would be testing a different path entirely.
+            ResponseEntity<String> res = client().method(HttpMethod.POST)
+                    .uri(URI.create("http://localhost:" + port + rawPath))
+                    .header("X-User-Id", guard.getId().toString())
+                    .header("X-User-Role", guard.getRole().name())
+                    .header("X-Tenant-Id", guard.getTenantId().toString())
+                    .header("X-User-Tenant-Id", guard.getTenantId().toString())
+                    .header("X-Forwarded-For", attackerIp)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(scanBody(null, String.format("%08d", i), "ENTRY"))
+                    .retrieve()
+                    .onStatus(status -> true, (req, rs) -> { })
+                    .toEntity(String.class);
+            if (firstStatus < 0) {
+                firstStatus = res.getStatusCode().value();
+            }
+            if (res.getStatusCode().value() == 429) {
+                throttled++;
+            }
+        }
+
+        // Either the encoding never reached the handler at all (404), or it did and was
+        // throttled like any other scan. What must not happen is 60 unthrottled 200s.
+        assertThat(throttled)
+                .withFailMessage("%s ran %d/60 requests with no throttling (first status %d) — the scan "
+                        + "rate limit is bypassable by percent-encoding the path", rawPath, 60 - throttled,
+                        firstStatus)
+                .isGreaterThan(0);
     }
 
     @Test
