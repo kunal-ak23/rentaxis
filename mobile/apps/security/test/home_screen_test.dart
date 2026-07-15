@@ -72,8 +72,35 @@ void main() {
       expect(find.byIcon(Icons.directions_car), findsOneWidget);
     });
 
-    testWidgets('groups by property and heads the groups when a guard is '
-        'posted to more than one', (tester) async {
+    testWidgets('names each property group when a guard is posted to more '
+        'than one', (tester) async {
+      await pumpHome(
+        tester,
+        gatePass: FakeGatePassService(expectedTodayRows: [
+          summaryFixture(
+            id: 'pass-1',
+            propertyId: 'aaaaaaaa-1111-2222-3333-444444444444',
+            propertyName: 'Marina Heights',
+            guestName: 'Ahmed Khan',
+          ),
+          summaryFixture(
+            id: 'pass-2',
+            propertyId: 'bbbbbbbb-1111-2222-3333-444444444444',
+            propertyName: 'Jumeirah Gardens',
+            guestName: 'Priya Nair',
+          ),
+        ]),
+      );
+
+      // The building's own name is the whole point: a guard walking between two
+      // gates needs the word that is on the gate, not a discriminator.
+      expect(find.text('Marina Heights'), findsOneWidget);
+      expect(find.text('Jumeirah Gardens'), findsOneWidget);
+      expect(find.textContaining('Property 1'), findsNothing);
+    });
+
+    testWidgets('falls back to the id fragment when a group carries no name',
+        (tester) async {
       await pumpHome(
         tester,
         gatePass: FakeGatePassService(expectedTodayRows: [
@@ -90,8 +117,6 @@ void main() {
         ]),
       );
 
-      // No property name exists on the guard-facing payload, so the heading can
-      // only discriminate, not name — see propertyGroupLabel.
       expect(find.textContaining('Property 1'), findsOneWidget);
       expect(find.textContaining('Property 2'), findsOneWidget);
     });

@@ -111,6 +111,7 @@ class FakeGatePassService extends GatePassApiService {
 Map<String, dynamic> summaryFixture({
   String id = 'pass-1',
   String propertyId = 'prop-1',
+  String? propertyName,
   String? unitNumber = '101',
   String? guestName = 'Ahmed Khan',
   String? guestPhone = '+971501112222',
@@ -124,6 +125,7 @@ Map<String, dynamic> summaryFixture({
   return {
     'id': id,
     'propertyId': propertyId,
+    'propertyName': propertyName,
     'unitId': 'unit-1',
     'unitNumber': unitNumber,
     'guestName': guestName,

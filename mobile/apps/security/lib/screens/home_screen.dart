@@ -122,7 +122,7 @@ class _VisitorsTab extends ConsumerWidget {
           final groups = groupByProperty(passes);
           // A guard posted to one property — nearly all of them — gets no
           // headings: with only one group the heading separates nothing, and the
-          // label it would carry is an id fragment, not a name.
+          // property is not in question at a gate you are standing at.
           final showHeadings = groups.length > 1;
 
           return ListView.builder(
@@ -138,7 +138,11 @@ class _VisitorsTab extends ConsumerWidget {
                     Padding(
                       padding: const EdgeInsets.fromLTRB(4, 12, 4, 8),
                       child: Text(
-                        propertyGroupLabel(group.propertyId, index),
+                        propertyGroupLabel(
+                          group.propertyId,
+                          index,
+                          propertyName: group.propertyName,
+                        ),
                         style: const TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w700,

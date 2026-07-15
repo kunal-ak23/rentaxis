@@ -115,9 +115,12 @@ bool isBlindedRejection(Map<String, dynamic> response) =>
 
 /// Groups today's expected visitors by the property they are expected at.
 ///
-/// Grouped by `propertyId` because it is the stable key. `GatePassSummary` now
-/// also carries `propertyName` (the building's `nameEn`), which is what the
-/// heading should show — see [propertyGroupLabel], which does not use it yet.
+/// Grouped by `propertyId` because it is the stable key, but each group also
+/// carries the `propertyName` (`GatePassSummary`'s copy of the building's
+/// `nameEn`) that [propertyGroupLabel] renders. The name is taken from the first
+/// row in the group that has one: it is a property of the group, not the row, so
+/// any row that carries it carries the same one — and an older backend that
+/// omits the field leaves it null rather than making the grouping fail.
 /// Most guards are posted to one property, where the grouping is invisible
 /// anyway.
 ///
@@ -142,23 +145,33 @@ List<PropertyGroup> groupByProperty(List<Map<String, dynamic>> passes) {
       if (bFrom == null) return -1;
       return aFrom.compareTo(bFrom);
     });
-    return PropertyGroup(propertyId: entry.key, passes: rows);
+    String? name;
+    for (final row in rows) {
+      name = passString(row, 'propertyName');
+      if (name != null) break;
+    }
+    return PropertyGroup(
+      propertyId: entry.key,
+      propertyName: name,
+      passes: rows,
+    );
   }).toList();
 }
 
-/// A heading built from the property's id.
+/// A heading naming the property a group of visitors is expected at.
 ///
-/// The short id is not meaningful to a guard — it is a discriminator, not a
-/// name. It exists so a two-property guard can at least see that these are two
-/// different gates.
+/// Uses the building's own name when `GatePassSummary` carries one — that is the
+/// word on the gate and the only version of this heading a guard can act on.
 ///
-/// **Superseded but not yet replaced.** `GatePassSummary` now carries
-/// `propertyName`, so the heading a guard actually needs is available on every
-/// row; rendering it here (and dropping the id fragment) is a deliberate
-/// follow-up, kept out of the change that added the field to keep that one to
-/// the API contract. Until it lands, a multi-property guard still reads
-/// "Property 1 · A3F2E1" at the gate.
-String propertyGroupLabel(String propertyId, int index) {
+/// Falls back to a fragment of the property's id when the name is absent (an
+/// older backend, or a property with no `nameEn`). The fragment is not meaningful
+/// — it is a discriminator, not a name — but it still lets a two-property guard
+/// see that these are two different gates, which is the minimum the heading owes
+/// them.
+String propertyGroupLabel(String propertyId, int index, {String? propertyName}) {
+  if (propertyName != null && propertyName.trim().isNotEmpty) {
+    return propertyName.trim();
+  }
   if (propertyId.isEmpty) return 'Property ${index + 1}';
   final short = propertyId.replaceAll('-', '');
   return 'Property ${index + 1} · '
@@ -167,8 +180,16 @@ String propertyGroupLabel(String propertyId, int index) {
 
 /// One property's worth of expected visitors.
 class PropertyGroup {
-  const PropertyGroup({required this.propertyId, required this.passes});
+  const PropertyGroup({
+    required this.propertyId,
+    required this.passes,
+    this.propertyName,
+  });
 
   final String propertyId;
+
+  /// The building's name, or null when the payload did not carry one.
+  final String? propertyName;
+
   final List<Map<String, dynamic>> passes;
 }

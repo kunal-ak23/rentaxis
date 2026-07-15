@@ -154,5 +154,70 @@ void main() {
     test('an empty list groups into nothing', () {
       expect(groupByProperty([]), isEmpty);
     });
+
+    test('carries the property name off the rows', () {
+      final groups = groupByProperty([
+        {'id': 'a', 'propertyId': 'p1', 'propertyName': 'Marina Heights'},
+        {'id': 'b', 'propertyId': 'p1', 'propertyName': 'Marina Heights'},
+      ]);
+
+      expect(groups.single.propertyName, 'Marina Heights');
+    });
+
+    test('takes the name from a later row when the first has none', () {
+      // The name belongs to the group, not the row, so one row omitting it must
+      // not cost the whole heading its name.
+      final groups = groupByProperty([
+        {'id': 'a', 'propertyId': 'p1'},
+        {'id': 'b', 'propertyId': 'p1', 'propertyName': 'Marina Heights'},
+      ]);
+
+      expect(groups.single.propertyName, 'Marina Heights');
+    });
+
+    test('leaves the name null when no row carries one', () {
+      final groups = groupByProperty([
+        {'id': 'a', 'propertyId': 'p1'},
+      ]);
+
+      expect(groups.single.propertyName, isNull);
+    });
+  });
+
+  group('propertyGroupLabel', () {
+    test('shows the building name when there is one', () {
+      expect(
+        propertyGroupLabel('aaaaaaaa-1111-2222', 0,
+            propertyName: 'Marina Heights'),
+        'Marina Heights',
+      );
+    });
+
+    test('prefers the name over the id fragment regardless of position', () {
+      expect(
+        propertyGroupLabel('bbbbbbbb-1111-2222', 3,
+            propertyName: 'Jumeirah Gardens'),
+        'Jumeirah Gardens',
+      );
+    });
+
+    test('falls back to the id fragment when the name is absent', () {
+      expect(
+        propertyGroupLabel('a3f2e1aa-1111-2222', 0),
+        'Property 1 · A3F2E1',
+      );
+    });
+
+    test('falls back when the name is blank rather than heading with nothing',
+        () {
+      expect(
+        propertyGroupLabel('a3f2e1aa-1111-2222', 0, propertyName: '   '),
+        'Property 1 · A3F2E1',
+      );
+    });
+
+    test('falls back to the bare ordinal when there is no id either', () {
+      expect(propertyGroupLabel('', 1), 'Property 2');
+    });
   });
 }
