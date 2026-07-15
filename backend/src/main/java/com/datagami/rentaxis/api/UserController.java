@@ -201,6 +201,7 @@ public class UserController {
             case PROPERTY_MANAGER -> 2;
             case TENANT_USER -> 3;
             case RENTER -> 4;
+            case SECURITY_GUARD -> 5;
         };
     }
 }

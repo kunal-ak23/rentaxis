@@ -5,5 +5,6 @@ public enum UserRole {
     TENANT_ADMIN,
     PROPERTY_MANAGER,
     TENANT_USER,
-    RENTER
+    RENTER,
+    SECURITY_GUARD
 }

@@ -133,3 +133,5 @@ databaseChangeLog:
       file: db/changelog/changesets/62-installment-distribution.yaml
   - include:
       file: db/changelog/changesets/63-payment-schedule-vat-amount.yaml
+  - include:
+      file: db/changelog/changesets/65-gate-pass.yaml
