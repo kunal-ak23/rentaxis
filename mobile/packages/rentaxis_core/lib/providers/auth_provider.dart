@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../api/api_client.dart';
+import '../api/otp_errors.dart';
 import '../api/services/auth_service.dart';
 import '../api/services/gate_pass_service.dart';
 import '../api/services/listing_api_service.dart';
@@ -148,6 +149,12 @@ class AuthNotifier extends StateNotifier<AuthState> {
   /// Phone-OTP login for security guards. The backend returns the same identity
   /// payload as [login], so the session is established identically — see
   /// [_establishSession].
+  ///
+  /// Unlike [login], the failure is classified rather than flattened: verify
+  /// answers 429 once the per-phone attempt cap trips, and reporting that as a
+  /// bad code tells a guard who cannot succeed for an hour to keep guessing. See
+  /// [describeOtpVerifyError] for the mapping and why the server's own 429 text
+  /// is not reused.
   Future<bool> loginWithOtp(String phone, String code) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
@@ -156,7 +163,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     } catch (e) {
       state = state.copyWith(
         isLoading: false,
-        error: 'Invalid or expired code',
+        error: describeOtpVerifyError(e),
       );
       return false;
     }
