@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.core.service;
 
+import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.domain.entity.GatePass;
 import com.datagami.rentaxis.domain.entity.enums.GatePassStatus;
@@ -28,9 +29,10 @@ import static org.mockito.Mockito.when;
 
 /**
  * Unit tests for {@link GatePassService}: pass creation (codes + window
- * validation), approval/rejection of RECURRING passes, and creator-only
- * cancellation. Lease-ownership / RBAC checks are the controller's job
- * (Task 7) and are intentionally not exercised here.
+ * validation), approval/rejection of RECURRING passes, creator-only
+ * cancellation, and tenant isolation on both approve and cancel.
+ * Role-based access and the lease-ownership check are the controller's
+ * job (Task 7) and are intentionally not exercised here.
  */
 @ExtendWith(MockitoExtension.class)
 class GatePassServiceTest {
@@ -68,13 +70,12 @@ class GatePassServiceTest {
                 GatePassType.SINGLE_USE, validFrom, validTo);
 
         assertThat(pass.getStatus()).isEqualTo(GatePassStatus.ACTIVE);
-        assertThat(pass.getQrToken()).isNotNull();
-        assertThat(pass.getQrToken().length()).isGreaterThanOrEqualTo(32);
+        assertThat(pass.getQrToken()).matches("[0-9a-f]{48}");
         assertThat(pass.getNumericCode()).matches("\\d{8}");
     }
 
     @Test
-    void recurringPassStartsPendingApprovalAndNotifies() {
+    void recurringPassStartsPendingApprovalWithoutNotifying() {
         when(gatePassRepository.existsByTenantIdAndNumericCodeAndStatusIn(any(), any(), any())).thenReturn(false);
         when(gatePassRepository.save(any(GatePass.class))).thenAnswer(inv -> inv.getArgument(0));
 
@@ -116,7 +117,7 @@ class GatePassServiceTest {
         assertThat(result.getStatus()).isEqualTo(GatePassStatus.ACTIVE);
         assertThat(result.getApprovedByUserId()).isEqualTo(approverId);
         assertThat(result.getApprovedAt()).isNotNull();
-        verify(notificationService, times(1)).notify(eq(tenantId), eq(createdBy),
+        verify(notificationService, times(1)).notifyInApp(eq(tenantId), eq(createdBy),
                 eq("GATE_PASS_APPROVED"), any(), any(), eq("GATE_PASS"), eq(passId));
     }
 
@@ -131,7 +132,7 @@ class GatePassServiceTest {
         GatePass result = service.approve(tenantId, passId, approverId, false);
 
         assertThat(result.getStatus()).isEqualTo(GatePassStatus.CANCELLED);
-        verify(notificationService, times(1)).notify(eq(tenantId), eq(createdBy),
+        verify(notificationService, times(1)).notifyInApp(eq(tenantId), eq(createdBy),
                 eq("GATE_PASS_REJECTED"), any(), any(), eq("GATE_PASS"), eq(passId));
     }
 
@@ -143,7 +144,21 @@ class GatePassServiceTest {
         when(gatePassRepository.findById(passId)).thenReturn(Optional.of(pass));
 
         assertThatThrownBy(() -> service.approve(tenantId, passId, UUID.randomUUID(), true))
-                .isInstanceOf(IllegalStateException.class);
+                .isInstanceOf(BusinessRuleViolationException.class);
+
+        verify(gatePassRepository, never()).save(any());
+        verifyNoInteractions(notificationService);
+    }
+
+    @Test
+    void approveRejectsCrossTenantPass() {
+        UUID passId = UUID.randomUUID();
+        GatePass pass = pendingPass(passId);
+        pass.setTenantId(UUID.randomUUID()); // belongs to a different tenant
+        when(gatePassRepository.findById(passId)).thenReturn(Optional.of(pass));
+
+        assertThatThrownBy(() -> service.approve(tenantId, passId, UUID.randomUUID(), true))
+                .isInstanceOf(NotFoundException.class);
 
         verify(gatePassRepository, never()).save(any());
         verifyNoInteractions(notificationService);
@@ -153,12 +168,26 @@ class GatePassServiceTest {
     void cancelRejectsAlreadyUsedPass() {
         UUID passId = UUID.randomUUID();
         GatePass pass = pendingPass(passId);
-        pass.setCreatedByUserId(createdBy);
         pass.setStatus(GatePassStatus.USED);
         when(gatePassRepository.findById(passId)).thenReturn(Optional.of(pass));
 
         assertThatThrownBy(() -> service.cancel(tenantId, passId, createdBy))
-                .isInstanceOf(IllegalStateException.class);
+                .isInstanceOf(BusinessRuleViolationException.class);
+
+        verify(gatePassRepository, never()).save(any());
+    }
+
+    @Test
+    void cancelRejectsCrossTenantPass() {
+        UUID passId = UUID.randomUUID();
+        GatePass pass = pendingPass(passId);
+        pass.setTenantId(UUID.randomUUID()); // belongs to a different tenant
+        pass.setStatus(GatePassStatus.ACTIVE);
+        when(gatePassRepository.findById(passId)).thenReturn(Optional.of(pass));
+
+        // Same creator id — only the tenant differs, so this isolates the tenant check.
+        assertThatThrownBy(() -> service.cancel(tenantId, passId, createdBy))
+                .isInstanceOf(NotFoundException.class);
 
         verify(gatePassRepository, never()).save(any());
     }
@@ -167,7 +196,6 @@ class GatePassServiceTest {
     void cancelByNonCreatorFails() {
         UUID passId = UUID.randomUUID();
         GatePass pass = pendingPass(passId);
-        pass.setCreatedByUserId(createdBy);
         pass.setStatus(GatePassStatus.ACTIVE);
         when(gatePassRepository.findById(passId)).thenReturn(Optional.of(pass));
 
@@ -175,6 +203,19 @@ class GatePassServiceTest {
         assertThatThrownBy(() -> service.cancel(tenantId, passId, otherUser))
                 .isInstanceOf(NotFoundException.class);
 
+        verify(gatePassRepository, never()).save(any());
+    }
+
+    @Test
+    void numericCodeExhaustionAfterTenAttemptsThrows() {
+        when(gatePassRepository.existsByTenantIdAndNumericCodeAndStatusIn(any(), any(), any())).thenReturn(true);
+
+        assertThatThrownBy(() -> service.create(tenantId, createdBy, propertyId, unitId,
+                "Guest Name", "+971500000000", "Delivery", null,
+                GatePassType.SINGLE_USE, validFrom, validTo))
+                .isInstanceOf(IllegalStateException.class);
+
+        verify(gatePassRepository, times(10)).existsByTenantIdAndNumericCodeAndStatusIn(any(), any(), any());
         verify(gatePassRepository, never()).save(any());
     }
 

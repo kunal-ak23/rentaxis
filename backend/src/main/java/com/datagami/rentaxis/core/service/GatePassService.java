@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.core.service;
 
+import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.domain.entity.GatePass;
 import com.datagami.rentaxis.domain.entity.enums.GatePassStatus;
@@ -17,10 +18,11 @@ import java.util.UUID;
  * Creation, approval and cancellation of {@link GatePass}es.
  *
  * <p>Scanning / redemption at the gate lives in {@code GatePassScanService}
- * (Task 4). RBAC and unit-belongs-to-renter's-lease checks are the
- * controller's job (Task 7) — this service only enforces invariants that
- * hold regardless of caller: validity window ordering, status transitions,
- * and numeric-code / QR-token uniqueness.
+ * (Task 4). Enforced here: validity-window ordering, status transitions,
+ * numeric-code / QR-token uniqueness, tenant isolation, and the
+ * creator-only rule on {@link #cancel}. Role-based access (who may approve)
+ * and the unit-belongs-to-the-renter's-lease check remain the controller's
+ * job (Task 7).
  */
 @Service
 public class GatePassService {
@@ -62,7 +64,8 @@ public class GatePassService {
         pass.setValidFrom(validFrom);
         pass.setValidTo(validTo);
         pass.setStatus(type == GatePassType.RECURRING ? GatePassStatus.PENDING_APPROVAL : GatePassStatus.ACTIVE);
-        pass.setQrToken(UUID.randomUUID().toString().replace("-", "") + Long.toHexString(RANDOM.nextLong()));
+        // 32 hex chars of UUID + a zero-padded 16-hex-char random suffix = fixed 48 chars.
+        pass.setQrToken(UUID.randomUUID().toString().replace("-", "") + String.format("%016x", RANDOM.nextLong()));
         pass.setNumericCode(uniqueNumericCode(tenantId));
 
         return gatePassRepository.save(pass);
@@ -73,14 +76,16 @@ public class GatePassService {
         GatePass pass = findInTenant(tenantId, passId);
 
         if (pass.getStatus() != GatePassStatus.PENDING_APPROVAL) {
-            throw new IllegalStateException("Gate pass is not pending approval");
+            throw new BusinessRuleViolationException("Gate pass is not pending approval");
         }
 
         pass.setStatus(approved ? GatePassStatus.ACTIVE : GatePassStatus.CANCELLED);
         pass.setApprovedByUserId(approverId);
         pass.setApprovedAt(Instant.now());
 
-        notificationService.notify(tenantId, pass.getCreatedByUserId(),
+        // notifyInApp, not notify: NotificationService.mapLegacyType has no GATE_PASS_*
+        // entry, so notify() would publish no EmailEvent anyway. Say what we mean.
+        notificationService.notifyInApp(tenantId, pass.getCreatedByUserId(),
                 approved ? "GATE_PASS_APPROVED" : "GATE_PASS_REJECTED",
                 approved ? "Gate pass approved" : "Gate pass rejected",
                 "Pass for " + pass.getGuestName(),
@@ -91,14 +96,14 @@ public class GatePassService {
 
     @Transactional
     public GatePass cancel(UUID tenantId, UUID passId, UUID requesterId) {
-        GatePass pass = gatePassRepository.findById(passId)
-                .orElseThrow(() -> new NotFoundException("Gate pass not found"));
-        if (!tenantId.equals(pass.getTenantId()) || !requesterId.equals(pass.getCreatedByUserId())) {
+        GatePass pass = findInTenant(tenantId, passId);
+        // Creator-only. 404 rather than 403 so a non-creator cannot probe for pass existence.
+        if (!requesterId.equals(pass.getCreatedByUserId())) {
             throw new NotFoundException("Gate pass not found");
         }
 
         if (pass.getStatus() == GatePassStatus.USED) {
-            throw new IllegalStateException("Gate pass has already been used");
+            throw new BusinessRuleViolationException("Gate pass has already been used");
         }
 
         pass.setStatus(GatePassStatus.CANCELLED);
@@ -115,6 +120,9 @@ public class GatePassService {
     }
 
     private String uniqueNumericCode(UUID tenantId) {
+        // The DB partial unique index uq_gate_pass_numeric_active (tenant_id, numeric_code)
+        // WHERE status IN ('PENDING_APPROVAL','ACTIVE') is the real authority; this
+        // pre-check is an optimization to avoid the common insert-conflict round trip.
         for (int attempt = 0; attempt < MAX_CODE_ATTEMPTS; attempt++) {
             String code = String.format("%08d", RANDOM.nextInt(100_000_000));
             if (!gatePassRepository.existsByTenantIdAndNumericCodeAndStatusIn(tenantId, code, NON_TERMINAL)) {
