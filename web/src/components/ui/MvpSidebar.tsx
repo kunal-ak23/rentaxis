@@ -23,6 +23,7 @@ import {
     HelpCircle,
     Building2,
     CalendarDays,
+    ScanLine,
 } from 'lucide-react';
 import Image from "next/image";
 import { Link } from "@/i18n/routing";
@@ -46,6 +47,7 @@ export default function MvpSidebar() {
     const tVendors = useTranslations("Vendors");
     const tBankAccounts = useTranslations("BankAccounts");
     const tStaff = useTranslations("Staff");
+    const tGatePass = useTranslations("GatePass");
     const pathname = usePathname();
     const [isCollapsed, setIsCollapsed] = useState(() => {
         if (typeof window !== 'undefined') {
@@ -71,6 +73,14 @@ export default function MvpSidebar() {
                 ...(isEnabled('LISTINGS') ? [{ name: "Listings", href: "/dashboard/listings", icon: Building2, tourId: 'sidebar-listings' }] : []),
                 { name: "Tickets", href: "/dashboard/tickets", icon: Wrench, tourId: 'sidebar-tickets' },
                 ...(isEnabled('MEETINGS') ? [{ name: "Meetings", href: "/dashboard/meetings", icon: CalendarDays, tourId: 'sidebar-meetings' }] : []),
+                // Not wrapped in isEnabled('GATEPASS'): no such TenantFeature exists yet
+                // (see the enum), so the hook's `features[f] ?? false` would hide this
+                // permanently. Role is the real boundary here anyway — the report's
+                // @PreAuthorize is what actually gates the data. Add the isEnabled()
+                // wrapper when the backend flag lands.
+                ...(hasPermission(userRole, 'canViewGatePassReport')
+                    ? [{ name: tGatePass("navLabel"), href: "/dashboard/gatepass", icon: ScanLine, tourId: 'sidebar-gatepass' }]
+                    : []),
             ]
             : []),
         ...(hasPermission(userRole, 'canManageTenants')
