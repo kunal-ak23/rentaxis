@@ -77,7 +77,16 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/result',
-        builder: (context, state) => const ResultScreen(),
+        // The verdict travels as `extra`, exactly like /otp's phone, and with
+        // the same consequence: a deep link, a hot reload or a process restart
+        // arrives with extra == null. There is nothing to re-fetch — a
+        // ScanResponse only exists as the answer to a scan, and re-scanning
+        // needs the pass in hand — so send the guard back to the board rather
+        // than building a verdict screen with no verdict.
+        redirect: (context, state) =>
+            state.extra is ScanResultArgs ? null : '/',
+        builder: (context, state) =>
+            ResultScreen(args: state.extra! as ScanResultArgs),
       ),
       GoRoute(
         path: '/approvals',

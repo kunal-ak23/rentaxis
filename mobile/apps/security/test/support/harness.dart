@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 import 'package:security/app.dart';
 
@@ -55,6 +56,42 @@ Future<ProviderContainer> pumpSecurityApp(
     UncontrolledProviderScope(
       container: container,
       child: const SecurityApp(),
+    ),
+  );
+  await tester.pumpAndSettle();
+  return container;
+}
+
+/// Pumps one screen with the network seam faked.
+///
+/// Unlike [pumpSecurityApp] this does NOT boot the real app. That is deliberate
+/// and the reason is narrow: booting the whole app exists to keep the auth
+/// screens honest about the router's redirect, which they interact with. The
+/// gate screens do not — they render provider state and post to a service — and
+/// reaching them through the real app would mean walking a fake login on every
+/// test for no coverage of anything the login tests do not already pin.
+///
+/// [routes] lets a test supply the router the screen under test needs (the
+/// scanner pushes /result), so navigation is still the real thing.
+Future<ProviderContainer> pumpScreen(
+  WidgetTester tester, {
+  required List<RouteBase> routes,
+  required String initialLocation,
+  List<Override> overrides = const [],
+}) async {
+  final container = ProviderContainer(overrides: overrides);
+  addTearDown(container.dispose);
+
+  await tester.pumpWidget(
+    UncontrolledProviderScope(
+      container: container,
+      child: MaterialApp.router(
+        theme: AppTheme.lightTheme,
+        routerConfig: GoRouter(
+          initialLocation: initialLocation,
+          routes: routes,
+        ),
+      ),
     ),
   );
   await tester.pumpAndSettle();
