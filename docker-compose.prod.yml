@@ -52,6 +52,14 @@ services:
       - AZURE_OPENAI_CHEQUE_DEPLOYMENT=${AZURE_OPENAI_CHEQUE_DEPLOYMENT:-gpt-4o}
       - AZURE_COMMUNICATION_CONNECTION_STRING=${AZURE_COMMUNICATION_CONNECTION_STRING:-}
       - AZURE_EMAIL_SENDER=${AZURE_EMAIL_SENDER:-}
+      # Guard-login OTP delivery. The channel default MUST stay `whatsapp` here:
+      # this list is the only path from the deploy .env into the container, and
+      # anything else (including unset -> `log`) leaves prod with no OtpSender
+      # bean, because LoggingOtpSender is @Profile("!prod"). The backend then
+      # refuses to start — by design, but only if this var actually arrives.
+      - GATEPASS_OTP_CHANNEL=${GATEPASS_OTP_CHANNEL:-whatsapp}
+      - ACS_WHATSAPP_CHANNEL_ID=${ACS_WHATSAPP_CHANNEL_ID:-}
+      - GATEPASS_OTP_TEMPLATE_NAME=${GATEPASS_OTP_TEMPLATE_NAME:-gatepass_otp}
       - RENTAXIS_ENCRYPTION_KEY=${ENCRYPTION_KEY:-}
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
     deploy:

@@ -104,6 +104,9 @@ jobs:
           AZURE_OPENAI_CHEQUE_DEPLOYMENT=${{ secrets.AZURE_OPENAI_CHEQUE_DEPLOYMENT }}
           AZURE_COMMUNICATION_CONNECTION_STRING=${{ secrets.AZURE_COMMUNICATION_CONNECTION_STRING }}
           AZURE_EMAIL_SENDER=${{ secrets.AZURE_EMAIL_SENDER }}
+          GATEPASS_OTP_CHANNEL=${{ secrets.GATEPASS_OTP_CHANNEL || 'whatsapp' }}
+          ACS_WHATSAPP_CHANNEL_ID=${{ secrets.ACS_WHATSAPP_CHANNEL_ID }}
+          GATEPASS_OTP_TEMPLATE_NAME=${{ secrets.GATEPASS_OTP_TEMPLATE_NAME || 'gatepass_otp' }}
           EOF
           sed -i 's/^[[:space:]]*//' /tmp/rentaxis.env
 

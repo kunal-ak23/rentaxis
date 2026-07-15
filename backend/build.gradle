@@ -42,6 +42,9 @@ dependencies {
 	implementation 'com.azure:azure-storage-blob:12.29.0'
 	implementation 'com.azure:azure-ai-openai:1.0.0-beta.13'
 	implementation 'com.azure:azure-communication-email:1.0.9'
+	// WhatsApp delivery for security-guard login OTPs (AcsWhatsAppOtpSender).
+	// Same ACS resource / connection string as azure-communication-email above.
+	implementation 'com.azure:azure-communication-messages:1.1.3'
 	// OkHttp-backed Azure HTTP client. The default azure-core-http-netty client
 	// is not safe for repeated/concurrent sync calls — it throws
 	// "IllegalStateException: channel not registered to an event loop" on

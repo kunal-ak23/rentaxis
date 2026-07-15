@@ -53,6 +53,22 @@ azure:
     deployment: ${AZURE_OPENAI_CHEQUE_DEPLOYMENT:gpt-4o}
     api-version: "2024-10-21"
 
+gatepass:
+  otp:
+    # Delivery channel for security-guard login codes: log | whatsapp.
+    #   log      -> LoggingOtpSender, prints the code (dev only, @Profile("!prod"))
+    #   whatsapp -> AcsWhatsAppOtpSender, via the ACS resource below
+    # Prod MUST set this to whatsapp. Leaving it unset there resolves to `log`,
+    # whose sender is excluded under the prod profile — so no OtpSender bean
+    # exists and the context fails fast at startup. That is deliberate: the
+    # alternative is prod quietly logging every guard's live credential.
+    channel: ${GATEPASS_OTP_CHANNEL:log}
+    # ACS channel registration id for the connected WhatsApp Business number.
+    # Unset -> the sender still starts (warns) and fails at send time.
+    whatsapp-channel-id: ${ACS_WHATSAPP_CHANNEL_ID:}
+    # Must match a Meta-APPROVED WhatsApp authentication template on that channel.
+    template-name: ${GATEPASS_OTP_TEMPLATE_NAME:gatepass_otp}
+
 cheque-extraction:
   retention-days: 90
   purge-cron: "0 0 3 * * *"
