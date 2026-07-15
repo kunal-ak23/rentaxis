@@ -23,6 +23,6 @@ public class GuardPropertyAssignment extends BaseTenantEntity {
     @Column(name = "property_id", nullable = false)
     private UUID propertyId;
 
-    @Column(name = "created_at", nullable = false)
+    @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 }

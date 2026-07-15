@@ -32,6 +32,6 @@ public class LoginOtp {
     @Column(name = "consumed_at")
     private Instant consumedAt;
 
-    @Column(name = "created_at", nullable = false)
+    @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 }
