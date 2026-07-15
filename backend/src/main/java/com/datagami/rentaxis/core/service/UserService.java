@@ -48,6 +48,51 @@ public class UserService {
         this.events = events;
     }
 
+    /**
+     * Whether a role gets a {@code user_tenant_memberships} row when it is
+     * created in, or moved into, a tenant.
+     *
+     * <p>True for every role that lives inside exactly one tenant. Only
+     * SUPER_ADMIN is excluded: it is cross-tenant by definition and enumerates
+     * orgs directly (see {@code AuthController.tenants}), so a membership row
+     * would be meaningless rather than merely redundant.
+     *
+     * <h2>Why this is a switch and not an if/else chain</h2>
+     * <b>Adding a value to {@link UserRole} must not compile until this method
+     * has an answer for it.</b> Being a switch over the enum with no
+     * {@code default} is the whole mechanism: the next role is a compile error
+     * here, not a bug found in production months later.
+     *
+     * <p>That is not hypothetical. SECURITY_GUARD was added and three separate
+     * role-lists were missed. Exactly one of them failed loudly and immediately —
+     * {@code UserController.privilegeRank}, because it is an exhaustive switch and
+     * the compiler refused it. The other two were if/else chains that silently
+     * took the "not a tenant role" branch:
+     * <ul>
+     *   <li>{@code ApiSecurityFilter}'s chain — silent; guard requests were
+     *       unreachable until someone used the role end-to-end.</li>
+     *   <li>this one, twice ({@code createUser} and {@code updateUser}) — silent;
+     *       guards got no membership row at all.</li>
+     * </ul>
+     * The lesson is in the scoreboard, so it is applied here rather than
+     * described: the two callers below now share one exhaustive switch, which
+     * closes both instances and the next one.
+     *
+     * <p>Role-scoped logic that this switch does NOT cover, for whoever adds the
+     * next role — each still needs its own visit:
+     * {@code UserController.privilegeRank} (exhaustive, will not compile — safe),
+     * {@code ApiSecurityFilter}'s tenant-access chain (if/else — silent),
+     * {@code UserService.createUser}'s {@code issuesInviteToken} (if/else —
+     * silent; a guard has no email, so it is correctly false for SECURITY_GUARD),
+     * and the {@code @PreAuthorize} literals across the controllers.
+     */
+    private static boolean getsTenantMembership(UserRole role) {
+        return switch (role) {
+            case TENANT_ADMIN, PROPERTY_MANAGER, TENANT_USER, RENTER, SECURITY_GUARD -> true;
+            case SUPER_ADMIN -> false;
+        };
+    }
+
     private static String generateInviteToken() {
         java.security.SecureRandom rng = new java.security.SecureRandom();
         byte[] buf = new byte[32];
@@ -108,9 +153,7 @@ public class UserService {
         }
 
         // Auto-create tenant membership for tenant-scoped roles
-        if (tenantId != null && !tenantId.isBlank()
-                && (role == UserRole.TENANT_ADMIN || role == UserRole.PROPERTY_MANAGER
-                        || role == UserRole.TENANT_USER || role == UserRole.RENTER)) {
+        if (tenantId != null && !tenantId.isBlank() && getsTenantMembership(role)) {
             addTenantMembership(saved.getId(), UUID.fromString(tenantId));
         }
 
@@ -282,9 +325,11 @@ public class UserService {
 
         User saved = userRepository.save(user);
 
-        // Auto-create tenant membership if new tenantId is provided
-        if (newTenantId != null && (role == UserRole.TENANT_ADMIN || role == UserRole.PROPERTY_MANAGER
-                || role == UserRole.TENANT_USER || role == UserRole.RENTER)) {
+        // Auto-create tenant membership if new tenantId is provided. Same rule as
+        // createUser — a guard promoted into a tenant here needs the row just as
+        // much as one created with it, and this call site had the identical
+        // SECURITY_GUARD omission.
+        if (newTenantId != null && getsTenantMembership(role)) {
             addTenantMembership(saved.getId(), newTenantId);
         }
 
