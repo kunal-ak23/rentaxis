@@ -93,6 +93,43 @@ public class GlobalExceptionHandler {
         ));
     }
 
+    /**
+     * Failed authentication → 401. Without this, the catch-all
+     * {@link #handleRuntime} below would swallow it as a 500, since
+     * BadCredentialsException is itself a RuntimeException.
+     *
+     * <p>The message is deliberately generic and never echoes {@code ex}: the
+     * throwing service uses one constant string for every failure mode, and
+     * this handler must not reintroduce a distinction it worked to remove.
+     */
+    @ExceptionHandler(org.springframework.security.authentication.BadCredentialsException.class)
+    public ResponseEntity<Map<String, Object>> handleBadCredentials(
+            org.springframework.security.authentication.BadCredentialsException ex) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
+                "error", true,
+                "message", "Invalid credentials",
+                "status", 401
+        ));
+    }
+
+    /**
+     * Honors the status carried by a ResponseStatusException (e.g. 429 from
+     * OTP throttling). Also needed to keep {@link #handleRuntime} from
+     * downgrading these to 500 — ExceptionHandlerExceptionResolver runs ahead
+     * of Spring's ResponseStatusExceptionResolver, so the catch-all wins
+     * without an explicit handler here.
+     */
+    @ExceptionHandler(org.springframework.web.server.ResponseStatusException.class)
+    public ResponseEntity<Map<String, Object>> handleResponseStatus(
+            org.springframework.web.server.ResponseStatusException ex) {
+        String reason = ex.getReason() != null ? ex.getReason() : "Request failed";
+        return ResponseEntity.status(ex.getStatusCode()).body(Map.of(
+                "error", true,
+                "message", reason,
+                "status", ex.getStatusCode().value()
+        ));
+    }
+
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<Map<String, Object>> handleRuntime(RuntimeException ex) {
         log.error("Unhandled exception", ex);

@@ -68,4 +68,16 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     List<User> findByRole(UserRole role);
 
     List<User> findByTenantIdAndRole(UUID tenantId, UserRole role);
+
+    /**
+     * Cross-tenant phone + role lookup, used by the pre-auth guard OTP login
+     * where the phone number is the only identifier available and there is no
+     * tenant context yet.
+     *
+     * <p>Returns a list because phone numbers carry no uniqueness constraint:
+     * the same number may exist on rows in different tenants. Callers must
+     * handle the multi-match case explicitly rather than assuming one row —
+     * same contract as {@link #findAllByEmail}.
+     */
+    List<User> findByPhoneNumberAndRole(String phoneNumber, UserRole role);
 }

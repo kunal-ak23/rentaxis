@@ -4,6 +4,7 @@ import com.datagami.rentaxis.api.dto.InviteTokenInfoResponse;
 import com.datagami.rentaxis.api.dto.SetPasswordRequest;
 import com.datagami.rentaxis.core.service.LandlordOrgService;
 import com.datagami.rentaxis.core.service.UserService;
+import com.datagami.rentaxis.core.service.otp.OtpLoginService;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
 import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
@@ -23,11 +24,14 @@ public class AuthController {
     private final UserService userService;
     private final LandlordOrgService orgService;
     private final PasswordEncoder passwordEncoder;
+    private final OtpLoginService otpLoginService;
 
-    public AuthController(UserService userService, LandlordOrgService orgService, PasswordEncoder passwordEncoder) {
+    public AuthController(UserService userService, LandlordOrgService orgService, PasswordEncoder passwordEncoder,
+            OtpLoginService otpLoginService) {
         this.userService = userService;
         this.orgService = orgService;
         this.passwordEncoder = passwordEncoder;
+        this.otpLoginService = otpLoginService;
     }
 
     /**
@@ -134,20 +138,30 @@ public class AuthController {
         }
 
         User authed = matched.get(0);
-        List<String> tenantIds = userService.getUserTenantIds(authed.getId())
-                .stream().map(UUID::toString).toList();
 
         if (authed.getWelcomedAt() == null) {
             userService.markWelcomed(authed.getId());
         }
 
-        return ResponseEntity.ok(new AuthResponse(
-                authed.getId().toString(),
-                authed.getEmail(),
-                authed.getName(),
-                authed.getRole().name(),
-                authed.getTenantId() != null ? authed.getTenantId().toString() : null,
-                tenantIds));
+        return ResponseEntity.ok(toAuthResponse(authed));
+    }
+
+    /**
+     * Builds the login identity payload for an already-authenticated user.
+     * Shared by password login and guard OTP login so both issue an identical
+     * shape — in particular the {@code tenantIds} membership list, which the
+     * clients store as their tenant-switcher source.
+     */
+    private AuthResponse toAuthResponse(User user) {
+        List<String> tenantIds = userService.getUserTenantIds(user.getId())
+                .stream().map(UUID::toString).toList();
+        return new AuthResponse(
+                user.getId().toString(),
+                user.getEmail(),
+                user.getName(),
+                user.getRole().name(),
+                user.getTenantId() != null ? user.getTenantId().toString() : null,
+                tenantIds);
     }
 
     @PostMapping("/register")
@@ -174,6 +188,38 @@ public class AuthController {
                 user.getRole().name(),
                 user.getTenantId() != null ? user.getTenantId().toString() : null,
                 List.of(org.getId().toString())));
+    }
+
+    // --- Security guard phone-OTP login ---
+
+    public record OtpRequestBody(String phone) {
+    }
+
+    public record OtpVerifyBody(String phone, String code) {
+    }
+
+    /**
+     * Requests a login code for a security guard's phone.
+     *
+     * <p>Always 200 for a well-formed phone, whether or not a guard exists —
+     * the response must not let an unauthenticated caller enumerate which
+     * numbers are registered. 400 for a malformed phone, 429 once rate-limited.
+     */
+    @PostMapping("/otp/request")
+    public ResponseEntity<Void> requestOtp(@RequestBody OtpRequestBody request) {
+        otpLoginService.requestOtp(request.phone());
+        return ResponseEntity.ok().build();
+    }
+
+    /**
+     * Exchanges a phone + code for the same identity payload {@code /login}
+     * returns, so the guard app stores its session exactly like the
+     * email/password clients do. 401 on any verification failure.
+     */
+    @PostMapping("/otp/verify")
+    public ResponseEntity<AuthResponse> verifyOtp(@RequestBody OtpVerifyBody request) {
+        User guard = otpLoginService.verifyOtp(request.phone(), request.code());
+        return ResponseEntity.ok(toAuthResponse(guard));
     }
 
     @GetMapping("/set-password/validate")
