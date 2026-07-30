@@ -3,7 +3,7 @@
  * Central source of truth for role-based access control in the frontend
  */
 
-export type UserRole = 'SUPER_ADMIN' | 'TENANT_ADMIN' | 'PROPERTY_MANAGER' | 'TENANT_USER' | 'RENTER';
+export type UserRole = 'SUPER_ADMIN' | 'TENANT_ADMIN' | 'PROPERTY_MANAGER' | 'SECURITY_GUARD' | 'TENANT_USER' | 'RENTER';
 
 export const PERMISSIONS = {
     canManageTenants: ['SUPER_ADMIN'] as UserRole[],
@@ -35,8 +35,9 @@ const ROLE_RANK: Record<UserRole, number> = {
     SUPER_ADMIN: 0,
     TENANT_ADMIN: 1,
     PROPERTY_MANAGER: 2,
-    TENANT_USER: 3,
-    RENTER: 4,
+    SECURITY_GUARD: 3,
+    TENANT_USER: 4,
+    RENTER: 5,
 };
 
 /**
@@ -74,6 +75,7 @@ export function getRoleLabel(role: UserRole | string): string {
         SUPER_ADMIN: 'System Admin',
         TENANT_ADMIN: 'Tenant Admin',
         PROPERTY_MANAGER: 'Property Manager',
+        SECURITY_GUARD: 'Security Guard',
         TENANT_USER: 'Tenant',
         RENTER: 'Renter',
     };
