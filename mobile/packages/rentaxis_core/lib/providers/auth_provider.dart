@@ -1,10 +1,13 @@
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../api/api_client.dart';
 import '../api/services/auth_service.dart';
+import '../api/services/gate_pass_service.dart';
 import '../api/services/listing_api_service.dart';
 import '../api/services/location_service.dart';
 import '../api/tenant_context.dart';
+import '../models/auth_response.dart';
 
 final apiClientProvider = Provider<ApiClient>((ref) => ApiClient());
 
@@ -18,6 +21,12 @@ final authServiceProvider = Provider<AuthService>((ref) {
 final listingApiServiceProvider = Provider<ListingApiService>((ref) {
   final client = ref.watch(apiClientProvider);
   return ListingApiService(client.dio);
+});
+
+/// Single shared GatePassApiService — used by the renter, manager and guard apps.
+final gatePassServiceProvider = Provider<GatePassApiService>((ref) {
+  final client = ref.watch(apiClientProvider);
+  return GatePassApiService(client.dio);
 });
 
 /// Single shared LocationService (geolocator wrapper).
@@ -126,30 +135,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<bool> login(String email, String password) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      final response = await _authService.login(email, password);
-
-      await _storage.write(key: 'userId', value: response.id);
-      await _storage.write(key: 'userRole', value: response.role);
-
-      final tenantId = response.tenantId;
-      if (tenantId != null) {
-        await _storage.write(key: 'tenantId', value: tenantId);
-        await _storage.write(key: 'userTenantId', value: tenantId);
-        TenantContext.currentTenantId = tenantId;
-      }
-
-      final tenants = await _authService.getTenants();
-
-      state = AuthState(
-        isAuthenticated: true,
-        isLoading: false,
-        userId: response.id,
-        email: response.email,
-        name: response.name,
-        role: response.role,
-        tenantId: tenantId,
-        tenants: List<Map<String, dynamic>>.from(tenants),
-      );
+      await _establishSession(await _authService.login(email, password));
       return true;
     } catch (e) {
       state = state.copyWith(
@@ -158,6 +144,54 @@ class AuthNotifier extends StateNotifier<AuthState> {
       );
       return false;
     }
+  }
+
+  /// Exchanges a Firebase Phone Authentication ID token for the guard's
+  /// RentAxis session. The backend returns the same identity payload as [login],
+  /// so both paths share [_establishSession].
+  Future<bool> loginWithFirebase(String idToken) async {
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      await _establishSession(await _authService.loginWithFirebase(idToken));
+      return true;
+    } catch (error) {
+      state = state.copyWith(
+        isLoading: false,
+        error: _firebaseLoginError(error),
+      );
+      return false;
+    }
+  }
+
+  /// Persists the identity every request is authenticated with and loads the
+  /// tenant list. Shared by [login] and [loginWithFirebase]: the identity written
+  /// here is exactly what [AuthInterceptor] reads back into the `X-User-*`
+  /// headers, so the two paths must not drift apart.
+  Future<void> _establishSession(AuthResponse response) async {
+    await _storage.write(key: 'userId', value: response.id);
+    await _storage.write(key: 'userRole', value: response.role);
+
+    final tenantId = response.tenantId;
+    if (tenantId != null) {
+      await _storage.write(key: 'tenantId', value: tenantId);
+      await _storage.write(key: 'userTenantId', value: tenantId);
+      TenantContext.currentTenantId = tenantId;
+    }
+
+    // Ordered after the writes above: this call is itself authenticated by the
+    // headers they feed.
+    final tenants = await _authService.getTenants();
+
+    state = AuthState(
+      isAuthenticated: true,
+      isLoading: false,
+      userId: response.id,
+      email: response.email,
+      name: response.name,
+      role: response.role,
+      tenantId: tenantId,
+      tenants: List<Map<String, dynamic>>.from(tenants),
+    );
   }
 
   Future<void> switchTenant(String tenantId) async {
@@ -178,6 +212,29 @@ class AuthNotifier extends StateNotifier<AuthState> {
     await _storage.delete(key: 'tenantId');
     await _storage.delete(key: 'userTenantId');
   }
+}
+
+String _firebaseLoginError(Object error) {
+  if (error is! DioException) {
+    return 'Could not complete login. Please try again.';
+  }
+  final status = error.response?.statusCode;
+  if (status == 401) {
+    return 'This phone is not assigned to an active security guard.';
+  }
+  if (status == 429) {
+    return 'Too many login attempts. Please wait and try again.';
+  }
+  if (status == 503) {
+    return 'Phone login is temporarily unavailable. Please contact support.';
+  }
+  if (error.type == DioExceptionType.connectionError ||
+      error.type == DioExceptionType.connectionTimeout ||
+      error.type == DioExceptionType.receiveTimeout ||
+      error.type == DioExceptionType.sendTimeout) {
+    return 'No connection. Check your network and try again.';
+  }
+  return 'Could not complete login. Please try again.';
 }
 
 final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {

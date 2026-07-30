@@ -23,6 +23,12 @@ export const PERMISSIONS = {
     canDownloadContracts: ['SUPER_ADMIN', 'TENANT_ADMIN', 'RENTER'] as UserRole[],
     canManageMeetings: ['SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER'] as UserRole[],
     canCreateMeetings: ['SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER', 'RENTER'] as UserRole[],
+    // Deliberately excludes SUPER_ADMIN, unlike its neighbours. This mirrors
+    // GatePassController#report's @PreAuthorize("hasAnyRole('TENANT_ADMIN','PROPERTY_MANAGER')")
+    // exactly — the gate-pass module scopes every read to a tenant, so a SUPER_ADMIN
+    // hitting it gets a 403, and offering the nav item would only surface that as a
+    // broken page. Widen this only alongside the annotation.
+    canViewGatePassReport: ['TENANT_ADMIN', 'PROPERTY_MANAGER'] as UserRole[],
 } as const;
 
 export type Permission = keyof typeof PERMISSIONS;

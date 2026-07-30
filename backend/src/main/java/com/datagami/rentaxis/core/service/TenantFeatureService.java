@@ -73,6 +73,7 @@ public class TenantFeatureService {
             case MEETINGS -> "Meetings & Scheduling";
             case EMAIL_NOTIFICATIONS -> "Email Notifications";
             case LEASE_RENEWALS -> "Lease Renewals & Reminders";
+            case GATEPASS -> "Gate Passes & Security";
         };
     }
 }

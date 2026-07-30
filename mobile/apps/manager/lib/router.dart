@@ -38,6 +38,8 @@ import 'screens/meetings_screen.dart';
 import 'screens/meeting_detail_screen.dart';
 import 'screens/create_meeting_screen.dart';
 import 'screens/cheque_scan/cheque_scan_flow_screen.dart';
+import 'screens/gatepass/gate_pass_approvals_screen.dart';
+import 'screens/gatepass/guard_management_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authProvider);
@@ -197,6 +199,18 @@ final routerProvider = Provider<GoRouter>((ref) {
                 ),
               ),
             ],
+          ),
+          // Both gate-pass screens are parameterless and re-fetch their own
+          // state, so neither passes anything through GoRouter `extra` — which
+          // this router would discard on any auth-state change, since it
+          // rebuilds on `authProvider`.
+          GoRoute(
+            path: '/gate-passes/approvals',
+            builder: (context, state) => const GatePassApprovalsScreen(),
+          ),
+          GoRoute(
+            path: '/gate-passes/guards',
+            builder: (context, state) => const GuardManagementScreen(),
           ),
           GoRoute(
             path: '/vendors',

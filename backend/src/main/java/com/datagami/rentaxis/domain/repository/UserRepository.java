@@ -65,7 +65,71 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     List<User> findByTenantId(UUID tenantId);
 
+    /**
+     * Explicit tenant-scoped batch lookup by id, mirroring
+     * {@code PropertyRepository.findByTenantIdAndIdIn}.
+     *
+     * <p>Exists so the gate-pass report can resolve the scanning guard's name for a
+     * whole month of traffic in one query instead of one per scan row. Prefer this
+     * over {@link #findAllById(Iterable)} on any tenant-scoped path: a foreign id
+     * passed to that one is caught only by the {@code tenantFilter} aspect having
+     * fired, whereas the scope is in this SQL either way.
+     *
+     * <p>Distinct from {@link #findDisplayNameById}, and the difference is the
+     * point: that one deliberately bypasses the tenant filter with native SQL
+     * because SUPER_ADMIN attribution needs a cross-tenant read. Nothing on the
+     * report path does — a scan is always performed by a guard inside the tenant
+     * that owns it — so the report uses the scoped query and a foreign
+     * {@code scanned_by_user_id} resolves to no name at all rather than to a name
+     * from another tenant.
+     */
+    List<User> findByTenantIdAndIdIn(UUID tenantId, java.util.Collection<UUID> ids);
+
     List<User> findByRole(UserRole role);
 
     List<User> findByTenantIdAndRole(UUID tenantId, UserRole role);
+
+    /**
+     * Cross-tenant phone + role lookup, used by the pre-auth guard OTP login
+     * where the phone number is the only identifier available and there is no
+     * tenant context yet.
+     *
+     * <p>Returns a list because phone numbers carry no uniqueness constraint:
+     * the same number may exist on rows in different tenants. Callers must
+     * handle the multi-match case explicitly rather than assuming one row —
+     * same contract as {@link #findAllByEmail}.
+     */
+    List<User> findByPhoneNumberAndRole(String phoneNumber, UserRole role);
+
+    /**
+     * Pre-check for {@code uq_users_guard_phone} (changeset 65).
+     *
+     * <p><b>Deliberately not tenant-scoped.</b> That index is
+     * {@code ON users(phone_number) WHERE role='SECURITY_GUARD'} with no tenant
+     * predicate, so a guard phone is unique <i>globally</i>, not per tenant. A
+     * tenant-scoped pre-check would pass and then let the INSERT fail anyway,
+     * which is the whole failure mode this exists to give a decent message for.
+     * Match the index or do not bother.
+     *
+     * <p><b>This cannot be the guarantee, only the message.</b> Two things get
+     * past it, so {@code UserService} must still translate the violation the
+     * index throws:
+     * <ul>
+     *   <li>It is read-then-write, so two concurrent creates both see false.</li>
+     *   <li>{@link User} extends {@code BaseTenantEntity}, so this derived query
+     *       is subject to {@code tenantFilter} whenever {@code TenantAspect} has
+     *       enabled it — while the index is global. A TENANT_ADMIN creating a
+     *       guard whose number is already a guard's in another tenant thus sees
+     *       false here and fails at the INSERT. That is ordinary production
+     *       behaviour, not a race.</li>
+     * </ul>
+     */
+    boolean existsByPhoneNumberAndRole(String phoneNumber, UserRole role);
+
+    /**
+     * As {@link #existsByPhoneNumberAndRole}, excluding one row — the update-path
+     * variant, so a guard keeping their own number is not a conflict with
+     * themselves.
+     */
+    boolean existsByPhoneNumberAndRoleAndIdNot(String phoneNumber, UserRole role, UUID id);
 }

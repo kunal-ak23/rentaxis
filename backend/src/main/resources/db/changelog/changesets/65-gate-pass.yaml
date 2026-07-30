@@ -1,0 +1,85 @@
+databaseChangeLog:
+  - changeSet:
+      id: 65-gate-pass
+      author: rentaxis-system
+      changes:
+        # fk_gate_pass_creator (created_by_user_id) deliberately RESTRICTs on user
+        # deletion (no cascade): passes are audit records of who admitted a guest.
+        # Audit retention wins — a renter/user with pass history must be
+        # deactivated (status change), not hard-deleted. Same reasoning as
+        # meetings.host_user_id in changeset 57.
+        - createTable:
+            tableName: gate_passes
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: property_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_gate_pass_property, referencedTableName: properties, referencedColumnNames: id } }
+              - column: { name: unit_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_gate_pass_unit, referencedTableName: units, referencedColumnNames: id } }
+              - column: { name: created_by_user_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_gate_pass_creator, referencedTableName: users, referencedColumnNames: id } }
+              - column: { name: guest_name, type: varchar(160), constraints: { nullable: false } }
+              - column: { name: guest_phone, type: varchar(32), constraints: { nullable: false } }
+              - column: { name: purpose, type: varchar(240) }
+              - column: { name: vehicle_number, type: varchar(32) }
+              - column: { name: pass_type, type: varchar(20), constraints: { nullable: false } }
+              - column: { name: valid_from, type: timestamptz, constraints: { nullable: false } }
+              - column: { name: valid_to, type: timestamptz, constraints: { nullable: false } }
+              - column: { name: status, type: varchar(24), constraints: { nullable: false } }
+              - column: { name: qr_token, type: varchar(64), constraints: { nullable: false, unique: true } }
+              - column: { name: numeric_code, type: varchar(8), constraints: { nullable: false } }
+              - column: { name: approved_by_user_id, type: uuid }
+              - column: { name: approved_at, type: timestamptz }
+              - column: { name: created_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
+              - column: { name: updated_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
+        - createIndex: { tableName: gate_passes, indexName: idx_gate_pass_tenant, columns: [ { column: { name: tenant_id } } ] }
+        - createIndex: { tableName: gate_passes, indexName: idx_gate_pass_property_window, columns: [ { column: { name: property_id } }, { column: { name: valid_from } } ] }
+        - createIndex: { tableName: gate_passes, indexName: idx_gate_pass_creator, columns: [ { column: { name: created_by_user_id } } ] }
+        - sql:
+            splitStatements: false
+            sql: |
+              CREATE UNIQUE INDEX uq_gate_pass_numeric_active ON gate_passes (tenant_id, numeric_code) WHERE status IN ('PENDING_APPROVAL','ACTIVE');
+        # fk_scan_guard (scanned_by_user_id) deliberately RESTRICTs on user
+        # deletion (no cascade): scans are the gate audit trail. Audit retention
+        # wins — a guard with scan history must be deactivated (status change),
+        # not hard-deleted. Same reasoning as meetings.host_user_id in
+        # changeset 57.
+        - createTable:
+            tableName: gate_pass_scans
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: gate_pass_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_scan_gate_pass, referencedTableName: gate_passes, referencedColumnNames: id } }
+              - column: { name: direction, type: varchar(8), constraints: { nullable: false } }
+              - column: { name: scanned_by_user_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_scan_guard, referencedTableName: users, referencedColumnNames: id } }
+              - column: { name: scanned_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
+              - column: { name: result, type: varchar(12), constraints: { nullable: false } }
+              - column: { name: rejection_reason, type: varchar(120) }
+        - createIndex: { tableName: gate_pass_scans, indexName: idx_scan_pass, columns: [ { column: { name: gate_pass_id } } ] }
+        - createIndex: { tableName: gate_pass_scans, indexName: idx_scan_tenant_time, columns: [ { column: { name: tenant_id } }, { column: { name: scanned_at } } ] }
+        # fk_gpa_user / fk_gpa_property cascade on delete: assignments are pure
+        # join rows, not audit data. UserService.deleteUser hard-deletes users,
+        # so without cascade, deleting a guard would 500 on the FK (same bug
+        # class changesets 55/57 fixed).
+        - createTable:
+            tableName: guard_property_assignments
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: user_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_gpa_user, referencedTableName: users, referencedColumnNames: id, deleteCascade: true } }
+              - column: { name: property_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_gpa_property, referencedTableName: properties, referencedColumnNames: id, deleteCascade: true } }
+              - column: { name: created_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
+        - addUniqueConstraint: { tableName: guard_property_assignments, columnNames: "user_id, property_id", constraintName: uq_gpa_user_property }
+        - createTable:
+            tableName: login_otps
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: phone_number, type: varchar(32), constraints: { nullable: false } }
+              - column: { name: code_hash, type: varchar(72), constraints: { nullable: false } }
+              - column: { name: expires_at, type: timestamptz, constraints: { nullable: false } }
+              - column: { name: attempt_count, type: int, constraints: { nullable: false }, defaultValueNumeric: 0 }
+              - column: { name: consumed_at, type: timestamptz }
+              - column: { name: created_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
+        - createIndex: { tableName: login_otps, indexName: idx_login_otp_phone, columns: [ { column: { name: phone_number } }, { column: { name: created_at } } ] }
+        - sql:
+            splitStatements: false
+            sql: |
+              CREATE UNIQUE INDEX uq_users_guard_phone ON users (phone_number) WHERE role = 'SECURITY_GUARD';

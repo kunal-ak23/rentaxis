@@ -21,6 +21,17 @@ class AuthService {
     return AuthResponse.fromJson(response.data);
   }
 
+  /// Exchanges a Firebase Phone Authentication ID token for a RentAxis guard
+  /// session. Firebase has already verified the SMS code on the device; the
+  /// backend independently verifies this signed token before trusting its
+  /// phone-number claim.
+  Future<AuthResponse> loginWithFirebase(String idToken) async {
+    final response = await _dio.post('/v1/auth/firebase', data: {
+      'idToken': idToken,
+    });
+    return AuthResponse.fromJson(response.data);
+  }
+
   Future<Map<String, dynamic>> getProfile() async {
     final response = await _dio.get('/auth/me');
     return response.data;

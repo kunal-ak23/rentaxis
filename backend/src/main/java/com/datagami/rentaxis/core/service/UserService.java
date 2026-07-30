@@ -7,6 +7,7 @@ import com.datagami.rentaxis.core.email.event.payload.StaffRoleChangedPayload;
 import com.datagami.rentaxis.core.email.event.payload.TenantAdminAddedPayload;
 import com.datagami.rentaxis.core.email.event.payload.UserInvitedPayload;
 import com.datagami.rentaxis.core.email.event.payload.UserWelcomedPayload;
+import com.datagami.rentaxis.core.util.PhoneNumbers;
 import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.UserPropertyAssignment;
 import com.datagami.rentaxis.domain.entity.UserTenantMembership;
@@ -48,6 +49,115 @@ public class UserService {
         this.events = events;
     }
 
+    /**
+     * Whether a role gets a {@code user_tenant_memberships} row when it is
+     * created in, or moved into, a tenant.
+     *
+     * <p>True for every role that lives inside exactly one tenant. Only
+     * SUPER_ADMIN is excluded: it is cross-tenant by definition and enumerates
+     * orgs directly (see {@code AuthController.tenants}), so a membership row
+     * would be meaningless rather than merely redundant.
+     *
+     * <h2>Why this is a switch and not an if/else chain</h2>
+     * <b>Adding a value to {@link UserRole} must not compile until this method
+     * has an answer for it.</b> Being a switch over the enum with no
+     * {@code default} is the whole mechanism: the next role is a compile error
+     * here, not a bug found in production months later.
+     *
+     * <p>That is not hypothetical. SECURITY_GUARD was added and three separate
+     * role-lists were missed. Exactly one of them failed loudly and immediately —
+     * {@code UserController.privilegeRank}, because it is an exhaustive switch and
+     * the compiler refused it. The other two were if/else chains that silently
+     * took the "not a tenant role" branch:
+     * <ul>
+     *   <li>{@code ApiSecurityFilter}'s chain — silent; guard requests were
+     *       unreachable until someone used the role end-to-end.</li>
+     *   <li>this one, twice ({@code createUser} and {@code updateUser}) — silent;
+     *       guards got no membership row at all.</li>
+     * </ul>
+     * The lesson is in the scoreboard, so it is applied here rather than
+     * described: the two callers below now share one exhaustive switch, which
+     * closes both instances and the next one.
+     *
+     * <p>Role-scoped logic that this switch does NOT cover, for whoever adds the
+     * next role — each still needs its own visit:
+     * {@code UserController.privilegeRank} (exhaustive, will not compile — safe),
+     * {@code ApiSecurityFilter}'s tenant-access chain (if/else — silent),
+     * {@code UserService.createUser}'s {@code issuesInviteToken} (if/else —
+     * silent; a guard has no email, so it is correctly false for SECURITY_GUARD),
+     * and the {@code @PreAuthorize} literals across the controllers.
+     */
+    private static boolean getsTenantMembership(UserRole role) {
+        return switch (role) {
+            case TENANT_ADMIN, PROPERTY_MANAGER, TENANT_USER, RENTER, SECURITY_GUARD -> true;
+            case SUPER_ADMIN -> false;
+        };
+    }
+
+    /**
+     * The index name from changeset 65. Postgres names the violated constraint in
+     * the error text, which is how the cause chain below is read.
+     */
+    private static final String GUARD_PHONE_INDEX = "uq_users_guard_phone";
+
+    private static final String GUARD_PHONE_TAKEN =
+            "A security guard with this phone number already exists.";
+
+    /**
+     * Whether this integrity violation is the guard-phone index rather than an
+     * email one.
+     *
+     * <p>This matters more than a normal belt-and-braces fallback. The pre-checks
+     * in {@code createUser}/{@code updateUser} are read-then-write and cannot be
+     * anything else, so two concurrent creates of the same guard phone both see
+     * "free" and one reaches the INSERT. The index catches it — and without this,
+     * that caller is told their <i>email</i> is duplicated, which is the exact
+     * mis-diagnosis this change exists to remove. The pre-check gives the good
+     * message on the common path; this keeps it truthful on the racy one.
+     *
+     * <p>Matches on the index name in the cause chain rather than casting to
+     * Hibernate's {@code ConstraintViolationException}: the name is stable (it is
+     * ours, pinned in a migration), whereas the exception plumbing is not.
+     */
+    private static boolean isGuardPhoneViolation(Throwable t) {
+        for (Throwable c = t; c != null; c = c.getCause()) {
+            if (c.getMessage() != null && c.getMessage().contains(GUARD_PHONE_INDEX)) {
+                return true;
+            }
+            if (c.getCause() == c) {
+                break; // self-referencing cause; nothing more to walk
+            }
+        }
+        return false;
+    }
+
+    /**
+     * The password hash a SECURITY_GUARD gets: an encoding of fresh random bytes
+     * that is thrown away the moment it is computed.
+     *
+     * <p>Guards authenticate by phone OTP only — {@code AuthController.login}
+     * rejects the role outright — so a guard's password is not a credential, it is
+     * an artifact of {@code password_hash} being NOT NULL. Generating it here means
+     * no caller ever chooses it, closing the gap where an API client provisioning a
+     * guard with a password it knows created a credential that mattered. The manager
+     * app already generated a random secret client-side for exactly this reason;
+     * that made it a client's choice to keep making. Now it is the server's rule,
+     * and {@code rawPassword} is simply ignored for this role.
+     *
+     * <p>Null is deliberately not an option: the column forbids it, and a caller
+     * that "helpfully" relaxed the constraint would turn every guard row into an
+     * account with no password rather than an unusable one.
+     *
+     * <p>This is defence in depth behind the {@code /login} gate, not a substitute
+     * for it. If it were the only protection, anyone who could read a hash offline
+     * would still be attacking a real login path.
+     */
+    private static String generateUnusableGuardSecret() {
+        byte[] buf = new byte[32];
+        new java.security.SecureRandom().nextBytes(buf);
+        return java.util.Base64.getEncoder().encodeToString(buf);
+    }
+
     private static String generateInviteToken() {
         java.security.SecureRandom rng = new java.security.SecureRandom();
         byte[] buf = new byte[32];
@@ -63,6 +173,12 @@ public class UserService {
         String normalizedEmail = email.toLowerCase().trim();
         UUID tenantUuid = (tenantId != null && !tenantId.isBlank()) ? UUID.fromString(tenantId) : null;
 
+        // Normalize BEFORE the uniqueness pre-check and before persisting: the
+        // stored value is what FirebaseGuardAuthService matches its normalized login
+        // input against, so storing "+971 50 123 4567" here is a guard who can
+        // never log in and never learns why. See PhoneNumbers.
+        String normalizedPhone = PhoneNumbers.normalizeForRole(phoneNumber, role);
+
         // Post-migration 59: emails are unique per tenant, with SUPER_ADMINs
         // (tenant_id IS NULL) globally unique among themselves.
         boolean emailTaken = (tenantUuid == null)
@@ -75,12 +191,25 @@ public class UserService {
                             : "A user with this email already exists in this tenant.");
         }
 
+        // Same shape as the email pre-check above, for the other unique index on
+        // this table. Without it, the guard-phone collision below surfaced as
+        // "A user with this email already exists" — a 400 naming a field the
+        // caller had not duplicated.
+        if (role == UserRole.SECURITY_GUARD && normalizedPhone != null
+                && userRepository.existsByPhoneNumberAndRole(normalizedPhone, UserRole.SECURITY_GUARD)) {
+            throw new IllegalArgumentException(GUARD_PHONE_TAKEN);
+        }
+
         User user = new User();
         user.setEmail(normalizedEmail);
-        user.setPasswordHash(passwordEncoder.encode(rawPassword));
+        // A guard's rawPassword is ignored, whatever the caller passed — see
+        // generateUnusableGuardSecret. This also makes a null rawPassword safe for
+        // the one role that has no use for one.
+        user.setPasswordHash(passwordEncoder.encode(
+                role == UserRole.SECURITY_GUARD ? generateUnusableGuardSecret() : rawPassword));
         user.setName(name);
         user.setRole(role);
-        user.setPhoneNumber(phoneNumber);
+        user.setPhoneNumber(normalizedPhone);
         user.setTenantId(tenantUuid);
 
         boolean issuesInviteToken = role == UserRole.RENTER
@@ -91,15 +220,30 @@ public class UserService {
             user.setInviteTokenExpiresAt(java.time.Instant.now().plus(java.time.Duration.ofDays(7)));
         }
 
-        // The existsBy check above is a happy-path message-quality guard, but
-        // it's TOCTOU against the DB-level partial unique indexes added in
-        // migration 59. Catch the race here and translate the
+        // The existsBy checks above are happy-path message-quality guards, but
+        // they're TOCTOU against the DB-level partial unique indexes (migration
+        // 59 for email, 65 for guard phone). Catch the race here and translate the
         // DataIntegrityViolationException so callers see the same 400-friendly
         // IllegalArgumentException instead of a 500.
+        //
+        // Two indexes can fail this INSERT, so the message has to ask which one
+        // did. Assuming email — as this did — is how a duplicate guard phone came
+        // back as an email conflict.
+        //
+        // saveAndFlush, not save: the id is generated in memory, so Hibernate is
+        // free to batch the INSERT and execute it at some later auto-flush or at
+        // commit — i.e. AFTER this catch has gone out of scope, which made this
+        // translation unreachable and surfaced a raw DataIntegrityViolationException
+        // (a 500) instead. Flushing here is what puts the violation inside the try.
+        // Verified by UserServicePhoneNormalizationIT's cross-tenant case, which
+        // fails with the raw exception if this is weakened back to save().
         User saved;
         try {
-            saved = userRepository.save(user);
+            saved = userRepository.saveAndFlush(user);
         } catch (org.springframework.dao.DataIntegrityViolationException e) {
+            if (isGuardPhoneViolation(e)) {
+                throw new IllegalArgumentException(GUARD_PHONE_TAKEN, e);
+            }
             throw new IllegalArgumentException(
                     tenantUuid == null
                             ? "A SUPER_ADMIN with this email already exists."
@@ -108,9 +252,7 @@ public class UserService {
         }
 
         // Auto-create tenant membership for tenant-scoped roles
-        if (tenantId != null && !tenantId.isBlank()
-                && (role == UserRole.TENANT_ADMIN || role == UserRole.PROPERTY_MANAGER
-                        || role == UserRole.TENANT_USER || role == UserRole.RENTER)) {
+        if (tenantId != null && !tenantId.isBlank() && getsTenantMembership(role)) {
             addTenantMembership(saved.getId(), UUID.fromString(tenantId));
         }
 
@@ -267,11 +409,21 @@ public class UserService {
             }
         }
 
+        // Same rule as createUser — an edited guard is exactly as unreachable as a
+        // badly created one, and re-roling a user into SECURITY_GUARD arrives here
+        // with a phone that has never been checked against E.164.
+        String normalizedPhone = PhoneNumbers.normalizeForRole(phoneNumber, role);
+        if (role == UserRole.SECURITY_GUARD && normalizedPhone != null
+                && userRepository.existsByPhoneNumberAndRoleAndIdNot(
+                        normalizedPhone, UserRole.SECURITY_GUARD, id)) {
+            throw new IllegalArgumentException(GUARD_PHONE_TAKEN);
+        }
+
         UserRole previousRole = user.getRole();
         user.setEmail(normalizedEmail);
         user.setName(name);
         user.setRole(role);
-        user.setPhoneNumber(phoneNumber);
+        user.setPhoneNumber(normalizedPhone);
 
         UUID newTenantId = (tenantId != null && !tenantId.isBlank()) ? UUID.fromString(tenantId) : null;
         user.setTenantId(newTenantId);
@@ -280,11 +432,30 @@ public class UserService {
             user.setPasswordHash(passwordEncoder.encode(rawPassword));
         }
 
-        User saved = userRepository.save(user);
+        // Same translation as createUser, and saveAndFlush for the same reason —
+        // see that method. The pre-check above is tenant-filtered while
+        // uq_users_guard_phone is global, so an edit that collides with a guard in
+        // ANOTHER tenant reaches the UPDATE, which this path never translated at
+        // all and surfaced as a raw 500.
+        User saved;
+        try {
+            saved = userRepository.saveAndFlush(user);
+        } catch (org.springframework.dao.DataIntegrityViolationException e) {
+            if (isGuardPhoneViolation(e)) {
+                throw new IllegalArgumentException(GUARD_PHONE_TAKEN, e);
+            }
+            throw new IllegalArgumentException(
+                    newTenantId == null
+                            ? "A SUPER_ADMIN with this email already exists."
+                            : "A user with this email already exists in this tenant.",
+                    e);
+        }
 
-        // Auto-create tenant membership if new tenantId is provided
-        if (newTenantId != null && (role == UserRole.TENANT_ADMIN || role == UserRole.PROPERTY_MANAGER
-                || role == UserRole.TENANT_USER || role == UserRole.RENTER)) {
+        // Auto-create tenant membership if new tenantId is provided. Same rule as
+        // createUser — a guard promoted into a tenant here needs the row just as
+        // much as one created with it, and this call site had the identical
+        // SECURITY_GUARD omission.
+        if (newTenantId != null && getsTenantMembership(role)) {
             addTenantMembership(saved.getId(), newTenantId);
         }
 

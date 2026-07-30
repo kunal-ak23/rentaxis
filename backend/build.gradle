@@ -42,6 +42,9 @@ dependencies {
 	implementation 'com.azure:azure-storage-blob:12.29.0'
 	implementation 'com.azure:azure-ai-openai:1.0.0-beta.13'
 	implementation 'com.azure:azure-communication-email:1.0.9'
+	// Verifies Firebase Phone Authentication ID tokens presented by the
+	// standalone security-guard app.
+	implementation 'com.google.firebase:firebase-admin:9.10.0'
 	// OkHttp-backed Azure HTTP client. The default azure-core-http-netty client
 	// is not safe for repeated/concurrent sync calls — it throws
 	// "IllegalStateException: channel not registered to an event loop" on
@@ -72,4 +75,9 @@ dependencies {
 
 tasks.named('test') {
 	useJUnitPlatform()
+	// Gradle defaults test workers to 512m, which the full suite now exhausts:
+	// several @SpringBootTest contexts plus the Testcontainers integration tests
+	// (GatePassScanConcurrencyIT, OtpLoginRollbackIT) exceed it and the worker
+	// dies with OutOfMemoryError part-way through rather than reporting failures.
+	maxHeapSize = '2g'
 }

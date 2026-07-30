@@ -2,8 +2,10 @@ package com.datagami.rentaxis.api;
 
 import com.datagami.rentaxis.api.dto.InviteTokenInfoResponse;
 import com.datagami.rentaxis.api.dto.SetPasswordRequest;
+import com.datagami.rentaxis.core.service.auth.FirebaseGuardAuthService;
 import com.datagami.rentaxis.core.service.LandlordOrgService;
 import com.datagami.rentaxis.core.service.UserService;
+import com.datagami.rentaxis.core.util.PhoneNumbers;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
 import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
@@ -23,11 +25,14 @@ public class AuthController {
     private final UserService userService;
     private final LandlordOrgService orgService;
     private final PasswordEncoder passwordEncoder;
+    private final FirebaseGuardAuthService firebaseGuardAuthService;
 
-    public AuthController(UserService userService, LandlordOrgService orgService, PasswordEncoder passwordEncoder) {
+    public AuthController(UserService userService, LandlordOrgService orgService, PasswordEncoder passwordEncoder,
+            FirebaseGuardAuthService firebaseGuardAuthService) {
         this.userService = userService;
         this.orgService = orgService;
         this.passwordEncoder = passwordEncoder;
+        this.firebaseGuardAuthService = firebaseGuardAuthService;
     }
 
     /**
@@ -88,7 +93,41 @@ public class AuthController {
         // "unknown email" timing close to the "wrong password" timing. Multi-
         // candidate paths still leak that N > 1 via response time, but never
         // tenant identity — an acceptable trade-off vs. the previous oracle.
-        List<User> candidates = userService.findAllByEmail(request.email());
+        //
+        // SECURITY_GUARDs are dropped here, at the candidate stage, and the
+        // placement is the whole mechanism — see below.
+        List<User> candidates = userService.findAllByEmail(request.email()).stream()
+                .filter(u -> u.getRole() != UserRole.SECURITY_GUARD)
+                .toList();
+
+        // Why guards are excluded at all: createUser hashes whatever password it
+        // is given, so every guard row has a real, matchable password_hash. The
+        // only thing that kept guards off this endpoint was the manager app
+        // choosing to generate a random secret and discard it — a client-side
+        // accident holding up a server-side guarantee. A guard who reaches this
+        // endpoint bypasses Firebase's proof that the caller controls the
+        // registered phone. Guards authenticate at /api/v1/auth/firebase and nowhere
+        // else.
+        //
+        // Why the filter is HERE and not a check further down:
+        //
+        //   - A guard-only email leaves candidates empty, so it falls into the
+        //     zero-candidate branch below and absorbs exactly one DUMMY_HASH
+        //     bcrypt before its 401 — the same work, the same status and the
+        //     same empty body as an unknown email, which is already engineered
+        //     to match the wrong-password path. There is no separate guard
+        //     branch to time, because there is no separate guard branch.
+        //   - An explicit "guards must use phone auth" response would be a role oracle
+        //     on an unauthenticated endpoint: anyone could test an email and
+        //     learn whether it belongs to a guard, i.e. harvest a target list
+        //     for the phone-auth surface. Do not add one, however helpful it reads.
+        //   - Filtering rather than rejecting the whole request matters: post-
+        //     migration 59 an email can be a guard in one tenant and a real user
+        //     in another, and that user must still log in.
+        //
+        // Defence in depth, not the boundary itself: createUser now generates a
+        // guard's credential server-side so no caller can choose one. This gate
+        // is what makes that unnecessary rather than load-bearing.
 
         if (request.tenantId() != null && !request.tenantId().isBlank()) {
             UUID requested;
@@ -134,20 +173,30 @@ public class AuthController {
         }
 
         User authed = matched.get(0);
-        List<String> tenantIds = userService.getUserTenantIds(authed.getId())
-                .stream().map(UUID::toString).toList();
 
         if (authed.getWelcomedAt() == null) {
             userService.markWelcomed(authed.getId());
         }
 
-        return ResponseEntity.ok(new AuthResponse(
-                authed.getId().toString(),
-                authed.getEmail(),
-                authed.getName(),
-                authed.getRole().name(),
-                authed.getTenantId() != null ? authed.getTenantId().toString() : null,
-                tenantIds));
+        return ResponseEntity.ok(toAuthResponse(authed));
+    }
+
+    /**
+     * Builds the login identity payload for an already-authenticated user.
+     * Shared by password login and Firebase guard login so both issue an identical
+     * shape — in particular the {@code tenantIds} membership list, which the
+     * clients store as their tenant-switcher source.
+     */
+    private AuthResponse toAuthResponse(User user) {
+        List<String> tenantIds = userService.getUserTenantIds(user.getId())
+                .stream().map(UUID::toString).toList();
+        return new AuthResponse(
+                user.getId().toString(),
+                user.getEmail(),
+                user.getName(),
+                user.getRole().name(),
+                user.getTenantId() != null ? user.getTenantId().toString() : null,
+                tenantIds);
     }
 
     @PostMapping("/register")
@@ -174,6 +223,23 @@ public class AuthController {
                 user.getRole().name(),
                 user.getTenantId() != null ? user.getTenantId().toString() : null,
                 List.of(org.getId().toString())));
+    }
+
+    // --- Security guard Firebase Phone Authentication login ---
+
+    public record FirebaseLoginRequest(String idToken) {
+    }
+
+    /**
+     * Exchanges a Firebase ID token for the same identity payload
+     * {@code /login} returns. Firebase has already sent and verified the SMS;
+     * this server verifies the token and maps its signed phone-number claim to
+     * one active security guard.
+     */
+    @PostMapping("/firebase")
+    public ResponseEntity<AuthResponse> firebaseLogin(@RequestBody FirebaseLoginRequest request) {
+        User guard = firebaseGuardAuthService.authenticate(request.idToken());
+        return ResponseEntity.ok(toAuthResponse(guard));
     }
 
     @GetMapping("/set-password/validate")
@@ -292,7 +358,11 @@ public class AuthController {
             user.setName(request.name());
         }
         if (request.phoneNumber() != null) {
-            user.setPhoneNumber(request.phoneNumber());
+            // Third write path for users.phone_number, and it reaches the row via
+            // saveUser() rather than UserService.createUser/updateUser — so it does
+            // not inherit their normalization and would silently re-create the dead
+            // guard account those two now prevent. Same rule, same helper.
+            user.setPhoneNumber(PhoneNumbers.normalizeForRole(request.phoneNumber(), user.getRole()));
         }
 
         User saved = userService.saveUser(user);

@@ -53,6 +53,15 @@ azure:
     deployment: ${AZURE_OPENAI_CHEQUE_DEPLOYMENT:gpt-4o}
     api-version: "2024-10-21"
 
+firebase:
+  auth:
+    # The backend never sends SMS codes. The security app uses Firebase Phone
+    # Authentication and sends the resulting ID token here for verification.
+    # Both values are required in the prod profile; local/test contexts may boot
+    # without them, but /api/v1/auth/firebase answers 503 until configured.
+    project-id: ${FIREBASE_PROJECT_ID:}
+    service-account-json-base64: ${FIREBASE_SERVICE_ACCOUNT_JSON_BASE64:}
+
 cheque-extraction:
   retention-days: 90
   purge-cron: "0 0 3 * * *"

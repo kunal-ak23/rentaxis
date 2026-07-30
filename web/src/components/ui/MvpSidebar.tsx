@@ -23,6 +23,7 @@ import {
     HelpCircle,
     Building2,
     CalendarDays,
+    ScanLine,
 } from 'lucide-react';
 import Image from "next/image";
 import { Link } from "@/i18n/routing";
@@ -46,6 +47,7 @@ export default function MvpSidebar() {
     const tVendors = useTranslations("Vendors");
     const tBankAccounts = useTranslations("BankAccounts");
     const tStaff = useTranslations("Staff");
+    const tGatePass = useTranslations("GatePass");
     const pathname = usePathname();
     const [isCollapsed, setIsCollapsed] = useState(() => {
         if (typeof window !== 'undefined') {
@@ -71,6 +73,21 @@ export default function MvpSidebar() {
                 ...(isEnabled('LISTINGS') ? [{ name: "Listings", href: "/dashboard/listings", icon: Building2, tourId: 'sidebar-listings' }] : []),
                 { name: "Tickets", href: "/dashboard/tickets", icon: Wrench, tourId: 'sidebar-tickets' },
                 ...(isEnabled('MEETINGS') ? [{ name: "Meetings", href: "/dashboard/meetings", icon: CalendarDays, tourId: 'sidebar-meetings' }] : []),
+                // Still not wrapped in isEnabled('GATEPASS'), and the reason has changed:
+                // the TenantFeature now exists, but nothing can turn it on. It defaults
+                // to false and TenantFeatureController is read-only — setEnabled() has no
+                // caller, for ANY of the five flags — so isEnabled('GATEPASS') is false
+                // for every tenant until someone writes a tenant_feature row by hand.
+                // Wrapping this now would hide the page from everyone, permanently.
+                // Role stays the real boundary; the report's @PreAuthorize is what
+                // actually gates the data.
+                //
+                // So this is NOT "add the wrapper when the flag lands" — it landed. It is
+                // "add the wrapper when a toggle exists to flip it", which is a platform
+                // decision covering all five flags, not a gate-pass one.
+                ...(hasPermission(userRole, 'canViewGatePassReport')
+                    ? [{ name: tGatePass("navLabel"), href: "/dashboard/gatepass", icon: ScanLine, tourId: 'sidebar-gatepass' }]
+                    : []),
             ]
             : []),
         ...(hasPermission(userRole, 'canManageTenants')

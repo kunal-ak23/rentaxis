@@ -52,11 +52,20 @@ public class ApiSecurityFilter extends OncePerRequestFilter {
 
                 boolean authorized = false;
 
-                // Validate Tenant Access
+                // Validate Tenant Access.
+                //
+                // SECURITY_GUARD belongs in the same-tenant branch as every other
+                // tenant-scoped role, and omitting it made guard requests unreachable
+                // rather than merely unauthorized: with an X-Tenant-Id header the
+                // role fell through to the 403 below, and without one it was let
+                // through with no TenantContext at all — which silently disables the
+                // tenantFilter on BaseTenantEntity. Guards get exactly the RENTER
+                // treatment: the requested tenant must equal their home tenant.
                 if ("SUPER_ADMIN".equals(userRole)) {
                     authorized = true;
                 } else if ("TENANT_ADMIN".equals(userRole) || "PROPERTY_MANAGER".equals(userRole)
-                        || "TENANT_USER".equals(userRole) || "RENTER".equals(userRole)) {
+                        || "TENANT_USER".equals(userRole) || "RENTER".equals(userRole)
+                        || "SECURITY_GUARD".equals(userRole)) {
                     if (requestedTenantId == null) {
                         requestedTenantId = homeTenantId;
                     }

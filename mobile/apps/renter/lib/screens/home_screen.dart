@@ -661,14 +661,32 @@ class _QuickActions extends StatelessWidget {
         route: '/notifications',
         badge: null
       ),
+      // "Visitors" rather than "Gate Pass": it is what the renter is arranging,
+      // it matches the guard app's language for the same objects, and it is
+      // short enough to sit under the icon on a narrow phone.
+      (
+        icon: Icons.qr_code_2_outlined,
+        label: 'Visitors',
+        route: '/gatepass',
+        badge: null
+      ),
     ];
+    // Five across rather than four, so the row stays whole instead of leaving a
+    // single tile stranded on a second row.
+    //
+    // The aspect ratio drops from 0.95 to buy height, because narrowing the
+    // tiles is what puts the labels at risk: these `Text`s wrap rather than
+    // ellipsize, so on a ~320pt phone (tile ≈ 51pt) a label that no longer fits
+    // takes a second line and would overflow the tile vertically at the old
+    // ratio. 0.75 leaves room for that second line rather than betting no label
+    // ever needs one.
     return GridView.count(
-      crossAxisCount: 4,
+      crossAxisCount: 5,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      crossAxisSpacing: 8,
+      crossAxisSpacing: 6,
       mainAxisSpacing: 8,
-      childAspectRatio: 0.95,
+      childAspectRatio: 0.75,
       children: actions
           .map((a) => InkWell(
                 borderRadius: BorderRadius.circular(14),

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "142221860342",
+    "project_id": "rent-axis-493307",
+    "storage_bucket": "rent-axis-493307.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:142221860342:android:b316e86492e1af8f97bbd7",
+        "android_client_info": {
+          "package_name": "com.rentaxis.security"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCEYnlgmtrctxN8JYrwZpLC9wVmUP1Z-EI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

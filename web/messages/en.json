@@ -1069,5 +1069,41 @@
       "MOVE_OUT": "Move out",
       "DISCUSS": "Discuss"
     }
-  }
+  },
+    "GatePass": {
+      "navLabel": "Gate Passes",
+      "noAccess": "You do not have access to the gate pass report.",
+      "reportTitle": "Gate Pass Report",
+      "reportDescription": "Visitor scans at your gates over the selected period.",
+      "from": "From",
+      "to": "To",
+      "property": "Property",
+      "allProperties": "All properties",
+      "exportCsv": "Export CSV",
+      "scanCount": "{count} scans",
+      "loadError": "Failed to load the gate pass report.",
+      "invalidRange": "The 'To' date must not be before the 'From' date.",
+      "retry": "Retry",
+      "noRows": "No gate activity in this period.",
+      "noRowsHint": "Try widening the date range or clearing the property filter.",
+      "colScannedAt": "Scanned At",
+      "colDirection": "Direction",
+      "colResult": "Result",
+      "colProperty": "Property",
+      "colUnit": "Unit",
+      "colGuestName": "Guest",
+      "colGuestPhone": "Phone",
+      "colVehicle": "Vehicle",
+      "colPurpose": "Purpose",
+      "colPassType": "Pass Type",
+      "colReason": "Reason",
+      "colGuard": "Scanned By",
+      "colGuardId": "Scanned By (ID)",
+      "ENTRY": "Entry",
+      "EXIT": "Exit",
+      "ALLOWED": "Allowed",
+      "REJECTED": "Rejected",
+      "SINGLE_USE": "Single use",
+      "RECURRING": "Recurring"
+    }
 }

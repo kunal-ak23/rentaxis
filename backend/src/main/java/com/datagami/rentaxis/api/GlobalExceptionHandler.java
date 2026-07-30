@@ -8,9 +8,11 @@ import com.datagami.rentaxis.core.service.BulkAttachValidationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -90,6 +92,41 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(status).body(Map.of(
                 "error", "validation_failed",
                 "rows", ex.getRows()
+        ));
+    }
+
+    /**
+     * Failed authentication → 401. Without this, the catch-all
+     * {@link #handleRuntime} below would swallow it as a 500, since
+     * BadCredentialsException is itself a RuntimeException.
+     *
+     * <p>The message is deliberately generic and never echoes {@code ex}: the
+     * throwing service uses one constant string for every failure mode, and
+     * this handler must not reintroduce a distinction it worked to remove.
+     */
+    @ExceptionHandler(BadCredentialsException.class)
+    public ResponseEntity<Map<String, Object>> handleBadCredentials(BadCredentialsException ex) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
+                "error", true,
+                "message", "Invalid credentials",
+                "status", 401
+        ));
+    }
+
+    /**
+     * Honors the status carried by a ResponseStatusException (e.g. 429 from
+     * OTP throttling). Also needed to keep {@link #handleRuntime} from
+     * downgrading these to 500 — ExceptionHandlerExceptionResolver runs ahead
+     * of Spring's ResponseStatusExceptionResolver, so the catch-all wins
+     * without an explicit handler here.
+     */
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<Map<String, Object>> handleResponseStatus(ResponseStatusException ex) {
+        String reason = ex.getReason() != null ? ex.getReason() : "Request failed";
+        return ResponseEntity.status(ex.getStatusCode()).body(Map.of(
+                "error", true,
+                "message", reason,
+                "status", ex.getStatusCode().value()
         ));
     }
 
