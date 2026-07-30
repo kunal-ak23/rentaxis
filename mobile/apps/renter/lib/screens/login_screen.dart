@@ -76,7 +76,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
       child: Scaffold(
-        backgroundColor: AppColors.background,
+        backgroundColor: AppColors.navyDark,
         body: SafeArea(
           child: Center(
             child: SingleChildScrollView(
@@ -110,7 +110,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                           style: GoogleFonts.josefinSans(
                             fontSize: 13,
                             fontWeight: FontWeight.w400,
-                            color: AppColors.textMuted,
+                            color: AppColors.gold400.withValues(alpha: 0.85),
                             letterSpacing: 1.5,
                           ),
                         ),
@@ -124,7 +124,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                             style: GoogleFonts.cinzel(
                               fontSize: 22,
                               fontWeight: FontWeight.w600,
-                              color: AppColors.navyDark,
+                              color: AppColors.accent,
                             ),
                           ),
                         ),
@@ -135,7 +135,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                             'Sign in to manage your rentals',
                             style: GoogleFonts.josefinSans(
                               fontSize: 14,
-                              color: AppColors.textSecondary,
+                              color: AppColors.accentLight.withValues(alpha: 0.75),
                             ),
                           ),
                         ),
@@ -274,14 +274,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                 decoration: BoxDecoration(
                                   gradient: const LinearGradient(
                                     colors: [
-                                      AppColors.primary,
-                                      AppColors.primaryLight,
+                                      AppColors.accentDark,
+                                      AppColors.accent,
                                     ],
                                   ),
                                   borderRadius: BorderRadius.circular(14),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: AppColors.primary
+                                      color: AppColors.accent
                                           .withValues(alpha: 0.25),
                                       blurRadius: 16,
                                       offset: const Offset(0, 6),
@@ -305,7 +305,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                           width: 20,
                                           child: CircularProgressIndicator(
                                             strokeWidth: 2,
-                                            color: Colors.white,
+                                            color: AppColors.navyDark,
                                           ),
                                         )
                                       : Text(
@@ -313,7 +313,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                           style: GoogleFonts.josefinSans(
                                             fontSize: 16,
                                             fontWeight: FontWeight.w600,
-                                            color: Colors.white,
+                                            color: AppColors.navyDark,
                                             letterSpacing: 0.5,
                                           ),
                                         ),
@@ -330,7 +330,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                           'Powered by Miftah',
                           style: GoogleFonts.josefinSans(
                             fontSize: 11,
-                            color: AppColors.textMuted,
+                            color: AppColors.gold400.withValues(alpha: 0.6),
                             letterSpacing: 0.5,
                           ),
                         ),
@@ -371,7 +371,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+        borderSide: const BorderSide(color: AppColors.accent, width: 1.5),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
@@ -381,7 +381,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
         borderRadius: BorderRadius.circular(14),
         borderSide: const BorderSide(color: AppColors.danger, width: 1.5),
       ),
-      errorStyle: GoogleFonts.josefinSans(color: AppColors.danger, fontSize: 12),
+      errorStyle:
+          GoogleFonts.josefinSans(color: AppColors.dangerLight, fontSize: 12),
     );
   }
 }

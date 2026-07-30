@@ -39,7 +39,7 @@ class _ShellScreenState extends ConsumerState<ShellScreen> {
       child: Scaffold(
         extendBody: true, // Content extends behind the floating nav
         appBar: AppBar(
-          backgroundColor: AppColors.surface,
+          backgroundColor: AppColors.navyDark,
           elevation: 0,
           scrolledUnderElevation: 0.5,
           title: Image.asset(
@@ -61,7 +61,7 @@ class _ShellScreenState extends ConsumerState<ShellScreen> {
                 backgroundColor: AppColors.danger,
                 child: const Icon(
                   Icons.notifications_outlined,
-                  color: AppColors.navyDark,
+                  color: AppColors.accent,
                 ),
               ),
             ),
@@ -71,7 +71,7 @@ class _ShellScreenState extends ConsumerState<ShellScreen> {
                 onPressed: () => context.push('/profile'),
                 icon: const Icon(
                   Icons.person_outline_rounded,
-                  color: AppColors.navyDark,
+                  color: AppColors.accent,
                 ),
               ),
             ),
