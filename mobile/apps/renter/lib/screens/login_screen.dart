@@ -327,7 +327,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
                         // Footer
                         Text(
-                          'Powered by RentAxis',
+                          'Powered by Miftah',
                           style: GoogleFonts.josefinSans(
                             fontSize: 11,
                             color: AppColors.textMuted,
