@@ -164,6 +164,7 @@ class GatePassApiService {
         'photo': await MultipartFile.fromFile(
           photoPath,
           filename: 'gate-visitor.jpg',
+          contentType: DioMediaType('image', 'jpeg'),
         ),
     });
     final response = await _dio.post('/v1/gatepass/walk-in', data: form);
