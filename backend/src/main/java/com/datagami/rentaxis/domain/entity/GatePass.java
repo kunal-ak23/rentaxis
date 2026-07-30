@@ -2,6 +2,8 @@ package com.datagami.rentaxis.domain.entity;
 
 import com.datagami.rentaxis.domain.entity.enums.GatePassStatus;
 import com.datagami.rentaxis.domain.entity.enums.GatePassType;
+import com.datagami.rentaxis.domain.entity.enums.GatePassOrigin;
+import com.datagami.rentaxis.domain.entity.enums.GateVisitorType;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -28,6 +30,13 @@ public class GatePass extends BaseTenantEntity {
     @Column(name = "created_by_user_id", nullable = false)
     private UUID createdByUserId;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 24)
+    private GatePassOrigin origin = GatePassOrigin.RENTER;
+
+    @Column(name = "visitor_profile_id")
+    private UUID visitorProfileId;
+
     @Column(name = "guest_name", nullable = false, length = 160)
     private String guestName;
 
@@ -39,6 +48,17 @@ public class GatePass extends BaseTenantEntity {
 
     @Column(name = "vehicle_number", length = 32)
     private String vehicleNumber;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "visitor_type", nullable = false, length = 32)
+    private GateVisitorType visitorType = GateVisitorType.GUEST;
+
+    @Column(name = "guest_photo_url", length = 1024)
+    private String guestPhotoUrl;
+
+    /** Immutable snapshot path for this visit; profiles may receive newer photos. */
+    @Column(name = "guest_photo_blob_path", length = 512)
+    private String guestPhotoBlobPath;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "pass_type", nullable = false, length = 20)

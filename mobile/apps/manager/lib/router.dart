@@ -40,6 +40,8 @@ import 'screens/create_meeting_screen.dart';
 import 'screens/cheque_scan/cheque_scan_flow_screen.dart';
 import 'screens/gatepass/gate_pass_approvals_screen.dart';
 import 'screens/gatepass/guard_management_screen.dart';
+import 'screens/gatepass/gate_access_policy_screen.dart';
+import 'screens/gatepass/register_gate_vendor_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authProvider);
@@ -77,10 +79,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           },
         ),
       ),
-      GoRoute(
-        path: '/login',
-        builder: (context, state) => const LoginScreen(),
-      ),
+      GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
       GoRoute(
         path: '/scan',
         builder: (context, state) => ChequeScanFlowScreen(
@@ -112,9 +111,8 @@ final routerProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(
                 path: ':id',
-                builder: (context, state) => LeaseDetailScreen(
-                  leaseId: state.pathParameters['id']!,
-                ),
+                builder: (context, state) =>
+                    LeaseDetailScreen(leaseId: state.pathParameters['id']!),
                 routes: [
                   GoRoute(
                     path: 'penalties',
@@ -146,9 +144,8 @@ final routerProvider = Provider<GoRouter>((ref) {
               ),
               GoRoute(
                 path: ':id',
-                builder: (context, state) => TicketDetailScreen(
-                  ticketId: state.pathParameters['id']!,
-                ),
+                builder: (context, state) =>
+                    TicketDetailScreen(ticketId: state.pathParameters['id']!),
               ),
             ],
           ),
@@ -166,9 +163,8 @@ final routerProvider = Provider<GoRouter>((ref) {
               ),
               GoRoute(
                 path: ':id',
-                builder: (context, state) => MeetingDetailScreen(
-                  meetingId: state.pathParameters['id']!,
-                ),
+                builder: (context, state) =>
+                    MeetingDetailScreen(meetingId: state.pathParameters['id']!),
               ),
             ],
           ),
@@ -194,9 +190,8 @@ final routerProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(
                 path: ':id',
-                builder: (context, state) => StaffDetailScreen(
-                  staffId: state.pathParameters['id']!,
-                ),
+                builder: (context, state) =>
+                    StaffDetailScreen(staffId: state.pathParameters['id']!),
               ),
             ],
           ),
@@ -213,14 +208,21 @@ final routerProvider = Provider<GoRouter>((ref) {
             builder: (context, state) => const GuardManagementScreen(),
           ),
           GoRoute(
+            path: '/gate-passes/policy',
+            builder: (context, state) => const GateAccessPolicyScreen(),
+          ),
+          GoRoute(
+            path: '/gate-passes/vendors',
+            builder: (context, state) => const RegisterGateVendorScreen(),
+          ),
+          GoRoute(
             path: '/vendors',
             builder: (context, state) => const VendorsScreen(),
             routes: [
               GoRoute(
                 path: ':id',
-                builder: (context, state) => VendorDetailScreen(
-                  vendorId: state.pathParameters['id']!,
-                ),
+                builder: (context, state) =>
+                    VendorDetailScreen(vendorId: state.pathParameters['id']!),
               ),
             ],
           ),
@@ -238,9 +240,8 @@ final routerProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(
                 path: ':id',
-                builder: (context, state) => ListingEditScreen(
-                  listingId: state.pathParameters['id']!,
-                ),
+                builder: (context, state) =>
+                    ListingEditScreen(listingId: state.pathParameters['id']!),
                 routes: [
                   GoRoute(
                     path: 'interests',

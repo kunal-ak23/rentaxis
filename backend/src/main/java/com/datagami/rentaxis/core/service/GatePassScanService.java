@@ -5,6 +5,7 @@ import com.datagami.rentaxis.domain.entity.GatePassScan;
 import com.datagami.rentaxis.domain.entity.GuardPropertyAssignment;
 import com.datagami.rentaxis.domain.entity.enums.GatePassStatus;
 import com.datagami.rentaxis.domain.entity.enums.GatePassType;
+import com.datagami.rentaxis.domain.entity.enums.GatePassOrigin;
 import com.datagami.rentaxis.domain.entity.enums.ScanDirection;
 import com.datagami.rentaxis.domain.entity.enums.ScanResult;
 import com.datagami.rentaxis.domain.repository.GatePassRepository;
@@ -203,9 +204,15 @@ public class GatePassScanService {
         //
         // notifyInApp, not notify: NotificationService.mapLegacyType has no GATE_PASS_*
         // entry, so notify() would publish no EmailEvent anyway. Say what we mean.
-        notificationService.notifyInApp(tenantId, pass.getCreatedByUserId(), "GATE_PASS_ARRIVAL",
-                "Your guest has arrived", pass.getGuestName() + " was scanned in at the gate",
-                "GATE_PASS", pass.getId());
+        // Renter-created passes notify their creator. A walk-in's creator is the
+        // guard standing at the gate, so sending "your guest has arrived" to that
+        // guard is both noisy and wrong; its resident notification was created by
+        // GateWalkInService when the request/registered arrival was recorded.
+        if (pass.getOrigin() != GatePassOrigin.GUARD_WALK_IN) {
+            notificationService.notifyInApp(tenantId, pass.getCreatedByUserId(), "GATE_PASS_ARRIVAL",
+                    "Your guest has arrived", pass.getGuestName() + " was scanned in at the gate",
+                    "GATE_PASS", pass.getId());
+        }
 
         return new ScanOutcome(ScanResult.ALLOWED, null, pass);
     }

@@ -110,6 +110,16 @@ class MoreScreen extends ConsumerWidget {
               label: 'Security Guards',
               onTap: () => context.push('/gate-passes/guards'),
             ),
+            _MenuItem(
+              icon: Icons.tune,
+              label: 'Gate Access Policy',
+              onTap: () => context.push('/gate-passes/policy'),
+            ),
+            _MenuItem(
+              icon: Icons.handyman_outlined,
+              label: 'Register Unit Vendor',
+              onTap: () => context.push('/gate-passes/vendors'),
+            ),
             const SizedBox(height: 16),
 
             _SectionHeader(title: 'Finance'),
@@ -152,14 +162,19 @@ class MoreScreen extends ConsumerWidget {
             _MenuItem(
               icon: Icons.language,
               label: 'Language',
-              trailing: Text('English',
-                  style:
-                      GoogleFonts.josefinSans(fontSize: 13, color: AppColors.textMuted)),
+              trailing: Text(
+                'English',
+                style: GoogleFonts.josefinSans(
+                  fontSize: 13,
+                  color: AppColors.textMuted,
+                ),
+              ),
               onTap: () {
                 // Language switching - placeholder
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                      content: Text('Language switching coming soon')),
+                    content: Text('Language switching coming soon'),
+                  ),
                 );
               },
             ),
@@ -195,8 +210,7 @@ class MoreScreen extends ConsumerWidget {
                     context: context,
                     builder: (ctx) => AlertDialog(
                       title: const Text('Logout'),
-                      content: const Text(
-                          'Are you sure you want to log out?'),
+                      content: const Text('Are you sure you want to log out?'),
                       actions: [
                         TextButton(
                           onPressed: () => Navigator.pop(ctx, false),
@@ -297,8 +311,11 @@ class _MenuItem extends StatelessWidget {
             ),
             if (trailing != null) trailing!,
             if (trailing == null)
-              const Icon(Icons.chevron_right,
-                  size: 20, color: AppColors.textMuted),
+              const Icon(
+                Icons.chevron_right,
+                size: 20,
+                color: AppColors.textMuted,
+              ),
           ],
         ),
       ),

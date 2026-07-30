@@ -1,0 +1,87 @@
+databaseChangeLog:
+  - changeSet:
+      id: 67-gate-walk-in-visitors
+      author: codex
+      changes:
+        - createTable:
+            tableName: gate_visitor_profiles
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: property_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_gvp_property, referencedTableName: properties, referencedColumnNames: id } }
+              - column: { name: phone_normalized, type: varchar(32), constraints: { nullable: false } }
+              - column: { name: display_name, type: varchar(160), constraints: { nullable: false } }
+              - column: { name: visitor_type, type: varchar(32), constraints: { nullable: false } }
+              - column: { name: photo_url, type: varchar(1024) }
+              - column: { name: photo_blob_path, type: varchar(512) }
+              - column: { name: last_vehicle_number, type: varchar(32) }
+              - column: { name: last_unit_id, type: uuid }
+              - column: { name: last_visited_at, type: timestamptz }
+              - column: { name: created_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
+              - column: { name: updated_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
+        - addUniqueConstraint:
+            tableName: gate_visitor_profiles
+            columnNames: tenant_id, property_id, phone_normalized
+            constraintName: uq_gate_visitor_phone_property
+        - createIndex:
+            tableName: gate_visitor_profiles
+            indexName: idx_gate_visitor_last_seen
+            columns:
+              - column: { name: tenant_id }
+              - column: { name: property_id }
+              - column: { name: last_visited_at, descending: true }
+
+        - createTable:
+            tableName: gate_visitor_unit_registrations
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: visitor_profile_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_gvur_profile, referencedTableName: gate_visitor_profiles, referencedColumnNames: id, deleteCascade: true } }
+              - column: { name: unit_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_gvur_unit, referencedTableName: units, referencedColumnNames: id, deleteCascade: true } }
+              - column: { name: valid_from, type: timestamptz }
+              - column: { name: valid_to, type: timestamptz }
+              - column: { name: active, type: boolean, constraints: { nullable: false }, defaultValueBoolean: true }
+              - column: { name: created_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
+        - addUniqueConstraint:
+            tableName: gate_visitor_unit_registrations
+            columnNames: visitor_profile_id, unit_id
+            constraintName: uq_gate_visitor_unit_registration
+
+        - createTable:
+            tableName: gate_access_policies
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: property_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_gap_property, referencedTableName: properties, referencedColumnNames: id, deleteCascade: true } }
+              - column: { name: building_id, type: uuid, constraints: { foreignKeyName: fk_gap_building, referencedTableName: buildings, referencedColumnNames: id, deleteCascade: true } }
+              - column: { name: require_unregistered_approval, type: boolean, constraints: { nullable: false }, defaultValueBoolean: true }
+              - column: { name: require_registered_approval, type: boolean, constraints: { nullable: false }, defaultValueBoolean: false }
+              - column: { name: notify_registered_entry, type: boolean, constraints: { nullable: false }, defaultValueBoolean: true }
+              - column: { name: require_fresh_photo, type: boolean, constraints: { nullable: false }, defaultValueBoolean: true }
+              - column: { name: approval_timeout_minutes, type: int, constraints: { nullable: false }, defaultValueNumeric: 15 }
+              - column: { name: updated_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
+        - sql:
+            splitStatements: false
+            sql: |
+              CREATE UNIQUE INDEX uq_gate_policy_property_default
+                ON gate_access_policies (tenant_id, property_id)
+                WHERE building_id IS NULL;
+              CREATE UNIQUE INDEX uq_gate_policy_building
+                ON gate_access_policies (tenant_id, property_id, building_id)
+                WHERE building_id IS NOT NULL;
+
+        - addColumn:
+            tableName: gate_passes
+            columns:
+              - column: { name: origin, type: varchar(24), constraints: { nullable: false }, defaultValue: RENTER }
+              - column: { name: visitor_profile_id, type: uuid }
+              - column: { name: visitor_type, type: varchar(32), constraints: { nullable: false }, defaultValue: GUEST }
+              - column: { name: guest_photo_url, type: varchar(1024) }
+              - column: { name: guest_photo_blob_path, type: varchar(512) }
+        - addForeignKeyConstraint:
+            baseTableName: gate_passes
+            baseColumnNames: visitor_profile_id
+            referencedTableName: gate_visitor_profiles
+            referencedColumnNames: id
+            constraintName: fk_gate_pass_visitor_profile
+            onDelete: RESTRICT

@@ -137,3 +137,5 @@ databaseChangeLog:
       file: db/changelog/changesets/65-gate-pass.yaml
   - include:
       file: db/changelog/changesets/66-firebase-phone-auth.yaml
+  - include:
+      file: db/changelog/changesets/67-gate-walk-in-visitors.yaml

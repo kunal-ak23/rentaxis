@@ -10,6 +10,8 @@ import 'screens/home_screen.dart';
 import 'screens/scan_screen.dart';
 import 'screens/result_screen.dart';
 import 'screens/approvals_screen.dart';
+import 'screens/walk_in_screen.dart';
+import 'screens/walk_in_status_screen.dart';
 
 /// Guard app router. Auth state comes from core's shared [authProvider] —
 /// guards authenticate via Firebase phone auth
@@ -79,14 +81,8 @@ final routerProvider = Provider<GoRouter>((ref) {
               : const PhoneLoginScreen();
         },
       ),
-      GoRoute(
-        path: '/',
-        builder: (context, state) => const HomeScreen(),
-      ),
-      GoRoute(
-        path: '/scan',
-        builder: (context, state) => const ScanScreen(),
-      ),
+      GoRoute(path: '/', builder: (context, state) => const HomeScreen()),
+      GoRoute(path: '/scan', builder: (context, state) => const ScanScreen()),
       GoRoute(
         path: '/result',
         // The verdict travels as `extra`, exactly like /otp's phone, and with
@@ -107,6 +103,15 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/approvals',
         builder: (context, state) => const ApprovalsScreen(),
+      ),
+      GoRoute(
+        path: '/walk-in',
+        builder: (context, state) => const WalkInScreen(),
+      ),
+      GoRoute(
+        path: '/walk-in/:id',
+        builder: (context, state) =>
+            WalkInStatusScreen(passId: state.pathParameters['id']!),
       ),
     ],
   );

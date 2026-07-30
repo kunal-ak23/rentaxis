@@ -5,6 +5,8 @@ import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.domain.entity.GatePass;
 import com.datagami.rentaxis.domain.entity.enums.GatePassStatus;
 import com.datagami.rentaxis.domain.entity.enums.GatePassType;
+import com.datagami.rentaxis.domain.entity.enums.GatePassOrigin;
+import com.datagami.rentaxis.domain.entity.enums.GateVisitorType;
 import com.datagami.rentaxis.domain.repository.GatePassRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -47,6 +49,20 @@ public class GatePassService {
     public GatePass create(UUID tenantId, UUID createdBy, UUID propertyId, UUID unitId,
                             String guestName, String guestPhone, String purpose, String vehicleNumber,
                             GatePassType type, Instant validFrom, Instant validTo) {
+        return create(tenantId, createdBy, propertyId, unitId, guestName, guestPhone,
+                purpose, vehicleNumber, type, validFrom, validTo,
+                type == GatePassType.RECURRING
+                        ? GatePassStatus.PENDING_APPROVAL : GatePassStatus.ACTIVE,
+                GatePassOrigin.RENTER, GateVisitorType.GUEST, null, null, null);
+    }
+
+    @Transactional
+    public GatePass create(UUID tenantId, UUID createdBy, UUID propertyId, UUID unitId,
+                           String guestName, String guestPhone, String purpose, String vehicleNumber,
+                           GatePassType type, Instant validFrom, Instant validTo,
+                           GatePassStatus initialStatus, GatePassOrigin origin,
+                           GateVisitorType visitorType, UUID visitorProfileId,
+                           String guestPhotoUrl, String guestPhotoBlobPath) {
         if (validFrom == null || validTo == null || !validTo.isAfter(validFrom)) {
             throw new IllegalArgumentException("validTo must be after validFrom");
         }
@@ -56,14 +72,19 @@ public class GatePassService {
         pass.setPropertyId(propertyId);
         pass.setUnitId(unitId);
         pass.setCreatedByUserId(createdBy);
+        pass.setOrigin(origin);
+        pass.setVisitorProfileId(visitorProfileId);
         pass.setGuestName(guestName);
         pass.setGuestPhone(guestPhone);
         pass.setPurpose(purpose);
         pass.setVehicleNumber(vehicleNumber);
+        pass.setVisitorType(visitorType);
+        pass.setGuestPhotoUrl(guestPhotoUrl);
+        pass.setGuestPhotoBlobPath(guestPhotoBlobPath);
         pass.setPassType(type);
         pass.setValidFrom(validFrom);
         pass.setValidTo(validTo);
-        pass.setStatus(type == GatePassType.RECURRING ? GatePassStatus.PENDING_APPROVAL : GatePassStatus.ACTIVE);
+        pass.setStatus(initialStatus);
         // 32 hex chars of UUID + a zero-padded 16-hex-char random suffix = fixed 48 chars.
         pass.setQrToken(UUID.randomUUID().toString().replace("-", "") + String.format("%016x", RANDOM.nextLong()));
         pass.setNumericCode(uniqueNumericCode(tenantId));

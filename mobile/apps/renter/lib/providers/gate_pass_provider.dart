@@ -17,11 +17,19 @@ import 'package:share_plus/share_plus.dart';
 ///
 /// The ordering is the backend's (`findBy...OrderByCreatedAtDesc`), not re-done
 /// here — the same way the guard app trusts the ordering of `expected-today`.
-final myPassesProvider =
+final myPassesProvider = FutureProvider.autoDispose<List<Map<String, dynamic>>>(
+  (ref) async {
+    final service = ref.watch(gatePassServiceProvider);
+    return _asRows(await service.mine());
+  },
+);
+
+/// Guard-created visitors currently waiting for this resident's approval.
+final residentGateApprovalsProvider =
     FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
-  final service = ref.watch(gatePassServiceProvider);
-  return _asRows(await service.mine());
-});
+      final service = ref.watch(gatePassServiceProvider);
+      return _asRows(await service.residentApprovals());
+    });
 
 /// One pass by id, re-fetched rather than handed over from the list.
 ///
@@ -32,9 +40,9 @@ final myPassesProvider =
 /// `authProvider`).
 final passByIdProvider = FutureProvider.autoDispose
     .family<Map<String, dynamic>, String>((ref, id) async {
-  final service = ref.watch(gatePassServiceProvider);
-  return service.byId(id);
-});
+      final service = ref.watch(gatePassServiceProvider);
+      return service.byId(id);
+    });
 
 /// The renter's ACTIVE leases — the units they may raise a pass for.
 ///
@@ -49,13 +57,13 @@ final passByIdProvider = FutureProvider.autoDispose
 /// such server-side rule behind it.
 final activeLeasesProvider =
     FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
-  final service = ref.watch(leaseServiceProvider);
-  final leases = await service.getMyLeases();
-  return leases
-      .whereType<Map<String, dynamic>>()
-      .where((l) => l['status'] == 'ACTIVE')
-      .toList();
-});
+      final service = ref.watch(leaseServiceProvider);
+      final leases = await service.getMyLeases();
+      return leases
+          .whereType<Map<String, dynamic>>()
+          .where((l) => l['status'] == 'ACTIVE')
+          .toList();
+    });
 
 /// The lease API, as an overridable seam.
 ///
