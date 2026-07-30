@@ -13,6 +13,7 @@ const ALL_ROLE_OPTIONS: { value: UserRole; label: string }[] = [
     { value: "SUPER_ADMIN", label: "Super Admin" },
     { value: "TENANT_ADMIN", label: "Tenant Admin" },
     { value: "PROPERTY_MANAGER", label: "Property Manager" },
+    { value: "SECURITY_GUARD", label: "Security Guard" },
     { value: "TENANT_USER", label: "Tenant User" },
 ];
 
