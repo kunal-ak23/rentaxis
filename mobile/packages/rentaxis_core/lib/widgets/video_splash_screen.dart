@@ -82,7 +82,7 @@ class _VideoSplashScreenState extends State<VideoSplashScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppColors.navyDark,
       body: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -133,7 +133,7 @@ class _VideoSplashScreenState extends State<VideoSplashScreen>
                     style: GoogleFonts.josefinSans(
                       fontSize: 13,
                       fontWeight: FontWeight.w400,
-                      color: AppColors.textMuted,
+                      color: AppColors.gold400.withValues(alpha: 0.85),
                       letterSpacing: 1.5,
                     ),
                   ),
