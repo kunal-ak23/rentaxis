@@ -62,15 +62,31 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         child: _tab == 0 ? const _VisitorsTab() : const ApprovalsView(),
       ),
       // The gate's primary action, sized to be hit without looking at the phone.
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => context.push('/scan'),
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
-        icon: const Icon(Icons.qr_code_scanner, size: 26),
-        label: const Text(
-          'Scan',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-        ),
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          FloatingActionButton.extended(
+            heroTag: 'walk-in',
+            onPressed: () => context.push('/walk-in'),
+            backgroundColor: AppColors.accentDark,
+            foregroundColor: Colors.white,
+            icon: const Icon(Icons.person_add_alt_1),
+            label: const Text('Walk-in'),
+          ),
+          const SizedBox(height: 10),
+          FloatingActionButton.extended(
+            heroTag: 'scan',
+            onPressed: () => context.push('/scan'),
+            backgroundColor: AppColors.primary,
+            foregroundColor: Colors.white,
+            icon: const Icon(Icons.qr_code_scanner, size: 26),
+            label: const Text(
+              'Scan',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _tab,
@@ -211,8 +227,10 @@ class _VisitorRow extends StatelessWidget {
               ),
               if (unit != null)
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.surface2,
                     borderRadius: BorderRadius.circular(8),
@@ -258,8 +276,11 @@ class _VisitorRow extends StatelessWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.directions_car,
-                        size: 14, color: AppColors.accentDark),
+                    const Icon(
+                      Icons.directions_car,
+                      size: 14,
+                      color: AppColors.accentDark,
+                    ),
                     const SizedBox(width: 5),
                     Text(
                       vehicle,
@@ -309,7 +330,8 @@ class _NoVisitors extends ConsumerWidget {
           ? const EmptyState(
               icon: Icons.location_off_outlined,
               title: 'No properties assigned',
-              subtitle: 'You are not posted to a gate yet, so no visitors will '
+              subtitle:
+                  'You are not posted to a gate yet, so no visitors will '
                   'appear here.\n\n'
                   'Ask your manager to assign you to a property.',
             )
@@ -332,7 +354,8 @@ class _EmptyBoardHedged extends StatelessWidget {
     return const EmptyState(
       icon: Icons.event_available,
       title: 'No visitors expected today',
-      subtitle: 'Guests booked for your gate appear here.\n\n'
+      subtitle:
+          'Guests booked for your gate appear here.\n\n'
           'Nothing all shift? Ask your manager to check that you are assigned '
           'to a property.',
     );

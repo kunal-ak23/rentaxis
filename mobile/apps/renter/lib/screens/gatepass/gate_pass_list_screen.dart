@@ -25,6 +25,13 @@ class GatePassListScreen extends ConsumerWidget {
         backgroundColor: AppColors.surface,
         elevation: 0,
         title: const Text('Gate Passes'),
+        actions: [
+          IconButton(
+            tooltip: 'Visitor approvals',
+            onPressed: () => context.push('/gatepass/approvals'),
+            icon: const Icon(Icons.approval_outlined),
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => context.push('/gatepass/create'),
@@ -47,7 +54,12 @@ class GatePassListScreen extends ConsumerWidget {
             if (rows.isEmpty) return const _Scrollable(child: _NoPasses());
             return ListView.builder(
               physics: const AlwaysScrollableScrollPhysics(),
-              padding: EdgeInsets.fromLTRB(16, 12, 16, AppInsets.bottomNav(context) + 72),
+              padding: EdgeInsets.fromLTRB(
+                16,
+                12,
+                16,
+                AppInsets.bottomNav(context) + 72,
+              ),
               itemCount: rows.length,
               itemBuilder: (context, index) => AnimatedListItem(
                 index: index,
@@ -90,7 +102,8 @@ class _NoPasses extends StatelessWidget {
     return EmptyState(
       icon: Icons.qr_code_2_outlined,
       title: 'No gate passes yet',
-      subtitle: 'Create a pass and your guest can show it at the gate '
+      subtitle:
+          'Create a pass and your guest can show it at the gate '
           'instead of being signed in by the guard.',
       actionLabel: 'Create a pass',
       onAction: () => context.push('/gatepass/create'),
@@ -168,7 +181,8 @@ class _PassRow extends StatelessWidget {
                     spacing: 6,
                     runSpacing: 6,
                     children: [
-                      if (recurring) const _Tag(icon: Icons.repeat, label: 'Recurring'),
+                      if (recurring)
+                        const _Tag(icon: Icons.repeat, label: 'Recurring'),
                       if (purpose != null)
                         _Tag(icon: Icons.notes_outlined, label: purpose),
                       if (vehicle != null)
@@ -208,7 +222,10 @@ class _Tag extends StatelessWidget {
             child: Text(
               label,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 11.5, color: AppColors.textSecondary),
+              style: const TextStyle(
+                fontSize: 11.5,
+                color: AppColors.textSecondary,
+              ),
             ),
           ),
         ],

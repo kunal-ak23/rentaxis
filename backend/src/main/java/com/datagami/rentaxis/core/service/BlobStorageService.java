@@ -41,6 +41,9 @@ public class BlobStorageService {
     public record UploadResult(String url, String blobPath) {
     }
 
+    public record DownloadResult(byte[] bytes, String contentType) {
+    }
+
     /**
      * Uploads {@code file} to {@code tenant-{tenantId}/listings/{listingId}/{uuid}.{ext}}
      * and returns both the blob's public URL and its container-relative path.
@@ -85,6 +88,31 @@ public class BlobStorageService {
         }
     }
 
+    /** Uploads a fresh gate photo under a visitor profile's stable folder. */
+    public UploadResult uploadGateVisitor(UUID tenantId, UUID visitorProfileId, MultipartFile file) {
+        if (tenantId == null || visitorProfileId == null || file == null || file.isEmpty()) {
+            throw new BlobStorageException("tenantId, visitorProfileId, and a non-empty file are required");
+        }
+        if (file.getContentType() == null || !file.getContentType().startsWith("image/")) {
+            throw new BlobStorageException("Gate visitor photo must be an image");
+        }
+        if (file.getSize() > 5 * 1024 * 1024) {
+            throw new BlobStorageException("Gate visitor photo must be under 5 MB");
+        }
+        String ext = extractExtension(file.getOriginalFilename());
+        String blobPath = String.format("gate-visitors/%s/%s%s",
+                visitorProfileId, UUID.randomUUID(), ext);
+        try (InputStream in = file.getInputStream()) {
+            BlobClient blobClient = getContainerClient(tenantId).getBlobClient(blobPath);
+            blobClient.upload(in, file.getSize(), true);
+            return new UploadResult(blobClient.getBlobUrl(), blobPath);
+        } catch (IOException e) {
+            throw new BlobStorageException("Failed to read gate visitor photo", e);
+        } catch (com.azure.storage.blob.models.BlobStorageException e) {
+            throw new BlobStorageException("Failed to upload gate visitor photo", e);
+        }
+    }
+
     /**
      * Deletes a blob by its container-relative path within a tenant's container.
      * Idempotent: silently succeeds if the blob does not exist.
@@ -100,6 +128,23 @@ public class BlobStorageService {
             }
         } catch (com.azure.storage.blob.models.BlobStorageException e) {
             throw new BlobStorageException("Failed to delete blob " + blobPath, e);
+        }
+    }
+
+    /** Reads a tenant-scoped blob for an authenticated controller response. */
+    public DownloadResult download(UUID tenantId, String blobPath) {
+        if (tenantId == null || blobPath == null || blobPath.isBlank()) {
+            throw new BlobStorageException("tenantId and blobPath are required");
+        }
+        try {
+            BlobClient client = getContainerClient(tenantId).getBlobClient(blobPath);
+            byte[] bytes = client.downloadContent().toBytes();
+            String contentType = client.getProperties().getContentType();
+            return new DownloadResult(bytes,
+                    contentType == null || contentType.isBlank()
+                            ? "application/octet-stream" : contentType);
+        } catch (com.azure.storage.blob.models.BlobStorageException e) {
+            throw new BlobStorageException("Failed to download blob " + blobPath, e);
         }
     }
 

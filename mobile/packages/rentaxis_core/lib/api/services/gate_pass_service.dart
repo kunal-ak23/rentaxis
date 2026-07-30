@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:dio/dio.dart';
 
 /// Thin wrapper over `/api/v1/gatepass`.
@@ -71,11 +73,14 @@ class GatePassApiService {
       );
     }
 
-    final response = await _dio.post('/v1/gatepass/scan', data: {
-      if (qr != null) 'qrToken': qr,
-      if (code != null) 'numericCode': code,
-      'direction': direction,
-    });
+    final response = await _dio.post(
+      '/v1/gatepass/scan',
+      data: {
+        if (qr != null) 'qrToken': qr,
+        if (code != null) 'numericCode': code,
+        'direction': direction,
+      },
+    );
     return response.data;
   }
 
@@ -106,6 +111,84 @@ class GatePassApiService {
     return response.data as List<dynamic>;
   }
 
+  /// Units the signed-in guard may select at one of their assigned properties.
+  Future<List<dynamic>> walkInDestinations(String propertyId) async {
+    final response = await _dio.get(
+      '/v1/gatepass/walk-in/destinations',
+      queryParameters: {'propertyId': propertyId},
+    );
+    return response.data as List<dynamic>;
+  }
+
+  /// Reuses a previous visitor's details by normalized mobile number.
+  /// A 404 means this is the person's first visit and is intentionally allowed
+  /// to bubble so the form can remain blank.
+  Future<Map<String, dynamic>> lookupWalkInVisitor({
+    required String propertyId,
+    required String phone,
+    String? unitId,
+  }) async {
+    final response = await _dio.get(
+      '/v1/gatepass/walk-in/visitor',
+      queryParameters: {
+        'propertyId': propertyId,
+        'phone': phone,
+        if (unitId != null) 'unitId': unitId,
+      },
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// Creates a fresh, auditable walk-in visit. The camera image is multipart
+  /// binary data; it is never base64-expanded into JSON.
+  Future<Map<String, dynamic>> createWalkIn({
+    required String propertyId,
+    required String unitId,
+    required String name,
+    required String phone,
+    required String visitorType,
+    String? purpose,
+    String? vehicleNumber,
+    String? photoPath,
+  }) async {
+    final form = FormData.fromMap({
+      'propertyId': propertyId,
+      'unitId': unitId,
+      'name': name,
+      'phone': phone,
+      'visitorType': visitorType,
+      if (_trimToNull(purpose) != null) 'purpose': purpose!.trim(),
+      if (_trimToNull(vehicleNumber) != null)
+        'vehicleNumber': vehicleNumber!.trim(),
+      if (photoPath != null)
+        'photo': await MultipartFile.fromFile(
+          photoPath,
+          filename: 'gate-visitor.jpg',
+          contentType: DioMediaType('image', 'jpeg'),
+        ),
+    });
+    final response = await _dio.post('/v1/gatepass/walk-in', data: form);
+    return response.data as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> walkInStatus(String id) async {
+    final response = await _dio.get('/v1/gatepass/walk-in/$id/status');
+    return response.data as Map<String, dynamic>;
+  }
+
+  Future<Uint8List> walkInPhoto(String id) async {
+    final response = await _dio.get<List<int>>(
+      '/v1/gatepass/walk-in/$id/photo',
+      options: Options(responseType: ResponseType.bytes),
+    );
+    return Uint8List.fromList(response.data ?? const []);
+  }
+
+  Future<Map<String, dynamic>> admitWalkIn(String id) async {
+    final response = await _dio.post('/v1/gatepass/walk-in/$id/admit');
+    return response.data as Map<String, dynamic>;
+  }
+
   // ------------------------------------------------------- approvals (shared)
 
   /// GET /v1/gatepass/approvals — passes awaiting approval. Scope depends on the
@@ -125,6 +208,24 @@ class GatePassApiService {
     return response.data;
   }
 
+  // ------------------------------------------------------- renter approvals
+
+  Future<List<dynamic>> residentApprovals() async {
+    final response = await _dio.get('/v1/gatepass/resident-approvals');
+    return response.data as List<dynamic>;
+  }
+
+  Future<Map<String, dynamic>> decideAsResident(
+    String id,
+    bool approved,
+  ) async {
+    final response = await _dio.post(
+      '/v1/gatepass/resident-approvals/$id',
+      data: {'approved': approved},
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
   // --------------------------------------------------------------- manager
 
   /// GET /v1/gatepass/report — one row per scan over [from]..[to], joined to its
@@ -134,11 +235,14 @@ class GatePassApiService {
     required DateTime to,
     String? propertyId,
   }) async {
-    final response = await _dio.get('/v1/gatepass/report', queryParameters: {
-      'from': instant(from),
-      'to': instant(to),
-      if (propertyId != null) 'propertyId': propertyId,
-    });
+    final response = await _dio.get(
+      '/v1/gatepass/report',
+      queryParameters: {
+        'from': instant(from),
+        'to': instant(to),
+        if (propertyId != null) 'propertyId': propertyId,
+      },
+    );
     return response.data as List<dynamic>;
   }
 
@@ -155,12 +259,54 @@ class GatePassApiService {
   /// This does not create the guard's tenant membership — see the note on the
   /// controller. A guard provisioned without one logs in with no tenant.
   Future<List<dynamic>> setGuardProperties(
-      String userId, List<String> propertyIds) async {
+    String userId,
+    List<String> propertyIds,
+  ) async {
     final response = await _dio.put(
       '/v1/gatepass/guards/$userId/properties',
       data: propertyIds,
     );
     return response.data as List<dynamic>;
+  }
+
+  Future<Map<String, dynamic>> effectiveGatePolicy({
+    required String propertyId,
+    String? buildingId,
+  }) async {
+    final response = await _dio.get(
+      '/v1/gatepass/policies/effective',
+      queryParameters: {
+        'propertyId': propertyId,
+        if (buildingId != null) 'buildingId': buildingId,
+      },
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> saveGatePolicy({
+    required String propertyId,
+    String? buildingId,
+    required Map<String, dynamic> policy,
+  }) async {
+    final response = await _dio.put(
+      '/v1/gatepass/policies',
+      queryParameters: {
+        'propertyId': propertyId,
+        if (buildingId != null) 'buildingId': buildingId,
+      },
+      data: policy,
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> registerGateVisitor(
+    Map<String, dynamic> registration,
+  ) async {
+    final response = await _dio.post(
+      '/v1/gatepass/visitors/registration',
+      data: registration,
+    );
+    return response.data as Map<String, dynamic>;
   }
 
   static String? _trimToNull(String? value) {

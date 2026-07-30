@@ -22,6 +22,7 @@ import 'screens/penalties_screen.dart';
 import 'screens/gatepass/gate_pass_list_screen.dart';
 import 'screens/gatepass/gate_pass_create_screen.dart';
 import 'screens/gatepass/gate_pass_detail_screen.dart';
+import 'screens/gatepass/resident_approvals_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authProvider);
@@ -56,10 +57,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           },
         ),
       ),
-      GoRoute(
-        path: '/login',
-        builder: (context, state) => const LoginScreen(),
-      ),
+      GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
       GoRoute(
         path: '/set-password',
         builder: (context, state) {
@@ -70,10 +68,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       ShellRoute(
         builder: (context, state, child) => ShellScreen(child: child),
         routes: [
-          GoRoute(
-            path: '/',
-            builder: (context, state) => const HomeScreen(),
-          ),
+          GoRoute(path: '/', builder: (context, state) => const HomeScreen()),
           GoRoute(
             path: '/payments',
             builder: (context, state) => const PaymentsScreen(),
@@ -83,14 +78,17 @@ final routerProvider = Provider<GoRouter>((ref) {
             builder: (context, state) => const TicketsScreen(),
             routes: [
               GoRoute(
+                path: 'approvals',
+                builder: (context, state) => const ResidentApprovalsScreen(),
+              ),
+              GoRoute(
                 path: 'create',
                 builder: (context, state) => const CreateTicketScreen(),
               ),
               GoRoute(
                 path: ':id',
-                builder: (context, state) => TicketDetailScreen(
-                  ticketId: state.pathParameters['id']!,
-                ),
+                builder: (context, state) =>
+                    TicketDetailScreen(ticketId: state.pathParameters['id']!),
               ),
             ],
           ),
@@ -108,9 +106,8 @@ final routerProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(
                 path: ':slug',
-                builder: (context, state) => ListingDetailScreen(
-                  slug: state.pathParameters['slug']!,
-                ),
+                builder: (context, state) =>
+                    ListingDetailScreen(slug: state.pathParameters['slug']!),
               ),
             ],
           ),
@@ -128,9 +125,8 @@ final routerProvider = Provider<GoRouter>((ref) {
               ),
               GoRoute(
                 path: ':id',
-                builder: (context, state) => MeetingDetailScreen(
-                  meetingId: state.pathParameters['id']!,
-                ),
+                builder: (context, state) =>
+                    MeetingDetailScreen(meetingId: state.pathParameters['id']!),
               ),
             ],
           ),
@@ -152,9 +148,8 @@ final routerProvider = Provider<GoRouter>((ref) {
               ),
               GoRoute(
                 path: ':id',
-                builder: (context, state) => GatePassDetailScreen(
-                  passId: state.pathParameters['id']!,
-                ),
+                builder: (context, state) =>
+                    GatePassDetailScreen(passId: state.pathParameters['id']!),
               ),
             ],
           ),

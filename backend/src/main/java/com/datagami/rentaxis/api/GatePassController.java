@@ -23,6 +23,7 @@ import com.datagami.rentaxis.domain.entity.Renter;
 import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.enums.GatePassStatus;
+import com.datagami.rentaxis.domain.entity.enums.GatePassOrigin;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
 import com.datagami.rentaxis.domain.repository.GatePassRepository;
@@ -258,7 +259,9 @@ public class GatePassController {
         UUID tenantId = tenantId();
         if (!isGuard()) {
             return toSummaries(gatePassRepository.findByTenantIdAndStatusOrderByCreatedAtDesc(
-                    tenantId, GatePassStatus.PENDING_APPROVAL));
+                            tenantId, GatePassStatus.PENDING_APPROVAL).stream()
+                    .filter(pass -> pass.getOrigin() != GatePassOrigin.GUARD_WALK_IN)
+                    .toList());
         }
 
         List<UUID> propertyIds = assignedPropertyIds(currentUserId());
@@ -266,20 +269,31 @@ public class GatePassController {
             return List.of();
         }
         return toSummaries(gatePassRepository.findByTenantIdAndStatusAndPropertyIdInOrderByCreatedAtDesc(
-                tenantId, GatePassStatus.PENDING_APPROVAL, propertyIds));
+                        tenantId, GatePassStatus.PENDING_APPROVAL, propertyIds).stream()
+                // A guard may monitor a walk-in through its dedicated status path,
+                // but the resident is the approver. Never put a resident decision
+                // behind the guard screen's Approve button.
+                .filter(pass -> pass.getOrigin() != GatePassOrigin.GUARD_WALK_IN)
+                .toList());
     }
 
     @PostMapping("/{id}/approval")
     @PreAuthorize("hasAnyRole('SECURITY_GUARD','TENANT_ADMIN','PROPERTY_MANAGER')")
     public GatePassSummary decideApproval(@PathVariable UUID id, @RequestBody ApprovalDecision decision) {
         UUID tenantId = tenantId();
+        GatePass requested = gatePassRepository.findById(id)
+                .orElseThrow(() -> new NotFoundException("Gate pass not found"));
+        if (!tenantId.equals(requested.getTenantId())) {
+            throw new NotFoundException("Gate pass not found");
+        }
+        if (requested.getOrigin() == GatePassOrigin.GUARD_WALK_IN) {
+            throw new BusinessRuleViolationException(
+                    "Walk-in requests must be decided by the resident");
+        }
         if (isGuard()) {
             // Mirror the read scope: a guard may only decide passes they can see. Without
             // this a guard could approve a pass for any property in the tenant by id.
-            GatePass pass = gatePassRepository.findById(id)
-                    .orElseThrow(() -> new NotFoundException("Gate pass not found"));
-            if (!tenantId.equals(pass.getTenantId())
-                    || !assignedPropertyIds(currentUserId()).contains(pass.getPropertyId())) {
+            if (!assignedPropertyIds(currentUserId()).contains(requested.getPropertyId())) {
                 // 404, not 403 — a guard must not be able to probe for passes at
                 // properties they are not posted to.
                 throw new NotFoundException("Gate pass not found");
