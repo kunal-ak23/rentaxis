@@ -90,9 +90,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        // Logo
+                        // Brand mark (Arabic مفتاح)
                         Image.asset(
-                          'assets/logo.png',
+                          'assets/logo_mark.png',
                           width: 100,
                           height: 100,
                         ),

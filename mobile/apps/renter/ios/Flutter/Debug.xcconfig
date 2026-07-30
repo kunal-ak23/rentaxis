@@ -1,2 +1,6 @@
 #include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"
 #include "Generated.xcconfig"
+
+// Generated.xcconfig (stale, from an Intel host) excludes arm64 for simulator
+// builds; re-allow it so debug builds run on Apple Silicon simulators.
+EXCLUDED_ARCHS[sdk=iphonesimulator*] = i386
