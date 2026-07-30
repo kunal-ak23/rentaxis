@@ -2,28 +2,31 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class AppColors {
-  static const primary = Color(0xFF0B1F3A);
-  static const primaryLight = Color(0xFF1F3D67);
-  static const accent = Color(0xFFC9A961);
-  static const accentDark = Color(0xFF8C7434);
-  static const accentLight = Color(0xFFF4EBD3);
-  static const gold400 = Color(0xFFD9BE83);
-  static const navyDark = Color(0xFF0B1F3A);
-  static const background = Color(0xFFFAF7F2);
+  // Miftah brand: black #1B1B1B + gold #EEC046 (from customer logo pack)
+  static const primary = Color(0xFF1B1B1B);
+  static const primaryLight = Color(0xFF3A3A36);
+  static const accent = Color(0xFFEEC046);
+  static const accentDark = Color(0xFF8C6F1F);
+  static const accentLight = Color(0xFFF8E9BE);
+  static const gold400 = Color(0xFFF5DC8E);
+  // Darkest chrome tone (field name kept for compatibility with existing screens)
+  static const navyDark = Color(0xFF111111);
+  static const background = Color(0xFFFAF8F3);
   static const surface = Color(0xFFFFFFFF);
-  static const surface2 = Color(0xFFF4EFE6);
-  static const border = Color(0xFFE6DFD3);
-  static const borderStrong = Color(0xFFD8CBB1);
-  static const textPrimary = Color(0xFF0B1F3A);
-  static const textSecondary = Color(0xFF335580);
-  static const textMuted = Color(0xFF5C7494);
+  static const surface2 = Color(0xFFF5F1E8);
+  static const border = Color(0xFFE8E2D4);
+  static const borderStrong = Color(0xFFD6CDB6);
+  static const textPrimary = Color(0xFF1B1B1B);
+  static const textSecondary = Color(0xFF55524A);
+  static const textMuted = Color(0xFF807B6E);
   static const success = Color(0xFF2F7B4C);
   static const successLight = Color(0xFFDDEFE3);
   static const warning = Color(0xFFB5781E);
   static const warningLight = Color(0xFFF8EBD0);
   static const danger = Color(0xFFB33A30);
   static const dangerLight = Color(0xFFF6DAD6);
-  static const info = Color(0xFF2D7D7D);
+  // Teal retired for the Miftah brand; info reads as bronze/gold
+  static const info = Color(0xFF8C6F1F);
 
   // Status colors
   static const statusPending = warning;
@@ -211,7 +214,7 @@ class AppTheme {
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
             backgroundColor: AppColors.primary,
-            foregroundColor: Colors.white,
+            foregroundColor: AppColors.accent,
             elevation: 0,
             padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
             shape: RoundedRectangleBorder(
@@ -292,7 +295,7 @@ class AppTheme {
         ),
         floatingActionButtonTheme: const FloatingActionButtonThemeData(
           backgroundColor: AppColors.primary,
-          foregroundColor: Colors.white,
+          foregroundColor: AppColors.accent,
           elevation: 4,
           shape: CircleBorder(),
         ),
