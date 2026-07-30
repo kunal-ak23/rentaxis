@@ -1,32 +1,28 @@
 import 'dart:async';
 
-import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
-import '../auth/otp_errors.dart';
+import '../auth/firebase_auth_errors.dart';
+import '../auth/phone_auth_service.dart';
 
 /// Code entry for guard OTP login.
 ///
-/// [phone] is the already-normalized E.164 number the phone screen requested a
-/// code for; the router refuses to build this screen without one, so it is
-/// non-null here rather than defensively re-checked.
+/// The verification session comes directly from Firebase's code-sent callback;
+/// the router refuses to build this screen without it.
 class OtpScreen extends ConsumerStatefulWidget {
-  const OtpScreen({super.key, required this.phone});
+  const OtpScreen({super.key, required this.session});
 
-  final String phone;
+  final PhoneVerificationSession session;
 
   @override
   ConsumerState<OtpScreen> createState() => _OtpScreenState();
 }
 
 class _OtpScreenState extends ConsumerState<OtpScreen> {
-  /// Sits well inside `OtpLoginService.CODE_TTL_MINUTES` (5), so a guard who
-  /// genuinely lost the message can ask again without waiting out the code they
-  /// already hold.
   static const _resendCooldownSeconds = 60;
 
   final _codeController = TextEditingController();
@@ -38,11 +34,11 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
   bool _isSubmitting = false;
   bool _isResending = false;
 
-  /// Errors from resend (`/auth/otp/request`), which this screen owns.
-  String? _resendError;
+  late PhoneVerificationSession _session;
 
-  /// Neutral confirmation after a resend. Hedged on purpose — see [_resend].
+  String? _resendError;
   String? _resendNotice;
+  String? _verifyError;
 
   /// Whether the verify error held in [AuthState.error] is still current. A
   /// resend must not leave a stale "invalid code" banner sitting above a fresh
@@ -52,6 +48,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
   @override
   void initState() {
     super.initState();
+    _session = widget.session;
     // A code was just requested on the previous screen, so the cooldown starts
     // spent — not idle.
     _startCooldown();
@@ -90,11 +87,24 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
       _isSubmitting = true;
       _resendError = null;
       _resendNotice = null;
+      _verifyError = null;
       _showAuthError = true;
     });
 
-    final success =
-        await ref.read(authProvider.notifier).loginWithOtp(widget.phone, code);
+    var success = false;
+    try {
+      final idToken = await ref
+          .read(phoneAuthServiceProvider)
+          .verifyCode(_session, code);
+      success = await ref
+          .read(authProvider.notifier)
+          .loginWithFirebase(idToken);
+      if (!success) {
+        await ref.read(phoneAuthServiceProvider).signOut();
+      }
+    } catch (error) {
+      _verifyError = describePhoneAuthError(error);
+    }
 
     if (!mounted) return;
     setState(() => _isSubmitting = false);
@@ -124,26 +134,30 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
     });
 
     try {
-      await ref.read(authServiceProvider).requestOtp(widget.phone);
+      final result = await ref
+          .read(phoneAuthServiceProvider)
+          .sendCode(_session.phone, forceResendingToken: _session.resendToken);
       if (!mounted) return;
+      switch (result) {
+        case PhoneVerificationSession():
+          _session = result;
+          _startCooldown();
+          setState(() => _resendNotice = 'A new SMS code is on its way.');
+        case AutomaticallyVerified(:final idToken):
+          final success = await ref
+              .read(authProvider.notifier)
+              .loginWithFirebase(idToken);
+          if (!success) {
+            await ref.read(phoneAuthServiceProvider).signOut();
+            if (mounted) {
+              setState(() => _resendError = ref.read(authProvider).error);
+            }
+          }
+      }
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _resendError = describePhoneAuthError(error));
       _startCooldown();
-      setState(() {
-        // Hedged, like the subtitle: a 200 from /auth/otp/request does not mean
-        // a code went anywhere. Claiming "sent" would confirm the number belongs
-        // to a guard — exactly what the endpoint's blanket 200 exists to avoid.
-        _resendNotice =
-            'If that number is registered, a new code is on its way.';
-      });
-    } on DioException catch (e) {
-      if (!mounted) return;
-      setState(() => _resendError = describeOtpRequestError(e));
-      // A throttled resend is a wait, not a mistake: restart the cooldown so the
-      // button does not invite the retry that would extend the throttle.
-      if (isThrottled(e)) _startCooldown();
-    } catch (_) {
-      if (!mounted) return;
-      setState(
-          () => _resendError = 'Could not send a new code. Please try again.');
     } finally {
       if (mounted) setState(() => _isResending = false);
     }
@@ -155,7 +169,8 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
 
     // Resend failures take precedence: they are the most recent thing the guard
     // did. Otherwise show the verify error, but only while it is still current.
-    final errorMessage = _resendError ?? (_showAuthError ? authError : null);
+    final errorMessage =
+        _resendError ?? _verifyError ?? (_showAuthError ? authError : null);
     final canResend = _secondsRemaining <= 0 && !_isResending && !_isSubmitting;
 
     return GestureDetector(
@@ -180,13 +195,8 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  // Hedged wording, not a confirmation. /auth/otp/request answers
-                  // 200 for any well-formed number, registered or not, so the app
-                  // genuinely does not know whether a code was sent — and saying
-                  // otherwise would turn the guard app into the enumeration
-                  // oracle the backend declines to be.
                   const Text(
-                    "If that number is registered, you'll get a code on WhatsApp.",
+                    'We sent a verification code by SMS.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 14,
@@ -194,7 +204,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                     ),
                   ),
                   const SizedBox(height: 20),
-                  _PhoneHeader(phone: widget.phone),
+                  _PhoneHeader(phone: _session.phone),
                   const SizedBox(height: 24),
                   TextField(
                     // /login stays mounted under this pushed route, so its phone
@@ -239,7 +249,9 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(14),
                         borderSide: const BorderSide(
-                            color: AppColors.primary, width: 1.5),
+                          color: AppColors.primary,
+                          width: 1.5,
+                        ),
                       ),
                     ),
                     onChanged: (value) {
@@ -300,10 +312,15 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                           ),
                   ),
                   TextButton(
-                    onPressed: _isSubmitting ? null : () => context.go('/login'),
+                    onPressed: _isSubmitting
+                        ? null
+                        : () => context.go('/login'),
                     child: const Text(
                       'Wrong number?',
-                      style: TextStyle(fontSize: 13, color: AppColors.textMuted),
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: AppColors.textMuted,
+                      ),
                     ),
                   ),
                 ],
@@ -333,7 +350,11 @@ class _PhoneHeader extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.phone_outlined, size: 16, color: AppColors.textMuted),
+          const Icon(
+            Icons.phone_outlined,
+            size: 16,
+            color: AppColors.textMuted,
+          ),
           const SizedBox(width: 8),
           // The number is the one piece of state a guard can sanity-check
           // themselves, so keep it verbatim and legible.
@@ -377,10 +398,7 @@ class _Banner extends StatelessWidget {
           Icon(icon, color: color, size: 18),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(
-              message,
-              style: TextStyle(color: color, fontSize: 13),
-            ),
+            child: Text(message, style: TextStyle(color: color, fontSize: 13)),
           ),
         ],
       ),

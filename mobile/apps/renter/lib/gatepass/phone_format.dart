@@ -1,5 +1,5 @@
 /// E.164 phone handling, kept deliberately identical to the server's
-/// `OtpLoginService.normalize` / `E164` pattern.
+/// Backend `PhoneNumbers.toE164` pattern.
 ///
 /// The two must agree: the app sends what it normalizes here, and the backend
 /// re-normalizes and answers 400 on anything that fails its own check. If this

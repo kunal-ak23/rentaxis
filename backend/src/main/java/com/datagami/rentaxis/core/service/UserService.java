@@ -174,7 +174,7 @@ public class UserService {
         UUID tenantUuid = (tenantId != null && !tenantId.isBlank()) ? UUID.fromString(tenantId) : null;
 
         // Normalize BEFORE the uniqueness pre-check and before persisting: the
-        // stored value is what OtpLoginService matches its (normalized) login
+        // stored value is what FirebaseGuardAuthService matches its normalized login
         // input against, so storing "+971 50 123 4567" here is a guard who can
         // never log in and never learns why. See PhoneNumbers.
         String normalizedPhone = PhoneNumbers.normalizeForRole(phoneNumber, role);

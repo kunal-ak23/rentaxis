@@ -50,7 +50,7 @@ class PhoneNumbersTest {
         assertThat(PhoneNumbers.compact("050 883-1786")).isEqualTo("0508831786");
     }
 
-    // --- toE164: the login-side contract, unchanged from when it lived in OtpLoginService ---
+    // --- toE164: the login-side contract used by FirebaseGuardAuthService ---
 
     @Test
     void toE164NormalizesAndAccepts() {

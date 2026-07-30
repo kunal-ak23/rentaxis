@@ -1,7 +1,7 @@
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../api/api_client.dart';
-import '../api/otp_errors.dart';
 import '../api/services/auth_service.dart';
 import '../api/services/gate_pass_service.dart';
 import '../api/services/listing_api_service.dart';
@@ -146,31 +146,25 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
-  /// Phone-OTP login for security guards. The backend returns the same identity
-  /// payload as [login], so the session is established identically — see
-  /// [_establishSession].
-  ///
-  /// Unlike [login], the failure is classified rather than flattened: verify
-  /// answers 429 once the per-phone attempt cap trips, and reporting that as a
-  /// bad code tells a guard who cannot succeed for an hour to keep guessing. See
-  /// [describeOtpVerifyError] for the mapping and why the server's own 429 text
-  /// is not reused.
-  Future<bool> loginWithOtp(String phone, String code) async {
+  /// Exchanges a Firebase Phone Authentication ID token for the guard's
+  /// RentAxis session. The backend returns the same identity payload as [login],
+  /// so both paths share [_establishSession].
+  Future<bool> loginWithFirebase(String idToken) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      await _establishSession(await _authService.verifyOtp(phone, code));
+      await _establishSession(await _authService.loginWithFirebase(idToken));
       return true;
-    } catch (e) {
+    } catch (error) {
       state = state.copyWith(
         isLoading: false,
-        error: describeOtpVerifyError(e),
+        error: _firebaseLoginError(error),
       );
       return false;
     }
   }
 
   /// Persists the identity every request is authenticated with and loads the
-  /// tenant list. Shared by [login] and [loginWithOtp]: the identity written
+  /// tenant list. Shared by [login] and [loginWithFirebase]: the identity written
   /// here is exactly what [AuthInterceptor] reads back into the `X-User-*`
   /// headers, so the two paths must not drift apart.
   Future<void> _establishSession(AuthResponse response) async {
@@ -218,6 +212,29 @@ class AuthNotifier extends StateNotifier<AuthState> {
     await _storage.delete(key: 'tenantId');
     await _storage.delete(key: 'userTenantId');
   }
+}
+
+String _firebaseLoginError(Object error) {
+  if (error is! DioException) {
+    return 'Could not complete login. Please try again.';
+  }
+  final status = error.response?.statusCode;
+  if (status == 401) {
+    return 'This phone is not assigned to an active security guard.';
+  }
+  if (status == 429) {
+    return 'Too many login attempts. Please wait and try again.';
+  }
+  if (status == 503) {
+    return 'Phone login is temporarily unavailable. Please contact support.';
+  }
+  if (error.type == DioExceptionType.connectionError ||
+      error.type == DioExceptionType.connectionTimeout ||
+      error.type == DioExceptionType.receiveTimeout ||
+      error.type == DioExceptionType.sendTimeout) {
+    return 'No connection. Check your network and try again.';
+  }
+  return 'Could not complete login. Please try again.';
 }
 
 final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {

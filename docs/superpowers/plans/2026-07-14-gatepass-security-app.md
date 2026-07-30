@@ -1,12 +1,17 @@
 # Gate Pass Module + Security Guard App Implementation Plan
 
+> **Auth update (2026-07-30):** The WhatsApp/ACS OTP tasks below are historical
+> and have been superseded by Firebase Phone Authentication. Current architecture
+> and setup live in the design spec and
+> `docs/runbooks/firebase-phone-auth-setup.md`; do not implement Tasks 5–6 as written.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Visitor gate passes created by renters (QR + numeric code), scanned by security guards using a new standalone Flutter app with WhatsApp-OTP phone login.
+**Goal:** Visitor gate passes created by renters (QR + numeric code), scanned by security guards using a new standalone Flutter app with Firebase phone login.
 
-**Architecture:** Additive backend module (`gatepass` tables, `SECURITY_GUARD` role, phone-OTP auth endpoints, scan validation service) reusing the existing header-identity auth, `NotificationService`, and ACS account. New Flutter app `mobile/apps/security` in the Melos monorepo consuming `rentaxis_core`; new screens in the renter app (create/share pass) and manager app (approvals, guard management).
+**Architecture:** Additive backend module (`gatepass` tables, `SECURITY_GUARD` role, Firebase ID-token exchange, scan validation service) reusing the existing header-identity auth and `NotificationService`. New Flutter app `mobile/apps/security` in the Melos monorepo consuming `rentaxis_core`; new screens in the renter app (create/share pass) and manager app (approvals, guard management).
 
-**Tech Stack:** Java 21 / Spring Boot 4 / Liquibase / PostgreSQL 16; Flutter (Riverpod, GoRouter, `mobile_scanner`, `qr_flutter`); Azure Communication Services Advanced Messaging (WhatsApp) for OTP.
+**Tech Stack:** Java 21 / Spring Boot 4 / Liquibase / PostgreSQL 16; Flutter (Riverpod, GoRouter, `mobile_scanner`, `qr_flutter`, FlutterFire); Firebase Phone Authentication.
 
 **Spec:** `docs/superpowers/specs/2026-07-14-gatepass-security-app-design.md`
 

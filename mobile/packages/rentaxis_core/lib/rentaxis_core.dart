@@ -1,6 +1,5 @@
 // API
 export 'api/api_client.dart';
-export 'api/otp_errors.dart';
 export 'api/tenant_context.dart';
 export 'api/interceptors/auth_interceptor.dart';
 export 'api/interceptors/tenant_interceptor.dart';

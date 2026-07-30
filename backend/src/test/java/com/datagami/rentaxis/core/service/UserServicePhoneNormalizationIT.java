@@ -1,13 +1,11 @@
 package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
-import com.datagami.rentaxis.core.service.otp.OtpLoginService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
 import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
-import com.datagami.rentaxis.domain.repository.LoginOtpRepository;
 import com.datagami.rentaxis.domain.repository.PropertyRepository;
 import com.datagami.rentaxis.domain.repository.UserPropertyAssignmentRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
@@ -23,8 +21,6 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -40,11 +36,10 @@ import static org.mockito.Mockito.when;
  * phone uniqueness message.
  *
  * <p>Runs against a real Postgres rather than mocks on purpose: the reported bug
- * was a mismatch between what {@code createUser} <i>stored</i> and what
- * {@code OtpLoginService} <i>queried</i>, and only a real row and a real query
- * can show the two halves agreeing. Mocked repositories would stub away the very
- * thing under test. {@code uq_users_guard_phone} is likewise a DB object and has
- * no mocked equivalent.
+ * was a mismatch between what {@code createUser} stored and what guard login
+ * queried, and only a real row and a real query can show the two halves
+ * agreeing. Mocked repositories would stub away the very thing under test.
+ * {@code uq_users_guard_phone} is likewise a DB object and has no mocked equivalent.
  */
 @SpringBootTest
 @Testcontainers
@@ -56,8 +51,6 @@ class UserServicePhoneNormalizationIT {
     @Autowired UserService userService;
     @Autowired UserRepository userRepository;
     @Autowired LandlordOrgRepository landlordOrgRepo;
-    @Autowired OtpLoginService otpLoginService;
-    @Autowired LoginOtpRepository otpRepository;
     @Autowired PasswordEncoder passwordEncoder;
 
     private LandlordOrg makeOrg() {
@@ -90,15 +83,11 @@ class UserServicePhoneNormalizationIT {
      * be resolvable by the login that normalizes its input — the manager types
      * spaces, the guard's handset dials digits, and both must land on one row.
      *
-     * <p>Asserted through {@code requestOtp} rather than a repository lookup
-     * because the bug's whole nature was that nothing threw: requestOtp is
-     * anti-enumeration and returns 200 for an unknown phone, so "it did not throw"
-     * proves nothing at all. The issued {@code login_otps} row is the only
-     * observable that separates "found the guard" from "silently found nobody" —
-     * before the fix this count is 0 and the guard can never log in.
+     * <p>The Firebase token supplies the compact E.164 number, so this asserts
+     * the exact repository query used by {@code FirebaseGuardAuthService}.
      */
     @Test
-    void guardSavedWithAFormattedPhoneCanBeResolvedByOtpLogin() {
+    void guardSavedWithAFormattedPhoneCanBeResolvedByFirebaseLogin() {
         LandlordOrg org = makeOrg();
         String digits = uniqueE164();                            // +9715XXXXXXXX
         // Re-group it the way a human writes it: "+971 5X XXX XXXX".
@@ -111,13 +100,10 @@ class UserServicePhoneNormalizationIT {
                 .as("stored verbatim, the login query can never match it")
                 .isEqualTo(digits);
 
-        otpLoginService.requestOtp(digits);
-
-        assertThat(otpRepository.countByPhoneNumberAndCreatedAtAfter(
-                digits, Instant.now().minus(1, ChronoUnit.HOURS)))
-                .as("an OTP is only issued when requestOtp resolves an active guard — "
-                        + "0 here is the silent dead account the bug produced")
-                .isEqualTo(1);
+        assertThat(userRepository.findByPhoneNumberAndRole(
+                digits, UserRole.SECURITY_GUARD))
+                .extracting(User::getId)
+                .containsExactly(guard.getId());
     }
 
     /** The same defect on the update path: re-roling or editing must not undo it. */

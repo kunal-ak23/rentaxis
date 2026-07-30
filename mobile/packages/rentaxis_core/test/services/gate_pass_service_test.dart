@@ -135,20 +135,8 @@ void main() {
     });
   });
 
-  group('AuthService OTP', () {
-    test('requestOtp posts the phone to /auth/otp/request', () async {
-      final adapter = _StubAdapter(responseBody: {});
-      final service = AuthService(_dio(adapter));
-
-      await service.requestOtp('+971500000001');
-
-      final request = adapter.captured.single;
-      expect(request.method, 'POST');
-      expect(request.path, '/auth/otp/request');
-      expect(request.data, {'phone': '+971500000001'});
-    });
-
-    test('verifyOtp posts phone+code and parses the AuthResponse', () async {
+  group('AuthService Firebase login', () {
+    test('posts the ID token and parses the AuthResponse', () async {
       final adapter = _StubAdapter(responseBody: {
         'id': 'u-1',
         'email': 'guard@example.com',
@@ -159,11 +147,12 @@ void main() {
       });
       final service = AuthService(_dio(adapter));
 
-      final auth = await service.verifyOtp('+971500000001', '123456');
+      final auth = await service.loginWithFirebase('signed-firebase-token');
 
       final request = adapter.captured.single;
-      expect(request.path, '/auth/otp/verify');
-      expect(request.data, {'phone': '+971500000001', 'code': '123456'});
+      expect(request.method, 'POST');
+      expect(request.path, '/v1/auth/firebase');
+      expect(request.data, {'idToken': 'signed-firebase-token'});
       expect(auth.id, 'u-1');
       expect(auth.role, 'SECURITY_GUARD');
       expect(auth.tenantId, 't-1');

@@ -1,5 +1,5 @@
 /// E.164 phone handling, kept deliberately identical to the server's
-/// `OtpLoginService.normalize` / `E164` pattern.
+/// `PhoneNumbers.toE164` pattern on the backend.
 ///
 /// The two must agree: the app sends what it normalizes here, and the backend
 /// re-normalizes and answers 400 on anything that fails its own check. If this
@@ -20,3 +20,19 @@ String normalizePhone(String raw) => raw.replaceAll(RegExp(r'[\s-]'), '');
 /// True when [normalized] matches the server's E.164 pattern. Pass the output
 /// of [normalizePhone] — this does not normalize for you.
 bool isValidE164(String normalized) => _e164.hasMatch(normalized);
+
+/// Prefills the country code for the two countries in which the security app
+/// is currently operated and tested. Production remains UAE-first, while an
+/// Indian device does not require the tester to replace `+971` by hand.
+String defaultPhonePrefixForCountry(String? countryCode) {
+  return switch (countryCode?.toUpperCase()) {
+    'IN' => '+91',
+    'AE' => '+971',
+    _ => '+971',
+  };
+}
+
+/// A locale-matched validation example for the supported country prefixes.
+String examplePhoneForPrefix(String prefix) {
+  return prefix == '+91' ? '+919876543210' : '+971501234567';
+}

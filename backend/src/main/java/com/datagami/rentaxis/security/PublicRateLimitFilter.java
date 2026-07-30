@@ -28,13 +28,12 @@ public class PublicRateLimitFilter extends OncePerRequestFilter {
     private static final PathPatternParser PARSER = PathPatternParser.defaultInstance;
 
     /**
-     * Guard OTP login. Scoped to the {@code otp} subtree specifically rather than
-     * all of {@code /api/auth/**}: these endpoints are permitAll and pre-auth, so
-     * without an IP limit the only bound on code guessing is the per-phone cap in
-     * OtpLoginService. Widening this to {@code /api/auth/**} would also throttle
-     * {@code /login}, which is a behaviour change and out of scope here.
+     * Firebase token exchange is permitAll and pre-auth. Firebase performs the
+     * SMS-code throttling and verification; this bucket limits replay/noise at
+     * the RentAxis exchange endpoint without affecting password login.
      */
-    private static final PathPattern OTP_PATH = PARSER.parse("/api/auth/otp/**");
+    private static final PathPattern FIREBASE_AUTH_PATH = PARSER.parse("/api/v1/auth/firebase");
+    private static final PathPattern LEGACY_FIREBASE_AUTH_PATH = PARSER.parse("/api/auth/firebase");
 
     private static final PathPattern PUBLIC_PATH = PARSER.parse("/public/**");
 
@@ -52,7 +51,7 @@ public class PublicRateLimitFilter extends OncePerRequestFilter {
     private static final PathPattern SCAN_PATH = PARSER.parse("/api/v1/gatepass/scan");
 
     private final ConcurrentHashMap<String, Bucket> publicBuckets = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, Bucket> otpBuckets = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Bucket> firebaseAuthBuckets = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Bucket> scanBuckets = new ConcurrentHashMap<>();
 
     @Override
@@ -64,21 +63,23 @@ public class PublicRateLimitFilter extends OncePerRequestFilter {
         // Parsed once and shared: parseAndCache re-parses and overwrites on every call,
         // so asking it per pattern would parse the same URI three times a request.
         PathContainer path = resolvePath(request);
-        boolean isOtp = OTP_PATH.matches(path);
+        boolean isFirebaseAuth =
+                "POST".equals(request.getMethod())
+                        && (FIREBASE_AUTH_PATH.matches(path) || LEGACY_FIREBASE_AUTH_PATH.matches(path));
         boolean isPublic = PUBLIC_PATH.matches(path);
         boolean isScan = "POST".equals(request.getMethod()) && SCAN_PATH.matches(path);
 
-        if (!isOtp && !isPublic && !isScan) {
+        if (!isFirebaseAuth && !isPublic && !isScan) {
             filterChain.doFilter(request, response);
             return;
         }
 
         String ip = resolveClientIp(request);
-        // Separate maps, so OTP traffic gets its own tighter budget and cannot be
+        // Separate maps, so auth traffic gets its own tighter budget and cannot be
         // starved by (or starve) unrelated /public/ traffic from the same IP.
         Bucket bucket;
-        if (isOtp) {
-            bucket = otpBuckets.computeIfAbsent(ip, k -> createOtpBucket());
+        if (isFirebaseAuth) {
+            bucket = firebaseAuthBuckets.computeIfAbsent(ip, k -> createFirebaseAuthBucket());
         } else if (isScan) {
             bucket = scanBuckets.computeIfAbsent(ip, k -> createScanBucket());
         } else {
@@ -103,12 +104,10 @@ public class PublicRateLimitFilter extends OncePerRequestFilter {
     }
 
     /**
-     * Deliberately far tighter than the general public bucket: a legitimate guard
-     * login is two calls (request + verify), and a retry or two on top. 10/min
-     * leaves ample headroom for a shared gatehouse NAT while removing the
-     * high-volume online guessing that 60/min would still permit.
+     * A legitimate guard login is one exchange. Ten per minute leaves ample
+     * headroom for a shared gatehouse NAT while limiting token replay/noise.
      */
-    private Bucket createOtpBucket() {
+    private Bucket createFirebaseAuthBucket() {
         Bandwidth limit = Bandwidth.builder()
                 .capacity(10)
                 .refillGreedy(10, Duration.ofMinutes(1))
@@ -166,7 +165,7 @@ public class PublicRateLimitFilter extends OncePerRequestFilter {
      * to {@code s} and ran the scan handler anyway. StrictHttpFirewall permits
      * {@code %73}, so nothing downstream caught it: the limit was <i>absent</i>, not
      * loosened. The prefixes were exposed the same way to an encoding inside the prefix
-     * ({@code /api/%61uth/otp/verify}), hence one shared mechanism rather than a
+     * ({@code /api/%61uth/firebase}), hence one shared mechanism rather than a
      * scan-only patch.
      *
      * <p>Matching {@code PathPattern} against the parsed {@code RequestPath} is what

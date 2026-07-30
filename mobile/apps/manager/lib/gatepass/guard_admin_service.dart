@@ -15,19 +15,19 @@ import 'dart:math';
 
 import 'package:dio/dio.dart';
 
-/// `\+\d{8,15}` — the exact pattern `OtpLoginService.E164` enforces at login.
+/// `\+\d{8,15}` — the exact pattern `PhoneNumbers.toE164` enforces at login.
 ///
 /// Kept identical on purpose. A guard is provisioned here and authenticates
 /// there, and the two are joined by a raw string comparison:
 /// `createUser` stores `phoneNumber` **verbatim**, with no normalization of its
-/// own, while `OtpLoginService.normalize` strips spaces/dashes from the *login*
+/// own, while `PhoneNumbers.toE164` strips spaces/dashes from the *login*
 /// input and then looks the stored value up with `findByPhoneNumberAndRole`.
 /// So a guard saved as `+971 50 123 4567` is never found by a login normalized
 /// to `+971501234567`, and that guard can never sign in — silently, with no
 /// error anywhere. [normalizeGuardPhone] closes that gap on the way in.
 final RegExp _e164 = RegExp(r'^\+\d{8,15}$');
 
-/// Strips the separators a human types, matching `OtpLoginService.normalize`.
+/// Strips the separators a human types, matching `PhoneNumbers.toE164`.
 String normalizeGuardPhone(String input) =>
     input.trim().replaceAll(RegExp(r'[\s-]'), '');
 

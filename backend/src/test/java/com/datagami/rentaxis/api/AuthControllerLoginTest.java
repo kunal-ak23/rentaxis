@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.api;
 
+import com.datagami.rentaxis.core.service.auth.FirebaseIdTokenVerifier;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
 import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
@@ -11,6 +12,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -25,6 +27,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.when;
 
 /**
  * Covers the multi-tenant disambiguation flow introduced when migration 59
@@ -42,16 +45,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@link #securityGuardWithAKnownPasswordCannotLogIn} for why that is a security
  * boundary and not a routing preference.
  *
- * <p>{@code gatepass.otp.dev-fixed-code} pins every issued OTP to a known
- * constant (see {@code FixedOtpCodeGenerator}), which is what lets
- * {@link #securityGuardCanStillLogInViaOtp} drive the real HTTP OTP flow rather
- * than asserting against the service. That test is the other half of the guard
+ * <p>The Firebase verifier is replaced at the signed-token boundary, which lets
+ * {@link #securityGuardCanStillLogInViaFirebase} drive the real HTTP exchange
+ * without depending on an external Firebase project. That test is the other half of the guard
  * exclusion: without it, "guards are rejected by /login" is indistinguishable
  * from "guards cannot log in at all".
  */
-@SpringBootTest(
-        webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = "gatepass.otp.dev-fixed-code=424242")
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Testcontainers
 class AuthControllerLoginTest {
 
@@ -62,6 +62,7 @@ class AuthControllerLoginTest {
     @Autowired UserRepository userRepo;
     @Autowired LandlordOrgRepository orgRepo;
     @Autowired PasswordEncoder passwordEncoder;
+    @MockitoBean FirebaseIdTokenVerifier firebaseIdTokenVerifier;
 
     private RestClient client() {
         return RestClient.builder().baseUrl("http://localhost:" + port).build();
@@ -299,7 +300,7 @@ class AuthControllerLoginTest {
 
         assertThat(guardFailure.getStatusCode()).isEqualTo(wrongPassword.getStatusCode());
         assertThat(guardFailure.getResponseBodyAsString()).isEqualTo(wrongPassword.getResponseBodyAsString());
-        // Nothing in the body may name the role or point at the OTP endpoint.
+        // Nothing in the body may name the role or point at the phone-auth endpoint.
         assertThat(guardFailure.getResponseBodyAsString().toUpperCase())
                 .doesNotContain("SECURITY_GUARD")
                 .doesNotContain("OTP");
@@ -319,26 +320,24 @@ class AuthControllerLoginTest {
 
     /**
      * The other half of the exclusion: guards are shut out of {@code /login}, not shut
-     * out. Drives the real HTTP OTP flow — request, then verify with the pinned dev
-     * code — and requires the same identity payload {@code /login} returns.
+     * out. Drives the real HTTP Firebase exchange and requires the same identity
+     * payload {@code /login} returns.
      *
      * <p>Without this test, deleting the guard's ability to authenticate at all would
      * pass every other test in this class.
      */
     @Test
-    void securityGuardCanStillLogInViaOtp() {
-        LandlordOrg org = makeOrg("otp-still-works");
+    void securityGuardCanStillLogInViaFirebase() {
+        LandlordOrg org = makeOrg("firebase-still-works");
         String phone = freshGuardPhone();
-        User guard = makeGuard(org, "otp-" + UUID.randomUUID() + "@test", "unused", phone);
+        User guard = makeGuard(org, "firebase-" + UUID.randomUUID() + "@test", "unused", phone);
+        when(firebaseIdTokenVerifier.verify("valid-firebase-id-token"))
+                .thenReturn(new FirebaseIdTokenVerifier.VerifiedPhoneIdentity(
+                        "firebase-uid", phone));
 
-        client().post().uri("/api/auth/otp/request")
+        Map<?, ?> resp = client().post().uri("/api/v1/auth/firebase")
                 .contentType(MediaType.APPLICATION_JSON)
-                .body(Map.of("phone", phone))
-                .retrieve().toBodilessEntity();
-
-        Map<?, ?> resp = client().post().uri("/api/auth/otp/verify")
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(Map.of("phone", phone, "code", "424242"))
+                .body(Map.of("idToken", "valid-firebase-id-token"))
                 .retrieve().body(Map.class);
 
         assertThat(resp.get("id")).isEqualTo(guard.getId().toString());

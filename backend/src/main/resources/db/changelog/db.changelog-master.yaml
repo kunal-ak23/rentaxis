@@ -135,3 +135,5 @@ databaseChangeLog:
       file: db/changelog/changesets/63-payment-schedule-vat-amount.yaml
   - include:
       file: db/changelog/changesets/65-gate-pass.yaml
+  - include:
+      file: db/changelog/changesets/66-firebase-phone-auth.yaml

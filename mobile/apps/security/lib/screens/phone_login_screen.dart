@@ -1,18 +1,14 @@
-import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
-import '../auth/otp_errors.dart';
+import '../auth/firebase_auth_errors.dart';
 import '../auth/phone_format.dart';
+import '../auth/phone_auth_service.dart';
 
-/// Phone entry for guard OTP login.
-///
-/// Calls `POST /auth/otp/request` and forwards the normalized E.164 phone to
-/// `/otp` as GoRouter `extra`. Deliberately does NOT report whether the number
-/// belongs to a registered guard — see [_requestCode].
+/// Phone entry for Firebase SMS authentication.
 class PhoneLoginScreen extends ConsumerStatefulWidget {
   const PhoneLoginScreen({super.key});
 
@@ -23,12 +19,21 @@ class PhoneLoginScreen extends ConsumerStatefulWidget {
 class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
   final _formKey = GlobalKey<FormState>();
 
-  /// Guards are UAE-based (Dubai deployment), so the country code is prefilled
-  /// rather than offered as a picker — one less thing to get wrong at a gate.
-  final _phoneController = TextEditingController(text: '+971');
+  late final TextEditingController _phoneController;
+  late final String _phoneExample;
 
   bool _isSubmitting = false;
   String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    final prefix = defaultPhonePrefixForCountry(
+      WidgetsBinding.instance.platformDispatcher.locale.countryCode,
+    );
+    _phoneController = TextEditingController(text: prefix);
+    _phoneExample = examplePhoneForPrefix(prefix);
+  }
 
   @override
   void dispose() {
@@ -37,9 +42,8 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
   }
 
   Future<void> _requestCode() async {
-    // Client-side E.164 check first: the backend answers 400 for a malformed
-    // phone, and "must start with + and country code" is a better message than
-    // whatever a failed round-trip would surface.
+    // Client-side E.164 check first so Firebase receives the canonical number
+    // stored on the guard record.
     if (!_formKey.currentState!.validate()) return;
 
     final phone = normalizePhone(_phoneController.text);
@@ -50,21 +54,25 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
     });
 
     try {
-      await ref.read(authServiceProvider).requestOtp(phone);
+      final result = await ref.read(phoneAuthServiceProvider).sendCode(phone);
       if (!mounted) return;
-      // Success here means "the server accepted the request", NOT "a code was
-      // sent". /auth/otp/request answers 200 for an unregistered number too, on
-      // purpose — it refuses to confirm which numbers belong to guards. The OTP
-      // screen's copy is hedged to match ("if that number is registered..."); do
-      // not "improve" it into a confirmation, that would hand an attacker the
-      // enumeration oracle the backend is spending a silent 200 to deny.
-      context.push('/otp', extra: phone);
-    } on DioException catch (e) {
+      switch (result) {
+        case PhoneVerificationSession():
+          context.push('/otp', extra: result);
+        case AutomaticallyVerified(:final idToken):
+          final success = await ref
+              .read(authProvider.notifier)
+              .loginWithFirebase(idToken);
+          if (!success) {
+            await ref.read(phoneAuthServiceProvider).signOut();
+            if (mounted) {
+              setState(() => _errorMessage = ref.read(authProvider).error);
+            }
+          }
+      }
+    } catch (error) {
       if (!mounted) return;
-      setState(() => _errorMessage = describeOtpRequestError(e));
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _errorMessage = 'Something went wrong. Please try again.');
+      setState(() => _errorMessage = describePhoneAuthError(error));
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
@@ -119,7 +127,7 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
                       autofillHints: const [AutofillHints.telephoneNumber],
                       inputFormatters: [
                         // '+', digits, spaces and hyphens only — the same
-                        // alphabet the server's normalize() accepts.
+                        // alphabet our E.164 normalizer accepts.
                         FilteringTextInputFormatter.allow(RegExp(r'[\d\s+-]')),
                       ],
                       style: const TextStyle(
@@ -138,7 +146,7 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
                         }
                         if (!isValidE164(normalized)) {
                           return 'Enter a full number with country code, '
-                              'e.g. +971501234567';
+                              'e.g. $_phoneExample';
                         }
                         return null;
                       },
@@ -154,8 +162,9 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
                         onPressed: _isSubmitting ? null : _requestCode,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.primary,
-                          disabledBackgroundColor:
-                              AppColors.primary.withValues(alpha: 0.4),
+                          disabledBackgroundColor: AppColors.primary.withValues(
+                            alpha: 0.4,
+                          ),
                           foregroundColor: Colors.white,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(14),
@@ -181,6 +190,16 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
                       ),
                     ),
                     const SizedBox(height: 24),
+                    const Text(
+                      'By continuing, you agree to receive an SMS verification '
+                      'code. Standard messaging rates may apply.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
                     const Text(
                       'Powered by RentAxis',
                       textAlign: TextAlign.center,

@@ -5,6 +5,7 @@ import 'package:rentaxis_core/rentaxis_core.dart';
 
 import '../gatepass/pass_display.dart';
 import '../providers/gate_pass_provider.dart';
+import '../auth/phone_auth_service.dart';
 import 'approvals_screen.dart';
 
 /// The guard's home: today's expected visitors, the scanner, and the approvals
@@ -47,7 +48,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           IconButton(
             tooltip: 'Log out',
             icon: const Icon(Icons.logout, color: AppColors.textMuted),
-            onPressed: () => ref.read(authProvider.notifier).logout(),
+            onPressed: () async {
+              try {
+                await ref.read(phoneAuthServiceProvider).signOut();
+              } finally {
+                await ref.read(authProvider.notifier).logout();
+              }
+            },
           ),
         ],
       ),

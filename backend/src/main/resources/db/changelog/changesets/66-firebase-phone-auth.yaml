@@ -1,0 +1,14 @@
+databaseChangeLog:
+  - changeSet:
+      id: 66-firebase-phone-auth
+      author: rentaxis-system
+      preConditions:
+        - onFail: MARK_RAN
+        - tableExists:
+            tableName: login_otps
+      changes:
+        # Firebase sends and verifies guard SMS codes. RentAxis stores no OTP
+        # material, so remove the obsolete table without mutating changeset 65
+        # (which may already be checksummed in an existing environment).
+        - dropTable:
+            tableName: login_otps

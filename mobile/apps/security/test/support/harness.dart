@@ -5,8 +5,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 import 'package:security/app.dart';
+import 'package:security/auth/phone_auth_service.dart';
+import 'package:security/router.dart';
 
 import 'fake_auth_service.dart';
+import 'fake_gate_pass_service.dart';
 
 /// Stubs the flutter_secure_storage channel so [AuthNotifier] resolves to
 /// "no stored session" instead of a MissingPluginException, and so the writes
@@ -41,16 +44,31 @@ void stubSecureStorage() {
 ///
 /// Deliberately not a bare screen pumped into a MaterialApp: the auth screens'
 /// hardest behaviour is their interaction with the router's redirect (the OTP
-/// screen must survive `loginWithOtp` flipping `isLoading`), and a hand-rolled
+/// screen must survive `loginWithFirebase` flipping `isLoading`), and a hand-rolled
 /// MaterialApp would test past exactly that.
 Future<ProviderContainer> pumpSecurityApp(
   WidgetTester tester, {
   required FakeAuthService authService,
+  FakePhoneAuthService? phoneAuthService,
+  FakeGatePassService? gatePassService,
+  String? startLocation,
 }) async {
   final container = ProviderContainer(
-    overrides: [authServiceProvider.overrideWithValue(authService)],
+    overrides: [
+      authServiceProvider.overrideWithValue(authService),
+      phoneAuthServiceProvider.overrideWithValue(
+        phoneAuthService ?? FakePhoneAuthService(),
+      ),
+      gatePassServiceProvider.overrideWithValue(
+        gatePassService ?? FakeGatePassService(),
+      ),
+    ],
   );
   addTearDown(container.dispose);
+
+  if (startLocation != null) {
+    container.read(routerProvider).go(startLocation);
+  }
 
   await tester.pumpWidget(
     UncontrolledProviderScope(

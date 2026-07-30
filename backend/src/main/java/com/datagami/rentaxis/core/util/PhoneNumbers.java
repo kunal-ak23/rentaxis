@@ -10,14 +10,13 @@ import java.util.regex.Pattern;
  * every path that writes one and by the OTP login that reads one back.
  *
  * <h2>Why this is not private to one service</h2>
- * It used to be. {@code OtpLoginService} normalized the <i>login input</i> and
+ * It used to be. The original OTP service normalized the <i>login input</i> and
  * then matched it against {@code users.phone_number}, which
  * {@code UserService.createUser} stored <i>verbatim</i>. A guard provisioned as
  * {@code "+971 50 123 4567"} was therefore unreachable forever: login normalized
  * to {@code "+971501234567"}, the stored string kept its spaces, and no row
- * matched. Nothing failed loudly — {@code requestOtp} is anti-enumeration and
- * answers 200 for an unknown phone, so the manager saw success, the guard saw no
- * code, and the module looked like a broken WhatsApp integration.
+ * matched. Nothing failed loudly, so the manager saw success while the guard
+ * remained unable to log in.
  *
  * <p>A normalizer that only one side of a comparison uses is not a normalizer.
  * Both sides now call into here, so read and write cannot drift apart again: the

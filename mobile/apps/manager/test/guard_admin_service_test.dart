@@ -4,7 +4,7 @@ import 'package:manager/gatepass/guard_admin_service.dart';
 import 'support/gatepass_harness.dart';
 
 void main() {
-  /// These mirror `OtpLoginService.normalize` + `E164` exactly. They are the
+  /// These mirror backend `PhoneNumbers.toE164` exactly. They are the
   /// only thing standing between a manager's typing and a guard who can never
   /// log in: `createUser` stores the phone verbatim, and login looks it up
   /// verbatim, so anything these let through unnormalized is a dead account

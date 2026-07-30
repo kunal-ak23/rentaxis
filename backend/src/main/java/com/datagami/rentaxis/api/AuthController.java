@@ -2,9 +2,9 @@ package com.datagami.rentaxis.api;
 
 import com.datagami.rentaxis.api.dto.InviteTokenInfoResponse;
 import com.datagami.rentaxis.api.dto.SetPasswordRequest;
+import com.datagami.rentaxis.core.service.auth.FirebaseGuardAuthService;
 import com.datagami.rentaxis.core.service.LandlordOrgService;
 import com.datagami.rentaxis.core.service.UserService;
-import com.datagami.rentaxis.core.service.otp.OtpLoginService;
 import com.datagami.rentaxis.core.util.PhoneNumbers;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
 import com.datagami.rentaxis.domain.entity.User;
@@ -25,14 +25,14 @@ public class AuthController {
     private final UserService userService;
     private final LandlordOrgService orgService;
     private final PasswordEncoder passwordEncoder;
-    private final OtpLoginService otpLoginService;
+    private final FirebaseGuardAuthService firebaseGuardAuthService;
 
     public AuthController(UserService userService, LandlordOrgService orgService, PasswordEncoder passwordEncoder,
-            OtpLoginService otpLoginService) {
+            FirebaseGuardAuthService firebaseGuardAuthService) {
         this.userService = userService;
         this.orgService = orgService;
         this.passwordEncoder = passwordEncoder;
-        this.otpLoginService = otpLoginService;
+        this.firebaseGuardAuthService = firebaseGuardAuthService;
     }
 
     /**
@@ -105,9 +105,9 @@ public class AuthController {
         // only thing that kept guards off this endpoint was the manager app
         // choosing to generate a random secret and discard it — a client-side
         // accident holding up a server-side guarantee. A guard who reaches this
-        // endpoint bypasses the entire OTP design: atomic attempt claim,
-        // per-phone failure cap, IP throttle, anti-enumeration. Guards
-        // authenticate at /auth/otp/verify and nowhere else.
+        // endpoint bypasses Firebase's proof that the caller controls the
+        // registered phone. Guards authenticate at /api/v1/auth/firebase and nowhere
+        // else.
         //
         // Why the filter is HERE and not a check further down:
         //
@@ -117,10 +117,10 @@ public class AuthController {
         //     same empty body as an unknown email, which is already engineered
         //     to match the wrong-password path. There is no separate guard
         //     branch to time, because there is no separate guard branch.
-        //   - An explicit "guards must use OTP" response would be a role oracle
+        //   - An explicit "guards must use phone auth" response would be a role oracle
         //     on an unauthenticated endpoint: anyone could test an email and
         //     learn whether it belongs to a guard, i.e. harvest a target list
-        //     for the OTP surface. Do not add one, however helpful it reads.
+        //     for the phone-auth surface. Do not add one, however helpful it reads.
         //   - Filtering rather than rejecting the whole request matters: post-
         //     migration 59 an email can be a guard in one tenant and a real user
         //     in another, and that user must still log in.
@@ -183,7 +183,7 @@ public class AuthController {
 
     /**
      * Builds the login identity payload for an already-authenticated user.
-     * Shared by password login and guard OTP login so both issue an identical
+     * Shared by password login and Firebase guard login so both issue an identical
      * shape — in particular the {@code tenantIds} membership list, which the
      * clients store as their tenant-switcher source.
      */
@@ -225,35 +225,20 @@ public class AuthController {
                 List.of(org.getId().toString())));
     }
 
-    // --- Security guard phone-OTP login ---
+    // --- Security guard Firebase Phone Authentication login ---
 
-    public record SendOtpRequest(String phone) {
-    }
-
-    public record VerifyOtpRequest(String phone, String code) {
+    public record FirebaseLoginRequest(String idToken) {
     }
 
     /**
-     * Requests a login code for a security guard's phone.
-     *
-     * <p>Always 200 for a well-formed phone, whether or not a guard exists —
-     * the response must not let an unauthenticated caller enumerate which
-     * numbers are registered. 400 for a malformed phone, 429 once rate-limited.
+     * Exchanges a Firebase ID token for the same identity payload
+     * {@code /login} returns. Firebase has already sent and verified the SMS;
+     * this server verifies the token and maps its signed phone-number claim to
+     * one active security guard.
      */
-    @PostMapping("/otp/request")
-    public ResponseEntity<Void> requestOtp(@RequestBody SendOtpRequest request) {
-        otpLoginService.requestOtp(request.phone());
-        return ResponseEntity.ok().build();
-    }
-
-    /**
-     * Exchanges a phone + code for the same identity payload {@code /login}
-     * returns, so the guard app stores its session exactly like the
-     * email/password clients do. 401 on any verification failure.
-     */
-    @PostMapping("/otp/verify")
-    public ResponseEntity<AuthResponse> verifyOtp(@RequestBody VerifyOtpRequest request) {
-        User guard = otpLoginService.verifyOtp(request.phone(), request.code());
+    @PostMapping("/firebase")
+    public ResponseEntity<AuthResponse> firebaseLogin(@RequestBody FirebaseLoginRequest request) {
+        User guard = firebaseGuardAuthService.authenticate(request.idToken());
         return ResponseEntity.ok(toAuthResponse(guard));
     }
 

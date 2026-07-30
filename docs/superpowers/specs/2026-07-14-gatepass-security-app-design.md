@@ -6,14 +6,14 @@
 
 ## 1. Summary
 
-A visitor gate-pass module for RentAxis. A renter creates a pass in the Renter app and shares it (QR + numeric code). A security guard — using a **new standalone Flutter app** — logs in with **mobile number + OTP delivered over WhatsApp via Azure Communication Services (ACS)**, scans the pass at the gate, sees the renter-entered details, and allows entry. Entry (and exit) are logged; the renter is notified on arrival.
+A visitor gate-pass module for RentAxis. A renter creates a pass in the Renter app and shares it (QR + numeric code). A security guard — using a **new standalone Flutter app** — logs in with **mobile number + SMS verification through Firebase Phone Authentication**, scans the pass at the gate, sees the renter-entered details, and allows entry. Entry (and exit) are logged; the renter is notified on arrival.
 
 ### Scope decisions (owner-confirmed)
 
 | Decision | Choice |
 |---|---|
 | Guard surface | **Standalone app** `mobile/apps/security` — deviates from SOW §3.2/§3.6 (SOW puts scanning inside the Manager app and lists a standalone security app as out of scope). **Requires a written Change Request with GDH per SOW §8.2 before client delivery.** |
-| OTP channel | **WhatsApp via ACS Advanced Messaging** (`azure-communication-messages`). ACS native SMS does not support UAE. Built behind an `OtpSender` interface with a log-only dev implementation. |
+| Phone auth | **Firebase Phone Authentication** on Android and iOS. The app verifies the SMS code with Firebase; RentAxis verifies the resulting Firebase ID token server-side. |
 | Guard app v1 scope | QR scan, numeric-code manual entry, exit logging, recurring-pass approval queue, today's expected visitors list. |
 
 ## 2. Requirements (from SOW §3.2 + owner additions)
@@ -37,22 +37,20 @@ All tables carry standard audit fields and `tenant_id` (BaseTenantEntity pattern
 - **`gate_pass`** — id (UUID), tenant_id, property_id FK, unit_id FK, created_by_user_id FK (renter's User), guest_name, guest_phone, purpose, vehicle_number (nullable), pass_type (`SINGLE_USE|RECURRING`), valid_from, valid_to (single-use window; for recurring: recurrence_expiry_date + optional daily window), status (`PENDING_APPROVAL|ACTIVE|USED|EXPIRED|CANCELLED`), qr_token (random 128-bit opaque, unique, the QR payload), numeric_code (8 digits, unique among non-terminal passes per tenant), approved_by_user_id (nullable), approved_at (nullable).
 - **`gate_pass_scan`** — id, tenant_id, gate_pass_id FK, direction (`ENTRY|EXIT`), scanned_by_user_id FK (guard), scanned_at, result (`ALLOWED|REJECTED`), rejection_reason (nullable). Serves as the SOW-required audit log for scans.
 - **`guard_property_assignment`** — id, tenant_id, user_id FK (guard), property_id FK. A guard sees/scans only passes for assigned properties.
-- **`login_otp`** — id, phone_number, code_hash (bcrypt), expires_at (now+5 min), attempt_count, consumed_at (nullable), created_at. Not tenant-scoped (phone lookup happens pre-auth).
 
 ### 3.2 Roles & RBAC
 
 - Add `SECURITY_GUARD` to `UserRole` enum. Guards are `User` rows (existing `phone_number` column) created by TENANT_ADMIN / PROPERTY_MANAGER via existing user management, plus property assignment.
 - `@PreAuthorize` scope: `SECURITY_GUARD` may call **only** gate-pass scan/lookup, today's-visitors, and recurring-approval endpoints. Scan responses expose only pass fields (guest details, unit number, window, vehicle) — no lease, financial, or renter-profile data.
-- `phone_number` values must be unique among `SECURITY_GUARD` users (enforced by partial unique index + service check) so OTP login resolves to exactly one guard. Multi-tenant phone collisions are rejected at guard creation in v1.
+- `phone_number` values must be unique among `SECURITY_GUARD` users (enforced by partial unique index + service check) so Firebase login resolves to exactly one guard. Multi-tenant phone collisions are rejected at guard creation in v1.
 
-### 3.3 OTP auth flow
+### 3.3 Firebase Phone Authentication flow
 
-- `POST /api/auth/otp/request` `{phone}` → if a `SECURITY_GUARD` user with that phone exists and is ACTIVE, generate 6-digit code, store bcrypt hash with 5-min expiry, send via `OtpSender`. Response is 200 regardless of whether the phone exists (no user enumeration). Rate-limited (per-phone: 3/15 min; per-IP via existing `PublicRateLimitFilter` pattern).
-- `POST /api/auth/otp/verify` `{phone, code}` → validate hash, expiry, attempts (max 5, then consumed), single-use. On success returns the same `AuthResponse` shape as `/api/auth/login` (id/email/name/role/tenantId/tenantIds). The guard app then authenticates like the other apps: identity headers (`X-User-Id`, `X-User-Role`, `X-Tenant-Id`, `X-User-Tenant-Id`) from secure storage via `rentaxis_core` interceptors.
-- **`OtpSender` interface** with two implementations selected by config:
-  - `LoggingOtpSender` (default, dev/test — logs the code)
-  - `AcsWhatsAppOtpSender` — ACS Advanced Messaging SDK, sends a Meta-approved **authentication template** message from the connected WhatsApp Business number. Config: `AZURE_COMMUNICATION_CONNECTION_STRING` (existing), `ACS_WHATSAPP_CHANNEL_ID`, `GATEPASS_OTP_TEMPLATE_NAME`.
-- Known platform risk (inherited, not worsened): backend trusts `X-User-*` headers (tracked P0). OTP verification is real; session integrity is only as strong as the header-trust model until that is fixed platform-wide.
+- The Android/iOS app calls FlutterFire `verifyPhoneNumber`; Firebase sends and verifies the six-digit SMS code, including its native app-verification and abuse controls.
+- The app obtains a Firebase ID token and calls `POST /api/v1/auth/firebase` `{idToken}`.
+- The backend Firebase Admin SDK verifies signature, project audience, expiry, revocation, disabled-user status, and the signed `phone_number` claim. It then resolves exactly one ACTIVE `SECURITY_GUARD` and returns the same `AuthResponse` shape as `/api/auth/login`.
+- No OTP code, phone-auth session, or Firebase service-account secret is stored in the mobile app or RentAxis database.
+- Known platform risk (inherited, not worsened): backend trusts `X-User-*` headers (tracked P0). Firebase verification is real; session integrity is only as strong as the header-trust model until that is fixed platform-wide.
 
 ### 3.4 Gate pass lifecycle & endpoints
 
@@ -83,8 +81,8 @@ No FCM push in this phase (device-token registration exists but no sender — pl
 Standard Flutter app, auto-discovered by the Melos `apps/*` glob; depends on `rentaxis_core` (Dio client, auth/tenant interceptors, secure storage, theme) + `flutter_riverpod`, `go_router`, `mobile_scanner`, `intl`. Patterns mirror manager/renter: `ProviderScope` → `MaterialApp.router` → `routerProvider` with `authProvider` redirects; `ConsumerStatefulWidget`; raw `Map<String, dynamic>`.
 
 Screens (EN/AR + RTL):
-1. Phone entry → request OTP
-2. OTP entry (6-digit, resend with cooldown) → verify → store identity
+1. Phone entry → request Firebase SMS verification
+2. Code entry (6-digit, resend with cooldown) → Firebase verify → backend token exchange → store identity
 3. Home — today's expected visitors (grouped by property), pull-to-refresh
 4. Scan — `mobile_scanner` camera view + numeric-code manual entry field
 5. Result — guest details, big **Allow entry** / **Log exit** action, rejection state with reason
@@ -107,8 +105,8 @@ Minimal v1: gate-pass usage report page with CSV export, feature activate/deacti
 
 ## 6. Testing
 
-- Backend: unit tests for scan validation matrix (expired/early/wrong-property/reused single-use/unapproved recurring/cancelled), OTP flow (expiry, attempt cap, single-use, enumeration-safe response), RBAC (SECURITY_GUARD blocked from financial endpoints); integration test for create→scan→notify happy path.
-- Mobile: widget tests for OTP login flow and scan-result rendering; manual E2E with `LoggingOtpSender` locally.
+- Backend: unit tests for scan validation matrix (expired/early/wrong-property/reused single-use/unapproved recurring/cancelled), Firebase token-to-guard mapping, RBAC (SECURITY_GUARD blocked from financial endpoints); integration test for create→scan→notify happy path.
+- Mobile: widget tests for Firebase phone login flow and scan-result rendering; manual E2E with Firebase test phone numbers.
 - RTL check on all new screens in both apps.
 
 ## 7. Deferred / out of scope
@@ -122,5 +120,5 @@ Minimal v1: gate-pass usage report page with CSV export, feature activate/deacti
 ## 8. Dependencies / prerequisites
 
 1. **Change Request** to GDH for the standalone guard app (SOW §8.2).
-2. WhatsApp Business Account connected to the existing ACS resource + Meta-approved authentication template (1–3 days) — build proceeds on `LoggingOtpSender` meanwhile.
+2. Firebase project with Phone provider, SMS regions, Android signing fingerprints, iOS APNs/app verification, and production billing configured. See `docs/runbooks/firebase-phone-auth-setup.md`.
 3. Client nominates guard users + provides Android devices with cameras (SOW §7).

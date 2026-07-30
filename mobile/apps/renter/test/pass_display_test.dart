@@ -155,7 +155,7 @@ void main() {
     });
 
     test('rejects what the server rejects', () {
-      // Kept in step with `OtpLoginService.normalize` / the E164 pattern: a
+      // Kept in step with `PhoneNumbers.toE164`: a
       // looser check here turns a field error into an opaque 400.
       expect(isValidE164('0501234567'), isFalse); // no country code
       expect(isValidE164('+9715'), isFalse); // too short

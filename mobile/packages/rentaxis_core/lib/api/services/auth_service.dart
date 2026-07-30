@@ -21,23 +21,13 @@ class AuthService {
     return AuthResponse.fromJson(response.data);
   }
 
-  /// Requests a login code for a security guard's phone.
-  ///
-  /// Always succeeds for a well-formed phone, whether or not a guard is
-  /// registered on that number — the server will not confirm which numbers
-  /// exist. Do not present a "no such number" error off the back of this.
-  /// Throws on 400 (malformed phone) and 429 (rate-limited).
-  Future<void> requestOtp(String phone) async {
-    await _dio.post('/auth/otp/request', data: {'phone': phone});
-  }
-
-  /// Exchanges a phone + code for the same identity payload [login] returns,
-  /// so the guard app stores its session exactly like the password clients do.
-  /// Throws on 401 (any verification failure).
-  Future<AuthResponse> verifyOtp(String phone, String code) async {
-    final response = await _dio.post('/auth/otp/verify', data: {
-      'phone': phone,
-      'code': code,
+  /// Exchanges a Firebase Phone Authentication ID token for a RentAxis guard
+  /// session. Firebase has already verified the SMS code on the device; the
+  /// backend independently verifies this signed token before trusting its
+  /// phone-number claim.
+  Future<AuthResponse> loginWithFirebase(String idToken) async {
+    final response = await _dio.post('/v1/auth/firebase', data: {
+      'idToken': idToken,
     });
     return AuthResponse.fromJson(response.data);
   }

@@ -1,46 +1,19 @@
 import 'package:dio/dio.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
+import 'package:security/auth/phone_auth_service.dart';
 
-/// Records OTP calls and replays canned outcomes.
-///
-/// Subclasses the real [AuthService] rather than mocking a Dio adapter: these
-/// are widget tests about what the screens send and how they render what comes
-/// back, and `AuthService`'s own wire format is already pinned by
-/// `rentaxis_core/test/services/gate_pass_service_test.dart`.
 class FakeAuthService extends AuthService {
-  FakeAuthService({
-    this.requestOtpError,
-    this.verifyOtpError,
-    this.latency,
-  }) : super(Dio());
+  FakeAuthService({this.firebaseLoginError, this.latency}) : super(Dio());
 
-  /// Thrown by [requestOtp] when set — used to drive the 429 / 400 paths.
-  Object? requestOtpError;
-
-  /// Thrown by [verifyOtp] when set.
-  Object? verifyOtpError;
-
-  /// Holds both calls open for a known duration so a test can observe the
-  /// in-flight state. Without it the fake's future resolves in the same pump
-  /// that renders the tap, and the loading state is never observable.
+  Object? firebaseLoginError;
   final Duration? latency;
-
-  final List<String> requestedPhones = [];
-  final List<({String phone, String code})> verifiedCodes = [];
+  final List<String> exchangedTokens = [];
 
   @override
-  Future<void> requestOtp(String phone) async {
-    requestedPhones.add(phone);
+  Future<AuthResponse> loginWithFirebase(String idToken) async {
+    exchangedTokens.add(idToken);
     if (latency != null) await Future<void>.delayed(latency!);
-    final error = requestOtpError;
-    if (error != null) throw error;
-  }
-
-  @override
-  Future<AuthResponse> verifyOtp(String phone, String code) async {
-    verifiedCodes.add((phone: phone, code: code));
-    if (latency != null) await Future<void>.delayed(latency!);
-    final error = verifyOtpError;
+    final error = firebaseLoginError;
     if (error != null) throw error;
     return AuthResponse(
       id: 'guard-1',
@@ -56,21 +29,58 @@ class FakeAuthService extends AuthService {
   Future<List<dynamic>> getTenants() async => [];
 }
 
-/// Builds a [DioException] shaped like a real backend error response.
-///
-/// [data] is deliberately `Object?`: the two 429 sources do not agree on a body.
-/// `OtpLoginService` throws `ResponseStatusException`, which
-/// `GlobalExceptionHandler` renders as JSON `{"message": ...}`, while the per-IP
-/// bucket in `PublicRateLimitFilter` writes plain text `Rate limit exceeded`.
-DioException httpError(int status, {Object? data}) {
-  final options = RequestOptions(path: '/auth/otp/request');
-  return DioException(
-    requestOptions: options,
-    response: Response<Object?>(
-      requestOptions: options,
-      statusCode: status,
-      data: data,
-    ),
-    type: DioExceptionType.badResponse,
-  );
+class FakePhoneAuthService implements PhoneAuthService {
+  FakePhoneAuthService({
+    this.sendError,
+    this.verifyError,
+    this.latency,
+    this.automaticallyVerify = false,
+  });
+
+  Object? sendError;
+  Object? verifyError;
+  final Duration? latency;
+  bool automaticallyVerify;
+
+  final List<String> requestedPhones = [];
+  final List<({String verificationId, String code})> verifiedCodes = [];
+  var signOutCalls = 0;
+  var _sendCount = 0;
+
+  @override
+  Future<PhoneVerificationResult> sendCode(
+    String phone, {
+    int? forceResendingToken,
+  }) async {
+    requestedPhones.add(phone);
+    if (latency != null) await Future<void>.delayed(latency!);
+    final error = sendError;
+    if (error != null) throw error;
+    if (automaticallyVerify) {
+      return const AutomaticallyVerified('auto-firebase-token');
+    }
+    _sendCount++;
+    return PhoneVerificationSession(
+      phone: phone,
+      verificationId: 'verification-$_sendCount',
+      resendToken: _sendCount,
+    );
+  }
+
+  @override
+  Future<String> verifyCode(
+    PhoneVerificationSession session,
+    String smsCode,
+  ) async {
+    verifiedCodes.add((verificationId: session.verificationId, code: smsCode));
+    if (latency != null) await Future<void>.delayed(latency!);
+    final error = verifyError;
+    if (error != null) throw error;
+    return 'firebase-token-for-${session.phone}';
+  }
+
+  @override
+  Future<void> signOut() async {
+    signOutCalls++;
+  }
 }

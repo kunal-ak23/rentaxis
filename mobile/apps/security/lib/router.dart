@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
+import 'auth/phone_auth_service.dart';
 import 'screens/phone_login_screen.dart';
 import 'screens/otp_screen.dart';
 import 'screens/home_screen.dart';
@@ -11,7 +12,8 @@ import 'screens/result_screen.dart';
 import 'screens/approvals_screen.dart';
 
 /// Guard app router. Auth state comes from core's shared [authProvider] —
-/// guards authenticate via phone OTP ([AuthNotifier.loginWithOtp]), which
+/// guards authenticate via Firebase phone auth
+/// ([AuthNotifier.loginWithFirebase]), which
 /// persists the same identity payload as password login, so the redirect rules
 /// below mirror the renter/manager apps exactly.
 ///
@@ -21,8 +23,8 @@ import 'screens/approvals_screen.dart';
 /// [initialLocation], so each rebuild silently threw away the navigation stack
 /// and every route's `extra`. That went unnoticed while login was one shot
 /// (password login ends authenticated, and a reset to '/' is where you wanted to
-/// be anyway), but OTP login has an intermediate screen and a failure path:
-/// `loginWithOtp` sets `isLoading: true` *before* the network call, which
+/// be anyway), but phone login has an intermediate screen and a failure path:
+/// `loginWithFirebase` sets `isLoading: true` *before* the network call, which
 /// rebuilt the router mid-verify, destroyed /otp along with the phone it was
 /// verifying, and — on a wrong code — left the guard back on /login with the
 /// 'Invalid or expired code' error set on a screen that no longer existed.
@@ -58,14 +60,24 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/otp',
-        // The phone to verify travels as `extra`, so it survives nothing: a deep
+        // The Firebase verification session travels as `extra`, so it survives
+        // nothing: a deep
         // link, a hot reload, or a process restart all land here with extra ==
         // null. Bounce those back to /login to re-enter the number rather than
         // building a screen with no phone to verify. Route-level redirects run
         // after the top-level one, so the authenticated -> '/' rule above still
         // wins over this.
-        redirect: (context, state) => state.extra is String ? null : '/login',
-        builder: (context, state) => OtpScreen(phone: state.extra as String),
+        redirect: (context, state) =>
+            state.extra is PhoneVerificationSession ? null : '/login',
+        // A restored Android activity can ask GoRouter to build the last route
+        // before its redirect has completed. Keep the builder defensive too;
+        // relying only on the redirect still permits a one-frame null cast.
+        builder: (context, state) {
+          final session = state.extra;
+          return session is PhoneVerificationSession
+              ? OtpScreen(session: session)
+              : const PhoneLoginScreen();
+        },
       ),
       GoRoute(
         path: '/',
@@ -85,8 +97,12 @@ final routerProvider = Provider<GoRouter>((ref) {
         // than building a verdict screen with no verdict.
         redirect: (context, state) =>
             state.extra is ScanResultArgs ? null : '/',
-        builder: (context, state) =>
-            ResultScreen(args: state.extra! as ScanResultArgs),
+        builder: (context, state) {
+          final args = state.extra;
+          return args is ScanResultArgs
+              ? ResultScreen(args: args)
+              : const HomeScreen();
+        },
       ),
       GoRoute(
         path: '/approvals',
