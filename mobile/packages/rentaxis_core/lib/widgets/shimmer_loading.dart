@@ -43,6 +43,11 @@ class _ShimmerLoadingState extends State<ShimmerLoading>
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final base = m.surfaceAlt;
+    // Composite the (semi-transparent) hairline border over the base tone so
+    // the shimmer sweep reads as a visible highlight in both themes.
+    final highlight = Color.alphaBlend(m.border, base);
     return AnimatedBuilder(
       animation: _animation,
       builder: (context, child) {
@@ -54,11 +59,7 @@ class _ShimmerLoadingState extends State<ShimmerLoading>
             gradient: LinearGradient(
               begin: Alignment(_animation.value - 1, 0),
               end: Alignment(_animation.value + 1, 0),
-              colors: const [
-                Color(0xFFEEECE8),
-                Color(0xFFF5F3EF),
-                Color(0xFFEEECE8),
-              ],
+              colors: [base, highlight, base],
               stops: const [0.0, 0.5, 1.0],
             ),
           ),
@@ -73,13 +74,15 @@ class CardShimmer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: m.surface,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: AppShadows.soft,
+        border: Border.all(color: m.border),
+        boxShadow: m.isDark ? null : AppShadows.soft,
       ),
       child: const Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -127,10 +130,16 @@ class ListShimmer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: List.generate(
-        itemCount,
-        (index) => const CardShimmer(),
+    // Skeletons can briefly render inside a tighter box than their content
+    // (e.g. while a layout is still settling); clip instead of overflowing.
+    return SingleChildScrollView(
+      physics: const NeverScrollableScrollPhysics(),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: List.generate(
+          itemCount,
+          (index) => const CardShimmer(),
+        ),
       ),
     );
   }

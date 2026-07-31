@@ -37,6 +37,8 @@ export 'models/auth_response.dart';
 export 'providers/auth_provider.dart';
 export 'providers/notification_provider.dart';
 export 'providers/wishlist_provider.dart';
+export 'providers/theme_provider.dart';
+export 'providers/language_provider.dart';
 
 // Theme
 export 'theme/app_theme.dart';
@@ -45,6 +47,7 @@ export 'theme/status_helpers.dart';
 
 // Utils
 export 'utils/formatters.dart';
+export 'utils/l10n.dart';
 
 // Widgets
 export 'widgets/status_badge.dart';
@@ -59,3 +62,4 @@ export 'widgets/listing_card.dart';
 export 'widgets/distance_chip.dart';
 export 'widgets/price_label.dart';
 export 'widgets/amenity_chip.dart';
+export 'widgets/gold_button.dart';
