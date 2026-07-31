@@ -31,15 +31,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       vsync: this,
       duration: const Duration(milliseconds: 800),
     );
-    _fadeIn = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _fadeController, curve: Curves.easeOut),
-    );
-    _slideIn = Tween<Offset>(
-      begin: const Offset(0, 0.05),
-      end: Offset.zero,
-    ).animate(
-      CurvedAnimation(parent: _fadeController, curve: Curves.easeOutCubic),
-    );
+    _fadeIn = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(CurvedAnimation(parent: _fadeController, curve: Curves.easeOut));
+    _slideIn = Tween<Offset>(begin: const Offset(0, 0.05), end: Offset.zero)
+        .animate(
+          CurvedAnimation(parent: _fadeController, curve: Curves.easeOutCubic),
+        );
     _fadeController.forward();
   }
 
@@ -56,10 +55,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
     setState(() => _isSubmitting = true);
 
-    final success = await ref.read(authProvider.notifier).login(
-          _emailController.text.trim(),
-          _passwordController.text,
-        );
+    final success = await ref
+        .read(authProvider.notifier)
+        .login(_emailController.text.trim(), _passwordController.text);
 
     if (!mounted) return;
     setState(() => _isSubmitting = false);
@@ -72,6 +70,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authProvider);
+    final m = context.miftah;
+    final l = _L(context.isAr);
 
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
@@ -90,6 +90,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
+                        // Language pill, top-end per design 1b.
+                        Align(
+                          alignment: AlignmentDirectional.centerEnd,
+                          child: _LanguagePill(
+                            language: ref.watch(appLanguageProvider),
+                            onChanged: (lang) => ref
+                                .read(appLanguageProvider.notifier)
+                                .setLanguage(lang),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
                         // Brand mark (Arabic مفتاح)
                         Image.asset(
                           'assets/logo_mark.png',
@@ -106,37 +117,58 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'Renter Portal',
-                          style: GoogleFonts.josefinSans(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w400,
-                            color: AppColors.gold400.withValues(alpha: 0.85),
-                            letterSpacing: 1.5,
-                          ),
+                          l.renterPortal,
+                          style: l.ar
+                              ? GoogleFonts.notoNaskhArabic(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w400,
+                                  color: AppColors.gold400.withValues(
+                                    alpha: 0.85,
+                                  ),
+                                )
+                              : GoogleFonts.josefinSans(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w400,
+                                  color: AppColors.gold400.withValues(
+                                    alpha: 0.85,
+                                  ),
+                                  letterSpacing: 1.5,
+                                ),
                         ),
                         const SizedBox(height: 48),
 
                         // Welcome text
                         Align(
-                          alignment: Alignment.centerLeft,
+                          alignment: AlignmentDirectional.centerStart,
                           child: Text(
-                            'Welcome back',
-                            style: GoogleFonts.cinzel(
-                              fontSize: 22,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.accent,
-                            ),
+                            l.welcomeBack,
+                            style: l.ar
+                                ? GoogleFonts.notoNaskhArabic(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.accent,
+                                  )
+                                : GoogleFonts.cinzel(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.accent,
+                                  ),
                           ),
                         ),
                         const SizedBox(height: 4),
                         Align(
-                          alignment: Alignment.centerLeft,
+                          alignment: AlignmentDirectional.centerStart,
                           child: Text(
-                            'Sign in to manage your rentals',
-                            style: GoogleFonts.josefinSans(
-                              fontSize: 14,
-                              color: AppColors.accentLight.withValues(alpha: 0.75),
-                            ),
+                            l.signInSubtitle,
+                            style:
+                                (l.ar
+                                ? GoogleFonts.notoNaskhArabic
+                                : GoogleFonts.josefinSans)(
+                                  fontSize: 14,
+                                  color: AppColors.accentLight.withValues(
+                                    alpha: 0.75,
+                                  ),
+                                ),
                           ),
                         ),
                         const SizedBox(height: 28),
@@ -146,21 +178,27 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                           controller: _emailController,
                           keyboardType: TextInputType.emailAddress,
                           textInputAction: TextInputAction.next,
-                          style: GoogleFonts.josefinSans(
-                            color: AppColors.textPrimary,
-                            fontSize: 15,
-                          ),
+                          style:
+                              (l.ar
+                              ? GoogleFonts.notoNaskhArabic
+                              : GoogleFonts.josefinSans)(
+                                color: m.textPrimary,
+                                fontSize: 15,
+                              ),
                           decoration: _inputDecoration(
-                            label: 'Email',
+                            context,
+                            l,
+                            label: l.email,
                             icon: Icons.email_outlined,
                           ),
                           validator: (value) {
                             if (value == null || value.trim().isEmpty) {
-                              return 'Email is required';
+                              return l.emailRequired;
                             }
-                            if (!RegExp(r'^[^@]+@[^@]+\.[^@]+$')
-                                .hasMatch(value.trim())) {
-                              return 'Enter a valid email';
+                            if (!RegExp(
+                              r'^[^@]+@[^@]+\.[^@]+$',
+                            ).hasMatch(value.trim())) {
+                              return l.emailInvalid;
                             }
                             return null;
                           },
@@ -172,29 +210,35 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                           controller: _passwordController,
                           obscureText: _obscurePassword,
                           textInputAction: TextInputAction.done,
-                          style: GoogleFonts.josefinSans(
-                            color: AppColors.textPrimary,
-                            fontSize: 15,
-                          ),
+                          style:
+                              (l.ar
+                              ? GoogleFonts.notoNaskhArabic
+                              : GoogleFonts.josefinSans)(
+                                color: m.textPrimary,
+                                fontSize: 15,
+                              ),
                           onFieldSubmitted: (_) => _handleLogin(),
                           decoration: _inputDecoration(
-                            label: 'Password',
+                            context,
+                            l,
+                            label: l.password,
                             icon: Icons.lock_outlined,
                             suffixIcon: IconButton(
                               icon: Icon(
                                 _obscurePassword
                                     ? Icons.visibility_off_outlined
                                     : Icons.visibility_outlined,
-                                color: AppColors.textMuted,
+                                color: m.textMuted,
                                 size: 20,
                               ),
                               onPressed: () => setState(
-                                  () => _obscurePassword = !_obscurePassword),
+                                () => _obscurePassword = !_obscurePassword,
+                              ),
                             ),
                           ),
                           validator: (value) {
                             if (value == null || value.isEmpty) {
-                              return 'Password is required';
+                              return l.passwordRequired;
                             }
                             return null;
                           },
@@ -206,13 +250,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                           duration: const Duration(milliseconds: 300),
                           transitionBuilder: (child, animation) {
                             return SlideTransition(
-                              position: Tween<Offset>(
-                                begin: const Offset(0, -0.3),
-                                end: Offset.zero,
-                              ).animate(CurvedAnimation(
-                                parent: animation,
-                                curve: Curves.easeOutCubic,
-                              )),
+                              position:
+                                  Tween<Offset>(
+                                    begin: const Offset(0, -0.3),
+                                    end: Offset.zero,
+                                  ).animate(
+                                    CurvedAnimation(
+                                      parent: animation,
+                                      curve: Curves.easeOutCubic,
+                                    ),
+                                  ),
                               child: FadeTransition(
                                 opacity: animation,
                                 child: child,
@@ -226,43 +273,49 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                   padding: const EdgeInsets.all(12),
                                   margin: const EdgeInsets.only(bottom: 16),
                                   decoration: BoxDecoration(
-                                    color:
-                                        AppColors.danger.withValues(alpha: 0.08),
+                                    color: AppColorsDark.danger.withValues(
+                                      alpha: 0.12,
+                                    ),
                                     borderRadius: BorderRadius.circular(12),
                                     border: Border.all(
-                                      color: AppColors.danger
-                                          .withValues(alpha: 0.2),
+                                      color: AppColorsDark.danger.withValues(
+                                        alpha: 0.3,
+                                      ),
                                     ),
                                   ),
                                   child: Row(
                                     children: [
-                                      const Icon(Icons.error_outline,
-                                          color: AppColors.danger, size: 18),
+                                      const Icon(
+                                        Icons.error_outline,
+                                        color: AppColorsDark.danger,
+                                        size: 18,
+                                      ),
                                       const SizedBox(width: 8),
                                       Expanded(
                                         child: Text(
                                           authState.error!,
-                                          style: GoogleFonts.josefinSans(
-                                            color: AppColors.danger,
-                                            fontSize: 13,
-                                          ),
+                                          style:
+                                              (l.ar
+                                              ? GoogleFonts.notoNaskhArabic
+                                              : GoogleFonts.josefinSans)(
+                                                color: AppColorsDark.danger,
+                                                fontSize: 13,
+                                              ),
                                         ),
                                       ),
                                     ],
                                   ),
                                 )
                               : const SizedBox.shrink(
-                                  key: ValueKey('no_error')),
+                                  key: ValueKey('no_error'),
+                                ),
                         ),
 
                         // Sign In button
                         GestureDetector(
-                          onTapDown: (_) =>
-                              setState(() => _buttonScale = 0.97),
-                          onTapUp: (_) =>
-                              setState(() => _buttonScale = 1.0),
-                          onTapCancel: () =>
-                              setState(() => _buttonScale = 1.0),
+                          onTapDown: (_) => setState(() => _buttonScale = 0.97),
+                          onTapUp: (_) => setState(() => _buttonScale = 1.0),
+                          onTapCancel: () => setState(() => _buttonScale = 1.0),
                           child: AnimatedScale(
                             scale: _buttonScale,
                             duration: const Duration(milliseconds: 150),
@@ -272,50 +325,46 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                               height: 52,
                               child: DecoratedBox(
                                 decoration: BoxDecoration(
-                                  gradient: const LinearGradient(
-                                    colors: [
-                                      AppColors.accentDark,
-                                      AppColors.accent,
-                                    ],
-                                  ),
-                                  borderRadius: BorderRadius.circular(14),
+                                  gradient: MiftahGradients.gold,
+                                  borderRadius: BorderRadius.circular(10),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: AppColors.accent
-                                          .withValues(alpha: 0.25),
+                                      color: AppColors.accent.withValues(
+                                        alpha: 0.25,
+                                      ),
                                       blurRadius: 16,
                                       offset: const Offset(0, 6),
                                     ),
                                   ],
                                 ),
                                 child: ElevatedButton(
-                                  onPressed:
-                                      _isSubmitting ? null : _handleLogin,
+                                  onPressed: _isSubmitting
+                                      ? null
+                                      : _handleLogin,
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: Colors.transparent,
                                     shadowColor: Colors.transparent,
                                     disabledBackgroundColor: Colors.transparent,
                                     shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(14),
+                                      borderRadius: BorderRadius.circular(10),
                                     ),
                                   ),
                                   child: _isSubmitting
-                                      ? const SizedBox(
-                                          height: 20,
-                                          width: 20,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            color: AppColors.navyDark,
-                                          ),
-                                        )
+                                      ? const _SigningInBar()
                                       : Text(
-                                          'Sign In',
-                                          style: GoogleFonts.josefinSans(
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w600,
-                                            color: AppColors.navyDark,
-                                            letterSpacing: 0.5,
-                                          ),
+                                          l.signIn,
+                                          style: l.ar
+                                              ? GoogleFonts.notoNaskhArabic(
+                                                  fontSize: 14.5,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: AppColors.primary,
+                                                )
+                                              : GoogleFonts.josefinSans(
+                                                  fontSize: 13.5,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: AppColors.primary,
+                                                  letterSpacing: 2.8,
+                                                ),
                                         ),
                                 ),
                               ),
@@ -327,12 +376,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
                         // Footer
                         Text(
-                          'Powered by Miftah',
-                          style: GoogleFonts.josefinSans(
-                            fontSize: 11,
-                            color: AppColors.gold400.withValues(alpha: 0.6),
-                            letterSpacing: 0.5,
-                          ),
+                          l.poweredBy,
+                          style:
+                              (l.ar
+                              ? GoogleFonts.notoNaskhArabic
+                              : GoogleFonts.josefinSans)(
+                                fontSize: 11,
+                                color: AppColors.gold400.withValues(alpha: 0.6),
+                              ),
                         ),
                       ],
                     ),
@@ -346,28 +397,30 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     );
   }
 
-  InputDecoration _inputDecoration({
+  InputDecoration _inputDecoration(
+    BuildContext context,
+    _L l, {
     required String label,
     required IconData icon,
     Widget? suffixIcon,
   }) {
+    final m = context.miftah;
     return InputDecoration(
       labelText: label,
-      labelStyle: GoogleFonts.josefinSans(
-        color: AppColors.textMuted,
-        fontSize: 14,
-      ),
-      prefixIcon: Icon(icon, color: AppColors.textMuted, size: 20),
+      labelStyle: (l.ar
+          ? GoogleFonts.notoNaskhArabic
+          : GoogleFonts.josefinSans)(color: m.textMuted, fontSize: 14),
+      prefixIcon: Icon(icon, color: m.textMuted, size: 20),
       suffixIcon: suffixIcon,
       filled: true,
-      fillColor: Colors.white,
+      fillColor: m.surface,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: AppColors.border),
+        borderSide: BorderSide(color: m.border),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: AppColors.border),
+        borderSide: BorderSide(color: m.border),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
@@ -375,14 +428,175 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: AppColors.danger),
+        borderSide: BorderSide(color: AppColorsDark.danger),
       ),
       focusedErrorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: AppColors.danger, width: 1.5),
+        borderSide: BorderSide(color: AppColorsDark.danger, width: 1.5),
       ),
-      errorStyle:
-          GoogleFonts.josefinSans(color: AppColors.dangerLight, fontSize: 12),
+      errorStyle: (l.ar
+          ? GoogleFonts.notoNaskhArabic
+          : GoogleFonts.josefinSans)(color: AppColorsDark.danger, fontSize: 12),
+    );
+  }
+}
+
+/// Sign-in loading state: the design's thin sweeping bar motif (splash 1a),
+/// rendered dark-on-gold inside the CTA with a tracked caption.
+class _SigningInBar extends StatefulWidget {
+  const _SigningInBar();
+
+  @override
+  State<_SigningInBar> createState() => _SigningInBarState();
+}
+
+class _SigningInBarState extends State<_SigningInBar>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1100),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ar = context.isAr;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          width: 72,
+          height: 2,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(2),
+            child: ColoredBox(
+              color: AppColors.primary.withValues(alpha: 0.2),
+              child: AnimatedBuilder(
+                animation: _controller,
+                builder: (context, child) {
+                  // A 40%-wide dark segment sweeps left-to-right.
+                  final t = _controller.value;
+                  return Align(
+                    alignment: Alignment(-1.0 + 2.8 * t, 0),
+                    child: const FractionallySizedBox(
+                      widthFactor: 0.4,
+                      child: ColoredBox(color: AppColors.primary),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 14),
+        Text(
+          ar ? 'جارٍ تسجيل الدخول' : 'SIGNING IN',
+          style: ar
+              ? GoogleFonts.notoNaskhArabic(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.primary.withValues(alpha: 0.85),
+                )
+              : GoogleFonts.josefinSans(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 2.8,
+                  color: AppColors.primary.withValues(alpha: 0.85),
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Screen strings (EN/AR). Lightweight per-screen pattern — see arabic-brief.
+class _L {
+  _L(this.ar);
+  final bool ar;
+
+  String get renterPortal => ar ? 'بوابة المستأجر' : 'Renter Portal';
+  String get welcomeBack => ar ? 'أهلاً بعودتك إلى مسكنك' : 'Welcome back';
+  String get signInSubtitle =>
+      ar ? 'سجّل الدخول لإدارة إيجارك' : 'Sign in to manage your rentals';
+  String get email => ar ? 'البريد الإلكتروني' : 'Email';
+  String get password => ar ? 'كلمة المرور' : 'Password';
+  String get emailRequired =>
+      ar ? 'البريد الإلكتروني مطلوب' : 'Email is required';
+  String get emailInvalid =>
+      ar ? 'أدخل بريدًا إلكترونيًا صالحًا' : 'Enter a valid email';
+  String get passwordRequired =>
+      ar ? 'كلمة المرور مطلوبة' : 'Password is required';
+  String get signIn => ar ? 'تسجيل الدخول' : 'SIGN IN';
+  String get poweredBy => ar ? 'بدعم من Miftah' : 'Powered by Miftah';
+}
+
+/// EN / ع pill on the dark login chrome, per design 1b.
+class _LanguagePill extends StatelessWidget {
+  final AppLanguage language;
+  final ValueChanged<AppLanguage> onChanged;
+  const _LanguagePill({required this.language, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    Widget option(AppLanguage value, Widget child) {
+      final selected = language == value;
+      return GestureDetector(
+        onTap: () => onChanged(value),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(999),
+            color: selected ? AppColors.accent : Colors.transparent,
+          ),
+          child: child,
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: AppColors.accent.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          option(
+            AppLanguage.en,
+            Text(
+              'EN',
+              style: GoogleFonts.josefinSans(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 1.4,
+                color: language == AppLanguage.en
+                    ? AppColors.primary
+                    : Colors.white.withValues(alpha: 0.5),
+              ),
+            ),
+          ),
+          option(
+            AppLanguage.ar,
+            Text(
+              'ع',
+              style: GoogleFonts.notoNaskhArabic(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                height: 1.1,
+                color: language == AppLanguage.ar
+                    ? AppColors.primary
+                    : Colors.white.withValues(alpha: 0.5),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

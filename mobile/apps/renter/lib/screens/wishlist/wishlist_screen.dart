@@ -4,6 +4,46 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
+// ── Strings (EN/AR) ─────────────────────────────────────────────────────────
+
+/// Screen strings (EN/AR). Lightweight per-screen pattern — see arabic-brief.
+class _L {
+  _L(this.ar);
+  final bool ar;
+
+  String get title => ar ? 'المحفوظة' : 'SAVED';
+  String get failedToLoad =>
+      ar ? 'فشل تحميل المفضلة' : 'Failed to load wishlist';
+  String get showingFirst100 =>
+      ar ? 'عرض أول 100 قائمة محفوظة' : 'Showing first 100 saved listings';
+  String get removeFailed =>
+      ar ? 'تعذّرت إزالة القائمة من المفضلة' : 'Failed to remove from wishlist';
+  String get emptyTitle => ar ? 'مفضلتك فارغة' : 'YOUR WISHLIST IS EMPTY';
+  String get emptySubtitle => ar
+      ? 'تصفح القوائم واضغط على القلب لحفظها هنا'
+      : 'Browse listings and tap the heart to save them here';
+  String get browseListings => ar ? 'تصفح القوائم' : 'Browse listings';
+  String get listingFallback => ar ? 'قائمة' : 'Listing';
+}
+
+TextStyle _display(
+  bool ar, {
+  double size = 16,
+  double letterSpacing = 0,
+  Color? color,
+}) => ar
+    ? GoogleFonts.notoNaskhArabic(
+        fontSize: size + 1,
+        fontWeight: FontWeight.w600,
+        color: color,
+      )
+    : GoogleFonts.cinzel(
+        fontSize: size,
+        fontWeight: FontWeight.w600,
+        letterSpacing: letterSpacing,
+        color: color,
+      );
+
 // ── Providers ─────────────────────────────────────────────────────────────────
 
 final _wishlistProvider =
@@ -28,25 +68,26 @@ class _WishlistScreenState extends ConsumerState<WishlistScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final l = _L(context.isAr);
     final wishlistAsync = ref.watch(_wishlistProvider);
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: m.background,
       appBar: AppBar(
-        backgroundColor: AppColors.surface,
-        elevation: 0,
         title: Text(
-          'Wishlist',
-          style: GoogleFonts.cinzel(
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-            color: AppColors.textPrimary,
-          ),
+          l.title,
+          style: _display(l.ar, size: 16, letterSpacing: 3.2),
         ),
       ),
       body: wishlistAsync.when(
         loading: () => ListView.builder(
-          padding: EdgeInsets.fromLTRB(16, 16, 16, AppInsets.bottomNav(context)),
+          padding: EdgeInsets.fromLTRB(
+            16,
+            16,
+            16,
+            AppInsets.bottomNav(context),
+          ),
           itemCount: 4,
           itemBuilder: (_, __) => Padding(
             padding: const EdgeInsets.only(bottom: 14),
@@ -54,7 +95,7 @@ class _WishlistScreenState extends ConsumerState<WishlistScreen> {
           ),
         ),
         error: (e, _) => ErrorState(
-          message: 'Failed to load wishlist',
+          message: l.failedToLoad,
           onRetry: () => ref.invalidate(_wishlistProvider),
         ),
         data: (items) {
@@ -63,13 +104,7 @@ class _WishlistScreenState extends ConsumerState<WishlistScreen> {
               .toList();
 
           if (visible.isEmpty) {
-            return EmptyState(
-              icon: Icons.favorite_border,
-              title: 'Your wishlist is empty',
-              subtitle: 'Browse listings and tap the heart to save them here',
-              actionLabel: 'Browse listings',
-              onAction: () => context.go('/browse'),
-            );
+            return _WishlistEmptyState(onBrowse: () => context.go('/browse'));
           }
 
           final truncated = items.length >= 100;
@@ -79,18 +114,23 @@ class _WishlistScreenState extends ConsumerState<WishlistScreen> {
               ref.invalidate(_wishlistProvider);
             },
             child: ListView.builder(
-              padding: EdgeInsets.fromLTRB(16, 16, 16, AppInsets.bottomNav(context)),
+              padding: EdgeInsets.fromLTRB(
+                16,
+                16,
+                16,
+                AppInsets.bottomNav(context),
+              ),
               itemCount: visible.length + (truncated ? 1 : 0),
               itemBuilder: (_, i) {
                 if (truncated && i == visible.length) {
                   return Padding(
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     child: Text(
-                      'Showing first 100 saved listings',
+                      l.showingFirst100,
                       textAlign: TextAlign.center,
                       style: GoogleFonts.josefinSans(
                         fontSize: 12,
-                        color: AppColors.textMuted,
+                        color: m.textMuted,
                       ),
                     ),
                   );
@@ -103,8 +143,8 @@ class _WishlistScreenState extends ConsumerState<WishlistScreen> {
                     key: Key(id),
                     direction: DismissDirection.endToStart,
                     background: Container(
-                      alignment: Alignment.centerRight,
-                      padding: const EdgeInsets.only(right: 24),
+                      alignment: AlignmentDirectional.centerEnd,
+                      padding: const EdgeInsetsDirectional.only(end: 24),
                       margin: const EdgeInsets.only(bottom: 14),
                       decoration: BoxDecoration(
                         color: AppColors.danger,
@@ -143,11 +183,68 @@ class _WishlistScreenState extends ConsumerState<WishlistScreen> {
     } catch (e) {
       setState(() => _removedIds.remove(id));
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to remove from wishlist')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_L(context.isAr).removeFailed)));
       }
     }
+  }
+}
+
+// ── Empty state ──────────────────────────────────────────────────────────────
+
+/// "Nothing saved yet" state, styled per design mock 1l: Cinzel heading,
+/// muted copy, gold CTA back to Browse.
+class _WishlistEmptyState extends StatelessWidget {
+  final VoidCallback onBrowse;
+  const _WishlistEmptyState({required this.onBrowse});
+
+  @override
+  Widget build(BuildContext context) {
+    final m = context.miftah;
+    final l = _L(context.isAr);
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.favorite_border,
+              size: 48,
+              color: m.textMuted.withValues(alpha: 0.5),
+            ),
+            const SizedBox(height: 18),
+            Text(
+              l.emptyTitle,
+              textAlign: TextAlign.center,
+              style: _display(
+                l.ar,
+                size: 17,
+                letterSpacing: 1.6,
+                color: m.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              l.emptySubtitle,
+              textAlign: TextAlign.center,
+              style: GoogleFonts.josefinSans(
+                fontSize: 13.5,
+                height: 1.6,
+                color: m.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 24),
+            GoldButton(
+              label: l.browseListings,
+              expanded: false,
+              onPressed: onBrowse,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -166,8 +263,10 @@ class _WishlistItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final l = _L(context.isAr);
     final coverUrl = listing['coverPhotoUrl'] as String?;
-    final title = listing['title'] as String? ?? 'Listing';
+    final title = listing['title'] as String? ?? l.listingFallback;
     final rent = listing['annualRent'] as num?;
     final beds = listing['bedrooms'] as int?;
     final status = listing['status'] as String? ?? '';
@@ -177,16 +276,16 @@ class _WishlistItem extends StatelessWidget {
       'PUBLISHED' => AppColors.success,
       'UPCOMING' => AppColors.accent,
       'UNLISTED' => const Color(0xFFF59E0B), // amber
-      _ => AppColors.textMuted,
+      _ => m.textMuted,
     };
 
     return GestureDetector(
       onTap: onTap,
       child: Container(
         decoration: BoxDecoration(
-          color: AppColors.surface,
+          color: m.surface,
           borderRadius: BorderRadius.circular(16),
-          boxShadow: AppShadows.soft,
+          border: Border.all(color: m.border),
         ),
         child: Row(
           children: [
@@ -204,11 +303,8 @@ class _WishlistItem extends StatelessWidget {
                   : Container(
                       width: 100,
                       height: 100,
-                      color: AppColors.background,
-                      child: const Icon(
-                        Icons.apartment_outlined,
-                        color: AppColors.textMuted,
-                      ),
+                      color: m.background,
+                      child: Icon(Icons.apartment_outlined, color: m.textMuted),
                     ),
             ),
             Expanded(
@@ -227,7 +323,7 @@ class _WishlistItem extends StatelessWidget {
                             style: GoogleFonts.josefinSans(
                               fontSize: 14,
                               fontWeight: FontWeight.w600,
-                              color: AppColors.textPrimary,
+                              color: m.textPrimary,
                             ),
                           ),
                         ),
@@ -241,7 +337,7 @@ class _WishlistItem extends StatelessWidget {
                         maxLines: 1,
                         style: GoogleFonts.josefinSans(
                           fontSize: 12,
-                          color: AppColors.textMuted,
+                          color: m.textMuted,
                         ),
                       ),
                     ],
@@ -249,17 +345,17 @@ class _WishlistItem extends StatelessWidget {
                     Row(
                       children: [
                         if (beds != null) ...[
-                          const Icon(
+                          Icon(
                             Icons.bed_outlined,
                             size: 14,
-                            color: AppColors.textMuted,
+                            color: m.textMuted,
                           ),
                           const SizedBox(width: 3),
                           Text(
                             '$beds',
                             style: GoogleFonts.josefinSans(
                               fontSize: 12,
-                              color: AppColors.textSecondary,
+                              color: m.textSecondary,
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -270,7 +366,9 @@ class _WishlistItem extends StatelessWidget {
                             style: GoogleFonts.josefinSans(
                               fontSize: 13,
                               fontWeight: FontWeight.w700,
-                              color: AppColors.primary,
+                              color: m.isDark
+                                  ? AppColors.accent
+                                  : AppColors.primary,
                             ),
                           ),
                       ],
@@ -280,7 +378,7 @@ class _WishlistItem extends StatelessWidget {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.only(right: 12),
+              padding: const EdgeInsetsDirectional.only(end: 12),
               child: GestureDetector(
                 onTap: onRemove,
                 child: const Icon(
