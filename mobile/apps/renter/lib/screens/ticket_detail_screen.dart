@@ -897,7 +897,12 @@ class _StatusRail extends StatelessWidget {
               );
             }
             final stepIndex = index ~/ 2;
-            final completed = stepIndex <= current;
+            // RESOLVED reaches the final stage but the ticket isn't closed
+            // yet (OTP handshake pending) — show that dot as active-hollow,
+            // filled only once the status is actually CLOSED.
+            final reachedFinalUnclosed =
+                stepIndex == 3 && current == 3 && status != 'CLOSED';
+            final completed = stepIndex <= current && !reachedFinalUnclosed;
             return Container(
               width: 9,
               height: 9,
@@ -906,7 +911,11 @@ class _StatusRail extends StatelessWidget {
                 color: completed ? AppColors.accent : Colors.transparent,
                 border: completed
                     ? null
-                    : Border.all(color: Colors.white.withValues(alpha: 0.3)),
+                    : Border.all(
+                        color: reachedFinalUnclosed
+                            ? AppColors.accent
+                            : Colors.white.withValues(alpha: 0.3),
+                      ),
               ),
             );
           }),

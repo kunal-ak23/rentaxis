@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
+import '../utils/l10n.dart';
 
 /// Primary Miftah CTA: bronze→gold→pale-gold gradient fill with wide-tracked
 /// uppercase label. Use [GoldButton.outlined] for the secondary variant
@@ -26,8 +27,8 @@ class GoldButton extends StatelessWidget {
     this.height = 48,
     this.expanded = true,
     this.icon,
-  })  : _outlined = false,
-        onDark = false;
+  }) : _outlined = false,
+       onDark = false;
 
   const GoldButton.outlined({
     super.key,
@@ -56,9 +57,7 @@ class GoldButton extends StatelessWidget {
         gradient: _outlined ? null : MiftahGradients.gold,
         borderRadius: BorderRadius.circular(10),
         border: _outlined
-            ? Border.all(
-                color: goldOutlined ? m.goldOutline : m.borderStrong,
-              )
+            ? Border.all(color: goldOutlined ? m.goldOutline : m.borderStrong)
             : null,
       ),
       child: Row(
@@ -76,16 +75,28 @@ class GoldButton extends StatelessWidget {
             // Scale long labels down rather than ellipsizing mid-word.
             child: FittedBox(
               fit: BoxFit.scaleDown,
-              child: Text(
-                label.toUpperCase(),
-                maxLines: 1,
-                style: GoogleFonts.josefinSans(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 2.2,
-                  color: fg,
-                ),
-              ),
+              child: context.isAr
+                  // Arabic: Naskh, natural case, no tracking (tracking breaks
+                  // Arabic glyph joining; uppercase is a no-op anyway).
+                  ? Text(
+                      label,
+                      maxLines: 1,
+                      style: GoogleFonts.notoNaskhArabic(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: fg,
+                      ),
+                    )
+                  : Text(
+                      label.toUpperCase(),
+                      maxLines: 1,
+                      style: GoogleFonts.josefinSans(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 2.2,
+                        color: fg,
+                      ),
+                    ),
             ),
           ),
         ],

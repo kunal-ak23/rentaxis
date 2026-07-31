@@ -132,8 +132,9 @@ class _PeekCard extends StatelessWidget {
         child: Row(
           children: [
             ClipRRect(
-              borderRadius: const BorderRadius.horizontal(
-                left: Radius.circular(16),
+              // Directional so the outer corner mirrors correctly in RTL.
+              borderRadius: const BorderRadiusDirectional.horizontal(
+                start: Radius.circular(16),
               ),
               child: coverUrl != null
                   ? Image.network(

@@ -917,9 +917,11 @@ class _StatusPill extends StatelessWidget {
         return (fg: m.success, bg: m.successBg, label: l.statusCleared);
       case 'COLLECTED':
       case 'DEPOSITED':
+        // Bronze, not success-green: collected/deposited cheques can still
+        // bounce, so they must not read as settled (matches home activity).
         return (
-          fg: m.success,
-          bg: m.successBg,
+          fg: m.isDark ? AppColors.goldMid : AppColors.accentDark,
+          bg: AppColors.accent.withValues(alpha: 0.12),
           label: status == 'COLLECTED' ? l.statusCollected : l.statusDeposited,
         );
       case 'BOUNCED':

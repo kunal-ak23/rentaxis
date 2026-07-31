@@ -76,7 +76,7 @@ class _ShellScreenState extends ConsumerState<ShellScreen> {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsetsDirectional.only(end: 8),
               child: IconButton(
                 onPressed: () => context.push('/profile'),
                 icon: const Icon(
@@ -251,14 +251,28 @@ class _NavItemWidget extends StatelessWidget {
               child: Text(
                 label,
                 maxLines: 1,
-                style: GoogleFonts.josefinSans(
-                  fontSize: 10.5,
-                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                  letterSpacing: 0.4,
-                  color: isSelected
-                      ? AppColors.accent
-                      : Colors.white.withValues(alpha: 0.5),
-                ),
+                // Arabic labels need Naskh with no tracking (tracking breaks
+                // Arabic glyph joining; Josefin has no Arabic coverage).
+                style: context.isAr
+                    ? GoogleFonts.notoNaskhArabic(
+                        fontSize: 11,
+                        fontWeight: isSelected
+                            ? FontWeight.w600
+                            : FontWeight.w400,
+                        color: isSelected
+                            ? AppColors.accent
+                            : Colors.white.withValues(alpha: 0.5),
+                      )
+                    : GoogleFonts.josefinSans(
+                        fontSize: 10.5,
+                        fontWeight: isSelected
+                            ? FontWeight.w600
+                            : FontWeight.w400,
+                        letterSpacing: 0.4,
+                        color: isSelected
+                            ? AppColors.accent
+                            : Colors.white.withValues(alpha: 0.5),
+                      ),
               ),
             ),
             const SizedBox(height: 3),

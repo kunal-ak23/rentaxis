@@ -42,8 +42,20 @@ class _L {
   String get from => ar ? 'ابتداءً من' : 'FROM';
   String get scheduleVisit => ar ? 'حجز موعد معاينة' : 'Schedule a visit';
 
+  static const _viewsAr = {
+    'sea': 'بحرية',
+    'city': 'على المدينة',
+    'garden': 'على الحديقة',
+    'pool': 'على المسبح',
+    'community': 'على المجمّع',
+    'golf': 'على ملعب الجولف',
+    'canal': 'على القناة',
+    'street': 'على الشارع',
+    'road': 'على الشارع',
+  };
+
   String viewLabel(String viewType) =>
-      ar ? 'إطلالة $viewType' : '$viewType view';
+      ar ? 'إطلالة ${_viewsAr[viewType] ?? 'مميزة'}' : '$viewType view';
   String availableFrom(String date) => ar ? 'من $date' : 'From $date';
   String depositLabel(String amount) => ar ? 'التأمين $amount' : 'Dep. $amount';
   String chequesLabel(int n) =>

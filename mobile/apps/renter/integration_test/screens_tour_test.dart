@@ -69,7 +69,7 @@ void main() {
       await binding.takeScreenshot('01-login');
       await tester.enterText(fields.at(0), _email);
       await tester.enterText(fields.at(1), _password);
-      await tester.tap(find.text('Sign In'));
+      await tester.tap(find.text('SIGN IN'));
       final signedIn = await _waitFor(tester, find.text('Home'),
           timeout: const Duration(seconds: 30));
       expect(signedIn, isTrue, reason: 'sign-in did not reach the shell');
@@ -135,16 +135,16 @@ void main() {
     // Language toggle → Arabic-first brand lockup in the app bar.
     // The language row sits below the fold; scroll it into view first.
     if (find.text('عربي').evaluate().isNotEmpty) {
-      await tester.ensureVisible(find.text('عربي'));
+      await tester.ensureVisible(find.text('عربي').first);
       await _settle(tester);
-      await tester.tap(find.text('عربي'));
+      await tester.tap(find.text('عربي').first);
       await _settle(tester);
       await _go(tester, '/');
       await binding.takeScreenshot('15-home-arabic-brand');
       await _go(tester, '/profile');
-      await tester.ensureVisible(find.text('EN'));
+      await tester.ensureVisible(find.text('EN').first);
       await _settle(tester);
-      await tester.tap(find.text('EN'));
+      await tester.tap(find.text('EN').first);
       await _settle(tester);
     }
   });

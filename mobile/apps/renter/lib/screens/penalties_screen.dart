@@ -627,7 +627,14 @@ class _L {
       ? 'تواصل مع مدير العقار للحصول على تعليمات الدفع المحدّثة.'
       : 'Contact your property manager for updated payment instructions.';
 
-  String daysOverdue(int n) => ar ? 'متأخر $n يوم' : '$n days overdue';
+  // Arabic numeral–noun agreement: 1 يوم واحد · 2 يومين · 3–10 أيام · 11+ يوماً
+  String daysOverdue(int n) {
+    if (!ar) return '$n days overdue';
+    if (n == 1) return 'متأخر يوماً واحداً';
+    if (n == 2) return 'متأخر يومين';
+    if (n >= 3 && n <= 10) return 'متأخر $n أيام';
+    return 'متأخر $n يوماً';
+  }
 
   String statusLabel(String status) {
     switch (status) {

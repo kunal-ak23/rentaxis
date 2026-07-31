@@ -27,7 +27,8 @@ class _L {
       ar ? (n > 0 ? 'مفتوحة $n' : 'مفتوحة') : (n > 0 ? 'OPEN $n' : 'OPEN');
   String get all => ar ? 'الكل' : 'ALL';
   String get closed => ar ? 'مغلقة' : 'CLOSED';
-  String get searchHint => ar ? 'ابحث في الطلبات...' : 'Search tickets...';
+  String get searchHint =>
+      ar ? 'ابحث في طلبات الصيانة...' : 'Search tickets...';
   String get noMatching => ar ? 'لا توجد طلبات مطابقة' : 'No Matching Tickets';
   String get nothingPending =>
       ar ? 'لا يوجد شيء معلّق' : 'Nothing Else Pending';
@@ -396,12 +397,9 @@ class _TicketCard extends StatelessWidget {
   });
 
   String _shortId(dynamic id) {
-    final s = id?.toString() ?? '';
+    final s = (id?.toString() ?? '').replaceAll('-', '');
     if (s.isEmpty) return '----';
-    return s
-        .replaceAll('-', '')
-        .substring(0, s.length > 6 ? 6 : s.length)
-        .toUpperCase();
+    return s.substring(0, s.length > 6 ? 6 : s.length).toUpperCase();
   }
 
   int _stageFilled(String status) => switch (status) {
