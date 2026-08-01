@@ -8,6 +8,8 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
+import '../auth/phone_country.dart';
+import '../auth/phone_number_field.dart';
 import '../providers/gate_pass_provider.dart';
 
 class WalkInScreen extends ConsumerStatefulWidget {
@@ -20,6 +22,7 @@ class WalkInScreen extends ConsumerStatefulWidget {
 class _WalkInScreenState extends ConsumerState<WalkInScreen> {
   final _formKey = GlobalKey<FormState>();
   final _phone = TextEditingController();
+  PhoneCountry _phoneCountry = PhoneCountry.uae;
   final _name = TextEditingController();
   final _purpose = TextEditingController();
   final _vehicle = TextEditingController();
@@ -68,7 +71,14 @@ class _WalkInScreenState extends ConsumerState<WalkInScreen> {
   }
 
   Future<void> _lookup() async {
-    if (_propertyId == null || _phone.text.trim().isEmpty || _lookingUp) return;
+    final national = stripTrunkPrefix(_phone.text);
+    // Only look up a complete number: a partial one always 404s, which would
+    // flash "no previous visitor" at the guard mid-typing.
+    if (_propertyId == null ||
+        !_phoneCountry.nationalDigits.contains(national.length) ||
+        _lookingUp) {
+      return;
+    }
     final l = _L(context.isAr);
     setState(() {
       _lookingUp = true;
@@ -79,7 +89,7 @@ class _WalkInScreenState extends ConsumerState<WalkInScreen> {
           .read(gatePassServiceProvider)
           .lookupWalkInVisitor(
             propertyId: _propertyId!,
-            phone: _phone.text,
+            phone: _phoneCountry.toE164(stripTrunkPrefix(_phone.text)),
             unitId: _unitId,
           );
       if (!mounted) return;
@@ -147,7 +157,7 @@ class _WalkInScreenState extends ConsumerState<WalkInScreen> {
             propertyId: _propertyId!,
             unitId: _unitId!,
             name: _name.text,
-            phone: _phone.text,
+            phone: _phoneCountry.toE164(stripTrunkPrefix(_phone.text)),
             visitorType: _visitorType,
             purpose: _purpose.text,
             vehicleNumber: _vehicle.text,
@@ -273,31 +283,27 @@ class _WalkInScreenState extends ConsumerState<WalkInScreen> {
                     value == null ? l.selectDestination : null,
               ),
               const SizedBox(height: 14),
-              TextFormField(
+              PhoneNumberField(
                 controller: _phone,
-                keyboardType: TextInputType.phone,
+                country: _phoneCountry,
+                onCountryChanged: (c) => setState(() => _phoneCountry = c),
+                ar: l.ar,
+                label: l.mobileNumber,
                 textInputAction: TextInputAction.search,
-                onFieldSubmitted: (_) => _lookup(),
-                decoration: InputDecoration(
-                  labelText: l.mobileNumber,
-                  hintText: '+971501234567',
-                  suffixIcon: _lookingUp
-                      ? const Padding(
-                          padding: EdgeInsets.all(14),
-                          child: SizedBox.square(
-                            dimension: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                        )
-                      : IconButton(
-                          tooltip: l.findPreviousVisitor,
-                          onPressed: _lookup,
-                          icon: const Icon(Icons.manage_search),
+                onSubmitted: (_) => _lookup(),
+                suffixIcon: _lookingUp
+                    ? const Padding(
+                        padding: EdgeInsets.all(14),
+                        child: SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
                         ),
-                ),
-                validator: (value) => value == null || value.trim().isEmpty
-                    ? l.enterMobileNumber
-                    : null,
+                      )
+                    : IconButton(
+                        tooltip: l.findPreviousVisitor,
+                        onPressed: _lookup,
+                        icon: const Icon(Icons.manage_search),
+                      ),
               ),
               if (_lookupMessage != null)
                 Padding(
