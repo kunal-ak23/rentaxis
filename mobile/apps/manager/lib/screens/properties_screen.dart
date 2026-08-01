@@ -14,18 +14,23 @@ final _unitServiceProvider = Provider<UnitService>((ref) {
   return UnitService(client.dio);
 });
 
-final _propertiesProvider =
-    FutureProvider.autoDispose<List<dynamic>>((ref) async {
+final _propertiesProvider = FutureProvider.autoDispose<List<dynamic>>((
+  ref,
+) async {
   final service = ref.watch(_propertyServiceProvider);
   return service.getProperties();
 });
 
-final _allUnitsProvider =
-    FutureProvider.autoDispose<List<dynamic>>((ref) async {
+final _allUnitsProvider = FutureProvider.autoDispose<List<dynamic>>((
+  ref,
+) async {
   final service = ref.watch(_unitServiceProvider);
   return service.getUnits();
 });
 
+/// Properties list, per admin design 1b: dark chrome header with building
+/// count overline + search field, property cards with an occupancy bar and
+/// monthly/vacant/maintenance stat row.
 class PropertiesScreen extends ConsumerStatefulWidget {
   const PropertiesScreen({super.key});
 
@@ -45,32 +50,40 @@ class _PropertiesScreenState extends ConsumerState<PropertiesScreen> {
   Widget build(BuildContext context) {
     final propertiesAsync = ref.watch(_propertiesProvider);
     final unitsAsync = ref.watch(_allUnitsProvider);
+    final m = context.miftah;
+    final l = _L(context.isAr);
 
     return Scaffold(
-      appBar: AppBar(
-        title: _buildSearchableTitle(),
-        titleSpacing: 20,
-      ),
+      backgroundColor: m.background,
       body: Column(
         children: [
+          _ChromeHeader(
+            l: l,
+            propertyCount: propertiesAsync.valueOrNull?.length ?? 0,
+            unitCount: unitsAsync.valueOrNull?.length ?? 0,
+            searchQuery: _searchQuery,
+            onSearchChanged: (v) =>
+                setState(() => _searchQuery = v.toLowerCase()),
+            onAddTap: () => _showCreatePropertySheet(context, l),
+          ),
           Expanded(
             child: propertiesAsync.when(
               loading: () => const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 20),
                 child: ListShimmer(itemCount: 3),
               ),
-              error: (e, _) => ErrorState(
-                message: 'Failed to load properties',
-                onRetry: _refresh,
-              ),
+              error: (e, _) =>
+                  ErrorState(message: l.loadError, onRetry: _refresh),
               data: (properties) {
                 final allUnits = unitsAsync.valueOrNull ?? [];
                 final filtered = properties.where((p) {
                   final prop = p['property'] ?? p;
-                  final name =
-                      (prop['nameEn'] ?? prop['name'] ?? '').toString().toLowerCase();
-                  final address =
-                      (prop['address'] ?? '').toString().toLowerCase();
+                  final name = (prop['nameEn'] ?? prop['name'] ?? '')
+                      .toString()
+                      .toLowerCase();
+                  final address = (prop['address'] ?? '')
+                      .toString()
+                      .toLowerCase();
                   return name.contains(_searchQuery) ||
                       address.contains(_searchQuery);
                 }).toList();
@@ -79,52 +92,70 @@ class _PropertiesScreenState extends ConsumerState<PropertiesScreen> {
                   return EmptyState(
                     icon: Icons.apartment_outlined,
                     title: _searchQuery.isEmpty
-                        ? 'No properties yet'
-                        : 'No matching properties',
-                    subtitle: _searchQuery.isEmpty
-                        ? 'Add your first property to get started'
-                        : null,
+                        ? l.noPropertiesYet
+                        : l.noMatchingProperties,
+                    subtitle: _searchQuery.isEmpty ? l.addFirstProperty : null,
                   );
                 }
 
                 return RefreshIndicator(
                   onRefresh: _refresh,
-                  color: AppColors.primary,
+                  color: AppColors.accent,
                   child: ListView.builder(
                     physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 150),
+                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 150),
                     itemCount: filtered.length,
                     itemBuilder: (context, index) {
                       final item = filtered[index];
                       final prop = item['property'] ?? item;
                       final propertyId = prop['id'] ?? item['id'] ?? '';
-                      final units = allUnits
-                          .where((u) {
-                            final unitPropId = u['propertyId'] ?? u['property']?['id'];
-                            return unitPropId == propertyId;
-                          })
-                          .toList();
+                      final units = allUnits.where((u) {
+                        final unitPropId =
+                            u['propertyId'] ?? u['property']?['id'];
+                        return unitPropId == propertyId;
+                      }).toList();
                       final occupied = units
                           .where((u) => u['status'] == 'OCCUPIED')
                           .length;
                       final total = units.length;
                       final vacancies = item['vacancies'] ?? 0;
-                      final unitCount = total > 0 ? total : (item['propertyCount'] ?? 0);
-                      final occupiedCount = total > 0 ? occupied : (unitCount - (vacancies as int));
-                      final occupancy =
-                          unitCount > 0 ? occupiedCount / unitCount : 0.0;
+                      final unitCount = total > 0
+                          ? total
+                          : (item['propertyCount'] ?? 0);
+                      final occupiedCount = total > 0
+                          ? occupied
+                          : (unitCount - (vacancies as int));
+                      final occupancy = unitCount > 0
+                          ? occupiedCount / unitCount
+                          : 0.0;
+                      final monthlyRent = units.fold<double>(
+                        0,
+                        (s, u) =>
+                            s +
+                            (((u['annualRent'] ?? 0) as num).toDouble() / 12),
+                      );
+                      final maintenanceUnits = units
+                          .where((u) => u['status'] == 'MAINTENANCE')
+                          .length;
 
                       return AnimatedListItem(
                         index: index,
-                        child: _PropertyCard(
-                          name: prop['nameEn'] ?? prop['name'] ?? '',
-                          address: prop['address'] ?? '',
-                          emirate: prop['emirate'] ?? '',
-                          totalUnits: unitCount,
-                          occupiedUnits: occupiedCount,
-                          occupancy: occupancy,
-                          onTap: () =>
-                              context.push('/properties/$propertyId'),
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: _PropertyCard(
+                            name: prop['nameEn'] ?? prop['name'] ?? '',
+                            address: prop['address'] ?? '',
+                            emirate: prop['emirate'] ?? '',
+                            totalUnits: unitCount,
+                            occupiedUnits: occupiedCount,
+                            occupancy: occupancy,
+                            monthlyRent: monthlyRent,
+                            vacantUnits: unitCount - occupiedCount,
+                            maintenanceUnits: maintenanceUnits,
+                            l: l,
+                            onTap: () =>
+                                context.push('/properties/$propertyId'),
+                          ),
                         ),
                       );
                     },
@@ -135,62 +166,10 @@ class _PropertiesScreenState extends ConsumerState<PropertiesScreen> {
           ),
         ],
       ),
-      floatingActionButton: Padding(
-        padding: const EdgeInsets.only(bottom: 120),
-        child: FloatingActionButton(
-          backgroundColor: AppColors.primary,
-          onPressed: () => _showCreatePropertySheet(context),
-          child: const Icon(Icons.add, color: Colors.white),
-        ),
-      ),
     );
   }
 
-  bool _showSearch = false;
-
-  Widget _buildSearchableTitle() {
-    if (_showSearch) {
-      return SizedBox(
-        height: 40,
-        child: TextField(
-          autofocus: true,
-          onChanged: (v) => setState(() => _searchQuery = v.toLowerCase()),
-          style: GoogleFonts.josefinSans(fontSize: 14),
-          decoration: InputDecoration(
-            hintText: 'Search properties...',
-            hintStyle: GoogleFonts.josefinSans(fontSize: 14, color: AppColors.textMuted),
-            prefixIcon: const Icon(Icons.search, size: 20, color: AppColors.textMuted),
-            suffixIcon: IconButton(
-              icon: const Icon(Icons.close, size: 18),
-              onPressed: () => setState(() {
-                _showSearch = false;
-                _searchQuery = '';
-              }),
-            ),
-            contentPadding: const EdgeInsets.symmetric(vertical: 0),
-            filled: true,
-            fillColor: AppColors.background,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide.none,
-            ),
-          ),
-        ),
-      );
-    }
-    return Row(
-      children: [
-        const Text('Properties'),
-        const Spacer(),
-        IconButton(
-          icon: const Icon(Icons.search, color: AppColors.textSecondary, size: 22),
-          onPressed: () => setState(() => _showSearch = true),
-        ),
-      ],
-    );
-  }
-
-  void _showCreatePropertySheet(BuildContext context) {
+  void _showCreatePropertySheet(BuildContext context, _L l) {
     final nameCtrl = TextEditingController();
     final addressCtrl = TextEditingController();
     final formKey = GlobalKey<FormState>();
@@ -203,7 +182,7 @@ class _PropertiesScreenState extends ConsumerState<PropertiesScreen> {
       'AJMAN',
       'RAS_AL_KHAIMAH',
       'FUJAIRAH',
-      'UMM_AL_QUWAIN'
+      'UMM_AL_QUWAIN',
     ];
 
     showModalBottomSheet(
@@ -215,7 +194,11 @@ class _PropertiesScreenState extends ConsumerState<PropertiesScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheetState) => Padding(
           padding: EdgeInsets.fromLTRB(
-              24, 24, 24, MediaQuery.of(ctx).viewInsets.bottom + 24),
+            24,
+            24,
+            24,
+            MediaQuery.of(ctx).viewInsets.bottom + 24,
+          ),
           child: Form(
             key: formKey,
             child: Column(
@@ -233,73 +216,72 @@ class _PropertiesScreenState extends ConsumerState<PropertiesScreen> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                Text('New Property',
-                    style: Theme.of(ctx).textTheme.headlineSmall),
+                Text(
+                  l.newProperty,
+                  style: Theme.of(ctx).textTheme.headlineSmall,
+                ),
                 const SizedBox(height: 20),
                 TextFormField(
                   controller: nameCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Property Name',
-                    prefixIcon: Icon(Icons.apartment_outlined),
+                  decoration: InputDecoration(
+                    labelText: l.propertyName,
+                    prefixIcon: const Icon(Icons.apartment_outlined),
                   ),
-                  validator: (v) => v == null || v.trim().isEmpty
-                      ? 'Name is required'
-                      : null,
+                  validator: (v) =>
+                      v == null || v.trim().isEmpty ? l.nameRequired : null,
                 ),
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: addressCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Address',
-                    prefixIcon: Icon(Icons.location_on_outlined),
+                  decoration: InputDecoration(
+                    labelText: l.address,
+                    prefixIcon: const Icon(Icons.location_on_outlined),
                   ),
-                  validator: (v) => v == null || v.trim().isEmpty
-                      ? 'Address is required'
-                      : null,
+                  validator: (v) =>
+                      v == null || v.trim().isEmpty ? l.addressRequired : null,
                 ),
                 const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
                   value: selectedEmirate,
-                  decoration: const InputDecoration(
-                    labelText: 'Emirate',
-                    prefixIcon: Icon(Icons.flag_outlined),
+                  decoration: InputDecoration(
+                    labelText: l.emirate,
+                    prefixIcon: const Icon(Icons.flag_outlined),
                   ),
                   items: emirates
-                      .map((e) => DropdownMenuItem(
+                      .map(
+                        (e) => DropdownMenuItem(
                           value: e,
-                          child: Text(e.replaceAll('_', ' '))))
+                          child: Text(e.replaceAll('_', ' ')),
+                        ),
+                      )
                       .toList(),
                   onChanged: (v) =>
                       setSheetState(() => selectedEmirate = v ?? 'DUBAI'),
                 ),
                 const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: () async {
-                      if (!formKey.currentState!.validate()) return;
-                      final service =
-                          ref.read(_propertyServiceProvider);
-                      try {
-                        await service.createProperty({
-                          'name': nameCtrl.text.trim(),
-                          'address': addressCtrl.text.trim(),
-                          'emirate': selectedEmirate,
-                        });
-                        if (ctx.mounted) Navigator.pop(ctx);
-                        _refresh();
-                      } catch (e) {
-                        if (ctx.mounted) {
-                          ScaffoldMessenger.of(ctx).showSnackBar(
-                            const SnackBar(
-                                content:
-                                    Text('Failed to create property')),
-                          );
-                        }
+                GoldButton(
+                  label: l.ar
+                      ? l.createProperty
+                      : l.createProperty.toUpperCase(),
+                  onPressed: () async {
+                    if (!formKey.currentState!.validate()) return;
+                    final service = ref.read(_propertyServiceProvider);
+                    try {
+                      await service.createProperty({
+                        'name': nameCtrl.text.trim(),
+                        'address': addressCtrl.text.trim(),
+                        'emirate': selectedEmirate,
+                      });
+                      if (ctx.mounted) Navigator.pop(ctx);
+                      _refresh();
+                    } catch (e) {
+                      if (ctx.mounted) {
+                        ScaffoldMessenger.of(ctx).showSnackBar(
+                          SnackBar(content: Text(l.createPropertyFailed)),
+                        );
                       }
-                    },
-                    child: const Text('Create Property'),
-                  ),
+                    }
+                  },
                 ),
               ],
             ),
@@ -310,6 +292,183 @@ class _PropertiesScreenState extends ConsumerState<PropertiesScreen> {
   }
 }
 
+// ─── Chrome header ──────────────────────────────────────────────────────────
+
+class _ChromeHeader extends StatefulWidget {
+  final _L l;
+  final int propertyCount;
+  final int unitCount;
+  final String searchQuery;
+  final ValueChanged<String> onSearchChanged;
+  final VoidCallback onAddTap;
+
+  const _ChromeHeader({
+    required this.l,
+    required this.propertyCount,
+    required this.unitCount,
+    required this.searchQuery,
+    required this.onSearchChanged,
+    required this.onAddTap,
+  });
+
+  @override
+  State<_ChromeHeader> createState() => _ChromeHeaderState();
+}
+
+class _ChromeHeaderState extends State<_ChromeHeader> {
+  late final TextEditingController _ctrl = TextEditingController(
+    text: widget.searchQuery,
+  );
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l = widget.l;
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.primary,
+        border: Border(
+          bottom: BorderSide(color: AppColors.accent.withValues(alpha: 0.14)),
+        ),
+      ),
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      l.buildingsAndUnits(
+                        widget.propertyCount,
+                        widget.unitCount,
+                      ),
+                      style: l.ar
+                          ? GoogleFonts.notoNaskhArabic(
+                              fontSize: 11.5,
+                              color: AppColors.goldMid,
+                            )
+                          : GoogleFonts.josefinSans(
+                              fontSize: 9,
+                              letterSpacing: 2.4,
+                              color: AppColors.goldMid,
+                            ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      l.title,
+                      style: l.ar
+                          ? GoogleFonts.notoNaskhArabic(
+                              fontSize: 21,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.gold400,
+                            )
+                          : GoogleFonts.cinzel(
+                              fontSize: 21,
+                              color: AppColors.gold400,
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+              InkWell(
+                onTap: widget.onAddTap,
+                child: Text(
+                  l.ar ? l.addAction : l.addAction.toUpperCase(),
+                  style: l.ar
+                      ? GoogleFonts.notoNaskhArabic(
+                          fontSize: 13,
+                          color: AppColors.accent,
+                        )
+                      : GoogleFonts.josefinSans(
+                          fontSize: 11,
+                          letterSpacing: 1.4,
+                          color: AppColors.accent,
+                        ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.07),
+              border: Border.all(
+                color: AppColors.accent.withValues(alpha: 0.2),
+              ),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            padding: const EdgeInsetsDirectional.only(start: 14, end: 6),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.search,
+                  size: 17,
+                  color: Colors.white.withValues(alpha: 0.45),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: _ctrl,
+                    onChanged: widget.onSearchChanged,
+                    style: l.ar
+                        ? GoogleFonts.notoNaskhArabic(
+                            fontSize: 13,
+                            color: Colors.white,
+                          )
+                        : GoogleFonts.josefinSans(
+                            fontSize: 12.5,
+                            color: Colors.white,
+                          ),
+                    decoration: InputDecoration(
+                      isDense: true,
+                      hintText: l.searchHint,
+                      hintStyle: l.ar
+                          ? GoogleFonts.notoNaskhArabic(
+                              fontSize: 13,
+                              color: Colors.white.withValues(alpha: 0.45),
+                            )
+                          : GoogleFonts.josefinSans(
+                              fontSize: 12.5,
+                              color: Colors.white.withValues(alpha: 0.45),
+                            ),
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                    ),
+                  ),
+                ),
+                if (_ctrl.text.isNotEmpty)
+                  IconButton(
+                    icon: Icon(
+                      Icons.close,
+                      size: 16,
+                      color: Colors.white.withValues(alpha: 0.6),
+                    ),
+                    onPressed: () {
+                      _ctrl.clear();
+                      widget.onSearchChanged('');
+                    },
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Property card ──────────────────────────────────────────────────────────
+
 class _PropertyCard extends StatelessWidget {
   final String name;
   final String address;
@@ -317,6 +476,10 @@ class _PropertyCard extends StatelessWidget {
   final int totalUnits;
   final int occupiedUnits;
   final double occupancy;
+  final double monthlyRent;
+  final int vacantUnits;
+  final int maintenanceUnits;
+  final _L l;
   final VoidCallback onTap;
 
   const _PropertyCard({
@@ -326,106 +489,115 @@ class _PropertyCard extends StatelessWidget {
     required this.totalUnits,
     required this.occupiedUnits,
     required this.occupancy,
+    required this.monthlyRent,
+    required this.vacantUnits,
+    required this.maintenanceUnits,
+    required this.l,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: AppShadows.soft,
+        color: m.surface,
+        border: Border.all(color: m.border),
+        borderRadius: BorderRadius.circular(14),
       ),
+      clipBehavior: Clip.antiAlias,
       child: Material(
         color: Colors.transparent,
-        borderRadius: BorderRadius.circular(16),
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(16),
           child: Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(14),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Icon(Icons.apartment_rounded,
-                          color: AppColors.primary, size: 24),
-                    ),
-                    const SizedBox(width: 12),
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(name,
-                              style: GoogleFonts.josefinSans(
+                      child: Text(
+                        name,
+                        style: l.ar
+                            ? GoogleFonts.notoNaskhArabic(
+                                fontSize: 16,
                                 fontWeight: FontWeight.w600,
-                                fontSize: 15,
-                              )),
-                          const SizedBox(height: 2),
-                          Text(
-                            '$address, ${emirate.replaceAll('_', ' ')}',
-                            style: GoogleFonts.josefinSans(
-                              fontSize: 12,
-                              color: AppColors.textSecondary,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
+                                color: m.textPrimary,
+                              )
+                            : GoogleFonts.cinzel(
+                                fontSize: 17,
+                                color: m.textPrimary,
+                              ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    const Icon(Icons.chevron_right,
-                        color: AppColors.textMuted),
+                    const SizedBox(width: 8),
+                    _OccupancyPill(occupancy: occupancy, l: l, m: m),
                   ],
                 ),
-                const SizedBox(height: 14),
-                Row(
-                  children: [
-                    _StatChip(
-                      label: 'Units',
-                      value: '$totalUnits',
-                      color: AppColors.info,
-                    ),
-                    const SizedBox(width: 8),
-                    _StatChip(
-                      label: 'Occupied',
-                      value: '$occupiedUnits',
-                      color: AppColors.success,
-                    ),
-                    const SizedBox(width: 8),
-                    _StatChip(
-                      label: 'Vacant',
-                      value: '${totalUnits - occupiedUnits}',
-                      color: AppColors.warning,
-                    ),
-                    const Spacer(),
-                    Text(
-                      '${(occupancy * 100).toStringAsFixed(0)}%',
-                      style: GoogleFonts.cinzel(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 16,
-                        color: AppColors.primary,
-                      ),
-                    ),
-                  ],
+                const SizedBox(height: 3),
+                Text(
+                  '$address · ${l.unitsCount(totalUnits)}',
+                  style: l.ar
+                      ? GoogleFonts.notoNaskhArabic(
+                          fontSize: 12,
+                          color: m.textMuted,
+                        )
+                      : GoogleFonts.josefinSans(
+                          fontSize: 11.5,
+                          color: m.textMuted,
+                        ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 11),
                 ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
+                  borderRadius: BorderRadius.circular(999),
                   child: LinearProgressIndicator(
                     value: occupancy.clamp(0.0, 1.0),
-                    backgroundColor: AppColors.border,
-                    color: AppColors.success,
-                    minHeight: 4,
+                    backgroundColor: m.surfaceAlt,
+                    valueColor: AlwaysStoppedAnimation(AppColors.accent),
+                    minHeight: 6,
+                  ),
+                ),
+                const SizedBox(height: 11),
+                Container(
+                  decoration: BoxDecoration(
+                    border: Border(top: BorderSide(color: m.divider)),
+                  ),
+                  padding: const EdgeInsets.only(top: 11),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _StatCell(
+                          label: l.monthly,
+                          value: Formatters.currencyCompact(monthlyRent),
+                          m: m,
+                          l: l,
+                        ),
+                      ),
+                      Expanded(
+                        child: _StatCell(
+                          label: l.vacant,
+                          value: '$vacantUnits',
+                          m: m,
+                          l: l,
+                        ),
+                      ),
+                      Expanded(
+                        child: _StatCell(
+                          label: l.maintenance,
+                          value: '$maintenanceUnits',
+                          tone: maintenanceUnits > 0 ? AppColors.warning : null,
+                          m: m,
+                          l: l,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -437,42 +609,121 @@ class _PropertyCard extends StatelessWidget {
   }
 }
 
-class _StatChip extends StatelessWidget {
-  final String label;
-  final String value;
-  final Color color;
-
-  const _StatChip({
-    required this.label,
-    required this.value,
-    required this.color,
+class _OccupancyPill extends StatelessWidget {
+  final double occupancy;
+  final _L l;
+  final MiftahColors m;
+  const _OccupancyPill({
+    required this.occupancy,
+    required this.l,
+    required this.m,
   });
 
   @override
   Widget build(BuildContext context) {
+    final pct = (occupancy * 100).round();
+    final color = pct >= 95
+        ? m.success
+        : (pct >= 80 ? AppColors.warning : AppColors.accentDark);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(999),
+        color: color.withValues(alpha: 0.1),
+        border: Border.all(color: color.withValues(alpha: 0.28)),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(value,
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 12,
+      child: Text(
+        l.percentLet(pct),
+        style: l.ar
+            ? GoogleFonts.notoNaskhArabic(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w600,
                 color: color,
-              )),
-          const SizedBox(width: 4),
-          Text(label,
-              style: TextStyle(
-                fontSize: 11,
-                color: color.withValues(alpha: 0.8),
-              )),
-        ],
+              )
+            : GoogleFonts.josefinSans(
+                fontSize: 9,
+                letterSpacing: 1.0,
+                fontWeight: FontWeight.w600,
+                color: color,
+              ),
       ),
     );
   }
+}
+
+class _StatCell extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color? tone;
+  final MiftahColors m;
+  final _L l;
+
+  const _StatCell({
+    required this.label,
+    required this.value,
+    required this.m,
+    required this.l,
+    this.tone,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          l.ar ? label : label.toUpperCase(),
+          style: l.ar
+              ? GoogleFonts.notoNaskhArabic(fontSize: 10.5, color: m.textMuted)
+              : GoogleFonts.josefinSans(
+                  fontSize: 8.5,
+                  letterSpacing: 1.6,
+                  color: m.textMuted,
+                ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          value,
+          style: GoogleFonts.cinzel(fontSize: 14, color: tone ?? m.textPrimary),
+        ),
+      ],
+    );
+  }
+}
+
+/// Screen strings (EN/AR). Lightweight per-screen pattern — see arabic-brief.
+class _L {
+  _L(this.ar);
+  final bool ar;
+
+  String get title => ar ? 'العقارات' : 'Properties';
+  String buildingsAndUnits(int buildings, int units) => ar
+      ? '$buildings مبانٍ · $units وحدة'
+      : '$buildings building${buildings == 1 ? '' : 's'} · $units units';
+  String get addAction => ar ? '+ إضافة' : '+ Add';
+  String get searchHint =>
+      ar ? 'ابحث عن مبنى، وحدة، مستأجر' : 'Search building, unit, renter';
+  String get loadError =>
+      ar ? 'تعذّر تحميل العقارات' : 'Failed to load properties';
+  String get noPropertiesYet => ar ? 'لا توجد عقارات بعد' : 'No properties yet';
+  String get noMatchingProperties =>
+      ar ? 'لا توجد نتائج مطابقة' : 'No matching properties';
+  String get addFirstProperty =>
+      ar ? 'أضف أول عقار للبدء' : 'Add your first property to get started';
+  String unitsCount(int n) => ar ? '$n وحدة' : '$n units';
+  String percentLet(int pct) => ar ? '$pct% مؤجّر' : '$pct% let';
+  String get monthly => ar ? 'شهريًا' : 'Monthly';
+  String get vacant => ar ? 'شاغرة' : 'Vacant';
+  String get maintenance => ar ? 'الصيانة' : 'Maintenance';
+
+  // Create-property sheet
+  String get newProperty => ar ? 'عقار جديد' : 'New Property';
+  String get propertyName => ar ? 'اسم العقار' : 'Property Name';
+  String get nameRequired => ar ? 'الاسم مطلوب' : 'Name is required';
+  String get address => ar ? 'العنوان' : 'Address';
+  String get addressRequired => ar ? 'العنوان مطلوب' : 'Address is required';
+  String get emirate => ar ? 'الإمارة' : 'Emirate';
+  String get createProperty => ar ? 'إنشاء العقار' : 'Create Property';
+  String get createPropertyFailed =>
+      ar ? 'تعذّر إنشاء العقار' : 'Failed to create property';
 }

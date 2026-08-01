@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
 final _staffServiceProvider = Provider<StaffService>((ref) {
@@ -13,18 +14,20 @@ final _propertyServiceProvider = Provider<PropertyService>((ref) {
   return PropertyService(client.dio);
 });
 
-final _staffProvider =
-    FutureProvider.autoDispose<List<dynamic>>((ref) async {
+final _staffProvider = FutureProvider.autoDispose<List<dynamic>>((ref) async {
   final service = ref.watch(_staffServiceProvider);
   return service.getStaff();
 });
 
-final _propertiesForFilterProvider =
-    FutureProvider.autoDispose<List<dynamic>>((ref) async {
+final _propertiesForFilterProvider = FutureProvider.autoDispose<List<dynamic>>((
+  ref,
+) async {
   final service = ref.watch(_propertyServiceProvider);
   return service.getProperties();
 });
 
+/// Staff directory, restyled to match the admin design language: dark
+/// chrome search header, property filter chips, role-badged cards.
 class StaffScreen extends ConsumerStatefulWidget {
   const StaffScreen({super.key});
 
@@ -42,23 +45,22 @@ class _StaffScreenState extends ConsumerState<StaffScreen> {
   }
 
   Future<void> _deleteStaff(Map<String, dynamic> staff) async {
+    final l = _L(context.isAr);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete Staff'),
-        content: Text(
-            'Are you sure you want to delete ${staff['name'] ?? 'this staff member'}?'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(l.deleteStaff),
+        content: Text(l.deleteStaffConfirm(staff['name'])),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            child: Text(l.cancel),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.danger,
-            ),
-            child: const Text('Delete'),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.danger),
+            child: Text(l.delete),
           ),
         ],
       ),
@@ -68,16 +70,16 @@ class _StaffScreenState extends ConsumerState<StaffScreen> {
     try {
       await ref.read(_staffServiceProvider).deleteStaff(staff['id']);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Staff member deleted')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(l.staffDeleted)));
         _refresh();
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to delete staff member')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(l.staffDeleteFailed)));
       }
     }
   }
@@ -86,81 +88,69 @@ class _StaffScreenState extends ConsumerState<StaffScreen> {
   Widget build(BuildContext context) {
     final staffAsync = ref.watch(_staffProvider);
     final propertiesAsync = ref.watch(_propertiesForFilterProvider);
+    final m = context.miftah;
+    final l = _L(context.isAr);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Staff')),
+      backgroundColor: m.background,
       body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: TextField(
-              onChanged: (v) => setState(() => _searchQuery = v.toLowerCase()),
-              decoration: InputDecoration(
-                hintText: 'Search staff...',
-                prefixIcon:
-                    const Icon(Icons.search, color: AppColors.textMuted),
-                suffixIcon: _searchQuery.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear, size: 18),
-                        onPressed: () => setState(() => _searchQuery = ''),
-                      )
-                    : null,
-              ),
-            ),
+          _ChromeHeader(
+            count: staffAsync.asData?.value.length,
+            l: l,
+            onSearchChanged: (v) =>
+                setState(() => _searchQuery = v.toLowerCase()),
           ),
           propertiesAsync.when(
             loading: () => const SizedBox.shrink(),
-            error: (_, __) => const SizedBox.shrink(),
+            error: (error, stackTrace) => const SizedBox.shrink(),
             data: (properties) {
               if (properties.isEmpty) return const SizedBox.shrink();
               return SizedBox(
-                height: 40,
+                height: 48,
                 child: ListView(
                   scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
                   children: [
-                    FilterChip(
-                      label: const Text('All'),
+                    _FilterChip(
+                      label: l.all,
                       selected: _selectedPropertyId == null,
-                      onSelected: (_) =>
-                          setState(() => _selectedPropertyId = null),
-                      selectedColor:
-                          AppColors.primary.withValues(alpha: 0.15),
+                      onTap: () => setState(() => _selectedPropertyId = null),
                     ),
-                    const SizedBox(width: 8),
-                    ...properties.map((p) => Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: FilterChip(
-                            label: Text(p['name'] ?? 'Property'),
-                            selected: _selectedPropertyId == p['id'],
-                            onSelected: (_) => setState(
-                                () => _selectedPropertyId = p['id']),
-                            selectedColor:
-                                AppColors.primary.withValues(alpha: 0.15),
-                          ),
-                        )),
+                    ...properties.map(
+                      (p) => Padding(
+                        padding: const EdgeInsetsDirectional.only(start: 8),
+                        child: _FilterChip(
+                          label: p['name'] ?? l.property,
+                          selected: _selectedPropertyId == p['id'],
+                          onTap: () =>
+                              setState(() => _selectedPropertyId = p['id']),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               );
             },
           ),
-          const SizedBox(height: 8),
           Expanded(
             child: staffAsync.when(
-              loading: () => const Center(
-                child: CircularProgressIndicator(color: AppColors.primary),
+              loading: () => Center(
+                child: CircularProgressIndicator(
+                  color: m.isDark ? AppColors.accent : AppColors.primary,
+                ),
               ),
-              error: (e, _) => ErrorState(
-                message: 'Failed to load staff',
-                onRetry: _refresh,
-              ),
+              error: (e, _) =>
+                  ErrorState(message: l.loadFailed, onRetry: _refresh),
               data: (staff) {
                 final filtered = staff.where((s) {
-                  final name =
-                      (s['name'] ?? '').toString().toLowerCase();
-                  final email =
-                      (s['email'] ?? '').toString().toLowerCase();
-                  final matchesSearch = name.contains(_searchQuery) ||
+                  final name = (s['name'] ?? '').toString().toLowerCase();
+                  final email = (s['email'] ?? '').toString().toLowerCase();
+                  final matchesSearch =
+                      name.contains(_searchQuery) ||
                       email.contains(_searchQuery);
 
                   if (_selectedPropertyId != null) {
@@ -178,20 +168,26 @@ class _StaffScreenState extends ConsumerState<StaffScreen> {
                   return EmptyState(
                     icon: Icons.badge_outlined,
                     title: _searchQuery.isEmpty && _selectedPropertyId == null
-                        ? 'No staff yet'
-                        : 'No matching staff',
-                    subtitle: _searchQuery.isEmpty && _selectedPropertyId == null
-                        ? 'Add your first staff member'
+                        ? l.noStaffYet
+                        : l.noMatchingStaff,
+                    subtitle:
+                        _searchQuery.isEmpty && _selectedPropertyId == null
+                        ? l.addFirstStaff
                         : null,
                   );
                 }
 
                 return RefreshIndicator(
                   onRefresh: _refresh,
-                  color: AppColors.primary,
+                  color: m.isDark ? AppColors.accent : AppColors.primary,
                   child: ListView.builder(
                     physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 80),
+                    padding: EdgeInsets.fromLTRB(
+                      16,
+                      8,
+                      16,
+                      AppInsets.bottomNav(context),
+                    ),
                     itemCount: filtered.length,
                     itemBuilder: (context, index) {
                       final member = filtered[index];
@@ -199,8 +195,8 @@ class _StaffScreenState extends ConsumerState<StaffScreen> {
                         index: index,
                         child: _StaffCard(
                           staff: member,
-                          onTap: () =>
-                              context.push('/staff/${member['id']}'),
+                          l: l,
+                          onTap: () => context.push('/staff/${member['id']}'),
                           onLongPress: () => _deleteStaff(member),
                         ),
                       );
@@ -221,6 +217,7 @@ class _StaffScreenState extends ConsumerState<StaffScreen> {
   }
 
   void _showCreateStaffSheet(BuildContext context) {
+    final l = _L(context.isAr);
     final nameCtrl = TextEditingController();
     final emailCtrl = TextEditingController();
     final phoneCtrl = TextEditingController();
@@ -236,7 +233,11 @@ class _StaffScreenState extends ConsumerState<StaffScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheetState) => Padding(
           padding: EdgeInsets.fromLTRB(
-              24, 24, 24, MediaQuery.of(ctx).viewInsets.bottom + 24),
+            24,
+            24,
+            24,
+            MediaQuery.of(ctx).viewInsets.bottom + 24,
+          ),
           child: Form(
             key: formKey,
             child: SingleChildScrollView(
@@ -255,34 +256,40 @@ class _StaffScreenState extends ConsumerState<StaffScreen> {
                     ),
                   ),
                   const SizedBox(height: 20),
-                  Text('New Staff Member',
-                      style: Theme.of(ctx).textTheme.headlineSmall),
+                  Text(
+                    l.newStaffMember,
+                    style: l.ar
+                        ? GoogleFonts.notoNaskhArabic(
+                            fontSize: 19,
+                            fontWeight: FontWeight.w600,
+                          )
+                        : GoogleFonts.cinzel(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                          ),
+                  ),
                   const SizedBox(height: 20),
                   TextFormField(
                     controller: nameCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Full Name',
-                      prefixIcon: Icon(Icons.person_outline),
+                    decoration: InputDecoration(
+                      labelText: l.fullName,
+                      prefixIcon: const Icon(Icons.person_outline),
                     ),
-                    validator: (v) => v == null || v.trim().isEmpty
-                        ? 'Name is required'
-                        : null,
+                    validator: (v) =>
+                        v == null || v.trim().isEmpty ? l.nameRequired : null,
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
                     controller: emailCtrl,
                     keyboardType: TextInputType.emailAddress,
-                    decoration: const InputDecoration(
-                      labelText: 'Email',
-                      prefixIcon: Icon(Icons.email_outlined),
+                    decoration: InputDecoration(
+                      labelText: l.email,
+                      prefixIcon: const Icon(Icons.email_outlined),
                     ),
                     validator: (v) {
-                      if (v == null || v.trim().isEmpty) {
-                        return 'Email is required';
-                      }
-                      if (!RegExp(r'^[^@]+@[^@]+\.[^@]+$')
-                          .hasMatch(v.trim())) {
-                        return 'Enter a valid email';
+                      if (v == null || v.trim().isEmpty) return l.emailRequired;
+                      if (!RegExp(r'^[^@]+@[^@]+\.[^@]+$').hasMatch(v.trim())) {
+                        return l.emailInvalid;
                       }
                       return null;
                     },
@@ -291,58 +298,55 @@ class _StaffScreenState extends ConsumerState<StaffScreen> {
                   TextFormField(
                     controller: phoneCtrl,
                     keyboardType: TextInputType.phone,
-                    decoration: const InputDecoration(
-                      labelText: 'Phone Number',
-                      prefixIcon: Icon(Icons.phone_outlined),
+                    decoration: InputDecoration(
+                      labelText: l.phoneNumber,
+                      prefixIcon: const Icon(Icons.phone_outlined),
                     ),
                   ),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
-                    value: role,
-                    decoration: const InputDecoration(
-                      labelText: 'Role',
-                      prefixIcon: Icon(Icons.badge_outlined),
+                    initialValue: role,
+                    decoration: InputDecoration(
+                      labelText: l.role,
+                      prefixIcon: const Icon(Icons.badge_outlined),
                     ),
-                    items: const [
+                    items: [
                       DropdownMenuItem(
-                          value: 'PROPERTY_MANAGER',
-                          child: Text('Property Manager')),
+                        value: 'PROPERTY_MANAGER',
+                        child: Text(l.propertyManager),
+                      ),
                       DropdownMenuItem(
-                          value: 'TENANT_USER',
-                          child: Text('Tenant User')),
+                        value: 'TENANT_USER',
+                        child: Text(l.tenantUser),
+                      ),
                     ],
                     onChanged: (v) =>
                         setSheetState(() => role = v ?? 'PROPERTY_MANAGER'),
                   ),
                   const SizedBox(height: 24),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: () async {
-                        if (!formKey.currentState!.validate()) return;
-                        final service = ref.read(_staffServiceProvider);
-                        try {
-                          await service.createStaff({
-                            'name': nameCtrl.text.trim(),
-                            'email': emailCtrl.text.trim(),
-                            if (phoneCtrl.text.isNotEmpty)
-                              'phone': phoneCtrl.text.trim(),
-                            'role': role,
-                          });
-                          if (ctx.mounted) Navigator.pop(ctx);
-                          _refresh();
-                        } catch (e) {
-                          if (ctx.mounted) {
-                            ScaffoldMessenger.of(ctx).showSnackBar(
-                              const SnackBar(
-                                  content:
-                                      Text('Failed to create staff member')),
-                            );
-                          }
+                  GoldButton(
+                    label: l.createStaff,
+                    onPressed: () async {
+                      if (!formKey.currentState!.validate()) return;
+                      final service = ref.read(_staffServiceProvider);
+                      try {
+                        await service.createStaff({
+                          'name': nameCtrl.text.trim(),
+                          'email': emailCtrl.text.trim(),
+                          if (phoneCtrl.text.isNotEmpty)
+                            'phone': phoneCtrl.text.trim(),
+                          'role': role,
+                        });
+                        if (ctx.mounted) Navigator.pop(ctx);
+                        _refresh();
+                      } catch (e) {
+                        if (ctx.mounted) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            SnackBar(content: Text(l.createStaffFailed)),
+                          );
                         }
-                      },
-                      child: const Text('Create Staff'),
-                    ),
+                      }
+                    },
                   ),
                 ],
               ),
@@ -354,64 +358,211 @@ class _StaffScreenState extends ConsumerState<StaffScreen> {
   }
 }
 
+class _ChromeHeader extends StatelessWidget {
+  final int? count;
+  final _L l;
+  final ValueChanged<String> onSearchChanged;
+
+  const _ChromeHeader({
+    required this.count,
+    required this.l,
+    required this.onSearchChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.primary,
+        border: Border(
+          bottom: BorderSide(color: AppColors.accent.withValues(alpha: 0.14)),
+        ),
+      ),
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            count != null ? l.staffCount(count!) : l.title,
+            style: l.ar
+                ? GoogleFonts.notoNaskhArabic(
+                    fontSize: 12,
+                    color: AppColors.goldMid,
+                  )
+                : GoogleFonts.josefinSans(
+                    fontSize: 10,
+                    letterSpacing: 2.6,
+                    color: AppColors.goldMid,
+                  ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            l.title,
+            style: l.ar
+                ? GoogleFonts.notoNaskhArabic(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.gold400,
+                  )
+                : GoogleFonts.cinzel(fontSize: 22, color: AppColors.gold400),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            onChanged: onSearchChanged,
+            style: (l.ar
+                ? GoogleFonts.notoNaskhArabic
+                : GoogleFonts.josefinSans)(fontSize: 13, color: Colors.white),
+            decoration: InputDecoration(
+              isDense: true,
+              hintText: l.searchHint,
+              hintStyle:
+                  (l.ar
+                  ? GoogleFonts.notoNaskhArabic
+                  : GoogleFonts.josefinSans)(
+                    fontSize: 12.5,
+                    color: Colors.white.withValues(alpha: 0.45),
+                  ),
+              prefixIcon: Icon(
+                Icons.search,
+                size: 18,
+                color: Colors.white.withValues(alpha: 0.45),
+              ),
+              filled: true,
+              fillColor: Colors.white.withValues(alpha: 0.07),
+              contentPadding: const EdgeInsets.symmetric(vertical: 10),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(999),
+                borderSide: BorderSide(
+                  color: AppColors.accent.withValues(alpha: 0.2),
+                ),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(999),
+                borderSide: BorderSide(
+                  color: AppColors.accent.withValues(alpha: 0.2),
+                ),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(999),
+                borderSide: BorderSide(
+                  color: AppColors.accent.withValues(alpha: 0.5),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FilterChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  const _FilterChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final m = context.miftah;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(999),
+          color: selected ? AppColors.primary : Colors.transparent,
+          border: Border.all(
+            color: selected ? AppColors.primary : m.borderStrong,
+          ),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          style: context.isAr
+              ? GoogleFonts.notoNaskhArabic(
+                  fontSize: 12.5,
+                  color: selected ? AppColors.accent : m.textSecondary,
+                )
+              : GoogleFonts.josefinSans(
+                  fontSize: 11.5,
+                  letterSpacing: 0.6,
+                  color: selected ? AppColors.accent : m.textSecondary,
+                ),
+        ),
+      ),
+    );
+  }
+}
+
 class _StaffCard extends StatelessWidget {
   final Map<String, dynamic> staff;
+  final _L l;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
 
   const _StaffCard({
     required this.staff,
+    required this.l,
     required this.onTap,
     required this.onLongPress,
   });
 
-  Color _roleColor(String role) {
+  Color _roleColor(MiftahColors m, String role) {
     switch (role) {
       case 'PROPERTY_MANAGER':
-        return AppColors.primary;
+        return m.isDark ? AppColors.accent : AppColors.primary;
       case 'TENANT_USER':
         return AppColors.info;
       default:
-        return AppColors.textSecondary;
-    }
-  }
-
-  String _roleLabel(String role) {
-    switch (role) {
-      case 'PROPERTY_MANAGER':
-        return 'Property Manager';
-      case 'TENANT_USER':
-        return 'Tenant User';
-      default:
-        return role;
+        return m.textSecondary;
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final name = staff['name'] ?? 'Unknown';
+    final m = context.miftah;
+    final name = staff['name'] ?? l.unknown;
     final email = staff['email'] ?? '';
     final phone = staff['phone'] ?? staff['phoneNumber'] ?? '';
     final role = staff['role'] ?? '';
     final propertyIds = (staff['propertyIds'] as List<dynamic>?) ?? [];
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: m.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: m.border),
+      ),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
         onLongPress: onLongPress,
-        borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.all(14),
           child: Row(
             children: [
-              CircleAvatar(
-                backgroundColor: AppColors.primary.withValues(alpha: 0.1),
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: m.background,
+                  border: Border.all(color: m.borderStrong),
+                ),
+                alignment: Alignment.center,
                 child: Text(
-                  name.isNotEmpty ? name[0].toUpperCase() : '?',
-                  style: const TextStyle(
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.w700,
+                  name.toString().isNotEmpty
+                      ? name.toString()[0].toUpperCase()
+                      : '?',
+                  style: GoogleFonts.cinzel(
+                    fontSize: 13,
+                    color: AppColors.accentDark,
                   ),
                 ),
               ),
@@ -424,70 +575,159 @@ class _StaffCard extends StatelessWidget {
                       children: [
                         Flexible(
                           child: Text(
-                            name,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 14,
-                            ),
+                            name.toString(),
+                            style:
+                                (l.ar
+                                ? GoogleFonts.notoNaskhArabic
+                                : GoogleFonts.josefinSans)(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                  color: m.textPrimary,
+                                ),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        if (role.isNotEmpty) ...[
+                        if (role.toString().isNotEmpty) ...[
                           const SizedBox(width: 8),
-                          StatusBadge(
-                            label: _roleLabel(role),
-                            color: _roleColor(role),
+                          _RolePill(
+                            color: _roleColor(m, role),
+                            label: l.roleLabel(role),
+                            ar: l.ar,
                           ),
                         ],
                       ],
                     ),
                     const SizedBox(height: 4),
-                    if (email.isNotEmpty)
+                    if (email.toString().isNotEmpty)
                       Text(
-                        email,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textSecondary,
-                        ),
+                        email.toString(),
+                        style:
+                            (l.ar
+                            ? GoogleFonts.notoNaskhArabic
+                            : GoogleFonts.josefinSans)(
+                              fontSize: 12,
+                              color: m.textSecondary,
+                            ),
                       ),
-                    if (phone.isNotEmpty) ...[
+                    if (phone.toString().isNotEmpty) ...[
                       const SizedBox(height: 2),
                       Text(
-                        phone,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textMuted,
-                        ),
+                        phone.toString(),
+                        style:
+                            (l.ar
+                            ? GoogleFonts.notoNaskhArabic
+                            : GoogleFonts.josefinSans)(
+                              fontSize: 12,
+                              color: m.textMuted,
+                            ),
                       ),
                     ],
                     if (propertyIds.isNotEmpty) ...[
                       const SizedBox(height: 4),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: AppColors.accent.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          '${propertyIds.length} ${propertyIds.length == 1 ? 'property' : 'properties'}',
-                          style: const TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.accent,
-                          ),
-                        ),
+                      Text(
+                        l.propertyCount(propertyIds.length),
+                        style:
+                            (l.ar
+                            ? GoogleFonts.notoNaskhArabic
+                            : GoogleFonts.josefinSans)(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.accentDark,
+                            ),
                       ),
                     ],
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right,
-                  color: AppColors.textMuted, size: 20),
+              Icon(Icons.chevron_right, color: m.textMuted, size: 20),
             ],
           ),
         ),
       ),
     );
+  }
+}
+
+class _RolePill extends StatelessWidget {
+  final Color color;
+  final String label;
+  final bool ar;
+  const _RolePill({required this.color, required this.label, required this.ar});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(999),
+        color: color.withValues(alpha: 0.08),
+        border: Border.all(color: color.withValues(alpha: 0.28)),
+      ),
+      child: Text(
+        ar ? label : label.toUpperCase(),
+        style: (ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans)(
+          fontSize: 9,
+          letterSpacing: ar ? 0 : 1.0,
+          color: color,
+        ),
+      ),
+    );
+  }
+}
+
+/// Screen strings (EN/AR). Lightweight per-screen pattern — see arabic-brief.
+class _L {
+  _L(this.ar);
+  final bool ar;
+
+  String get title => ar ? 'الموظفون' : 'Staff';
+  String staffCount(int n) => ar ? '$n موظفًا' : '$n STAFF';
+  String get searchHint => ar ? 'ابحث في الموظفين' : 'Search staff...';
+  String get all => ar ? 'الكل' : 'All';
+  String get property => ar ? 'عقار' : 'Property';
+  String get loadFailed => ar ? 'فشل تحميل الموظفين' : 'Failed to load staff';
+  String get noStaffYet => ar ? 'لا يوجد موظفون بعد' : 'No staff yet';
+  String get noMatchingStaff =>
+      ar ? 'لا يوجد موظفون مطابقون' : 'No matching staff';
+  String get addFirstStaff =>
+      ar ? 'أضف أول موظف لديك' : 'Add your first staff member';
+  String get unknown => ar ? 'غير معروف' : 'Unknown';
+  String get newStaffMember => ar ? 'موظف جديد' : 'New Staff Member';
+  String get fullName => ar ? 'الاسم الكامل' : 'Full Name';
+  String get nameRequired => ar ? 'الاسم مطلوب' : 'Name is required';
+  String get email => ar ? 'البريد الإلكتروني' : 'Email';
+  String get emailRequired =>
+      ar ? 'البريد الإلكتروني مطلوب' : 'Email is required';
+  String get emailInvalid =>
+      ar ? 'أدخل بريدًا إلكترونيًا صالحًا' : 'Enter a valid email';
+  String get phoneNumber => ar ? 'رقم الهاتف' : 'Phone Number';
+  String get role => ar ? 'الدور الوظيفي' : 'Role';
+  String get propertyManager => ar ? 'مدير العقار' : 'Property Manager';
+  String get tenantUser => ar ? 'مستخدم الحساب' : 'Tenant User';
+  String get createStaff => ar ? 'إنشاء موظف' : 'Create Staff';
+  String get createStaffFailed =>
+      ar ? 'فشل إنشاء الموظف' : 'Failed to create staff member';
+  String get deleteStaff => ar ? 'حذف الموظف' : 'Delete Staff';
+  String deleteStaffConfirm(dynamic name) => ar
+      ? 'هل أنت متأكد من حذف ${name ?? 'هذا الموظف'}؟'
+      : 'Are you sure you want to delete ${name ?? 'this staff member'}?';
+  String get cancel => ar ? 'إلغاء' : 'Cancel';
+  String get delete => ar ? 'حذف' : 'Delete';
+  String get staffDeleted => ar ? 'تم حذف الموظف' : 'Staff member deleted';
+  String get staffDeleteFailed =>
+      ar ? 'فشل حذف الموظف' : 'Failed to delete staff member';
+  String propertyCount(int n) => ar
+      ? '$n ${n == 1 ? 'عقار' : 'عقارات'}'
+      : '$n ${n == 1 ? 'property' : 'properties'}';
+
+  String roleLabel(String role) {
+    switch (role) {
+      case 'PROPERTY_MANAGER':
+        return propertyManager;
+      case 'TENANT_USER':
+        return tenantUser;
+      default:
+        return role;
+    }
   }
 }

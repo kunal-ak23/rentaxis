@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
 final _bankAccountServiceProvider = Provider<BankAccountService>((ref) {
@@ -7,8 +9,9 @@ final _bankAccountServiceProvider = Provider<BankAccountService>((ref) {
   return BankAccountService(client.dio);
 });
 
-final _bankAccountsProvider =
-    FutureProvider.autoDispose<List<dynamic>>((ref) async {
+final _bankAccountsProvider = FutureProvider.autoDispose<List<dynamic>>((
+  ref,
+) async {
   final service = ref.watch(_bankAccountServiceProvider);
   return service.getBankAccounts();
 });
@@ -17,8 +20,7 @@ class BankAccountsScreen extends ConsumerStatefulWidget {
   const BankAccountsScreen({super.key});
 
   @override
-  ConsumerState<BankAccountsScreen> createState() =>
-      _BankAccountsScreenState();
+  ConsumerState<BankAccountsScreen> createState() => _BankAccountsScreenState();
 }
 
 class _BankAccountsScreenState extends ConsumerState<BankAccountsScreen> {
@@ -26,8 +28,13 @@ class _BankAccountsScreenState extends ConsumerState<BankAccountsScreen> {
     ref.invalidate(_bankAccountsProvider);
   }
 
-  void _showAccountDetails(BuildContext context, Map<String, dynamic> account) {
-    final bankName = account['bankName'] ?? 'Unknown';
+  void _showAccountDetails(
+    BuildContext context,
+    Map<String, dynamic> account,
+    _L l,
+  ) {
+    final m = context.miftah;
+    final bankName = account['bankName'] ?? l.unknown;
     final accountNumber = (account['accountNumber'] ?? '').toString();
     final iban = (account['iban'] ?? '').toString();
     final swiftCode = (account['swiftCode'] ?? '').toString();
@@ -37,6 +44,7 @@ class _BankAccountsScreenState extends ConsumerState<BankAccountsScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      backgroundColor: m.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -51,25 +59,33 @@ class _BankAccountsScreenState extends ConsumerState<BankAccountsScreen> {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: AppColors.border,
+                  color: m.borderStrong,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
             ),
             const SizedBox(height: 20),
-            Text(bankName, style: Theme.of(ctx).textTheme.headlineSmall),
+            Text(
+              bankName,
+              style: l.ar
+                  ? GoogleFonts.notoNaskhArabic(
+                      fontSize: 19,
+                      fontWeight: FontWeight.w600,
+                      color: m.textPrimary,
+                    )
+                  : GoogleFonts.cinzel(fontSize: 18, color: m.textPrimary),
+            ),
             const SizedBox(height: 20),
-            _DetailRow(label: 'Bank Name', value: bankName),
+            _DetailRow(label: l.bankName, value: bankName, l: l),
             if (accountNumber.isNotEmpty)
-              _DetailRow(label: 'Account Number', value: accountNumber),
-            if (iban.isNotEmpty)
-              _DetailRow(label: 'IBAN', value: iban),
+              _DetailRow(label: l.accountNumber, value: accountNumber, l: l),
+            if (iban.isNotEmpty) _DetailRow(label: l.iban, value: iban, l: l),
             if (swiftCode.isNotEmpty)
-              _DetailRow(label: 'SWIFT Code', value: swiftCode),
+              _DetailRow(label: l.swiftCode, value: swiftCode, l: l),
             if (branch.isNotEmpty)
-              _DetailRow(label: 'Branch', value: branch),
+              _DetailRow(label: l.branch, value: branch, l: l),
             if (propertyName.isNotEmpty)
-              _DetailRow(label: 'Linked Property', value: propertyName),
+              _DetailRow(label: l.linkedProperty, value: propertyName, l: l),
           ],
         ),
       ),
@@ -79,42 +95,97 @@ class _BankAccountsScreenState extends ConsumerState<BankAccountsScreen> {
   @override
   Widget build(BuildContext context) {
     final accountsAsync = ref.watch(_bankAccountsProvider);
+    final m = context.miftah;
+    final l = _L(context.isAr);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Bank Accounts')),
-      body: accountsAsync.when(
-        loading: () => const Center(
-          child: CircularProgressIndicator(color: AppColors.primary),
-        ),
-        error: (e, _) => ErrorState(
-          message: 'Failed to load bank accounts',
-          onRetry: _refresh,
-        ),
-        data: (accounts) {
-          if (accounts.isEmpty) {
-            return const EmptyState(
-              icon: Icons.account_balance_outlined,
-              title: 'No bank accounts',
-            );
-          }
+      backgroundColor: m.background,
+      body: Column(
+        children: [
+          _ChromeHeader(l: l),
+          Expanded(
+            child: accountsAsync.when(
+              loading: () => Center(
+                child: CircularProgressIndicator(color: AppColors.accent),
+              ),
+              error: (e, _) =>
+                  ErrorState(message: l.failedToLoad, onRetry: _refresh),
+              data: (accounts) {
+                if (accounts.isEmpty) {
+                  return EmptyState(
+                    icon: Icons.account_balance_outlined,
+                    title: l.noBankAccounts,
+                  );
+                }
 
-          return RefreshIndicator(
-            onRefresh: _refresh,
-            color: AppColors.primary,
-            child: ListView.builder(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.all(16),
-              itemCount: accounts.length,
-              itemBuilder: (context, index) {
-                final account = accounts[index];
-                return _BankAccountCard(
-                  account: account,
-                  onTap: () => _showAccountDetails(context, account),
+                return RefreshIndicator(
+                  onRefresh: _refresh,
+                  color: AppColors.accent,
+                  child: ListView.builder(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.all(16),
+                    itemCount: accounts.length,
+                    itemBuilder: (context, index) {
+                      final account = accounts[index];
+                      return _BankAccountCard(
+                        account: account,
+                        l: l,
+                        onTap: () => _showAccountDetails(context, account, l),
+                      );
+                    },
+                  ),
                 );
               },
             ),
-          );
-        },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ChromeHeader extends StatelessWidget {
+  final _L l;
+  const _ChromeHeader({required this.l});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.primary,
+        border: Border(
+          bottom: BorderSide(color: AppColors.accent.withValues(alpha: 0.14)),
+        ),
+      ),
+      padding: const EdgeInsets.fromLTRB(8, 4, 20, 18),
+      child: SafeArea(
+        bottom: false,
+        child: Row(
+          children: [
+            IconButton(
+              onPressed: () => context.pop(),
+              icon: Icon(
+                context.isAr ? Icons.chevron_right : Icons.chevron_left,
+                color: AppColors.accent,
+                size: 26,
+              ),
+            ),
+            Text(
+              l.title,
+              style: l.ar
+                  ? GoogleFonts.notoNaskhArabic(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                    )
+                  : GoogleFonts.cinzel(
+                      fontSize: 16,
+                      letterSpacing: 2.4,
+                      color: Colors.white,
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -122,9 +193,14 @@ class _BankAccountsScreenState extends ConsumerState<BankAccountsScreen> {
 
 class _BankAccountCard extends StatelessWidget {
   final Map<String, dynamic> account;
+  final _L l;
   final VoidCallback onTap;
 
-  const _BankAccountCard({required this.account, required this.onTap});
+  const _BankAccountCard({
+    required this.account,
+    required this.l,
+    required this.onTap,
+  });
 
   String _maskAccountNumber(String number) {
     if (number.length <= 4) return number;
@@ -133,16 +209,23 @@ class _BankAccountCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bankName = (account['bankName'] ?? 'Unknown').toString();
+    final m = context.miftah;
+    final bankName = (account['bankName'] ?? l.unknown).toString();
     final accountNumber = (account['accountNumber'] ?? '').toString();
     final iban = (account['iban'] ?? '').toString();
     final propertyName = (account['propertyName'] ?? '').toString();
+    final isDefault = account['isDefault'] == true;
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: m.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: m.border),
+      ),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.all(14),
           child: Row(
@@ -151,12 +234,12 @@ class _BankAccountCard extends StatelessWidget {
                 width: 44,
                 height: 44,
                 decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.1),
+                  color: AppColors.accentDark.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: const Icon(
                   Icons.account_balance,
-                  color: AppColors.primary,
+                  color: AppColors.accentDark,
                   size: 22,
                 ),
               ),
@@ -165,31 +248,48 @@ class _BankAccountCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      bankName,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                      ),
-                      overflow: TextOverflow.ellipsis,
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            bankName,
+                            style: l.ar
+                                ? GoogleFonts.notoNaskhArabic(
+                                    fontSize: 14.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: m.textPrimary,
+                                  )
+                                : GoogleFonts.josefinSans(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: m.textPrimary,
+                                  ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (isDefault) ...[
+                          const SizedBox(width: 8),
+                          _Pill(label: l.defaultLabel),
+                        ],
+                      ],
                     ),
                     if (accountNumber.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Text(
                         _maskAccountNumber(accountNumber),
-                        style: const TextStyle(
+                        style: GoogleFonts.josefinSans(
                           fontSize: 12,
-                          color: AppColors.textSecondary,
+                          color: m.textSecondary,
                         ),
                       ),
                     ],
                     if (iban.isNotEmpty) ...[
                       const SizedBox(height: 2),
                       Text(
-                        'IBAN: $iban',
-                        style: const TextStyle(
+                        l.ibanLine(iban),
+                        style: GoogleFonts.josefinSans(
                           fontSize: 11,
-                          color: AppColors.textMuted,
+                          color: m.textMuted,
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -198,18 +298,26 @@ class _BankAccountCard extends StatelessWidget {
                       const SizedBox(height: 2),
                       Text(
                         propertyName,
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: AppColors.textMuted,
-                        ),
+                        style: l.ar
+                            ? GoogleFonts.notoNaskhArabic(
+                                fontSize: 11.5,
+                                color: m.textMuted,
+                              )
+                            : GoogleFonts.josefinSans(
+                                fontSize: 11,
+                                color: m.textMuted,
+                              ),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ],
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right,
-                  color: AppColors.textMuted, size: 20),
+              Icon(
+                context.isAr ? Icons.chevron_left : Icons.chevron_right,
+                color: m.textMuted,
+                size: 20,
+              ),
             ],
           ),
         ),
@@ -218,14 +326,45 @@ class _BankAccountCard extends StatelessWidget {
   }
 }
 
-class _DetailRow extends StatelessWidget {
+class _Pill extends StatelessWidget {
   final String label;
-  final String value;
-
-  const _DetailRow({required this.label, required this.value});
+  const _Pill({required this.label});
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final ar = context.isAr;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: m.successBg,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        ar ? label : label.toUpperCase(),
+        style: ar
+            ? GoogleFonts.notoNaskhArabic(fontSize: 10, color: m.success)
+            : GoogleFonts.josefinSans(
+                fontSize: 9.5,
+                letterSpacing: 1.2,
+                fontWeight: FontWeight.w600,
+                color: m.success,
+              ),
+      ),
+    );
+  }
+}
+
+class _DetailRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final _L l;
+
+  const _DetailRow({required this.label, required this.value, required this.l});
+
+  @override
+  Widget build(BuildContext context) {
+    final m = context.miftah;
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
       child: Column(
@@ -233,21 +372,51 @@ class _DetailRow extends StatelessWidget {
         children: [
           Text(
             label,
-            style: const TextStyle(
-              fontSize: 12,
-              color: AppColors.textMuted,
-            ),
+            style: l.ar
+                ? GoogleFonts.notoNaskhArabic(fontSize: 12, color: m.textMuted)
+                : GoogleFonts.josefinSans(
+                    fontSize: 10.5,
+                    letterSpacing: 1.6,
+                    color: m.textMuted,
+                  ),
           ),
           const SizedBox(height: 4),
           Text(
             value,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-            ),
+            style: l.ar
+                ? GoogleFonts.notoNaskhArabic(
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w600,
+                    color: m.textPrimary,
+                  )
+                : GoogleFonts.josefinSans(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: m.textPrimary,
+                  ),
           ),
         ],
       ),
     );
   }
+}
+
+/// Screen strings (EN/AR). Lightweight per-screen pattern — see arabic-brief.
+class _L {
+  _L(this.ar);
+  final bool ar;
+
+  String get title => ar ? 'الحسابات البنكية' : 'Bank Accounts';
+  String get unknown => ar ? 'غير معروف' : 'Unknown';
+  String get bankName => ar ? 'اسم البنك' : 'Bank Name';
+  String get accountNumber => ar ? 'رقم الحساب' : 'Account Number';
+  String get iban => ar ? 'رقم الآيبان' : 'IBAN';
+  String get swiftCode => ar ? 'رمز السويفت' : 'SWIFT Code';
+  String get branch => ar ? 'الفرع' : 'Branch';
+  String get linkedProperty => ar ? 'العقار المرتبط' : 'Linked Property';
+  String get defaultLabel => ar ? 'افتراضي' : 'Default';
+  String get failedToLoad =>
+      ar ? 'تعذر تحميل الحسابات البنكية' : 'Failed to load bank accounts';
+  String get noBankAccounts => ar ? 'لا توجد حسابات بنكية' : 'No bank accounts';
+  String ibanLine(String iban) => ar ? 'آيبان: $iban' : 'IBAN: $iban';
 }

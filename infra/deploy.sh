@@ -28,6 +28,13 @@ fi
 # shellcheck source=/dev/null
 source "$ENV_FILE"
 
+# Point the CLI at the configured subscription so the `az` public-ip lookup
+# below resolves the VM in the right subscription. Blank keeps the CLI default.
+if [[ -n "${AZURE_SUBSCRIPTION:-}" ]]; then
+  echo "==> Using Azure subscription: $AZURE_SUBSCRIPTION"
+  az account set --subscription "$AZURE_SUBSCRIPTION"
+fi
+
 # ---- Configuration ----
 PUBLIC_IP=$(az network public-ip show \
   --resource-group "$AZURE_RESOURCE_GROUP" \

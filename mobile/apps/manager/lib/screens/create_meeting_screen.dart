@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
 final _meetingServiceProvider = Provider<MeetingService>((ref) {
@@ -12,6 +13,72 @@ final _leaseServiceProvider = Provider<LeaseService>((ref) {
   final client = ref.watch(apiClientProvider);
   return LeaseService(client.dio);
 });
+
+/// Screen strings (EN/AR). Lightweight per-screen pattern — see arabic-brief.
+/// Purpose terms mirror the renter app's create_meeting_screen so
+/// vocabulary stays identical across apps.
+class _L {
+  _L(this.ar);
+  final bool ar;
+
+  String get newMeeting => ar ? 'اجتماع جديد' : 'New Meeting';
+  String get meetingPurpose => ar ? 'الغرض من الاجتماع' : 'Meeting Purpose';
+  String get selectLease => ar ? 'اختر عقد الإيجار' : 'Select Lease';
+  String get noActiveLeases =>
+      ar ? 'لا توجد عقود إيجار نشطة.' : 'No active leases found.';
+  String get selectALease => ar ? 'اختر عقد إيجار' : 'Select a lease';
+  String get renewalDuration =>
+      ar ? 'مدة التجديد (بالأشهر)' : 'Renewal Duration (months)';
+  String get date => ar ? 'التاريخ' : 'Date';
+  String get pickADate => ar ? 'اختر تاريخًا' : 'Pick a date';
+  String get availableTimeSlots =>
+      ar ? 'الأوقات المتاحة' : 'Available Time Slots';
+  String get noSlotsForDate => ar
+      ? 'لا توجد مواعيد متاحة لهذا التاريخ.'
+      : 'No available slots for this date.';
+  String get notesOptional => ar ? 'ملاحظات (اختياري)' : 'Notes (optional)';
+  String get notesHint =>
+      ar ? 'أي ملاحظات إضافية...' : 'Any additional notes...';
+  String get chequeNotesOptional =>
+      ar ? 'ملاحظات الشيك (اختياري)' : 'Cheque Notes (optional)';
+  String get renewalNotesOptional =>
+      ar ? 'ملاحظات التجديد (اختياري)' : 'Renewal Notes (optional)';
+  String get chequeNotesHint => ar
+      ? 'ملاحظات حول الشيكات المطلوب استبدالها...'
+      : 'Notes about the cheques to be replaced...';
+  String get renewalNotesHint =>
+      ar ? 'ملاحظات حول التجديد...' : 'Notes about the renewal...';
+  String get requestMeeting => ar ? 'طلب اجتماع' : 'Request Meeting';
+  String get selectDateAndSlot =>
+      ar ? 'يرجى اختيار تاريخ ووقت' : 'Please select a date and time slot';
+  String get noHostAvailable => ar
+      ? 'لا يوجد مضيف متاح. تواصل مع الإدارة.'
+      : 'No host available. Contact admin.';
+  String get pleaseSelectLease =>
+      ar ? 'يرجى اختيار عقد الإيجار' : 'Please select a lease';
+  String get meetingCreated =>
+      ar ? 'تم إنشاء طلب الاجتماع' : 'Meeting request created';
+  String get meetingCreateFailed =>
+      ar ? 'فشل إنشاء الاجتماع' : 'Failed to create meeting';
+
+  String unitLine(String renterName, String unit) =>
+      ar ? '$renterName · وحدة $unit' : '$renterName · Unit $unit';
+
+  String purposeLabel(String p) {
+    switch (p) {
+      case 'PROPERTY_VIEWING':
+        return ar ? 'معاينة العقار' : 'Property Viewing';
+      case 'LEASE_RENEWAL':
+        return ar ? 'تجديد عقد الإيجار' : 'Lease Renewal';
+      case 'CHEQUE_REPLACEMENT':
+        return ar ? 'استبدال الشيك' : 'Cheque Replacement';
+      case 'OTHER':
+        return ar ? 'أخرى / زيارة مكتبية' : 'Other / Office Visit';
+      default:
+        return p;
+    }
+  }
+}
 
 class CreateMeetingScreen extends ConsumerStatefulWidget {
   const CreateMeetingScreen({super.key});
@@ -32,7 +99,6 @@ class _CreateMeetingScreenState extends ConsumerState<CreateMeetingScreen> {
   List<dynamic> _slots = [];
   bool _loadingSlots = false;
 
-  // Lease selection (for LEASE_RENEWAL / CHEQUE_REPLACEMENT)
   List<dynamic> _leases = [];
   String? _selectedLeaseId;
   bool _loadingLeases = false;
@@ -40,11 +106,11 @@ class _CreateMeetingScreenState extends ConsumerState<CreateMeetingScreen> {
   String? _defaultHostId;
   bool _isSubmitting = false;
 
-  static const _purposes = [
-    ('PROPERTY_VIEWING', 'Property Viewing', Icons.home_outlined),
-    ('LEASE_RENEWAL', 'Lease Renewal', Icons.autorenew_rounded),
-    ('CHEQUE_REPLACEMENT', 'Cheque Replacement', Icons.receipt_outlined),
-    ('OTHER', 'Other / Office Visit', Icons.business_outlined),
+  static const _purposeKeys = [
+    ('PROPERTY_VIEWING', Icons.home_outlined),
+    ('LEASE_RENEWAL', Icons.autorenew_rounded),
+    ('CHEQUE_REPLACEMENT', Icons.receipt_outlined),
+    ('OTHER', Icons.business_outlined),
   ];
 
   @override
@@ -64,8 +130,7 @@ class _CreateMeetingScreenState extends ConsumerState<CreateMeetingScreen> {
 
   Future<void> _fetchDefaultHost() async {
     try {
-      final id =
-          await ref.read(_meetingServiceProvider).getDefaultHostId();
+      final id = await ref.read(_meetingServiceProvider).getDefaultHostId();
       if (mounted) setState(() => _defaultHostId = id);
     } catch (_) {}
   }
@@ -76,8 +141,7 @@ class _CreateMeetingScreenState extends ConsumerState<CreateMeetingScreen> {
       final leases = await ref.read(_leaseServiceProvider).getAllLeases();
       if (!mounted) return;
       setState(() {
-        _leases =
-            leases.where((l) => l['status'] == 'ACTIVE').toList();
+        _leases = leases.where((l) => l['status'] == 'ACTIVE').toList();
         _loadingLeases = false;
       });
     } catch (_) {
@@ -86,11 +150,22 @@ class _CreateMeetingScreenState extends ConsumerState<CreateMeetingScreen> {
   }
 
   Future<void> _pickDate() async {
+    final m = context.miftah;
     final d = await showDatePicker(
       context: context,
       initialDate: DateTime.now().add(const Duration(days: 1)),
       firstDate: DateTime.now(),
       lastDate: DateTime.now().add(const Duration(days: 90)),
+      builder: (ctx, child) => Theme(
+        data: Theme.of(ctx).copyWith(
+          colorScheme: Theme.of(ctx).colorScheme.copyWith(
+            primary: AppColors.accent,
+            onPrimary: AppColors.primary,
+            surface: m.surface,
+          ),
+        ),
+        child: child!,
+      ),
     );
     if (d == null) return;
     setState(() {
@@ -125,7 +200,9 @@ class _CreateMeetingScreenState extends ConsumerState<CreateMeetingScreen> {
       final dt = DateTime.parse(slot['start'].toString()).toLocal();
       final hour = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
       final minute = dt.minute.toString().padLeft(2, '0');
-      final ampm = dt.hour < 12 ? 'AM' : 'PM';
+      final ampm = context.isAr
+          ? (dt.hour < 12 ? 'ص' : 'م')
+          : (dt.hour < 12 ? 'AM' : 'PM');
       return '$hour:$minute $ampm';
     } catch (_) {
       return slot['start'].toString();
@@ -136,26 +213,31 @@ class _CreateMeetingScreenState extends ConsumerState<CreateMeetingScreen> {
       _purpose == 'LEASE_RENEWAL' || _purpose == 'CHEQUE_REPLACEMENT';
 
   Future<void> _submit() async {
+    final l = _L(context.isAr);
     if (_selectedSlot == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please select a date and time slot')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(l.selectDateAndSlot)));
       return;
     }
     if (_defaultHostId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No host available. Contact admin.')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(l.noHostAvailable)));
       return;
     }
     if (_needsLease && _selectedLeaseId == null) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Please select a lease')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(l.pleaseSelectLease)));
       return;
     }
 
     setState(() => _isSubmitting = true);
     try {
-      final type =
-          _purpose == 'PROPERTY_VIEWING' ? 'PROPERTY_VISIT' : 'OFFICE_VISIT';
+      final type = _purpose == 'PROPERTY_VIEWING'
+          ? 'PROPERTY_VISIT'
+          : 'OFFICE_VISIT';
 
       final body = <String, dynamic>{
         'purpose': _purpose,
@@ -171,14 +253,14 @@ class _CreateMeetingScreenState extends ConsumerState<CreateMeetingScreen> {
 
       if (_purpose == 'LEASE_RENEWAL') {
         final lease = _leases.firstWhere(
-            (l) => l['id'] == _selectedLeaseId,
-            orElse: () => null);
+          (l) => l['id'] == _selectedLeaseId,
+          orElse: () => null,
+        );
         if (lease != null && lease['endDate'] != null) {
           body['proposedStartDate'] = lease['endDate'];
           final months = int.tryParse(_renewalMonthsCtrl.text.trim()) ?? 12;
           final start = DateTime.parse(lease['endDate']);
-          final end = DateTime(
-              start.year, start.month + months, start.day);
+          final end = DateTime(start.year, start.month + months, start.day);
           body['proposedEndDate'] =
               '${end.year}-${end.month.toString().padLeft(2, '0')}-${end.day.toString().padLeft(2, '0')}';
         }
@@ -194,13 +276,21 @@ class _CreateMeetingScreenState extends ConsumerState<CreateMeetingScreen> {
       await ref.read(_meetingServiceProvider).createMeeting(body);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Meeting request created')));
+          SnackBar(
+            content: Text(l.meetingCreated),
+            backgroundColor: AppColors.success,
+          ),
+        );
         context.pop();
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Failed to create meeting')));
+          SnackBar(
+            content: Text(l.meetingCreateFailed),
+            backgroundColor: AppColors.danger,
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
@@ -209,121 +299,163 @@ class _CreateMeetingScreenState extends ConsumerState<CreateMeetingScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final l = _L(context.isAr);
+
     return Scaffold(
-      appBar: AppBar(title: const Text('New Meeting')),
+      backgroundColor: m.background,
+      appBar: AppBar(
+        backgroundColor: m.surface,
+        foregroundColor: m.textPrimary,
+        elevation: 0,
+        title: Text(
+          l.newMeeting,
+          style: l.ar
+              ? GoogleFonts.notoNaskhArabic(fontWeight: FontWeight.w600)
+              : GoogleFonts.cinzel(fontSize: 16, letterSpacing: 1.2),
+        ),
+      ),
       body: LoadingOverlay(
         isLoading: _isSubmitting,
         child: SingleChildScrollView(
-          padding: EdgeInsets.fromLTRB(16, 16, 16, AppInsets.bottomNav(context)),
+          padding: EdgeInsets.fromLTRB(
+            16,
+            16,
+            16,
+            AppInsets.bottomNav(context),
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Purpose selection
-              _SectionHeader('Meeting Purpose'),
+              _sectionHeader(l.meetingPurpose, l, m),
               const SizedBox(height: 8),
-              ...(_purposes.map((p) => _PurposeOption(
-                    label: p.$2,
-                    icon: p.$3,
-                    isSelected: _purpose == p.$1,
-                    onTap: () => setState(() {
-                      _purpose = p.$1;
-                      _selectedLeaseId = null;
-                    }),
-                  ))),
+              ...(_purposeKeys.map(
+                (p) => _PurposeOption(
+                  label: l.purposeLabel(p.$1),
+                  icon: p.$2,
+                  isSelected: _purpose == p.$1,
+                  ar: l.ar,
+                  onTap: () => setState(() {
+                    _purpose = p.$1;
+                    _selectedLeaseId = null;
+                  }),
+                ),
+              )),
 
-              // Lease selector
               if (_needsLease) ...[
                 const SizedBox(height: 20),
-                _SectionHeader('Select Lease'),
+                _sectionHeader(l.selectLease, l, m),
                 const SizedBox(height: 8),
                 if (_loadingLeases)
                   const Center(
-                      child: CircularProgressIndicator(
-                          color: AppColors.primary))
+                    child: CircularProgressIndicator(color: AppColors.accent),
+                  )
                 else if (_leases.isEmpty)
-                  const Text('No active leases found.',
-                      style:
-                          TextStyle(color: AppColors.textMuted, fontSize: 13))
+                  Text(
+                    l.noActiveLeases,
+                    style: GoogleFonts.josefinSans(
+                      color: m.textMuted,
+                      fontSize: 13,
+                    ),
+                  )
                 else
                   Container(
                     decoration: BoxDecoration(
-                      color: AppColors.surface,
+                      color: m.surface,
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppColors.border),
+                      border: Border.all(color: m.border),
                     ),
                     child: DropdownButtonHideUnderline(
                       child: DropdownButton<String>(
                         value: _selectedLeaseId,
                         isExpanded: true,
-                        hint: const Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 12),
-                          child: Text('Select a lease'),
+                        hint: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: Text(
+                            l.selectALease,
+                            style: GoogleFonts.josefinSans(color: m.textMuted),
+                          ),
                         ),
-                        padding:
-                            const EdgeInsets.symmetric(horizontal: 12),
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
                         borderRadius: BorderRadius.circular(12),
-                        items: _leases.map<DropdownMenuItem<String>>((l) {
+                        dropdownColor: m.surface,
+                        items: _leases.map<DropdownMenuItem<String>>((lease) {
                           return DropdownMenuItem<String>(
-                            value: l['id'],
+                            value: lease['id'],
                             child: Text(
-                              '${l['renterName'] ?? '-'} · Unit ${l['unitIdentifier'] ?? l['unitNumber'] ?? '-'}',
+                              l.unitLine(
+                                lease['renterName'] ?? '-',
+                                (lease['unitIdentifier'] ??
+                                        lease['unitNumber'] ??
+                                        '-')
+                                    .toString(),
+                              ),
                               overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.josefinSans(
+                                color: m.textPrimary,
+                              ),
                             ),
                           );
                         }).toList(),
-                        onChanged: (v) =>
-                            setState(() => _selectedLeaseId = v),
+                        onChanged: (v) => setState(() => _selectedLeaseId = v),
                       ),
                     ),
                   ),
               ],
 
-              // Duration (LEASE_RENEWAL only)
               if (_purpose == 'LEASE_RENEWAL') ...[
                 const SizedBox(height: 20),
-                _SectionHeader('Renewal Duration (months)'),
+                _sectionHeader(l.renewalDuration, l, m),
                 const SizedBox(height: 8),
                 TextField(
                   controller: _renewalMonthsCtrl,
                   keyboardType: TextInputType.number,
+                  style: GoogleFonts.josefinSans(color: m.textPrimary),
                   decoration: InputDecoration(
                     hintText: '12',
                     border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12)),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                     contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 12),
+                      horizontal: 12,
+                      vertical: 12,
+                    ),
                   ),
                 ),
               ],
 
-              // Date picker
               const SizedBox(height: 20),
-              _SectionHeader('Date'),
+              _sectionHeader(l.date, l, m),
               const SizedBox(height: 8),
               InkWell(
                 onTap: _pickDate,
                 borderRadius: BorderRadius.circular(12),
                 child: Container(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 14),
+                    horizontal: 16,
+                    vertical: 14,
+                  ),
                   decoration: BoxDecoration(
-                    color: AppColors.surface,
+                    color: m.surface,
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.border),
+                    border: Border.all(color: m.border),
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.calendar_today_outlined,
-                          size: 18, color: AppColors.primary),
+                      const Icon(
+                        Icons.calendar_today_outlined,
+                        size: 18,
+                        color: AppColors.accentDark,
+                      ),
                       const SizedBox(width: 10),
                       Text(
                         _selectedDate == null
-                            ? 'Pick a date'
+                            ? l.pickADate
                             : '${_selectedDate!.year}-${_selectedDate!.month.toString().padLeft(2, '0')}-${_selectedDate!.day.toString().padLeft(2, '0')}',
-                        style: TextStyle(
+                        style: GoogleFonts.josefinSans(
                           color: _selectedDate == null
-                              ? AppColors.textMuted
-                              : AppColors.textPrimary,
+                              ? m.textMuted
+                              : m.textPrimary,
                           fontSize: 14,
                         ),
                       ),
@@ -332,25 +464,29 @@ class _CreateMeetingScreenState extends ConsumerState<CreateMeetingScreen> {
                 ),
               ),
 
-              // Time slots
               if (_selectedDate != null) ...[
                 const SizedBox(height: 16),
-                _SectionHeader('Available Time Slots'),
+                _sectionHeader(l.availableTimeSlots, l, m),
                 const SizedBox(height: 8),
                 if (_loadingSlots)
                   const Center(
-                      child: CircularProgressIndicator(
-                          color: AppColors.primary))
+                    child: CircularProgressIndicator(color: AppColors.accent),
+                  )
                 else if (_slots.isEmpty)
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: AppColors.surface,
+                      color: m.surface,
                       borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: m.border),
                     ),
-                    child: const Text('No available slots for this date.',
-                        style: TextStyle(
-                            color: AppColors.textMuted, fontSize: 13)),
+                    child: Text(
+                      l.noSlotsForDate,
+                      style: GoogleFonts.josefinSans(
+                        color: m.textMuted,
+                        fontSize: 13,
+                      ),
+                    ),
                   )
                 else
                   Wrap(
@@ -359,30 +495,27 @@ class _CreateMeetingScreenState extends ConsumerState<CreateMeetingScreen> {
                     children: _slots.map((slot) {
                       final isSelected = _selectedSlot == slot;
                       return GestureDetector(
-                        onTap: () =>
-                            setState(() => _selectedSlot = slot),
+                        onTap: () => setState(() => _selectedSlot = slot),
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 200),
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 10),
+                            horizontal: 16,
+                            vertical: 10,
+                          ),
                           decoration: BoxDecoration(
-                            color: isSelected
-                                ? AppColors.primary
-                                : AppColors.surface,
+                            color: isSelected ? AppColors.accent : m.surface,
                             borderRadius: BorderRadius.circular(10),
                             border: Border.all(
-                              color: isSelected
-                                  ? AppColors.primary
-                                  : AppColors.border,
+                              color: isSelected ? AppColors.accent : m.border,
                             ),
                           ),
                           child: Text(
                             _slotLabel(slot),
-                            style: TextStyle(
+                            style: GoogleFonts.josefinSans(
                               fontWeight: FontWeight.w600,
                               color: isSelected
-                                  ? Colors.white
-                                  : AppColors.textPrimary,
+                                  ? AppColors.primary
+                                  : m.textPrimary,
                               fontSize: 13,
                             ),
                           ),
@@ -392,60 +525,55 @@ class _CreateMeetingScreenState extends ConsumerState<CreateMeetingScreen> {
                   ),
               ],
 
-              // Notes
               const SizedBox(height: 20),
-              _SectionHeader('Notes (optional)'),
+              _sectionHeader(l.notesOptional, l, m),
               const SizedBox(height: 8),
               TextField(
                 controller: _notesCtrl,
                 maxLines: 3,
+                style: GoogleFonts.josefinSans(color: m.textPrimary),
                 decoration: InputDecoration(
-                  hintText: 'Any additional notes...',
+                  hintText: l.notesHint,
+                  hintStyle: GoogleFonts.josefinSans(color: m.textMuted),
                   border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12)),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                   contentPadding: const EdgeInsets.all(12),
                 ),
               ),
 
-              // Detail notes (LEASE_RENEWAL / CHEQUE_REPLACEMENT)
               if (_needsLease) ...[
                 const SizedBox(height: 16),
-                _SectionHeader(
-                    _purpose == 'CHEQUE_REPLACEMENT'
-                        ? 'Cheque Notes (optional)'
-                        : 'Renewal Notes (optional)'),
+                _sectionHeader(
+                  _purpose == 'CHEQUE_REPLACEMENT'
+                      ? l.chequeNotesOptional
+                      : l.renewalNotesOptional,
+                  l,
+                  m,
+                ),
                 const SizedBox(height: 8),
                 TextField(
                   controller: _detailNotesCtrl,
                   maxLines: 3,
+                  style: GoogleFonts.josefinSans(color: m.textPrimary),
                   decoration: InputDecoration(
                     hintText: _purpose == 'CHEQUE_REPLACEMENT'
-                        ? 'Notes about the cheques to be replaced...'
-                        : 'Notes about the renewal...',
+                        ? l.chequeNotesHint
+                        : l.renewalNotesHint,
+                    hintStyle: GoogleFonts.josefinSans(color: m.textMuted),
                     border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12)),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                     contentPadding: const EdgeInsets.all(12),
                   ),
                 ),
               ],
 
               const SizedBox(height: 32),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _isSubmitting ? null : _submit,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14)),
-                  ),
-                  child: const Text('Request Meeting',
-                      style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 15)),
-                ),
+              GoldButton(
+                label: l.requestMeeting,
+                height: 50,
+                onPressed: _isSubmitting ? null : _submit,
               ),
             ],
           ),
@@ -453,19 +581,23 @@ class _CreateMeetingScreenState extends ConsumerState<CreateMeetingScreen> {
       ),
     );
   }
-}
 
-class _SectionHeader extends StatelessWidget {
-  final String text;
-  const _SectionHeader(this.text);
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(text,
-        style: const TextStyle(
-            fontWeight: FontWeight.w700,
-            fontSize: 14,
-            color: AppColors.navyDark));
+  Widget _sectionHeader(String text, _L l, MiftahColors m) {
+    return Text(
+      text,
+      style: l.ar
+          ? GoogleFonts.notoNaskhArabic(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: m.textPrimary,
+            )
+          : GoogleFonts.josefinSans(
+              fontSize: 11,
+              letterSpacing: 1.6,
+              fontWeight: FontWeight.w600,
+              color: m.textPrimary,
+            ),
+    );
   }
 }
 
@@ -473,17 +605,20 @@ class _PurposeOption extends StatelessWidget {
   final String label;
   final IconData icon;
   final bool isSelected;
+  final bool ar;
   final VoidCallback onTap;
 
   const _PurposeOption({
     required this.label,
     required this.icon,
     required this.isSelected,
+    required this.ar,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
@@ -492,32 +627,43 @@ class _PurposeOption extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
           color: isSelected
-              ? AppColors.primary.withValues(alpha: 0.1)
-              : AppColors.surface,
+              ? AppColors.accent.withValues(alpha: 0.1)
+              : m.surface,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: isSelected ? AppColors.primary : AppColors.border,
+            color: isSelected ? AppColors.accent : m.border,
             width: isSelected ? 1.5 : 1,
           ),
         ),
         child: Row(
           children: [
-            Icon(icon,
-                size: 20,
-                color:
-                    isSelected ? AppColors.primary : AppColors.textMuted),
+            Icon(
+              icon,
+              size: 20,
+              color: isSelected
+                  ? (m.isDark ? AppColors.accent : AppColors.accentDark)
+                  : m.textMuted,
+            ),
             const SizedBox(width: 12),
             Expanded(
-              child: Text(label,
-                  style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      color: isSelected
-                          ? AppColors.primary
-                          : AppColors.textPrimary)),
+              child: Text(
+                label,
+                style: GoogleFonts.josefinSans(
+                  fontSize: 14,
+                  letterSpacing: ar ? 0 : 0.2,
+                  fontWeight: FontWeight.w600,
+                  color: isSelected
+                      ? (m.isDark ? AppColors.accent : AppColors.accentDark)
+                      : m.textPrimary,
+                ),
+              ),
             ),
             if (isSelected)
-              const Icon(Icons.check_circle_rounded,
-                  color: AppColors.primary, size: 18),
+              const Icon(
+                Icons.check_circle_rounded,
+                color: AppColors.accent,
+                size: 18,
+              ),
           ],
         ),
       ),

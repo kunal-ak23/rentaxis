@@ -18,6 +18,8 @@ import 'package:intl/intl.dart';
 
 final DateFormat _timeFormat = DateFormat('h:mm a');
 final DateFormat _dayTimeFormat = DateFormat('d MMM, h:mm a');
+final DateFormat _timeFormatAr = DateFormat('h:mm a', 'ar');
+final DateFormat _dayTimeFormatAr = DateFormat('d MMMM, h:mm a', 'ar');
 
 /// Reads a display string, treating blank as absent.
 ///
@@ -50,15 +52,29 @@ DateTime? passInstant(Map<String, dynamic> pass, String key) {
 /// day (the common case, and the one where a date is noise), and carries the day
 /// otherwise so an overnight or multi-day pass cannot be misread as ending this
 /// morning.
-String formatWindow(DateTime? from, DateTime? to) {
-  if (from == null && to == null) return 'No time limit given';
-  if (from == null) return 'Until ${_dayTimeFormat.format(to!)}';
-  if (to == null) return 'From ${_dayTimeFormat.format(from)}';
+///
+/// [ar] selects Arabic month names and wording (`Formatters.date`-style);
+/// the times themselves stay in Western digits, matching the rest of the app.
+String formatWindow(DateTime? from, DateTime? to, {bool ar = false}) {
+  final timeFormat = ar ? _timeFormatAr : _timeFormat;
+  final dayTimeFormat = ar ? _dayTimeFormatAr : _dayTimeFormat;
+
+  if (from == null && to == null) {
+    return ar ? 'لا يوجد حد زمني' : 'No time limit given';
+  }
+  if (from == null) {
+    final until = dayTimeFormat.format(to!);
+    return ar ? 'حتى $until' : 'Until $until';
+  }
+  if (to == null) {
+    final fromStr = dayTimeFormat.format(from);
+    return ar ? 'من $fromStr' : 'From $fromStr';
+  }
 
   final sameDay =
       from.year == to.year && from.month == to.month && from.day == to.day;
   if (sameDay) {
-    return '${_timeFormat.format(from)} – ${_timeFormat.format(to)}';
+    return '${timeFormat.format(from)} – ${timeFormat.format(to)}';
   }
-  return '${_dayTimeFormat.format(from)} – ${_dayTimeFormat.format(to)}';
+  return '${dayTimeFormat.format(from)} – ${dayTimeFormat.format(to)}';
 }

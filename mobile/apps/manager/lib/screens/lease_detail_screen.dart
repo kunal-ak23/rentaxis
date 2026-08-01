@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:open_filex/open_filex.dart';
@@ -8,6 +9,59 @@ import 'package:path_provider/path_provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 import '../widgets/mark_cheque_failed_dialog.dart';
+
+/// Cheque/payment status colors per the Miftah admin design: CLEARED is
+/// green, COLLECTED/DEPOSITED is bronze (in transit to the bank), BOUNCED/
+/// OVERDUE is red, PENDING is neutral.
+Color _chequeStatusColor(MiftahColors m, String status) {
+  switch (status) {
+    case 'CLEARED':
+      return m.success;
+    case 'COLLECTED':
+    case 'DEPOSITED':
+      return AppColors.accentDark;
+    case 'BOUNCED':
+    case 'OVERDUE':
+      return m.danger;
+    default:
+      return m.textMuted;
+  }
+}
+
+/// Text style helper — Arabic uses Noto Naskh instead of Cinzel/Josefin
+/// Sans, and never carries the EN tracked-uppercase letterSpacing (breaks
+/// glyph joining). See arabic-brief.
+TextStyle _display(
+  bool ar, {
+  double size = 16,
+  FontWeight weight = FontWeight.w600,
+  Color? color,
+}) => ar
+    ? GoogleFonts.notoNaskhArabic(
+        fontSize: size + 1,
+        fontWeight: weight,
+        color: color,
+      )
+    : GoogleFonts.cinzel(fontSize: size, fontWeight: weight, color: color);
+
+TextStyle _body(
+  bool ar, {
+  double size = 13,
+  FontWeight weight = FontWeight.w400,
+  Color? color,
+  double letterSpacing = 0,
+}) => ar
+    ? GoogleFonts.notoNaskhArabic(
+        fontSize: size,
+        fontWeight: weight,
+        color: color,
+      )
+    : GoogleFonts.josefinSans(
+        fontSize: size,
+        fontWeight: weight,
+        color: color,
+        letterSpacing: letterSpacing,
+      );
 
 final _leaseServiceProvider = Provider<LeaseService>((ref) {
   final client = ref.watch(apiClientProvider);
@@ -39,6 +93,8 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
   DateTime? _extendDate;
   bool _isExtending = false;
   bool _isGeneratingContract = false;
+
+  _L get _l => _L(context.isAr);
 
   @override
   void initState() {
@@ -74,16 +130,17 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = 'Failed to load lease details';
+        _error = _l.failedToLoad;
         _isLoading = false;
       });
     }
   }
 
   Future<void> _activateLease() async {
+    final l = _l;
     final confirmed = await _confirmAction(
-      'Activate Lease',
-      'Are you sure you want to activate this lease? This will generate the payment schedule.',
+      l.activateLeaseTitle,
+      l.activateLeaseBody,
     );
     if (!confirmed) return;
 
@@ -91,16 +148,16 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
     try {
       await ref.read(_leaseServiceProvider).activateLease(widget.leaseId);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Lease activated successfully')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(l.leaseActivated)));
         _loadData();
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to activate lease')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(l.failedToActivate)));
       }
     } finally {
       if (mounted) setState(() => _isActioning = false);
@@ -108,19 +165,28 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
   }
 
   Future<bool> _confirmAction(String title, String message) async {
+    final l = _l;
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(title),
-        content: Text(message),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(title, style: _display(l.ar, size: 17)),
+        content: Text(
+          message,
+          style: _body(l.ar, color: AppColors.textSecondary),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            child: Text(l.cancel, style: _body(l.ar, weight: FontWeight.w600)),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Confirm'),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+            child: Text(
+              l.confirm,
+              style: _body(l.ar, weight: FontWeight.w600, color: Colors.white),
+            ),
           ),
         ],
       ),
@@ -129,6 +195,7 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
   }
 
   Future<void> _uploadAttachment() async {
+    final l = _l;
     final source = await showModalBottomSheet<String>(
       context: context,
       builder: (ctx) => SafeArea(
@@ -136,17 +203,17 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
           children: [
             ListTile(
               leading: const Icon(Icons.camera_alt_outlined),
-              title: const Text('Camera'),
+              title: Text(l.camera),
               onTap: () => Navigator.pop(ctx, 'camera'),
             ),
             ListTile(
               leading: const Icon(Icons.photo_library_outlined),
-              title: const Text('Gallery'),
+              title: Text(l.gallery),
               onTap: () => Navigator.pop(ctx, 'gallery'),
             ),
             ListTile(
               leading: const Icon(Icons.attach_file),
-              title: const Text('File'),
+              title: Text(l.file),
               onTap: () => Navigator.pop(ctx, 'file'),
             ),
           ],
@@ -161,8 +228,7 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
     if (source == 'camera' || source == 'gallery') {
       final picker = ImagePicker();
       final image = await picker.pickImage(
-        source:
-            source == 'camera' ? ImageSource.camera : ImageSource.gallery,
+        source: source == 'camera' ? ImageSource.camera : ImageSource.gallery,
         imageQuality: 80,
       );
       if (image == null) return;
@@ -182,16 +248,16 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
           .read(_leaseServiceProvider)
           .uploadAttachment(widget.leaseId, filePath, fileName);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Attachment uploaded')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(l.attachmentUploaded)));
         _loadData();
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to upload attachment')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(l.failedToUpload)));
       }
     }
   }
@@ -208,28 +274,30 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
       await OpenFilex.open(file.path);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to download document')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_l.failedToDownload)));
       }
     }
   }
 
   Future<void> _generateContract() async {
+    final l = _l;
     setState(() => _isGeneratingContract = true);
     try {
       // 1) Fetch the preview PDF and open it in the system viewer.
-      final bytes =
-          await ref.read(_leaseServiceProvider).previewContract(widget.leaseId);
+      final bytes = await ref
+          .read(_leaseServiceProvider)
+          .previewContract(widget.leaseId);
       final dir = await getTemporaryDirectory();
       final file = File('${dir.path}/lease-preview-${widget.leaseId}.pdf');
       await file.writeAsBytes(bytes);
       await OpenFilex.open(file.path);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to generate preview')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(l.failedToPreview)));
         setState(() => _isGeneratingContract = false);
       }
       return;
@@ -244,19 +312,24 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Save Contract?'),
-        content: const Text(
-          'Once saved, this contract will be assigned a contract number '
-          'and stored on the lease. Continue?',
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(l.saveContractTitle, style: _display(l.ar, size: 17)),
+        content: Text(
+          l.saveContractBody,
+          style: _body(l.ar, color: AppColors.textSecondary),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            child: Text(l.cancel, style: _body(l.ar, weight: FontWeight.w600)),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Confirm & Save'),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+            child: Text(
+              l.confirmAndSave,
+              style: _body(l.ar, weight: FontWeight.w600, color: Colors.white),
+            ),
           ),
         ],
       ),
@@ -270,16 +343,16 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
     try {
       await ref.read(_leaseServiceProvider).generateContract(widget.leaseId);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Contract generated')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(l.contractGenerated)));
         await _loadData();
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to save contract')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(l.failedToSaveContract)));
       }
     } finally {
       if (mounted) setState(() => _isGeneratingContract = false);
@@ -287,24 +360,30 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
   }
 
   Future<void> _showExtendDialog() async {
+    final l = _l;
     final lease = _lease!;
-    final currentEnd = DateTime.tryParse(lease['endDate'] ?? '') ?? DateTime.now();
+    final currentEnd =
+        DateTime.tryParse(lease['endDate'] ?? '') ?? DateTime.now();
     DateTime picked = currentEnd.add(const Duration(days: 365));
 
     await showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
-          title: const Text('Extend Lease'),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Text(l.extendLeaseTitle, style: _display(l.ar, size: 17)),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Current end date: ${lease['endDate'] ?? '-'}',
-                  style: const TextStyle(color: AppColors.textMuted, fontSize: 13)),
+              Text(
+                l.currentEndDate(Formatters.date(lease['endDate'], ar: l.ar)),
+                style: _body(l.ar, color: AppColors.textMuted),
+              ),
               const SizedBox(height: 16),
-              const Text('New end date:',
-                  style: TextStyle(fontWeight: FontWeight.w600)),
+              Text(l.newEndDate, style: _body(l.ar, weight: FontWeight.w600)),
               const SizedBox(height: 8),
               InkWell(
                 onTap: () async {
@@ -317,18 +396,25 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
                   if (d != null) setDialogState(() => picked = d);
                 },
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 12,
+                  ),
                   decoration: BoxDecoration(
                     border: Border.all(color: AppColors.border),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.calendar_today_outlined, size: 18, color: AppColors.primary),
+                      const Icon(
+                        Icons.calendar_today_outlined,
+                        size: 18,
+                        color: AppColors.primary,
+                      ),
                       const SizedBox(width: 8),
                       Text(
                         '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
+                        style: _body(l.ar, weight: FontWeight.w600),
                       ),
                     ],
                   ),
@@ -339,7 +425,10 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
+              child: Text(
+                l.cancel,
+                style: _body(l.ar, weight: FontWeight.w600),
+              ),
             ),
             ElevatedButton(
               onPressed: _isExtending
@@ -355,29 +444,40 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
                         if (mounted) {
                           Navigator.pop(ctx);
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                                content: Text('Lease extended successfully')),
+                            SnackBar(content: Text(l.leaseExtended)),
                           );
                           _loadData();
                         }
                       } catch (e) {
                         if (mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                                content: Text('Failed to extend lease')),
+                            SnackBar(content: Text(l.failedToExtend)),
                           );
                         }
                       } finally {
                         if (mounted) setDialogState(() => _isExtending = false);
                       }
                     },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+              ),
               child: _isExtending
                   ? const SizedBox(
                       width: 18,
                       height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
                     )
-                  : const Text('Extend'),
+                  : Text(
+                      l.extend,
+                      style: _body(
+                        l.ar,
+                        weight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
             ),
           ],
         ),
@@ -387,233 +487,383 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final l = _l;
+
     if (_isLoading) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Lease')),
+        backgroundColor: m.background,
+        appBar: AppBar(
+          backgroundColor: AppColors.primary,
+          title: Text(
+            l.leaseTitle,
+            style: _display(l.ar, size: 17, color: AppColors.gold400),
+          ),
+        ),
         body: const Center(
-          child: CircularProgressIndicator(color: AppColors.primary),
+          child: CircularProgressIndicator(color: AppColors.accent),
         ),
       );
     }
 
     if (_error != null || _lease == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Lease')),
-        body: ErrorState(message: _error ?? 'Not found', onRetry: _loadData),
+        backgroundColor: m.background,
+        appBar: AppBar(
+          backgroundColor: AppColors.primary,
+          title: Text(
+            l.leaseTitle,
+            style: _display(l.ar, size: 17, color: AppColors.gold400),
+          ),
+        ),
+        body: ErrorState(message: _error ?? l.notFound, onRetry: _loadData),
       );
     }
 
     final lease = _lease!;
-    final status = lease['status'] ?? 'DRAFT';
-    final statusColor = StatusHelper.getLeaseStatusColor(status);
+    final status = (lease['status'] ?? 'DRAFT').toString();
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Lease Details'),
-        actions: [
-          if (status == 'ACTIVE' || status == 'NOTICE_GIVEN')
-            PopupMenuButton<String>(
-              onSelected: (v) {
-                if (v == 'terminate') context.push('/leases/${widget.leaseId}/settlement');
-                if (v == 'extend') _showExtendDialog();
-              },
-              itemBuilder: (_) => [
-                if (status == 'ACTIVE')
-                  const PopupMenuItem(
-                    value: 'extend',
-                    child: Row(
-                      children: [
-                        Icon(Icons.calendar_month_outlined, color: AppColors.primary, size: 18),
-                        SizedBox(width: 8),
-                        Text('Extend Lease'),
-                      ],
-                    ),
-                  ),
-                const PopupMenuItem(
-                  value: 'terminate',
-                  child: Row(
-                    children: [
-                      Icon(Icons.account_balance_wallet_outlined, color: AppColors.warning, size: 18),
-                      SizedBox(width: 8),
-                      Text('Settle & Terminate'),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-        ],
-      ),
+      backgroundColor: m.background,
       body: LoadingOverlay(
         isLoading: _isActioning,
         child: RefreshIndicator(
           onRefresh: _loadData,
-          color: AppColors.primary,
-          child: SingleChildScrollView(
+          color: AppColors.accent,
+          child: CustomScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: EdgeInsets.fromLTRB(16, 16, 16, AppInsets.bottomNav(context)),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildHeader(lease, status, statusColor),
-                const SizedBox(height: 20),
-                if (status == 'DRAFT' || status == 'PENDING_SIGNATURE') ...[
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: _isGeneratingContract ? null : _generateContract,
-                      icon: _isGeneratingContract
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.description_outlined),
-                      label: Text(lease['contractNumber'] != null
-                          ? 'Re-generate Contract'
-                          : 'Generate Contract'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.primary,
-                        side: const BorderSide(color: AppColors.primary),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
+            slivers: [
+              SliverToBoxAdapter(child: _buildChromeHeader(lease, status, l)),
+              SliverPadding(
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  16,
+                  16,
+                  AppInsets.bottomNav(context),
+                ),
+                sliver: SliverList(
+                  delegate: SliverChildListDelegate([
+                    _buildLeaseInfoCard(lease, l),
+                    const SizedBox(height: 18),
+                    if (status == 'DRAFT' || status == 'PENDING_SIGNATURE') ...[
+                      GoldButton.outlined(
+                        label: lease['contractNumber'] != null
+                            ? l.regenerateContract
+                            : l.generateContract,
+                        onPressed: _isGeneratingContract
+                            ? null
+                            : _generateContract,
+                        icon: _isGeneratingContract
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.description_outlined, size: 18),
                       ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: _activateLease,
-                      icon: const Icon(Icons.check_circle_outline),
-                      label: const Text('Activate Lease'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.success,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      const SizedBox(height: 10),
+                      GoldButton(
+                        label: l.activateLease,
+                        onPressed: _activateLease,
+                        icon: const Icon(
+                          Icons.check_circle_outline,
+                          size: 18,
+                          color: AppColors.primary,
+                        ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                ],
-                _buildPaymentSchedule(),
-                const SizedBox(height: 20),
-                _buildDocuments(),
-                const SizedBox(height: 20),
-                _buildAttachments(),
-                const SizedBox(height: 20),
-                _buildPenaltiesLink(),
-                const SizedBox(height: 20),
-                _buildSettlementLink(),
-              ],
-            ),
+                      const SizedBox(height: 18),
+                    ],
+                    _buildPaymentSchedule(m, l),
+                    const SizedBox(height: 20),
+                    _buildDocuments(m, l),
+                    const SizedBox(height: 20),
+                    _buildAttachments(m, l),
+                    const SizedBox(height: 20),
+                    _buildPenaltiesLink(m, l),
+                    const SizedBox(height: 10),
+                    _buildSettlementLink(m, l),
+                  ]),
+                ),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 
-  Widget _buildHeader(
-      Map<String, dynamic> lease, String status, Color statusColor) {
+  Widget _buildChromeHeader(Map<String, dynamic> lease, String status, _L l) {
+    final unit =
+        '${lease['propertyName'] ?? '-'} · ${lease['unitIdentifier'] ?? lease['unitNumber'] ?? '-'}';
+    final contractNumber = lease['contractNumber'];
+    final bouncedCount = _payments
+        .where((p) => (p is Map ? p['status'] : null) == 'BOUNCED')
+        .length;
+
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [AppColors.navyDark, Color(0xFF1A3352)],
+        color: AppColors.primary,
+        border: Border(
+          bottom: BorderSide(color: AppColors.accent.withValues(alpha: 0.16)),
         ),
-        borderRadius: BorderRadius.circular(16),
+      ),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        MediaQuery.of(context).padding.top + 8,
+        16,
+        16,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Expanded(
-                child: Text(
-                  lease['renterName'] ?? 'Unknown Renter',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
+              InkWell(
+                borderRadius: BorderRadius.circular(20),
+                onTap: () => context.pop(),
+                child: Padding(
+                  padding: const EdgeInsets.all(4),
+                  child: Icon(
+                    Icons.arrow_back,
+                    size: 18,
+                    color: Colors.white.withValues(alpha: 0.6),
                   ),
                 ),
               ),
-              StatusBadge(label: status, color: statusColor),
-            ],
-          ),
-          if (lease['contractNumber'] != null) ...[
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: AppColors.primary,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                'Contract No. ${lease['contractNumber']}',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  contractNumber != null
+                      ? l.contractOverline(contractNumber.toString())
+                      : l.leaseOverline,
+                  style: l.ar
+                      ? GoogleFonts.notoNaskhArabic(
+                          fontSize: 12,
+                          color: AppColors.goldMid,
+                        )
+                      : GoogleFonts.josefinSans(
+                          fontSize: 9.5,
+                          letterSpacing: 2.2,
+                          color: AppColors.goldMid,
+                        ),
                 ),
               ),
-            ),
-          ],
-          const SizedBox(height: 12),
-          _HeaderInfo(
-            icon: Icons.apartment_outlined,
-            text:
-                '${lease['propertyName'] ?? '-'} - Unit ${lease['unitIdentifier'] ?? lease['unitNumber'] ?? '-'}',
+              if (status == 'ACTIVE' || status == 'NOTICE_GIVEN')
+                PopupMenuButton<String>(
+                  icon: Icon(
+                    Icons.more_vert,
+                    size: 19,
+                    color: Colors.white.withValues(alpha: 0.6),
+                  ),
+                  padding: EdgeInsets.zero,
+                  color: AppColors.primary,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: BorderSide(
+                      color: AppColors.accent.withValues(alpha: 0.18),
+                    ),
+                  ),
+                  onSelected: (v) {
+                    if (v == 'terminate') {
+                      context.push('/leases/${lease['id']}/settlement');
+                    }
+                    if (v == 'extend') _showExtendDialog();
+                  },
+                  itemBuilder: (_) => [
+                    if (status == 'ACTIVE')
+                      PopupMenuItem(
+                        value: 'extend',
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.calendar_month_outlined,
+                              color: AppColors.accent,
+                              size: 18,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              l.extendLeaseTitle,
+                              style: _body(l.ar, size: 13, color: Colors.white),
+                            ),
+                          ],
+                        ),
+                      ),
+                    PopupMenuItem(
+                      value: 'terminate',
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.account_balance_wallet_outlined,
+                            color: AppColors.warning,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            l.settleAndTerminate,
+                            style: _body(l.ar, size: 13, color: Colors.white),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+            ],
           ),
           const SizedBox(height: 6),
-          _HeaderInfo(
-            icon: Icons.calendar_today_outlined,
-            text:
-                '${Formatters.date(lease['startDate'])} - ${Formatters.date(lease['endDate'])}',
+          Text(unit, style: _display(l.ar, size: 20, color: AppColors.gold400)),
+          const SizedBox(height: 2),
+          Text(
+            lease['renterName'] ?? l.unknownRenter,
+            style: l.ar
+                ? GoogleFonts.notoNaskhArabic(
+                    fontSize: 13,
+                    color: Colors.white70,
+                  )
+                : GoogleFonts.josefinSans(
+                    fontSize: 12.5,
+                    color: Colors.white70,
+                  ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 7,
+            runSpacing: 6,
+            children: [
+              _HeaderPill(
+                label: l.leaseStatusLabel(status),
+                color: _leaseStatusColor(status),
+              ),
+              if (bouncedCount > 0)
+                _HeaderPill(
+                  label: l.bouncedCount(bouncedCount),
+                  color: AppColors.danger,
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Color _leaseStatusColor(String status) {
+    switch (status) {
+      case 'ACTIVE':
+        return AppColors.success;
+      case 'NOTICE_GIVEN':
+      case 'EXPIRED':
+        return AppColors.warning;
+      case 'TERMINATED':
+        return AppColors.danger;
+      case 'DRAFT':
+      case 'PENDING_SIGNATURE':
+        return AppColors.accentDark;
+      default:
+        return AppColors.textMuted;
+    }
+  }
+
+  Widget _buildLeaseInfoCard(Map<String, dynamic> lease, _L l) {
+    final m = context.miftah;
+    final annualRent = (lease['annualRent'] ?? lease['totalRent'] ?? 0)
+        .toDouble();
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: m.surface,
+        border: Border.all(color: m.border),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _InfoBlock(
+                  label: l.renter,
+                  value: lease['renterName'] ?? l.unknownRenter,
+                  sub: lease['renterPhone']?.toString(),
+                  m: m,
+                  l: l,
+                ),
+              ),
+              _InfoBlock(
+                label: l.annualRent,
+                value: Formatters.currency(annualRent),
+                sub: l.chequeCount(
+                  (lease['numberOfPayments'] as num?)?.toInt() ??
+                      _payments.length,
+                ),
+                m: m,
+                l: l,
+                alignEnd: true,
+                isAmount: true,
+              ),
+            ],
+          ),
+          Divider(height: 24, color: m.divider),
+          Row(
+            children: [
+              Icon(Icons.calendar_today_outlined, size: 14, color: m.textMuted),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  '${Formatters.date(lease['startDate'], ar: l.ar)} — ${Formatters.date(lease['endDate'], ar: l.ar)}',
+                  style: _body(l.ar, size: 12.5, color: m.textSecondary),
+                ),
+              ),
+            ],
           ),
           if (lease['agreementDate'] != null) ...[
             const SizedBox(height: 6),
-            _HeaderInfo(
-              icon: Icons.assignment_outlined,
-              text: 'Agreement: ${Formatters.date(lease['agreementDate'])}',
+            Row(
+              children: [
+                Icon(Icons.assignment_outlined, size: 14, color: m.textMuted),
+                const SizedBox(width: 6),
+                Text(
+                  l.agreementDate(
+                    Formatters.date(lease['agreementDate'], ar: l.ar),
+                  ),
+                  style: _body(l.ar, size: 12.5, color: m.textSecondary),
+                ),
+              ],
             ),
           ],
-          const Divider(color: Colors.white24, height: 24),
-          Row(
-            children: [
-              _AmountItem(
-                label: 'Annual Rent',
-                value: Formatters.currency(
-                    (lease['annualRent'] ?? lease['totalRent'] ?? 0).toDouble()),
-              ),
-              const SizedBox(width: 24),
-              if (lease['monthlyRent'] != null)
-                _AmountItem(
-                  label: 'Monthly',
-                  value: Formatters.currency(
-                      (lease['monthlyRent']).toDouble()),
-                ),
-              const SizedBox(width: 24),
-              _AmountItem(
-                label: 'Payments',
-                value: '${lease['numberOfPayments'] ?? _payments.length}',
-              ),
-            ],
-          ),
           if ((lease['adminFee'] != null && (lease['adminFee'] as num) > 0) ||
-              (lease['parkingRemoteFee'] != null && (lease['parkingRemoteFee'] as num) > 0)) ...[
+              (lease['parkingRemoteFee'] != null &&
+                  (lease['parkingRemoteFee'] as num) > 0)) ...[
             const SizedBox(height: 12),
             Row(
               children: [
-                if (lease['adminFee'] != null && (lease['adminFee'] as num) > 0) ...[
-                  _AmountItem(
-                    label: 'Admin Fee',
-                    value: Formatters.currency((lease['adminFee'] as num).toDouble()),
+                if (lease['adminFee'] != null &&
+                    (lease['adminFee'] as num) > 0) ...[
+                  Expanded(
+                    child: _InfoBlock(
+                      label: l.adminFee,
+                      value: Formatters.currency(
+                        (lease['adminFee'] as num).toDouble(),
+                      ),
+                      m: m,
+                      l: l,
+                    ),
                   ),
-                  const SizedBox(width: 24),
                 ],
-                if (lease['parkingRemoteFee'] != null && (lease['parkingRemoteFee'] as num) > 0)
-                  _AmountItem(
-                    label: 'Parking Remote',
-                    value: Formatters.currency((lease['parkingRemoteFee'] as num).toDouble()),
+                if (lease['parkingRemoteFee'] != null &&
+                    (lease['parkingRemoteFee'] as num) > 0)
+                  Expanded(
+                    child: _InfoBlock(
+                      label: l.parkingRemote,
+                      value: Formatters.currency(
+                        (lease['parkingRemoteFee'] as num).toDouble(),
+                      ),
+                      m: m,
+                      l: l,
+                    ),
                   ),
               ],
             ),
@@ -623,21 +873,39 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
     );
   }
 
-  Widget _buildPaymentSchedule() {
+  // ─── Cheque schedule (timeline rail, per mock 1e/2b) ─────────────────────
+
+  Widget _buildPaymentSchedule(MiftahColors m, _L l) {
+    final cleared = _payments
+        .where((p) => (p is Map ? p['status'] : null) == 'CLEARED')
+        .length;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            const Icon(Icons.receipt_long_outlined,
-                size: 20, color: AppColors.primary),
-            const SizedBox(width: 8),
-            Text('Payment Schedule',
-                style: Theme.of(context).textTheme.headlineSmall),
+            Text(
+              l.ar ? l.chequeSchedule : l.chequeSchedule.toUpperCase(),
+              style: l.ar
+                  ? GoogleFonts.notoNaskhArabic(
+                      fontSize: 13,
+                      color: AppColors.accentDark,
+                      fontWeight: FontWeight.w600,
+                    )
+                  : GoogleFonts.josefinSans(
+                      fontSize: 10.5,
+                      letterSpacing: 2.2,
+                      color: AppColors.accentDark,
+                      fontWeight: FontWeight.w600,
+                    ),
+            ),
             const Spacer(),
-            Text('${_payments.length} installments',
-                style: const TextStyle(
-                    fontSize: 12, color: AppColors.textSecondary)),
+            if (_payments.isNotEmpty)
+              Text(
+                l.chequesClearedOf(cleared, _payments.length),
+                style: _body(l.ar, size: 11.5, color: m.textMuted),
+              ),
           ],
         ),
         const SizedBox(height: 12),
@@ -646,110 +914,40 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
             width: double.infinity,
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
-              color: AppColors.surface,
+              color: m.surface,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppColors.border),
+              border: Border.all(color: m.border),
             ),
-            child: const Column(
+            child: Column(
               children: [
-                Icon(Icons.receipt_long_outlined,
-                    size: 40, color: AppColors.textMuted),
-                SizedBox(height: 8),
-                Text('No payments yet',
-                    style: TextStyle(color: AppColors.textSecondary)),
-                Text('Activate the lease to generate the schedule',
-                    style:
-                        TextStyle(fontSize: 12, color: AppColors.textMuted)),
+                Icon(Icons.receipt_long_outlined, size: 36, color: m.textMuted),
+                const SizedBox(height: 8),
+                Text(
+                  l.noPaymentsYet,
+                  style: _body(l.ar, color: m.textSecondary),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  l.activateToGenerate,
+                  style: _body(l.ar, size: 11.5, color: m.textMuted),
+                ),
               ],
             ),
           )
         else
-          ..._payments.asMap().entries.map((entry) {
-            final index = entry.key;
-            final payment = entry.value;
-            final paymentStatus = payment['status'] ?? 'PENDING';
-            final paymentColor =
-                StatusHelper.getPaymentStatusColor(paymentStatus);
-            final isDeposited = paymentStatus == 'DEPOSITED';
-
-            final rowContent = Row(
-              children: [
-                Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    color: paymentColor.withValues(alpha: 0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Center(
-                    child: Text(
-                      '${index + 1}',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13,
-                        color: paymentColor,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        Formatters.currency(
-                            (payment['amount'] ?? 0).toDouble()),
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'Due: ${Formatters.date(payment['dueDate'])}',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                      if (payment['purposeLabel'] != null) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          payment['purposeLabel'] as String,
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: AppColors.textMuted,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                StatusBadge(label: paymentStatus, color: paymentColor),
-                if (isDeposited) ...[
-                  const SizedBox(width: 4),
-                  const Icon(Icons.more_vert,
-                      size: 18, color: AppColors.textMuted),
-                ],
-              ],
-            );
-
-            return Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: isDeposited
-                      ? AppColors.danger.withValues(alpha: 0.25)
-                      : AppColors.border,
-                ),
-              ),
-              child: isDeposited
-                  ? InkWell(
-                      borderRadius: BorderRadius.circular(10),
-                      onTap: () async {
+          Column(
+            children: _payments.asMap().entries.map((entry) {
+              final index = entry.key;
+              final payment = entry.value as Map<String, dynamic>;
+              final isLast = index == _payments.length - 1;
+              return _ChequeTimelineRow(
+                index: index,
+                payment: payment,
+                isLast: isLast,
+                m: m,
+                l: l,
+                onTap: (payment['status'] ?? 'PENDING') == 'DEPOSITED'
+                    ? () async {
                         final paymentId = payment['id'] as String? ?? '';
                         final amount = (payment['amount'] ?? 0) as num;
                         final result = await showMarkChequeFailedDialog(
@@ -757,110 +955,132 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
                           paymentId: paymentId,
                           installmentNumber: index + 1,
                           amount: amount,
-                          paymentService:
-                              ref.read(_paymentServiceProvider),
+                          paymentService: ref.read(_paymentServiceProvider),
                         );
                         if (result != null && mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                                content: Text('Cheque marked as failed')),
+                            SnackBar(content: Text(l.chequeMarkedFailed)),
                           );
                           _loadData();
                         }
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.all(14),
-                        child: rowContent,
-                      ),
-                    )
-                  : Padding(
-                      padding: const EdgeInsets.all(14),
-                      child: rowContent,
-                    ),
-            );
-          }),
+                      }
+                    : null,
+              );
+            }).toList(),
+          ),
       ],
     );
   }
 
-  Widget _buildDocuments() {
+  Widget _buildDocuments(MiftahColors m, _L l) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            const Icon(Icons.folder_outlined,
-                size: 20, color: AppColors.primary),
-            const SizedBox(width: 8),
-            Text('Documents',
-                style: Theme.of(context).textTheme.headlineSmall),
-          ],
+        _SectionLabel(
+          icon: Icons.folder_outlined,
+          text: l.documents,
+          m: m,
+          l: l,
         ),
         const SizedBox(height: 12),
         if (_documents.isEmpty)
-          const Text('No documents available',
-              style: TextStyle(
-                  fontSize: 13, color: AppColors.textSecondary))
+          Text(
+            l.noDocuments,
+            style: _body(l.ar, size: 12.5, color: m.textSecondary),
+          )
         else
-          ..._documents.map((doc) => ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: AppColors.info.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
+          Container(
+            decoration: BoxDecoration(
+              color: m.surface,
+              border: Border.all(color: m.border),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              children: [
+                for (var i = 0; i < _documents.length; i++) ...[
+                  if (i > 0) Divider(height: 1, color: m.divider),
+                  _DocumentRow(
+                    doc: _documents[i],
+                    m: m,
+                    l: l,
+                    onDownload: () => _downloadDocument(_documents[i]),
                   ),
-                  child: const Icon(Icons.picture_as_pdf_outlined,
-                      color: AppColors.info, size: 20),
-                ),
-                title: Text(doc['name'] ?? 'Document',
-                    style: const TextStyle(fontSize: 14)),
-                subtitle: Text(Formatters.date(doc['createdAt']),
-                    style: const TextStyle(fontSize: 12)),
-                trailing: IconButton(
-                  icon: const Icon(Icons.download_outlined,
-                      color: AppColors.primary),
-                  onPressed: () => _downloadDocument(doc),
-                ),
-              )),
+                ],
+              ],
+            ),
+          ),
       ],
     );
   }
 
-  Widget _buildAttachments() {
+  Widget _buildAttachments(MiftahColors m, _L l) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            const Icon(Icons.attach_file, size: 20, color: AppColors.primary),
+            Icon(Icons.attach_file, size: 17, color: AppColors.accentDark),
             const SizedBox(width: 8),
-            Text('Attachments',
-                style: Theme.of(context).textTheme.headlineSmall),
+            Text(
+              l.ar ? l.attachments : l.attachments.toUpperCase(),
+              style: l.ar
+                  ? GoogleFonts.notoNaskhArabic(
+                      fontSize: 13,
+                      color: AppColors.accentDark,
+                      fontWeight: FontWeight.w600,
+                    )
+                  : GoogleFonts.josefinSans(
+                      fontSize: 10.5,
+                      letterSpacing: 2.2,
+                      color: AppColors.accentDark,
+                      fontWeight: FontWeight.w600,
+                    ),
+            ),
             const Spacer(),
             TextButton.icon(
               onPressed: _uploadAttachment,
-              icon: const Icon(Icons.add, size: 18),
-              label: const Text('Add'),
+              icon: const Icon(
+                Icons.add,
+                size: 16,
+                color: AppColors.accentDark,
+              ),
+              label: Text(
+                l.add,
+                style: _body(
+                  l.ar,
+                  size: 12.5,
+                  color: AppColors.accentDark,
+                  weight: FontWeight.w600,
+                ),
+              ),
             ),
           ],
         ),
         const SizedBox(height: 8),
         if (_attachments.isEmpty)
-          const Text('No attachments',
-              style: TextStyle(
-                  fontSize: 13, color: AppColors.textSecondary))
+          Text(
+            l.noAttachments,
+            style: _body(l.ar, size: 12.5, color: m.textSecondary),
+          )
         else
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: _attachments.map((att) {
               return Chip(
-                avatar: const Icon(Icons.insert_drive_file_outlined,
-                    size: 16),
-                label: Text(att['name'] ?? 'File',
-                    style: const TextStyle(fontSize: 12)),
-                deleteIcon: const Icon(Icons.close, size: 16),
+                backgroundColor: m.surfaceAlt,
+                side: BorderSide(color: m.border),
+                avatar: Icon(
+                  Icons.insert_drive_file_outlined,
+                  size: 16,
+                  color: m.textSecondary,
+                ),
+                label: Text(
+                  att['name'] ?? l.file,
+                  style: _body(l.ar, size: 12, color: m.textPrimary),
+                ),
+                deleteIcon: Icon(Icons.close, size: 16, color: m.textMuted),
                 onDeleted: () async {
                   try {
                     await ref
@@ -876,143 +1096,651 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
     );
   }
 
-  Widget _buildPenaltiesLink() {
-    return InkWell(
+  Widget _buildPenaltiesLink(MiftahColors m, _L l) {
+    return _LinkCard(
+      icon: Icons.gavel,
+      iconColor: m.danger,
+      title: l.penalties,
+      subtitle: l.penaltiesSubtitle,
+      m: m,
+      l: l,
       onTap: () => context.push('/leases/${widget.leaseId}/penalties'),
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: AppColors.danger.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Icon(Icons.gavel, color: AppColors.danger, size: 22),
-            ),
-            const SizedBox(width: 14),
-            const Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Penalties', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
-                  SizedBox(height: 2),
-                  Text('View and manage late payment penalties', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-                ],
-              ),
-            ),
-            const Icon(Icons.chevron_right, color: AppColors.textMuted),
-          ],
-        ),
-      ),
     );
   }
 
-  Widget _buildSettlementLink() {
+  Widget _buildSettlementLink(MiftahColors m, _L l) {
     final status = _lease?['status'] ?? '';
     // Show settlement link for ACTIVE, NOTICE_GIVEN, TERMINATED, CLOSED
-    final showSettlementLink = ['ACTIVE', 'NOTICE_GIVEN', 'TERMINATED', 'CLOSED']
-        .contains(status);
+    final showSettlementLink = [
+      'ACTIVE',
+      'NOTICE_GIVEN',
+      'TERMINATED',
+      'CLOSED',
+    ].contains(status);
     if (!showSettlementLink) {
       return const SizedBox.shrink();
     }
     final settlementSubtitle = status == 'ACTIVE'
-        ? 'Manage settlement draft'
-        : 'View settlement preview or details';
-    return InkWell(
+        ? l.manageSettlementDraft
+        : l.viewSettlementPreview;
+    return _LinkCard(
+      icon: Icons.handshake_outlined,
+      iconColor: AppColors.accent,
+      title: l.settlement,
+      subtitle: settlementSubtitle,
+      m: m,
+      l: l,
       onTap: () => context.push('/leases/${widget.leaseId}/settlement'),
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: AppColors.accent.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(10),
+    );
+  }
+}
+
+// ─── Small building blocks ─────────────────────────────────────────────────
+
+class _HeaderPill extends StatelessWidget {
+  final String label;
+  final Color color;
+  const _HeaderPill({required this.label, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    final ar = context.isAr;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.16),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        ar ? label : label.toUpperCase(),
+        style: ar
+            ? GoogleFonts.notoNaskhArabic(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w600,
+                color: color,
+              )
+            : GoogleFonts.josefinSans(
+                fontSize: 9,
+                letterSpacing: 1.2,
+                fontWeight: FontWeight.w600,
+                color: color,
               ),
-              child: const Icon(Icons.handshake_outlined, color: AppColors.accent, size: 22),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Settlement', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
-                  const SizedBox(height: 2),
-                  Text(settlementSubtitle, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-                ],
-              ),
-            ),
-            const Icon(Icons.chevron_right, color: AppColors.textMuted),
-          ],
-        ),
       ),
     );
   }
 }
 
-class _HeaderInfo extends StatelessWidget {
+class _InfoBlock extends StatelessWidget {
+  final String label;
+  final String value;
+  final String? sub;
+  final MiftahColors m;
+  final _L l;
+  final bool alignEnd;
+  final bool isAmount;
+  const _InfoBlock({
+    required this.label,
+    required this.value,
+    this.sub,
+    required this.m,
+    required this.l,
+    this.alignEnd = false,
+    this.isAmount = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: alignEnd
+          ? CrossAxisAlignment.end
+          : CrossAxisAlignment.start,
+      children: [
+        Text(
+          l.ar ? label : label.toUpperCase(),
+          style: l.ar
+              ? GoogleFonts.notoNaskhArabic(fontSize: 10.5, color: m.textMuted)
+              : GoogleFonts.josefinSans(
+                  fontSize: 9,
+                  letterSpacing: 1.6,
+                  color: m.textMuted,
+                ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: isAmount
+              ? GoogleFonts.cinzel(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: m.textPrimary,
+                )
+              : _body(
+                  l.ar,
+                  size: 14,
+                  weight: FontWeight.w600,
+                  color: m.textPrimary,
+                ),
+        ),
+        if (sub != null) ...[
+          const SizedBox(height: 2),
+          Text(sub!, style: _body(l.ar, size: 11.5, color: m.textSecondary)),
+        ],
+      ],
+    );
+  }
+}
+
+class _SectionLabel extends StatelessWidget {
   final IconData icon;
   final String text;
-
-  const _HeaderInfo({required this.icon, required this.text});
+  final MiftahColors m;
+  final _L l;
+  const _SectionLabel({
+    required this.icon,
+    required this.text,
+    required this.m,
+    required this.l,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(icon, size: 16, color: Colors.white60),
+        Icon(icon, size: 17, color: AppColors.accentDark),
         const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            text,
-            style: const TextStyle(color: Colors.white70, fontSize: 13),
-          ),
+        Text(
+          l.ar ? text : text.toUpperCase(),
+          style: l.ar
+              ? GoogleFonts.notoNaskhArabic(
+                  fontSize: 13,
+                  color: AppColors.accentDark,
+                  fontWeight: FontWeight.w600,
+                )
+              : GoogleFonts.josefinSans(
+                  fontSize: 10.5,
+                  letterSpacing: 2.2,
+                  color: AppColors.accentDark,
+                  fontWeight: FontWeight.w600,
+                ),
         ),
       ],
     );
   }
 }
 
-class _AmountItem extends StatelessWidget {
-  final String label;
-  final String value;
+class _ChequeTimelineRow extends StatelessWidget {
+  final int index;
+  final Map<String, dynamic> payment;
+  final bool isLast;
+  final MiftahColors m;
+  final _L l;
+  final VoidCallback? onTap;
 
-  const _AmountItem({required this.label, required this.value});
+  const _ChequeTimelineRow({
+    required this.index,
+    required this.payment,
+    required this.isLast,
+    required this.m,
+    required this.l,
+    this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label,
-            style: const TextStyle(fontSize: 11, color: Colors.white54)),
-        const SizedBox(height: 2),
-        Text(
-          value,
-          style: const TextStyle(
-            color: AppColors.accent,
-            fontWeight: FontWeight.w700,
-            fontSize: 14,
-          ),
+    final status = (payment['status'] ?? 'PENDING').toString();
+    final color = _chequeStatusColor(m, status);
+    final isBounced = status == 'BOUNCED';
+    final amount = Formatters.currency((payment['amount'] ?? 0).toDouble());
+    final dueDate = Formatters.date(payment['dueDate'], ar: l.ar);
+
+    final content = isBounced
+        ? Container(
+            padding: const EdgeInsets.all(12),
+            margin: EdgeInsetsDirectional.only(bottom: isLast ? 0 : 12),
+            decoration: BoxDecoration(
+              color: m.surface,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: m.danger.withValues(alpha: 0.3)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      l.chequeLabel(index + 1, dueDate),
+                      style: _body(l.ar, size: 13.5, color: m.textPrimary),
+                    ),
+                    Text(
+                      amount,
+                      style: GoogleFonts.cinzel(fontSize: 14, color: m.danger),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  l.bouncedReason(payment['failureReason']?.toString()),
+                  style: _body(l.ar, size: 11.5, color: m.danger),
+                ),
+                if (onTap != null) ...[
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: onTap,
+                          child: Container(
+                            alignment: Alignment.center,
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            decoration: BoxDecoration(
+                              gradient: MiftahGradients.gold,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              l.ar ? l.markCheque : l.markCheque.toUpperCase(),
+                              style: l.ar
+                                  ? GoogleFonts.notoNaskhArabic(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.primary,
+                                    )
+                                  : GoogleFonts.josefinSans(
+                                      fontSize: 10,
+                                      letterSpacing: 1,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.primary,
+                                    ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          )
+        : Padding(
+            padding: EdgeInsetsDirectional.only(bottom: isLast ? 0 : 12),
+            child: GestureDetector(
+              onTap: onTap,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      l.chequeLabel(index + 1, dueDate),
+                      style: _body(
+                        l.ar,
+                        size: 13.5,
+                        color: status == 'PENDING'
+                            ? m.textSecondary
+                            : m.textPrimary,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    amount,
+                    style: GoogleFonts.cinzel(
+                      fontSize: 14,
+                      color: status == 'PENDING' ? m.textMuted : m.textPrimary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+
+    final subline = isBounced
+        ? const SizedBox.shrink()
+        : Padding(
+            padding: EdgeInsetsDirectional.only(
+              bottom: isLast ? 0 : 12,
+              top: 2,
+            ),
+            child: Text(
+              l.chequeStatusLine(status, payment),
+              style: _body(l.ar, size: 11.5, color: color),
+            ),
+          );
+
+    return Padding(
+      padding: const EdgeInsetsDirectional.only(bottom: 0),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 14,
+              child: Column(
+                children: [
+                  Container(
+                    width: 9,
+                    height: 9,
+                    margin: const EdgeInsets.only(top: 5),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: color,
+                    ),
+                  ),
+                  if (!isLast)
+                    Expanded(
+                      child: Container(
+                        width: 1,
+                        margin: const EdgeInsets.only(top: 3),
+                        color: m.border,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: isBounced
+                  ? content
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [content, subline],
+                    ),
+            ),
+          ],
         ),
-      ],
+      ),
     );
+  }
+}
+
+class _DocumentRow extends StatelessWidget {
+  final Map<String, dynamic> doc;
+  final MiftahColors m;
+  final _L l;
+  final VoidCallback onDownload;
+  const _DocumentRow({
+    required this.doc,
+    required this.m,
+    required this.l,
+    required this.onDownload,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: AppColors.info.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(
+              Icons.picture_as_pdf_outlined,
+              color: AppColors.info,
+              size: 19,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  doc['name'] ?? l.document,
+                  style: _body(l.ar, size: 13.5, color: m.textPrimary),
+                ),
+                Text(
+                  Formatters.date(doc['createdAt'], ar: l.ar),
+                  style: _body(l.ar, size: 11, color: m.textMuted),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(
+              Icons.download_outlined,
+              color: AppColors.accentDark,
+              size: 20,
+            ),
+            onPressed: onDownload,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LinkCard extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final String subtitle;
+  final MiftahColors m;
+  final _L l;
+  final VoidCallback onTap;
+  const _LinkCard({
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.subtitle,
+    required this.m,
+    required this.l,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: m.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: m.border),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: iconColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: iconColor, size: 21),
+            ),
+            const SizedBox(width: 13),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: _body(
+                      l.ar,
+                      size: 14.5,
+                      weight: FontWeight.w600,
+                      color: m.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: _body(l.ar, size: 11.5, color: m.textSecondary),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: m.textMuted),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Screen strings (EN/AR). Lightweight per-screen pattern — see arabic-brief.
+class _L {
+  _L(this.ar);
+  final bool ar;
+
+  String get leaseTitle => ar ? 'العقد' : 'Lease';
+  String get notFound => ar ? 'غير موجود' : 'Not found';
+  String get failedToLoad =>
+      ar ? 'تعذر تحميل تفاصيل العقد' : 'Failed to load lease details';
+  String get leaseOverline => ar ? 'عقد الإيجار' : 'LEASE';
+  String contractOverline(String number) =>
+      ar ? 'العقد رقم $number' : 'CONTRACT NO. $number';
+  String get unknownRenter => ar ? 'مستأجر غير معروف' : 'Unknown Renter';
+  String bouncedCount(int n) => ar ? '$n مرتجع' : '$n bounced';
+
+  String get cancel => ar ? 'إلغاء' : 'Cancel';
+  String get confirm => ar ? 'تأكيد' : 'Confirm';
+  String get confirmAndSave => ar ? 'تأكيد وحفظ' : 'Confirm & Save';
+  String get extend => ar ? 'تمديد' : 'Extend';
+
+  String get activateLeaseTitle => ar ? 'تفعيل العقد' : 'Activate Lease';
+  String get activateLeaseBody => ar
+      ? 'هل أنت متأكد من تفعيل هذا العقد؟ سيتم إنشاء جدول الدفعات.'
+      : 'Are you sure you want to activate this lease? This will generate the payment schedule.';
+  String get leaseActivated =>
+      ar ? 'تم تفعيل العقد بنجاح' : 'Lease activated successfully';
+  String get failedToActivate =>
+      ar ? 'فشل تفعيل العقد' : 'Failed to activate lease';
+
+  String get camera => ar ? 'الكاميرا' : 'Camera';
+  String get gallery => ar ? 'معرض الصور' : 'Gallery';
+  String get file => ar ? 'ملف' : 'File';
+  String get attachmentUploaded => ar ? 'تم رفع المرفق' : 'Attachment uploaded';
+  String get failedToUpload =>
+      ar ? 'فشل رفع المرفق' : 'Failed to upload attachment';
+  String get failedToDownload =>
+      ar ? 'فشل تحميل المستند' : 'Failed to download document';
+
+  String get saveContractTitle => ar ? 'حفظ العقد؟' : 'Save Contract?';
+  String get saveContractBody => ar
+      ? 'بمجرد الحفظ، سيتم تخصيص رقم للعقد وحفظه في العقد. هل تريد المتابعة؟'
+      : 'Once saved, this contract will be assigned a contract number and stored on the lease. Continue?';
+  String get contractGenerated => ar ? 'تم إنشاء العقد' : 'Contract generated';
+  String get failedToPreview =>
+      ar ? 'فشل إنشاء المعاينة' : 'Failed to generate preview';
+  String get failedToSaveContract =>
+      ar ? 'فشل حفظ العقد' : 'Failed to save contract';
+  String get generateContract => ar ? 'إنشاء العقد' : 'Generate Contract';
+  String get regenerateContract =>
+      ar ? 'إعادة إنشاء العقد' : 'Re-generate Contract';
+  String get activateLease => ar ? 'تفعيل العقد' : 'Activate Lease';
+
+  String get extendLeaseTitle => ar ? 'تمديد العقد' : 'Extend Lease';
+  String get settleAndTerminate => ar ? 'تسوية وإنهاء' : 'Settle & Terminate';
+  String currentEndDate(String date) =>
+      ar ? 'تاريخ الانتهاء الحالي: $date' : 'Current end date: $date';
+  String get newEndDate => ar ? 'تاريخ الانتهاء الجديد:' : 'New end date:';
+  String get leaseExtended =>
+      ar ? 'تم تمديد العقد بنجاح' : 'Lease extended successfully';
+  String get failedToExtend =>
+      ar ? 'فشل تمديد العقد' : 'Failed to extend lease';
+
+  String get renter => ar ? 'المستأجر' : 'RENTER';
+  String get annualRent => ar ? 'الإيجار السنوي' : 'ANNUAL RENT';
+  String get adminFee => ar ? 'رسوم إدارية' : 'ADMIN FEE';
+  String get parkingRemote => ar ? 'ريموت موقف السيارات' : 'PARKING REMOTE';
+  String agreementDate(String date) =>
+      ar ? 'تاريخ الاتفاقية: $date' : 'Agreement: $date';
+  String chequeCount(int n) {
+    if (!ar) return '$n cheques';
+    if (n == 1) return 'شيك واحد';
+    if (n == 2) return 'شيكان';
+    if (n >= 3 && n <= 10) return '$n شيكات';
+    return '$n شيكاً';
+  }
+
+  String get chequeSchedule => ar ? 'جدول الشيكات' : 'Cheque schedule';
+  String chequesClearedOf(int cleared, int total) =>
+      ar ? '$cleared من $total مصروف' : '$cleared of $total cleared';
+  String get noPaymentsYet => ar ? 'لا توجد دفعات بعد' : 'No payments yet';
+  String get activateToGenerate => ar
+      ? 'قم بتفعيل العقد لإنشاء الجدول'
+      : 'Activate the lease to generate the schedule';
+  String get chequeMarkedFailed =>
+      ar ? 'تم تسجيل الشيك كمرتجع' : 'Cheque marked as failed';
+  String get markCheque => ar ? 'تسجيل فشل الشيك' : 'Mark Failed';
+
+  String chequeLabel(int n, String date) =>
+      ar ? 'شيك $n · $date' : 'CHQ $n · $date';
+
+  String bouncedReason(String? reason) {
+    final label = switch (reason) {
+      'BOUNCE' => ar ? 'رصيد غير كافٍ' : 'insufficient funds',
+      'SIGNATURE_MISMATCH' => ar ? 'عدم تطابق التوقيع' : 'signature mismatch',
+      'ACCOUNT_CLOSED' => ar ? 'الحساب مغلق' : 'account closed',
+      _ => ar ? 'مرتد' : 'bounced',
+    };
+    return ar ? 'مرتجع · $label' : 'Bounced · $label';
+  }
+
+  String chequeStatusLine(String status, Map<String, dynamic> payment) {
+    final bank = payment['bankName']?.toString();
+    switch (status) {
+      case 'CLEARED':
+        return ar
+            ? (bank != null ? 'مصروف · $bank' : 'مصروف')
+            : (bank != null ? 'Cleared · $bank' : 'Cleared');
+      case 'COLLECTED':
+        return ar ? 'تم التحصيل' : 'Collected';
+      case 'DEPOSITED':
+        return ar ? 'تم الإيداع بالبنك' : 'Deposited';
+      default:
+        final due = payment['dueDate'] != null
+            ? Formatters.date(payment['dueDate'], ar: ar)
+            : null;
+        return ar
+            ? (due != null ? 'محتجز · إيداع $due' : 'قيد الانتظار')
+            : (due != null ? 'Held · deposit $due' : 'Pending');
+    }
+  }
+
+  String get documents => ar ? 'المستندات' : 'Documents';
+  String get noDocuments => ar ? 'لا توجد مستندات' : 'No documents available';
+  String get document => ar ? 'مستند' : 'Document';
+
+  String get attachments => ar ? 'المرفقات' : 'Attachments';
+  String get add => ar ? 'إضافة' : 'Add';
+  String get noAttachments => ar ? 'لا توجد مرفقات' : 'No attachments';
+
+  String get penalties => ar ? 'الغرامات' : 'Penalties';
+  String get penaltiesSubtitle => ar
+      ? 'عرض وإدارة غرامات التأخير'
+      : 'View and manage late payment penalties';
+  String get settlement => ar ? 'التسوية' : 'Settlement';
+  String get manageSettlementDraft =>
+      ar ? 'إدارة مسودة التسوية' : 'Manage settlement draft';
+  String get viewSettlementPreview => ar
+      ? 'عرض معاينة أو تفاصيل التسوية'
+      : 'View settlement preview or details';
+
+  String leaseStatusLabel(String status) {
+    switch (status) {
+      case 'ACTIVE':
+        return ar ? 'ساري' : 'Active';
+      case 'DRAFT':
+        return ar ? 'مسودة' : 'Draft';
+      case 'PENDING_SIGNATURE':
+        return ar ? 'بانتظار التوقيع' : 'Pending Signature';
+      case 'EXPIRED':
+        return ar ? 'منتهي' : 'Expired';
+      case 'NOTICE_GIVEN':
+        return ar ? 'إشعار إنهاء' : 'Notice Given';
+      case 'TERMINATED':
+        return ar ? 'منهى' : 'Terminated';
+      case 'CLOSED':
+        return ar ? 'مغلق' : 'Closed';
+      default:
+        return status;
+    }
   }
 }

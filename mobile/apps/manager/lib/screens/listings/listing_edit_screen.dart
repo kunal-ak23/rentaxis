@@ -7,16 +7,122 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 // ── Providers ─────────────────────────────────────────────────────────────────
 
 final _listingDetailProvider = FutureProvider.autoDispose
     .family<Map<String, dynamic>?, String>((ref, id) async {
-  if (id == 'new') return null;
-  final service = ref.watch(listingApiServiceProvider);
-  return service.getListing(id);
-});
+      if (id == 'new') return null;
+      final service = ref.watch(listingApiServiceProvider);
+      return service.getListing(id);
+    });
+
+// ── Screen strings (EN/AR). Lightweight per-screen pattern — see arabic-brief. ─
+
+class _L {
+  _L(this.ar);
+  final bool ar;
+
+  String get newListing => ar ? 'إعلان جديد' : 'NEW LISTING';
+  String get editListing => ar ? 'تعديل الإعلان' : 'EDIT LISTING';
+  String get unlist => ar ? 'إلغاء النشر' : 'Unlist';
+  String get publish => ar ? 'نشر' : 'Publish';
+  String get save => ar ? 'حفظ' : 'Save';
+  String get loadFailed => ar ? 'فشل تحميل الإعلان' : 'Failed to load listing';
+
+  String get tabDetails => ar ? 'التفاصيل' : 'Details';
+  String get tabPricing => ar ? 'التسعير' : 'Pricing';
+  String get tabLocation => ar ? 'الموقع' : 'Location';
+  String get tabAmenities => ar ? 'المرافق' : 'Amenities';
+  String get tabMedia => ar ? 'الوسائط' : 'Media';
+
+  // Details tab
+  String get titleSection => ar ? 'العنوان' : 'Title';
+  String get titleEnHint =>
+      ar ? 'العنوان (بالإنجليزية) *' : 'Title (English) *';
+  String get titleArHint => ar ? 'العنوان (بالعربية)' : 'العنوان (Arabic)';
+  String get descriptionSection => ar ? 'الوصف' : 'Description';
+  String get descEnHint => ar ? 'الوصف (بالإنجليزية)' : 'Description (English)';
+  String get descArHint => ar ? 'الوصف (بالعربية)' : 'الوصف (Arabic)';
+  String get specificationsSection => ar ? 'المواصفات' : 'Specifications';
+  String get bedrooms => ar ? 'غرف النوم' : 'Bedrooms';
+  String get bathrooms => ar ? 'الحمامات' : 'Bathrooms';
+  String get floor => ar ? 'الطابق' : 'Floor';
+  String get sizeSqft => ar ? 'المساحة (قدم مربع)' : 'Size (sqft)';
+  String get parking => ar ? 'مواقف السيارات' : 'Parking';
+  String get furnishingSection => ar ? 'الأثاث' : 'Furnishing';
+  String get viewTypeSection => ar ? 'نوع الإطلالة' : 'View type';
+
+  // Pricing tab
+  String get rentSection => ar ? 'الإيجار' : 'Rent';
+  String get annualRentHint =>
+      ar ? 'الإيجار السنوي (درهم)' : 'Annual rent (AED)';
+  String get depositHint => ar ? 'التأمين (درهم)' : 'Security deposit (AED)';
+  String get paymentTermsSection => ar ? 'شروط الدفع' : 'Payment terms';
+  String get minLeaseMonths =>
+      ar ? 'أقل مدة إيجار (أشهر)' : 'Min lease (months)';
+  String get chequesAccepted =>
+      ar ? 'عدد الشيكات المقبولة' : 'Cheques accepted';
+  String get utilitiesSection => ar ? 'المرافق المشمولة' : 'Utilities included';
+  String get dewaLabel =>
+      ar ? 'الكهرباء والماء (ديوا)' : 'DEWA (electricity & water)';
+  String get chillerLabel =>
+      ar ? 'التبريد المركزي' : 'District cooling (chiller)';
+  String get availabilitySection => ar ? 'التوفر' : 'Availability';
+  String get availableFromHint =>
+      ar ? 'متاح من (اختياري)' : 'Available from (optional)';
+
+  // Location tab
+  String get pinLocationSection => ar ? 'تحديد الموقع' : 'Pin location';
+  String get tapMapHint => ar
+      ? 'اضغط على الخريطة لتحديد الموقع الدقيق'
+      : 'Tap the map to set the exact location';
+  String latLng(String lat, String lng) =>
+      ar ? 'خط العرض: $lat، خط الطول: $lng' : 'Lat: $lat, Lng: $lng';
+  String get clearLocation => ar ? 'مسح الموقع' : 'Clear location';
+
+  // Amenities tab
+  String amenitiesSelected(int n) =>
+      ar ? '$n مرفقًا مختارًا' : '$n amenities selected';
+
+  // Media tab
+  String photosCount(int n) => ar ? '$n صورة' : '$n photos';
+  String pendingUpload(int n) => ar ? 'قيد الرفع ($n)' : 'Pending upload ($n)';
+  String get gallery => ar ? 'المعرض' : 'Gallery';
+  String get camera => ar ? 'الكاميرا' : 'Camera';
+  String get uploadHint => ar
+      ? 'يتم رفع الصور عند الضغط على حفظ.'
+      : 'Photos are uploaded when you tap Save.';
+  String get cover => ar ? 'الغلاف' : 'Cover';
+  String get couldNotPickImage =>
+      ar ? 'تعذّر اختيار الصورة' : 'Could not pick image';
+  String get deleteFailed => ar ? 'فشل الحذف' : 'Delete failed';
+
+  // Actions / messages
+  String get titleRequired =>
+      ar ? 'العنوان (بالإنجليزية) مطلوب' : 'Title (English) is required';
+  String get listingCreated => ar ? 'تم إنشاء الإعلان' : 'Listing created';
+  String get savedMsg => ar ? 'تم الحفظ' : 'Saved';
+  String errorMsg(String e) => ar ? 'خطأ: $e' : 'Error: $e';
+
+  String furnishing(String value) => switch (value) {
+    'UNFURNISHED' => ar ? 'غير مفروش' : 'Unfurnished',
+    'SEMI_FURNISHED' => ar ? 'مفروش جزئيًا' : 'Semi-furnished',
+    'FULLY_FURNISHED' => ar ? 'مفروش بالكامل' : 'Fully furnished',
+    _ => value,
+  };
+
+  String viewType(String value) => switch (value) {
+    'SEA' => ar ? 'بحرية' : 'Sea',
+    'CITY' => ar ? 'على المدينة' : 'City',
+    'POOL' => ar ? 'على المسبح' : 'Pool',
+    'GARDEN' => ar ? 'على الحديقة' : 'Garden',
+    'STREET' => ar ? 'على الشارع' : 'Street',
+    'COMMUNITY' => ar ? 'على المجتمع' : 'Community',
+    'OTHER' => ar ? 'أخرى' : 'Other',
+    _ => value,
+  };
+}
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 
@@ -25,8 +131,7 @@ class ListingEditScreen extends ConsumerStatefulWidget {
   const ListingEditScreen({super.key, required this.listingId});
 
   @override
-  ConsumerState<ListingEditScreen> createState() =>
-      _ListingEditScreenState();
+  ConsumerState<ListingEditScreen> createState() => _ListingEditScreenState();
 }
 
 class _ListingEditScreenState extends ConsumerState<ListingEditScreen>
@@ -95,7 +200,6 @@ class _ListingEditScreenState extends ConsumerState<ListingEditScreen>
     ('OTHER', 'Other'),
   ];
 
-
   @override
   void initState() {
     super.initState();
@@ -145,12 +249,15 @@ class _ListingEditScreenState extends ConsumerState<ListingEditScreen>
     _seoDescCtrl.text = l['seoDescription'] as String? ?? '';
     _seoKeywordsCtrl.text = l['seoKeywords'] as String? ?? '';
     _existingMedia = (l['media'] as List? ?? []).cast<Map<String, dynamic>>();
-    final amenities = (l['amenities'] as List? ?? []).cast<Map<String, dynamic>>();
+    final amenities = (l['amenities'] as List? ?? [])
+        .cast<Map<String, dynamic>>();
     _amenities.addAll(amenities.map((a) => a['amenity'] as String));
   }
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final l = _L(context.isAr);
     final isNew = _listingId == null;
     final detailAsync = ref.watch(_listingDetailProvider(widget.listingId));
 
@@ -161,7 +268,11 @@ class _ListingEditScreenState extends ConsumerState<ListingEditScreen>
     ref.listen<AsyncValue<Map<String, dynamic>?>>(
       _listingDetailProvider(widget.listingId),
       (_, next) {
-        if (!isNew) next.whenData((l) { if (l != null) _populateFromListing(l); });
+        if (!isNew) {
+          next.whenData((l) {
+            if (l != null) _populateFromListing(l);
+          });
+        }
       },
     );
 
@@ -170,98 +281,51 @@ class _ListingEditScreenState extends ConsumerState<ListingEditScreen>
         : (detailAsync.valueOrNull?['status'] as String? ?? 'DRAFT');
 
     return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.surface,
-        elevation: 0,
-        title: Text(
-          isNew ? 'New Listing' : 'Edit Listing',
-          style: GoogleFonts.cinzel(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              color: AppColors.textPrimary),
-        ),
-        actions: [
-          // Publish / Unlist button
-          if (!isNew) ...[
-            TextButton.icon(
-              onPressed: _publishing ? null : () => _togglePublish(status),
-              icon: _publishing
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2))
-                  : Icon(
-                      status == 'PUBLISHED'
-                          ? Icons.visibility_off_outlined
-                          : Icons.publish_outlined,
-                      size: 18),
-              label: Text(
-                status == 'PUBLISHED' ? 'Unlist' : 'Publish',
-                style: GoogleFonts.josefinSans(fontWeight: FontWeight.w600),
-              ),
-            ),
-          ],
-          // Save button
-          TextButton(
-            onPressed: _saving ? null : _save,
-            child: _saving
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2))
-                : Text(
-                    'Save',
-                    style: GoogleFonts.josefinSans(
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.primary,
-                      fontSize: 15,
+      backgroundColor: m.background,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _ChromeHeader(
+            l: l,
+            isNew: isNew,
+            status: status,
+            saving: _saving,
+            publishing: _publishing,
+            onSave: _saving ? null : _save,
+            onTogglePublish: (!isNew && !_publishing)
+                ? () => _togglePublish(status)
+                : null,
+          ),
+          _MiftahTabBar(tabs: _tabs, l: l),
+          Expanded(
+            child: detailAsync.when(
+              loading: () => isNew
+                  ? _buildForm(l)
+                  : Center(
+                      child: CircularProgressIndicator(color: AppColors.accent),
                     ),
-                  ),
+              error: (e, _) => ErrorState(
+                message: l.loadFailed,
+                onRetry: () =>
+                    ref.invalidate(_listingDetailProvider(widget.listingId)),
+              ),
+              data: (_) => _buildForm(l),
+            ),
           ),
         ],
-        bottom: TabBar(
-          controller: _tabs,
-          isScrollable: true,
-          labelStyle: GoogleFonts.josefinSans(
-              fontSize: 13, fontWeight: FontWeight.w600),
-          unselectedLabelStyle:
-              GoogleFonts.josefinSans(fontSize: 13),
-          labelColor: AppColors.primary,
-          unselectedLabelColor: AppColors.textMuted,
-          indicatorColor: AppColors.primary,
-          tabs: const [
-            Tab(text: 'Details'),
-            Tab(text: 'Pricing'),
-            Tab(text: 'Location'),
-            Tab(text: 'Amenities'),
-            Tab(text: 'Media'),
-          ],
-        ),
-      ),
-      body: detailAsync.when(
-        loading: () => isNew
-            ? _buildForm()
-            : const Center(child: CircularProgressIndicator()),
-        error: (e, _) => ErrorState(
-          message: 'Failed to load listing',
-          onRetry: () =>
-              ref.invalidate(_listingDetailProvider(widget.listingId)),
-        ),
-        data: (_) => _buildForm(),
       ),
     );
   }
 
-  Widget _buildForm() {
+  Widget _buildForm(_L l) {
     return TabBarView(
       controller: _tabs,
       children: [
-        _DetailsTab(state: this),
-        _PricingTab(state: this),
-        _LocationTab(state: this),
-        _AmenitiesTab(state: this),
-        _MediaTab(state: this),
+        _DetailsTab(state: this, l: l),
+        _PricingTab(state: this, l: l),
+        _LocationTab(state: this, l: l),
+        _AmenitiesTab(state: this, l: l),
+        _MediaTab(state: this, l: l),
       ],
     );
   }
@@ -269,10 +333,11 @@ class _ListingEditScreenState extends ConsumerState<ListingEditScreen>
   // ── Actions ───────────────────────────────────────────────────────────────
 
   Future<void> _save() async {
+    final l = _L(context.isAr);
     if (_titleEnCtrl.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Title (English) is required')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(l.titleRequired)));
       return;
     }
     setState(() => _saving = true);
@@ -286,22 +351,25 @@ class _ListingEditScreenState extends ConsumerState<ListingEditScreen>
         // Upload any pending media
         await _flushPendingUploads();
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Listing created')));
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(l.listingCreated)));
           context.go('/listings/$_listingId');
         }
       } else {
         await service.updateListing(_listingId!, data);
         await _flushPendingUploads();
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Saved')));
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(l.savedMsg)));
         }
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Error: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(l.errorMsg('$e'))));
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -310,6 +378,7 @@ class _ListingEditScreenState extends ConsumerState<ListingEditScreen>
 
   Future<void> _togglePublish(String currentStatus) async {
     if (_listingId == null) return;
+    final l = _L(context.isAr);
     setState(() => _publishing = true);
     try {
       final service = ref.read(listingApiServiceProvider);
@@ -321,8 +390,9 @@ class _ListingEditScreenState extends ConsumerState<ListingEditScreen>
       ref.invalidate(_listingDetailProvider(widget.listingId));
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Error: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(l.errorMsg('$e'))));
       }
     } finally {
       if (mounted) setState(() => _publishing = false);
@@ -370,11 +440,195 @@ class _ListingEditScreenState extends ConsumerState<ListingEditScreen>
     for (final file in List.of(_pendingUploads)) {
       final bytes = await file.readAsBytes();
       final name = file.path.split('/').last;
-      await service.uploadMedia(_listingId!, bytes, name,
-          isCover: _existingMedia.isEmpty && _pendingUploads.first == file);
+      await service.uploadMedia(
+        _listingId!,
+        bytes,
+        name,
+        isCover: _existingMedia.isEmpty && _pendingUploads.first == file,
+      );
       _pendingUploads.remove(file);
     }
     ref.invalidate(_listingDetailProvider(widget.listingId));
+  }
+}
+
+// ── Chrome header ─────────────────────────────────────────────────────────────
+
+class _ChromeHeader extends StatelessWidget {
+  final _L l;
+  final bool isNew;
+  final String status;
+  final bool saving;
+  final bool publishing;
+  final VoidCallback? onSave;
+  final VoidCallback? onTogglePublish;
+
+  const _ChromeHeader({
+    required this.l,
+    required this.isNew,
+    required this.status,
+    required this.saving,
+    required this.publishing,
+    required this.onSave,
+    required this.onTogglePublish,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.primary,
+        border: Border(
+          bottom: BorderSide(color: AppColors.accent.withValues(alpha: 0.14)),
+        ),
+      ),
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 14, 12, 14),
+          child: Row(
+            children: [
+              IconButton(
+                onPressed: () => context.pop(),
+                icon: const Icon(
+                  Icons.arrow_back,
+                  color: Colors.white,
+                  size: 20,
+                ),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  isNew ? l.newListing : l.editListing,
+                  style: l.ar
+                      ? GoogleFonts.notoNaskhArabic(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        )
+                      : GoogleFonts.cinzel(
+                          fontSize: 15,
+                          letterSpacing: 2.4,
+                          color: Colors.white,
+                        ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (!isNew) ...[
+                _HeaderAction(
+                  label: status == 'PUBLISHED' ? l.unlist : l.publish,
+                  icon: status == 'PUBLISHED'
+                      ? Icons.visibility_off_outlined
+                      : Icons.publish_outlined,
+                  loading: publishing,
+                  ar: l.ar,
+                  onTap: onTogglePublish,
+                ),
+                const SizedBox(width: 16),
+              ],
+              _HeaderAction(
+                label: l.save,
+                icon: Icons.check,
+                loading: saving,
+                emphasize: true,
+                ar: l.ar,
+                onTap: onSave,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HeaderAction extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool loading;
+  final bool ar;
+  final bool emphasize;
+  final VoidCallback? onTap;
+
+  const _HeaderAction({
+    required this.label,
+    required this.icon,
+    required this.loading,
+    required this.ar,
+    this.emphasize = false,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = emphasize
+        ? AppColors.accent
+        : Colors.white.withValues(alpha: 0.82);
+    return GestureDetector(
+      onTap: onTap,
+      child: Opacity(
+        opacity: onTap == null && !loading ? 0.4 : 1,
+        child: loading
+            ? SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2, color: color),
+              )
+            : Text(
+                ar ? label : label.toUpperCase(),
+                style:
+                    (ar
+                    ? GoogleFonts.notoNaskhArabic
+                    : GoogleFonts.josefinSans)(
+                      fontSize: ar ? 13 : 11.5,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: ar ? 0 : 1.4,
+                      color: color,
+                    ),
+              ),
+      ),
+    );
+  }
+}
+
+class _MiftahTabBar extends StatelessWidget {
+  final TabController tabs;
+  final _L l;
+  const _MiftahTabBar({required this.tabs, required this.l});
+
+  @override
+  Widget build(BuildContext context) {
+    final m = context.miftah;
+    return Container(
+      color: m.surface,
+      child: TabBar(
+        controller: tabs,
+        isScrollable: true,
+        labelStyle:
+            (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans)(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              letterSpacing: l.ar ? 0 : 0.4,
+            ),
+        unselectedLabelStyle:
+            (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans)(
+              fontSize: 13,
+              letterSpacing: l.ar ? 0 : 0.4,
+            ),
+        labelColor: m.isDark ? AppColors.accent : AppColors.primary,
+        unselectedLabelColor: m.textMuted,
+        indicatorColor: AppColors.accent,
+        tabs: [
+          Tab(text: l.tabDetails),
+          Tab(text: l.tabPricing),
+          Tab(text: l.tabLocation),
+          Tab(text: l.tabAmenities),
+          Tab(text: l.tabMedia),
+        ],
+      ),
+    );
   }
 }
 
@@ -382,7 +636,8 @@ class _ListingEditScreenState extends ConsumerState<ListingEditScreen>
 
 class _DetailsTab extends StatefulWidget {
   final _ListingEditScreenState state;
-  const _DetailsTab({required this.state});
+  final _L l;
+  const _DetailsTab({required this.state, required this.l});
 
   @override
   State<_DetailsTab> createState() => _DetailsTabState();
@@ -390,6 +645,7 @@ class _DetailsTab extends StatefulWidget {
 
 class _DetailsTabState extends State<_DetailsTab> {
   _ListingEditScreenState get s => widget.state;
+  _L get l => widget.l;
 
   @override
   Widget build(BuildContext context) {
@@ -398,70 +654,77 @@ class _DetailsTabState extends State<_DetailsTab> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _SectionLabel('Title'),
-          _Field(controller: s._titleEnCtrl, hint: 'Title (English) *'),
+          _SectionLabel(l.titleSection),
+          _Field(controller: s._titleEnCtrl, hint: l.titleEnHint),
           const SizedBox(height: 10),
           _Field(
-              controller: s._titleArCtrl,
-              hint: 'العنوان (Arabic)',
-              textDirection: TextDirection.rtl),
+            controller: s._titleArCtrl,
+            hint: l.titleArHint,
+            textDirection: TextDirection.rtl,
+          ),
           const SizedBox(height: 20),
-          _SectionLabel('Description'),
-          _Field(
-              controller: s._descEnCtrl,
-              hint: 'Description (English)',
-              maxLines: 4),
+          _SectionLabel(l.descriptionSection),
+          _Field(controller: s._descEnCtrl, hint: l.descEnHint, maxLines: 4),
           const SizedBox(height: 10),
           _Field(
-              controller: s._descArCtrl,
-              hint: 'الوصف (Arabic)',
-              maxLines: 4,
-              textDirection: TextDirection.rtl),
+            controller: s._descArCtrl,
+            hint: l.descArHint,
+            maxLines: 4,
+            textDirection: TextDirection.rtl,
+          ),
           const SizedBox(height: 20),
-          _SectionLabel('Specifications'),
+          _SectionLabel(l.specificationsSection),
           _NumRow(
             children: [
               _NumField(
-                  label: 'Bedrooms',
-                  value: s._bedrooms,
-                  onChanged: (v) => setState(() => s._bedrooms = v)),
+                label: l.bedrooms,
+                value: s._bedrooms,
+                onChanged: (v) => setState(() => s._bedrooms = v),
+              ),
               _NumField(
-                  label: 'Bathrooms',
-                  value: s._bathrooms,
-                  onChanged: (v) => setState(() => s._bathrooms = v)),
+                label: l.bathrooms,
+                value: s._bathrooms,
+                onChanged: (v) => setState(() => s._bathrooms = v),
+              ),
               _NumField(
-                  label: 'Floor',
-                  value: s._floor,
-                  onChanged: (v) => setState(() => s._floor = v)),
+                label: l.floor,
+                value: s._floor,
+                onChanged: (v) => setState(() => s._floor = v),
+              ),
             ],
           ),
           const SizedBox(height: 10),
           _NumRow(
             children: [
               _NumField(
-                  label: 'Size (sqft)',
-                  value: s._sizeSqft?.round(),
-                  onChanged: (v) =>
-                      setState(() => s._sizeSqft = v?.toDouble())),
+                label: l.sizeSqft,
+                value: s._sizeSqft?.round(),
+                onChanged: (v) => setState(() => s._sizeSqft = v?.toDouble()),
+              ),
               _NumField(
-                  label: 'Parking',
-                  value: s._parkingSpaces,
-                  onChanged: (v) => setState(() => s._parkingSpaces = v)),
+                label: l.parking,
+                value: s._parkingSpaces,
+                onChanged: (v) => setState(() => s._parkingSpaces = v),
+              ),
             ],
           ),
           const SizedBox(height: 20),
-          _SectionLabel('Furnishing'),
+          _SectionLabel(l.furnishingSection),
           const SizedBox(height: 8),
           _OptionPills(
-            options: _ListingEditScreenState._furnishingOptions,
+            options: _ListingEditScreenState._furnishingOptions
+                .map((o) => (o.$1, l.furnishing(o.$1)))
+                .toList(),
             selected: s._furnishing,
             onSelect: (v) => setState(() => s._furnishing = v),
           ),
           const SizedBox(height: 20),
-          _SectionLabel('View type'),
+          _SectionLabel(l.viewTypeSection),
           const SizedBox(height: 8),
           _OptionPills(
-            options: _ListingEditScreenState._viewTypeOptions,
+            options: _ListingEditScreenState._viewTypeOptions
+                .map((o) => (o.$1, l.viewType(o.$1)))
+                .toList(),
             selected: s._viewType,
             onSelect: (v) => setState(() => s._viewType = v),
           ),
@@ -475,7 +738,8 @@ class _DetailsTabState extends State<_DetailsTab> {
 
 class _PricingTab extends StatefulWidget {
   final _ListingEditScreenState state;
-  const _PricingTab({required this.state});
+  final _L l;
+  const _PricingTab({required this.state, required this.l});
 
   @override
   State<_PricingTab> createState() => _PricingTabState();
@@ -483,56 +747,61 @@ class _PricingTab extends StatefulWidget {
 
 class _PricingTabState extends State<_PricingTab> {
   _ListingEditScreenState get s => widget.state;
+  _L get l => widget.l;
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
     return SingleChildScrollView(
       padding: EdgeInsets.fromLTRB(16, 20, 16, AppInsets.bottomNav(context)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _SectionLabel('Rent'),
+          _SectionLabel(l.rentSection),
           _Field(
-              controller: s._rentCtrl,
-              hint: 'Annual rent (AED)',
-              keyboardType: TextInputType.number),
+            controller: s._rentCtrl,
+            hint: l.annualRentHint,
+            keyboardType: TextInputType.number,
+          ),
           const SizedBox(height: 10),
           _Field(
-              controller: s._depositCtrl,
-              hint: 'Security deposit (AED)',
-              keyboardType: TextInputType.number),
+            controller: s._depositCtrl,
+            hint: l.depositHint,
+            keyboardType: TextInputType.number,
+          ),
           const SizedBox(height: 20),
-          _SectionLabel('Payment terms'),
+          _SectionLabel(l.paymentTermsSection),
           const SizedBox(height: 8),
           _NumRow(
             children: [
               _NumField(
-                  label: 'Min lease (months)',
-                  value: s._minLeaseMonths,
-                  onChanged: (v) =>
-                      setState(() => s._minLeaseMonths = v)),
+                label: l.minLeaseMonths,
+                value: s._minLeaseMonths,
+                onChanged: (v) => setState(() => s._minLeaseMonths = v),
+              ),
               _NumField(
-                  label: 'Cheques accepted',
-                  value: s._cheques,
-                  onChanged: (v) => setState(() => s._cheques = v)),
+                label: l.chequesAccepted,
+                value: s._cheques,
+                onChanged: (v) => setState(() => s._cheques = v),
+              ),
             ],
           ),
           const SizedBox(height: 20),
-          _SectionLabel('Utilities included'),
+          _SectionLabel(l.utilitiesSection),
           const SizedBox(height: 8),
           _SwitchRow(
-            label: 'DEWA (electricity & water)',
+            label: l.dewaLabel,
             value: s._dewaIncluded,
             onChanged: (v) => setState(() => s._dewaIncluded = v),
           ),
           const SizedBox(height: 8),
           _SwitchRow(
-            label: 'District cooling (chiller)',
+            label: l.chillerLabel,
             value: s._chillerIncluded,
             onChanged: (v) => setState(() => s._chillerIncluded = v),
           ),
           const SizedBox(height: 20),
-          _SectionLabel('Availability'),
+          _SectionLabel(l.availabilitySection),
           const SizedBox(height: 8),
           GestureDetector(
             onTap: () async {
@@ -543,39 +812,46 @@ class _PricingTabState extends State<_PricingTab> {
                 lastDate: DateTime.now().add(const Duration(days: 730)),
               );
               if (date != null) {
-                setState(() => s._availableFrom =
-                    date.toIso8601String().split('T').first);
+                setState(
+                  () => s._availableFrom = date
+                      .toIso8601String()
+                      .split('T')
+                      .first,
+                );
               }
             },
             child: Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 14, vertical: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
               decoration: BoxDecoration(
-                color: AppColors.surface,
+                color: m.surface,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.border),
+                border: Border.all(color: m.border),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.calendar_today_outlined,
-                      size: 18, color: AppColors.textMuted),
+                  Icon(
+                    Icons.calendar_today_outlined,
+                    size: 18,
+                    color: m.textMuted,
+                  ),
                   const SizedBox(width: 10),
                   Text(
-                    s._availableFrom ?? 'Available from (optional)',
-                    style: GoogleFonts.josefinSans(
-                      fontSize: 14,
-                      color: s._availableFrom != null
-                          ? AppColors.textPrimary
-                          : AppColors.textMuted,
-                    ),
+                    s._availableFrom ?? l.availableFromHint,
+                    style:
+                        (l.ar
+                        ? GoogleFonts.notoNaskhArabic
+                        : GoogleFonts.josefinSans)(
+                          fontSize: 14,
+                          color: s._availableFrom != null
+                              ? m.textPrimary
+                              : m.textMuted,
+                        ),
                   ),
                   if (s._availableFrom != null) ...[
                     const Spacer(),
                     GestureDetector(
-                      onTap: () =>
-                          setState(() => s._availableFrom = null),
-                      child: const Icon(Icons.close,
-                          size: 16, color: AppColors.textMuted),
+                      onTap: () => setState(() => s._availableFrom = null),
+                      child: Icon(Icons.close, size: 16, color: m.textMuted),
                     ),
                   ],
                 ],
@@ -592,7 +868,8 @@ class _PricingTabState extends State<_PricingTab> {
 
 class _LocationTab extends StatefulWidget {
   final _ListingEditScreenState state;
-  const _LocationTab({required this.state});
+  final _L l;
+  const _LocationTab({required this.state, required this.l});
 
   @override
   State<_LocationTab> createState() => _LocationTabState();
@@ -600,70 +877,93 @@ class _LocationTab extends StatefulWidget {
 
 class _LocationTabState extends State<_LocationTab> {
   _ListingEditScreenState get s => widget.state;
+  _L get l => widget.l;
 
   static const _defaultPos = LatLng(25.2048, 55.2708); // Dubai
 
-  LatLng get _markerPos => s._lat != null && s._lng != null
-      ? LatLng(s._lat!, s._lng!)
-      : _defaultPos;
+  LatLng get _markerPos =>
+      s._lat != null && s._lng != null ? LatLng(s._lat!, s._lng!) : _defaultPos;
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
     return SingleChildScrollView(
       padding: EdgeInsets.fromLTRB(16, 20, 16, AppInsets.bottomNav(context)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _SectionLabel('Pin location'),
+          _SectionLabel(l.pinLocationSection),
           const SizedBox(height: 4),
           Text(
-            'Tap the map to set the exact location',
-            style: GoogleFonts.josefinSans(
-                fontSize: 12, color: AppColors.textMuted),
+            l.tapMapHint,
+            style: (l.ar
+                ? GoogleFonts.notoNaskhArabic
+                : GoogleFonts.josefinSans)(fontSize: 12, color: m.textMuted),
           ),
           const SizedBox(height: 12),
           ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: SizedBox(
-              height: 280,
-              child: GoogleMap(
-                initialCameraPosition: CameraPosition(
-                    target: _markerPos, zoom: s._lat != null ? 15 : 11),
-                markers: s._lat != null
-                    ? {
-                        Marker(
-                          markerId: const MarkerId('pin'),
-                          position: _markerPos,
-                          draggable: true,
-                          onDragEnd: (pos) => setState(() {
-                            s._lat = pos.latitude;
-                            s._lng = pos.longitude;
-                          }),
-                        )
-                      }
-                    : {},
-                onTap: (pos) => setState(() {
-                  s._lat = pos.latitude;
-                  s._lng = pos.longitude;
-                }),
-                myLocationButtonEnabled: false,
-                zoomControlsEnabled: true,
+            borderRadius: BorderRadius.circular(14),
+            child: Container(
+              decoration: BoxDecoration(border: Border.all(color: m.border)),
+              child: SizedBox(
+                height: 280,
+                child: GoogleMap(
+                  initialCameraPosition: CameraPosition(
+                    target: _markerPos,
+                    zoom: s._lat != null ? 15 : 11,
+                  ),
+                  markers: s._lat != null
+                      ? {
+                          Marker(
+                            markerId: const MarkerId('pin'),
+                            position: _markerPos,
+                            draggable: true,
+                            onDragEnd: (pos) => setState(() {
+                              s._lat = pos.latitude;
+                              s._lng = pos.longitude;
+                            }),
+                          ),
+                        }
+                      : {},
+                  onTap: (pos) => setState(() {
+                    s._lat = pos.latitude;
+                    s._lng = pos.longitude;
+                  }),
+                  myLocationButtonEnabled: false,
+                  zoomControlsEnabled: true,
+                ),
               ),
             ),
           ),
           if (s._lat != null) ...[
             const SizedBox(height: 12),
             Text(
-              'Lat: ${s._lat!.toStringAsFixed(6)}, Lng: ${s._lng!.toStringAsFixed(6)}',
-              style: GoogleFonts.josefinSans(
-                  fontSize: 12, color: AppColors.textMuted),
+              l.latLng(s._lat!.toStringAsFixed(6), s._lng!.toStringAsFixed(6)),
+              style: (l.ar
+                  ? GoogleFonts.notoNaskhArabic
+                  : GoogleFonts.josefinSans)(fontSize: 12, color: m.textMuted),
             ),
-            TextButton(
-              onPressed: () => setState(() {
+            GestureDetector(
+              onTap: () => setState(() {
                 s._lat = null;
                 s._lng = null;
               }),
-              child: const Text('Clear location'),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: Text(
+                  l.clearLocation,
+                  style:
+                      (l.ar
+                      ? GoogleFonts.notoNaskhArabic
+                      : GoogleFonts.josefinSans)(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: m.isDark
+                            ? AppColors.accent
+                            : AppColors.accentDark,
+                      ),
+                ),
+              ),
             ),
           ],
         ],
@@ -676,7 +976,8 @@ class _LocationTabState extends State<_LocationTab> {
 
 class _AmenitiesTab extends StatefulWidget {
   final _ListingEditScreenState state;
-  const _AmenitiesTab({required this.state});
+  final _L l;
+  const _AmenitiesTab({required this.state, required this.l});
 
   @override
   State<_AmenitiesTab> createState() => _AmenitiesTabState();
@@ -684,27 +985,24 @@ class _AmenitiesTab extends StatefulWidget {
 
 class _AmenitiesTabState extends State<_AmenitiesTab> {
   _ListingEditScreenState get s => widget.state;
+  _L get l => widget.l;
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
     return SingleChildScrollView(
       padding: EdgeInsets.fromLTRB(16, 20, 16, AppInsets.bottomNav(context)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _SectionLabel(
-              '${s._amenities.length} amenities selected'),
+          _SectionLabel(l.amenitiesSelected(s._amenities.length)),
           const SizedBox(height: 12),
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: kAllAmenities.map((a) {
               final isSelected = s._amenities.contains(a);
-              final label = a
-                  .split('_')
-                  .map((w) =>
-                      w[0].toUpperCase() + w.substring(1).toLowerCase())
-                  .join(' ');
+              final label = amenityLabel(a, ar: l.ar);
               return GestureDetector(
                 onTap: () => setState(() {
                   if (isSelected) {
@@ -716,30 +1014,30 @@ class _AmenitiesTabState extends State<_AmenitiesTab> {
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 180),
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 8),
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                   decoration: BoxDecoration(
-                    color: isSelected
-                        ? AppColors.primary
-                        : AppColors.surface,
+                    color: isSelected ? AppColors.primary : m.surface,
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
-                      color: isSelected
-                          ? AppColors.primary
-                          : AppColors.border,
+                      color: isSelected ? AppColors.accent : m.border,
                     ),
-                    boxShadow: isSelected ? [] : AppShadows.soft,
                   ),
                   child: Text(
                     label,
-                    style: GoogleFonts.josefinSans(
-                      fontSize: 12,
-                      color: isSelected
-                          ? Colors.white
-                          : AppColors.textSecondary,
-                      fontWeight: isSelected
-                          ? FontWeight.w600
-                          : FontWeight.w400,
-                    ),
+                    style:
+                        (l.ar
+                        ? GoogleFonts.notoNaskhArabic
+                        : GoogleFonts.josefinSans)(
+                          fontSize: 12,
+                          color: isSelected
+                              ? AppColors.accent
+                              : m.textSecondary,
+                          fontWeight: isSelected
+                              ? FontWeight.w600
+                              : FontWeight.w400,
+                        ),
                   ),
                 ),
               );
@@ -755,7 +1053,8 @@ class _AmenitiesTabState extends State<_AmenitiesTab> {
 
 class _MediaTab extends StatefulWidget {
   final _ListingEditScreenState state;
-  const _MediaTab({required this.state});
+  final _L l;
+  const _MediaTab({required this.state, required this.l});
 
   @override
   State<_MediaTab> createState() => _MediaTabState();
@@ -763,10 +1062,12 @@ class _MediaTab extends StatefulWidget {
 
 class _MediaTabState extends State<_MediaTab> {
   _ListingEditScreenState get s => widget.state;
+  _L get l => widget.l;
   final _picker = ImagePicker();
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
     return SingleChildScrollView(
       padding: EdgeInsets.fromLTRB(16, 20, 16, AppInsets.bottomNav(context)),
       child: Column(
@@ -775,13 +1076,20 @@ class _MediaTabState extends State<_MediaTab> {
           Row(
             children: [
               _SectionLabel(
-                  '${s._existingMedia.length + s._pendingUploads.length} photos'),
+                l.photosCount(
+                  s._existingMedia.length + s._pendingUploads.length,
+                ),
+              ),
               const Spacer(),
               if (s._uploadingMedia)
-                const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2)),
+                SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: AppColors.accent,
+                  ),
+                ),
             ],
           ),
           const SizedBox(height: 12),
@@ -791,8 +1099,7 @@ class _MediaTabState extends State<_MediaTab> {
             GridView.builder(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              gridDelegate:
-                  const SliverGridDelegateWithFixedCrossAxisCount(
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 3,
                 mainAxisSpacing: 8,
                 crossAxisSpacing: 8,
@@ -808,34 +1115,45 @@ class _MediaTabState extends State<_MediaTab> {
                   children: [
                     ClipRRect(
                       borderRadius: BorderRadius.circular(10),
-                      child: Image.network(url, fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) =>
-                              Container(color: AppColors.background)),
+                      child: Image.network(
+                        url,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) =>
+                            Container(color: m.surfaceAlt),
+                      ),
                     ),
                     if (isCover)
-                      Positioned(
+                      PositionedDirectional(
                         top: 4,
-                        left: 4,
+                        start: 4,
                         child: Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: AppColors.primary,
                             borderRadius: BorderRadius.circular(6),
                           ),
-                          child: Text('Cover',
-                              style: GoogleFonts.josefinSans(
+                          child: Text(
+                            l.cover,
+                            style:
+                                (l.ar
+                                ? GoogleFonts.notoNaskhArabic
+                                : GoogleFonts.josefinSans)(
                                   fontSize: 9,
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600)),
+                                  color: AppColors.accent,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                          ),
                         ),
                       ),
-                    Positioned(
+                    PositionedDirectional(
                       top: 4,
-                      right: 4,
+                      end: 4,
                       child: GestureDetector(
-                        onTap: () => _deleteExisting(
-                            media['id'] as String? ?? ''),
+                        onTap: () =>
+                            _deleteExisting(media['id'] as String? ?? ''),
                         child: Container(
                           width: 24,
                           height: 24,
@@ -843,8 +1161,11 @@ class _MediaTabState extends State<_MediaTab> {
                             color: Colors.black.withValues(alpha: 0.55),
                             shape: BoxShape.circle,
                           ),
-                          child: const Icon(Icons.close,
-                              size: 14, color: Colors.white),
+                          child: const Icon(
+                            Icons.close,
+                            size: 14,
+                            color: Colors.white,
+                          ),
                         ),
                       ),
                     ),
@@ -856,13 +1177,12 @@ class _MediaTabState extends State<_MediaTab> {
           // Pending local uploads
           if (s._pendingUploads.isNotEmpty) ...[
             const SizedBox(height: 12),
-            _SectionLabel('Pending upload (${s._pendingUploads.length})'),
+            _SectionLabel(l.pendingUpload(s._pendingUploads.length)),
             const SizedBox(height: 8),
             GridView.builder(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              gridDelegate:
-                  const SliverGridDelegateWithFixedCrossAxisCount(
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 3,
                 mainAxisSpacing: 8,
                 crossAxisSpacing: 8,
@@ -874,15 +1194,14 @@ class _MediaTabState extends State<_MediaTab> {
                 children: [
                   ClipRRect(
                     borderRadius: BorderRadius.circular(10),
-                    child: Image.file(s._pendingUploads[i],
-                        fit: BoxFit.cover),
+                    child: Image.file(s._pendingUploads[i], fit: BoxFit.cover),
                   ),
-                  Positioned(
+                  PositionedDirectional(
                     top: 4,
-                    right: 4,
+                    end: 4,
                     child: GestureDetector(
-                      onTap: () => setState(
-                          () => s._pendingUploads.removeAt(i)),
+                      onTap: () =>
+                          setState(() => s._pendingUploads.removeAt(i)),
                       child: Container(
                         width: 24,
                         height: 24,
@@ -890,8 +1209,11 @@ class _MediaTabState extends State<_MediaTab> {
                           color: Colors.black.withValues(alpha: 0.55),
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(Icons.close,
-                            size: 14, color: Colors.white),
+                        child: const Icon(
+                          Icons.close,
+                          size: 14,
+                          color: Colors.white,
+                        ),
                       ),
                     ),
                   ),
@@ -908,7 +1230,8 @@ class _MediaTabState extends State<_MediaTab> {
               Expanded(
                 child: _AddPhotoBtn(
                   icon: Icons.photo_library_outlined,
-                  label: 'Gallery',
+                  label: l.gallery,
+                  ar: l.ar,
                   onTap: () => _pick(ImageSource.gallery),
                 ),
               ),
@@ -916,7 +1239,8 @@ class _MediaTabState extends State<_MediaTab> {
               Expanded(
                 child: _AddPhotoBtn(
                   icon: Icons.camera_alt_outlined,
-                  label: 'Camera',
+                  label: l.camera,
+                  ar: l.ar,
                   onTap: () => _pick(ImageSource.camera),
                 ),
               ),
@@ -924,9 +1248,10 @@ class _MediaTabState extends State<_MediaTab> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Photos are uploaded when you tap Save.',
-            style: GoogleFonts.josefinSans(
-                fontSize: 11, color: AppColors.textMuted),
+            l.uploadHint,
+            style: (l.ar
+                ? GoogleFonts.notoNaskhArabic
+                : GoogleFonts.josefinSans)(fontSize: 11, color: m.textMuted),
           ),
         ],
       ),
@@ -938,18 +1263,19 @@ class _MediaTabState extends State<_MediaTab> {
       if (source == ImageSource.gallery) {
         final files = await _picker.pickMultiImage(imageQuality: 80);
         if (files.isEmpty) return;
-        setState(() => s._pendingUploads
-            .addAll(files.map((f) => File(f.path))));
+        setState(
+          () => s._pendingUploads.addAll(files.map((f) => File(f.path))),
+        );
       } else {
-        final file =
-            await _picker.pickImage(source: source, imageQuality: 80);
+        final file = await _picker.pickImage(source: source, imageQuality: 80);
         if (file == null) return;
         setState(() => s._pendingUploads.add(File(file.path)));
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Could not pick image: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('${l.couldNotPickImage}: $e')));
       }
     }
   }
@@ -959,12 +1285,12 @@ class _MediaTabState extends State<_MediaTab> {
     try {
       final service = s.ref.read(listingApiServiceProvider);
       await service.deleteMedia(s._listingId!, mediaId);
-      setState(() =>
-          s._existingMedia.removeWhere((m) => m['id'] == mediaId));
+      setState(() => s._existingMedia.removeWhere((m) => m['id'] == mediaId));
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Delete failed: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('${l.deleteFailed}: $e')));
       }
     }
   }
@@ -973,9 +1299,14 @@ class _MediaTabState extends State<_MediaTab> {
 class _AddPhotoBtn extends StatelessWidget {
   final IconData icon;
   final String label;
+  final bool ar;
   final VoidCallback onTap;
-  const _AddPhotoBtn(
-      {required this.icon, required this.label, required this.onTap});
+  const _AddPhotoBtn({
+    required this.icon,
+    required this.label,
+    required this.ar,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -984,22 +1315,27 @@ class _AddPhotoBtn extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 14),
         decoration: BoxDecoration(
-          color: AppColors.primary.withValues(alpha: 0.08),
+          color: AppColors.accent.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-              color: AppColors.primary.withValues(alpha: 0.25),
-              style: BorderStyle.solid),
+            color: AppColors.accent.withValues(alpha: 0.35),
+            style: BorderStyle.solid,
+          ),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 20, color: AppColors.primary),
+            Icon(icon, size: 20, color: AppColors.accentDark),
             const SizedBox(width: 8),
-            Text(label,
-                style: GoogleFonts.josefinSans(
+            Text(
+              label,
+              style:
+                  (ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans)(
                     fontSize: 13,
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.w600)),
+                    color: AppColors.accentDark,
+                    fontWeight: FontWeight.w600,
+                  ),
+            ),
           ],
         ),
       ),
@@ -1015,16 +1351,23 @@ class _SectionLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final ar = context.isAr;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsetsDirectional.only(bottom: 9),
       child: Text(
-        text,
-        style: GoogleFonts.josefinSans(
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
-          color: AppColors.textMuted,
-          letterSpacing: 0.3,
-        ),
+        ar ? text : text.toUpperCase(),
+        style: ar
+            ? GoogleFonts.notoNaskhArabic(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                color: AppColors.accentDark,
+              )
+            : GoogleFonts.josefinSans(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w600,
+                color: AppColors.accentDark,
+                letterSpacing: 2.0,
+              ),
       ),
     );
   }
@@ -1047,33 +1390,39 @@ class _Field extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final fieldIsAr = textDirection == TextDirection.rtl;
     return TextField(
       controller: controller,
       maxLines: maxLines,
       keyboardType: keyboardType,
       textDirection: textDirection,
-      style: GoogleFonts.josefinSans(fontSize: 14),
+      style: (fieldIsAr
+          ? GoogleFonts.notoNaskhArabic
+          : GoogleFonts.josefinSans)(fontSize: 14, color: m.textPrimary),
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle: GoogleFonts.josefinSans(
-            fontSize: 14, color: AppColors.textMuted),
+        hintStyle: (fieldIsAr
+            ? GoogleFonts.notoNaskhArabic
+            : GoogleFonts.josefinSans)(fontSize: 14, color: m.textMuted),
         filled: true,
-        fillColor: AppColors.surface,
+        fillColor: m.surface,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppColors.border),
+          borderSide: BorderSide(color: m.border),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppColors.border),
+          borderSide: BorderSide(color: m.border),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide:
-              const BorderSide(color: AppColors.primary, width: 1.5),
+          borderSide: const BorderSide(color: AppColors.accent, width: 1.5),
         ),
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 12,
+        ),
       ),
     );
   }
@@ -1083,41 +1432,48 @@ class _NumField extends StatelessWidget {
   final String label;
   final int? value;
   final ValueChanged<int?> onChanged;
-  const _NumField(
-      {required this.label,
-      required this.value,
-      required this.onChanged});
+  const _NumField({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final ar = context.isAr;
     return Expanded(
       child: TextField(
-        controller: TextEditingController(
-            text: value != null ? '$value' : ''),
+        controller: TextEditingController(text: value != null ? '$value' : ''),
         keyboardType: TextInputType.number,
-        style: GoogleFonts.josefinSans(fontSize: 14),
+        style: (ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans)(
+          fontSize: 14,
+          color: m.textPrimary,
+        ),
         onChanged: (v) => onChanged(int.tryParse(v)),
         decoration: InputDecoration(
           labelText: label,
-          labelStyle: GoogleFonts.josefinSans(
-              fontSize: 12, color: AppColors.textMuted),
+          labelStyle: (ar
+              ? GoogleFonts.notoNaskhArabic
+              : GoogleFonts.josefinSans)(fontSize: 12, color: m.textMuted),
           filled: true,
-          fillColor: AppColors.surface,
+          fillColor: m.surface,
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: AppColors.border),
+            borderSide: BorderSide(color: m.border),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: AppColors.border),
+            borderSide: BorderSide(color: m.border),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide:
-                const BorderSide(color: AppColors.primary, width: 1.5),
+            borderSide: const BorderSide(color: AppColors.accent, width: 1.5),
           ),
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 10,
+          ),
         ),
       ),
     );
@@ -1131,9 +1487,7 @@ class _NumRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
-      children: children
-          .expand((w) => [w, const SizedBox(width: 10)])
-          .toList()
+      children: children.expand((w) => [w, const SizedBox(width: 10)]).toList()
         ..removeLast(),
     );
   }
@@ -1143,31 +1497,40 @@ class _SwitchRow extends StatelessWidget {
   final String label;
   final bool value;
   final ValueChanged<bool> onChanged;
-  const _SwitchRow(
-      {required this.label,
-      required this.value,
-      required this.onChanged});
+  const _SwitchRow({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final ar = context.isAr;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: m.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(color: m.border),
       ),
       child: Row(
         children: [
           Expanded(
-            child: Text(label,
-                style: GoogleFonts.josefinSans(
-                    fontSize: 14, color: AppColors.textPrimary)),
+            child: Text(
+              label,
+              style:
+                  (ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans)(
+                    fontSize: 14,
+                    color: m.textPrimary,
+                  ),
+            ),
           ),
           Switch.adaptive(
             value: value,
             onChanged: onChanged,
-            activeColor: AppColors.primary,
+            activeColor: AppColors.accent,
+            activeTrackColor: AppColors.accent.withValues(alpha: 0.35),
           ),
         ],
       ),
@@ -1179,13 +1542,16 @@ class _OptionPills extends StatelessWidget {
   final List<(String, String)> options;
   final String? selected;
   final ValueChanged<String?> onSelect;
-  const _OptionPills(
-      {required this.options,
-      required this.selected,
-      required this.onSelect});
+  const _OptionPills({
+    required this.options,
+    required this.selected,
+    required this.onSelect,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final ar = context.isAr;
     return Wrap(
       spacing: 8,
       runSpacing: 8,
@@ -1195,28 +1561,22 @@ class _OptionPills extends StatelessWidget {
           onTap: () => onSelect(isSelected ? null : opt.$1),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 180),
-            padding:
-                const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
             decoration: BoxDecoration(
-              color: isSelected ? AppColors.primary : AppColors.surface,
+              color: isSelected ? AppColors.primary : m.surface,
               borderRadius: BorderRadius.circular(20),
               border: Border.all(
-                color:
-                    isSelected ? AppColors.primary : AppColors.border,
+                color: isSelected ? AppColors.accent : m.borderStrong,
               ),
-              boxShadow: isSelected ? [] : AppShadows.soft,
             ),
             child: Text(
               opt.$2,
-              style: GoogleFonts.josefinSans(
-                fontSize: 13,
-                color: isSelected
-                    ? Colors.white
-                    : AppColors.textSecondary,
-                fontWeight: isSelected
-                    ? FontWeight.w600
-                    : FontWeight.w400,
-              ),
+              style:
+                  (ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans)(
+                    fontSize: 13,
+                    color: isSelected ? AppColors.accent : m.textSecondary,
+                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                  ),
             ),
           ),
         );

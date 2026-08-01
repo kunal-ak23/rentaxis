@@ -22,6 +22,16 @@ fi
 # shellcheck source=/dev/null
 source "$ENV_FILE"
 
+# ---- Azure subscription ----
+# Point the CLI at the configured subscription so every `az` call below targets
+# it. Optional: a blank AZURE_SUBSCRIPTION keeps the CLI's current default
+# (`az account show`). Without this, a subscription migration silently
+# provisions/reads resources in whatever subscription happens to be active.
+if [[ -n "${AZURE_SUBSCRIPTION:-}" ]]; then
+  echo "==> Using Azure subscription: $AZURE_SUBSCRIPTION"
+  az account set --subscription "$AZURE_SUBSCRIPTION"
+fi
+
 echo "==> Provisioning RentAxis infrastructure"
 echo "    Resource Group : $AZURE_RESOURCE_GROUP"
 echo "    Location       : $AZURE_LOCATION"

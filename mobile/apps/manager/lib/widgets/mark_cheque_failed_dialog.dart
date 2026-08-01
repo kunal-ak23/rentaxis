@@ -1,19 +1,11 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
-// Reason options for cheque failure.
-const _kReasonOptions = [
-  _ReasonOption('BOUNCE', 'Bounced (insufficient funds)'),
-  _ReasonOption('SIGNATURE_MISMATCH', 'Signature mismatch'),
-  _ReasonOption('ACCOUNT_CLOSED', 'Account closed'),
-];
-
-class _ReasonOption {
-  final String value;
-  final String label;
-  const _ReasonOption(this.value, this.label);
-}
+// Reason options for cheque failure. Values are backend enum keys; labels are
+// resolved via _L at render time.
+const _kReasonValues = ['BOUNCE', 'SIGNATURE_MISMATCH', 'ACCOUNT_CLOSED'];
 
 /// Shows the mark-cheque-failed dialog and returns the response Map on
 /// success, or null if the user cancelled.
@@ -68,7 +60,7 @@ class _MarkChequeFailedDialogState extends State<_MarkChequeFailedDialog> {
 
   bool get _canSubmit => _selectedReason != null && !_isSubmitting;
 
-  Future<void> _submit() async {
+  Future<void> _submit(_L l) async {
     if (!_canSubmit) return;
     setState(() {
       _isSubmitting = true;
@@ -84,7 +76,7 @@ class _MarkChequeFailedDialogState extends State<_MarkChequeFailedDialog> {
       );
       if (mounted) Navigator.of(context).pop(result);
     } on DioException catch (e) {
-      String message = 'Failed to mark cheque failed';
+      String message = l.failedGeneric;
       final data = e.response?.data;
       if (data is Map && data['message'] != null) {
         message = data['message'].toString();
@@ -101,7 +93,7 @@ class _MarkChequeFailedDialogState extends State<_MarkChequeFailedDialog> {
       if (mounted) {
         setState(() {
           _isSubmitting = false;
-          _errorMessage = 'Failed to mark cheque failed';
+          _errorMessage = l.failedGeneric;
         });
       }
     }
@@ -109,15 +101,33 @@ class _MarkChequeFailedDialogState extends State<_MarkChequeFailedDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final amountStr =
-        Formatters.currency(widget.amount.toDouble());
+    final m = context.miftah;
+    final l = _L(context.isAr);
+    final amountStr = Formatters.currency(widget.amount.toDouble());
+    final bodyStyle = (l.ar
+        ? GoogleFonts.notoNaskhArabic
+        : GoogleFonts.josefinSans);
 
     return AlertDialog(
+      backgroundColor: m.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       title: Row(
         children: [
-          const Icon(Icons.cancel_outlined, color: AppColors.danger, size: 22),
+          Icon(Icons.cancel_outlined, color: m.danger, size: 22),
           const SizedBox(width: 10),
-          const Text('Mark cheque failed'),
+          Text(
+            l.title,
+            style: l.ar
+                ? GoogleFonts.notoNaskhArabic(
+                    fontWeight: FontWeight.w600,
+                    color: m.textPrimary,
+                  )
+                : GoogleFonts.cinzel(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 18,
+                    color: m.textPrimary,
+                  ),
+          ),
         ],
       ),
       content: SizedBox(
@@ -127,10 +137,8 @@ class _MarkChequeFailedDialogState extends State<_MarkChequeFailedDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Installment #${widget.installmentNumber} — $amountStr AED. '
-              'Choose a reason; a fine will be applied.',
-              style: const TextStyle(
-                  fontSize: 13, color: AppColors.textSecondary),
+              l.subtitle(widget.installmentNumber, amountStr),
+              style: bodyStyle(fontSize: 13, color: m.textSecondary),
             ),
             const SizedBox(height: 20),
 
@@ -138,18 +146,24 @@ class _MarkChequeFailedDialogState extends State<_MarkChequeFailedDialog> {
             DropdownButtonFormField<String>(
               value: _selectedReason,
               isExpanded: true,
-              decoration: const InputDecoration(
-                labelText: 'Failure reason *',
-                prefixIcon: Icon(Icons.error_outline, size: 20),
-                contentPadding:
-                    EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              decoration: InputDecoration(
+                labelText: l.failureReason,
+                prefixIcon: const Icon(Icons.error_outline, size: 20),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
+                ),
               ),
-              items: _kReasonOptions
-                  .map((opt) => DropdownMenuItem<String>(
-                        value: opt.value,
-                        child: Text(opt.label,
-                            style: const TextStyle(fontSize: 14)),
-                      ))
+              items: _kReasonValues
+                  .map(
+                    (v) => DropdownMenuItem<String>(
+                      value: v,
+                      child: Text(
+                        l.reasonLabel(v),
+                        style: bodyStyle(fontSize: 14, color: m.textPrimary),
+                      ),
+                    ),
+                  )
                   .toList(),
               onChanged: _isSubmitting
                   ? null
@@ -162,15 +176,19 @@ class _MarkChequeFailedDialogState extends State<_MarkChequeFailedDialog> {
               controller: _notesController,
               enabled: !_isSubmitting,
               maxLines: 3,
-              decoration: const InputDecoration(
-                labelText: 'Notes (optional)',
-                prefixIcon: Padding(
-                  padding: EdgeInsets.only(bottom: 40),
+              textDirection: l.ar ? TextDirection.rtl : TextDirection.ltr,
+              style: bodyStyle(fontSize: 14, color: m.textPrimary),
+              decoration: InputDecoration(
+                labelText: l.notesOptional,
+                prefixIcon: const Padding(
+                  padding: EdgeInsetsDirectional.only(bottom: 40),
                   child: Icon(Icons.notes_outlined, size: 20),
                 ),
                 alignLabelWithHint: true,
-                contentPadding:
-                    EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
+                ),
               ),
             ),
 
@@ -180,22 +198,23 @@ class _MarkChequeFailedDialogState extends State<_MarkChequeFailedDialog> {
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: AppColors.danger.withValues(alpha: 0.08),
+                  color: m.dangerBg,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                      color: AppColors.danger.withValues(alpha: 0.3)),
+                  border: Border.all(color: m.danger.withValues(alpha: 0.3)),
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(Icons.warning_amber_outlined,
-                        color: AppColors.danger, size: 18),
+                    Icon(
+                      Icons.warning_amber_outlined,
+                      color: m.danger,
+                      size: 18,
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         _errorMessage!,
-                        style: const TextStyle(
-                            fontSize: 12, color: AppColors.danger),
+                        style: bodyStyle(fontSize: 12, color: m.danger),
                       ),
                     ),
                   ],
@@ -210,14 +229,20 @@ class _MarkChequeFailedDialogState extends State<_MarkChequeFailedDialog> {
           onPressed: _isSubmitting
               ? null
               : () => Navigator.of(context).pop(null),
-          child: const Text('Cancel'),
+          child: Text(
+            l.cancel,
+            style: bodyStyle(
+              fontWeight: FontWeight.w600,
+              color: m.textSecondary,
+            ),
+          ),
         ),
         ElevatedButton(
-          onPressed: _canSubmit ? _submit : null,
+          onPressed: _canSubmit ? () => _submit(l) : null,
           style: ElevatedButton.styleFrom(
-            backgroundColor: AppColors.danger,
+            backgroundColor: m.danger,
             foregroundColor: Colors.white,
-            disabledBackgroundColor: AppColors.danger.withValues(alpha: 0.4),
+            disabledBackgroundColor: m.danger.withValues(alpha: 0.4),
             disabledForegroundColor: Colors.white70,
           ),
           child: _isSubmitting
@@ -225,11 +250,42 @@ class _MarkChequeFailedDialogState extends State<_MarkChequeFailedDialog> {
                   width: 18,
                   height: 18,
                   child: CircularProgressIndicator(
-                      strokeWidth: 2, color: Colors.white),
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
                 )
-              : const Text('Mark Failed'),
+              : Text(
+                  l.ar ? l.markFailed : l.markFailed.toUpperCase(),
+                  style: bodyStyle(fontWeight: FontWeight.w600),
+                ),
         ),
       ],
     );
   }
+}
+
+/// Dialog strings (EN/AR). Lightweight per-screen pattern — see arabic-brief.
+class _L {
+  _L(this.ar);
+  final bool ar;
+
+  String get title => ar ? 'تحديد الشيك كمرتجع' : 'Mark cheque failed';
+
+  String subtitle(int installment, String amount) => ar
+      ? 'القسط رقم $installment — $amount درهم. اختر السبب؛ سيتم تطبيق غرامة.'
+      : 'Installment #$installment — $amount AED. Choose a reason; a fine will be applied.';
+
+  String get failureReason => ar ? 'سبب الارتجاع *' : 'Failure reason *';
+  String get notesOptional => ar ? 'ملاحظات (اختياري)' : 'Notes (optional)';
+  String get cancel => ar ? 'إلغاء' : 'Cancel';
+  String get markFailed => ar ? 'تحديد كمرتجع' : 'Mark Failed';
+  String get failedGeneric =>
+      ar ? 'تعذّر تحديد الشيك كمرتجع' : 'Failed to mark cheque failed';
+
+  String reasonLabel(String value) => switch (value) {
+    'BOUNCE' => ar ? 'ارتجاع (رصيد غير كافٍ)' : 'Bounced (insufficient funds)',
+    'SIGNATURE_MISMATCH' => ar ? 'عدم تطابق التوقيع' : 'Signature mismatch',
+    'ACCOUNT_CLOSED' => ar ? 'الحساب مغلق' : 'Account closed',
+    _ => value,
+  };
 }

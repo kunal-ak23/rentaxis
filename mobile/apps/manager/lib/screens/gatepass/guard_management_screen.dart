@@ -1,9 +1,91 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
 import '../../gatepass/guard_admin_service.dart';
 import '../../providers/gate_pass_provider.dart';
+
+/// Screen strings (EN/AR). Lightweight per-screen pattern — see arabic-brief.
+class _L {
+  _L(this.ar);
+  final bool ar;
+
+  String get title => ar ? 'حراس الأمن' : 'Security Guards';
+  String get loadFailed => ar ? 'فشل تحميل الحراس' : 'Failed to load guards';
+  String get noGuardsTitle =>
+      ar ? 'لا يوجد حراس أمن بعد' : 'No security guards yet';
+  String get noGuardsSubtitle => ar
+      ? 'أضف حارسًا، ثم عيّن له العقارات التي يعمل بها.'
+      : 'Add a guard, then assign the properties they work.';
+  String get unnamedGuard => ar ? 'حارس بلا اسم' : 'Unnamed guard';
+  String get couldNotLoadAssignedProperties => ar
+      ? 'تعذّر تحميل العقارات المعيّنة'
+      : 'Could not load assigned properties';
+  String get unpostedWarning => ar
+      ? 'لا توجد عقارات معيّنة — لا يرى هذا الحارس أي زوار ولا يمكنه مسح تصريح. اضغط للتعيين.'
+      : 'No properties assigned — this guard sees no visitors and cannot '
+            'scan a pass. Tap to assign.';
+  String propertiesAssigned(int count) => ar
+      ? '$count ${count == 1 ? 'عقار معيّن' : 'عقارات معيّنة'}'
+      : '$count ${count == 1 ? 'property' : 'properties'} assigned';
+  String propertiesFor(String name) =>
+      ar ? 'عقارات $name' : 'Properties for $name';
+  String get assignedProperties =>
+      ar ? 'العقارات المعيّنة' : 'Assigned properties';
+  String get assignSheetSubtitle => ar
+      ? 'يرى الحارس الزوار المتوقعين ويمكنه مسح التصاريح فقط في العقارات المحددة هنا.'
+      : 'The guard sees expected visitors and may scan passes only at the '
+            'properties ticked here.';
+  String get couldNotLoadProperties =>
+      ar ? 'فشل تحميل العقارات' : 'Failed to load properties';
+  String get noPropertiesTitle => ar ? 'لا توجد عقارات' : 'No properties';
+  String get noPropertiesSubtitle => ar
+      ? 'أضف عقارًا قبل تعيين حارس له.'
+      : 'Add a property before posting a guard to it.';
+  String get property => ar ? 'عقار' : 'Property';
+  String get save => ar ? 'حفظ' : 'Save';
+  String get saving => ar ? 'جارٍ الحفظ…' : 'Saving…';
+  String get propertiesUpdated =>
+      ar ? 'تم تحديث العقارات' : 'Properties updated';
+  String get couldNotUpdateAssignment => ar
+      ? 'تعذّر تحديث التعيين. عقارات الحارس لم تتغيّر.'
+      : 'Could not update the assignment. The guard’s properties are '
+            'unchanged.';
+  String get newSecurityGuard => ar ? 'حارس أمن جديد' : 'New Security Guard';
+  String get fullName => ar ? 'الاسم الكامل' : 'Full Name';
+  String get nameRequired => ar ? 'الاسم مطلوب' : 'Name is required';
+  String get phoneNumber => ar ? 'رقم الهاتف' : 'Phone Number';
+  String get phoneHelper => ar
+      ? 'يسجّل الحارس الدخول بهذا الرقم'
+      : 'The guard signs in with this number';
+  String get email => ar ? 'البريد الإلكتروني' : 'Email';
+  String get guardAdded => ar
+      ? 'تمت إضافة الحارس. يمكنه تسجيل الدخول برقم هاتفه الآن — عيّن عقاراته بعد ذلك.'
+      : 'Guard added. They can sign in with their phone number now — '
+            'assign their properties next.';
+  String get createGuard => ar ? 'إنشاء حارس' : 'Create Guard';
+  String duplicatePhone(String? name) => ar
+      ? 'رقم الهاتف هذا مسجّل بالفعل لدى ${name?.isNotEmpty == true ? name : 'حارس آخر'}.'
+      : 'That phone number is already registered to '
+            '${name?.isNotEmpty == true ? name : 'another guard'}.';
+
+  String guardStatus(String value) => switch (value) {
+    'ACTIVE' => ar ? 'نشط' : 'Active',
+    'SUSPENDED' => ar ? 'موقوف' : 'Suspended',
+    'INACTIVE' => ar ? 'غير نشط' : 'Inactive',
+    'DISABLED' => ar ? 'معطّل' : 'Disabled',
+    'PENDING' => ar ? 'قيد الانتظار' : 'Pending',
+    _ => value.replaceAll('_', ' '),
+  };
+}
+
+Color _guardStatusColor(String status, MiftahColors m) => switch (status) {
+  'ACTIVE' => m.success,
+  'SUSPENDED' || 'DISABLED' => m.danger,
+  'PENDING' => m.warning,
+  _ => m.textMuted,
+};
 
 /// The tenant's security guards, and the properties each is posted to.
 ///
@@ -19,30 +101,44 @@ class GuardManagementScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final m = context.miftah;
+    final l = _L(context.isAr);
     final guards = ref.watch(guardsProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Security Guards')),
+      backgroundColor: m.background,
+      appBar: AppBar(
+        title: Text(
+          l.title,
+          style: l.ar
+              ? GoogleFonts.notoNaskhArabic(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                )
+              : null,
+        ),
+      ),
       body: RefreshIndicator(
         onRefresh: () => ref.refresh(guardsProvider.future),
-        color: AppColors.primary,
+        color: AppColors.accent,
         child: guards.when(
           loading: () => const Center(
-            child: CircularProgressIndicator(color: AppColors.primary),
+            child: CircularProgressIndicator(color: AppColors.accent),
           ),
           error: (error, _) => _Scrollable(
             child: ErrorState(
-              message: 'Failed to load guards',
+              message: l.loadFailed,
               onRetry: () => ref.invalidate(guardsProvider),
             ),
           ),
           data: (rows) {
             if (rows.isEmpty) {
-              return const _Scrollable(
+              return _Scrollable(
                 child: EmptyState(
                   icon: Icons.shield_outlined,
-                  title: 'No security guards yet',
-                  subtitle: 'Add a guard, then assign the properties they work.',
+                  title: l.noGuardsTitle,
+                  subtitle: l.noGuardsSubtitle,
                 ),
               );
             }
@@ -53,16 +149,16 @@ class GuardManagementScreen extends ConsumerWidget {
               itemCount: rows.length,
               itemBuilder: (context, index) => AnimatedListItem(
                 index: index,
-                child: _GuardCard(guard: rows[index]),
+                child: _GuardCard(guard: rows[index], l: l),
               ),
             );
           },
         ),
       ),
       floatingActionButton: FloatingActionButton(
-        backgroundColor: AppColors.primary,
+        backgroundColor: AppColors.accent,
         onPressed: () => _openCreateSheet(context, ref),
-        child: const Icon(Icons.person_add_outlined, color: Colors.white),
+        child: const Icon(Icons.person_add_outlined, color: AppColors.primary),
       ),
     );
   }
@@ -71,6 +167,7 @@ class GuardManagementScreen extends ConsumerWidget {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
+      backgroundColor: context.miftah.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -87,125 +184,157 @@ class GuardManagementScreen extends ConsumerWidget {
 /// screen exists to surface: the unposted ones. A tenant's guard roster is a
 /// handful of rows, so the cost is bounded and paid once per visit.
 class _GuardCard extends ConsumerWidget {
-  const _GuardCard({required this.guard});
+  const _GuardCard({required this.guard, required this.l});
 
   final Map<String, dynamic> guard;
+  final _L l;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final m = context.miftah;
     final id = guard['id']?.toString();
     final name = (guard['name'] as String?)?.trim();
     final phone = (guard['phoneNumber'] as String?)?.trim();
     final email = (guard['email'] as String?)?.trim();
     final status = (guard['status'] as String?)?.trim();
-    final assignments =
-        id == null ? const AsyncValue<List<String>>.data([]) : ref.watch(guardPropertiesProvider(id));
+    final assignments = id == null
+        ? const AsyncValue<List<String>>.data([])
+        : ref.watch(guardPropertiesProvider(id));
 
-    return Card(
+    final nameStyle = l.ar
+        ? GoogleFonts.notoNaskhArabic(fontWeight: FontWeight.w600, fontSize: 14)
+        : GoogleFonts.josefinSans(fontWeight: FontWeight.w600, fontSize: 14);
+    final metaStyle = l.ar
+        ? GoogleFonts.notoNaskhArabic(fontSize: 12, color: m.textSecondary)
+        : GoogleFonts.josefinSans(fontSize: 12, color: m.textSecondary);
+    final mutedStyle = l.ar
+        ? GoogleFonts.notoNaskhArabic(fontSize: 12, color: m.textMuted)
+        : GoogleFonts.josefinSans(fontSize: 12, color: m.textMuted);
+
+    return Container(
       margin: const EdgeInsets.only(bottom: 8),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: id == null ? null : () => _openAssignSheet(context, id, name),
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  CircleAvatar(
-                    backgroundColor: AppColors.primary.withValues(alpha: 0.1),
-                    child: Text(
-                      (name?.isNotEmpty ?? false) ? name![0].toUpperCase() : '?',
-                      style: const TextStyle(
-                        color: AppColors.primary,
-                        fontWeight: FontWeight.w700,
+      decoration: BoxDecoration(
+        color: m.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: m.border),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: id == null
+              ? null
+              : () => _openAssignSheet(context, id, name, l),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    CircleAvatar(
+                      backgroundColor: AppColors.accent.withValues(alpha: 0.14),
+                      child: Text(
+                        (name?.isNotEmpty ?? false)
+                            ? name![0].toUpperCase()
+                            : '?',
+                        style: GoogleFonts.cinzel(
+                          color: AppColors.accentDark,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Flexible(
-                              child: Text(
-                                name?.isNotEmpty == true ? name! : 'Unnamed guard',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 14,
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  name?.isNotEmpty == true
+                                      ? name!
+                                      : l.unnamedGuard,
+                                  style: nameStyle,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                                overflow: TextOverflow.ellipsis,
                               ),
-                            ),
-                            if (status != null && status != 'ACTIVE') ...[
-                              const SizedBox(width: 8),
-                              StatusBadge(
-                                label: status,
-                                color: AppColors.textMuted,
-                              ),
+                              if (status != null && status != 'ACTIVE') ...[
+                                const SizedBox(width: 8),
+                                _StatusPill(
+                                  label: l.guardStatus(status),
+                                  color: _guardStatusColor(status, m),
+                                  ar: l.ar,
+                                ),
+                              ],
                             ],
+                          ),
+                          // The phone is the guard's actual credential — it is
+                          // what the OTP is sent to and what identifies them at
+                          // login — so it leads, ahead of the email they never
+                          // use.
+                          if (phone != null && phone.isNotEmpty) ...[
+                            const SizedBox(height: 3),
+                            Text(phone, style: metaStyle),
                           ],
-                        ),
-                        // The phone is the guard's actual credential — it is what
-                        // the OTP is sent to and what identifies them at login —
-                        // so it leads, ahead of the email they never use.
-                        if (phone != null && phone.isNotEmpty) ...[
-                          const SizedBox(height: 3),
-                          Text(
-                            phone,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
+                          if (email != null && email.isNotEmpty) ...[
+                            const SizedBox(height: 2),
+                            Text(email, style: mutedStyle),
+                          ],
                         ],
-                        if (email != null && email.isNotEmpty) ...[
-                          const SizedBox(height: 2),
-                          Text(
-                            email,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: AppColors.textMuted,
-                            ),
-                          ),
-                        ],
-                      ],
+                      ),
                     ),
-                  ),
-                  const Icon(Icons.chevron_right,
-                      color: AppColors.textMuted, size: 20),
-                ],
-              ),
-              const SizedBox(height: 10),
-              assignments.when(
-                loading: () =>
-                    const ShimmerLoading(height: 22, width: 160, borderRadius: 6),
-                error: (_, _) => const Text(
-                  'Could not load assigned properties',
-                  style: TextStyle(fontSize: 12, color: AppColors.danger),
+                    Icon(Icons.chevron_right, color: m.textMuted, size: 20),
+                  ],
                 ),
-                data: (propertyIds) => propertyIds.isEmpty
-                    ? const _UnpostedFlag()
-                    : _PostedChip(count: propertyIds.length),
-              ),
-            ],
+                const SizedBox(height: 10),
+                assignments.when(
+                  loading: () => const ShimmerLoading(
+                    height: 22,
+                    width: 160,
+                    borderRadius: 6,
+                  ),
+                  error: (_, _) => Text(
+                    l.couldNotLoadAssignedProperties,
+                    style: l.ar
+                        ? GoogleFonts.notoNaskhArabic(
+                            fontSize: 12,
+                            color: m.danger,
+                          )
+                        : GoogleFonts.josefinSans(
+                            fontSize: 12,
+                            color: m.danger,
+                          ),
+                  ),
+                  data: (propertyIds) => propertyIds.isEmpty
+                      ? _UnpostedFlag(l: l, m: m)
+                      : _PostedChip(count: propertyIds.length, l: l),
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  void _openAssignSheet(BuildContext context, String userId, String? name) {
+  void _openAssignSheet(
+    BuildContext context,
+    String userId,
+    String? name,
+    _L l,
+  ) {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
+      backgroundColor: context.miftah.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => _AssignPropertiesSheet(userId: userId, guardName: name),
+      builder: (_) =>
+          _AssignPropertiesSheet(userId: userId, guardName: name, l: l),
     );
   }
 }
@@ -215,7 +344,10 @@ class _GuardCard extends ConsumerWidget {
 /// "0 properties" would be read as a number; this is read as a problem — which
 /// it is, and one only the manager can fix.
 class _UnpostedFlag extends StatelessWidget {
-  const _UnpostedFlag();
+  const _UnpostedFlag({required this.l, required this.m});
+
+  final _L l;
+  final MiftahColors m;
 
   @override
   Widget build(BuildContext context) {
@@ -223,24 +355,28 @@ class _UnpostedFlag extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: AppColors.warningLight,
+        color: m.warningBg,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.warning.withValues(alpha: 0.4)),
+        border: Border.all(color: m.warning.withValues(alpha: 0.4)),
       ),
-      child: const Row(
+      child: Row(
         children: [
-          Icon(Icons.warning_amber_rounded,
-              size: 16, color: AppColors.warning),
-          SizedBox(width: 8),
+          Icon(Icons.warning_amber_rounded, size: 16, color: m.warning),
+          const SizedBox(width: 8),
           Expanded(
             child: Text(
-              'No properties assigned — this guard sees no visitors and cannot '
-              'scan a pass. Tap to assign.',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: AppColors.warning,
-              ),
+              l.unpostedWarning,
+              style: l.ar
+                  ? GoogleFonts.notoNaskhArabic(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: m.warning,
+                    )
+                  : GoogleFonts.josefinSans(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: m.warning,
+                    ),
             ),
           ),
         ],
@@ -250,9 +386,10 @@ class _UnpostedFlag extends StatelessWidget {
 }
 
 class _PostedChip extends StatelessWidget {
-  const _PostedChip({required this.count});
+  const _PostedChip({required this.count, required this.l});
 
   final int count;
+  final _L l;
 
   @override
   Widget build(BuildContext context) {
@@ -263,12 +400,56 @@ class _PostedChip extends StatelessWidget {
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(
-        '$count ${count == 1 ? 'property' : 'properties'} assigned',
-        style: const TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-          color: AppColors.accent,
-        ),
+        l.propertiesAssigned(count),
+        style: l.ar
+            ? GoogleFonts.notoNaskhArabic(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: AppColors.accentDark,
+              )
+            : GoogleFonts.josefinSans(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: AppColors.accentDark,
+              ),
+      ),
+    );
+  }
+}
+
+class _StatusPill extends StatelessWidget {
+  const _StatusPill({
+    required this.label,
+    required this.color,
+    required this.ar,
+  });
+
+  final String label;
+  final Color color;
+  final bool ar;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        ar ? label : label.toUpperCase(),
+        style: ar
+            ? GoogleFonts.notoNaskhArabic(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w600,
+                color: color,
+              )
+            : GoogleFonts.josefinSans(
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 1,
+                color: color,
+              ),
       ),
     );
   }
@@ -280,10 +461,15 @@ class _PostedChip extends StatelessWidget {
 /// is pressed becomes the guard's entire posting. There is no delta to compute
 /// and none is computed.
 class _AssignPropertiesSheet extends ConsumerStatefulWidget {
-  const _AssignPropertiesSheet({required this.userId, this.guardName});
+  const _AssignPropertiesSheet({
+    required this.userId,
+    this.guardName,
+    required this.l,
+  });
 
   final String userId;
   final String? guardName;
+  final _L l;
 
   @override
   ConsumerState<_AssignPropertiesSheet> createState() =>
@@ -299,6 +485,7 @@ class _AssignPropertiesSheetState
   Future<void> _save() async {
     final selected = _selected;
     if (selected == null || _saving) return;
+    final l = widget.l;
 
     setState(() {
       _saving = true;
@@ -312,8 +499,8 @@ class _AssignPropertiesSheetState
       if (!mounted) return;
       Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Properties updated'),
+        SnackBar(
+          content: Text(l.propertiesUpdated),
           backgroundColor: AppColors.success,
           behavior: SnackBarBehavior.floating,
         ),
@@ -323,8 +510,7 @@ class _AssignPropertiesSheetState
       // The sheet stays open on the selection the manager made, so they can
       // retry without re-ticking. State is untouched, so the card behind still
       // shows the posting that is actually in force.
-      setState(() => _error =
-          'Could not update the assignment. The guard’s properties are unchanged.');
+      setState(() => _error = l.couldNotUpdateAssignment);
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -332,6 +518,8 @@ class _AssignPropertiesSheetState
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final l = widget.l;
     final properties = ref.watch(propertiesProvider);
     final assignments = ref.watch(guardPropertiesProvider(widget.userId));
 
@@ -339,9 +527,28 @@ class _AssignPropertiesSheetState
     // arrived. Only once: re-seeding on rebuild would undo the manager's edits.
     assignments.whenData((ids) => _selected ??= ids.toSet());
 
+    final headingStyle = l.ar
+        ? GoogleFonts.notoNaskhArabic(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: m.textPrimary,
+          )
+        : GoogleFonts.cinzel(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: m.textPrimary,
+          );
+    final subtitleStyle = l.ar
+        ? GoogleFonts.notoNaskhArabic(fontSize: 12, color: m.textSecondary)
+        : GoogleFonts.josefinSans(fontSize: 12, color: m.textSecondary);
+
     return Padding(
       padding: EdgeInsets.fromLTRB(
-          24, 20, 24, MediaQuery.of(context).viewInsets.bottom + 24),
+        24,
+        20,
+        24,
+        MediaQuery.of(context).viewInsets.bottom + 24,
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -351,7 +558,7 @@ class _AssignPropertiesSheetState
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: AppColors.border,
+                color: m.borderStrong,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -359,43 +566,38 @@ class _AssignPropertiesSheetState
           const SizedBox(height: 18),
           Text(
             widget.guardName?.isNotEmpty == true
-                ? 'Properties for ${widget.guardName}'
-                : 'Assigned properties',
-            style: Theme.of(context).textTheme.headlineSmall,
+                ? l.propertiesFor(widget.guardName!)
+                : l.assignedProperties,
+            style: headingStyle,
           ),
           const SizedBox(height: 6),
-          const Text(
-            'The guard sees expected visitors and may scan passes only at the '
-            'properties ticked here.',
-            style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-          ),
+          Text(l.assignSheetSubtitle, style: subtitleStyle),
           const SizedBox(height: 14),
           Flexible(
             child: properties.when(
               loading: () => const Padding(
                 padding: EdgeInsets.symmetric(vertical: 24),
                 child: Center(
-                  child: CircularProgressIndicator(color: AppColors.primary),
+                  child: CircularProgressIndicator(color: AppColors.accent),
                 ),
               ),
               error: (_, _) => ErrorState(
-                message: 'Failed to load properties',
+                message: l.couldNotLoadProperties,
                 onRetry: () => ref.invalidate(propertiesProvider),
               ),
               data: (rows) {
                 if (rows.isEmpty) {
-                  return const EmptyState(
+                  return EmptyState(
                     icon: Icons.apartment_outlined,
-                    title: 'No properties',
-                    subtitle: 'Add a property before posting a guard to it.',
+                    title: l.noPropertiesTitle,
+                    subtitle: l.noPropertiesSubtitle,
                   );
                 }
                 if (_selected == null) {
                   return const Padding(
                     padding: EdgeInsets.symmetric(vertical: 24),
                     child: Center(
-                      child:
-                          CircularProgressIndicator(color: AppColors.primary),
+                      child: CircularProgressIndicator(color: AppColors.accent),
                     ),
                   );
                 }
@@ -410,21 +612,30 @@ class _AssignPropertiesSheetState
                         key: Key('property-$id'),
                         contentPadding: EdgeInsets.zero,
                         controlAffinity: ListTileControlAffinity.leading,
-                        activeColor: AppColors.primary,
+                        activeColor: AppColors.accent,
+                        checkColor: AppColors.primary,
                         value: _selected!.contains(id),
                         title: Text(
-                          label?.isNotEmpty == true ? label! : 'Property',
-                          style: const TextStyle(fontSize: 14),
+                          label?.isNotEmpty == true ? label! : l.property,
+                          style: l.ar
+                              ? GoogleFonts.notoNaskhArabic(
+                                  fontSize: 14,
+                                  color: m.textPrimary,
+                                )
+                              : GoogleFonts.josefinSans(
+                                  fontSize: 14,
+                                  color: m.textPrimary,
+                                ),
                         ),
                         onChanged: _saving
                             ? null
                             : (checked) => setState(() {
-                                  if (checked == true) {
-                                    _selected!.add(id);
-                                  } else {
-                                    _selected!.remove(id);
-                                  }
-                                }),
+                                if (checked == true) {
+                                  _selected!.add(id);
+                                } else {
+                                  _selected!.remove(id);
+                                }
+                              }),
                       );
                     }).toList(),
                   ),
@@ -436,26 +647,25 @@ class _AssignPropertiesSheetState
             const SizedBox(height: 10),
             Text(
               _error!,
-              style: const TextStyle(fontSize: 12, color: AppColors.danger),
+              style: l.ar
+                  ? GoogleFonts.notoNaskhArabic(fontSize: 12, color: m.danger)
+                  : GoogleFonts.josefinSans(fontSize: 12, color: m.danger),
             ),
           ],
           const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              key: const Key('save-assignments'),
-              onPressed: _saving || _selected == null ? null : _save,
-              child: _saving
-                  ? const SizedBox(
-                      height: 18,
-                      width: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Text('Save'),
-            ),
+          GoldButton(
+            label: _saving ? l.saving : l.save,
+            onPressed: _saving || _selected == null ? null : _save,
+            icon: _saving
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppColors.primary,
+                    ),
+                  )
+                : null,
           ),
         ],
       ),
@@ -507,15 +717,14 @@ class _CreateGuardSheetState extends ConsumerState<_CreateGuardSheet> {
   /// tenant — but it does catch the case a manager can actually see and fix, and
   /// it does so with the precise wording the server cannot give
   /// ([describeGuardCreateFailure] explains why).
-  String? _localDuplicate(String phone) {
+  String? _localDuplicate(String phone, _L l) {
     final guards = ref.read(guardsProvider).value ?? const [];
     final normalized = normalizeGuardPhone(phone);
     for (final guard in guards) {
       final existing = (guard['phoneNumber'] as String?)?.trim();
       if (existing != null && normalizeGuardPhone(existing) == normalized) {
         final name = (guard['name'] as String?)?.trim();
-        return 'That phone number is already registered to '
-            '${name?.isNotEmpty == true ? name : 'another guard'}.';
+        return l.duplicatePhone(name);
       }
     }
     return null;
@@ -523,10 +732,11 @@ class _CreateGuardSheetState extends ConsumerState<_CreateGuardSheet> {
 
   Future<void> _submit() async {
     if (_saving) return;
+    final l = _L(context.isAr);
     // Validates first, so a malformed phone or email never reaches the network.
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
-    final duplicate = _localDuplicate(_phoneCtrl.text);
+    final duplicate = _localDuplicate(_phoneCtrl.text, l);
     if (duplicate != null) {
       setState(() => _error = duplicate);
       return;
@@ -537,7 +747,9 @@ class _CreateGuardSheetState extends ConsumerState<_CreateGuardSheet> {
       _error = null;
     });
     try {
-      await ref.read(guardAdminServiceProvider).createGuard(
+      await ref
+          .read(guardAdminServiceProvider)
+          .createGuard(
             name: _nameCtrl.text,
             email: _emailCtrl.text,
             phoneNumber: _phoneCtrl.text,
@@ -546,9 +758,8 @@ class _CreateGuardSheetState extends ConsumerState<_CreateGuardSheet> {
       ref.invalidate(guardsProvider);
       Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Guard added. They can sign in with their phone number '
-              'now — assign their properties next.'),
+        SnackBar(
+          content: Text(l.guardAdded),
           backgroundColor: AppColors.success,
           behavior: SnackBarBehavior.floating,
         ),
@@ -563,9 +774,30 @@ class _CreateGuardSheetState extends ConsumerState<_CreateGuardSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final l = _L(context.isAr);
+    final headingStyle = l.ar
+        ? GoogleFonts.notoNaskhArabic(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: m.textPrimary,
+          )
+        : GoogleFonts.cinzel(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: m.textPrimary,
+          );
+    final fieldStyle = l.ar
+        ? GoogleFonts.notoNaskhArabic(fontSize: 14, color: m.textPrimary)
+        : GoogleFonts.josefinSans(fontSize: 14, color: m.textPrimary);
+
     return Padding(
       padding: EdgeInsets.fromLTRB(
-          24, 20, 24, MediaQuery.of(context).viewInsets.bottom + 24),
+        24,
+        20,
+        24,
+        MediaQuery.of(context).viewInsets.bottom + 24,
+      ),
       child: Form(
         key: _formKey,
         child: SingleChildScrollView(
@@ -578,33 +810,34 @@ class _CreateGuardSheetState extends ConsumerState<_CreateGuardSheet> {
                   width: 40,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: AppColors.border,
+                    color: m.borderStrong,
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
               ),
               const SizedBox(height: 18),
-              Text('New Security Guard',
-                  style: Theme.of(context).textTheme.headlineSmall),
+              Text(l.newSecurityGuard, style: headingStyle),
               const SizedBox(height: 18),
               TextFormField(
                 controller: _nameCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Full Name',
-                  prefixIcon: Icon(Icons.person_outline),
+                style: fieldStyle,
+                decoration: InputDecoration(
+                  labelText: l.fullName,
+                  prefixIcon: const Icon(Icons.person_outline),
                 ),
                 validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? 'Name is required' : null,
+                    (v == null || v.trim().isEmpty) ? l.nameRequired : null,
               ),
               const SizedBox(height: 16),
               TextFormField(
                 key: const Key('guard-phone'),
                 controller: _phoneCtrl,
                 keyboardType: TextInputType.phone,
-                decoration: const InputDecoration(
-                  labelText: 'Phone Number',
-                  helperText: 'The guard signs in with this number',
-                  prefixIcon: Icon(Icons.phone_outlined),
+                style: fieldStyle,
+                decoration: InputDecoration(
+                  labelText: l.phoneNumber,
+                  helperText: l.phoneHelper,
+                  prefixIcon: const Icon(Icons.phone_outlined),
                 ),
                 validator: validateGuardPhone,
               ),
@@ -613,9 +846,10 @@ class _CreateGuardSheetState extends ConsumerState<_CreateGuardSheet> {
                 key: const Key('guard-email'),
                 controller: _emailCtrl,
                 keyboardType: TextInputType.emailAddress,
-                decoration: const InputDecoration(
-                  labelText: 'Email',
-                  prefixIcon: Icon(Icons.email_outlined),
+                style: fieldStyle,
+                decoration: InputDecoration(
+                  labelText: l.email,
+                  prefixIcon: const Icon(Icons.email_outlined),
                 ),
                 validator: validateGuardEmail,
               ),
@@ -625,36 +859,40 @@ class _CreateGuardSheetState extends ConsumerState<_CreateGuardSheet> {
                   width: double.infinity,
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: AppColors.dangerLight,
+                    color: m.dangerBg,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
                     _error!,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppColors.danger,
-                      fontWeight: FontWeight.w600,
-                    ),
+                    style: l.ar
+                        ? GoogleFonts.notoNaskhArabic(
+                            fontSize: 12,
+                            color: m.danger,
+                            fontWeight: FontWeight.w600,
+                          )
+                        : GoogleFonts.josefinSans(
+                            fontSize: 12,
+                            color: m.danger,
+                            fontWeight: FontWeight.w600,
+                          ),
                   ),
                 ),
               ],
               const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  key: const Key('create-guard'),
-                  onPressed: _saving ? null : _submit,
-                  child: _saving
-                      ? const SizedBox(
-                          height: 18,
-                          width: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Text('Create Guard'),
-                ),
+              GoldButton(
+                key: const Key('create-guard'),
+                label: _saving ? l.saving : l.createGuard,
+                onPressed: _saving ? null : _submit,
+                icon: _saving
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: AppColors.primary,
+                        ),
+                      )
+                    : null,
               ),
             ],
           ),

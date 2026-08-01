@@ -1,229 +1,244 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
 class ReportDetailScreen extends ConsumerWidget {
+  /// Stable machine key: orgSummary | trialBalance | vatReturn |
+  /// propertyReport | unitReport | vendorLedger.
   final String reportType;
+  final String reportTitle;
   final dynamic reportData;
 
   const ReportDetailScreen({
     super.key,
     required this.reportType,
+    required this.reportTitle,
     required this.reportData,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final m = context.miftah;
+    final l = _L(context.isAr);
     return Scaffold(
-      appBar: AppBar(title: Text(reportType)),
-      body: SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(16),
-        child: _buildReportBody(context),
+      backgroundColor: m.background,
+      body: Column(
+        children: [
+          _ChromeHeader(title: reportTitle, l: l),
+          Expanded(
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.all(16),
+              child: _buildReportBody(context, l),
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildReportBody(BuildContext context) {
+  Widget _buildReportBody(BuildContext context, _L l) {
     switch (reportType) {
-      case 'Organisation Summary':
-      case 'Property Report':
-      case 'Unit Report':
-        return _buildIncomeExpenseReport(context);
-      case 'Trial Balance':
-        return _buildTrialBalanceReport(context);
-      case 'VAT Return':
-        return _buildVatReturnReport(context);
-      case 'Vendor Ledger':
-        return _buildVendorLedgerReport(context);
+      case 'orgSummary':
+      case 'propertyReport':
+      case 'unitReport':
+        return _buildIncomeExpenseReport(context, l);
+      case 'trialBalance':
+        return _buildTrialBalanceReport(context, l);
+      case 'vatReturn':
+        return _buildVatReturnReport(context, l);
+      case 'vendorLedger':
+        return _buildVendorLedgerReport(context, l);
       default:
-        return _buildGenericReport(context);
+        return _buildGenericReport(context, l);
     }
   }
 
-  Widget _buildIncomeExpenseReport(BuildContext context) {
+  Widget _buildIncomeExpenseReport(BuildContext context, _L l) {
+    final m = context.miftah;
     final data = reportData as Map<String, dynamic>;
     final totalIncome = (data['totalIncome'] ?? 0).toDouble();
     final totalExpense = (data['totalExpense'] ?? 0).toDouble();
-    final netIncome =
-        (data['netIncome'] ?? totalIncome - totalExpense).toDouble();
-    final incomeAccounts =
-        List<Map<String, dynamic>>.from(data['incomeAccounts'] ?? []);
-    final expenseAccounts =
-        List<Map<String, dynamic>>.from(data['expenseAccounts'] ?? []);
+    final netIncome = (data['netIncome'] ?? totalIncome - totalExpense)
+        .toDouble();
+    final incomeAccounts = List<Map<String, dynamic>>.from(
+      data['incomeAccounts'] ?? [],
+    );
+    final expenseAccounts = List<Map<String, dynamic>>.from(
+      data['expenseAccounts'] ?? [],
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Summary cards row
         Row(
           children: [
             _SummaryCard(
-              label: 'Total Income',
+              label: l.totalIncome,
               amount: Formatters.currency(totalIncome),
-              color: AppColors.success,
+              color: m.success,
               icon: Icons.trending_up_rounded,
+              l: l,
             ),
             const SizedBox(width: 10),
             _SummaryCard(
-              label: 'Total Expense',
+              label: l.totalExpense,
               amount: Formatters.currency(totalExpense),
-              color: AppColors.danger,
+              color: m.danger,
               icon: Icons.trending_down_rounded,
+              l: l,
             ),
           ],
         ),
         const SizedBox(height: 10),
-        // Net income card
         Container(
           width: double.infinity,
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: (netIncome >= 0 ? AppColors.success : AppColors.danger)
-                .withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(12),
+            color: (netIncome >= 0 ? m.success : m.danger).withValues(
+              alpha: 0.08,
+            ),
+            borderRadius: BorderRadius.circular(14),
             border: Border.all(
-              color: (netIncome >= 0 ? AppColors.success : AppColors.danger)
-                  .withValues(alpha: 0.2),
+              color: (netIncome >= 0 ? m.success : m.danger).withValues(
+                alpha: 0.2,
+              ),
             ),
           ),
           child: Column(
             children: [
               Text(
-                'Net ${reportType == 'Organisation Summary' ? 'Income' : 'Amount'}',
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: AppColors.textSecondary,
-                ),
+                reportType == 'orgSummary' ? l.netIncome : l.netAmount,
+                style: l.ar
+                    ? GoogleFonts.notoNaskhArabic(
+                        fontSize: 13,
+                        color: m.textSecondary,
+                      )
+                    : GoogleFonts.josefinSans(
+                        fontSize: 12,
+                        letterSpacing: 1.2,
+                        color: m.textSecondary,
+                      ),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 6),
               Text(
                 Formatters.currency(netIncome),
-                style: TextStyle(
+                style: GoogleFonts.cinzel(
                   fontSize: 24,
                   fontWeight: FontWeight.w700,
-                  color:
-                      netIncome >= 0 ? AppColors.success : AppColors.danger,
+                  color: netIncome >= 0 ? m.success : m.danger,
                 ),
               ),
             ],
           ),
         ),
         const SizedBox(height: 24),
-
-        // Income breakdown
         if (incomeAccounts.isNotEmpty) ...[
-          Text('Income Breakdown',
-              style: Theme.of(context).textTheme.titleMedium),
+          _sectionLabel(l.incomeBreakdown, l.ar, m),
           const SizedBox(height: 8),
-          ...incomeAccounts.map((a) => _LineItem(
-                name: a['name'] ?? '-',
-                amount: (a['amount'] ?? 0).toDouble(),
-                color: AppColors.success,
-              )),
-          const Divider(height: 24),
+          ...incomeAccounts.map(
+            (a) => _LineItem(
+              name: a['name'] ?? '-',
+              amount: (a['amount'] ?? 0).toDouble(),
+              color: m.success,
+              ar: l.ar,
+            ),
+          ),
+          Divider(height: 24, color: m.divider),
         ],
-
-        // Expense breakdown
         if (expenseAccounts.isNotEmpty) ...[
-          Text('Expense Breakdown',
-              style: Theme.of(context).textTheme.titleMedium),
+          _sectionLabel(l.expenseBreakdown, l.ar, m),
           const SizedBox(height: 8),
-          ...expenseAccounts.map((a) => _LineItem(
-                name: a['name'] ?? '-',
-                amount: (a['amount'] ?? 0).toDouble(),
-                color: AppColors.danger,
-              )),
+          ...expenseAccounts.map(
+            (a) => _LineItem(
+              name: a['name'] ?? '-',
+              amount: (a['amount'] ?? 0).toDouble(),
+              color: m.danger,
+              ar: l.ar,
+            ),
+          ),
         ],
-
-        // Generic line items
         if (data.containsKey('lineItems')) ...[
-          const Divider(height: 24),
-          Text('Details', style: Theme.of(context).textTheme.titleMedium),
+          Divider(height: 24, color: m.divider),
+          _sectionLabel(l.details, l.ar, m),
           const SizedBox(height: 8),
-          ...List<Map<String, dynamic>>.from(data['lineItems']).map(
-            (item) => _TransactionRow(item: item),
-          ),
+          ...List<Map<String, dynamic>>.from(
+            data['lineItems'],
+          ).map((item) => _TransactionRow(item: item, ar: l.ar)),
         ],
-
         if (data.containsKey('entries')) ...[
-          const Divider(height: 24),
-          Text('Entries', style: Theme.of(context).textTheme.titleMedium),
+          Divider(height: 24, color: m.divider),
+          _sectionLabel(l.entries, l.ar, m),
           const SizedBox(height: 8),
-          ...List<Map<String, dynamic>>.from(data['entries']).map(
-            (item) => _TransactionRow(item: item),
-          ),
+          ...List<Map<String, dynamic>>.from(
+            data['entries'],
+          ).map((item) => _TransactionRow(item: item, ar: l.ar)),
         ],
       ],
     );
   }
 
-  Widget _buildTrialBalanceReport(BuildContext context) {
+  Widget _buildTrialBalanceReport(BuildContext context, _L l) {
+    final m = context.miftah;
     final data = reportData as Map<String, dynamic>;
-    final accounts =
-        List<Map<String, dynamic>>.from(data['accounts'] ?? data['rows'] ?? []);
+    final accounts = List<Map<String, dynamic>>.from(
+      data['accounts'] ?? data['rows'] ?? [],
+    );
     final totalDebit = (data['totalDebit'] ?? 0).toDouble();
     final totalCredit = (data['totalCredit'] ?? 0).toDouble();
+
+    TextStyle headStyle() => l.ar
+        ? GoogleFonts.notoNaskhArabic(
+            fontWeight: FontWeight.w700,
+            fontSize: 13,
+            color: m.textPrimary,
+          )
+        : GoogleFonts.josefinSans(
+            fontWeight: FontWeight.w700,
+            fontSize: 12.5,
+            letterSpacing: 0.6,
+            color: m.textPrimary,
+          );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Header row
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: BoxDecoration(
-            color: AppColors.primary.withValues(alpha: 0.08),
-            borderRadius:
-                const BorderRadius.vertical(top: Radius.circular(12)),
+            color: AppColors.accentDark.withValues(alpha: 0.08),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
           ),
-          child: const Row(
+          child: Row(
             children: [
+              Expanded(flex: 3, child: Text(l.account, style: headStyle())),
               Expanded(
-                flex: 3,
+                flex: 2,
                 child: Text(
-                  'Account',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
-                  ),
+                  l.debit,
+                  textAlign: TextAlign.right,
+                  style: headStyle(),
                 ),
               ),
               Expanded(
                 flex: 2,
                 child: Text(
-                  'Debit',
+                  l.credit,
                   textAlign: TextAlign.right,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
-                  ),
-                ),
-              ),
-              Expanded(
-                flex: 2,
-                child: Text(
-                  'Credit',
-                  textAlign: TextAlign.right,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
-                  ),
+                  style: headStyle(),
                 ),
               ),
             ],
           ),
         ),
-
-        // Account rows
         ...accounts.map((a) {
           final debit = (a['debit'] ?? a['debitBalance'] ?? 0).toDouble();
           final credit = (a['credit'] ?? a['creditBalance'] ?? 0).toDouble();
           return Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: const BoxDecoration(
-              border: Border(
-                bottom: BorderSide(color: AppColors.border, width: 0.5),
-              ),
+            decoration: BoxDecoration(
+              border: Border(bottom: BorderSide(color: m.divider, width: 0.5)),
             ),
             child: Row(
               children: [
@@ -231,7 +246,15 @@ class ReportDetailScreen extends ConsumerWidget {
                   flex: 3,
                   child: Text(
                     a['accountName'] ?? a['name'] ?? '-',
-                    style: const TextStyle(fontSize: 13),
+                    style: l.ar
+                        ? GoogleFonts.notoNaskhArabic(
+                            fontSize: 13.5,
+                            color: m.textPrimary,
+                          )
+                        : GoogleFonts.josefinSans(
+                            fontSize: 13,
+                            color: m.textPrimary,
+                          ),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
@@ -240,10 +263,7 @@ class ReportDetailScreen extends ConsumerWidget {
                   child: Text(
                     debit > 0 ? Formatters.currency(debit) : '-',
                     textAlign: TextAlign.right,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: AppColors.danger,
-                    ),
+                    style: GoogleFonts.cinzel(fontSize: 13, color: m.danger),
                   ),
                 ),
                 Expanded(
@@ -251,46 +271,33 @@ class ReportDetailScreen extends ConsumerWidget {
                   child: Text(
                     credit > 0 ? Formatters.currency(credit) : '-',
                     textAlign: TextAlign.right,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: AppColors.success,
-                    ),
+                    style: GoogleFonts.cinzel(fontSize: 13, color: m.success),
                   ),
                 ),
               ],
             ),
           );
         }),
-
-        // Footer totals
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: BoxDecoration(
-            color: AppColors.primary.withValues(alpha: 0.08),
-            borderRadius:
-                const BorderRadius.vertical(bottom: Radius.circular(12)),
+            color: AppColors.accentDark.withValues(alpha: 0.08),
+            borderRadius: const BorderRadius.vertical(
+              bottom: Radius.circular(12),
+            ),
           ),
           child: Row(
             children: [
-              const Expanded(
-                flex: 3,
-                child: Text(
-                  'Total',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
-                  ),
-                ),
-              ),
+              Expanded(flex: 3, child: Text(l.total, style: headStyle())),
               Expanded(
                 flex: 2,
                 child: Text(
                   Formatters.currency(totalDebit),
                   textAlign: TextAlign.right,
-                  style: const TextStyle(
+                  style: GoogleFonts.cinzel(
                     fontWeight: FontWeight.w700,
                     fontSize: 13,
-                    color: AppColors.danger,
+                    color: m.danger,
                   ),
                 ),
               ),
@@ -299,10 +306,10 @@ class ReportDetailScreen extends ConsumerWidget {
                 child: Text(
                   Formatters.currency(totalCredit),
                   textAlign: TextAlign.right,
-                  style: const TextStyle(
+                  style: GoogleFonts.cinzel(
                     fontWeight: FontWeight.w700,
                     fontSize: 13,
-                    color: AppColors.success,
+                    color: m.success,
                   ),
                 ),
               ),
@@ -313,30 +320,33 @@ class ReportDetailScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildVatReturnReport(BuildContext context) {
+  Widget _buildVatReturnReport(BuildContext context, _L l) {
+    final m = context.miftah;
     final data = reportData as Map<String, dynamic>;
     final outputVat = (data['outputVat'] ?? data['vatOutput'] ?? 0).toDouble();
     final inputVat = (data['inputVat'] ?? data['vatInput'] ?? 0).toDouble();
     final netVat =
         (data['netVat'] ?? data['netVatPayable'] ?? outputVat - inputVat)
             .toDouble();
-    final details =
-        List<Map<String, dynamic>>.from(data['details'] ?? data['rows'] ?? []);
+    final details = List<Map<String, dynamic>>.from(
+      data['details'] ?? data['rows'] ?? [],
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Summary cards
         _VatSummaryCard(
-          label: 'Output VAT',
+          label: l.outputVat,
           amount: outputVat,
-          color: AppColors.danger,
+          color: m.danger,
+          l: l,
         ),
         const SizedBox(height: 10),
         _VatSummaryCard(
-          label: 'Input VAT',
+          label: l.inputVat,
           amount: inputVat,
-          color: AppColors.success,
+          color: m.success,
+          l: l,
         ),
         const SizedBox(height: 10),
         Container(
@@ -344,54 +354,58 @@ class ReportDetailScreen extends ConsumerWidget {
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
             color: AppColors.primary.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-                color: AppColors.primary.withValues(alpha: 0.2)),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
           ),
           child: Column(
             children: [
-              const Text(
-                'Net VAT Payable',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: AppColors.textSecondary,
-                ),
+              Text(
+                l.netVatPayable,
+                style: l.ar
+                    ? GoogleFonts.notoNaskhArabic(
+                        fontSize: 13,
+                        color: m.textSecondary,
+                      )
+                    : GoogleFonts.josefinSans(
+                        fontSize: 12,
+                        letterSpacing: 1.2,
+                        color: m.textSecondary,
+                      ),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 6),
               Text(
                 Formatters.currency(netVat),
-                style: const TextStyle(
+                style: GoogleFonts.cinzel(
                   fontSize: 24,
                   fontWeight: FontWeight.w700,
-                  color: AppColors.primary,
+                  color: m.textPrimary,
                 ),
               ),
             ],
           ),
         ),
-
         if (details.isNotEmpty) ...[
           const SizedBox(height: 24),
-          Text('Details', style: Theme.of(context).textTheme.titleMedium),
+          _sectionLabel(l.details, l.ar, m),
           const SizedBox(height: 8),
-          ...details.map((item) => _TransactionRow(item: item)),
+          ...details.map((item) => _TransactionRow(item: item, ar: l.ar)),
         ],
       ],
     );
   }
 
-  Widget _buildVendorLedgerReport(BuildContext context) {
+  Widget _buildVendorLedgerReport(BuildContext context, _L l) {
     final entries = reportData is List
         ? List<Map<String, dynamic>>.from(reportData)
         : <Map<String, dynamic>>[];
 
     if (entries.isEmpty) {
-      return const Center(
+      return Center(
         child: Padding(
-          padding: EdgeInsets.all(40),
+          padding: const EdgeInsets.all(40),
           child: EmptyState(
             icon: Icons.receipt_long_outlined,
-            title: 'No transactions found',
+            title: l.noTransactions,
           ),
         ),
       );
@@ -400,21 +414,21 @@ class ReportDetailScreen extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: entries.map((tx) {
+        final m = context.miftah;
         final debit = (tx['debit'] ?? tx['debitAmount'] ?? 0).toDouble();
         final credit = (tx['credit'] ?? tx['creditAmount'] ?? 0).toDouble();
-        final balance =
-            (tx['balance'] ?? tx['runningBalance'] ?? 0).toDouble();
-        final description =
-            (tx['description'] ?? tx['narration'] ?? '-').toString();
+        final balance = (tx['balance'] ?? tx['runningBalance'] ?? 0).toDouble();
+        final description = (tx['description'] ?? tx['narration'] ?? '-')
+            .toString();
         final date = tx['date'] ?? tx['transactionDate'] ?? tx['createdAt'];
 
         return Container(
-          margin: const EdgeInsets.only(bottom: 8),
+          margin: const EdgeInsets.only(bottom: 10),
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: AppColors.border),
+            color: m.surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: m.border),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -425,20 +439,27 @@ class ReportDetailScreen extends ConsumerWidget {
                   Expanded(
                     child: Text(
                       description,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                      ),
+                      style: l.ar
+                          ? GoogleFonts.notoNaskhArabic(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w600,
+                              color: m.textPrimary,
+                            )
+                          : GoogleFonts.josefinSans(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                              color: m.textPrimary,
+                            ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    Formatters.date(date),
-                    style: const TextStyle(
+                    Formatters.date(date, ar: l.ar),
+                    style: GoogleFonts.josefinSans(
                       fontSize: 11,
-                      color: AppColors.textMuted,
+                      color: m.textMuted,
                     ),
                   ),
                 ],
@@ -448,34 +469,41 @@ class ReportDetailScreen extends ConsumerWidget {
                 children: [
                   if (debit > 0)
                     _LedgerAmountChip(
-                      label: 'Debit',
+                      label: l.debit,
                       amount: debit,
-                      color: AppColors.danger,
+                      color: m.danger,
+                      ar: l.ar,
                     ),
                   if (debit > 0 && credit > 0) const SizedBox(width: 8),
                   if (credit > 0)
                     _LedgerAmountChip(
-                      label: 'Credit',
+                      label: l.credit,
                       amount: credit,
-                      color: AppColors.success,
+                      color: m.success,
+                      ar: l.ar,
                     ),
                   const Spacer(),
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      const Text(
-                        'Balance',
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: AppColors.textMuted,
-                        ),
+                      Text(
+                        l.balance,
+                        style: l.ar
+                            ? GoogleFonts.notoNaskhArabic(
+                                fontSize: 10.5,
+                                color: m.textMuted,
+                              )
+                            : GoogleFonts.josefinSans(
+                                fontSize: 10,
+                                color: m.textMuted,
+                              ),
                       ),
                       Text(
                         Formatters.currency(balance),
-                        style: const TextStyle(
+                        style: GoogleFonts.cinzel(
                           fontWeight: FontWeight.w700,
                           fontSize: 13,
-                          color: AppColors.primary,
+                          color: m.textPrimary,
                         ),
                       ),
                     ],
@@ -489,7 +517,8 @@ class ReportDetailScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildGenericReport(BuildContext context) {
+  Widget _buildGenericReport(BuildContext context, _L l) {
+    final m = context.miftah;
     if (reportData is Map<String, dynamic>) {
       final data = reportData as Map<String, dynamic>;
       return Column(
@@ -502,15 +531,23 @@ class ReportDetailScreen extends ConsumerWidget {
               children: [
                 Text(
                   entry.key,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textMuted,
+                  style: GoogleFonts.josefinSans(
+                    fontSize: 11.5,
+                    color: m.textMuted,
                   ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   entry.value.toString(),
-                  style: const TextStyle(fontSize: 14),
+                  style: l.ar
+                      ? GoogleFonts.notoNaskhArabic(
+                          fontSize: 14,
+                          color: m.textPrimary,
+                        )
+                      : GoogleFonts.josefinSans(
+                          fontSize: 14,
+                          color: m.textPrimary,
+                        ),
                 ),
               ],
             ),
@@ -519,9 +556,75 @@ class ReportDetailScreen extends ConsumerWidget {
       );
     }
 
-    return const EmptyState(
-      icon: Icons.article_outlined,
-      title: 'No data available',
+    return EmptyState(icon: Icons.article_outlined, title: l.noData);
+  }
+
+  Widget _sectionLabel(String text, bool ar, MiftahColors m) {
+    return Text(
+      ar ? text : text.toUpperCase(),
+      style: ar
+          ? GoogleFonts.notoNaskhArabic(
+              fontSize: 13.5,
+              fontWeight: FontWeight.w600,
+              color: m.textPrimary,
+            )
+          : GoogleFonts.josefinSans(
+              fontSize: 12,
+              letterSpacing: 1.6,
+              fontWeight: FontWeight.w600,
+              color: m.textPrimary,
+            ),
+    );
+  }
+}
+
+class _ChromeHeader extends StatelessWidget {
+  final String title;
+  final _L l;
+  const _ChromeHeader({required this.title, required this.l});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.primary,
+        border: Border(
+          bottom: BorderSide(color: AppColors.accent.withValues(alpha: 0.14)),
+        ),
+      ),
+      padding: const EdgeInsets.fromLTRB(8, 4, 20, 18),
+      child: SafeArea(
+        bottom: false,
+        child: Row(
+          children: [
+            IconButton(
+              onPressed: () => Navigator.of(context).maybePop(),
+              icon: Icon(
+                context.isAr ? Icons.chevron_right : Icons.chevron_left,
+                color: AppColors.accent,
+                size: 26,
+              ),
+            ),
+            Flexible(
+              child: Text(
+                title,
+                style: l.ar
+                    ? GoogleFonts.notoNaskhArabic(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      )
+                    : GoogleFonts.cinzel(
+                        fontSize: 15,
+                        letterSpacing: 1.6,
+                        color: Colors.white,
+                      ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -531,12 +634,14 @@ class _SummaryCard extends StatelessWidget {
   final String amount;
   final Color color;
   final IconData icon;
+  final _L l;
 
   const _SummaryCard({
     required this.label,
     required this.amount,
     required this.color,
     required this.icon,
+    required this.l,
   });
 
   @override
@@ -546,7 +651,7 @@ class _SummaryCard extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(color: color.withValues(alpha: 0.2)),
         ),
         child: Column(
@@ -556,11 +661,19 @@ class _SummaryCard extends StatelessWidget {
               children: [
                 Icon(icon, color: color, size: 20),
                 const SizedBox(width: 8),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: color.withValues(alpha: 0.8),
+                Flexible(
+                  child: Text(
+                    label,
+                    style: l.ar
+                        ? GoogleFonts.notoNaskhArabic(
+                            fontSize: 13,
+                            color: color.withValues(alpha: 0.85),
+                          )
+                        : GoogleFonts.josefinSans(
+                            fontSize: 12,
+                            letterSpacing: 0.8,
+                            color: color.withValues(alpha: 0.85),
+                          ),
                   ),
                 ),
               ],
@@ -568,8 +681,8 @@ class _SummaryCard extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               amount,
-              style: TextStyle(
-                fontSize: 18,
+              style: GoogleFonts.cinzel(
+                fontSize: 17,
                 fontWeight: FontWeight.w700,
                 color: color,
               ),
@@ -585,15 +698,18 @@ class _LineItem extends StatelessWidget {
   final String name;
   final double amount;
   final Color color;
+  final bool ar;
 
   const _LineItem({
     required this.name,
     required this.amount,
     required this.color,
+    required this.ar,
   });
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
@@ -601,20 +717,25 @@ class _LineItem extends StatelessWidget {
           Container(
             width: 6,
             height: 6,
-            decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
-            ),
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: Text(name, style: const TextStyle(fontSize: 14)),
+            child: Text(
+              name,
+              style: ar
+                  ? GoogleFonts.notoNaskhArabic(
+                      fontSize: 14.5,
+                      color: m.textPrimary,
+                    )
+                  : GoogleFonts.josefinSans(fontSize: 14, color: m.textPrimary),
+            ),
           ),
           Text(
             Formatters.currency(amount),
-            style: TextStyle(
+            style: GoogleFonts.cinzel(
               fontWeight: FontWeight.w600,
-              fontSize: 14,
+              fontSize: 13,
               color: color,
             ),
           ),
@@ -626,23 +747,24 @@ class _LineItem extends StatelessWidget {
 
 class _TransactionRow extends StatelessWidget {
   final Map<String, dynamic> item;
+  final bool ar;
 
-  const _TransactionRow({required this.item});
+  const _TransactionRow({required this.item, required this.ar});
 
   @override
   Widget build(BuildContext context) {
-    final description =
-        (item['description'] ?? item['name'] ?? '-').toString();
+    final m = context.miftah;
+    final description = (item['description'] ?? item['name'] ?? '-').toString();
     final amount = (item['amount'] ?? 0).toDouble();
     final date = item['date'] ?? item['transactionDate'];
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 6),
+      margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.border),
+        color: m.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: m.border),
       ),
       child: Row(
         children: [
@@ -652,19 +774,26 @@ class _TransactionRow extends StatelessWidget {
               children: [
                 Text(
                   description,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                  ),
+                  style: ar
+                      ? GoogleFonts.notoNaskhArabic(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w500,
+                          color: m.textPrimary,
+                        )
+                      : GoogleFonts.josefinSans(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          color: m.textPrimary,
+                        ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
                 if (date != null)
                   Text(
-                    Formatters.date(date),
-                    style: const TextStyle(
+                    Formatters.date(date, ar: ar),
+                    style: GoogleFonts.josefinSans(
                       fontSize: 11,
-                      color: AppColors.textMuted,
+                      color: m.textMuted,
                     ),
                   ),
               ],
@@ -672,10 +801,10 @@ class _TransactionRow extends StatelessWidget {
           ),
           Text(
             Formatters.currency(amount),
-            style: TextStyle(
+            style: GoogleFonts.cinzel(
               fontWeight: FontWeight.w600,
               fontSize: 13,
-              color: amount >= 0 ? AppColors.success : AppColors.danger,
+              color: amount >= 0 ? m.success : m.danger,
             ),
           ),
         ],
@@ -688,11 +817,13 @@ class _VatSummaryCard extends StatelessWidget {
   final String label;
   final double amount;
   final Color color;
+  final _L l;
 
   const _VatSummaryCard({
     required this.label,
     required this.amount,
     required this.color,
+    required this.l,
   });
 
   @override
@@ -702,7 +833,7 @@ class _VatSummaryCard extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: color.withValues(alpha: 0.2)),
       ),
       child: Row(
@@ -710,15 +841,21 @@ class _VatSummaryCard extends StatelessWidget {
         children: [
           Text(
             label,
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-              color: color,
-            ),
+            style: l.ar
+                ? GoogleFonts.notoNaskhArabic(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: color,
+                  )
+                : GoogleFonts.josefinSans(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: color,
+                  ),
           ),
           Text(
             Formatters.currency(amount),
-            style: TextStyle(
+            style: GoogleFonts.cinzel(
               fontSize: 18,
               fontWeight: FontWeight.w700,
               color: color,
@@ -734,11 +871,13 @@ class _LedgerAmountChip extends StatelessWidget {
   final String label;
   final double amount;
   final Color color;
+  final bool ar;
 
   const _LedgerAmountChip({
     required this.label,
     required this.amount,
     required this.color,
+    required this.ar,
   });
 
   @override
@@ -747,16 +886,47 @@ class _LedgerAmountChip extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
         '$label: ${Formatters.currency(amount)}',
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-          color: color,
-        ),
+        style: ar
+            ? GoogleFonts.notoNaskhArabic(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+                color: color,
+              )
+            : GoogleFonts.josefinSans(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: color,
+              ),
       ),
     );
   }
+}
+
+/// Screen strings (EN/AR). Lightweight per-screen pattern — see arabic-brief.
+class _L {
+  _L(this.ar);
+  final bool ar;
+
+  String get totalIncome => ar ? 'إجمالي الدخل' : 'Total Income';
+  String get totalExpense => ar ? 'إجمالي المصاريف' : 'Total Expense';
+  String get netIncome => ar ? 'صافي الدخل' : 'Net Income';
+  String get netAmount => ar ? 'صافي المبلغ' : 'Net Amount';
+  String get incomeBreakdown => ar ? 'تفاصيل الدخل' : 'Income Breakdown';
+  String get expenseBreakdown => ar ? 'تفاصيل المصاريف' : 'Expense Breakdown';
+  String get details => ar ? 'التفاصيل' : 'Details';
+  String get entries => ar ? 'القيود' : 'Entries';
+  String get account => ar ? 'الحساب' : 'Account';
+  String get debit => ar ? 'مدين' : 'Debit';
+  String get credit => ar ? 'دائن' : 'Credit';
+  String get total => ar ? 'الإجمالي' : 'Total';
+  String get outputVat => ar ? 'ضريبة مخرجات' : 'Output VAT';
+  String get inputVat => ar ? 'ضريبة مدخلات' : 'Input VAT';
+  String get netVatPayable => ar ? 'صافي الضريبة المستحقة' : 'Net VAT Payable';
+  String get noTransactions => ar ? 'لا توجد معاملات' : 'No transactions found';
+  String get noData => ar ? 'لا توجد بيانات' : 'No data available';
+  String get balance => ar ? 'الرصيد' : 'Balance';
 }

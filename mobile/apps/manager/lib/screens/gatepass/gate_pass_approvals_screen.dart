@@ -1,10 +1,48 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
 import '../../gatepass/pass_display.dart';
 import '../../providers/gate_pass_provider.dart';
+
+/// Screen strings (EN/AR). Lightweight per-screen pattern — see arabic-brief.
+class _L {
+  _L(this.ar);
+  final bool ar;
+
+  String get title => ar ? 'موافقات تصاريح الدخول' : 'Gate Pass Approvals';
+  String get loadFailed =>
+      ar ? 'فشل تحميل الموافقات' : 'Failed to load approvals';
+  String get nothingWaiting =>
+      ar ? 'لا يوجد ما ينتظر الموافقة' : 'Nothing waiting for approval';
+  String get nothingWaitingSubtitle => ar
+      ? 'تظهر هنا تصاريح الدخول المتكررة التي يرفعها المستأجرون حتى يوافق عليها أو يرفضها أحدهم.'
+      : 'Recurring passes raised by renters appear here until someone '
+            'approves or rejects them.';
+  String get guest => ar ? 'ضيف' : 'Guest';
+  String get unit => ar ? 'وحدة' : 'Unit';
+  String get approve => ar ? 'اعتماد' : 'Approve';
+  String get reject => ar ? 'رفض' : 'Reject';
+  String get passApproved => ar ? 'تم اعتماد التصريح' : 'Pass approved';
+  String get passRejected => ar ? 'تم رفض التصريح' : 'Pass rejected';
+  String get alreadyDecided => ar
+      ? 'تم اعتماد قرار بشأن هذا التصريح مسبقًا من قِبل شخص آخر. جارٍ تحديث القائمة.'
+      : 'Someone already decided this pass. Refreshing the queue.';
+  String get couldNotApprove => ar
+      ? 'تعذّر اعتماد التصريح. ما زال معلّقًا — حاول مرة أخرى.'
+      : 'Could not approve the pass. It is still pending — try again.';
+  String get couldNotReject => ar
+      ? 'تعذّر رفض التصريح. ما زال معلّقًا — حاول مرة أخرى.'
+      : 'Could not reject the pass. It is still pending — try again.';
+
+  String passType(String value) => switch (value) {
+    'SINGLE_USE' => ar ? 'استخدام واحد' : 'Single use',
+    'RECURRING' => ar ? 'متكرر' : 'Recurring',
+    _ => value.replaceAll('_', ' '),
+  };
+}
 
 /// The tenant's gate passes awaiting a decision.
 ///
@@ -16,32 +54,44 @@ class GatePassApprovalsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final m = context.miftah;
+    final l = _L(context.isAr);
     final approvals = ref.watch(approvalsProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Gate Pass Approvals')),
+      backgroundColor: m.background,
+      appBar: AppBar(
+        title: Text(
+          l.title,
+          style: l.ar
+              ? GoogleFonts.notoNaskhArabic(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                )
+              : null,
+        ),
+      ),
       body: RefreshIndicator(
         onRefresh: () => ref.refresh(approvalsProvider.future),
-        color: AppColors.primary,
+        color: AppColors.accent,
         child: approvals.when(
           loading: () => const Center(
-            child: CircularProgressIndicator(color: AppColors.primary),
+            child: CircularProgressIndicator(color: AppColors.accent),
           ),
           error: (error, _) => _Scrollable(
             child: ErrorState(
-              message: 'Failed to load approvals',
+              message: l.loadFailed,
               onRetry: () => ref.invalidate(approvalsProvider),
             ),
           ),
           data: (passes) {
             if (passes.isEmpty) {
-              return const _Scrollable(
+              return _Scrollable(
                 child: EmptyState(
                   icon: Icons.inbox_outlined,
-                  title: 'Nothing waiting for approval',
-                  subtitle:
-                      'Recurring passes raised by renters appear here until '
-                      'someone approves or rejects them.',
+                  title: l.nothingWaiting,
+                  subtitle: l.nothingWaitingSubtitle,
                 ),
               );
             }
@@ -52,7 +102,7 @@ class GatePassApprovalsScreen extends ConsumerWidget {
               itemCount: passes.length,
               itemBuilder: (context, index) => AnimatedListItem(
                 index: index,
-                child: _ApprovalCard(pass: passes[index]),
+                child: _ApprovalCard(pass: passes[index], l: l),
               ),
             );
           },
@@ -68,9 +118,10 @@ class GatePassApprovalsScreen extends ConsumerWidget {
 /// Approve would post two decisions — the second of which comes back 400,
 /// turning a double-tap into an error on a pass that was in fact approved.
 class _ApprovalCard extends ConsumerStatefulWidget {
-  const _ApprovalCard({required this.pass});
+  const _ApprovalCard({required this.pass, required this.l});
 
   final Map<String, dynamic> pass;
+  final _L l;
 
   @override
   ConsumerState<_ApprovalCard> createState() => _ApprovalCardState();
@@ -99,6 +150,7 @@ class _ApprovalCardState extends ConsumerState<_ApprovalCard> {
   Future<void> _decide(bool approved) async {
     final id = passString(widget.pass, 'id');
     if (id == null || _deciding) return;
+    final l = widget.l;
 
     setState(() => _deciding = true);
     try {
@@ -106,22 +158,17 @@ class _ApprovalCardState extends ConsumerState<_ApprovalCard> {
       if (!mounted) return;
       ref.invalidate(approvalsProvider); // only after the server has agreed
       _notify(
-        approved ? 'Pass approved' : 'Pass rejected',
-        approved ? AppColors.success : AppColors.textMuted,
+        approved ? l.passApproved : l.passRejected,
+        approved ? AppColors.success : context.miftah.textMuted,
       );
     } catch (error) {
       if (!mounted) return;
       if (_isAlreadyDecided(error)) {
         ref.invalidate(approvalsProvider);
-        _notify(
-          'Someone already decided this pass. Refreshing the queue.',
-          AppColors.warning,
-        );
+        _notify(l.alreadyDecided, AppColors.warning);
       } else {
         _notify(
-          approved
-              ? 'Could not approve the pass. It is still pending — try again.'
-              : 'Could not reject the pass. It is still pending — try again.',
+          approved ? l.couldNotApprove : l.couldNotReject,
           AppColors.danger,
         );
       }
@@ -152,11 +199,13 @@ class _ApprovalCardState extends ConsumerState<_ApprovalCard> {
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final l = widget.l;
     final pass = widget.pass;
     // Keyed per pass so a tap in a test — and a hit test in a rebuilt list —
     // names one card's button rather than "whichever Approve is on screen".
     final id = passString(pass, 'id') ?? '';
-    final name = passString(pass, 'guestName') ?? 'Guest';
+    final name = passString(pass, 'guestName') ?? l.guest;
     final property = passString(pass, 'propertyName');
     final unit = passString(pass, 'unitNumber');
     final purpose = passString(pass, 'purpose');
@@ -165,119 +214,175 @@ class _ApprovalCardState extends ConsumerState<_ApprovalCard> {
     final window = formatWindow(
       passInstant(pass, 'validFrom'),
       passInstant(pass, 'validTo'),
+      ar: l.ar,
     );
 
-    return Card(
+    return Container(
       margin: const EdgeInsets.only(bottom: 10),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Text(
-                    name,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
+      decoration: BoxDecoration(
+        color: m.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: m.border),
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(
+                  name,
+                  style: l.ar
+                      ? GoogleFonts.notoNaskhArabic(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: m.textPrimary,
+                        )
+                      : GoogleFonts.josefinSans(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: m.textPrimary,
+                        ),
                 ),
-                if (passType != null)
-                  StatusBadge(label: passType, color: AppColors.info),
-              ],
+              ),
+              if (passType != null)
+                _PassTypePill(label: l.passType(passType), ar: l.ar),
+            ],
+          ),
+          const SizedBox(height: 10),
+          // `propertyName` is resolved server-side (commit 5180e3a); when it is
+          // null the row is gone, and no id is shown in its place — a raw UUID
+          // tells a manager nothing they can act on.
+          if (property != null)
+            _DetailRow(icon: Icons.apartment_outlined, value: property, m: m),
+          if (unit != null)
+            _DetailRow(
+              icon: Icons.home_outlined,
+              value: '${l.unit} $unit',
+              m: m,
             ),
-            const SizedBox(height: 10),
-            // `propertyName` is resolved server-side (commit 5180e3a); when it is
-            // null the row is gone, and no id is shown in its place — a raw UUID
-            // tells a manager nothing they can act on.
-            if (property != null)
-              _DetailRow(icon: Icons.apartment_outlined, value: property),
-            if (unit != null)
-              _DetailRow(icon: Icons.home_outlined, value: 'Unit $unit'),
-            _DetailRow(icon: Icons.schedule, value: window),
-            if (purpose != null)
-              _DetailRow(icon: Icons.notes_outlined, value: purpose),
-            if (vehicle != null)
-              _DetailRow(icon: Icons.directions_car, value: vehicle),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    key: Key('reject-$id'),
+          _DetailRow(icon: Icons.schedule, value: window, m: m),
+          if (purpose != null)
+            _DetailRow(icon: Icons.notes_outlined, value: purpose, m: m),
+          if (vehicle != null)
+            _DetailRow(icon: Icons.directions_car, value: vehicle, m: m),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: SizedBox(
+                  key: Key('reject-$id'),
+                  child: GoldButton.outlined(
+                    label: l.reject,
                     onPressed: _deciding ? null : () => _decide(false),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.danger,
-                      side: const BorderSide(color: AppColors.danger),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                    child: const Text(
-                      'Reject',
-                      style: TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: ElevatedButton(
-                    key: Key('approve-$id'),
-                    onPressed: _deciding ? null : () => _decide(true),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.success,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                    child: _deciding
-                        ? const SizedBox(
-                            height: 18,
-                            width: 18,
+                    height: 44,
+                    icon: _deciding
+                        ? SizedBox(
+                            width: 16,
+                            height: 16,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
-                              color: Colors.white,
+                              color: m.isDark
+                                  ? AppColors.accent
+                                  : m.textPrimary,
                             ),
                           )
-                        : const Text(
-                            'Approve',
-                            style: TextStyle(fontWeight: FontWeight.w700),
-                          ),
+                        : null,
                   ),
                 ),
-              ],
-            ),
-          ],
-        ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: SizedBox(
+                  key: Key('approve-$id'),
+                  child: GoldButton(
+                    label: l.approve,
+                    onPressed: _deciding ? null : () => _decide(true),
+                    height: 44,
+                    icon: _deciding
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: AppColors.primary,
+                            ),
+                          )
+                        : null,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PassTypePill extends StatelessWidget {
+  const _PassTypePill({required this.label, required this.ar});
+
+  final String label;
+  final bool ar;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppColors.accent.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        ar ? label : label.toUpperCase(),
+        style: ar
+            ? GoogleFonts.notoNaskhArabic(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: AppColors.accentDark,
+              )
+            : GoogleFonts.josefinSans(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 1.2,
+                color: AppColors.accentDark,
+              ),
       ),
     );
   }
 }
 
 class _DetailRow extends StatelessWidget {
-  const _DetailRow({required this.icon, required this.value});
+  const _DetailRow({required this.icon, required this.value, required this.m});
 
   final IconData icon;
   final String value;
+  final MiftahColors m;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsetsDirectional.only(bottom: 6),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 15, color: AppColors.textMuted),
+          Icon(icon, size: 15, color: m.textMuted),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(
-                fontSize: 13,
-                color: AppColors.textSecondary,
-              ),
+              style: context.isAr
+                  ? GoogleFonts.notoNaskhArabic(
+                      fontSize: 13,
+                      color: m.textSecondary,
+                    )
+                  : GoogleFonts.josefinSans(
+                      fontSize: 13,
+                      color: m.textSecondary,
+                    ),
             ),
           ),
         ],

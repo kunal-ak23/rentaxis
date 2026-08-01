@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
 final _authServiceProvider = Provider<AuthService>((ref) {
@@ -8,6 +8,46 @@ final _authServiceProvider = Provider<AuthService>((ref) {
   return AuthService(client.dio);
 });
 
+// ---------------------------------------------------------------------------
+// Fonts helper — Arabic uses Noto Naskh instead of Cinzel/Josefin Sans, and
+// never carries the EN tracked-uppercase letterSpacing (breaks glyph joining).
+// ---------------------------------------------------------------------------
+
+TextStyle _display(
+  bool ar, {
+  double size = 16,
+  FontWeight weight = FontWeight.w600,
+  Color? color,
+}) => ar
+    ? GoogleFonts.notoNaskhArabic(
+        fontSize: size + 1,
+        fontWeight: weight,
+        color: color,
+      )
+    : GoogleFonts.cinzel(fontSize: size, fontWeight: weight, color: color);
+
+TextStyle _body(
+  bool ar, {
+  double size = 14,
+  FontWeight weight = FontWeight.w400,
+  Color? color,
+  double letterSpacing = 0,
+}) => ar
+    ? GoogleFonts.notoNaskhArabic(
+        fontSize: size,
+        fontWeight: weight,
+        color: color,
+      )
+    : GoogleFonts.josefinSans(
+        fontSize: size,
+        fontWeight: weight,
+        color: color,
+        letterSpacing: letterSpacing,
+      );
+
+/// Admin profile screen: dark chrome header (mirrors the renter profile
+/// pattern), personal info + security cards, sign out. Appearance and
+/// language live on the More hub, not here.
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
 
@@ -16,250 +56,604 @@ class ProfileScreen extends ConsumerStatefulWidget {
 }
 
 class _ProfileScreenState extends ConsumerState<ProfileScreen> {
-  final _nameCtrl = TextEditingController();
-  final _phoneCtrl = TextEditingController();
+  final _nameController = TextEditingController();
+  final _phoneController = TextEditingController();
   bool _isSaving = false;
-  bool _isInitialized = false;
+  bool _hasChanges = false;
 
-  // Change password
-  final _currentPwdCtrl = TextEditingController();
-  final _newPwdCtrl = TextEditingController();
-  final _confirmPwdCtrl = TextEditingController();
-  bool _isChangingPwd = false;
+  bool _showPasswordSection = false;
+  final _currentPasswordController = TextEditingController();
+  final _newPasswordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
+  bool _isChangingPassword = false;
+  bool _obscureCurrent = true;
+  bool _obscureNew = true;
 
   @override
-  void dispose() {
-    _nameCtrl.dispose();
-    _phoneCtrl.dispose();
-    _currentPwdCtrl.dispose();
-    _newPwdCtrl.dispose();
-    _confirmPwdCtrl.dispose();
-    super.dispose();
+  void initState() {
+    super.initState();
+    _loadProfile();
   }
 
-  void _initFields(AuthState authState) {
-    if (!_isInitialized) {
-      _nameCtrl.text = authState.name ?? '';
-      _isInitialized = true;
+  void _loadProfile() {
+    final auth = ref.read(authProvider);
+    _nameController.text = auth.name ?? '';
+    _nameController.addListener(_onFieldChanged);
+    _phoneController.addListener(_onFieldChanged);
+  }
+
+  void _onFieldChanged() {
+    final auth = ref.read(authProvider);
+    final changed =
+        _nameController.text != (auth.name ?? '') ||
+        _phoneController.text.isNotEmpty;
+    if (changed != _hasChanges) {
+      setState(() => _hasChanges = changed);
     }
   }
 
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _phoneController.dispose();
+    _currentPasswordController.dispose();
+    _newPasswordController.dispose();
+    _confirmPasswordController.dispose();
+    super.dispose();
+  }
+
   Future<void> _saveProfile() async {
+    final l = _L(context.isAr);
     setState(() => _isSaving = true);
     try {
       final service = ref.read(_authServiceProvider);
       await service.updateProfile(
-        name: _nameCtrl.text.trim().isNotEmpty ? _nameCtrl.text.trim() : null,
-        phoneNumber:
-            _phoneCtrl.text.trim().isNotEmpty ? _phoneCtrl.text.trim() : null,
+        name: _nameController.text.trim(),
+        phoneNumber: _phoneController.text.trim().isNotEmpty
+            ? _phoneController.text.trim()
+            : null,
       );
       if (mounted) {
+        setState(() {
+          _hasChanges = false;
+          _isSaving = false;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Profile updated')),
+          SnackBar(
+            content: Text(l.profileUpdated),
+            backgroundColor: AppColors.success,
+          ),
         );
       }
     } catch (e) {
       if (mounted) {
+        setState(() => _isSaving = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to update profile')),
+          SnackBar(
+            content: Text(l.profileUpdateFailed),
+            backgroundColor: AppColors.danger,
+          ),
         );
       }
-    } finally {
-      if (mounted) setState(() => _isSaving = false);
     }
   }
 
   Future<void> _changePassword() async {
-    if (_newPwdCtrl.text != _confirmPwdCtrl.text) {
+    final l = _L(context.isAr);
+    if (_newPasswordController.text != _confirmPasswordController.text) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Passwords do not match')),
+        SnackBar(
+          content: Text(l.passwordsDontMatch),
+          backgroundColor: AppColors.danger,
+        ),
       );
       return;
     }
-    if (_newPwdCtrl.text.length < 6) {
+    if (_newPasswordController.text.length < 6) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Password must be at least 6 characters')),
+        SnackBar(
+          content: Text(l.passwordTooShort),
+          backgroundColor: AppColors.danger,
+        ),
       );
       return;
     }
 
-    setState(() => _isChangingPwd = true);
+    setState(() => _isChangingPassword = true);
     try {
       final service = ref.read(_authServiceProvider);
       await service.changePassword(
-        _currentPwdCtrl.text,
-        _newPwdCtrl.text,
+        _currentPasswordController.text,
+        _newPasswordController.text,
       );
-      _currentPwdCtrl.clear();
-      _newPwdCtrl.clear();
-      _confirmPwdCtrl.clear();
       if (mounted) {
+        _currentPasswordController.clear();
+        _newPasswordController.clear();
+        _confirmPasswordController.clear();
+        setState(() {
+          _isChangingPassword = false;
+          _showPasswordSection = false;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Password changed successfully')),
+          SnackBar(
+            content: Text(l.passwordChanged),
+            backgroundColor: AppColors.success,
+          ),
         );
       }
     } catch (e) {
       if (mounted) {
+        setState(() => _isChangingPassword = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('Failed to change password. Check current password.')),
+          SnackBar(
+            content: Text(l.passwordChangeFailed),
+            backgroundColor: AppColors.danger,
+          ),
         );
       }
-    } finally {
-      if (mounted) setState(() => _isChangingPwd = false);
+    }
+  }
+
+  Future<void> _logout() async {
+    final l = _L(context.isAr);
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          l.signOut,
+          style: _display(l.ar, size: 18, weight: FontWeight.w600),
+        ),
+        content: Text(l.signOutConfirm, style: _body(l.ar)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(l.cancel, style: _body(l.ar, weight: FontWeight.w600)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.danger),
+            child: Text(l.signOut, style: _body(l.ar, weight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      ref.read(notificationProvider.notifier).stopPolling();
+      await ref.read(authProvider.notifier).logout();
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final authState = ref.watch(authProvider);
-    _initFields(authState);
+    final auth = ref.watch(authProvider);
+    final l = _L(context.isAr);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Profile')),
-      body: LoadingOverlay(
-        isLoading: _isSaving || _isChangingPwd,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Avatar + role
-              Center(
-                child: Column(
-                  children: [
-                    CircleAvatar(
-                      radius: 40,
-                      backgroundColor:
-                          AppColors.primary.withValues(alpha: 0.1),
-                      child: Text(
-                        (authState.name ?? 'U')[0].toUpperCase(),
-                        style: const TextStyle(
-                          color: AppColors.primary,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 28,
+      body: ListView(
+        padding: EdgeInsets.fromLTRB(0, 0, 0, AppInsets.bottomNav(context)),
+        children: [
+          _buildChromeHeader(auth, l),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _sectionLabel(l.personalInformation, l.ar),
+                _buildPersonalInfoCard(auth, l),
+                const SizedBox(height: 14),
+                _sectionLabel(l.security, l.ar),
+                _buildPasswordCard(l),
+                const SizedBox(height: 26),
+                _buildSignOut(l),
+                const SizedBox(height: 30),
+                _buildBrandFooter(l),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Dark chrome header: gold-ringed monogram, name, role — always
+  /// near-black regardless of theme mode, matching the app chrome.
+  Widget _buildChromeHeader(AuthState auth, _L l) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.primary,
+        border: Border(
+          bottom: BorderSide(color: AppColors.accent.withValues(alpha: 0.14)),
+        ),
+      ),
+      padding: const EdgeInsets.fromLTRB(24, 28, 24, 28),
+      child: Column(
+        children: [
+          Container(
+            width: 80,
+            height: 80,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: AppColors.primary,
+              border: Border.all(
+                color: AppColors.accent.withValues(alpha: 0.45),
+              ),
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              _getInitials(auth.name ?? 'M'),
+              style: GoogleFonts.cinzel(
+                fontSize: 26,
+                fontWeight: FontWeight.w600,
+                color: AppColors.accent,
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            auth.name ?? l.managerFallback,
+            style: _display(
+              l.ar,
+              size: 20,
+              weight: FontWeight.w600,
+              color: Colors.white,
+            ),
+          ),
+          if (auth.email != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              auth.email!,
+              style: _body(
+                l.ar,
+                size: 12,
+                color: Colors.white.withValues(alpha: 0.5),
+              ),
+            ),
+          ],
+          if (auth.role != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                  color: AppColors.accent.withValues(alpha: 0.3),
+                ),
+              ),
+              child: Text(
+                l.roleLabel(auth.role!),
+                style: _body(l.ar, size: 10.5, color: AppColors.accent),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionLabel(String text, bool ar) {
+    final m = context.miftah;
+    return Padding(
+      padding: const EdgeInsetsDirectional.only(start: 4, bottom: 10),
+      child: Text(
+        text.toUpperCase(),
+        style: _body(
+          ar,
+          size: 11,
+          weight: FontWeight.w500,
+          color: m.textMuted,
+          letterSpacing: 2.0,
+        ),
+      ),
+    );
+  }
+
+  BoxDecoration _cardDecoration() {
+    final m = context.miftah;
+    return BoxDecoration(
+      color: m.surface,
+      borderRadius: BorderRadius.circular(14),
+      border: Border.all(color: m.border),
+    );
+  }
+
+  Widget _buildPersonalInfoCard(AuthState auth, _L l) {
+    final m = context.miftah;
+    return Container(
+      decoration: _cardDecoration(),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: [
+          TextFormField(
+            controller: _nameController,
+            style: _body(l.ar, size: 15),
+            decoration: InputDecoration(
+              labelText: l.name,
+              prefixIcon: const Icon(Icons.person_outline, size: 20),
+            ),
+          ),
+          const SizedBox(height: 14),
+          TextFormField(
+            initialValue: auth.email ?? '',
+            readOnly: true,
+            style: _body(l.ar, size: 15, color: m.textSecondary),
+            decoration: InputDecoration(
+              labelText: l.email,
+              prefixIcon: const Icon(Icons.email_outlined, size: 20),
+              filled: true,
+              fillColor: m.background,
+              suffixIcon: Icon(
+                Icons.lock_outline,
+                size: 16,
+                color: m.textMuted,
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          TextFormField(
+            controller: _phoneController,
+            keyboardType: TextInputType.phone,
+            style: _body(l.ar, size: 15),
+            decoration: InputDecoration(
+              labelText: l.phoneNumber,
+              prefixIcon: const Icon(Icons.phone_outlined, size: 20),
+              hintText: '+971 XX XXX XXXX',
+            ),
+          ),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 250),
+            transitionBuilder: (child, animation) => SizeTransition(
+              sizeFactor: animation,
+              child: FadeTransition(opacity: animation, child: child),
+            ),
+            child: _hasChanges
+                ? Padding(
+                    key: const ValueKey('save_btn'),
+                    padding: const EdgeInsets.only(top: 18),
+                    child: _isSaving
+                        ? const Center(
+                            child: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          )
+                        : GoldButton(
+                            label: l.saveChanges,
+                            height: 46,
+                            onPressed: _saveProfile,
+                          ),
+                  )
+                : const SizedBox.shrink(key: ValueKey('no_save')),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPasswordCard(_L l) {
+    final m = context.miftah;
+    return Container(
+      decoration: _cardDecoration(),
+      child: Column(
+        children: [
+          ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+            leading: Icon(
+              Icons.lock_outline,
+              color: m.isDark ? AppColors.accent : AppColors.primary,
+            ),
+            title: Text(
+              l.changePassword,
+              style: _body(l.ar, weight: FontWeight.w500),
+            ),
+            trailing: AnimatedRotation(
+              turns: _showPasswordSection ? 0.5 : 0.0,
+              duration: const Duration(milliseconds: 200),
+              child: Icon(Icons.keyboard_arrow_down, color: m.textMuted),
+            ),
+            onTap: () =>
+                setState(() => _showPasswordSection = !_showPasswordSection),
+          ),
+          AnimatedCrossFade(
+            firstChild: const SizedBox.shrink(),
+            secondChild: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: Column(
+                children: [
+                  const SizedBox(height: 8),
+                  TextFormField(
+                    controller: _currentPasswordController,
+                    obscureText: _obscureCurrent,
+                    style: _body(l.ar, size: 15),
+                    decoration: InputDecoration(
+                      labelText: l.currentPassword,
+                      prefixIcon: const Icon(Icons.lock_outline, size: 20),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _obscureCurrent
+                              ? Icons.visibility_off_outlined
+                              : Icons.visibility_outlined,
+                          size: 20,
                         ),
+                        onPressed: () =>
+                            setState(() => _obscureCurrent = !_obscureCurrent),
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    Text(
-                      authState.name ?? 'User',
-                      style: Theme.of(context).textTheme.headlineSmall,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      authState.email ?? '',
-                      style: const TextStyle(
-                        color: AppColors.textSecondary,
-                        fontSize: 14,
-                      ),
-                    ),
-                    if (authState.role != null) ...[
-                      const SizedBox(height: 8),
-                      StatusBadge(
-                        label: authState.role!.replaceAll('_', ' '),
-                        color: AppColors.primary,
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              const SizedBox(height: 32),
-
-              // Edit profile
-              Text('Edit Profile',
-                  style: Theme.of(context).textTheme.headlineSmall),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _nameCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Name',
-                  prefixIcon: Icon(Icons.person_outline),
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _phoneCtrl,
-                keyboardType: TextInputType.phone,
-                decoration: const InputDecoration(
-                  labelText: 'Phone Number',
-                  prefixIcon: Icon(Icons.phone_outlined),
-                ),
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _isSaving ? null : _saveProfile,
-                  child: const Text('Save Changes'),
-                ),
-              ),
-              const SizedBox(height: 32),
-
-              // Change password
-              Text('Change Password',
-                  style: Theme.of(context).textTheme.headlineSmall),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _currentPwdCtrl,
-                obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: 'Current Password',
-                  prefixIcon: Icon(Icons.lock_outline),
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _newPwdCtrl,
-                obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: 'New Password',
-                  prefixIcon: Icon(Icons.lock_outline),
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _confirmPwdCtrl,
-                obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: 'Confirm New Password',
-                  prefixIcon: Icon(Icons.lock_outline),
-                ),
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton(
-                  onPressed: _isChangingPwd ? null : _changePassword,
-                  child: const Text('Change Password'),
-                ),
-              ),
-              const SizedBox(height: 32),
-
-              // Logout
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: () async {
-                    ref.read(notificationProvider.notifier).stopPolling();
-                    await ref.read(authProvider.notifier).logout();
-                    if (context.mounted) context.go('/login');
-                  },
-                  icon: const Icon(Icons.logout, color: AppColors.danger),
-                  label: const Text('Logout'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.danger,
-                    side: const BorderSide(color: AppColors.danger),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
-                ),
+                  const SizedBox(height: 14),
+                  TextFormField(
+                    controller: _newPasswordController,
+                    obscureText: _obscureNew,
+                    style: _body(l.ar, size: 15),
+                    decoration: InputDecoration(
+                      labelText: l.newPassword,
+                      prefixIcon: const Icon(Icons.lock_reset, size: 20),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _obscureNew
+                              ? Icons.visibility_off_outlined
+                              : Icons.visibility_outlined,
+                          size: 20,
+                        ),
+                        onPressed: () =>
+                            setState(() => _obscureNew = !_obscureNew),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  TextFormField(
+                    controller: _confirmPasswordController,
+                    obscureText: true,
+                    style: _body(l.ar, size: 15),
+                    decoration: InputDecoration(
+                      labelText: l.confirmNewPassword,
+                      prefixIcon: const Icon(Icons.lock_reset, size: 20),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  _isChangingPassword
+                      ? const Center(
+                          child: SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        )
+                      : GoldButton.outlined(
+                          label: l.updatePassword,
+                          height: 46,
+                          onPressed: _changePassword,
+                        ),
+                ],
               ),
-              const SizedBox(height: 32),
-            ],
+            ),
+            crossFadeState: _showPasswordSection
+                ? CrossFadeState.showSecond
+                : CrossFadeState.showFirst,
+            duration: const Duration(milliseconds: 250),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSignOut(_L l) {
+    final m = context.miftah;
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton(
+        onPressed: _logout,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: m.danger,
+          side: BorderSide(color: m.danger.withValues(alpha: 0.5)),
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+        child: Text(
+          l.signOutUpper,
+          style: _body(
+            l.ar,
+            weight: FontWeight.w600,
+            size: 12.5,
+            letterSpacing: 2.4,
           ),
         ),
       ),
     );
+  }
+
+  Widget _buildBrandFooter(_L l) {
+    final m = context.miftah;
+    return Center(
+      child: Column(
+        children: [
+          Opacity(
+            opacity: 0.35,
+            child: Image.asset(
+              'assets/logo_horizontal.png',
+              height: 22,
+              fit: BoxFit.contain,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            l.versionFooter,
+            style: _body(
+              l.ar,
+              size: 10.5,
+              color: m.textMuted,
+              letterSpacing: 2.0,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _getInitials(String name) {
+    final parts = name.trim().split(' ');
+    if (parts.length >= 2 && parts[1].isNotEmpty) {
+      return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+    }
+    return name.isNotEmpty ? name[0].toUpperCase() : 'M';
+  }
+}
+
+/// Screen strings (EN/AR). Lightweight per-screen pattern — see arabic-brief.
+class _L {
+  _L(this.ar);
+  final bool ar;
+
+  String get personalInformation =>
+      ar ? 'المعلومات الشخصية' : 'Personal information';
+  String get security => ar ? 'الأمان' : 'Security';
+  String get name => ar ? 'الاسم' : 'Name';
+  String get email => ar ? 'البريد الإلكتروني' : 'Email';
+  String get phoneNumber => ar ? 'رقم الهاتف' : 'Phone Number';
+  String get saveChanges => ar ? 'حفظ التغييرات' : 'Save changes';
+  String get changePassword => ar ? 'تغيير كلمة المرور' : 'Change password';
+  String get currentPassword => ar ? 'كلمة المرور الحالية' : 'Current Password';
+  String get newPassword => ar ? 'كلمة مرور جديدة' : 'New Password';
+  String get confirmNewPassword =>
+      ar ? 'تأكيد كلمة المرور الجديدة' : 'Confirm New Password';
+  String get updatePassword => ar ? 'تحديث كلمة المرور' : 'Update password';
+  String get signOut => ar ? 'تسجيل الخروج' : 'Sign out';
+  String get signOutUpper => ar ? 'تسجيل الخروج' : 'SIGN OUT';
+  String get signOutConfirm => ar
+      ? 'هل أنت متأكد أنك تريد تسجيل الخروج؟'
+      : 'Are you sure you want to sign out?';
+  String get cancel => ar ? 'إلغاء' : 'Cancel';
+  String get managerFallback => ar ? 'مدير العقارات' : 'Manager';
+  String get versionFooter =>
+      ar ? 'مفتاح للإدارة · 1.0.0' : 'MIFTAH ADMIN · V1.0.0';
+  String get profileUpdated => ar ? 'تم تحديث الملف الشخصي' : 'Profile updated';
+  String get profileUpdateFailed =>
+      ar ? 'فشل تحديث الملف الشخصي' : 'Failed to update profile';
+  String get passwordsDontMatch =>
+      ar ? 'كلمتا المرور غير متطابقتين' : 'Passwords do not match';
+  String get passwordTooShort => ar
+      ? 'يجب أن تتكون كلمة المرور من 6 أحرف على الأقل'
+      : 'Password must be at least 6 characters';
+  String get passwordChanged =>
+      ar ? 'تم تغيير كلمة المرور بنجاح' : 'Password changed successfully';
+  String get passwordChangeFailed => ar
+      ? 'فشل تغيير كلمة المرور. تحقق من كلمة المرور الحالية.'
+      : 'Failed to change password. Check your current password.';
+
+  String roleLabel(String role) {
+    if (ar) {
+      final roleAr = switch (role) {
+        'TENANT_ADMIN' => 'مدير الحساب',
+        'PROPERTY_MANAGER' => 'مدير العقارات',
+        'SUPER_ADMIN' => 'مشرف عام',
+        _ => role.replaceAll('_', ' '),
+      };
+      return roleAr;
+    }
+    return role.replaceAll('_', ' ').toUpperCase();
   }
 }

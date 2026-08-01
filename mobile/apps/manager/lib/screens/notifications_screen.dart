@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
+/// Notifications, mirrors the renter notifications pattern: dark chrome
+/// app bar, All/Unread tabs, semantic icon chips per notification type.
 class NotificationsScreen extends ConsumerStatefulWidget {
   const NotificationsScreen({super.key});
 
@@ -44,9 +45,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
 
   Future<void> _refresh() async {
     _currentPage = 0;
-    await ref
-        .read(notificationProvider.notifier)
-        .fetchNotifications(page: 0);
+    await ref.read(notificationProvider.notifier).fetchNotifications(page: 0);
     ref.read(notificationProvider.notifier).fetchUnreadCount();
   }
 
@@ -54,45 +53,47 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
   Widget build(BuildContext context) {
     final notifState = ref.watch(notificationProvider);
     final allNotifications = notifState.notifications;
-    final unreadNotifications =
-        allNotifications.where((n) => n['isRead'] != true).toList();
+    final unreadNotifications = allNotifications
+        .where((n) => n['isRead'] != true)
+        .toList();
+    final m = context.miftah;
+    final l = _L(context.isAr);
+    final accentColor = m.isDark ? AppColors.accent : AppColors.primary;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Notifications'),
+        backgroundColor: AppColors.navyDark,
+        title: Text(l.title),
         actions: [
           if (notifState.unreadCount > 0)
             TextButton(
               onPressed: () =>
                   ref.read(notificationProvider.notifier).markAllAsRead(),
               child: Text(
-                'Mark All Read',
-                style: GoogleFonts.josefinSans(
-                  color: AppColors.primary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
+                l.markAllRead,
+                style: const TextStyle(color: AppColors.accent, fontSize: 13),
               ),
             ),
         ],
         bottom: TabBar(
           controller: _tabController,
-          indicatorColor: AppColors.primary,
-          labelColor: AppColors.primary,
-          unselectedLabelColor: AppColors.textMuted,
-          indicatorSize: TabBarIndicatorSize.label,
+          indicatorColor: AppColors.accent,
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white54,
           tabs: [
-            const Tab(text: 'All'),
+            Tab(text: l.all),
             Tab(
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text('Unread'),
+                  Text(l.unread),
                   if (notifState.unreadCount > 0) ...[
                     const SizedBox(width: 6),
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
                       decoration: BoxDecoration(
                         color: AppColors.danger,
                         borderRadius: BorderRadius.circular(10),
@@ -114,8 +115,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
         ),
       ),
       body: notifState.isLoading && allNotifications.isEmpty
-          ? const Center(
-              child: CircularProgressIndicator(color: AppColors.primary))
+          ? Center(child: CircularProgressIndicator(color: accentColor))
           : TabBarView(
               controller: _tabController,
               children: [
@@ -126,13 +126,18 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
     );
   }
 
-  Widget _buildNotificationList(List<dynamic> notifications,
-      {required bool showAll}) {
+  Widget _buildNotificationList(
+    List<dynamic> notifications, {
+    required bool showAll,
+  }) {
+    final m = context.miftah;
+    final l = _L(context.isAr);
+    final accentColor = m.isDark ? AppColors.accent : AppColors.primary;
     if (notifications.isEmpty) {
-      return const EmptyState(
+      return EmptyState(
         icon: Icons.notifications_none,
-        title: 'No Notifications',
-        subtitle: 'You\'re all caught up!',
+        title: l.noNotifications,
+        subtitle: l.allCaughtUp,
       );
     }
 
@@ -146,19 +151,19 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
         return false;
       },
       child: RefreshIndicator(
-        color: AppColors.primary,
+        color: accentColor,
         onRefresh: _refresh,
         child: ListView.separated(
           padding: const EdgeInsets.symmetric(vertical: 8),
           itemCount: notifications.length + (_isLoadingMore ? 1 : 0),
-          separatorBuilder: (_, __) =>
+          separatorBuilder: (context, index) =>
               const Divider(height: 1, indent: 72),
           itemBuilder: (context, index) {
             if (index >= notifications.length) {
-              return const Center(
+              return Center(
                 child: Padding(
-                  padding: EdgeInsets.all(16),
-                  child: CircularProgressIndicator(color: AppColors.primary),
+                  padding: const EdgeInsets.all(16),
+                  child: CircularProgressIndicator(color: accentColor),
                 ),
               );
             }
@@ -168,15 +173,17 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
             final type = notification['type'] ?? '';
 
             return ListTile(
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 4,
+              ),
               leading: _notificationIcon(type, isRead),
               title: Text(
-                notification['title'] ?? 'Notification',
-                style: GoogleFonts.josefinSans(
+                notification['title'] ?? l.notification,
+                style: TextStyle(
                   fontWeight: isRead ? FontWeight.w400 : FontWeight.w600,
                   fontSize: 14,
-                  color: AppColors.textPrimary,
+                  color: m.textPrimary,
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -188,21 +195,18 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
                     const SizedBox(height: 2),
                     Text(
                       notification['message'],
-                      style: GoogleFonts.josefinSans(
-                        fontSize: 12,
-                        color: AppColors.textSecondary,
-                      ),
+                      style: Theme.of(context).textTheme.bodySmall,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ],
                   const SizedBox(height: 4),
                   Text(
-                    Formatters.timeAgo(notification['createdAt']),
-                    style: GoogleFonts.josefinSans(
-                      fontSize: 11,
-                      color: AppColors.textMuted,
+                    Formatters.timeAgo(
+                      notification['createdAt'],
+                      ar: context.isAr,
                     ),
+                    style: Theme.of(context).textTheme.labelSmall,
                   ),
                 ],
               ),
@@ -210,14 +214,13 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
                   ? Container(
                       width: 8,
                       height: 8,
-                      decoration: const BoxDecoration(
-                        color: AppColors.primary,
+                      decoration: BoxDecoration(
+                        color: accentColor,
                         shape: BoxShape.circle,
                       ),
                     )
                   : null,
-              tileColor:
-                  isRead ? null : AppColors.primary.withValues(alpha: 0.03),
+              tileColor: isRead ? null : accentColor.withValues(alpha: 0.05),
               onTap: () {
                 if (!isRead && notification['id'] != null) {
                   ref
@@ -233,6 +236,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
   }
 
   Widget _notificationIcon(String type, bool isRead) {
+    final m = context.miftah;
     IconData icon;
     Color color;
 
@@ -244,18 +248,18 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
       case 'PAYMENT_CLEARED':
       case 'PAYMENT_BOUNCED':
         icon = Icons.payment;
-        color = AppColors.warning;
+        color = m.warning;
       case 'TICKET':
       case 'TICKET_UPDATE':
         icon = Icons.build_outlined;
-        color = AppColors.info;
+        color = AppColors.accentDark;
       case 'LEASE':
       case 'LEASE_UPDATE':
         icon = Icons.description_outlined;
-        color = AppColors.primary;
+        color = m.isDark ? AppColors.accent : AppColors.primary;
       default:
         icon = Icons.notifications_outlined;
-        color = AppColors.textSecondary;
+        color = m.textSecondary;
     }
 
     return Container(
@@ -268,4 +272,19 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
       child: Icon(icon, color: color, size: 20),
     );
   }
+}
+
+/// Screen strings (EN/AR). Lightweight per-screen pattern — see arabic-brief.
+class _L {
+  _L(this.ar);
+  final bool ar;
+
+  String get title => ar ? 'الإشعارات' : 'Notifications';
+  String get markAllRead => ar ? 'تعليم الكل كمقروء' : 'Mark All Read';
+  String get all => ar ? 'الكل' : 'All';
+  String get unread => ar ? 'غير مقروء' : 'Unread';
+  String get noNotifications => ar ? 'لا توجد إشعارات' : 'No Notifications';
+  String get allCaughtUp =>
+      ar ? 'أنت على اطلاع بكل شيء!' : 'You\'re all caught up!';
+  String get notification => ar ? 'إشعار' : 'Notification';
 }

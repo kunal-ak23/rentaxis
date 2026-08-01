@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
 final _propertyServiceProvider = Provider<PropertyService>((ref) {
@@ -22,6 +23,10 @@ final _buildingServiceProvider = Provider<BuildingService>((ref) {
   return BuildingService(client.dio);
 });
 
+/// Property detail, per admin design 1c: hero card with gradient overlay,
+/// a spec strip (units / let% / buildings / type), a unit grid with
+/// status-color top bars, a rent-roll summary, and existing contacts /
+/// buildings sections restyled to match.
 class PropertyDetailScreen extends ConsumerStatefulWidget {
   final String propertyId;
   const PropertyDetailScreen({super.key, required this.propertyId});
@@ -72,7 +77,7 @@ class _PropertyDetailScreenState extends ConsumerState<PropertyDetailScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = 'Failed to load property details';
+        _error = 'load-failed';
         _isLoading = false;
       });
     }
@@ -80,253 +85,252 @@ class _PropertyDetailScreenState extends ConsumerState<PropertyDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final l = _L(context.isAr);
+
     if (_isLoading) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Property')),
-        body: const Center(
-          child: CircularProgressIndicator(color: AppColors.primary),
-        ),
+        backgroundColor: m.background,
+        appBar: AppBar(title: Text(l.property)),
+        body: Center(child: CircularProgressIndicator(color: AppColors.accent)),
       );
     }
 
     if (_error != null || _property == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Property')),
-        body: ErrorState(message: _error ?? 'Not found', onRetry: _loadData),
+        backgroundColor: m.background,
+        appBar: AppBar(title: Text(l.property)),
+        body: ErrorState(message: l.loadError, onRetry: _loadData),
       );
     }
 
     final property = _property!;
     final totalUnits = _units.length;
-    final occupied =
-        _units.where((u) => u['status'] == 'OCCUPIED').length;
-    final vacant = totalUnits - occupied;
+    final occupied = _units.where((u) => u['status'] == 'OCCUPIED').length;
     final occupancy = totalUnits > 0 ? occupied / totalUnits : 0.0;
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(property['name'] ?? 'Property'),
-      ),
+      backgroundColor: m.background,
       body: RefreshIndicator(
         onRefresh: _loadData,
-        color: AppColors.primary,
+        color: AppColors.accent,
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: EdgeInsets.fromLTRB(16, 16, 16, AppInsets.bottomNav(context)),
+          padding: EdgeInsets.only(bottom: AppInsets.bottomNav(context)),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Property header card
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [AppColors.navyDark, Color(0xFF1A3352)],
-                  ),
-                  borderRadius: BorderRadius.circular(16),
-                ),
+              _HeroHeader(property: property, l: l),
+              _SpecStrip(
+                totalUnits: totalUnits,
+                occupancy: occupancy,
+                buildingCount: _buildings.length,
+                type: (property['type'] ?? '').toString(),
+                m: m,
+                l: l,
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.apartment_rounded,
-                            color: AppColors.accent, size: 28),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            property['name'] ?? '',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 20,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                      ],
+                    _SectionHeader(
+                      label: l.unitsSection,
+                      trailing: _UnitLegend(l: l, m: m),
                     ),
-                    const SizedBox(height: 12),
-                    _InfoRow(
-                      icon: Icons.location_on_outlined,
-                      text: property['address'] ?? '-',
-                    ),
-                    const SizedBox(height: 6),
-                    _InfoRow(
-                      icon: Icons.flag_outlined,
-                      text: (property['emirate'] ?? '-')
-                          .toString()
-                          .replaceAll('_', ' '),
-                    ),
-                    if (property['type'] != null) ...[
-                      const SizedBox(height: 6),
-                      _InfoRow(
-                        icon: Icons.category_outlined,
-                        text: property['type'].toString(),
+                    const SizedBox(height: 10),
+                    if (_units.isEmpty)
+                      EmptyState(
+                        icon: Icons.door_front_door_outlined,
+                        title: l.noUnitsYet,
+                        subtitle: l.addUnitsPrompt,
+                      )
+                    else
+                      GridView.count(
+                        crossAxisCount: 4,
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        crossAxisSpacing: 8,
+                        mainAxisSpacing: 8,
+                        childAspectRatio: 0.92,
+                        children: _units
+                            .map(
+                              (unit) => _UnitTile(
+                                unit: unit,
+                                l: l,
+                                onTap: () {
+                                  // Unit detail - future enhancement
+                                },
+                              ),
+                            )
+                            .toList(),
                       ),
-                    ],
+                    const SizedBox(height: 22),
+                    _SectionHeader(label: l.rentRollSection),
+                    const SizedBox(height: 10),
+                    _RentRollCard(units: _units, m: m, l: l),
+                    const SizedBox(height: 22),
+                    _SectionHeader(
+                      label: l.contactsSection,
+                      trailing: InkWell(
+                        onTap: () => _showAddContactSheet(context, l),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.add,
+                              size: 15,
+                              color: AppColors.accentDark,
+                            ),
+                            const SizedBox(width: 3),
+                            Text(
+                              l.ar ? l.add : l.add.toUpperCase(),
+                              style: l.ar
+                                  ? GoogleFonts.notoNaskhArabic(
+                                      fontSize: 12,
+                                      color: AppColors.accentDark,
+                                    )
+                                  : GoogleFonts.josefinSans(
+                                      fontSize: 10.5,
+                                      letterSpacing: 1.2,
+                                      color: AppColors.accentDark,
+                                    ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    if (_contacts.isEmpty)
+                      Text(
+                        l.noContacts,
+                        style: l.ar
+                            ? GoogleFonts.notoNaskhArabic(
+                                fontSize: 13,
+                                color: m.textSecondary,
+                              )
+                            : GoogleFonts.josefinSans(
+                                fontSize: 12.5,
+                                color: m.textSecondary,
+                              ),
+                      )
+                    else
+                      ..._contacts.map(
+                        (contact) => _ContactRow(
+                          contact: contact,
+                          l: l,
+                          m: m,
+                          onDelete: () async {
+                            final confirmed = await showDialog<bool>(
+                              context: context,
+                              builder: (ctx) => AlertDialog(
+                                title: Text(l.deleteContact),
+                                content: Text(l.deleteContactConfirm),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(ctx, false),
+                                    child: Text(l.cancel),
+                                  ),
+                                  ElevatedButton(
+                                    onPressed: () => Navigator.pop(ctx, true),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: m.danger,
+                                    ),
+                                    child: Text(l.delete),
+                                  ),
+                                ],
+                              ),
+                            );
+                            if (confirmed == true) {
+                              try {
+                                await ref
+                                    .read(_contactServiceProvider)
+                                    .deleteContact(
+                                      widget.propertyId,
+                                      contact['id'],
+                                    );
+                                _loadData();
+                              } catch (_) {}
+                            }
+                          },
+                        ),
+                      ),
+                    const SizedBox(height: 22),
+                    _SectionHeader(label: l.buildingsSection),
+                    const SizedBox(height: 10),
+                    if (_buildings.isEmpty)
+                      Text(
+                        l.noBuildings,
+                        style: l.ar
+                            ? GoogleFonts.notoNaskhArabic(
+                                fontSize: 13,
+                                color: m.textSecondary,
+                              )
+                            : GoogleFonts.josefinSans(
+                                fontSize: 12.5,
+                                color: m.textSecondary,
+                              ),
+                      )
+                    else
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: _buildings
+                            .map(
+                              (b) => Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 7,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: m.surface,
+                                  border: Border.all(color: m.border),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.domain,
+                                      size: 15,
+                                      color: AppColors.accentDark,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      b['name'] ?? l.building,
+                                      style: l.ar
+                                          ? GoogleFonts.notoNaskhArabic(
+                                              fontSize: 12.5,
+                                              color: m.textPrimary,
+                                            )
+                                          : GoogleFonts.josefinSans(
+                                              fontSize: 12,
+                                              color: m.textPrimary,
+                                            ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            )
+                            .toList(),
+                      ),
+                    const SizedBox(height: 20),
                   ],
                 ),
               ),
-              const SizedBox(height: 20),
-
-              // Stats row
-              Row(
-                children: [
-                  _StatCard(
-                    label: 'Total',
-                    value: '$totalUnits',
-                    color: AppColors.info,
-                  ),
-                  const SizedBox(width: 10),
-                  _StatCard(
-                    label: 'Occupied',
-                    value: '$occupied',
-                    color: AppColors.success,
-                  ),
-                  const SizedBox(width: 10),
-                  _StatCard(
-                    label: 'Vacant',
-                    value: '$vacant',
-                    color: AppColors.warning,
-                  ),
-                  const SizedBox(width: 10),
-                  _StatCard(
-                    label: 'Occupancy',
-                    value: '${(occupancy * 100).toStringAsFixed(0)}%',
-                    color: AppColors.primary,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-
-              // Units header
-              Row(
-                children: [
-                  Text('Units',
-                      style: Theme.of(context).textTheme.headlineSmall),
-                  const Spacer(),
-                  Text('$totalUnits total',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        color: AppColors.textSecondary,
-                      )),
-                ],
-              ),
-              const SizedBox(height: 12),
-
-              if (_units.isEmpty)
-                const EmptyState(
-                  icon: Icons.door_front_door_outlined,
-                  title: 'No units yet',
-                  subtitle: 'Add units to this property',
-                )
-              else
-                ..._units.map((unit) => _UnitCard(
-                      unit: unit,
-                      onTap: () {
-                        // Unit detail - future enhancement
-                      },
-                    )),
-
-              // Contacts section
-              const SizedBox(height: 20),
-              Row(
-                children: [
-                  const Icon(Icons.contacts_outlined, size: 20, color: AppColors.primary),
-                  const SizedBox(width: 8),
-                  Text('Contacts', style: Theme.of(context).textTheme.headlineSmall),
-                  const Spacer(),
-                  TextButton.icon(
-                    onPressed: () => _showAddContactSheet(context),
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text('Add'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              if (_contacts.isEmpty)
-                const Text('No contacts', style: TextStyle(fontSize: 13, color: AppColors.textSecondary))
-              else
-                ..._contacts.map((contact) => Card(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  child: ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: AppColors.accent.withValues(alpha: 0.1),
-                      child: const Icon(Icons.person_outline, color: AppColors.accent, size: 20),
-                    ),
-                    title: Text(contact['name'] ?? 'Contact', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (contact['role'] != null) Text(contact['role'], style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-                        if (contact['phone'] != null) Text(contact['phone'], style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
-                        if (contact['email'] != null) Text(contact['email'], style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
-                      ],
-                    ),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.delete_outline, size: 18, color: AppColors.danger),
-                      onPressed: () async {
-                        final confirmed = await showDialog<bool>(
-                          context: context,
-                          builder: (ctx) => AlertDialog(
-                            title: const Text('Delete Contact'),
-                            content: const Text('Remove this contact?'),
-                            actions: [
-                              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-                              ElevatedButton(
-                                onPressed: () => Navigator.pop(ctx, true),
-                                style: ElevatedButton.styleFrom(backgroundColor: AppColors.danger),
-                                child: const Text('Delete'),
-                              ),
-                            ],
-                          ),
-                        );
-                        if (confirmed == true) {
-                          try {
-                            await ref.read(_contactServiceProvider).deleteContact(widget.propertyId, contact['id']);
-                            _loadData();
-                          } catch (_) {}
-                        }
-                      },
-                    ),
-                  ),
-                )),
-
-              // Buildings section
-              const SizedBox(height: 20),
-              Row(
-                children: [
-                  const Icon(Icons.domain_outlined, size: 20, color: AppColors.primary),
-                  const SizedBox(width: 8),
-                  Text('Buildings', style: Theme.of(context).textTheme.headlineSmall),
-                ],
-              ),
-              const SizedBox(height: 8),
-              if (_buildings.isEmpty)
-                const Text('No buildings', style: TextStyle(fontSize: 13, color: AppColors.textSecondary))
-              else
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: _buildings.map((b) => Chip(
-                    avatar: const Icon(Icons.domain, size: 16, color: AppColors.primary),
-                    label: Text(b['name'] ?? 'Building', style: const TextStyle(fontSize: 12)),
-                  )).toList(),
-                ),
             ],
           ),
         ),
       ),
       floatingActionButton: FloatingActionButton(
         backgroundColor: AppColors.primary,
-        onPressed: () => _showCreateUnitSheet(context),
+        onPressed: () => _showCreateUnitSheet(context, l),
         child: const Icon(Icons.add, color: Colors.white),
       ),
     );
   }
 
-  void _showCreateUnitSheet(BuildContext context) {
+  void _showCreateUnitSheet(BuildContext context, _L l) {
     final unitNumberCtrl = TextEditingController();
     final sizeCtrl = TextEditingController();
     final rentCtrl = TextEditingController();
@@ -341,7 +345,7 @@ class _PropertyDetailScreenState extends ConsumerState<PropertyDetailScreen> {
       'SHOP',
       'WAREHOUSE',
       'TOWNHOUSE',
-      'PENTHOUSE'
+      'PENTHOUSE',
     ];
 
     showModalBottomSheet(
@@ -353,7 +357,11 @@ class _PropertyDetailScreenState extends ConsumerState<PropertyDetailScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheetState) => Padding(
           padding: EdgeInsets.fromLTRB(
-              24, 24, 24, MediaQuery.of(ctx).viewInsets.bottom + 24),
+            24,
+            24,
+            24,
+            MediaQuery.of(ctx).viewInsets.bottom + 24,
+          ),
           child: Form(
             key: formKey,
             child: SingleChildScrollView(
@@ -372,29 +380,26 @@ class _PropertyDetailScreenState extends ConsumerState<PropertyDetailScreen> {
                     ),
                   ),
                   const SizedBox(height: 20),
-                  Text('New Unit',
-                      style: Theme.of(ctx).textTheme.headlineSmall),
+                  Text(l.newUnit, style: Theme.of(ctx).textTheme.headlineSmall),
                   const SizedBox(height: 20),
                   TextFormField(
                     controller: unitNumberCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Unit Number',
-                      prefixIcon: Icon(Icons.tag),
+                    decoration: InputDecoration(
+                      labelText: l.unitNumber,
+                      prefixIcon: const Icon(Icons.tag),
                     ),
-                    validator: (v) => v == null || v.trim().isEmpty
-                        ? 'Required'
-                        : null,
+                    validator: (v) =>
+                        v == null || v.trim().isEmpty ? l.required : null,
                   ),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
                     value: unitType,
-                    decoration: const InputDecoration(
-                      labelText: 'Type',
-                      prefixIcon: Icon(Icons.category_outlined),
+                    decoration: InputDecoration(
+                      labelText: l.type,
+                      prefixIcon: const Icon(Icons.category_outlined),
                     ),
                     items: unitTypes
-                        .map((t) => DropdownMenuItem(
-                            value: t, child: Text(t)))
+                        .map((t) => DropdownMenuItem(value: t, child: Text(t)))
                         .toList(),
                     onChanged: (v) =>
                         setSheetState(() => unitType = v ?? 'APARTMENT'),
@@ -403,53 +408,46 @@ class _PropertyDetailScreenState extends ConsumerState<PropertyDetailScreen> {
                   TextFormField(
                     controller: sizeCtrl,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Size (sq ft)',
-                      prefixIcon: Icon(Icons.square_foot_outlined),
+                    decoration: InputDecoration(
+                      labelText: l.sizeSqft,
+                      prefixIcon: const Icon(Icons.square_foot_outlined),
                     ),
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
                     controller: rentCtrl,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Annual Rent (AED)',
-                      prefixIcon: Icon(Icons.attach_money),
+                    decoration: InputDecoration(
+                      labelText: l.annualRent,
+                      prefixIcon: const Icon(Icons.attach_money),
                     ),
                   ),
                   const SizedBox(height: 24),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: () async {
-                        if (!formKey.currentState!.validate()) return;
-                        final service = ref.read(_unitServiceProvider);
-                        try {
-                          await service.createUnit({
-                            'unitNumber': unitNumberCtrl.text.trim(),
-                            'propertyId': widget.propertyId,
-                            'type': unitType,
-                            if (sizeCtrl.text.isNotEmpty)
-                              'size':
-                                  double.tryParse(sizeCtrl.text.trim()),
-                            if (rentCtrl.text.isNotEmpty)
-                              'annualRent':
-                                  double.tryParse(rentCtrl.text.trim()),
-                          });
-                          if (ctx.mounted) Navigator.pop(ctx);
-                          _loadData();
-                        } catch (e) {
-                          if (ctx.mounted) {
-                            ScaffoldMessenger.of(ctx).showSnackBar(
-                              const SnackBar(
-                                  content:
-                                      Text('Failed to create unit')),
-                            );
-                          }
+                  GoldButton(
+                    label: l.ar ? l.createUnit : l.createUnit.toUpperCase(),
+                    onPressed: () async {
+                      if (!formKey.currentState!.validate()) return;
+                      final service = ref.read(_unitServiceProvider);
+                      try {
+                        await service.createUnit({
+                          'unitNumber': unitNumberCtrl.text.trim(),
+                          'propertyId': widget.propertyId,
+                          'type': unitType,
+                          if (sizeCtrl.text.isNotEmpty)
+                            'size': double.tryParse(sizeCtrl.text.trim()),
+                          if (rentCtrl.text.isNotEmpty)
+                            'annualRent': double.tryParse(rentCtrl.text.trim()),
+                        });
+                        if (ctx.mounted) Navigator.pop(ctx);
+                        _loadData();
+                      } catch (e) {
+                        if (ctx.mounted) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            SnackBar(content: Text(l.createUnitFailed)),
+                          );
                         }
-                      },
-                      child: const Text('Create Unit'),
-                    ),
+                      }
+                    },
                   ),
                 ],
               ),
@@ -460,7 +458,7 @@ class _PropertyDetailScreenState extends ConsumerState<PropertyDetailScreen> {
     );
   }
 
-  void _showAddContactSheet(BuildContext context) {
+  void _showAddContactSheet(BuildContext context, _L l) {
     final nameCtrl = TextEditingController();
     final roleCtrl = TextEditingController();
     final phoneCtrl = TextEditingController();
@@ -474,7 +472,12 @@ class _PropertyDetailScreenState extends ConsumerState<PropertyDetailScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) => Padding(
-        padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(ctx).viewInsets.bottom + 24),
+        padding: EdgeInsets.fromLTRB(
+          24,
+          24,
+          24,
+          MediaQuery.of(ctx).viewInsets.bottom + 24,
+        ),
         child: Form(
           key: formKey,
           child: SingleChildScrollView(
@@ -482,38 +485,84 @@ class _PropertyDetailScreenState extends ConsumerState<PropertyDetailScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2)))),
-                const SizedBox(height: 20),
-                Text('New Contact', style: Theme.of(ctx).textTheme.headlineSmall),
-                const SizedBox(height: 20),
-                TextFormField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Name', prefixIcon: Icon(Icons.person_outline)), validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null),
-                const SizedBox(height: 16),
-                TextFormField(controller: roleCtrl, decoration: const InputDecoration(labelText: 'Role', prefixIcon: Icon(Icons.work_outline))),
-                const SizedBox(height: 16),
-                TextFormField(controller: phoneCtrl, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'Phone', prefixIcon: Icon(Icons.phone_outlined))),
-                const SizedBox(height: 16),
-                TextFormField(controller: emailCtrl, keyboardType: TextInputType.emailAddress, decoration: const InputDecoration(labelText: 'Email', prefixIcon: Icon(Icons.email_outlined))),
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: () async {
-                      if (!formKey.currentState!.validate()) return;
-                      try {
-                        await ref.read(_contactServiceProvider).createContact(widget.propertyId, {
-                          'name': nameCtrl.text.trim(),
-                          if (roleCtrl.text.isNotEmpty) 'role': roleCtrl.text.trim(),
-                          if (phoneCtrl.text.isNotEmpty) 'phone': phoneCtrl.text.trim(),
-                          if (emailCtrl.text.isNotEmpty) 'email': emailCtrl.text.trim(),
-                        });
-                        if (ctx.mounted) Navigator.pop(ctx);
-                        _loadData();
-                      } catch (e) {
-                        if (ctx.mounted) ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('Failed to add contact')));
-                      }
-                    },
-                    child: const Text('Add Contact'),
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: AppColors.border,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  l.newContact,
+                  style: Theme.of(ctx).textTheme.headlineSmall,
+                ),
+                const SizedBox(height: 20),
+                TextFormField(
+                  controller: nameCtrl,
+                  decoration: InputDecoration(
+                    labelText: l.name,
+                    prefixIcon: const Icon(Icons.person_outline),
+                  ),
+                  validator: (v) =>
+                      v == null || v.trim().isEmpty ? l.required : null,
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: roleCtrl,
+                  decoration: InputDecoration(
+                    labelText: l.role,
+                    prefixIcon: const Icon(Icons.work_outline),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: phoneCtrl,
+                  keyboardType: TextInputType.phone,
+                  decoration: InputDecoration(
+                    labelText: l.phone,
+                    prefixIcon: const Icon(Icons.phone_outlined),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: emailCtrl,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: InputDecoration(
+                    labelText: l.email,
+                    prefixIcon: const Icon(Icons.email_outlined),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                GoldButton(
+                  label: l.ar ? l.addContact : l.addContact.toUpperCase(),
+                  onPressed: () async {
+                    if (!formKey.currentState!.validate()) return;
+                    try {
+                      await ref
+                          .read(_contactServiceProvider)
+                          .createContact(widget.propertyId, {
+                            'name': nameCtrl.text.trim(),
+                            if (roleCtrl.text.isNotEmpty)
+                              'role': roleCtrl.text.trim(),
+                            if (phoneCtrl.text.isNotEmpty)
+                              'phone': phoneCtrl.text.trim(),
+                            if (emailCtrl.text.isNotEmpty)
+                              'email': emailCtrl.text.trim(),
+                          });
+                      if (ctx.mounted) Navigator.pop(ctx);
+                      _loadData();
+                    } catch (e) {
+                      if (ctx.mounted) {
+                        ScaffoldMessenger.of(ctx).showSnackBar(
+                          SnackBar(content: Text(l.addContactFailed)),
+                        );
+                      }
+                    }
+                  },
                 ),
               ],
             ),
@@ -524,69 +573,329 @@ class _PropertyDetailScreenState extends ConsumerState<PropertyDetailScreen> {
   }
 }
 
-class _InfoRow extends StatelessWidget {
-  final IconData icon;
-  final String text;
+// ─── Hero header ────────────────────────────────────────────────────────────
 
-  const _InfoRow({required this.icon, required this.text});
+class _HeroHeader extends StatelessWidget {
+  final Map<String, dynamic> property;
+  final _L l;
+  const _HeroHeader({required this.property, required this.l});
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Icon(icon, size: 16, color: Colors.white60),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            text,
-            style: const TextStyle(
-              color: Colors.white70,
-              fontSize: 13,
+    final name = property['nameEn'] ?? property['name'] ?? '';
+    final emirate = (property['emirate'] ?? '').toString().replaceAll('_', ' ');
+    return SizedBox(
+      height: 210,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // No property photo available yet — a chrome-toned gradient fills
+          // the hero in its place.
+          const DecoratedBox(
+            decoration: BoxDecoration(gradient: MiftahGradients.heroDark),
+          ),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  AppColors.primary.withValues(alpha: 0.72),
+                  AppColors.primary.withValues(alpha: 0.0),
+                  AppColors.primary.withValues(alpha: 0.6),
+                ],
+                stops: const [0, 0.46, 1],
+              ),
             ),
           ),
+          PositionedDirectional(
+            top: MediaQuery.of(context).padding.top + 4,
+            start: 8,
+            child: IconButton(
+              onPressed: () => Navigator.of(context).maybePop(),
+              icon: Icon(
+                context.isAr ? Icons.arrow_forward : Icons.arrow_back,
+                color: Colors.white.withValues(alpha: 0.85),
+              ),
+            ),
+          ),
+          PositionedDirectional(
+            start: 20,
+            end: 20,
+            bottom: 14,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  address(property, emirate),
+                  style: l.ar
+                      ? GoogleFonts.notoNaskhArabic(
+                          fontSize: 12,
+                          color: AppColors.accent,
+                        )
+                      : GoogleFonts.josefinSans(
+                          fontSize: 9,
+                          letterSpacing: 2.4,
+                          color: AppColors.accent,
+                        ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  name,
+                  style: l.ar
+                      ? GoogleFonts.notoNaskhArabic(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        )
+                      : GoogleFonts.cinzel(fontSize: 24, color: Colors.white),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String address(Map<String, dynamic> property, String emirate) {
+    final addr = property['address']?.toString() ?? '';
+    if (addr.isNotEmpty && emirate.isNotEmpty) return '$emirate · $addr';
+    return emirate.isNotEmpty ? emirate : addr;
+  }
+}
+
+// ─── Spec strip ─────────────────────────────────────────────────────────────
+
+class _SpecStrip extends StatelessWidget {
+  final int totalUnits;
+  final double occupancy;
+  final int buildingCount;
+  final String type;
+  final MiftahColors m;
+  final _L l;
+
+  const _SpecStrip({
+    required this.totalUnits,
+    required this.occupancy,
+    required this.buildingCount,
+    required this.type,
+    required this.m,
+    required this.l,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cells = [
+      (value: '$totalUnits', label: l.units),
+      (value: '${(occupancy * 100).round()}%', label: l.let),
+      (value: '$buildingCount', label: l.buildings),
+      (value: type.isEmpty ? '—' : type, label: l.type),
+    ];
+    return Container(
+      decoration: BoxDecoration(
+        color: m.surface,
+        border: Border(bottom: BorderSide(color: m.border)),
+      ),
+      child: Row(
+        children: [
+          for (var i = 0; i < cells.length; i++)
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  vertical: 12,
+                  horizontal: 6,
+                ),
+                decoration: BoxDecoration(
+                  border: BorderDirectional(
+                    end: i < cells.length - 1
+                        ? BorderSide(color: m.border)
+                        : BorderSide.none,
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      cells[i].value,
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.cinzel(
+                        fontSize: 16,
+                        color: m.textPrimary,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      l.ar ? cells[i].label : cells[i].label.toUpperCase(),
+                      textAlign: TextAlign.center,
+                      style: l.ar
+                          ? GoogleFonts.notoNaskhArabic(
+                              fontSize: 10,
+                              color: m.textMuted,
+                            )
+                          : GoogleFonts.josefinSans(
+                              fontSize: 8,
+                              letterSpacing: 1.4,
+                              color: m.textMuted,
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Section header ─────────────────────────────────────────────────────────
+
+class _SectionHeader extends StatelessWidget {
+  final String label;
+  final Widget? trailing;
+  const _SectionHeader({required this.label, this.trailing});
+
+  @override
+  Widget build(BuildContext context) {
+    final ar = context.isAr;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          ar ? label : label.toUpperCase(),
+          style: ar
+              ? GoogleFonts.notoNaskhArabic(
+                  fontSize: 13,
+                  color: AppColors.accentDark,
+                )
+              : GoogleFonts.josefinSans(
+                  fontSize: 10,
+                  letterSpacing: 2.4,
+                  color: AppColors.accentDark,
+                ),
         ),
+        ?trailing,
       ],
     );
   }
 }
 
-class _StatCard extends StatelessWidget {
-  final String label;
-  final String value;
-  final Color color;
+// ─── Unit legend + grid ─────────────────────────────────────────────────────
 
-  const _StatCard({
-    required this.label,
-    required this.value,
-    required this.color,
-  });
+class _UnitLegend extends StatelessWidget {
+  final _L l;
+  final MiftahColors m;
+  const _UnitLegend({required this.l, required this.m});
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 14),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withValues(alpha: 0.2)),
+    Widget dot(Color c, String label) => Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 7,
+          height: 7,
+          decoration: BoxDecoration(
+            color: c,
+            borderRadius: BorderRadius.circular(2),
+          ),
         ),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: l.ar
+              ? GoogleFonts.notoNaskhArabic(fontSize: 10.5, color: m.textMuted)
+              : GoogleFonts.josefinSans(fontSize: 10, color: m.textMuted),
+        ),
+      ],
+    );
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        dot(m.success, l.legendLet),
+        const SizedBox(width: 10),
+        dot(AppColors.warning, l.legendMaintenance),
+        const SizedBox(width: 10),
+        dot(m.borderStrong, l.legendVacant),
+      ],
+    );
+  }
+}
+
+class _UnitTile extends StatelessWidget {
+  final Map<String, dynamic> unit;
+  final _L l;
+  final VoidCallback onTap;
+
+  const _UnitTile({required this.unit, required this.l, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final m = context.miftah;
+    final status = unit['status'] ?? 'VACANT';
+    final topColor = switch (status) {
+      'OCCUPIED' => m.success,
+      'MAINTENANCE' => AppColors.warning,
+      _ => m.borderStrong,
+    };
+    final subLabel = switch (status) {
+      'MAINTENANCE' => l.maintenanceShort,
+      'VACANT' => l.vacantShort,
+      _ => (unit['type'] ?? '').toString(),
+    };
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        decoration: BoxDecoration(
+          color: m.surface,
+          border: Border.all(color: m.border),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        clipBehavior: Clip.antiAlias,
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
-                color: color,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 11,
-                color: color.withValues(alpha: 0.8),
+            Container(height: 3, color: topColor),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    unit['unitNumber']?.toString() ?? '-',
+                    style: GoogleFonts.cinzel(
+                      fontSize: 13,
+                      color: m.textPrimary,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subLabel,
+                    style: l.ar
+                        ? GoogleFonts.notoNaskhArabic(
+                            fontSize: 10,
+                            color: status == 'MAINTENANCE'
+                                ? AppColors.warning
+                                : m.textMuted,
+                          )
+                        : GoogleFonts.josefinSans(
+                            fontSize: 9.5,
+                            color: status == 'MAINTENANCE'
+                                ? AppColors.warning
+                                : m.textMuted,
+                          ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
               ),
             ),
           ],
@@ -596,121 +905,246 @@ class _StatCard extends StatelessWidget {
   }
 }
 
-class _UnitCard extends StatelessWidget {
-  final Map<String, dynamic> unit;
-  final VoidCallback onTap;
+// ─── Rent roll ──────────────────────────────────────────────────────────────
 
-  const _UnitCard({required this.unit, required this.onTap});
+class _RentRollCard extends StatelessWidget {
+  final List<dynamic> units;
+  final MiftahColors m;
+  final _L l;
+  const _RentRollCard({required this.units, required this.m, required this.l});
 
   @override
   Widget build(BuildContext context) {
-    final status = unit['status'] ?? 'VACANT';
-    final isOccupied = status == 'OCCUPIED';
+    double monthlyOf(bool Function(dynamic) test) => units
+        .where(test)
+        .fold<double>(
+          0,
+          (s, u) => s + (((u['annualRent'] ?? 0) as num).toDouble() / 12),
+        );
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: (isOccupied ? AppColors.info : AppColors.success)
-                      .withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(
-                  Icons.door_front_door_outlined,
-                  color: isOccupied ? AppColors.info : AppColors.success,
-                  size: 22,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text(
-                          'Unit ${unit['unitNumber'] ?? '-'}',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 14,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        StatusBadge(
-                          label: status,
-                          color: isOccupied
-                              ? AppColors.info
-                              : AppColors.success,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        if (unit['type'] != null)
-                          Text(
-                            unit['type'].toString(),
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                        if (unit['size'] != null) ...[
-                          const Text(' | ',
-                              style: TextStyle(
-                                  color: AppColors.textMuted, fontSize: 12)),
-                          Text(
-                            '${unit['size']} sq ft',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                    if (unit['renterName'] != null && isOccupied) ...[
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          const Icon(Icons.person_outline,
-                              size: 14, color: AppColors.textMuted),
-                          const SizedBox(width: 4),
-                          Text(
-                            unit['renterName'],
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              if (unit['annualRent'] != null)
-                Text(
-                  Formatters.currencyCompact(
-                      (unit['annualRent'] as num).toDouble()),
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                    color: AppColors.primary,
-                  ),
-                ),
-            ],
-          ),
+    final total = monthlyOf((_) => true);
+    final fromOccupied = monthlyOf((u) => u['status'] == 'OCCUPIED');
+    final vacantPotential = monthlyOf((u) => u['status'] == 'VACANT');
+
+    Widget row(String label, double amount, {Color? tone, bool last = false}) {
+      return Container(
+        padding: const EdgeInsets.symmetric(vertical: 9),
+        decoration: BoxDecoration(
+          border: last ? null : Border(bottom: BorderSide(color: m.divider)),
         ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              label,
+              style: l.ar
+                  ? GoogleFonts.notoNaskhArabic(
+                      fontSize: 13,
+                      color: m.textSecondary,
+                    )
+                  : GoogleFonts.josefinSans(
+                      fontSize: 13,
+                      color: m.textSecondary,
+                    ),
+            ),
+            Text(
+              Formatters.currencyCompact(amount),
+              style: GoogleFonts.cinzel(
+                fontSize: 15,
+                color: tone ?? m.textPrimary,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: BoxDecoration(
+        color: m.surface,
+        border: Border.all(color: m.border),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        children: [
+          row(l.monthlyRentRoll, total),
+          row(l.fromOccupiedUnits, fromOccupied, tone: m.success),
+          row(
+            l.vacantPotential,
+            vacantPotential,
+            tone: vacantPotential > 0 ? AppColors.warning : null,
+            last: true,
+          ),
+        ],
       ),
     );
   }
+}
+
+// ─── Contacts ───────────────────────────────────────────────────────────────
+
+class _ContactRow extends StatelessWidget {
+  final Map<String, dynamic> contact;
+  final _L l;
+  final MiftahColors m;
+  final VoidCallback onDelete;
+
+  const _ContactRow({
+    required this.contact,
+    required this.l,
+    required this.m,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: m.surface,
+        border: Border.all(color: m.border),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            backgroundColor: AppColors.accent.withValues(alpha: 0.12),
+            child: const Icon(
+              Icons.person_outline,
+              color: AppColors.accentDark,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  contact['name'] ?? l.contact,
+                  style: l.ar
+                      ? GoogleFonts.notoNaskhArabic(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: m.textPrimary,
+                        )
+                      : GoogleFonts.josefinSans(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: m.textPrimary,
+                        ),
+                ),
+                if (contact['role'] != null)
+                  Text(
+                    contact['role'],
+                    style: l.ar
+                        ? GoogleFonts.notoNaskhArabic(
+                            fontSize: 12,
+                            color: m.textSecondary,
+                          )
+                        : GoogleFonts.josefinSans(
+                            fontSize: 12,
+                            color: m.textSecondary,
+                          ),
+                  ),
+                if (contact['phone'] != null)
+                  Text(
+                    contact['phone'],
+                    style: GoogleFonts.josefinSans(
+                      fontSize: 12,
+                      color: m.textMuted,
+                    ),
+                  ),
+                if (contact['email'] != null)
+                  Text(
+                    contact['email'],
+                    style: GoogleFonts.josefinSans(
+                      fontSize: 12,
+                      color: m.textMuted,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: Icon(Icons.delete_outline, size: 18, color: m.danger),
+            onPressed: onDelete,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Screen strings (EN/AR). Lightweight per-screen pattern — see arabic-brief.
+class _L {
+  _L(this.ar);
+  final bool ar;
+
+  String get property => ar ? 'العقار' : 'Property';
+  String get loadError =>
+      ar ? 'تعذّر تحميل تفاصيل العقار' : 'Failed to load property details';
+
+  // Spec strip
+  String get units => ar ? 'الوحدات' : 'Units';
+  String get let => ar ? 'مؤجّر' : 'Let';
+  String get buildings => ar ? 'المباني' : 'Buildings';
+  String get type => ar ? 'النوع' : 'Type';
+
+  // Units section
+  String get unitsSection => ar ? 'الوحدات' : 'Units';
+  String get legendLet => ar ? 'مؤجّرة' : 'Let';
+  String get legendMaintenance => ar ? 'صيانة' : 'Maintenance';
+  String get legendVacant => ar ? 'شاغرة' : 'Vacant';
+  String get maintenanceShort => ar ? 'صيانة' : 'Maint.';
+  String get vacantShort => ar ? 'شاغرة' : 'Vacant';
+  String get noUnitsYet => ar ? 'لا توجد وحدات بعد' : 'No units yet';
+  String get addUnitsPrompt =>
+      ar ? 'أضف وحدات لهذا العقار' : 'Add units to this property';
+
+  // Rent roll
+  String get rentRollSection =>
+      ar ? 'إيرادات الإيجار · شهريًا' : 'Rent roll · monthly';
+  String get monthlyRentRoll =>
+      ar ? 'إجمالي الإيجار الشهري' : 'Monthly rent roll';
+  String get fromOccupiedUnits =>
+      ar ? 'من الوحدات المؤجّرة' : 'From occupied units';
+  String get vacantPotential =>
+      ar ? 'إمكانية الوحدات الشاغرة' : 'Vacant potential';
+
+  // Contacts / buildings
+  String get contactsSection => ar ? 'جهات الاتصال' : 'Contacts';
+  String get buildingsSection => ar ? 'المباني' : 'Buildings';
+  String get add => ar ? 'إضافة' : 'Add';
+  String get noContacts => ar ? 'لا توجد جهات اتصال' : 'No contacts';
+  String get noBuildings => ar ? 'لا توجد مبانٍ' : 'No buildings';
+  String get building => ar ? 'مبنى' : 'Building';
+  String get contact => ar ? 'جهة اتصال' : 'Contact';
+  String get deleteContact => ar ? 'حذف جهة الاتصال' : 'Delete Contact';
+  String get deleteContactConfirm =>
+      ar ? 'هل تريد إزالة جهة الاتصال هذه؟' : 'Remove this contact?';
+  String get cancel => ar ? 'إلغاء' : 'Cancel';
+  String get delete => ar ? 'حذف' : 'Delete';
+
+  // Create-unit sheet
+  String get newUnit => ar ? 'وحدة جديدة' : 'New Unit';
+  String get unitNumber => ar ? 'رقم الوحدة' : 'Unit Number';
+  String get required => ar ? 'مطلوب' : 'Required';
+  String get sizeSqft => ar ? 'المساحة (قدم مربع)' : 'Size (sq ft)';
+  String get annualRent => ar ? 'الإيجار السنوي (درهم)' : 'Annual Rent (AED)';
+  String get createUnit => ar ? 'إنشاء الوحدة' : 'Create Unit';
+  String get createUnitFailed =>
+      ar ? 'تعذّر إنشاء الوحدة' : 'Failed to create unit';
+
+  // Add-contact sheet
+  String get newContact => ar ? 'جهة اتصال جديدة' : 'New Contact';
+  String get name => ar ? 'الاسم' : 'Name';
+  String get role => ar ? 'الدور' : 'Role';
+  String get phone => ar ? 'الهاتف' : 'Phone';
+  String get email => ar ? 'البريد الإلكتروني' : 'Email';
+  String get addContact => ar ? 'إضافة جهة الاتصال' : 'Add Contact';
+  String get addContactFailed =>
+      ar ? 'تعذّر إضافة جهة الاتصال' : 'Failed to add contact';
 }

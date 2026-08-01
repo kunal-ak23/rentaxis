@@ -107,8 +107,9 @@ class _ChequeScanFlowScreenState extends ConsumerState<ChequeScanFlowScreen> {
       });
     } catch (e) {
       if (!mounted) return;
+      final ar = context.isAr;
       setState(() {
-        _extractionError = 'Extraction failed: $e';
+        _extractionError = ar ? 'تعذّرت القراءة: $e' : 'Extraction failed: $e';
       });
     }
   }
@@ -120,9 +121,8 @@ class _ChequeScanFlowScreenState extends ConsumerState<ChequeScanFlowScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (sheetCtx) => _PaymentPickerSheet(
-        service: ref.read(_paymentServiceProvider),
-      ),
+      builder: (sheetCtx) =>
+          _PaymentPickerSheet(service: ref.read(_paymentServiceProvider)),
     );
     if (picked != null && mounted) {
       setState(() {
@@ -160,8 +160,9 @@ class _ChequeScanFlowScreenState extends ConsumerState<ChequeScanFlowScreen> {
         // Backend (Spring + Jackson) deserializes OffsetDateTime strictly: a
         // string with no offset (Dart's default for non-UTC DateTime) would
         // be rejected.
-        'chequeImageUploadedAt':
-            _extracted!.uploadedAt.toUtc().toIso8601String(),
+        'chequeImageUploadedAt': _extracted!.uploadedAt
+            .toUtc()
+            .toIso8601String(),
       });
       if (disposition == Disposition.depositToday) {
         await svc.depositPayment(_selectedPaymentId!);
@@ -199,8 +200,9 @@ class _ChequeScanFlowScreenState extends ConsumerState<ChequeScanFlowScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: m.background,
       body: SafeArea(child: _buildBody()),
     );
   }
@@ -267,6 +269,11 @@ class _PaymentPickerSheetState extends State<_PaymentPickerSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final l = _PickerL(context.isAr);
+    final bodyFont = l.ar
+        ? GoogleFonts.notoNaskhArabic
+        : GoogleFonts.josefinSans;
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
       child: Column(
@@ -279,26 +286,29 @@ class _PaymentPickerSheetState extends State<_PaymentPickerSheet> {
               height: 4,
               margin: const EdgeInsets.only(bottom: 12),
               decoration: BoxDecoration(
-                color: AppColors.borderStrong,
+                color: m.borderStrong,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
           ),
           Text(
-            'Pick a pending payment',
-            style: GoogleFonts.sourceSerif4(
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-              color: AppColors.textPrimary,
-            ),
+            l.pickPayment,
+            style: l.ar
+                ? GoogleFonts.notoNaskhArabic(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: m.textPrimary,
+                  )
+                : GoogleFonts.cinzel(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: m.textPrimary,
+                  ),
           ),
           const SizedBox(height: 4),
           Text(
-            'The scanned cheque will be linked to the selected installment.',
-            style: GoogleFonts.inter(
-              fontSize: 12,
-              color: AppColors.textMuted,
-            ),
+            l.pickPaymentHint,
+            style: bodyFont(fontSize: 12, color: m.textMuted),
           ),
           const SizedBox(height: 14),
           SizedBox(
@@ -312,9 +322,8 @@ class _PaymentPickerSheetState extends State<_PaymentPickerSheet> {
                 if (snap.hasError) {
                   return Center(
                     child: Text(
-                      'Failed to load payments: ${snap.error}',
-                      style: GoogleFonts.inter(
-                          fontSize: 12, color: AppColors.danger),
+                      l.failedToLoad(snap.error.toString()),
+                      style: bodyFont(fontSize: 12, color: m.danger),
                     ),
                   );
                 }
@@ -322,15 +331,16 @@ class _PaymentPickerSheetState extends State<_PaymentPickerSheet> {
                 // sheet, which offers "Collect" for PENDING and OVERDUE.
                 final pending = (snap.data ?? const [])
                     .whereType<Map<String, dynamic>>()
-                    .where((p) =>
-                        p['status'] == 'PENDING' || p['status'] == 'OVERDUE')
+                    .where(
+                      (p) =>
+                          p['status'] == 'PENDING' || p['status'] == 'OVERDUE',
+                    )
                     .toList();
                 if (pending.isEmpty) {
                   return Center(
                     child: Text(
-                      'No pending payments to collect.',
-                      style: GoogleFonts.inter(
-                          fontSize: 13, color: AppColors.textMuted),
+                      l.noPending,
+                      style: bodyFont(fontSize: 13, color: m.textMuted),
                     ),
                   );
                 }
@@ -343,11 +353,13 @@ class _PaymentPickerSheetState extends State<_PaymentPickerSheet> {
                       onTap: () => Navigator.pop(context, p),
                       borderRadius: BorderRadius.circular(12),
                       child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 12),
+                        padding: const EdgeInsetsDirectional.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
                         decoration: BoxDecoration(
-                          color: AppColors.surface,
-                          border: Border.all(color: AppColors.border),
+                          color: m.surface,
+                          border: Border.all(color: m.border),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Row(
@@ -358,18 +370,22 @@ class _PaymentPickerSheetState extends State<_PaymentPickerSheet> {
                                 children: [
                                   Text(
                                     '${p['propertyName'] ?? '—'} · ${p['unitIdentifier'] ?? ''}',
-                                    style: GoogleFonts.inter(
+                                    style: bodyFont(
                                       fontSize: 13,
                                       fontWeight: FontWeight.w600,
-                                      color: AppColors.textPrimary,
+                                      color: m.textPrimary,
                                     ),
                                   ),
                                   const SizedBox(height: 2),
                                   Text(
-                                    '${p['renterName'] ?? ''} · Installment #${p['installmentNumber']} · Due ${_dueLabel(p['dueDate'])}',
-                                    style: GoogleFonts.inter(
+                                    l.rowMeta(
+                                      p['renterName']?.toString() ?? '',
+                                      p['installmentNumber'],
+                                      _dueLabel(p['dueDate'], l.ar),
+                                    ),
+                                    style: bodyFont(
                                       fontSize: 11,
-                                      color: AppColors.textMuted,
+                                      color: m.textMuted,
                                     ),
                                   ),
                                 ],
@@ -378,10 +394,10 @@ class _PaymentPickerSheetState extends State<_PaymentPickerSheet> {
                             const SizedBox(width: 8),
                             Text(
                               'AED ${_amount(p['amount'])}',
-                              style: GoogleFonts.jetBrainsMono(
+                              style: GoogleFonts.cinzel(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
-                                color: AppColors.textPrimary,
+                                color: m.textPrimary,
                               ),
                             ),
                           ],
@@ -398,10 +414,11 @@ class _PaymentPickerSheetState extends State<_PaymentPickerSheet> {
     );
   }
 
-  String _dueLabel(dynamic iso) {
+  String _dueLabel(dynamic iso, bool ar) {
     if (iso == null) return '—';
     final dt = DateTime.tryParse(iso.toString());
     if (dt == null) return '—';
+    if (ar) return DateFormat('d MMMM', 'ar').format(dt);
     return DateFormat('d MMM').format(dt);
   }
 
@@ -410,4 +427,23 @@ class _PaymentPickerSheetState extends State<_PaymentPickerSheet> {
     if (n == null) return '—';
     return NumberFormat('#,##0').format(n);
   }
+}
+
+/// Payment-picker sheet strings (EN/AR). Lightweight per-widget pattern —
+/// see arabic-brief.
+class _PickerL {
+  _PickerL(this.ar);
+  final bool ar;
+
+  String get pickPayment => ar ? 'اختر دفعة معلّقة' : 'Pick a pending payment';
+  String get pickPaymentHint => ar
+      ? 'سيتم ربط الشيك الممسوح بالقسط المختار.'
+      : 'The scanned cheque will be linked to the selected installment.';
+  String get noPending =>
+      ar ? 'لا توجد دفعات معلّقة للتحصيل.' : 'No pending payments to collect.';
+  String failedToLoad(String error) =>
+      ar ? 'تعذّر تحميل المدفوعات: $error' : 'Failed to load payments: $error';
+  String rowMeta(String renter, dynamic installment, String due) => ar
+      ? '$renter · القسط رقم $installment · الاستحقاق $due'
+      : '$renter · Installment #$installment · Due $due';
 }
