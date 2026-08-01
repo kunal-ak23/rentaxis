@@ -111,66 +111,59 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                         ),
                         const SizedBox(height: 16),
 
-                        // Brand mark (Arabic مفتاح)
+                        // Brand block, mirrored from the renter login so the
+                        // two apps read as one product.
                         Image.asset(
                           'assets/logo_mark.png',
-                          width: 150,
-                          fit: BoxFit.contain,
+                          width: 100,
+                          height: 100,
                         ),
                         const SizedBox(height: 16),
-
-                        // MIFTAH wordmark
                         Image.asset(
                           'assets/logo_horizontal.png',
-                          width: 196,
+                          height: 32,
                           fit: BoxFit.contain,
                         ),
-                        const SizedBox(height: 20),
-
-                        // "ADMIN CONSOLE" tracked divider
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Container(
-                                height: 1,
-                                color: AppColors.accent.withValues(alpha: 0.22),
-                              ),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                              ),
-                              child: Text(
-                                l.adminConsole,
-                                style: l.ar
-                                    ? GoogleFonts.notoNaskhArabic(
-                                        fontSize: 11,
-                                        color: AppColors.goldMid,
-                                      )
-                                    : GoogleFonts.josefinSans(
-                                        fontSize: 9.5,
-                                        letterSpacing: 3.4,
-                                        color: AppColors.goldMid,
-                                      ),
-                              ),
-                            ),
-                            Expanded(
-                              child: Container(
-                                height: 1,
-                                color: AppColors.accent.withValues(alpha: 0.22),
-                              ),
-                            ),
-                          ],
+                        const SizedBox(height: 8),
+                        Text(
+                          l.adminConsole,
+                          style: l.ar
+                              ? GoogleFonts.notoNaskhArabic(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w400,
+                                  color: AppColors.gold400.withValues(
+                                    alpha: 0.85,
+                                  ),
+                                )
+                              : GoogleFonts.josefinSans(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w400,
+                                  color: AppColors.gold400.withValues(
+                                    alpha: 0.85,
+                                  ),
+                                  letterSpacing: 1.5,
+                                ),
                         ),
-                        const SizedBox(height: 38),
+                        const SizedBox(height: 44),
 
-                        // Email field (underline style)
-                        _UnderlineField(
+                        // Email field
+                        TextFormField(
                           controller: _emailController,
-                          label: l.workEmail,
-                          ar: l.ar,
                           keyboardType: TextInputType.emailAddress,
                           textInputAction: TextInputAction.next,
+                          style:
+                              (l.ar
+                              ? GoogleFonts.notoNaskhArabic
+                              : GoogleFonts.josefinSans)(
+                                color: Colors.white,
+                                fontSize: 15,
+                              ),
+                          decoration: _inputDecoration(
+                            context,
+                            l,
+                            label: l.workEmail,
+                            icon: Icons.email_outlined,
+                          ),
                           validator: (value) {
                             if (value == null || value.trim().isEmpty) {
                               return l.emailRequired;
@@ -183,32 +176,37 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                             return null;
                           },
                         ),
-                        const SizedBox(height: 22),
+                        const SizedBox(height: 16),
 
-                        // Password field (underline style, "Show" toggle)
-                        _UnderlineField(
+                        // Password field
+                        TextFormField(
                           controller: _passwordController,
-                          label: l.password,
-                          ar: l.ar,
                           obscureText: _obscurePassword,
                           textInputAction: TextInputAction.done,
                           onFieldSubmitted: (_) => _handleLogin(),
-                          trailing: GestureDetector(
-                            onTap: () => setState(
-                              () => _obscurePassword = !_obscurePassword,
-                            ),
-                            child: Text(
-                              _obscurePassword ? l.show : l.hide,
-                              style: l.ar
-                                  ? GoogleFonts.notoNaskhArabic(
-                                      fontSize: 11,
-                                      color: AppColors.goldMid,
-                                    )
-                                  : GoogleFonts.josefinSans(
-                                      fontSize: 10,
-                                      letterSpacing: 1.4,
-                                      color: AppColors.goldMid,
-                                    ),
+                          style:
+                              (l.ar
+                              ? GoogleFonts.notoNaskhArabic
+                              : GoogleFonts.josefinSans)(
+                                color: Colors.white,
+                                fontSize: 15,
+                              ),
+                          decoration: _inputDecoration(
+                            context,
+                            l,
+                            label: l.password,
+                            icon: Icons.lock_outlined,
+                            suffixIcon: IconButton(
+                              icon: Icon(
+                                _obscurePassword
+                                    ? Icons.visibility_off_outlined
+                                    : Icons.visibility_outlined,
+                                color: Colors.white.withValues(alpha: 0.45),
+                                size: 20,
+                              ),
+                              onPressed: () => setState(
+                                () => _obscurePassword = !_obscurePassword,
+                              ),
                             ),
                           ),
                           validator: (value) {
@@ -391,6 +389,62 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       ),
     );
   }
+
+  InputDecoration _inputDecoration(
+    BuildContext context,
+    _L l, {
+    required String label,
+    required IconData icon,
+    Widget? suffixIcon,
+  }) {
+    // Mirrors the renter login: the form sits on dark chrome, so the label
+    // stays inline (a floating label would clip over the pill border) and the
+    // fill comes from the dark surface, not the light theme's white.
+    final labelStyle =
+        (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans)(
+          color: Colors.white.withValues(alpha: 0.45),
+          fontSize: 14,
+        );
+    return InputDecoration(
+      labelText: label,
+      floatingLabelBehavior: FloatingLabelBehavior.never,
+      floatingLabelStyle: (l.ar
+          ? GoogleFonts.notoNaskhArabic
+          : GoogleFonts.josefinSans)(color: AppColors.accent, fontSize: 13),
+      labelStyle: labelStyle,
+      prefixIcon: Icon(
+        icon,
+        color: Colors.white.withValues(alpha: 0.45),
+        size: 20,
+      ),
+      suffixIcon: suffixIcon,
+      filled: true,
+      fillColor: Colors.white.withValues(alpha: 0.06),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: AppColors.accent.withValues(alpha: 0.25)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: AppColors.accent.withValues(alpha: 0.25)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: AppColors.accent, width: 1.5),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: AppColorsDark.danger),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: AppColorsDark.danger, width: 1.5),
+      ),
+      errorStyle: (l.ar
+          ? GoogleFonts.notoNaskhArabic
+          : GoogleFonts.josefinSans)(color: AppColorsDark.danger, fontSize: 12),
+    );
+  }
 }
 
 /// Sign-in loading state: a thin sweeping bar rendered dark-on-gold inside
@@ -465,106 +519,6 @@ class _SigningInBarState extends State<_SigningInBar>
   }
 }
 
-/// Underline-style field per design 1j: uppercase tracked label above a
-/// hairline-bottom-bordered input, optional trailing action (e.g. "Show").
-class _UnderlineField extends StatelessWidget {
-  final TextEditingController controller;
-  final String label;
-  final bool ar;
-  final bool obscureText;
-  final TextInputType? keyboardType;
-  final TextInputAction? textInputAction;
-  final ValueChanged<String>? onFieldSubmitted;
-  final String? Function(String?)? validator;
-  final Widget? trailing;
-
-  const _UnderlineField({
-    required this.controller,
-    required this.label,
-    required this.ar,
-    this.obscureText = false,
-    this.keyboardType,
-    this.textInputAction,
-    this.onFieldSubmitted,
-    this.validator,
-    this.trailing,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: ar
-              ? GoogleFonts.notoNaskhArabic(
-                  fontSize: 11,
-                  color: Colors.white.withValues(alpha: 0.4),
-                )
-              : GoogleFonts.josefinSans(
-                  fontSize: 9,
-                  letterSpacing: 2.0,
-                  color: Colors.white.withValues(alpha: 0.4),
-                ),
-        ),
-        Row(
-          children: [
-            Expanded(
-              child: TextFormField(
-                controller: controller,
-                obscureText: obscureText,
-                keyboardType: keyboardType,
-                textInputAction: textInputAction,
-                onFieldSubmitted: onFieldSubmitted,
-                validator: validator,
-                style: (ar
-                    ? GoogleFonts.notoNaskhArabic
-                    : GoogleFonts
-                          .josefinSans)(fontSize: 14.5, color: Colors.white),
-                decoration: InputDecoration(
-                  isDense: true,
-                  contentPadding: const EdgeInsets.symmetric(vertical: 9),
-                  border: UnderlineInputBorder(
-                    borderSide: BorderSide(
-                      color: AppColors.accent.withValues(alpha: 0.3),
-                    ),
-                  ),
-                  enabledBorder: UnderlineInputBorder(
-                    borderSide: BorderSide(
-                      color: AppColors.accent.withValues(alpha: 0.3),
-                    ),
-                  ),
-                  focusedBorder: const UnderlineInputBorder(
-                    borderSide: BorderSide(color: AppColors.accent, width: 1.5),
-                  ),
-                  errorBorder: UnderlineInputBorder(
-                    borderSide: BorderSide(color: AppColorsDark.danger),
-                  ),
-                  focusedErrorBorder: UnderlineInputBorder(
-                    borderSide: BorderSide(
-                      color: AppColorsDark.danger,
-                      width: 1.5,
-                    ),
-                  ),
-                  errorStyle:
-                      (ar
-                      ? GoogleFonts.notoNaskhArabic
-                      : GoogleFonts.josefinSans)(
-                        color: AppColorsDark.danger,
-                        fontSize: 11.5,
-                      ),
-                ),
-              ),
-            ),
-            if (trailing != null) ...[const SizedBox(width: 10), trailing!],
-          ],
-        ),
-      ],
-    );
-  }
-}
-
 /// Screen strings (EN/AR). Lightweight per-screen pattern — see arabic-brief.
 class _L {
   _L(this.ar);
@@ -573,8 +527,6 @@ class _L {
   String get adminConsole => ar ? 'وحدة تحكم الإدارة' : 'Admin Console';
   String get workEmail => ar ? 'البريد الإلكتروني للعمل' : 'Work email';
   String get password => ar ? 'كلمة المرور' : 'Password';
-  String get show => ar ? 'إظهار' : 'Show';
-  String get hide => ar ? 'إخفاء' : 'Hide';
   String get emailRequired =>
       ar ? 'البريد الإلكتروني مطلوب' : 'Email is required';
   String get emailInvalid =>
