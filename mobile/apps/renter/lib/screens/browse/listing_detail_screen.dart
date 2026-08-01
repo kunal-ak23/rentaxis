@@ -744,11 +744,17 @@ class _AmenitiesGrid extends StatelessWidget {
               ),
               child: Text(
                 label,
-                style: GoogleFonts.josefinSans(
-                  fontSize: 11.5,
-                  letterSpacing: 0.6,
-                  color: m.textPrimary,
-                ),
+                // Naskh + no tracking for Arabic labels (joining).
+                style: context.isAr
+                    ? GoogleFonts.notoNaskhArabic(
+                        fontSize: 12,
+                        color: m.textPrimary,
+                      )
+                    : GoogleFonts.josefinSans(
+                        fontSize: 11.5,
+                        letterSpacing: 0.6,
+                        color: m.textPrimary,
+                      ),
               ),
             );
           }).toList(),

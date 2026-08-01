@@ -636,18 +636,30 @@ class _StatusDot extends StatelessWidget {
   final String status;
   const _StatusDot({required this.status});
 
-  static const _clearedLike = {'CLEARED', 'COLLECTED', 'DEPOSITED'};
+  static const _inClearing = {'COLLECTED', 'DEPOSITED'};
   static const _dangerLike = {'OVERDUE', 'BOUNCED'};
 
   @override
   Widget build(BuildContext context) {
     final m = context.miftah;
 
-    if (_clearedLike.contains(status)) {
+    if (status == 'CLEARED') {
       return Container(
         width: 11,
         height: 11,
         decoration: BoxDecoration(shape: BoxShape.circle, color: m.success),
+      );
+    }
+    // Bronze while the cheque is still in clearing — matches the pill; only
+    // fully cleared cheques earn the settled green.
+    if (_inClearing.contains(status)) {
+      return Container(
+        width: 11,
+        height: 11,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: m.isDark ? AppColors.goldMid : AppColors.accentDark,
+        ),
       );
     }
     if (_dangerLike.contains(status)) {

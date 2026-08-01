@@ -2,12 +2,10 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
-import '../utils/formatters.dart';
 import '../utils/l10n.dart';
 import 'distance_chip.dart';
 import 'price_label.dart';
 import 'shimmer_loading.dart';
-import 'status_badge.dart';
 
 /// Screen strings (EN/AR). Lightweight per-widget pattern — see arabic-brief.
 class _L {
