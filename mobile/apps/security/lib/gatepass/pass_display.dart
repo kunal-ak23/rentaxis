@@ -70,10 +70,12 @@ String formatWindow(DateTime? from, DateTime? to, {bool ar = false}) {
 
   final sameDay =
       from.year == to.year && from.month == to.month && from.day == to.day;
+  // LTR-isolate the range so from/to keep their order inside RTL text: the
+  // range is all weak-directional characters (digits, dash) otherwise.
   if (sameDay) {
-    return '${timeFormat.format(from)} – ${timeFormat.format(to)}';
+    return '\u2066${timeFormat.format(from)} – ${timeFormat.format(to)}\u2069';
   }
-  return '${dayTimeFormat.format(from)} – ${dayTimeFormat.format(to)}';
+  return '\u2066${dayTimeFormat.format(from)} – ${dayTimeFormat.format(to)}\u2069';
 }
 
 /// Short label for the day a window falls on, used to head a visitor row that is

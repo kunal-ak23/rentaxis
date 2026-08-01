@@ -159,7 +159,7 @@ class _LeasePenaltiesScreenState extends ConsumerState<LeasePenaltiesScreen> {
             TextField(
               controller: reasonCtrl,
               maxLines: 2,
-              textAlign: l.ar ? TextAlign.right : TextAlign.left,
+              textAlign: TextAlign.start,
               style: _body(l.ar),
               decoration: InputDecoration(
                 hintText: l.waiveReasonHint,
@@ -495,8 +495,9 @@ class _L {
       case 'WAIVED':
         return ar ? 'معفوة' : 'WAIVED';
       case 'CLEARED':
-      case 'PAID':
         return ar ? 'مسددة' : 'CLEARED';
+      case 'PAID':
+        return ar ? 'مدفوعة' : 'PAID';
       default:
         return status;
     }

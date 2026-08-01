@@ -21,9 +21,9 @@ import 'package:rentaxis_core/rentaxis_core.dart';
 /// Do not reach for a credential here; it is deliberately not in this payload.
 final expectedTodayProvider =
     FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
-  final service = ref.watch(gatePassServiceProvider);
-  return _asRows(await service.expectedToday());
-});
+      final service = ref.watch(gatePassServiceProvider);
+      return _asRows(await service.expectedToday());
+    });
 
 /// The guard's own posting: `{id, name}` rows, one per assigned property.
 ///
@@ -36,16 +36,16 @@ final expectedTodayProvider =
 /// (SOW §3.1). See `GatePassApiService.myProperties`.
 final myPropertiesProvider =
     FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
-  final service = ref.watch(gatePassServiceProvider);
-  return _asRows(await service.myProperties());
-});
+      final service = ref.watch(gatePassServiceProvider);
+      return _asRows(await service.myProperties());
+    });
 
 /// Passes awaiting approval at the guard's assigned properties.
 final approvalsProvider =
     FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
-  final service = ref.watch(gatePassServiceProvider);
-  return _asRows(await service.approvals());
-});
+      final service = ref.watch(gatePassServiceProvider);
+      return _asRows(await service.approvals());
+    });
 
 /// Narrows the `List<dynamic>` Dio hands back.
 ///

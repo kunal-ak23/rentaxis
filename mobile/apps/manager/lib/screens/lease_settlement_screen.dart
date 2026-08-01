@@ -1606,7 +1606,7 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
           controller: _notesController,
           enabled: !readOnly,
           maxLines: 4,
-          textAlign: l.ar ? TextAlign.right : TextAlign.left,
+          textAlign: TextAlign.start,
           style: _body(l.ar),
           decoration: InputDecoration(
             hintText: readOnly

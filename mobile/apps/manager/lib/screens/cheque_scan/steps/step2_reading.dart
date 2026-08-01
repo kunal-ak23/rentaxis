@@ -253,9 +253,14 @@ class _FieldRow extends StatelessWidget {
           Text(label, style: bodyFont(fontSize: 12, color: m.textMuted)),
           const Spacer(),
           if (hasError)
-            Text(
-              errorText ?? l.failed,
-              style: bodyFont(fontSize: 12, color: m.danger),
+            Flexible(
+              child: Text(
+                errorText ?? l.failed,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.end,
+                style: bodyFont(fontSize: 12, color: m.danger),
+              ),
             )
           else ...[
             Text(

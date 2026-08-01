@@ -118,12 +118,18 @@ class _WalkInScreenState extends ConsumerState<WalkInScreen> {
   }
 
   Future<void> _takePhoto() async {
-    final image = await _picker.pickImage(
-      source: ImageSource.camera,
-      imageQuality: 78,
-      maxWidth: 1280,
-    );
-    if (image != null && mounted) setState(() => _photo = image);
+    try {
+      final image = await _picker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 78,
+        maxWidth: 1280,
+      );
+      if (image != null && mounted) setState(() => _photo = image);
+    } catch (_) {
+      // Denied camera permission or a platform failure: tell the guard
+      // instead of silently doing nothing.
+      if (mounted) _snack(_L(context.isAr).cameraUnavailable);
+    }
   }
 
   Future<void> _submit() async {
@@ -375,6 +381,9 @@ class _WalkInScreenState extends ConsumerState<WalkInScreen> {
 class _L {
   _L(this.ar);
   final bool ar;
+  String get cameraUnavailable => ar
+      ? 'تعذّر فتح الكاميرا. تحقق من صلاحية الكاميرا في الإعدادات.'
+      : 'Could not open the camera. Check camera permission in Settings.';
 
   String get newWalkIn => ar ? 'زيارة بدون تصريح جديدة' : 'New walk-in visitor';
   String get loadPropertiesFailed => ar

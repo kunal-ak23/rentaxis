@@ -317,7 +317,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
           keyboardType: TextInputType.number,
           decoration: InputDecoration(
             labelText: l.estimatedHours,
-            hintText: 'e.g. 24',
+            hintText: l.ar ? 'مثال: 24' : 'e.g. 24',
           ),
         ),
         actions: [
@@ -676,8 +676,8 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
             children: [
               IconButton(
                 onPressed: () => Navigator.of(context).maybePop(),
-                icon: const Icon(
-                  Icons.chevron_left,
+                icon: Icon(
+                  l.ar ? Icons.chevron_right : Icons.chevron_left,
                   color: AppColors.accent,
                   size: 26,
                 ),

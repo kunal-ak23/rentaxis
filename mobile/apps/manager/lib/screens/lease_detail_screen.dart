@@ -627,7 +627,7 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
                 child: Padding(
                   padding: const EdgeInsets.all(4),
                   child: Icon(
-                    Icons.arrow_back,
+                    l.ar ? Icons.arrow_forward : Icons.arrow_back,
                     size: 18,
                     color: Colors.white.withValues(alpha: 0.6),
                   ),
@@ -668,7 +668,7 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
                   ),
                   onSelected: (v) {
                     if (v == 'terminate') {
-                      context.push('/leases/${lease['id']}/settlement');
+                      context.push('/leases/${widget.leaseId}/settlement');
                     }
                     if (v == 'extend') _showExtendDialog();
                   },
@@ -753,8 +753,11 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
       case 'ACTIVE':
         return AppColors.success;
       case 'NOTICE_GIVEN':
-      case 'EXPIRED':
         return AppColors.warning;
+      // Matches the shared StatusHelper convention: an expired term is a
+      // settled fact, not an amber "needs attention" state.
+      case 'EXPIRED':
+        return AppColors.textMuted;
       case 'TERMINATED':
         return AppColors.danger;
       case 'DRAFT':
@@ -806,6 +809,23 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
               ),
             ],
           ),
+          if (lease['monthlyRent'] != null) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(Icons.payments_outlined, size: 14, color: m.textMuted),
+                const SizedBox(width: 6),
+                Text(
+                  l.monthlyRentLine(
+                    Formatters.currency(
+                      (lease['monthlyRent'] as num).toDouble(),
+                    ),
+                  ),
+                  style: _body(l.ar, size: 12.5, color: m.textSecondary),
+                ),
+              ],
+            ),
+          ],
           Divider(height: 24, color: m.divider),
           Row(
             children: [
@@ -1324,41 +1344,6 @@ class _ChequeTimelineRow extends StatelessWidget {
                   l.bouncedReason(payment['failureReason']?.toString()),
                   style: _body(l.ar, size: 11.5, color: m.danger),
                 ),
-                if (onTap != null) ...[
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: onTap,
-                          child: Container(
-                            alignment: Alignment.center,
-                            padding: const EdgeInsets.symmetric(vertical: 8),
-                            decoration: BoxDecoration(
-                              gradient: MiftahGradients.gold,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Text(
-                              l.ar ? l.markCheque : l.markCheque.toUpperCase(),
-                              style: l.ar
-                                  ? GoogleFonts.notoNaskhArabic(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w600,
-                                      color: AppColors.primary,
-                                    )
-                                  : GoogleFonts.josefinSans(
-                                      fontSize: 10,
-                                      letterSpacing: 1,
-                                      fontWeight: FontWeight.w600,
-                                      color: AppColors.primary,
-                                    ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
               ],
             ),
           )
@@ -1647,6 +1632,8 @@ class _L {
 
   String get renter => ar ? 'المستأجر' : 'RENTER';
   String get annualRent => ar ? 'الإيجار السنوي' : 'ANNUAL RENT';
+  String monthlyRentLine(String amount) =>
+      ar ? 'الإيجار الشهري: $amount' : 'Monthly rent: $amount';
   String get adminFee => ar ? 'رسوم إدارية' : 'ADMIN FEE';
   String get parkingRemote => ar ? 'ريموت موقف السيارات' : 'PARKING REMOTE';
   String agreementDate(String date) =>

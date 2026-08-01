@@ -497,14 +497,20 @@ class _NeedsAttention extends StatelessWidget {
                       color: AppColors.accentDark,
                     ),
             ),
-            Text(
-              l.itemsCount(tasks.length),
-              style: l.ar
-                  ? GoogleFonts.notoNaskhArabic(
-                      fontSize: 11,
-                      color: m.textMuted,
-                    )
-                  : GoogleFonts.josefinSans(fontSize: 11, color: m.textMuted),
+            InkWell(
+              onTap: () => context.go('/payments'),
+              child: Text(
+                l.itemsCount(tasks.length),
+                style: l.ar
+                    ? GoogleFonts.notoNaskhArabic(
+                        fontSize: 11,
+                        color: AppColors.accentDark,
+                      )
+                    : GoogleFonts.josefinSans(
+                        fontSize: 11,
+                        color: AppColors.accentDark,
+                      ),
+              ),
             ),
           ],
         ),

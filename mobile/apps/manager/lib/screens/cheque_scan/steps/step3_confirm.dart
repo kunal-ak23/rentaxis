@@ -505,28 +505,38 @@ class _MatchCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 14),
+                // Expanded stats so long Arabic month names can't overflow
+                // the card on narrow screens.
                 Row(
                   children: [
-                    _MatchStat(
-                      label: l.installment,
-                      value: '#${matchedPayment!['installmentNumber'] ?? '—'}',
-                      l: l,
-                    ),
-                    const SizedBox(width: 14),
-                    _MatchStat(
-                      label: l.due,
-                      value: _formatDueDate(
-                        matchedPayment!['dueDate']?.toString(),
-                        l,
+                    Expanded(
+                      child: _MatchStat(
+                        label: l.installment,
+                        value:
+                            '#${matchedPayment!['installmentNumber'] ?? '—'}',
+                        l: l,
                       ),
-                      l: l,
                     ),
                     const SizedBox(width: 14),
-                    _MatchStat(
-                      label: l.expected,
-                      value: 'AED ${_formatAmount(matchedPayment!['amount'])}',
-                      gold: true,
-                      l: l,
+                    Expanded(
+                      child: _MatchStat(
+                        label: l.due,
+                        value: _formatDueDate(
+                          matchedPayment!['dueDate']?.toString(),
+                          l,
+                        ),
+                        l: l,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: _MatchStat(
+                        label: l.expected,
+                        value:
+                            'AED ${_formatAmount(matchedPayment!['amount'])}',
+                        gold: true,
+                        l: l,
+                      ),
                     ),
                   ],
                 ),

@@ -80,6 +80,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
   }
 
   Future<void> _submit() async {
+    final ar = context.isAr;
     if (_isSubmitting) return; // auto-submit must not double-fire
     final code = _codeController.text;
     if (code.length != 6) return;
@@ -104,7 +105,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
         await ref.read(phoneAuthServiceProvider).signOut();
       }
     } catch (error) {
-      _verifyError = describePhoneAuthError(error);
+      _verifyError = describePhoneAuthError(error, ar: ar);
     }
 
     if (!mounted) return;
@@ -125,6 +126,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
   }
 
   Future<void> _resend() async {
+    final ar = context.isAr;
     if (_isResending || _secondsRemaining > 0) return;
 
     setState(() {
@@ -157,7 +159,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
       }
     } catch (error) {
       if (!mounted) return;
-      setState(() => _resendError = describePhoneAuthError(error));
+      setState(() => _resendError = describePhoneAuthError(error, ar: ar));
       _startCooldown();
     } finally {
       if (mounted) setState(() => _isResending = false);

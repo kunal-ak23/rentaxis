@@ -414,12 +414,12 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
                 : GoogleFonts.cinzel(fontSize: 23, color: AppColors.gold400),
           ),
           const SizedBox(height: 14),
-          Row(
+          Wrap(
+            spacing: 7,
+            runSpacing: 7,
             children: [
               _CountChip(label: l.urgent(urgentCount), emphasize: true),
-              const SizedBox(width: 7),
               _CountChip(label: l.open(openCount)),
-              const SizedBox(width: 7),
               _CountChip(label: l.assigned(assignedCount)),
             ],
           ),

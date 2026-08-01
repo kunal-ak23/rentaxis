@@ -515,10 +515,23 @@ class _LeaseCard extends StatelessWidget {
                           ),
                         ),
                 ),
+                if (hasBounced) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    width: 7,
+                    height: 7,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: m.danger,
+                    ),
+                  ),
+                ],
                 const SizedBox(width: 8),
                 Text(
                   total > 0
-                      ? l.chequesCleared(cleared, total)
+                      ? (expiry.isNotEmpty
+                            ? '${l.chequesCleared(cleared, total)} · $expiry'
+                            : l.chequesCleared(cleared, total))
                       : (expiry.isNotEmpty ? expiry : ''),
                   style: l.ar
                       ? GoogleFonts.notoNaskhArabic(
@@ -560,8 +573,9 @@ class _ChequeProgressBar extends StatelessWidget {
             margin: EdgeInsetsDirectional.only(end: i == total - 1 ? 0 : 4),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(999),
-              gradient: isCleared ? MiftahGradients.gold : null,
-              color: isCleared ? null : m.surfaceDim,
+              // Green = cleared, per the shared status convention (gold would
+              // read as neutral chrome / collected-in-transit).
+              color: isCleared ? m.success : m.surfaceDim,
             ),
           ),
         );
@@ -681,9 +695,14 @@ class _L {
     }
   }
 
-  // Arabic numeral–noun agreement for "N days left".
+  // Arabic numeral–noun agreement for "N days left"; EN tiers to m/y for
+  // readability like the pre-rebrand label did.
   String daysLeft(int n) {
-    if (!ar) return '${n}d left';
+    if (!ar) {
+      if (n < 31) return '${n}d left';
+      if (n < 365) return '${n ~/ 30}m left';
+      return '${n ~/ 365}y left';
+    }
     if (n == 1) return 'يوم واحد متبقٍ';
     if (n == 2) return 'يومان متبقيان';
     if (n >= 3 && n <= 10) return '$n أيام متبقية';

@@ -156,11 +156,16 @@ class MoreScreen extends ConsumerWidget {
                 Center(
                   child: Text(
                     l.versionFooter,
-                    style: GoogleFonts.josefinSans(
-                      fontSize: 10.5,
-                      letterSpacing: l.ar ? 0 : 2.0,
-                      color: m.textMuted,
-                    ),
+                    style: l.ar
+                        ? GoogleFonts.notoNaskhArabic(
+                            fontSize: 11.5,
+                            color: m.textMuted,
+                          )
+                        : GoogleFonts.josefinSans(
+                            fontSize: 10.5,
+                            letterSpacing: 2.0,
+                            color: m.textMuted,
+                          ),
                   ),
                 ),
                 const SizedBox(height: 16),

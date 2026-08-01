@@ -43,6 +43,7 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
   }
 
   Future<void> _requestCode() async {
+    final ar = context.isAr;
     // Client-side E.164 check first so Firebase receives the canonical number
     // stored on the guard record.
     if (!_formKey.currentState!.validate()) return;
@@ -73,7 +74,7 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
       }
     } catch (error) {
       if (!mounted) return;
-      setState(() => _errorMessage = describePhoneAuthError(error));
+      setState(() => _errorMessage = describePhoneAuthError(error, ar: ar));
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }

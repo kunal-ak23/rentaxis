@@ -337,7 +337,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     return Padding(
       padding: const EdgeInsetsDirectional.only(start: 4, bottom: 10),
       child: Text(
-        text.toUpperCase(),
+        ar ? text : text.toUpperCase(),
         style: _body(
           ar,
           size: 11,

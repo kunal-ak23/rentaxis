@@ -97,10 +97,15 @@ class _PropertyDetailScreenState extends ConsumerState<PropertyDetailScreen> {
     }
 
     if (_error != null || _property == null) {
+      // A clean-but-empty response means the property is gone, not that the
+      // request failed — say so instead of a misleading "failed to load".
+      final notFound = _error == null && _property == null;
       return Scaffold(
         backgroundColor: m.background,
         appBar: AppBar(title: Text(l.property)),
-        body: ErrorState(message: l.loadError, onRetry: _loadData),
+        body: notFound
+            ? EmptyState(icon: Icons.apartment_outlined, title: l.notFound)
+            : ErrorState(message: l.loadError, onRetry: _loadData),
       );
     }
 
@@ -1084,6 +1089,7 @@ class _L {
   final bool ar;
 
   String get property => ar ? 'العقار' : 'Property';
+  String get notFound => ar ? 'العقار غير موجود' : 'Property not found';
   String get loadError =>
       ar ? 'تعذّر تحميل تفاصيل العقار' : 'Failed to load property details';
 
