@@ -815,13 +815,15 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
               children: [
                 Icon(Icons.payments_outlined, size: 14, color: m.textMuted),
                 const SizedBox(width: 6),
-                Text(
-                  l.monthlyRentLine(
-                    Formatters.currency(
-                      (lease['monthlyRent'] as num).toDouble(),
+                Expanded(
+                  child: Text(
+                    l.monthlyRentLine(
+                      Formatters.currency(
+                        (lease['monthlyRent'] as num).toDouble(),
+                      ),
                     ),
+                    style: _body(l.ar, size: 12.5, color: m.textSecondary),
                   ),
-                  style: _body(l.ar, size: 12.5, color: m.textSecondary),
                 ),
               ],
             ),

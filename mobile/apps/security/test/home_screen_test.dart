@@ -27,22 +27,25 @@ void main() {
   setUp(stubSecureStorage);
 
   group('Visitors board', () {
-    testWidgets('renders each expected guest with unit and time window',
-        (tester) async {
+    testWidgets('renders each expected guest with unit and time window', (
+      tester,
+    ) async {
       await pumpHome(
         tester,
-        gatePass: FakeGatePassService(expectedTodayRows: [
-          summaryFixture(
-            id: 'pass-1',
-            guestName: 'Ahmed Khan',
-            unitNumber: '101',
-          ),
-          summaryFixture(
-            id: 'pass-2',
-            guestName: 'Priya Nair',
-            unitNumber: '204',
-          ),
-        ]),
+        gatePass: FakeGatePassService(
+          expectedTodayRows: [
+            summaryFixture(
+              id: 'pass-1',
+              guestName: 'Ahmed Khan',
+              unitNumber: '101',
+            ),
+            summaryFixture(
+              id: 'pass-2',
+              guestName: 'Priya Nair',
+              unitNumber: '204',
+            ),
+          ],
+        ),
       );
 
       expect(find.text('Ahmed Khan'), findsOneWidget);
@@ -54,18 +57,21 @@ void main() {
       expect(find.textContaining('–'), findsNWidgets(2));
     });
 
-    testWidgets('shows a vehicle chip only for the guest who has one',
-        (tester) async {
+    testWidgets('shows a vehicle chip only for the guest who has one', (
+      tester,
+    ) async {
       await pumpHome(
         tester,
-        gatePass: FakeGatePassService(expectedTodayRows: [
-          summaryFixture(id: 'pass-1', guestName: 'Ahmed Khan'),
-          summaryFixture(
-            id: 'pass-2',
-            guestName: 'Priya Nair',
-            vehicleNumber: 'DXB 4412',
-          ),
-        ]),
+        gatePass: FakeGatePassService(
+          expectedTodayRows: [
+            summaryFixture(id: 'pass-1', guestName: 'Ahmed Khan'),
+            summaryFixture(
+              id: 'pass-2',
+              guestName: 'Priya Nair',
+              vehicleNumber: 'DXB 4412',
+            ),
+          ],
+        ),
       );
 
       expect(find.text('DXB 4412'), findsOneWidget);
@@ -76,20 +82,22 @@ void main() {
         'than one', (tester) async {
       await pumpHome(
         tester,
-        gatePass: FakeGatePassService(expectedTodayRows: [
-          summaryFixture(
-            id: 'pass-1',
-            propertyId: 'aaaaaaaa-1111-2222-3333-444444444444',
-            propertyName: 'Marina Heights',
-            guestName: 'Ahmed Khan',
-          ),
-          summaryFixture(
-            id: 'pass-2',
-            propertyId: 'bbbbbbbb-1111-2222-3333-444444444444',
-            propertyName: 'Jumeirah Gardens',
-            guestName: 'Priya Nair',
-          ),
-        ]),
+        gatePass: FakeGatePassService(
+          expectedTodayRows: [
+            summaryFixture(
+              id: 'pass-1',
+              propertyId: 'aaaaaaaa-1111-2222-3333-444444444444',
+              propertyName: 'Marina Heights',
+              guestName: 'Ahmed Khan',
+            ),
+            summaryFixture(
+              id: 'pass-2',
+              propertyId: 'bbbbbbbb-1111-2222-3333-444444444444',
+              propertyName: 'Jumeirah Gardens',
+              guestName: 'Priya Nair',
+            ),
+          ],
+        ),
       );
 
       // The building's own name is the whole point: a guard walking between two
@@ -99,43 +107,50 @@ void main() {
       expect(find.textContaining('Property 1'), findsNothing);
     });
 
-    testWidgets('falls back to the id fragment when a group carries no name',
-        (tester) async {
+    testWidgets('falls back to the id fragment when a group carries no name', (
+      tester,
+    ) async {
       await pumpHome(
         tester,
-        gatePass: FakeGatePassService(expectedTodayRows: [
-          summaryFixture(
-            id: 'pass-1',
-            propertyId: 'aaaaaaaa-1111-2222-3333-444444444444',
-            guestName: 'Ahmed Khan',
-          ),
-          summaryFixture(
-            id: 'pass-2',
-            propertyId: 'bbbbbbbb-1111-2222-3333-444444444444',
-            guestName: 'Priya Nair',
-          ),
-        ]),
+        gatePass: FakeGatePassService(
+          expectedTodayRows: [
+            summaryFixture(
+              id: 'pass-1',
+              propertyId: 'aaaaaaaa-1111-2222-3333-444444444444',
+              guestName: 'Ahmed Khan',
+            ),
+            summaryFixture(
+              id: 'pass-2',
+              propertyId: 'bbbbbbbb-1111-2222-3333-444444444444',
+              guestName: 'Priya Nair',
+            ),
+          ],
+        ),
       );
 
       expect(find.textContaining('Property 1'), findsOneWidget);
       expect(find.textContaining('Property 2'), findsOneWidget);
     });
 
-    testWidgets('a single-property guard gets no group headings',
-        (tester) async {
+    testWidgets('a single-property guard gets no group headings', (
+      tester,
+    ) async {
       await pumpHome(
         tester,
-        gatePass: FakeGatePassService(expectedTodayRows: [
-          summaryFixture(id: 'pass-1', propertyId: 'prop-1'),
-          summaryFixture(id: 'pass-2', propertyId: 'prop-1'),
-        ]),
+        gatePass: FakeGatePassService(
+          expectedTodayRows: [
+            summaryFixture(id: 'pass-1', propertyId: 'prop-1'),
+            summaryFixture(id: 'pass-2', propertyId: 'prop-1'),
+          ],
+        ),
       );
 
       expect(find.textContaining('Property 1'), findsNothing);
     });
 
-    testWidgets('an empty board on a posted guard reads as a quiet day',
-        (tester) async {
+    testWidgets('an empty board on a posted guard reads as a quiet day', (
+      tester,
+    ) async {
       await pumpHome(
         tester,
         gatePass: FakeGatePassService(
@@ -146,14 +161,15 @@ void main() {
         ),
       );
 
-      expect(find.text('No visitors expected today'), findsOneWidget);
+      expect(find.text('NO VISITORS EXPECTED TODAY'), findsOneWidget);
       // This guard IS posted, so the "go and ask your manager" hedge must be gone
       // — it is the wrong advice, and it teaches guards to ignore the real one.
       expect(find.textContaining('assigned to a property'), findsNothing);
     });
 
-    testWidgets('an empty board on an unposted guard says so plainly',
-        (tester) async {
+    testWidgets('an empty board on an unposted guard says so plainly', (
+      tester,
+    ) async {
       await pumpHome(
         tester,
         gatePass: FakeGatePassService(
@@ -165,32 +181,34 @@ void main() {
       // The case that used to be indistinguishable from a quiet day. A guard with
       // no posting will never see a visitor, and must be told to act rather than
       // wait.
-      expect(find.text('No properties assigned'), findsOneWidget);
+      expect(find.text('NO PROPERTIES ASSIGNED'), findsOneWidget);
       expect(find.textContaining('Ask your manager'), findsOneWidget);
-      expect(find.text('No visitors expected today'), findsNothing);
+      expect(find.text('NO VISITORS EXPECTED TODAY'), findsNothing);
     });
 
     testWidgets(
-        'an empty board falls back to the hedged copy when the postings fail',
-        (tester) async {
-      await pumpHome(
-        tester,
-        gatePass: FakeGatePassService(
-          expectedTodayRows: [],
-          myPropertiesError: StateError('postings unavailable'),
-        ),
-      );
+      'an empty board falls back to the hedged copy when the postings fail',
+      (tester) async {
+        await pumpHome(
+          tester,
+          gatePass: FakeGatePassService(
+            expectedTodayRows: [],
+            myPropertiesError: StateError('postings unavailable'),
+          ),
+        );
 
-      // Knowing "nothing is expected" without knowing why is exactly what the old
-      // wording was for. It must not harden into either claim on a failed call:
-      // "No properties assigned" would be a guess, and a bare "no visitors" would
-      // drop the one hint an unposted guard has.
-      expect(find.text('No visitors expected today'), findsOneWidget);
-      expect(find.textContaining('assigned to a property'), findsOneWidget);
-    });
+        // Knowing "nothing is expected" without knowing why is exactly what the old
+        // wording was for. It must not harden into either claim on a failed call:
+        // "No properties assigned" would be a guess, and a bare "no visitors" would
+        // drop the one hint an unposted guard has.
+        expect(find.text('NO VISITORS EXPECTED TODAY'), findsOneWidget);
+        expect(find.textContaining('assigned to a property'), findsOneWidget);
+      },
+    );
 
-    testWidgets('a failed load offers a retry that re-reads the gate',
-        (tester) async {
+    testWidgets('a failed load offers a retry that re-reads the gate', (
+      tester,
+    ) async {
       final gatePass = FakeGatePassService(
         expectedTodayError: StateError('network down'),
       );

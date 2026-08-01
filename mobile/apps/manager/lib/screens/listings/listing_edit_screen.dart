@@ -490,8 +490,8 @@ class _ChromeHeader extends StatelessWidget {
             children: [
               IconButton(
                 onPressed: () => context.pop(),
-                icon: const Icon(
-                  Icons.arrow_back,
+                icon: Icon(
+                  context.isAr ? Icons.arrow_forward : Icons.arrow_back,
                   color: Colors.white,
                   size: 20,
                 ),

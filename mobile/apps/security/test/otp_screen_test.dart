@@ -19,7 +19,7 @@ Future<ProviderContainer> reachOtpScreen(
     phoneAuthService: phoneAuthService,
   );
   await tester.enterText(find.byKey(const Key('phoneField')), phone);
-  await tester.tap(find.text('Continue'));
+  await tester.tap(find.text('CONTINUE'));
   await settleRoute(tester);
   expect(find.text('Enter your code'), findsOneWidget);
   phoneAuthService.requestedPhones.clear();
@@ -150,20 +150,17 @@ void main() {
       await disposeTree(tester);
     });
 
-    testWidgets('restoring /otp without a Firebase session falls back to login', (
-      tester,
-    ) async {
-      final auth = FakeAuthService();
-      await pumpSecurityApp(
-        tester,
-        authService: auth,
-        startLocation: '/otp',
-      );
+    testWidgets(
+      'restoring /otp without a Firebase session falls back to login',
+      (tester) async {
+        final auth = FakeAuthService();
+        await pumpSecurityApp(tester, authService: auth, startLocation: '/otp');
 
-      expect(find.text('Enter your code'), findsNothing);
-      expect(find.text('Continue'), findsOneWidget);
+        expect(find.text('Enter your code'), findsNothing);
+        expect(find.text('CONTINUE'), findsOneWidget);
 
-      await disposeTree(tester);
-    });
+        await disposeTree(tester);
+      },
+    );
   });
 }

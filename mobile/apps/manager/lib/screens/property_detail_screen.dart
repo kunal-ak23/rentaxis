@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -76,8 +77,11 @@ class _PropertyDetailScreenState extends ConsumerState<PropertyDetailScreen> {
       });
     } catch (e) {
       if (!mounted) return;
+      // A 404 means the property is gone — a different message than a
+      // transient load failure.
+      final gone = e is DioException && e.response?.statusCode == 404;
       setState(() {
-        _error = 'load-failed';
+        _error = gone ? 'not-found' : 'load-failed';
         _isLoading = false;
       });
     }
@@ -99,7 +103,8 @@ class _PropertyDetailScreenState extends ConsumerState<PropertyDetailScreen> {
     if (_error != null || _property == null) {
       // A clean-but-empty response means the property is gone, not that the
       // request failed — say so instead of a misleading "failed to load".
-      final notFound = _error == null && _property == null;
+      final notFound =
+          _error == 'not-found' || (_error == null && _property == null);
       return Scaffold(
         backgroundColor: m.background,
         appBar: AppBar(title: Text(l.property)),

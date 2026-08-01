@@ -27,7 +27,7 @@ void main() {
           find.byKey(const Key('phoneField')),
           '+971 50-123 4567',
         );
-        await tester.tap(find.text('Continue'));
+        await tester.tap(find.text('CONTINUE'));
         await settleRoute(tester);
 
         expect(phoneAuth.requestedPhones, ['+971501234567']);
@@ -52,7 +52,7 @@ void main() {
 
       // Too short for the server's \+\d{8,15}.
       await tester.enterText(find.byKey(const Key('phoneField')), '+9715');
-      await tester.tap(find.text('Continue'));
+      await tester.tap(find.text('CONTINUE'));
       await settleRoute(tester);
 
       expect(
@@ -86,7 +86,7 @@ void main() {
         find.byKey(const Key('phoneField')),
         '+971501234567',
       );
-      await tester.tap(find.text('Continue'));
+      await tester.tap(find.text('CONTINUE'));
       await settleRoute(tester);
 
       expect(phoneAuth.requestedPhones, ['+971501234567']);
@@ -116,7 +116,7 @@ void main() {
         find.byKey(const Key('phoneField')),
         '+971501234567',
       );
-      await tester.tap(find.text('Continue'));
+      await tester.tap(find.text('CONTINUE'));
       await settleRoute(tester);
 
       expect(
@@ -144,7 +144,7 @@ void main() {
         find.byKey(const Key('phoneField')),
         '+971501234567',
       );
-      await tester.tap(find.text('Continue'));
+      await tester.tap(find.text('CONTINUE'));
       await tester.pump(); // renders the in-flight frame; latency still pending
 
       expect(
