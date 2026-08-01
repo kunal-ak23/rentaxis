@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
 import '../gatepass/pass_display.dart';
@@ -36,80 +37,569 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     setState(() => _tab = index);
   }
 
+  Future<void> _signOut() async {
+    try {
+      await ref.read(phoneAuthServiceProvider).signOut();
+    } finally {
+      await ref.read(authProvider.notifier).logout();
+    }
+  }
+
+  void _openSettings() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => _SettingsSheet(onSignOut: _signOut),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final l = _L(context.isAr);
+
     return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        title: Text(_tab == 0 ? 'Expected today' : 'Approvals'),
-        backgroundColor: AppColors.surface,
-        surfaceTintColor: Colors.transparent,
-        actions: [
-          IconButton(
-            tooltip: 'Log out',
-            icon: const Icon(Icons.logout, color: AppColors.textMuted),
-            onPressed: () async {
-              try {
-                await ref.read(phoneAuthServiceProvider).signOut();
-              } finally {
-                await ref.read(authProvider.notifier).logout();
-              }
-            },
-          ),
-        ],
-      ),
+      backgroundColor: m.background,
+      appBar: _ChromeAppBar(l: l, onSettingsTap: _openSettings),
       body: SafeArea(
-        child: _tab == 0 ? const _VisitorsTab() : const ApprovalsView(),
+        top: false,
+        child: _tab == 0
+            ? Column(
+                children: [
+                  _HomeHeader(l: l),
+                  Expanded(child: const _VisitorsTab()),
+                ],
+              )
+            : const ApprovalsView(),
       ),
-      // The gate's primary action, sized to be hit without looking at the phone.
-      floatingActionButton: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.end,
+      bottomNavigationBar: _GateNavBar(
+        selectedIndex: _tab,
+        l: l,
+        onTap: _onDestinationSelected,
+      ),
+    );
+  }
+}
+
+/// Dark chrome header: language-aware brand lockup + settings entry point.
+class _ChromeAppBar extends StatelessWidget implements PreferredSizeWidget {
+  const _ChromeAppBar({required this.l, required this.onSettingsTap});
+
+  final _L l;
+  final VoidCallback onSettingsTap;
+
+  @override
+  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
+
+  @override
+  Widget build(BuildContext context) {
+    return AppBar(
+      backgroundColor: AppColors.primary,
+      elevation: 0,
+      scrolledUnderElevation: 0.5,
+      shape: Border(
+        bottom: BorderSide(color: AppColors.accent.withValues(alpha: 0.14)),
+      ),
+      centerTitle: true,
+      // Arabic wordmark in عربي, English wordmark in EN — one script each.
+      title: l.ar
+          ? Image.asset('assets/logo_mark.png', height: 44, fit: BoxFit.contain)
+          : Image.asset(
+              'assets/logo_horizontal.png',
+              height: 26,
+              fit: BoxFit.contain,
+            ),
+      actions: [
+        Padding(
+          padding: const EdgeInsetsDirectional.only(end: 8),
+          child: IconButton(
+            tooltip: l.settings,
+            onPressed: onSettingsTap,
+            icon: const Icon(Icons.tune_rounded, color: AppColors.accent),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Guard identity + posting, and the big SCAN action with approvals/walk-in
+/// quick tiles beneath it.
+class _HomeHeader extends ConsumerWidget {
+  const _HomeHeader({required this.l});
+
+  final _L l;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final m = context.miftah;
+    final authState = ref.watch(authProvider);
+    final properties = ref.watch(myPropertiesProvider);
+
+    return Container(
+      color: m.background,
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          FloatingActionButton.extended(
-            heroTag: 'walk-in',
-            onPressed: () => context.push('/walk-in'),
-            backgroundColor: AppColors.accentDark,
-            foregroundColor: Colors.white,
-            icon: const Icon(Icons.person_add_alt_1),
-            label: const Text('Walk-in'),
+          Text(
+            authState.name ?? l.guardFallback,
+            style: l.ar
+                ? GoogleFonts.notoNaskhArabic(
+                    fontSize: 19,
+                    fontWeight: FontWeight.w600,
+                    color: m.textPrimary,
+                  )
+                : GoogleFonts.cinzel(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: m.textPrimary,
+                  ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            properties.when(
+              data: (rows) => l.propertyLine(rows),
+              loading: () => l.loadingPosting,
+              error: (_, _) => l.postingUnavailable,
+            ),
+            style: l.ar
+                ? GoogleFonts.notoNaskhArabic(
+                    fontSize: 12.5,
+                    color: AppColors.accentDark,
+                  )
+                : GoogleFonts.josefinSans(
+                    fontSize: 11,
+                    letterSpacing: 1.4,
+                    color: AppColors.accentDark,
+                  ),
+          ),
+          const SizedBox(height: 18),
+          GoldButton(
+            label: l.scan,
+            height: 60,
+            icon: const Icon(Icons.qr_code_scanner_rounded),
+            onPressed: () => context.push('/scan'),
           ),
           const SizedBox(height: 10),
-          FloatingActionButton.extended(
-            heroTag: 'scan',
-            onPressed: () => context.push('/scan'),
-            backgroundColor: AppColors.primary,
-            foregroundColor: Colors.white,
-            icon: const Icon(Icons.qr_code_scanner, size: 26),
-            label: const Text(
-              'Scan',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+          Row(
+            children: [
+              Expanded(
+                child: _QuickTile(
+                  icon: Icons.how_to_reg_outlined,
+                  label: l.approvals,
+                  onTap: () => context.push('/approvals'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _QuickTile(
+                  icon: Icons.person_add_alt_1_outlined,
+                  label: l.walkIn,
+                  onTap: () => context.push('/walk-in'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Padding(
+            padding: const EdgeInsetsDirectional.only(start: 2),
+            child: Text(
+              l.ar ? l.expectedToday : l.expectedToday.toUpperCase(),
+              style: l.ar
+                  ? GoogleFonts.notoNaskhArabic(
+                      fontSize: 13,
+                      color: m.textMuted,
+                    )
+                  : GoogleFonts.josefinSans(
+                      fontSize: 10.5,
+                      letterSpacing: 2.2,
+                      color: m.textMuted,
+                    ),
             ),
           ),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _tab,
-        onDestinationSelected: _onDestinationSelected,
-        backgroundColor: AppColors.surface,
-        indicatorColor: AppColors.accentLight,
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.people_outline),
-            selectedIcon: Icon(Icons.people),
-            label: 'Visitors',
+    );
+  }
+}
+
+class _QuickTile extends StatelessWidget {
+  const _QuickTile({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final m = context.miftah;
+    final ar = context.isAr;
+    return Material(
+      color: m.surface,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: m.border),
           ),
-          NavigationDestination(
-            icon: Icon(Icons.qr_code_scanner),
-            label: 'Scan',
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 18, color: AppColors.accentDark),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  label,
+                  overflow: TextOverflow.ellipsis,
+                  style: ar
+                      ? GoogleFonts.notoNaskhArabic(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: m.textPrimary,
+                        )
+                      : GoogleFonts.josefinSans(
+                          fontSize: 11.5,
+                          letterSpacing: 1.2,
+                          fontWeight: FontWeight.w600,
+                          color: m.textPrimary,
+                        ),
+                ),
+              ),
+            ],
           ),
-          NavigationDestination(
-            icon: Icon(Icons.approval_outlined),
-            selectedIcon: Icon(Icons.approval),
-            label: 'Approvals',
-          ),
-        ],
+        ),
       ),
+    );
+  }
+}
+
+/// Dark gold-accented gate nav: Visitors / Scan / Approvals.
+class _GateNavBar extends StatelessWidget {
+  const _GateNavBar({
+    required this.selectedIndex,
+    required this.l,
+    required this.onTap,
+  });
+
+  final int selectedIndex;
+  final _L l;
+  final ValueChanged<int> onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final items = [
+      (icon: Icons.people_outline, activeIcon: Icons.people, label: l.visitors),
+      (
+        icon: Icons.qr_code_scanner_outlined,
+        activeIcon: Icons.qr_code_scanner,
+        label: l.scan,
+      ),
+      (
+        icon: Icons.approval_outlined,
+        activeIcon: Icons.approval,
+        label: l.approvals,
+      ),
+    ];
+
+    return SafeArea(
+      top: false,
+      child: Container(
+        height: 64,
+        decoration: BoxDecoration(
+          color: AppColors.primary,
+          border: Border(
+            top: BorderSide(color: AppColors.accent.withValues(alpha: 0.14)),
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: List.generate(items.length, (index) {
+            final item = items[index];
+            // The Scan destination pushes rather than selecting a tab, so it is
+            // never "current" the way Visitors/Approvals are.
+            final isSelected = index != 1 && index == selectedIndex;
+            return Expanded(
+              child: InkWell(
+                onTap: () => onTap(index),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      isSelected ? item.activeIcon : item.icon,
+                      size: 22,
+                      color: isSelected
+                          ? AppColors.accent
+                          : Colors.white.withValues(alpha: 0.5),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      item.label,
+                      style: l.ar
+                          ? GoogleFonts.notoNaskhArabic(
+                              fontSize: 11,
+                              fontWeight: isSelected
+                                  ? FontWeight.w600
+                                  : FontWeight.w400,
+                              color: isSelected
+                                  ? AppColors.accent
+                                  : Colors.white.withValues(alpha: 0.5),
+                            )
+                          : GoogleFonts.josefinSans(
+                              fontSize: 10,
+                              fontWeight: isSelected
+                                  ? FontWeight.w600
+                                  : FontWeight.w400,
+                              letterSpacing: 0.4,
+                              color: isSelected
+                                  ? AppColors.accent
+                                  : Colors.white.withValues(alpha: 0.5),
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }),
+        ),
+      ),
+    );
+  }
+}
+
+/// Appearance + language + sign-out, in a sheet reachable from the header's
+/// settings icon — same pattern as the manager app's More screen.
+class _SettingsSheet extends ConsumerWidget {
+  const _SettingsSheet({required this.onSignOut});
+
+  final Future<void> Function() onSignOut;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final m = context.miftah;
+    final l = _L(context.isAr);
+
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.only(
+          left: 16,
+          right: 16,
+          top: 14,
+          bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+        ),
+        child: Container(
+          decoration: BoxDecoration(
+            color: m.surface,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: m.border),
+          ),
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: m.border,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                l.ar ? l.settings : l.settings.toUpperCase(),
+                style: l.ar
+                    ? GoogleFonts.notoNaskhArabic(
+                        fontSize: 13,
+                        color: m.textMuted,
+                      )
+                    : GoogleFonts.josefinSans(
+                        fontSize: 10,
+                        letterSpacing: 2.4,
+                        color: m.textMuted,
+                      ),
+              ),
+              const SizedBox(height: 12),
+              _AppearanceRow(l: l),
+              const SizedBox(height: 12),
+              _LanguageRow(l: l),
+              const SizedBox(height: 18),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    onSignOut();
+                  },
+                  icon: Icon(Icons.logout, size: 18, color: m.danger),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: m.danger,
+                    side: BorderSide(color: m.danger.withValues(alpha: 0.5)),
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  label: Text(
+                    l.ar ? l.signOut : l.signOut.toUpperCase(),
+                    style: l.ar
+                        ? GoogleFonts.notoNaskhArabic(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          )
+                        : GoogleFonts.josefinSans(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 2.0,
+                          ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AppearanceRow extends ConsumerWidget {
+  const _AppearanceRow({required this.l});
+
+  final _L l;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final m = context.miftah;
+    final mode = ref.watch(themeModeProvider);
+
+    Widget option(String label, ThemeMode value) {
+      final selected = mode == value;
+      return Expanded(
+        child: GestureDetector(
+          onTap: () => ref.read(themeModeProvider.notifier).setMode(value),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            height: 34,
+            margin: const EdgeInsets.symmetric(horizontal: 3),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(999),
+              gradient: selected ? MiftahGradients.gold : null,
+              border: selected ? null : Border.all(color: m.borderStrong),
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              l.ar ? label : label.toUpperCase(),
+              style: l.ar
+                  ? GoogleFonts.notoNaskhArabic(
+                      fontSize: 12,
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                      color: selected ? AppColors.primary : m.textSecondary,
+                    )
+                  : GoogleFonts.josefinSans(
+                      fontSize: 10,
+                      letterSpacing: 1.6,
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                      color: selected ? AppColors.primary : m.textSecondary,
+                    ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Row(
+      children: [
+        option(l.light, ThemeMode.light),
+        option(l.dark, ThemeMode.dark),
+        option(l.system, ThemeMode.system),
+      ],
+    );
+  }
+}
+
+class _LanguageRow extends ConsumerWidget {
+  const _LanguageRow({required this.l});
+
+  final _L l;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final m = context.miftah;
+    final language = ref.watch(appLanguageProvider);
+
+    Widget option({
+      required bool selected,
+      required VoidCallback onTap,
+      required Widget child,
+    }) {
+      return Expanded(
+        child: GestureDetector(
+          onTap: onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            height: 34,
+            margin: const EdgeInsets.symmetric(horizontal: 3),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(999),
+              color: selected ? AppColors.accent : Colors.transparent,
+              border: selected ? null : Border.all(color: m.borderStrong),
+            ),
+            child: child,
+          ),
+        ),
+      );
+    }
+
+    return Row(
+      children: [
+        option(
+          selected: language == AppLanguage.en,
+          onTap: () => ref
+              .read(appLanguageProvider.notifier)
+              .setLanguage(AppLanguage.en),
+          child: Text(
+            'EN',
+            style: GoogleFonts.josefinSans(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 1.4,
+              color: language == AppLanguage.en
+                  ? AppColors.primary
+                  : m.textSecondary,
+            ),
+          ),
+        ),
+        option(
+          selected: language == AppLanguage.ar,
+          onTap: () => ref
+              .read(appLanguageProvider.notifier)
+              .setLanguage(AppLanguage.ar),
+          child: Text(
+            'عربي',
+            style: GoogleFonts.notoNaskhArabic(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: language == AppLanguage.ar
+                  ? AppColors.primary
+                  : m.textSecondary,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -121,6 +611,7 @@ class _VisitorsTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final expected = ref.watch(expectedTodayProvider);
+    final l = _L(context.isAr);
 
     return RefreshIndicator(
       // Refreshes the postings alongside the board: a guard assigned mid-shift is
@@ -135,7 +626,7 @@ class _VisitorsTab extends ConsumerWidget {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => _Scrollable(
           child: ErrorState(
-            message: "Could not load today's visitors.",
+            message: l.visitorsLoadError,
             onRetry: () => ref.invalidate(expectedTodayProvider),
           ),
         ),
@@ -150,7 +641,7 @@ class _VisitorsTab extends ConsumerWidget {
 
           return ListView.builder(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 96),
+            padding: const EdgeInsets.fromLTRB(12, 4, 12, 96),
             itemCount: groups.length,
             itemBuilder: (context, index) {
               final group = groups[index];
@@ -159,19 +650,30 @@ class _VisitorsTab extends ConsumerWidget {
                 children: [
                   if (showHeadings)
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(4, 12, 4, 8),
+                      padding: const EdgeInsetsDirectional.fromSTEB(
+                        4,
+                        12,
+                        4,
+                        8,
+                      ),
                       child: Text(
                         propertyGroupLabel(
                           group.propertyId,
                           index,
                           propertyName: group.propertyName,
                         ),
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.6,
-                          color: AppColors.textMuted,
-                        ),
+                        style: l.ar
+                            ? GoogleFonts.notoNaskhArabic(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: context.miftah.textMuted,
+                              )
+                            : GoogleFonts.josefinSans(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.6,
+                                color: context.miftah.textMuted,
+                              ),
                       ),
                     ),
                   ...group.passes.map((pass) => _VisitorRow(pass: pass)),
@@ -193,7 +695,9 @@ class _VisitorRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final name = passString(pass, 'guestName') ?? 'Guest';
+    final m = context.miftah;
+    final l = _L(context.isAr);
+    final name = passString(pass, 'guestName') ?? l.guestFallback;
     final unit = passString(pass, 'unitNumber');
     final vehicle = passString(pass, 'vehicleNumber');
     final window = formatWindow(
@@ -205,9 +709,9 @@ class _VisitorRow extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: m.surface,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(color: m.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -218,11 +722,17 @@ class _VisitorRow extends StatelessWidget {
               Expanded(
                 child: Text(
                   name,
-                  style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
-                  ),
+                  style: l.ar
+                      ? GoogleFonts.notoNaskhArabic(
+                          fontSize: 16.5,
+                          fontWeight: FontWeight.w600,
+                          color: m.textPrimary,
+                        )
+                      : GoogleFonts.josefinSans(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
+                          color: m.textPrimary,
+                        ),
                 ),
               ),
               if (unit != null)
@@ -232,17 +742,23 @@ class _VisitorRow extends StatelessWidget {
                     vertical: 3,
                   ),
                   decoration: BoxDecoration(
-                    color: AppColors.surface2,
+                    color: m.surfaceAlt,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppColors.border),
+                    border: Border.all(color: m.border),
                   ),
                   child: Text(
-                    'Unit $unit',
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textSecondary,
-                    ),
+                    l.unitLabel(unit),
+                    style: l.ar
+                        ? GoogleFonts.notoNaskhArabic(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                            color: m.textSecondary,
+                          )
+                        : GoogleFonts.josefinSans(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: m.textSecondary,
+                          ),
                   ),
                 ),
             ],
@@ -250,15 +766,20 @@ class _VisitorRow extends StatelessWidget {
           const SizedBox(height: 8),
           Row(
             children: [
-              const Icon(Icons.schedule, size: 15, color: AppColors.textMuted),
+              Icon(Icons.schedule, size: 15, color: m.textMuted),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
                   window,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: AppColors.textSecondary,
-                  ),
+                  style: l.ar
+                      ? GoogleFonts.notoNaskhArabic(
+                          fontSize: 13.5,
+                          color: m.textSecondary,
+                        )
+                      : GoogleFonts.josefinSans(
+                          fontSize: 14,
+                          color: m.textSecondary,
+                        ),
                 ),
               ),
             ],
@@ -266,17 +787,17 @@ class _VisitorRow extends StatelessWidget {
           if (vehicle != null) ...[
             const SizedBox(height: 8),
             Align(
-              alignment: Alignment.centerLeft,
+              alignment: AlignmentDirectional.centerStart,
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: AppColors.accentLight,
+                  color: m.successBg,
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.directions_car,
                       size: 14,
                       color: AppColors.accentDark,
@@ -284,7 +805,7 @@ class _VisitorRow extends StatelessWidget {
                     const SizedBox(width: 5),
                     Text(
                       vehicle,
-                      style: const TextStyle(
+                      style: GoogleFonts.josefinSans(
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
                         color: AppColors.accentDark,
@@ -319,26 +840,24 @@ class _NoVisitors extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final properties = ref.watch(myPropertiesProvider);
+    final l = _L(context.isAr);
 
     return properties.when(
       // Not a spinner: the board underneath has already resolved, and flashing a
       // loader onto a settled screen reads as a reload. The hedged copy is true
       // in both cases, so it holds until the answer lands.
-      loading: () => const _EmptyBoardHedged(),
-      error: (_, _) => const _EmptyBoardHedged(),
+      loading: () => _EmptyBoardHedged(l: l),
+      error: (_, _) => _EmptyBoardHedged(l: l),
       data: (properties) => properties.isEmpty
-          ? const EmptyState(
+          ? EmptyState(
               icon: Icons.location_off_outlined,
-              title: 'No properties assigned',
-              subtitle:
-                  'You are not posted to a gate yet, so no visitors will '
-                  'appear here.\n\n'
-                  'Ask your manager to assign you to a property.',
+              title: l.noPropertiesTitle,
+              subtitle: l.noPropertiesSubtitle,
             )
-          : const EmptyState(
+          : EmptyState(
               icon: Icons.event_available,
-              title: 'No visitors expected today',
-              subtitle: 'Guests booked for your gate appear here.',
+              title: l.noVisitorsTitle,
+              subtitle: l.noVisitorsSubtitle,
             ),
     );
   }
@@ -347,17 +866,16 @@ class _NoVisitors extends ConsumerWidget {
 /// The pre-`/my-properties` wording: correct but non-committal, for when the
 /// assignments call has not answered (yet, or at all).
 class _EmptyBoardHedged extends StatelessWidget {
-  const _EmptyBoardHedged();
+  const _EmptyBoardHedged({required this.l});
+
+  final _L l;
 
   @override
   Widget build(BuildContext context) {
-    return const EmptyState(
+    return EmptyState(
       icon: Icons.event_available,
-      title: 'No visitors expected today',
-      subtitle:
-          'Guests booked for your gate appear here.\n\n'
-          'Nothing all shift? Ask your manager to check that you are assigned '
-          'to a property.',
+      title: l.noVisitorsTitle,
+      subtitle: l.noVisitorsHedgedSubtitle,
     );
   }
 }
@@ -381,5 +899,64 @@ class _Scrollable extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// Screen strings (EN/AR). Lightweight per-screen pattern — see arabic-brief.
+class _L {
+  _L(this.ar);
+  final bool ar;
+
+  String get settings => ar ? 'الإعدادات' : 'Settings';
+  String get scan => ar ? 'مسح الرمز' : 'Scan';
+  String get approvals => ar ? 'الموافقات' : 'Approvals';
+  String get walkIn => ar ? 'زيارة بدون تصريح' : 'Walk-in';
+  String get visitors => ar ? 'الزوّار' : 'Visitors';
+  String get expectedToday => ar ? 'المتوقعون اليوم' : 'Expected today';
+  String get guardFallback => ar ? 'حارس' : 'Guard';
+  String get guestFallback => ar ? 'زائر' : 'Guest';
+  String get loadingPosting =>
+      ar ? 'جارٍ تحميل موقع العمل...' : 'Loading posting…';
+  String get postingUnavailable =>
+      ar ? 'تعذّر تحميل موقع العمل' : 'Could not load posting';
+  String get light => ar ? 'فاتح' : 'Light';
+  String get dark => ar ? 'داكن' : 'Dark';
+  String get system => ar ? 'تلقائي' : 'System';
+  String get signOut => ar ? 'تسجيل الخروج' : 'Sign out';
+  String get visitorsLoadError =>
+      ar ? "تعذّر تحميل زوّار اليوم." : "Could not load today's visitors.";
+  String get noPropertiesTitle =>
+      ar ? 'لا توجد عقارات مسندة إليك' : 'No properties assigned';
+  String get noPropertiesSubtitle => ar
+      ? 'لم يتم تعيينك على بوابة بعد، لذا لن يظهر هنا أي زوّار.\n\n'
+            'اطلب من مديرك تعيينك على أحد العقارات.'
+      : 'You are not posted to a gate yet, so no visitors will '
+            'appear here.\n\n'
+            'Ask your manager to assign you to a property.';
+  String get noVisitorsTitle =>
+      ar ? 'لا يوجد زوّار متوقعون اليوم' : 'No visitors expected today';
+  String get noVisitorsSubtitle => ar
+      ? 'يظهر هنا الضيوف المحجوزون لبوابتك.'
+      : 'Guests booked for your gate appear here.';
+  String get noVisitorsHedgedSubtitle => ar
+      ? 'يظهر هنا الضيوف المحجوزون لبوابتك.\n\n'
+            'لم يظهر شيء طوال المناوبة؟ اطلب من مديرك التأكد من تعيينك على عقار.'
+      : 'Guests booked for your gate appear here.\n\n'
+            'Nothing all shift? Ask your manager to check that you are assigned '
+            'to a property.';
+
+  String unitLabel(String unit) => ar ? 'وحدة $unit' : 'Unit $unit';
+
+  String propertyLine(List<Map<String, dynamic>> properties) {
+    if (properties.isEmpty) {
+      return ar ? 'غير مُعيَّن على عقار' : 'Not posted to a property';
+    }
+    if (properties.length == 1) {
+      final name = properties.first['name'] as String? ?? '';
+      return name.isEmpty ? (ar ? 'حارس أمن' : 'Security guard') : name;
+    }
+    return ar
+        ? '${properties.length} عقارات مسندة'
+        : '${properties.length} properties assigned';
   }
 }

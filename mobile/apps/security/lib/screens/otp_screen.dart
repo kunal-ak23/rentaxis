@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
 import '../auth/firebase_auth_errors.dart';
@@ -142,7 +143,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
         case PhoneVerificationSession():
           _session = result;
           _startCooldown();
-          setState(() => _resendNotice = 'A new SMS code is on its way.');
+          setState(() => _resendNotice = _L(context.isAr).newCodeSent);
         case AutomaticallyVerified(:final idToken):
           final success = await ref
               .read(authProvider.notifier)
@@ -166,6 +167,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
   @override
   Widget build(BuildContext context) {
     final authError = ref.watch(authProvider).error;
+    final l = _L(context.isAr);
 
     // Resend failures take precedence: they are the most recent thing the guard
     // did. Otherwise show the verify error, but only while it is still current.
@@ -176,7 +178,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
       child: Scaffold(
-        backgroundColor: AppColors.background,
+        backgroundColor: AppColors.navyDark,
         body: SafeArea(
           child: Center(
             child: SingleChildScrollView(
@@ -185,80 +187,103 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Text(
-                    'Enter your code',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.navyDark,
+                  Center(
+                    child: Image.asset(
+                      'assets/logo_mark.png',
+                      width: 64,
+                      height: 64,
                     ),
+                  ),
+                  const SizedBox(height: 22),
+                  Text(
+                    l.enterCode,
+                    textAlign: TextAlign.center,
+                    style: l.ar
+                        ? GoogleFonts.notoNaskhArabic(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.accent,
+                          )
+                        : GoogleFonts.cinzel(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.accent,
+                          ),
                   ),
                   const SizedBox(height: 8),
-                  const Text(
-                    'We sent a verification code by SMS.',
+                  Text(
+                    l.smsSubtitle,
                     textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: AppColors.textSecondary,
-                    ),
+                    style:
+                        (l.ar
+                        ? GoogleFonts.notoNaskhArabic
+                        : GoogleFonts.josefinSans)(
+                          fontSize: 14,
+                          color: Colors.white.withValues(alpha: 0.55),
+                        ),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 18),
                   _PhoneHeader(phone: _session.phone),
-                  const SizedBox(height: 24),
-                  TextField(
-                    // /login stays mounted under this pushed route, so its phone
-                    // field is in the tree too — the key keeps "the code field"
-                    // unambiguous for tests and for focus traversal.
-                    key: const Key('otpCodeField'),
-                    controller: _codeController,
-                    focusNode: _codeFocus,
-                    keyboardType: TextInputType.number,
-                    textAlign: TextAlign.center,
-                    maxLength: 6,
-                    enabled: !_isSubmitting,
-                    autofillHints: const [AutofillHints.oneTimeCode],
-                    inputFormatters: [
-                      FilteringTextInputFormatter.digitsOnly,
-                      LengthLimitingTextInputFormatter(6),
-                    ],
-                    style: const TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 12,
-                      color: AppColors.textPrimary,
-                    ),
-                    decoration: InputDecoration(
-                      counterText: '',
-                      hintText: '------',
-                      hintStyle: TextStyle(
-                        fontSize: 28,
-                        letterSpacing: 12,
-                        color: AppColors.textMuted.withValues(alpha: 0.4),
+                  const SizedBox(height: 28),
+                  Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      AnimatedBuilder(
+                        animation: Listenable.merge([
+                          _codeController,
+                          _codeFocus,
+                        ]),
+                        builder: (context, _) {
+                          final text = _codeController.text;
+                          return Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: List.generate(6, (index) {
+                              final digit = index < text.length
+                                  ? text[index]
+                                  : '';
+                              final isActive =
+                                  index == text.length &&
+                                  _codeFocus.hasFocus &&
+                                  !_isSubmitting;
+                              final hasError = errorMessage != null;
+                              return _OtpBox(
+                                digit: digit,
+                                active: isActive,
+                                hasError: hasError,
+                              );
+                            }),
+                          );
+                        },
                       ),
-                      filled: true,
-                      fillColor: Colors.white,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: const BorderSide(color: AppColors.border),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: const BorderSide(color: AppColors.border),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: const BorderSide(
-                          color: AppColors.primary,
-                          width: 1.5,
+                      // Invisible field absorbing real input; the boxes above
+                      // are pure presentation driven by its value.
+                      Opacity(
+                        opacity: 0,
+                        child: TextField(
+                          key: const Key('otpCodeField'),
+                          controller: _codeController,
+                          focusNode: _codeFocus,
+                          keyboardType: TextInputType.number,
+                          textAlign: TextAlign.center,
+                          maxLength: 6,
+                          enabled: !_isSubmitting,
+                          autofillHints: const [AutofillHints.oneTimeCode],
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                            LengthLimitingTextInputFormatter(6),
+                          ],
+                          decoration: const InputDecoration(
+                            counterText: '',
+                            border: InputBorder.none,
+                          ),
+                          onChanged: (value) {
+                            // Auto-submit: the code is a fixed 6 digits, so a
+                            // Verify tap would be pure ceremony.
+                            if (value.length == 6) _submit();
+                          },
                         ),
                       ),
-                    ),
-                    onChanged: (value) {
-                      // Auto-submit: the code is a fixed 6 digits, so a Verify
-                      // tap would be pure ceremony.
-                      if (value.length == 6) _submit();
-                    },
+                    ],
                   ),
                   if (_isSubmitting) ...[
                     const SizedBox(height: 20),
@@ -268,7 +293,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                         width: 22,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          color: AppColors.primary,
+                          color: AppColors.accent,
                         ),
                       ),
                     ),
@@ -277,16 +302,18 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                     const SizedBox(height: 16),
                     _Banner(
                       message: errorMessage,
-                      color: AppColors.danger,
+                      color: AppColorsDark.danger,
                       icon: Icons.error_outline,
+                      ar: l.ar,
                     ),
                   ],
                   if (_resendNotice != null) ...[
                     const SizedBox(height: 16),
                     _Banner(
                       message: _resendNotice!,
-                      color: AppColors.success,
+                      color: AppColorsDark.success,
                       icon: Icons.check_circle_outline,
+                      ar: l.ar,
                     ),
                   ],
                   const SizedBox(height: 20),
@@ -296,37 +323,93 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                         ? const SizedBox(
                             height: 16,
                             width: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: AppColors.accent,
+                            ),
                           )
                         : Text(
                             _secondsRemaining > 0
-                                ? 'Resend code in ${_secondsRemaining}s'
-                                : 'Resend code',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: canResend
-                                  ? AppColors.primary
-                                  : AppColors.textMuted,
-                            ),
+                                ? l.resendIn(_secondsRemaining)
+                                : l.resendCode,
+                            style:
+                                (l.ar
+                                ? GoogleFonts.notoNaskhArabic
+                                : GoogleFonts.josefinSans)(
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: canResend
+                                      ? AppColors.accent
+                                      : Colors.white.withValues(alpha: 0.35),
+                                ),
                           ),
                   ),
                   TextButton(
                     onPressed: _isSubmitting
                         ? null
                         : () => context.go('/login'),
-                    child: const Text(
-                      'Wrong number?',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: AppColors.textMuted,
-                      ),
+                    child: Text(
+                      l.wrongNumber,
+                      style:
+                          (l.ar
+                          ? GoogleFonts.notoNaskhArabic
+                          : GoogleFonts.josefinSans)(
+                            fontSize: 13,
+                            color: Colors.white.withValues(alpha: 0.4),
+                          ),
                     ),
                   ),
                 ],
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// One digit slot in the OTP entry row: gold border when active, danger tint
+/// on a rejected code, filled digit otherwise.
+class _OtpBox extends StatelessWidget {
+  const _OtpBox({
+    required this.digit,
+    required this.active,
+    required this.hasError,
+  });
+
+  final String digit;
+  final bool active;
+  final bool hasError;
+
+  @override
+  Widget build(BuildContext context) {
+    final filled = digit.isNotEmpty;
+    final borderColor = hasError
+        ? AppColorsDark.danger
+        : active
+        ? AppColors.accent
+        : Colors.white.withValues(alpha: filled ? 0.3 : 0.16);
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 150),
+      width: 44,
+      height: 54,
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: borderColor,
+          width: active || hasError ? 1.5 : 1,
+        ),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        digit,
+        style: GoogleFonts.cinzel(
+          fontSize: 22,
+          fontWeight: FontWeight.w600,
+          color: Colors.white,
         ),
       ),
     );
@@ -340,33 +423,35 @@ class _PhoneHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: AppColors.surface2,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(
-            Icons.phone_outlined,
-            size: 16,
-            color: AppColors.textMuted,
-          ),
-          const SizedBox(width: 8),
-          // The number is the one piece of state a guard can sanity-check
-          // themselves, so keep it verbatim and legible.
-          Text(
-            phone,
-            style: const TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-              color: AppColors.textPrimary,
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AppColors.accent.withValues(alpha: 0.2)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.phone_outlined,
+              size: 16,
+              color: Colors.white.withValues(alpha: 0.5),
             ),
-          ),
-        ],
+            const SizedBox(width: 8),
+            // The number is the one piece of state a guard can sanity-check
+            // themselves, so keep it verbatim and legible.
+            Text(
+              phone,
+              style: GoogleFonts.josefinSans(
+                fontSize: 14.5,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -377,11 +462,13 @@ class _Banner extends StatelessWidget {
     required this.message,
     required this.color,
     required this.icon,
+    required this.ar,
   });
 
   final String message;
   final Color color;
   final IconData icon;
+  final bool ar;
 
   @override
   Widget build(BuildContext context) {
@@ -389,19 +476,41 @@ class _Banner extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withValues(alpha: 0.2)),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
       ),
       child: Row(
         children: [
           Icon(icon, color: color, size: 18),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(message, style: TextStyle(color: color, fontSize: 13)),
+            child: Text(
+              message,
+              style: (ar
+                  ? GoogleFonts.notoNaskhArabic
+                  : GoogleFonts.josefinSans)(color: color, fontSize: 13),
+            ),
           ),
         ],
       ),
     );
   }
+}
+
+/// Screen strings (EN/AR). Lightweight per-screen pattern — see arabic-brief.
+class _L {
+  _L(this.ar);
+  final bool ar;
+
+  String get enterCode => ar ? 'أدخل رمز التحقق' : 'Enter your code';
+  String get smsSubtitle => ar
+      ? 'أرسلنا رمز التحقق عبر رسالة نصية.'
+      : 'We sent a verification code by SMS.';
+  String get resendCode => ar ? 'إعادة إرسال الرمز' : 'Resend code';
+  String resendIn(int seconds) =>
+      ar ? 'إعادة الإرسال خلال $seconds ثانية' : 'Resend code in ${seconds}s';
+  String get newCodeSent =>
+      ar ? 'رمز جديد في طريقه إليك.' : 'A new SMS code is on its way.';
+  String get wrongNumber => ar ? 'رقم خاطئ؟' : 'Wrong number?';
 }
