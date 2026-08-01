@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
 import '../providers/gate_pass_provider.dart';
@@ -62,12 +63,13 @@ class _WalkInScreenState extends ConsumerState<WalkInScreen> {
     } catch (_) {
       if (!mounted) return;
       setState(() => _loadingUnits = false);
-      _snack('Could not load units for this property.');
+      _snack(_L(context.isAr).loadUnitsFailed);
     }
   }
 
   Future<void> _lookup() async {
     if (_propertyId == null || _phone.text.trim().isEmpty || _lookingUp) return;
+    final l = _L(context.isAr);
     setState(() {
       _lookingUp = true;
       _lookupMessage = null;
@@ -95,39 +97,46 @@ class _WalkInScreenState extends ConsumerState<WalkInScreen> {
       setState(() {
         _lookingUp = false;
         _lookupMessage = row['registeredForSelectedUnit'] == true
-            ? 'Registered for this unit — details loaded.'
-            : 'Previous visitor found — confirm the details and take a fresh photo.';
+            ? l.registeredForUnit
+            : l.previousVisitorFound;
       });
     } on DioException catch (error) {
       if (!mounted) return;
       setState(() {
         _lookingUp = false;
         _lookupMessage = error.response?.statusCode == 404
-            ? 'First visit — enter the details below.'
-            : 'Could not search previous visits.';
+            ? l.firstVisit
+            : l.lookupFailed;
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _lookingUp = false;
-        _lookupMessage = 'Could not search previous visits.';
+        _lookupMessage = l.lookupFailed;
       });
     }
   }
 
   Future<void> _takePhoto() async {
-    final image = await _picker.pickImage(
-      source: ImageSource.camera,
-      imageQuality: 78,
-      maxWidth: 1280,
-    );
-    if (image != null && mounted) setState(() => _photo = image);
+    try {
+      final image = await _picker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 78,
+        maxWidth: 1280,
+      );
+      if (image != null && mounted) setState(() => _photo = image);
+    } catch (_) {
+      // Denied camera permission or a platform failure: tell the guard
+      // instead of silently doing nothing.
+      if (mounted) _snack(_L(context.isAr).cameraUnavailable);
+    }
   }
 
   Future<void> _submit() async {
+    final l = _L(context.isAr);
     if (!_formKey.currentState!.validate() || _submitting) return;
     if (_photo == null) {
-      _snack('Take a fresh visitor photo before submitting.');
+      _snack(l.takePhotoFirst);
       return;
     }
     setState(() => _submitting = true);
@@ -153,9 +162,8 @@ class _WalkInScreenState extends ConsumerState<WalkInScreen> {
     } on DioException catch (error) {
       _snack(
         error.response?.data is Map
-            ? (error.response!.data['message']?.toString() ??
-                  'Could not create the visitor request.')
-            : 'Could not create the visitor request.',
+            ? (error.response!.data['message']?.toString() ?? l.createFailed)
+            : l.createFailed,
       );
     } finally {
       if (mounted) setState(() => _submitting = false);
@@ -181,14 +189,43 @@ class _WalkInScreenState extends ConsumerState<WalkInScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final l = _L(context.isAr);
+    final bodyFont = l.ar
+        ? GoogleFonts.notoNaskhArabic
+        : GoogleFonts.josefinSans;
     final properties = ref.watch(myPropertiesProvider);
     return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(title: const Text('New walk-in visitor')),
+      backgroundColor: m.background,
+      appBar: AppBar(
+        backgroundColor: m.surface,
+        foregroundColor: m.textPrimary,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        title: Text(
+          l.newWalkIn,
+          style: l.ar
+              ? GoogleFonts.notoNaskhArabic(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: m.textPrimary,
+                )
+              : GoogleFonts.cinzel(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w500,
+                  letterSpacing: 1.2,
+                  color: m.textPrimary,
+                ),
+        ),
+      ),
       body: properties.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, stack) =>
-            const Center(child: Text('Could not load assigned properties.')),
+        error: (error, stack) => Center(
+          child: Text(
+            l.loadPropertiesFailed,
+            style: bodyFont(color: m.textSecondary),
+          ),
+        ),
         data: (rows) => Form(
           key: _formKey,
           child: ListView(
@@ -196,20 +233,21 @@ class _WalkInScreenState extends ConsumerState<WalkInScreen> {
             children: [
               DropdownButtonFormField<String>(
                 initialValue: _propertyId,
-                decoration: const InputDecoration(labelText: 'Property'),
+                decoration: InputDecoration(labelText: l.property),
                 items: rows
                     .map(
                       (row) => DropdownMenuItem(
                         value: row['id']?.toString(),
-                        child: Text(row['name']?.toString() ?? 'Property'),
+                        child: Text(
+                          row['name']?.toString() ?? l.propertyFallback,
+                        ),
                       ),
                     )
                     .toList(),
                 onChanged: (value) {
                   if (value != null) _loadDestinations(value);
                 },
-                validator: (value) =>
-                    value == null ? 'Select a property' : null,
+                validator: (value) => value == null ? l.selectProperty : null,
               ),
               const SizedBox(height: 14),
               DropdownButtonFormField<String>(
@@ -218,13 +256,11 @@ class _WalkInScreenState extends ConsumerState<WalkInScreen> {
                 ),
                 initialValue: _unitId,
                 decoration: InputDecoration(
-                  labelText: _loadingUnits
-                      ? 'Loading units…'
-                      : 'Tower and unit',
+                  labelText: _loadingUnits ? l.loadingUnits : l.towerAndUnit,
                 ),
                 items: _destinations.map((row) {
                   final tower = row['buildingName']?.toString();
-                  final unit = row['unitNumber']?.toString() ?? 'Unit';
+                  final unit = row['unitNumber']?.toString() ?? l.unitFallback;
                   return DropdownMenuItem(
                     value: row['unitId']?.toString(),
                     child: Text(tower == null ? unit : '$tower · $unit'),
@@ -234,7 +270,7 @@ class _WalkInScreenState extends ConsumerState<WalkInScreen> {
                     ? null
                     : (value) => setState(() => _unitId = value),
                 validator: (value) =>
-                    value == null ? 'Select the destination unit' : null,
+                    value == null ? l.selectDestination : null,
               ),
               const SizedBox(height: 14),
               TextFormField(
@@ -243,7 +279,7 @@ class _WalkInScreenState extends ConsumerState<WalkInScreen> {
                 textInputAction: TextInputAction.search,
                 onFieldSubmitted: (_) => _lookup(),
                 decoration: InputDecoration(
-                  labelText: 'Mobile number with country code',
+                  labelText: l.mobileNumber,
                   hintText: '+971501234567',
                   suffixIcon: _lookingUp
                       ? const Padding(
@@ -254,41 +290,41 @@ class _WalkInScreenState extends ConsumerState<WalkInScreen> {
                           ),
                         )
                       : IconButton(
-                          tooltip: 'Find previous visitor',
+                          tooltip: l.findPreviousVisitor,
                           onPressed: _lookup,
                           icon: const Icon(Icons.manage_search),
                         ),
                 ),
                 validator: (value) => value == null || value.trim().isEmpty
-                    ? 'Enter a mobile number'
+                    ? l.enterMobileNumber
                     : null,
               ),
               if (_lookupMessage != null)
                 Padding(
-                  padding: const EdgeInsets.only(top: 8),
+                  padding: const EdgeInsetsDirectional.only(top: 8),
                   child: Text(
                     _lookupMessage!,
-                    style: const TextStyle(color: AppColors.textSecondary),
+                    style: bodyFont(color: m.textSecondary, fontSize: 13),
                   ),
                 ),
               const SizedBox(height: 14),
               TextFormField(
                 controller: _name,
                 textCapitalization: TextCapitalization.words,
-                decoration: const InputDecoration(labelText: 'Visitor name'),
+                decoration: InputDecoration(labelText: l.visitorName),
                 validator: (value) => value == null || value.trim().isEmpty
-                    ? 'Enter the visitor name'
+                    ? l.enterVisitorName
                     : null,
               ),
               const SizedBox(height: 14),
               DropdownButtonFormField<String>(
                 initialValue: _visitorType,
-                decoration: const InputDecoration(labelText: 'Visitor type'),
+                decoration: InputDecoration(labelText: l.visitorType),
                 items: _types
                     .map(
                       (type) => DropdownMenuItem(
                         value: type,
-                        child: Text(type.replaceAll('_', ' ').toLowerCase()),
+                        child: Text(l.visitorTypeValue(type)),
                       ),
                     )
                     .toList(),
@@ -297,17 +333,13 @@ class _WalkInScreenState extends ConsumerState<WalkInScreen> {
               const SizedBox(height: 14),
               TextFormField(
                 controller: _purpose,
-                decoration: const InputDecoration(
-                  labelText: 'Purpose or delivery company',
-                ),
+                decoration: InputDecoration(labelText: l.purposeOrCompany),
               ),
               const SizedBox(height: 14),
               TextFormField(
                 controller: _vehicle,
                 textCapitalization: TextCapitalization.characters,
-                decoration: const InputDecoration(
-                  labelText: 'Vehicle number (optional)',
-                ),
+                decoration: InputDecoration(labelText: l.vehicleNumberOptional),
               ),
               const SizedBox(height: 18),
               if (_photo != null)
@@ -320,15 +352,14 @@ class _WalkInScreenState extends ConsumerState<WalkInScreen> {
                   ),
                 ),
               const SizedBox(height: 10),
-              OutlinedButton.icon(
+              GoldButton.outlined(
+                label: _photo == null ? l.takePhoto : l.retakePhoto,
                 onPressed: _takePhoto,
                 icon: const Icon(Icons.photo_camera),
-                label: Text(
-                  _photo == null ? 'Take visitor photo' : 'Retake photo',
-                ),
               ),
               const SizedBox(height: 18),
-              FilledButton.icon(
+              GoldButton(
+                label: _submitting ? l.submitting : l.requestEntry,
                 onPressed: _submitting ? null : _submit,
                 icon: _submitting
                     ? const SizedBox.square(
@@ -336,12 +367,93 @@ class _WalkInScreenState extends ConsumerState<WalkInScreen> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.send),
-                label: const Text('Request entry'),
               ),
             ],
           ),
         ),
       ),
     );
+  }
+}
+
+/// Walk-in screen strings (EN/AR). Lightweight per-screen pattern — see
+/// arabic-brief.
+class _L {
+  _L(this.ar);
+  final bool ar;
+  String get cameraUnavailable => ar
+      ? 'تعذّر فتح الكاميرا. تحقق من صلاحية الكاميرا في الإعدادات.'
+      : 'Could not open the camera. Check camera permission in Settings.';
+
+  String get newWalkIn => ar ? 'زيارة بدون تصريح جديدة' : 'New walk-in visitor';
+  String get loadPropertiesFailed => ar
+      ? 'تعذّر تحميل العقارات المكلّف بها.'
+      : 'Could not load assigned properties.';
+  String get loadUnitsFailed => ar
+      ? 'تعذّر تحميل وحدات هذا العقار.'
+      : 'Could not load units for this property.';
+  String get property => ar ? 'العقار' : 'Property';
+  String get propertyFallback => ar ? 'عقار' : 'Property';
+  String get selectProperty => ar ? 'اختر عقارًا' : 'Select a property';
+  String get loadingUnits => ar ? 'جارٍ تحميل الوحدات…' : 'Loading units…';
+  String get towerAndUnit => ar ? 'البرج والوحدة' : 'Tower and unit';
+  String get unitFallback => ar ? 'وحدة' : 'Unit';
+  String get selectDestination =>
+      ar ? 'اختر الوحدة المقصودة' : 'Select the destination unit';
+  String get mobileNumber =>
+      ar ? 'رقم الهاتف مع رمز الدولة' : 'Mobile number with country code';
+  String get findPreviousVisitor =>
+      ar ? 'البحث عن زائر سابق' : 'Find previous visitor';
+  String get enterMobileNumber =>
+      ar ? 'أدخل رقم الهاتف' : 'Enter a mobile number';
+  String get registeredForUnit => ar
+      ? 'مسجَّل لهذه الوحدة — تم تحميل البيانات.'
+      : 'Registered for this unit — details loaded.';
+  String get previousVisitorFound => ar
+      ? 'تم العثور على زائر سابق — تأكد من البيانات والتقط صورة جديدة.'
+      : 'Previous visitor found — confirm the details and take a fresh photo.';
+  String get firstVisit => ar
+      ? 'زيارة أولى — أدخل البيانات أدناه.'
+      : 'First visit — enter the details below.';
+  String get lookupFailed => ar
+      ? 'تعذّر البحث عن الزيارات السابقة.'
+      : 'Could not search previous visits.';
+  String get visitorName => ar ? 'اسم الزائر' : 'Visitor name';
+  String get enterVisitorName =>
+      ar ? 'أدخل اسم الزائر' : 'Enter the visitor name';
+  String get visitorType => ar ? 'نوع الزائر' : 'Visitor type';
+  String get purposeOrCompany =>
+      ar ? 'الغرض أو شركة التوصيل' : 'Purpose or delivery company';
+  String get vehicleNumberOptional =>
+      ar ? 'رقم المركبة (اختياري)' : 'Vehicle number (optional)';
+  String get takePhoto => ar ? 'التقاط صورة الزائر' : 'Take visitor photo';
+  String get retakePhoto => ar ? 'إعادة التقاط الصورة' : 'Retake photo';
+  String get submitting => ar ? 'جارٍ الإرسال…' : 'Submitting…';
+  String get requestEntry => ar ? 'طلب الدخول' : 'Request entry';
+  String get takePhotoFirst => ar
+      ? 'التقط صورة جديدة للزائر قبل الإرسال.'
+      : 'Take a fresh visitor photo before submitting.';
+  String get createFailed =>
+      ar ? 'تعذّر إنشاء طلب الزيارة.' : 'Could not create the visitor request.';
+
+  String visitorTypeValue(String type) {
+    switch (type) {
+      case 'DELIVERY':
+        return ar ? 'توصيل' : 'delivery';
+      case 'GUEST':
+        return ar ? 'ضيف' : 'guest';
+      case 'MAID':
+        return ar ? 'عاملة منزلية' : 'maid';
+      case 'MILK_VENDOR':
+        return ar ? 'مورّد الحليب' : 'milk vendor';
+      case 'LAUNDRY_VENDOR':
+        return ar ? 'مورّد المغسلة' : 'laundry vendor';
+      case 'SERVICE_VENDOR':
+        return ar ? 'مورّد خدمة' : 'service vendor';
+      case 'OTHER':
+        return ar ? 'أخرى' : 'other';
+      default:
+        return type.replaceAll('_', ' ').toLowerCase();
+    }
   }
 }

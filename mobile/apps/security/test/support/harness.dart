@@ -18,25 +18,25 @@ void stubSecureStorage() {
   final store = <String, String>{};
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
       .setMockMethodCallHandler(
-    const MethodChannel('plugins.it_nomads.com/flutter_secure_storage'),
-    (call) async {
-      switch (call.method) {
-        case 'read':
-          return store[call.arguments['key'] as String];
-        case 'write':
-          store[call.arguments['key'] as String] =
-              call.arguments['value'] as String;
-          return null;
-        case 'delete':
-          store.remove(call.arguments['key'] as String);
-          return null;
-        case 'readAll':
-          return store;
-        default:
-          return null;
-      }
-    },
-  );
+        const MethodChannel('plugins.it_nomads.com/flutter_secure_storage'),
+        (call) async {
+          switch (call.method) {
+            case 'read':
+              return store[call.arguments['key'] as String];
+            case 'write':
+              store[call.arguments['key'] as String] =
+                  call.arguments['value'] as String;
+              return null;
+            case 'delete':
+              store.remove(call.arguments['key'] as String);
+              return null;
+            case 'readAll':
+              return store;
+            default:
+              return null;
+          }
+        },
+      );
 }
 
 /// Boots the real [SecurityApp] — real router, real redirect, real
@@ -71,10 +71,7 @@ Future<ProviderContainer> pumpSecurityApp(
   }
 
   await tester.pumpWidget(
-    UncontrolledProviderScope(
-      container: container,
-      child: const SecurityApp(),
-    ),
+    UncontrolledProviderScope(container: container, child: const SecurityApp()),
   );
   await tester.pumpAndSettle();
   return container;

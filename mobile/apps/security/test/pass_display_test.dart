@@ -14,12 +14,18 @@ void main() {
 
   group('passInstant', () {
     test('converts the UTC instant the backend sends into local time', () {
-      final parsed = passInstant({'validFrom': '2026-07-16T05:00:00Z'}, 'validFrom');
+      final parsed = passInstant({
+        'validFrom': '2026-07-16T05:00:00Z',
+      }, 'validFrom');
 
       expect(parsed, isNotNull);
-      expect(parsed!.isUtc, isFalse,
-          reason: 'formatting a UTC DateTime would show a UAE guard every '
-              'window four hours early');
+      expect(
+        parsed!.isUtc,
+        isFalse,
+        reason:
+            'formatting a UTC DateTime would show a UAE guard every '
+            'window four hours early',
+      );
       expect(parsed.toUtc(), DateTime.utc(2026, 7, 16, 5));
     });
 
@@ -37,7 +43,9 @@ void main() {
         DateTime(2026, 7, 16, 17),
       );
 
-      expect(window, '9:00 AM – 5:00 PM');
+      // The range is LTR-isolated (U+2066/U+2069) so it can't reorder
+      // inside RTL text.
+      expect(window, '\u20669:00 AM – 5:00 PM\u2069');
     });
 
     test('keeps the day when the window spans more than one', () {
@@ -56,19 +64,24 @@ void main() {
 
     test('handles a half-open window', () {
       expect(formatWindow(DateTime(2026, 7, 16, 9), null), startsWith('From '));
-      expect(formatWindow(null, DateTime(2026, 7, 16, 17)), startsWith('Until '));
+      expect(
+        formatWindow(null, DateTime(2026, 7, 16, 17)),
+        startsWith('Until '),
+      );
     });
   });
 
   group('describeRejection', () {
-    test('the blinded rejection stands on its own, with no guest to qualify it',
-        () {
-      final copy = describeRejection('not authorized for this property');
+    test(
+      'the blinded rejection stands on its own, with no guest to qualify it',
+      () {
+        final copy = describeRejection('not authorized for this property');
 
-      expect(copy, contains('another property'));
-      // Nothing on that screen names a guest, so the copy must say what to do.
-      expect(copy.toLowerCase(), contains('gate'));
-    });
+        expect(copy, contains('another property'));
+        // Nothing on that screen names a guest, so the copy must say what to do.
+        expect(copy.toLowerCase(), contains('gate'));
+      },
+    );
 
     test('every reason GatePassScanService emits has copy', () {
       const reasons = [
@@ -86,17 +99,25 @@ void main() {
       for (final reason in reasons) {
         final copy = describeRejection(reason);
         expect(copy, isNotEmpty);
-        expect(copy, isNot(reason),
-            reason: '$reason should be rewritten for a guard, not echoed');
+        expect(
+          copy,
+          isNot(reason),
+          reason: '$reason should be rewritten for a guard, not echoed',
+        );
       }
     });
 
-    test('an unknown reason falls back to the server text, not to "denied"', () {
-      // A guard reading an awkward phrase still knows why; a guard reading
-      // "denied" has nothing to tell the guest.
-      expect(describeRejection('some new backend reason'),
-          'some new backend reason');
-    });
+    test(
+      'an unknown reason falls back to the server text, not to "denied"',
+      () {
+        // A guard reading an awkward phrase still knows why; a guard reading
+        // "denied" has nothing to tell the guest.
+        expect(
+          describeRejection('some new backend reason'),
+          'some new backend reason',
+        );
+      },
+    );
 
     test('a null reason still says something', () {
       expect(describeRejection(null), 'This pass cannot be used.');
@@ -104,27 +125,29 @@ void main() {
   });
 
   group('isBlindedRejection', () {
-    test('keys on the guest actually being absent, not on the reason string',
-        () {
-      expect(
-        isBlindedRejection({
-          'result': 'REJECTED',
-          'reason': 'not authorized for this property',
-          'guestName': null,
-          'unitNumber': null,
-        }),
-        isTrue,
-      );
-      expect(
-        isBlindedRejection({
-          'result': 'REJECTED',
-          'reason': 'already used',
-          'guestName': 'Ahmed Khan',
-          'unitNumber': '101',
-        }),
-        isFalse,
-      );
-    });
+    test(
+      'keys on the guest actually being absent, not on the reason string',
+      () {
+        expect(
+          isBlindedRejection({
+            'result': 'REJECTED',
+            'reason': 'not authorized for this property',
+            'guestName': null,
+            'unitNumber': null,
+          }),
+          isTrue,
+        );
+        expect(
+          isBlindedRejection({
+            'result': 'REJECTED',
+            'reason': 'already used',
+            'guestName': 'Ahmed Khan',
+            'unitNumber': '101',
+          }),
+          isFalse,
+        );
+      },
+    );
   });
 
   group('groupByProperty', () {
@@ -141,15 +164,21 @@ void main() {
       expect(groups.last.passes.map((p) => p['id']), ['c']);
     });
 
-    test('a pass with no validFrom sorts last rather than breaking the sort',
-        () {
-      final groups = groupByProperty([
-        {'id': 'none', 'propertyId': 'p1'},
-        {'id': 'timed', 'propertyId': 'p1', 'validFrom': '2026-07-16T05:00:00Z'},
-      ]);
+    test(
+      'a pass with no validFrom sorts last rather than breaking the sort',
+      () {
+        final groups = groupByProperty([
+          {'id': 'none', 'propertyId': 'p1'},
+          {
+            'id': 'timed',
+            'propertyId': 'p1',
+            'validFrom': '2026-07-16T05:00:00Z',
+          },
+        ]);
 
-      expect(groups.single.passes.map((p) => p['id']), ['timed', 'none']);
-    });
+        expect(groups.single.passes.map((p) => p['id']), ['timed', 'none']);
+      },
+    );
 
     test('an empty list groups into nothing', () {
       expect(groupByProperty([]), isEmpty);
@@ -187,16 +216,22 @@ void main() {
   group('propertyGroupLabel', () {
     test('shows the building name when there is one', () {
       expect(
-        propertyGroupLabel('aaaaaaaa-1111-2222', 0,
-            propertyName: 'Marina Heights'),
+        propertyGroupLabel(
+          'aaaaaaaa-1111-2222',
+          0,
+          propertyName: 'Marina Heights',
+        ),
         'Marina Heights',
       );
     });
 
     test('prefers the name over the id fragment regardless of position', () {
       expect(
-        propertyGroupLabel('bbbbbbbb-1111-2222', 3,
-            propertyName: 'Jumeirah Gardens'),
+        propertyGroupLabel(
+          'bbbbbbbb-1111-2222',
+          3,
+          propertyName: 'Jumeirah Gardens',
+        ),
         'Jumeirah Gardens',
       );
     });
@@ -208,13 +243,15 @@ void main() {
       );
     });
 
-    test('falls back when the name is blank rather than heading with nothing',
-        () {
-      expect(
-        propertyGroupLabel('a3f2e1aa-1111-2222', 0, propertyName: '   '),
-        'Property 1 · A3F2E1',
-      );
-    });
+    test(
+      'falls back when the name is blank rather than heading with nothing',
+      () {
+        expect(
+          propertyGroupLabel('a3f2e1aa-1111-2222', 0, propertyName: '   '),
+          'Property 1 · A3F2E1',
+        );
+      },
+    );
 
     test('falls back to the bare ordinal when there is no id either', () {
       expect(propertyGroupLabel('', 1), 'Property 2');

@@ -56,6 +56,16 @@ az account show &> /dev/null || {
     exit 1
 }
 
+# ── Target subscription ────────────────────────────────────
+# Point the CLI at the configured subscription so the Communication Services
+# resource is created/read in the intended subscription and the connection
+# string written to $ENV_FILE below belongs to it. Blank AZURE_SUBSCRIPTION
+# keeps the CLI's current default.
+if [ -n "${AZURE_SUBSCRIPTION:-}" ]; then
+    echo "Setting subscription: $AZURE_SUBSCRIPTION"
+    az account set --subscription "$AZURE_SUBSCRIPTION"
+fi
+
 echo "Logged in as: $(az account show --query user.name -o tsv)"
 echo "Subscription: $(az account show --query name -o tsv)"
 echo ""

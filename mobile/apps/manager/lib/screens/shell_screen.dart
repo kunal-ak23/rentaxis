@@ -52,14 +52,24 @@ class _ShellScreenState extends ConsumerState<ShellScreen> {
       child: Scaffold(
         extendBody: true,
         appBar: AppBar(
-          backgroundColor: AppColors.surface,
+          backgroundColor: AppColors.navyDark,
           elevation: 0,
           scrolledUnderElevation: 0.5,
-          title: Image.asset(
-            'assets/logo_horizontal.png',
-            height: 32,
-            fit: BoxFit.contain,
+          shape: Border(
+            bottom: BorderSide(color: AppColors.accent.withValues(alpha: 0.14)),
           ),
+          // Arabic wordmark in عربي, English wordmark in EN — one script each.
+          title: ref.watch(appLanguageProvider) == AppLanguage.ar
+              ? Image.asset(
+                  'assets/logo_mark.png',
+                  height: 52,
+                  fit: BoxFit.contain,
+                )
+              : Image.asset(
+                  'assets/logo_horizontal.png',
+                  height: 28,
+                  fit: BoxFit.contain,
+                ),
           actions: [
             IconButton(
               onPressed: () => context.push('/notifications'),
@@ -74,17 +84,17 @@ class _ShellScreenState extends ConsumerState<ShellScreen> {
                 backgroundColor: AppColors.danger,
                 child: const Icon(
                   Icons.notifications_outlined,
-                  color: AppColors.navyDark,
+                  color: AppColors.accent,
                 ),
               ),
             ),
             Padding(
-              padding: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsetsDirectional.only(end: 8),
               child: IconButton(
                 onPressed: () => context.push('/more'),
                 icon: const Icon(
                   Icons.person_outline_rounded,
-                  color: AppColors.navyDark,
+                  color: AppColors.accent,
                 ),
               ),
             ),
@@ -119,56 +129,54 @@ class _FrostedBottomNav extends StatelessWidget {
 
   const _FrostedBottomNav({required this.selectedIndex, required this.onTap});
 
-  static const _items = [
-    (
-      icon: Icons.dashboard_outlined,
-      activeIcon: Icons.dashboard_rounded,
-      label: 'Dashboard',
-    ),
-    (
-      icon: Icons.apartment_outlined,
-      activeIcon: Icons.apartment_rounded,
-      label: 'Properties',
-    ),
+  static const _icons = [
+    (icon: Icons.dashboard_outlined, activeIcon: Icons.dashboard_rounded),
+    (icon: Icons.apartment_outlined, activeIcon: Icons.apartment_rounded),
     (
       icon: Icons.confirmation_number_outlined,
       activeIcon: Icons.confirmation_number_rounded,
-      label: 'Tickets',
     ),
-    (
-      icon: Icons.event_outlined,
-      activeIcon: Icons.event_rounded,
-      label: 'Meetings',
-    ),
-    (
-      icon: Icons.payment_outlined,
-      activeIcon: Icons.payment_rounded,
-      label: 'Payments',
-    ),
+    (icon: Icons.event_outlined, activeIcon: Icons.event_rounded),
+    (icon: Icons.payment_outlined, activeIcon: Icons.payment_rounded),
+  ];
+
+  static const _labelsEn = [
+    'Dashboard',
+    'Properties',
+    'Tickets',
+    'Meetings',
+    'Payments',
+  ];
+  static const _labelsAr = [
+    'لوحة التحكم',
+    'العقارات',
+    'الطلبات',
+    'المواعيد',
+    'المدفوعات',
   ];
 
   @override
   Widget build(BuildContext context) {
+    final labels = context.isAr ? _labelsAr : _labelsEn;
     return SafeArea(
       top: false,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+        padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(28),
+          borderRadius: BorderRadius.circular(20),
           child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+            filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
             child: Container(
-              height: 72,
+              height: 68,
               decoration: BoxDecoration(
-                color: AppColors.background.withValues(alpha: 0.82),
-                borderRadius: BorderRadius.circular(28),
+                color: AppColors.navyDark.withValues(alpha: 0.9),
+                borderRadius: BorderRadius.circular(20),
                 border: Border.all(
-                  color: AppColors.border.withValues(alpha: 0.6),
-                  width: 1.2,
+                  color: AppColors.accent.withValues(alpha: 0.18),
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.12),
+                    color: Colors.black.withValues(alpha: 0.22),
                     blurRadius: 24,
                     offset: const Offset(0, 8),
                   ),
@@ -176,15 +184,17 @@ class _FrostedBottomNav extends StatelessWidget {
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: List.generate(_items.length, (index) {
-                  final item = _items[index];
+                children: List.generate(_icons.length, (index) {
+                  final item = _icons[index];
                   final isSelected = index == selectedIndex;
-                  return _NavItemWidget(
-                    icon: item.icon,
-                    activeIcon: item.activeIcon,
-                    label: item.label,
-                    isSelected: isSelected,
-                    onTap: () => onTap(index),
+                  return Flexible(
+                    child: _NavItemWidget(
+                      icon: item.icon,
+                      activeIcon: item.activeIcon,
+                      label: labels[index],
+                      isSelected: isSelected,
+                      onTap: () => onTap(index),
+                    ),
                   );
                 }),
               ),
@@ -220,14 +230,8 @@ class _NavItemWidget extends StatelessWidget {
         duration: const Duration(milliseconds: 250),
         curve: Curves.easeOutCubic,
         padding: EdgeInsets.symmetric(
-          horizontal: isSelected ? 14 : 10,
+          horizontal: isSelected ? 12 : 8,
           vertical: 8,
-        ),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? AppColors.primary.withValues(alpha: 0.12)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(20),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -237,17 +241,49 @@ class _NavItemWidget extends StatelessWidget {
               child: Icon(
                 isSelected ? activeIcon : icon,
                 key: ValueKey(isSelected),
-                size: 22,
-                color: isSelected ? AppColors.primary : AppColors.textMuted,
+                size: 21,
+                color: isSelected
+                    ? AppColors.accent
+                    : Colors.white.withValues(alpha: 0.5),
               ),
             ),
             const SizedBox(height: 3),
-            Text(
-              label,
-              style: GoogleFonts.josefinSans(
-                fontSize: 10,
-                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w400,
-                color: isSelected ? AppColors.primary : AppColors.textMuted,
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                label,
+                maxLines: 1,
+                // Naskh + no tracking for Arabic (joining); Josefin for EN.
+                style: context.isAr
+                    ? GoogleFonts.notoNaskhArabic(
+                        fontSize: 11,
+                        fontWeight: isSelected
+                            ? FontWeight.w600
+                            : FontWeight.w400,
+                        color: isSelected
+                            ? AppColors.accent
+                            : Colors.white.withValues(alpha: 0.5),
+                      )
+                    : GoogleFonts.josefinSans(
+                        fontSize: 10.5,
+                        fontWeight: isSelected
+                            ? FontWeight.w600
+                            : FontWeight.w400,
+                        letterSpacing: 0.4,
+                        color: isSelected
+                            ? AppColors.accent
+                            : Colors.white.withValues(alpha: 0.5),
+                      ),
+              ),
+            ),
+            const SizedBox(height: 3),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 250),
+              width: 4,
+              height: 4,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isSelected ? AppColors.accent : Colors.transparent,
               ),
             ),
           ],

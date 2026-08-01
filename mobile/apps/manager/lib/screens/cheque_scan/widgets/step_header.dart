@@ -6,7 +6,7 @@ import 'package:rentaxis_core/rentaxis_core.dart';
 ///  - back / close icon row
 ///  - "Step N of 4" label
 ///  - 4-segment progress bar (gold up to current step)
-///  - serif title
+///  - Cinzel/Naskh title, matching the Miftah chrome typography.
 class StepHeader extends StatelessWidget {
   final int step;
   final String title;
@@ -25,8 +25,12 @@ class StepHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final ar = context.isAr;
+    final stepLabel = ar ? 'الخطوة $step من 4' : 'Step $step of 4';
+
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+      padding: const EdgeInsetsDirectional.fromSTEB(20, 4, 20, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -38,27 +42,37 @@ class StepHeader extends StatelessWidget {
                 height: 32,
                 child: showBack
                     ? Material(
-                        color: AppColors.surface,
+                        color: m.surface,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10),
-                          side: const BorderSide(color: AppColors.border),
+                          side: BorderSide(color: m.border),
                         ),
                         child: InkWell(
                           borderRadius: BorderRadius.circular(10),
                           onTap: onBack,
-                          child: const Icon(Icons.arrow_back,
-                              size: 14, color: AppColors.textPrimary),
+                          child: Icon(
+                            ar ? Icons.arrow_forward : Icons.arrow_back,
+                            size: 14,
+                            color: m.textPrimary,
+                          ),
                         ),
                       )
                     : const SizedBox.shrink(),
               ),
               Text(
-                'Step $step of 4',
-                style: GoogleFonts.inter(
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w500,
-                  color: AppColors.textMuted,
-                ),
+                stepLabel,
+                style: ar
+                    ? GoogleFonts.notoNaskhArabic(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w500,
+                        color: m.textMuted,
+                      )
+                    : GoogleFonts.josefinSans(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w500,
+                        letterSpacing: 1.0,
+                        color: m.textMuted,
+                      ),
               ),
               SizedBox(
                 width: 32,
@@ -66,8 +80,7 @@ class StepHeader extends StatelessWidget {
                 child: InkWell(
                   borderRadius: BorderRadius.circular(10),
                   onTap: onClose,
-                  child: const Icon(Icons.close,
-                      size: 16, color: AppColors.textSecondary),
+                  child: Icon(Icons.close, size: 16, color: m.textSecondary),
                 ),
               ),
             ],
@@ -80,9 +93,10 @@ class StepHeader extends StatelessWidget {
               return Expanded(
                 child: Container(
                   height: 3,
-                  margin: EdgeInsets.only(right: i == 3 ? 0 : 4),
+                  margin: EdgeInsetsDirectional.only(end: i == 3 ? 0 : 4),
                   decoration: BoxDecoration(
-                    color: filled ? AppColors.accent : AppColors.surface2,
+                    gradient: filled ? MiftahGradients.goldProgress : null,
+                    color: filled ? null : m.surfaceAlt,
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -92,12 +106,18 @@ class StepHeader extends StatelessWidget {
           const SizedBox(height: 14),
           Text(
             title,
-            style: GoogleFonts.sourceSerif4(
-              fontSize: 22,
-              fontWeight: FontWeight.w600,
-              letterSpacing: -0.4,
-              color: AppColors.textPrimary,
-            ),
+            style: ar
+                ? GoogleFonts.notoNaskhArabic(
+                    fontSize: 21,
+                    fontWeight: FontWeight.w600,
+                    color: m.textPrimary,
+                  )
+                : GoogleFonts.cinzel(
+                    fontSize: 21,
+                    fontWeight: FontWeight.w500,
+                    letterSpacing: 0.4,
+                    color: m.textPrimary,
+                  ),
           ),
         ],
       ),

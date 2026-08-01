@@ -59,20 +59,24 @@ class _Step2ReadingState extends State<Step2Reading>
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final l = _L(context.isAr);
+    final bodyFont = l.ar
+        ? GoogleFonts.notoNaskhArabic
+        : GoogleFonts.josefinSans;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         StepHeader(
           step: 2,
-          title: widget.error != null
-              ? 'Couldn\'t read cheque'
-              : 'Reading cheque…',
+          title: widget.error != null ? l.couldNotRead : l.reading,
           onBack: widget.onBack,
           onClose: widget.onClose,
         ),
         Expanded(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+            padding: const EdgeInsetsDirectional.fromSTEB(20, 0, 20, 24),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -87,12 +91,14 @@ class _Step2ReadingState extends State<Step2Reading>
                 ),
                 const SizedBox(height: 18),
                 Text(
-                  'Recognising fields',
-                  style: GoogleFonts.inter(
-                    fontSize: 11,
+                  l.ar
+                      ? l.recognisingFields
+                      : l.recognisingFields.toUpperCase(),
+                  style: bodyFont(
+                    fontSize: l.ar ? 12.5 : 11,
                     fontWeight: FontWeight.w600,
-                    color: AppColors.textMuted,
-                    letterSpacing: 0.6,
+                    color: m.textMuted,
+                    letterSpacing: l.ar ? 0 : 0.6,
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -100,6 +106,7 @@ class _Step2ReadingState extends State<Step2Reading>
                   result: widget.result,
                   error: widget.error,
                   controller: _ctrl,
+                  l: l,
                 ),
                 const SizedBox(height: 18),
                 if (widget.error == null)
@@ -112,18 +119,15 @@ class _Step2ReadingState extends State<Step2Reading>
                           height: 12,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation(AppColors.accent),
+                            valueColor: AlwaysStoppedAnimation(
+                              AppColors.accent,
+                            ),
                           ),
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          widget.result == null
-                              ? 'Reading cheque…'
-                              : 'Preparing confirmation…',
-                          style: GoogleFonts.inter(
-                            fontSize: 12,
-                            color: AppColors.textMuted,
-                          ),
+                          widget.result == null ? l.reading : l.preparing,
+                          style: bodyFont(fontSize: 12, color: m.textMuted),
                         ),
                       ],
                     ),
@@ -141,30 +145,37 @@ class _FieldsList extends StatelessWidget {
   final ChequeExtractionResult? result;
   final String? error;
   final AnimationController controller;
+  final _L l;
 
   const _FieldsList({
     required this.result,
     required this.error,
     required this.controller,
+    required this.l,
   });
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
     final extracted = result?.extracted;
     final amount = result?.amount;
     final rows = <_Row>[
-      _Row('Bank', extracted?['bankName']?.toString()),
-      _Row('Cheque #', extracted?['chequeNumber']?.toString()),
-      _Row('Date', extracted?['chequeDate']?.toString()),
-      _Row('Payer', extracted?['payerName']?.toString()),
-      _Row('Amount',
-          amount == null ? null : 'AED ${NumberFormat('#,##0.##').format(amount)}'),
+      _Row(l.fieldBank, extracted?['bankName']?.toString()),
+      _Row(l.fieldChequeNumber, extracted?['chequeNumber']?.toString()),
+      _Row(l.fieldDate, extracted?['chequeDate']?.toString()),
+      _Row(l.fieldPayer, extracted?['payerName']?.toString()),
+      _Row(
+        l.fieldAmount,
+        amount == null
+            ? null
+            : 'AED ${NumberFormat('#,##0.##').format(amount)}',
+      ),
     ];
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        border: Border.all(color: AppColors.border),
+        color: m.surface,
+        border: Border.all(color: m.border),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -176,8 +187,10 @@ class _FieldsList extends StatelessWidget {
           return AnimatedBuilder(
             animation: controller,
             builder: (context, _) {
-              final t = ((controller.value - from) / (to - from))
-                  .clamp(0.0, 1.0);
+              final t = ((controller.value - from) / (to - from)).clamp(
+                0.0,
+                1.0,
+              );
               final done = result != null && t >= 1.0;
               return _FieldRow(
                 label: row.label,
@@ -186,6 +199,7 @@ class _FieldsList extends StatelessWidget {
                 isLast: i == rows.length - 1,
                 hasError: error != null && i == 0,
                 errorText: error,
+                l: l,
               );
             },
           );
@@ -208,6 +222,7 @@ class _FieldRow extends StatelessWidget {
   final bool isLast;
   final bool hasError;
   final String? errorText;
+  final _L l;
 
   const _FieldRow({
     required this.label,
@@ -215,31 +230,36 @@ class _FieldRow extends StatelessWidget {
     required this.done,
     required this.isLast,
     required this.hasError,
+    required this.l,
     this.errorText,
   });
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final bodyFont = l.ar
+        ? GoogleFonts.notoNaskhArabic
+        : GoogleFonts.josefinSans;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+      padding: const EdgeInsetsDirectional.symmetric(
+        horizontal: 12,
+        vertical: 11,
+      ),
       decoration: BoxDecoration(
-        border: isLast
-            ? null
-            : const Border(bottom: BorderSide(color: AppColors.border)),
+        border: isLast ? null : Border(bottom: BorderSide(color: m.border)),
       ),
       child: Row(
         children: [
-          Text(
-            label,
-            style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted),
-          ),
+          Text(label, style: bodyFont(fontSize: 12, color: m.textMuted)),
           const Spacer(),
           if (hasError)
-            Text(
-              errorText ?? 'Failed',
-              style: GoogleFonts.inter(
-                fontSize: 12,
-                color: AppColors.danger,
+            Flexible(
+              child: Text(
+                errorText ?? l.failed,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.end,
+                style: bodyFont(fontSize: 12, color: m.danger),
               ),
             )
           else ...[
@@ -248,21 +268,21 @@ class _FieldRow extends StatelessWidget {
               style: GoogleFonts.jetBrainsMono(
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
-                color: done ? AppColors.textPrimary : AppColors.textMuted,
+                color: done ? m.textPrimary : m.textMuted,
               ),
             ),
             const SizedBox(width: 8),
             done
-                ? const Icon(Icons.check,
-                    size: 13, color: AppColors.success)
+                ? Icon(Icons.check, size: 13, color: m.success)
                 : SizedBox(
                     width: 13,
                     height: 13,
                     child: CircularProgressIndicator(
                       strokeWidth: 2,
-                      valueColor:
-                          const AlwaysStoppedAnimation(AppColors.accent),
-                      backgroundColor: AppColors.border,
+                      valueColor: const AlwaysStoppedAnimation(
+                        AppColors.accent,
+                      ),
+                      backgroundColor: m.border,
                     ),
                   ),
           ],
@@ -270,4 +290,25 @@ class _FieldRow extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Step 2 strings (EN/AR). Lightweight per-screen pattern — see arabic-brief.
+/// Field labels mirror web/messages/ar.json's `cheque.scanner.field*` keys.
+class _L {
+  _L(this.ar);
+  final bool ar;
+
+  String get couldNotRead => ar ? 'تعذّرت قراءة الشيك' : "Couldn't read cheque";
+  String get reading => ar ? 'جارٍ قراءة الشيك…' : 'Reading cheque…';
+  String get preparing =>
+      ar ? 'جارٍ تجهيز التأكيد…' : 'Preparing confirmation…';
+  String get recognisingFields =>
+      ar ? 'التعرّف على الحقول' : 'Recognising fields';
+  String get failed => ar ? 'فشل' : 'Failed';
+
+  String get fieldBank => ar ? 'اسم البنك' : 'Bank';
+  String get fieldChequeNumber => ar ? 'رقم الشيك' : 'Cheque #';
+  String get fieldDate => ar ? 'تاريخ الشيك' : 'Date';
+  String get fieldPayer => ar ? 'اسم الدافع' : 'Payer';
+  String get fieldAmount => ar ? 'المبلغ' : 'Amount';
 }

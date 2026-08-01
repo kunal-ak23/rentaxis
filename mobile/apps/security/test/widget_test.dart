@@ -9,8 +9,9 @@ void main() {
 
   setUp(stubSecureStorage);
 
-  testWidgets('SecurityApp boots to the login screen with no stored session',
-      (tester) async {
+  testWidgets('SecurityApp boots to the login screen with no stored session', (
+    tester,
+  ) async {
     // Booted through the harness rather than a bare `ProviderScope(child:
     // SecurityApp())`. The bare version passed only while `/` was a
     // placeholder: the real home screen reads the gate, so an un-stubbed boot

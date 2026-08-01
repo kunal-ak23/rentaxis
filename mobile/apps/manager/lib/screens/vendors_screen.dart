@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
 final _vendorServiceProvider = Provider<VendorService>((ref) {
@@ -8,12 +9,13 @@ final _vendorServiceProvider = Provider<VendorService>((ref) {
   return VendorService(client.dio);
 });
 
-final _vendorsProvider =
-    FutureProvider.autoDispose<List<dynamic>>((ref) async {
+final _vendorsProvider = FutureProvider.autoDispose<List<dynamic>>((ref) async {
   final service = ref.watch(_vendorServiceProvider);
   return service.getVendors();
 });
 
+/// Vendors directory, restyled to match the admin design language: dark
+/// chrome search header, contact detail cards.
 class VendorsScreen extends ConsumerStatefulWidget {
   const VendorsScreen({super.key});
 
@@ -31,45 +33,33 @@ class _VendorsScreenState extends ConsumerState<VendorsScreen> {
   @override
   Widget build(BuildContext context) {
     final vendorsAsync = ref.watch(_vendorsProvider);
+    final m = context.miftah;
+    final l = _L(context.isAr);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Vendors')),
+      backgroundColor: m.background,
       body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: TextField(
-              onChanged: (v) => setState(() => _searchQuery = v.toLowerCase()),
-              decoration: InputDecoration(
-                hintText: 'Search vendors...',
-                prefixIcon:
-                    const Icon(Icons.search, color: AppColors.textMuted),
-                suffixIcon: _searchQuery.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear, size: 18),
-                        onPressed: () => setState(() => _searchQuery = ''),
-                      )
-                    : null,
-              ),
-            ),
+          _ChromeHeader(
+            count: vendorsAsync.asData?.value.length,
+            l: l,
+            onSearchChanged: (v) =>
+                setState(() => _searchQuery = v.toLowerCase()),
           ),
           Expanded(
             child: vendorsAsync.when(
-              loading: () => const Center(
-                child: CircularProgressIndicator(color: AppColors.primary),
+              loading: () => Center(
+                child: CircularProgressIndicator(
+                  color: m.isDark ? AppColors.accent : AppColors.primary,
+                ),
               ),
-              error: (e, _) => ErrorState(
-                message: 'Failed to load vendors',
-                onRetry: _refresh,
-              ),
+              error: (e, _) =>
+                  ErrorState(message: l.loadFailed, onRetry: _refresh),
               data: (vendors) {
                 final filtered = vendors.where((v) {
-                  final name =
-                      (v['name'] ?? '').toString().toLowerCase();
-                  final email =
-                      (v['email'] ?? '').toString().toLowerCase();
-                  final phone =
-                      (v['phone'] ?? '').toString().toLowerCase();
+                  final name = (v['name'] ?? '').toString().toLowerCase();
+                  final email = (v['email'] ?? '').toString().toLowerCase();
+                  final phone = (v['phone'] ?? '').toString().toLowerCase();
                   return name.contains(_searchQuery) ||
                       email.contains(_searchQuery) ||
                       phone.contains(_searchQuery);
@@ -79,27 +69,30 @@ class _VendorsScreenState extends ConsumerState<VendorsScreen> {
                   return EmptyState(
                     icon: Icons.store_outlined,
                     title: _searchQuery.isEmpty
-                        ? 'No vendors yet'
-                        : 'No matching vendors',
-                    subtitle: _searchQuery.isEmpty
-                        ? 'Add your first vendor'
-                        : null,
+                        ? l.noVendorsYet
+                        : l.noMatchingVendors,
+                    subtitle: _searchQuery.isEmpty ? l.addFirstVendor : null,
                   );
                 }
 
                 return RefreshIndicator(
                   onRefresh: _refresh,
-                  color: AppColors.primary,
+                  color: m.isDark ? AppColors.accent : AppColors.primary,
                   child: ListView.builder(
                     physics: const AlwaysScrollableScrollPhysics(),
-                    padding: EdgeInsets.fromLTRB(16, 0, 16, AppInsets.bottomNav(context)),
+                    padding: EdgeInsets.fromLTRB(
+                      16,
+                      8,
+                      16,
+                      AppInsets.bottomNav(context),
+                    ),
                     itemCount: filtered.length,
                     itemBuilder: (context, index) {
                       final vendor = filtered[index];
                       return _VendorCard(
                         vendor: vendor,
-                        onTap: () =>
-                            context.push('/vendors/${vendor['id']}'),
+                        l: l,
+                        onTap: () => context.push('/vendors/${vendor['id']}'),
                       );
                     },
                   ),
@@ -118,6 +111,7 @@ class _VendorsScreenState extends ConsumerState<VendorsScreen> {
   }
 
   void _showCreateVendorSheet(BuildContext context) {
+    final l = _L(context.isAr);
     final nameCtrl = TextEditingController();
     final emailCtrl = TextEditingController();
     final phoneCtrl = TextEditingController();
@@ -134,7 +128,11 @@ class _VendorsScreenState extends ConsumerState<VendorsScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheetState) => Padding(
           padding: EdgeInsets.fromLTRB(
-              24, 24, 24, MediaQuery.of(ctx).viewInsets.bottom + 24),
+            24,
+            24,
+            24,
+            MediaQuery.of(ctx).viewInsets.bottom + 24,
+          ),
           child: Form(
             key: formKey,
             child: SingleChildScrollView(
@@ -153,86 +151,90 @@ class _VendorsScreenState extends ConsumerState<VendorsScreen> {
                     ),
                   ),
                   const SizedBox(height: 20),
-                  Text('New Vendor',
-                      style: Theme.of(ctx).textTheme.headlineSmall),
+                  Text(
+                    l.newVendor,
+                    style: l.ar
+                        ? GoogleFonts.notoNaskhArabic(
+                            fontSize: 19,
+                            fontWeight: FontWeight.w600,
+                          )
+                        : GoogleFonts.cinzel(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                          ),
+                  ),
                   const SizedBox(height: 20),
                   TextFormField(
                     controller: nameCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Name',
-                      prefixIcon: Icon(Icons.store_outlined),
+                    decoration: InputDecoration(
+                      labelText: l.name,
+                      prefixIcon: const Icon(Icons.store_outlined),
                     ),
-                    validator: (v) => v == null || v.trim().isEmpty
-                        ? 'Name is required'
-                        : null,
+                    validator: (v) =>
+                        v == null || v.trim().isEmpty ? l.nameRequired : null,
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
                     controller: emailCtrl,
                     keyboardType: TextInputType.emailAddress,
-                    decoration: const InputDecoration(
-                      labelText: 'Email',
-                      prefixIcon: Icon(Icons.email_outlined),
+                    decoration: InputDecoration(
+                      labelText: l.email,
+                      prefixIcon: const Icon(Icons.email_outlined),
                     ),
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
                     controller: phoneCtrl,
                     keyboardType: TextInputType.phone,
-                    decoration: const InputDecoration(
-                      labelText: 'Phone',
-                      prefixIcon: Icon(Icons.phone_outlined),
+                    decoration: InputDecoration(
+                      labelText: l.phone,
+                      prefixIcon: const Icon(Icons.phone_outlined),
                     ),
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
                     controller: addressCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Address',
-                      prefixIcon: Icon(Icons.location_on_outlined),
+                    decoration: InputDecoration(
+                      labelText: l.address,
+                      prefixIcon: const Icon(Icons.location_on_outlined),
                     ),
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
                     controller: trnCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'TRN (Tax Registration Number)',
-                      prefixIcon: Icon(Icons.receipt_long_outlined),
+                    decoration: InputDecoration(
+                      labelText: l.trn,
+                      prefixIcon: const Icon(Icons.receipt_long_outlined),
                     ),
                   ),
                   const SizedBox(height: 24),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: () async {
-                        if (!formKey.currentState!.validate()) return;
-                        final service = ref.read(_vendorServiceProvider);
-                        try {
-                          await service.createVendor({
-                            'name': nameCtrl.text.trim(),
-                            if (emailCtrl.text.isNotEmpty)
-                              'email': emailCtrl.text.trim(),
-                            if (phoneCtrl.text.isNotEmpty)
-                              'phone': phoneCtrl.text.trim(),
-                            if (addressCtrl.text.isNotEmpty)
-                              'address': addressCtrl.text.trim(),
-                            if (trnCtrl.text.isNotEmpty)
-                              'trn': trnCtrl.text.trim(),
-                          });
-                          if (ctx.mounted) Navigator.pop(ctx);
-                          _refresh();
-                        } catch (e) {
-                          if (ctx.mounted) {
-                            ScaffoldMessenger.of(ctx).showSnackBar(
-                              const SnackBar(
-                                  content:
-                                      Text('Failed to create vendor')),
-                            );
-                          }
+                  GoldButton(
+                    label: l.createVendor,
+                    onPressed: () async {
+                      if (!formKey.currentState!.validate()) return;
+                      final service = ref.read(_vendorServiceProvider);
+                      try {
+                        await service.createVendor({
+                          'name': nameCtrl.text.trim(),
+                          if (emailCtrl.text.isNotEmpty)
+                            'email': emailCtrl.text.trim(),
+                          if (phoneCtrl.text.isNotEmpty)
+                            'phone': phoneCtrl.text.trim(),
+                          if (addressCtrl.text.isNotEmpty)
+                            'address': addressCtrl.text.trim(),
+                          if (trnCtrl.text.isNotEmpty)
+                            'trn': trnCtrl.text.trim(),
+                        });
+                        if (ctx.mounted) Navigator.pop(ctx);
+                        _refresh();
+                      } catch (e) {
+                        if (ctx.mounted) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            SnackBar(content: Text(l.createFailed)),
+                          );
                         }
-                      },
-                      child: const Text('Create Vendor'),
-                    ),
+                      }
+                    },
                   ),
                 ],
               ),
@@ -244,40 +246,159 @@ class _VendorsScreenState extends ConsumerState<VendorsScreen> {
   }
 }
 
-class _VendorCard extends StatelessWidget {
-  final Map<String, dynamic> vendor;
-  final VoidCallback onTap;
+class _ChromeHeader extends StatelessWidget {
+  final int? count;
+  final _L l;
+  final ValueChanged<String> onSearchChanged;
 
-  const _VendorCard({required this.vendor, required this.onTap});
+  const _ChromeHeader({
+    required this.count,
+    required this.l,
+    required this.onSearchChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final name = vendor['name'] ?? 'Unknown';
-    final email = vendor['email'] ?? '';
-    final phone = vendor['phone'] ?? '';
-    final trn = vendor['trn'] ?? '';
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.primary,
+        border: Border(
+          bottom: BorderSide(color: AppColors.accent.withValues(alpha: 0.14)),
+        ),
+      ),
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            count != null ? l.vendorsCount(count!) : l.title,
+            style: l.ar
+                ? GoogleFonts.notoNaskhArabic(
+                    fontSize: 12,
+                    color: AppColors.goldMid,
+                  )
+                : GoogleFonts.josefinSans(
+                    fontSize: 10,
+                    letterSpacing: 2.6,
+                    color: AppColors.goldMid,
+                  ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            l.title,
+            style: l.ar
+                ? GoogleFonts.notoNaskhArabic(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.gold400,
+                  )
+                : GoogleFonts.cinzel(fontSize: 22, color: AppColors.gold400),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            onChanged: onSearchChanged,
+            style: (l.ar
+                ? GoogleFonts.notoNaskhArabic
+                : GoogleFonts.josefinSans)(fontSize: 13, color: Colors.white),
+            decoration: InputDecoration(
+              isDense: true,
+              hintText: l.searchHint,
+              hintStyle:
+                  (l.ar
+                  ? GoogleFonts.notoNaskhArabic
+                  : GoogleFonts.josefinSans)(
+                    fontSize: 12.5,
+                    color: Colors.white.withValues(alpha: 0.45),
+                  ),
+              prefixIcon: Icon(
+                Icons.search,
+                size: 18,
+                color: Colors.white.withValues(alpha: 0.45),
+              ),
+              filled: true,
+              fillColor: Colors.white.withValues(alpha: 0.07),
+              contentPadding: const EdgeInsets.symmetric(vertical: 10),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(999),
+                borderSide: BorderSide(
+                  color: AppColors.accent.withValues(alpha: 0.2),
+                ),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(999),
+                borderSide: BorderSide(
+                  color: AppColors.accent.withValues(alpha: 0.2),
+                ),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(999),
+                borderSide: BorderSide(
+                  color: AppColors.accent.withValues(alpha: 0.5),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
+class _VendorCard extends StatelessWidget {
+  final Map<String, dynamic> vendor;
+  final _L l;
+  final VoidCallback onTap;
+
+  const _VendorCard({
+    required this.vendor,
+    required this.l,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final m = context.miftah;
+    final name = (vendor['name'] ?? l.unknown).toString();
+    final email = (vendor['email'] ?? '').toString();
+    final phone = (vendor['phone'] ?? '').toString();
+    final trn = (vendor['trn'] ?? '').toString();
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: m.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: m.border),
+      ),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.all(14),
           child: Row(
             children: [
-              CircleAvatar(
-                backgroundColor: AppColors.primary.withValues(alpha: 0.1),
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: m.background,
+                  border: Border.all(color: m.borderStrong),
+                ),
+                alignment: Alignment.center,
                 child: name.isNotEmpty
                     ? Text(
                         name[0].toUpperCase(),
-                        style: const TextStyle(
-                          color: AppColors.primary,
-                          fontWeight: FontWeight.w700,
+                        style: GoogleFonts.cinzel(
+                          fontSize: 13,
+                          color: AppColors.accentDark,
                         ),
                       )
-                    : const Icon(Icons.store_outlined,
-                        color: AppColors.primary, size: 20),
+                    : Icon(
+                        Icons.store_outlined,
+                        color: AppColors.accentDark,
+                        size: 18,
+                      ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -286,50 +407,90 @@ class _VendorCard extends StatelessWidget {
                   children: [
                     Text(
                       name,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                      ),
+                      style:
+                          (l.ar
+                          ? GoogleFonts.notoNaskhArabic
+                          : GoogleFonts.josefinSans)(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                            color: m.textPrimary,
+                          ),
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 4),
-                    if (email.toString().isNotEmpty)
+                    if (email.isNotEmpty)
                       Text(
-                        email.toString(),
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textSecondary,
-                        ),
+                        email,
+                        style:
+                            (l.ar
+                            ? GoogleFonts.notoNaskhArabic
+                            : GoogleFonts.josefinSans)(
+                              fontSize: 12,
+                              color: m.textSecondary,
+                            ),
                       ),
-                    if (phone.toString().isNotEmpty) ...[
+                    if (phone.isNotEmpty) ...[
                       const SizedBox(height: 2),
                       Text(
-                        phone.toString(),
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textMuted,
-                        ),
+                        phone,
+                        style:
+                            (l.ar
+                            ? GoogleFonts.notoNaskhArabic
+                            : GoogleFonts.josefinSans)(
+                              fontSize: 12,
+                              color: m.textMuted,
+                            ),
                       ),
                     ],
-                    if (trn.toString().isNotEmpty) ...[
+                    if (trn.isNotEmpty) ...[
                       const SizedBox(height: 2),
                       Text(
-                        'TRN: ${trn.toString()}',
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: AppColors.textMuted,
-                        ),
+                        l.trnLine(trn),
+                        style:
+                            (l.ar
+                            ? GoogleFonts.notoNaskhArabic
+                            : GoogleFonts.josefinSans)(
+                              fontSize: 11,
+                              color: m.textMuted,
+                            ),
                       ),
                     ],
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right,
-                  color: AppColors.textMuted, size: 20),
+              Icon(Icons.chevron_right, color: m.textMuted, size: 20),
             ],
           ),
         ),
       ),
     );
   }
+}
+
+/// Screen strings (EN/AR). Lightweight per-screen pattern — see arabic-brief.
+class _L {
+  _L(this.ar);
+  final bool ar;
+
+  String get title => ar ? 'المورّدون' : 'Vendors';
+  String vendorsCount(int n) => ar ? '$n موردًا' : '$n VENDORS';
+  String get searchHint => ar ? 'ابحث في الموردين' : 'Search vendors...';
+  String get loadFailed => ar ? 'فشل تحميل الموردين' : 'Failed to load vendors';
+  String get noVendorsYet => ar ? 'لا يوجد موردون بعد' : 'No vendors yet';
+  String get noMatchingVendors =>
+      ar ? 'لا يوجد موردون مطابقون' : 'No matching vendors';
+  String get addFirstVendor =>
+      ar ? 'أضف أول مورد لديك' : 'Add your first vendor';
+  String get unknown => ar ? 'غير معروف' : 'Unknown';
+  String get newVendor => ar ? 'مورّد جديد' : 'New Vendor';
+  String get name => ar ? 'الاسم' : 'Name';
+  String get nameRequired => ar ? 'الاسم مطلوب' : 'Name is required';
+  String get email => ar ? 'البريد الإلكتروني' : 'Email';
+  String get phone => ar ? 'الهاتف' : 'Phone';
+  String get address => ar ? 'العنوان' : 'Address';
+  String get trn => ar ? 'الرقم الضريبي' : 'TRN (Tax Registration Number)';
+  String trnLine(String trn) => ar ? 'الرقم الضريبي: $trn' : 'TRN: $trn';
+  String get createVendor => ar ? 'إنشاء مورّد' : 'Create Vendor';
+  String get createFailed =>
+      ar ? 'فشل إنشاء المورد' : 'Failed to create vendor';
 }

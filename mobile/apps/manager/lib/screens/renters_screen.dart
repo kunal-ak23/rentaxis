@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
 final _renterServiceProvider = Provider<RenterService>((ref) {
@@ -7,12 +9,13 @@ final _renterServiceProvider = Provider<RenterService>((ref) {
   return RenterService(client.dio);
 });
 
-final _rentersProvider =
-    FutureProvider.autoDispose<List<dynamic>>((ref) async {
+final _rentersProvider = FutureProvider.autoDispose<List<dynamic>>((ref) async {
   final service = ref.watch(_renterServiceProvider);
   return service.getRenters();
 });
 
+/// Renters directory, per design 1h: dark chrome search header, rows grouped
+/// under alphabetical section labels with balance/status badges.
 class RentersScreen extends ConsumerStatefulWidget {
   const RentersScreen({super.key});
 
@@ -30,74 +33,74 @@ class _RentersScreenState extends ConsumerState<RentersScreen> {
   @override
   Widget build(BuildContext context) {
     final rentersAsync = ref.watch(_rentersProvider);
+    final m = context.miftah;
+    final l = _L(context.isAr);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Renters')),
+      backgroundColor: m.background,
       body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: TextField(
-              onChanged: (v) => setState(() => _searchQuery = v.toLowerCase()),
-              decoration: InputDecoration(
-                hintText: 'Search renters...',
-                prefixIcon:
-                    const Icon(Icons.search, color: AppColors.textMuted),
-                suffixIcon: _searchQuery.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear, size: 18),
-                        onPressed: () => setState(() => _searchQuery = ''),
-                      )
-                    : null,
-              ),
-            ),
+          _ChromeHeader(
+            count: rentersAsync.asData?.value.length,
+            l: l,
+            onSearchChanged: (v) =>
+                setState(() => _searchQuery = v.toLowerCase()),
           ),
           Expanded(
             child: rentersAsync.when(
-              loading: () => const Center(
-                child: CircularProgressIndicator(color: AppColors.primary),
+              loading: () => Center(
+                child: CircularProgressIndicator(
+                  color: m.isDark ? AppColors.accent : AppColors.primary,
+                ),
               ),
-              error: (e, _) => ErrorState(
-                message: 'Failed to load renters',
-                onRetry: _refresh,
-              ),
+              error: (e, _) =>
+                  ErrorState(message: l.loadFailed, onRetry: _refresh),
               data: (renters) {
-                final filtered = renters.where((r) {
-                  final name =
-                      (r['name'] ?? '').toString().toLowerCase();
-                  final email =
-                      (r['email'] ?? '').toString().toLowerCase();
-                  final phone = (r['phoneNumber'] ?? r['phone'] ?? '')
-                      .toString()
-                      .toLowerCase();
-                  return name.contains(_searchQuery) ||
-                      email.contains(_searchQuery) ||
-                      phone.contains(_searchQuery);
-                }).toList();
+                final filtered =
+                    renters.where((r) {
+                      final name = (r['name'] ?? '').toString().toLowerCase();
+                      final email = (r['email'] ?? '').toString().toLowerCase();
+                      final phone = (r['phoneNumber'] ?? r['phone'] ?? '')
+                          .toString()
+                          .toLowerCase();
+                      final unit = (r['unitNumber'] ?? r['unit'] ?? '')
+                          .toString()
+                          .toLowerCase();
+                      return name.contains(_searchQuery) ||
+                          email.contains(_searchQuery) ||
+                          phone.contains(_searchQuery) ||
+                          unit.contains(_searchQuery);
+                    }).toList()..sort(
+                      (a, b) =>
+                          (a['name'] ?? '').toString().toLowerCase().compareTo(
+                            (b['name'] ?? '').toString().toLowerCase(),
+                          ),
+                    );
 
                 if (filtered.isEmpty) {
                   return EmptyState(
                     icon: Icons.people_outline,
                     title: _searchQuery.isEmpty
-                        ? 'No renters yet'
-                        : 'No matching renters',
-                    subtitle: _searchQuery.isEmpty
-                        ? 'Add your first renter'
-                        : null,
+                        ? l.noRentersYet
+                        : l.noMatchingRenters,
+                    subtitle: _searchQuery.isEmpty ? l.addFirstRenter : null,
                   );
                 }
 
                 return RefreshIndicator(
                   onRefresh: _refresh,
-                  color: AppColors.primary,
+                  color: m.isDark ? AppColors.accent : AppColors.primary,
                   child: ListView.builder(
                     physics: const AlwaysScrollableScrollPhysics(),
-                    padding: EdgeInsets.fromLTRB(16, 0, 16, AppInsets.bottomNav(context)),
-                    itemCount: filtered.length,
-                    itemBuilder: (context, index) {
-                      final renter = filtered[index];
-                      return _RenterCard(renter: renter);
-                    },
+                    padding: EdgeInsets.fromLTRB(
+                      0,
+                      8,
+                      0,
+                      AppInsets.bottomNav(context),
+                    ),
+                    itemCount: _rowCount(filtered),
+                    itemBuilder: (context, index) =>
+                        _buildRow(context, filtered, index, l),
                   ),
                 );
               },
@@ -113,7 +116,51 @@ class _RentersScreenState extends ConsumerState<RentersScreen> {
     );
   }
 
+  /// Interleaves section-label rows ahead of each new starting letter.
+  int _rowCount(List<dynamic> renters) {
+    var count = 0;
+    String? lastLetter;
+    for (final r in renters) {
+      final letter = _firstLetter(r);
+      if (letter != lastLetter) {
+        count++;
+        lastLetter = letter;
+      }
+      count++;
+    }
+    return count;
+  }
+
+  String _firstLetter(dynamic renter) {
+    final name = (renter['name'] ?? '').toString().trim();
+    return name.isNotEmpty ? name[0].toUpperCase() : '#';
+  }
+
+  Widget _buildRow(
+    BuildContext context,
+    List<dynamic> renters,
+    int index,
+    _L l,
+  ) {
+    var i = 0;
+    String? lastLetter;
+    for (final r in renters) {
+      final letter = _firstLetter(r);
+      if (letter != lastLetter) {
+        if (i == index) return _SectionLabel(letter: letter);
+        i++;
+        lastLetter = letter;
+      }
+      if (i == index) {
+        return _RenterRow(renter: r, l: l);
+      }
+      i++;
+    }
+    return const SizedBox.shrink();
+  }
+
   void _showCreateRenterSheet(BuildContext context) {
+    final l = _L(context.isAr);
     final nameCtrl = TextEditingController();
     final emailCtrl = TextEditingController();
     final phoneCtrl = TextEditingController();
@@ -129,7 +176,11 @@ class _RentersScreenState extends ConsumerState<RentersScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheetState) => Padding(
           padding: EdgeInsets.fromLTRB(
-              24, 24, 24, MediaQuery.of(ctx).viewInsets.bottom + 24),
+            24,
+            24,
+            24,
+            MediaQuery.of(ctx).viewInsets.bottom + 24,
+          ),
           child: Form(
             key: formKey,
             child: SingleChildScrollView(
@@ -148,34 +199,42 @@ class _RentersScreenState extends ConsumerState<RentersScreen> {
                     ),
                   ),
                   const SizedBox(height: 20),
-                  Text('New Renter',
-                      style: Theme.of(ctx).textTheme.headlineSmall),
+                  Text(
+                    l.newRenter,
+                    style: l.ar
+                        ? GoogleFonts.notoNaskhArabic(
+                            fontSize: 19,
+                            fontWeight: FontWeight.w600,
+                          )
+                        : GoogleFonts.cinzel(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                          ),
+                  ),
                   const SizedBox(height: 20),
                   TextFormField(
                     controller: nameCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Full Name',
-                      prefixIcon: Icon(Icons.person_outline),
+                    decoration: InputDecoration(
+                      labelText: l.fullName,
+                      prefixIcon: const Icon(Icons.person_outline),
                     ),
-                    validator: (v) => v == null || v.trim().isEmpty
-                        ? 'Name is required'
-                        : null,
+                    validator: (v) =>
+                        v == null || v.trim().isEmpty ? l.nameRequired : null,
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
                     controller: emailCtrl,
                     keyboardType: TextInputType.emailAddress,
-                    decoration: const InputDecoration(
-                      labelText: 'Email',
-                      prefixIcon: Icon(Icons.email_outlined),
+                    decoration: InputDecoration(
+                      labelText: l.email,
+                      prefixIcon: const Icon(Icons.email_outlined),
                     ),
                     validator: (v) {
                       if (v == null || v.trim().isEmpty) {
-                        return 'Email is required';
+                        return l.emailRequired;
                       }
-                      if (!RegExp(r'^[^@]+@[^@]+\.[^@]+$')
-                          .hasMatch(v.trim())) {
-                        return 'Enter a valid email';
+                      if (!RegExp(r'^[^@]+@[^@]+\.[^@]+$').hasMatch(v.trim())) {
+                        return l.emailInvalid;
                       }
                       return null;
                     },
@@ -184,56 +243,52 @@ class _RentersScreenState extends ConsumerState<RentersScreen> {
                   TextFormField(
                     controller: phoneCtrl,
                     keyboardType: TextInputType.phone,
-                    decoration: const InputDecoration(
-                      labelText: 'Phone Number',
-                      prefixIcon: Icon(Icons.phone_outlined),
+                    decoration: InputDecoration(
+                      labelText: l.phoneNumber,
+                      prefixIcon: const Icon(Icons.phone_outlined),
                     ),
                   ),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
-                    value: language,
-                    decoration: const InputDecoration(
-                      labelText: 'Preferred Language',
-                      prefixIcon: Icon(Icons.language),
+                    initialValue: language,
+                    decoration: InputDecoration(
+                      labelText: l.preferredLanguage,
+                      prefixIcon: const Icon(Icons.language),
                     ),
-                    items: const [
+                    items: [
                       DropdownMenuItem(
-                          value: 'ENGLISH', child: Text('English')),
-                      DropdownMenuItem(
-                          value: 'ARABIC', child: Text('Arabic')),
+                        value: 'ENGLISH',
+                        child: Text(l.english),
+                      ),
+                      DropdownMenuItem(value: 'ARABIC', child: Text(l.arabic)),
                     ],
                     onChanged: (v) =>
                         setSheetState(() => language = v ?? 'ENGLISH'),
                   ),
                   const SizedBox(height: 24),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: () async {
-                        if (!formKey.currentState!.validate()) return;
-                        final service = ref.read(_renterServiceProvider);
-                        try {
-                          await service.createRenter({
-                            'name': nameCtrl.text.trim(),
-                            'email': emailCtrl.text.trim(),
-                            if (phoneCtrl.text.isNotEmpty)
-                              'phoneNumber': phoneCtrl.text.trim(),
-                            'preferredLanguage': language,
-                          });
-                          if (ctx.mounted) Navigator.pop(ctx);
-                          _refresh();
-                        } catch (e) {
-                          if (ctx.mounted) {
-                            ScaffoldMessenger.of(ctx).showSnackBar(
-                              const SnackBar(
-                                  content:
-                                      Text('Failed to create renter')),
-                            );
-                          }
+                  GoldButton(
+                    label: l.createRenter,
+                    onPressed: () async {
+                      if (!formKey.currentState!.validate()) return;
+                      final service = ref.read(_renterServiceProvider);
+                      try {
+                        await service.createRenter({
+                          'name': nameCtrl.text.trim(),
+                          'email': emailCtrl.text.trim(),
+                          if (phoneCtrl.text.isNotEmpty)
+                            'phoneNumber': phoneCtrl.text.trim(),
+                          'preferredLanguage': language,
+                        });
+                        if (ctx.mounted) Navigator.pop(ctx);
+                        _refresh();
+                      } catch (e) {
+                        if (ctx.mounted) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            SnackBar(content: Text(l.createFailed)),
+                          );
                         }
-                      },
-                      child: const Text('Create Renter'),
-                    ),
+                      }
+                    },
                   ),
                 ],
               ),
@@ -245,97 +300,323 @@ class _RentersScreenState extends ConsumerState<RentersScreen> {
   }
 }
 
-class _RenterCard extends StatelessWidget {
-  final Map<String, dynamic> renter;
+/// Dark chrome header: renter count overline, "Directory" title, pill search.
+class _ChromeHeader extends StatelessWidget {
+  final int? count;
+  final _L l;
+  final ValueChanged<String> onSearchChanged;
 
-  const _RenterCard({required this.renter});
+  const _ChromeHeader({
+    required this.count,
+    required this.l,
+    required this.onSearchChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final name = renter['name'] ?? 'Unknown';
-    final email = renter['email'] ?? '';
-    final phone = renter['phoneNumber'] ?? renter['phone'] ?? '';
-    final language = renter['preferredLanguage'] ?? '';
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Row(
-          children: [
-            CircleAvatar(
-              backgroundColor: AppColors.primary.withValues(alpha: 0.1),
-              child: Text(
-                name.isNotEmpty ? name[0].toUpperCase() : '?',
-                style: const TextStyle(
-                  color: AppColors.primary,
-                  fontWeight: FontWeight.w700,
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.primary,
+        border: Border(
+          bottom: BorderSide(color: AppColors.accent.withValues(alpha: 0.14)),
+        ),
+      ),
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            count != null ? l.rentersCount(count!) : l.directory,
+            style: l.ar
+                ? GoogleFonts.notoNaskhArabic(
+                    fontSize: 12,
+                    color: AppColors.goldMid,
+                  )
+                : GoogleFonts.josefinSans(
+                    fontSize: 10,
+                    letterSpacing: 2.6,
+                    color: AppColors.goldMid,
+                  ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            l.directory,
+            style: l.ar
+                ? GoogleFonts.notoNaskhArabic(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.gold400,
+                  )
+                : GoogleFonts.cinzel(fontSize: 22, color: AppColors.gold400),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            onChanged: onSearchChanged,
+            style: (l.ar
+                ? GoogleFonts.notoNaskhArabic
+                : GoogleFonts.josefinSans)(fontSize: 13, color: Colors.white),
+            decoration: InputDecoration(
+              isDense: true,
+              hintText: l.searchHint,
+              hintStyle:
+                  (l.ar
+                  ? GoogleFonts.notoNaskhArabic
+                  : GoogleFonts.josefinSans)(
+                    fontSize: 12.5,
+                    color: Colors.white.withValues(alpha: 0.45),
+                  ),
+              prefixIcon: Icon(
+                Icons.search,
+                size: 18,
+                color: Colors.white.withValues(alpha: 0.45),
+              ),
+              filled: true,
+              fillColor: Colors.white.withValues(alpha: 0.07),
+              contentPadding: const EdgeInsets.symmetric(vertical: 10),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(999),
+                borderSide: BorderSide(
+                  color: AppColors.accent.withValues(alpha: 0.2),
+                ),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(999),
+                borderSide: BorderSide(
+                  color: AppColors.accent.withValues(alpha: 0.2),
+                ),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(999),
+                borderSide: BorderSide(
+                  color: AppColors.accent.withValues(alpha: 0.5),
                 ),
               ),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Flexible(
-                        child: Text(
-                          name,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 14,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      if (language.isNotEmpty) ...[
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: AppColors.accent.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            language == 'ARABIC' ? 'AR' : 'EN',
-                            style: const TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.accent,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  if (email.isNotEmpty)
-                    Text(
-                      email,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                  if (phone.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      phone,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: AppColors.textMuted,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SectionLabel extends StatelessWidget {
+  final String letter;
+  const _SectionLabel({required this.letter});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsetsDirectional.only(start: 18, top: 14, bottom: 6),
+      child: Text(
+        letter,
+        style: GoogleFonts.josefinSans(
+          fontSize: 9,
+          letterSpacing: 2.6,
+          color: AppColors.accentDark,
         ),
       ),
     );
+  }
+}
+
+class _RenterRow extends StatelessWidget {
+  final Map<String, dynamic> renter;
+  final _L l;
+  const _RenterRow({required this.renter, required this.l});
+
+  @override
+  Widget build(BuildContext context) {
+    final m = context.miftah;
+    final name = (renter['name'] ?? '').toString();
+    final unit = (renter['unitNumber'] ?? renter['unit'] ?? '').toString();
+    final property = (renter['propertyName'] ?? renter['property'] ?? '')
+        .toString();
+    final subtitle = [
+      if (property.isNotEmpty) property,
+      if (unit.isNotEmpty) unit,
+    ].join(' · ');
+    final status = (renter['status'] ?? '').toString();
+    final balance = renter['balance'];
+
+    return Container(
+      decoration: BoxDecoration(
+        color: m.surface,
+        border: Border(
+          top: BorderSide(color: m.divider),
+          bottom: BorderSide(color: m.divider),
+        ),
+      ),
+      child: InkWell(
+        onTap: () {},
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
+          child: Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: m.background,
+                  border: Border.all(color: m.borderStrong),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  _initials(name),
+                  style: GoogleFonts.cinzel(
+                    fontSize: 12,
+                    color: AppColors.accentDark,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name.isNotEmpty ? name : l.unknown,
+                      style:
+                          (l.ar
+                          ? GoogleFonts.notoNaskhArabic
+                          : GoogleFonts.josefinSans)(
+                            fontSize: 14,
+                            color: m.textPrimary,
+                          ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (subtitle.isNotEmpty)
+                      Text(
+                        subtitle,
+                        style:
+                            (l.ar
+                            ? GoogleFonts.notoNaskhArabic
+                            : GoogleFonts.josefinSans)(
+                              fontSize: 11.5,
+                              color: m.textMuted,
+                            ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              _trailing(m, status, balance),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _trailing(MiftahColors m, String status, dynamic balance) {
+    if (status.isNotEmpty) {
+      final color = _statusColor(m, status);
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(999),
+          color: color.withValues(alpha: 0.08),
+          border: Border.all(color: color.withValues(alpha: 0.28)),
+        ),
+        child: Text(
+          l.ar ? l.statusLabel(status) : l.statusLabel(status).toUpperCase(),
+          style: (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans)(
+            fontSize: 9.5,
+            letterSpacing: l.ar ? 0 : 1.4,
+            color: color,
+          ),
+        ),
+      );
+    }
+
+    final amount = (balance is num) ? balance : num.tryParse('$balance') ?? 0;
+    final overdue = amount > 0;
+    final color = overdue ? m.danger : m.success;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Text(
+          NumberFormat.decimalPattern('en').format(amount),
+          style: GoogleFonts.cinzel(fontSize: 14, color: color),
+        ),
+        Text(
+          overdue ? l.overdue : l.balanceLabel,
+          style: (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans)(
+            fontSize: 9.5,
+            color: color,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Color _statusColor(MiftahColors m, String status) {
+    switch (status.toUpperCase()) {
+      case 'EXPIRING':
+        return m.warning;
+      case 'OVERDUE':
+        return m.danger;
+      case 'PENDING':
+        return m.textSecondary;
+      default:
+        return m.textSecondary;
+    }
+  }
+
+  String _initials(String name) {
+    final parts = name.trim().split(RegExp(r'\s+'));
+    if (parts.isEmpty || parts.first.isEmpty) return '?';
+    if (parts.length == 1) return parts.first[0].toUpperCase();
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+}
+
+/// Screen strings (EN/AR). Lightweight per-screen pattern — see arabic-brief.
+class _L {
+  _L(this.ar);
+  final bool ar;
+
+  String get directory => ar ? 'الدليل' : 'Directory';
+  String rentersCount(int n) => ar ? '$n مستأجرًا' : '$n RENTERS';
+  String get searchHint =>
+      ar ? 'ابحث بالاسم أو الوحدة أو الهاتف' : 'Search name, unit, phone';
+  String get loadFailed =>
+      ar ? 'فشل تحميل المستأجرين' : 'Failed to load renters';
+  String get noRentersYet => ar ? 'لا يوجد مستأجرون بعد' : 'No renters yet';
+  String get noMatchingRenters =>
+      ar ? 'لا يوجد مستأجرون مطابقون' : 'No matching renters';
+  String get addFirstRenter =>
+      ar ? 'أضف أول مستأجر لديك' : 'Add your first renter';
+  String get unknown => ar ? 'غير معروف' : 'Unknown';
+  String get overdue => ar ? 'متأخر' : 'overdue';
+  String get balanceLabel => ar ? 'الرصيد' : 'balance';
+  String get newRenter => ar ? 'مستأجر جديد' : 'New Renter';
+  String get fullName => ar ? 'الاسم الكامل' : 'Full Name';
+  String get nameRequired => ar ? 'الاسم مطلوب' : 'Name is required';
+  String get email => ar ? 'البريد الإلكتروني' : 'Email';
+  String get emailRequired =>
+      ar ? 'البريد الإلكتروني مطلوب' : 'Email is required';
+  String get emailInvalid =>
+      ar ? 'أدخل بريدًا إلكترونيًا صالحًا' : 'Enter a valid email';
+  String get phoneNumber => ar ? 'رقم الهاتف' : 'Phone Number';
+  String get preferredLanguage => ar ? 'اللغة المفضلة' : 'Preferred Language';
+  String get english => ar ? 'الإنجليزية' : 'English';
+  String get arabic => ar ? 'العربية' : 'Arabic';
+  String get createRenter => ar ? 'إنشاء مستأجر' : 'Create Renter';
+  String get createFailed =>
+      ar ? 'فشل إنشاء المستأجر' : 'Failed to create renter';
+
+  String statusLabel(String status) {
+    switch (status.toUpperCase()) {
+      case 'PENDING':
+        return ar ? 'قيد الانتظار' : 'Pending';
+      case 'EXPIRING':
+        return ar ? 'قارب على الانتهاء' : 'Expiring';
+      case 'OVERDUE':
+        return ar ? 'متأخر' : 'Overdue';
+      default:
+        return status;
+    }
   }
 }

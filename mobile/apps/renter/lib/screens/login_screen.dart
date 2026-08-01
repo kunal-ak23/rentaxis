@@ -407,6 +407,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     final m = context.miftah;
     return InputDecoration(
       labelText: label,
+      // The form sits on dark chrome: a floating label would render the
+      // theme's near-black label over black and clip across the pill border.
+      // Keep the label inline; gold as a fallback if it ever floats.
+      floatingLabelBehavior: FloatingLabelBehavior.never,
+      floatingLabelStyle: (l.ar
+          ? GoogleFonts.notoNaskhArabic
+          : GoogleFonts.josefinSans)(color: AppColors.accent, fontSize: 13),
       labelStyle: (l.ar
           ? GoogleFonts.notoNaskhArabic
           : GoogleFonts.josefinSans)(color: m.textMuted, fontSize: 14),

@@ -30,43 +30,44 @@ Future<void> pumpResult(
       ),
     ],
     overrides: [
-      gatePassServiceProvider.overrideWithValue(gatePass ?? FakeGatePassService()),
+      gatePassServiceProvider.overrideWithValue(
+        gatePass ?? FakeGatePassService(),
+      ),
     ],
   );
 }
 
 /// An ALLOWED verdict with everything present.
 Map<String, dynamic> allowedResponse() => {
-      'result': 'ALLOWED',
-      'reason': null,
-      'guestName': 'Ahmed Khan',
-      'guestPhone': '+971501112222',
-      'vehicleNumber': 'DXB 4412',
-      'purpose': 'Delivery',
-      'unitNumber': '101',
-      'passType': 'SINGLE_USE',
-      'validFrom': '2026-07-16T05:00:00Z',
-      'validTo': '2026-07-16T13:00:00Z',
-    };
+  'result': 'ALLOWED',
+  'reason': null,
+  'guestName': 'Ahmed Khan',
+  'guestPhone': '+971501112222',
+  'vehicleNumber': 'DXB 4412',
+  'purpose': 'Delivery',
+  'unitNumber': '101',
+  'passType': 'SINGLE_USE',
+  'validFrom': '2026-07-16T05:00:00Z',
+  'validTo': '2026-07-16T13:00:00Z',
+};
 
 /// The blinded rejection, exactly as `GatePassController.toScanResponse` builds
 /// it when the scan service hands back a null pass: the verdict and the reason,
 /// and nothing else at all.
 Map<String, dynamic> blindedRejection({
   String reason = 'not authorized for this property',
-}) =>
-    {
-      'result': 'REJECTED',
-      'reason': reason,
-      'guestName': null,
-      'guestPhone': null,
-      'vehicleNumber': null,
-      'purpose': null,
-      'unitNumber': null,
-      'passType': null,
-      'validFrom': null,
-      'validTo': null,
-    };
+}) => {
+  'result': 'REJECTED',
+  'reason': reason,
+  'guestName': null,
+  'guestPhone': null,
+  'vehicleNumber': null,
+  'purpose': null,
+  'unitNumber': null,
+  'passType': null,
+  'validFrom': null,
+  'validTo': null,
+};
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -88,11 +89,12 @@ void main() {
       expect(find.text('Delivery'), findsOneWidget);
       expect(find.text('single use'), findsOneWidget);
       expect(find.byKey(const Key('logExitButton')), findsOneWidget);
-      expect(find.text('Done'), findsOneWidget);
+      expect(find.text('DONE'), findsOneWidget);
     });
 
-    testWidgets('Log exit re-presents the same credential as an EXIT',
-        (tester) async {
+    testWidgets('Log exit re-presents the same credential as an EXIT', (
+      tester,
+    ) async {
       final gatePass = FakeGatePassService();
       await pumpResult(
         tester,
@@ -112,8 +114,9 @@ void main() {
       expect(find.byKey(const Key('logExitButton')), findsNothing);
     });
 
-    testWidgets('a keyed-code pass logs its exit on the numeric code',
-        (tester) async {
+    testWidgets('a keyed-code pass logs its exit on the numeric code', (
+      tester,
+    ) async {
       final gatePass = FakeGatePassService();
       await pumpResult(
         tester,
@@ -150,8 +153,9 @@ void main() {
       expect(find.textContaining('No entry was recorded'), findsOneWidget);
     });
 
-    testWidgets('a failed exit call does not claim the exit was logged',
-        (tester) async {
+    testWidgets('a failed exit call does not claim the exit was logged', (
+      tester,
+    ) async {
       final gatePass = FakeGatePassService(scanError: StateError('offline'));
       await pumpResult(
         tester,
@@ -182,13 +186,15 @@ void main() {
 
       expect(tester.takeException(), isNull);
       expect(find.text('DO NOT ADMIT'), findsOneWidget);
-      expect(find.textContaining('This pass is for another property'),
-          findsOneWidget);
+      expect(
+        find.textContaining('This pass is for another property'),
+        findsOneWidget,
+      );
       // Says why the screen is bare, rather than letting it read as a bug.
       expect(find.textContaining('No guest details'), findsOneWidget);
       // Nothing to exit, and no identity to leak.
       expect(find.byKey(const Key('logExitButton')), findsNothing);
-      expect(find.text('Scan again'), findsOneWidget);
+      expect(find.text('SCAN AGAIN'), findsOneWidget);
     });
 
     testWidgets('a rejection at the guard\'s own gate keeps the guest so the '
@@ -196,7 +202,11 @@ void main() {
       await pumpResult(
         tester,
         args: ScanResultArgs(
-          response: {...allowedResponse(), 'result': 'REJECTED', 'reason': 'already used'},
+          response: {
+            ...allowedResponse(),
+            'result': 'REJECTED',
+            'reason': 'already used',
+          },
           qrToken: 'qr-1',
         ),
       );
@@ -207,7 +217,9 @@ void main() {
       expect(find.textContaining('No guest details'), findsNothing);
     });
 
-    testWidgets('every backend reason renders without throwing', (tester) async {
+    testWidgets('every backend reason renders without throwing', (
+      tester,
+    ) async {
       // The literals in GatePassScanService. If the backend adds one, the
       // fallback keeps the guard informed rather than showing "denied".
       const reasons = [

@@ -86,7 +86,11 @@ class FakeGatePassService extends GatePassApiService {
     String? numericCode,
     required String direction,
   }) async {
-    scans.add((qrToken: qrToken, numericCode: numericCode, direction: direction));
+    scans.add((
+      qrToken: qrToken,
+      numericCode: numericCode,
+      direction: direction,
+    ));
     if (latency != null) await Future<void>.delayed(latency!);
     final error = scanError;
     if (error != null) throw error;

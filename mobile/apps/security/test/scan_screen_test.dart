@@ -52,8 +52,9 @@ void main() {
   setUp(stubSecureStorage);
 
   group('ScanScreen detection throttling', () {
-    testWidgets('two rapid detections of the same pass make ONE scan call',
-        (tester) async {
+    testWidgets('two rapid detections of the same pass make ONE scan call', (
+      tester,
+    ) async {
       final gatePass = FakeGatePassService(
         latency: const Duration(milliseconds: 50),
       );
@@ -72,8 +73,9 @@ void main() {
       await tester.pumpAndSettle();
     });
 
-    testWidgets('detections are ignored while the result screen is up',
-        (tester) async {
+    testWidgets('detections are ignored while the result screen is up', (
+      tester,
+    ) async {
       // The scanner stays mounted under /result and the camera keeps detecting,
       // so the in-flight flag has to outlive the request itself.
       final gatePass = FakeGatePassService();
@@ -89,8 +91,9 @@ void main() {
       expect(gatePass.scans, hasLength(1));
     });
 
-    testWidgets('a detection within the cooldown after a scan is ignored',
-        (tester) async {
+    testWidgets('a detection within the cooldown after a scan is ignored', (
+      tester,
+    ) async {
       final gatePass = FakeGatePassService();
       await pumpScanner(tester, gatePass: gatePass);
 
@@ -104,9 +107,13 @@ void main() {
       scanner(tester).handleDetection('qr-token-1');
       await tester.pumpAndSettle();
 
-      expect(gatePass.scans, hasLength(1),
-          reason: 'the cooldown starts when the guard is back at the '
-              'viewfinder, not when the request returned');
+      expect(
+        gatePass.scans,
+        hasLength(1),
+        reason:
+            'the cooldown starts when the guard is back at the '
+            'viewfinder, not when the request returned',
+      );
     });
 
     testWidgets('a blank barcode never reaches the network', (tester) async {
@@ -122,8 +129,9 @@ void main() {
   });
 
   group('ScanScreen numeric fallback', () {
-    testWidgets('a keyed code is sent as numericCode, not as a qrToken',
-        (tester) async {
+    testWidgets('a keyed code is sent as numericCode, not as a qrToken', (
+      tester,
+    ) async {
       final gatePass = FakeGatePassService();
       await pumpScanner(tester, gatePass: gatePass);
 
@@ -131,7 +139,9 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.enterText(
-          find.byKey(const Key('numericCodeField')), '12345678');
+        find.byKey(const Key('numericCodeField')),
+        '12345678',
+      );
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('submitCodeButton')));
       await tester.pumpAndSettle();
@@ -143,31 +153,36 @@ void main() {
       expect(find.text('ALLOWED'), findsOneWidget);
     });
 
-    testWidgets('Check pass stays disabled until the code is 8 digits',
-        (tester) async {
+    testWidgets('Check pass stays disabled until the code is 8 digits', (
+      tester,
+    ) async {
       final gatePass = FakeGatePassService();
       await pumpScanner(tester, gatePass: gatePass);
 
       await tester.tap(find.byKey(const Key('enterCodeButton')));
       await tester.pumpAndSettle();
 
-      await tester.enterText(
-          find.byKey(const Key('numericCodeField')), '1234');
+      await tester.enterText(find.byKey(const Key('numericCodeField')), '1234');
       await tester.pumpAndSettle();
 
-      final button = tester.widget<ElevatedButton>(
+      final button = tester.widget<GoldButton>(
         find.byKey(const Key('submitCodeButton')),
       );
-      expect(button.onPressed, isNull,
-          reason: 'a short code can only come back "not recognised", at the '
-              'cost of one of the gate\'s 30 scans per minute');
+      expect(
+        button.onPressed,
+        isNull,
+        reason:
+            'a short code can only come back "not recognised", at the '
+            'cost of one of the gate\'s 30 scans per minute',
+      );
       expect(gatePass.scans, isEmpty);
     });
   });
 
   group('ScanScreen errors', () {
-    testWidgets('a 429 tells the guard to wait rather than to scan again',
-        (tester) async {
+    testWidgets('a 429 tells the guard to wait rather than to scan again', (
+      tester,
+    ) async {
       final options = RequestOptions(path: '/v1/gatepass/scan');
       final gatePass = FakeGatePassService(
         scanError: DioException(
@@ -190,21 +205,23 @@ void main() {
       expect(find.text('ALLOWED'), findsNothing);
     });
 
-    testWidgets('a dropped connection is reported without leaving the scanner',
-        (tester) async {
-      final gatePass = FakeGatePassService(
-        scanError: DioException(
-          requestOptions: RequestOptions(path: '/v1/gatepass/scan'),
-          type: DioExceptionType.connectionError,
-        ),
-      );
-      await pumpScanner(tester, gatePass: gatePass);
+    testWidgets(
+      'a dropped connection is reported without leaving the scanner',
+      (tester) async {
+        final gatePass = FakeGatePassService(
+          scanError: DioException(
+            requestOptions: RequestOptions(path: '/v1/gatepass/scan'),
+            type: DioExceptionType.connectionError,
+          ),
+        );
+        await pumpScanner(tester, gatePass: gatePass);
 
-      scanner(tester).handleDetection('qr-token-1');
-      await tester.pumpAndSettle();
+        scanner(tester).handleDetection('qr-token-1');
+        await tester.pumpAndSettle();
 
-      expect(find.textContaining('No connection'), findsOneWidget);
-      expect(find.byType(ScanScreen), findsOneWidget);
-    });
+        expect(find.textContaining('No connection'), findsOneWidget);
+        expect(find.byType(ScanScreen), findsOneWidget);
+      },
+    );
   });
 }

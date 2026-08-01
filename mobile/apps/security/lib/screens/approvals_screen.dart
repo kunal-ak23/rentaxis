@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
 import '../gatepass/pass_display.dart';
@@ -12,12 +13,28 @@ class ApprovalsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final l = _L(context.isAr);
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: m.background,
       appBar: AppBar(
-        title: const Text('Approvals'),
-        backgroundColor: AppColors.surface,
-        surfaceTintColor: Colors.transparent,
+        backgroundColor: AppColors.primary,
+        elevation: 0,
+        scrolledUnderElevation: 0.5,
+        shape: Border(
+          bottom: BorderSide(color: AppColors.accent.withValues(alpha: 0.14)),
+        ),
+        iconTheme: const IconThemeData(color: AppColors.accent),
+        title: Text(
+          l.approvals,
+          style: l.ar
+              ? GoogleFonts.notoNaskhArabic(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.gold400,
+                )
+              : GoogleFonts.cinzel(fontSize: 17, color: AppColors.gold400),
+        ),
       ),
       body: const SafeArea(child: ApprovalsView()),
     );
@@ -31,6 +48,7 @@ class ApprovalsView extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final approvals = ref.watch(approvalsProvider);
+    final l = _L(context.isAr);
 
     return RefreshIndicator(
       onRefresh: () => ref.refresh(approvalsProvider.future),
@@ -38,19 +56,17 @@ class ApprovalsView extends ConsumerWidget {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => _Scrollable(
           child: ErrorState(
-            message: 'Could not load approvals.',
+            message: l.loadError,
             onRetry: () => ref.invalidate(approvalsProvider),
           ),
         ),
         data: (passes) {
           if (passes.isEmpty) {
-            return const _Scrollable(
+            return _Scrollable(
               child: EmptyState(
                 icon: Icons.inbox_outlined,
-                title: 'Nothing waiting for approval',
-                subtitle: 'Recurring passes raised for your gate appear here.\n\n'
-                    'Never see any? Ask your manager to check that you are '
-                    'assigned to a property.',
+                title: l.emptyTitle,
+                subtitle: l.emptySubtitle,
               ),
             );
           }
@@ -59,8 +75,7 @@ class ApprovalsView extends ConsumerWidget {
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 96),
             itemCount: passes.length,
-            itemBuilder: (context, index) =>
-                _ApprovalCard(pass: passes[index]),
+            itemBuilder: (context, index) => _ApprovalCard(pass: passes[index]),
           );
         },
       ),
@@ -98,6 +113,7 @@ class _ApprovalCardState extends ConsumerState<_ApprovalCard> {
     final id = passString(widget.pass, 'id');
     if (id == null || _deciding) return;
 
+    final l = _L(context.isAr);
     setState(() => _deciding = true);
     try {
       await ref.read(gatePassServiceProvider).decide(id, approved);
@@ -106,7 +122,7 @@ class _ApprovalCardState extends ConsumerState<_ApprovalCard> {
       ref.invalidate(approvalsProvider);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(approved ? 'Pass approved' : 'Pass rejected'),
+          content: Text(approved ? l.approvedNotice : l.rejectedNotice),
           backgroundColor: approved ? AppColors.success : AppColors.textMuted,
           behavior: SnackBarBehavior.floating,
         ),
@@ -117,11 +133,7 @@ class _ApprovalCardState extends ConsumerState<_ApprovalCard> {
       // undecided — which it is.
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            approved
-                ? 'Could not approve the pass. It is still pending — try again.'
-                : 'Could not reject the pass. It is still pending — try again.',
-          ),
+          content: Text(approved ? l.approveFailed : l.rejectFailed),
           backgroundColor: AppColors.danger,
           behavior: SnackBarBehavior.floating,
         ),
@@ -133,11 +145,13 @@ class _ApprovalCardState extends ConsumerState<_ApprovalCard> {
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final l = _L(context.isAr);
     final pass = widget.pass;
     // Keyed per pass so a tap in a test — and a hit test in a rebuilt list —
     // names one card's button rather than "whichever Approve is on screen".
     final id = passString(pass, 'id') ?? '';
-    final name = passString(pass, 'guestName') ?? 'Guest';
+    final name = passString(pass, 'guestName') ?? l.guestFallback;
     final unit = passString(pass, 'unitNumber');
     final purpose = passString(pass, 'purpose');
     final vehicle = passString(pass, 'vehicleNumber');
@@ -146,95 +160,144 @@ class _ApprovalCardState extends ConsumerState<_ApprovalCard> {
       passInstant(pass, 'validTo'),
     );
 
+    // A rounded border can't mix colors per side, so the recurring-pass accent
+    // is an inner strip clipped to the card's radius instead of a left side.
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: m.surface,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(color: m.border),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Text(
-                  name,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-              ),
-              const StatusBadge(
-                label: 'RECURRING',
-                color: AppColors.info,
-              ),
-            ],
+          PositionedDirectional(
+            start: 0,
+            top: 0,
+            bottom: 0,
+            child: Container(width: 3, color: AppColors.accentDark),
           ),
-          const SizedBox(height: 10),
-          if (unit != null) _DetailRow(icon: Icons.home_outlined, value: 'Unit $unit'),
-          _DetailRow(icon: Icons.schedule, value: window),
-          if (purpose != null)
-            _DetailRow(icon: Icons.notes_outlined, value: purpose),
-          if (vehicle != null)
-            _DetailRow(icon: Icons.directions_car, value: vehicle),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  key: Key('reject-$id'),
-                  onPressed: _deciding ? null : () => _decide(false),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.danger,
-                    side: const BorderSide(color: AppColors.danger),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        name,
+                        style: l.ar
+                            ? GoogleFonts.notoNaskhArabic(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w600,
+                                color: m.textPrimary,
+                              )
+                            : GoogleFonts.josefinSans(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                                color: m.textPrimary,
+                              ),
+                      ),
                     ),
-                  ),
-                  child: const Text(
-                    'Reject',
-                    style: TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: ElevatedButton(
-                  key: Key('approve-$id'),
-                  onPressed: _deciding ? null : () => _decide(true),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.success,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                    _StatusPill(
+                      label: l.recurring,
+                      color: AppColors.info,
+                      ar: l.ar,
                     ),
-                  ),
-                  child: _deciding
-                      ? const SizedBox(
-                          height: 18,
-                          width: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Text(
-                          'Approve',
-                          style: TextStyle(fontWeight: FontWeight.w700),
-                        ),
+                  ],
                 ),
-              ),
-            ],
+                const SizedBox(height: 10),
+                if (unit != null)
+                  _DetailRow(
+                    icon: Icons.home_outlined,
+                    value: l.unitLabel(unit),
+                  ),
+                _DetailRow(icon: Icons.schedule, value: window),
+                if (purpose != null)
+                  _DetailRow(icon: Icons.notes_outlined, value: purpose),
+                if (vehicle != null)
+                  _DetailRow(icon: Icons.directions_car, value: vehicle),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: GoldButton.outlined(
+                        key: Key('reject-$id'),
+                        label: l.reject,
+                        onPressed: _deciding ? null : () => _decide(false),
+                        height: 46,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _deciding
+                          ? const SizedBox(
+                              height: 46,
+                              child: Center(
+                                child: SizedBox(
+                                  height: 18,
+                                  width: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: AppColors.accent,
+                                  ),
+                                ),
+                              ),
+                            )
+                          : GoldButton(
+                              key: Key('approve-$id'),
+                              label: l.approve,
+                              onPressed: () => _decide(true),
+                              height: 46,
+                            ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _StatusPill extends StatelessWidget {
+  const _StatusPill({
+    required this.label,
+    required this.color,
+    required this.ar,
+  });
+
+  final String label;
+  final Color color;
+  final bool ar;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: ar
+            ? GoogleFonts.notoNaskhArabic(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: color,
+              )
+            : GoogleFonts.josefinSans(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 1.2,
+                color: color,
+              ),
       ),
     );
   }
@@ -248,20 +311,23 @@ class _DetailRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final ar = context.isAr;
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 15, color: AppColors.textMuted),
+          Icon(icon, size: 15, color: m.textMuted),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(
-                fontSize: 14,
-                color: AppColors.textSecondary,
-              ),
+              style:
+                  (ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans)(
+                    fontSize: 14,
+                    color: m.textSecondary,
+                  ),
             ),
           ),
         ],
@@ -289,4 +355,37 @@ class _Scrollable extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Screen strings (EN/AR). Lightweight per-screen pattern — see arabic-brief.
+class _L {
+  _L(this.ar);
+  final bool ar;
+
+  String get approvals => ar ? 'الموافقات' : 'Approvals';
+  String get recurring => ar ? 'متكرر' : 'RECURRING';
+  String get reject => ar ? 'رفض' : 'Reject';
+  String get approve => ar ? 'موافقة' : 'Approve';
+  String get guestFallback => ar ? 'زائر' : 'Guest';
+  String get loadError =>
+      ar ? 'تعذّر تحميل الموافقات.' : 'Could not load approvals.';
+  String get emptyTitle =>
+      ar ? 'لا شيء بانتظار الموافقة' : 'Nothing waiting for approval';
+  String get emptySubtitle => ar
+      ? 'تظهر هنا التصاريح المتكررة الخاصة ببوابتك.\n\n'
+            'لا تظهر أي عناصر؟ اطلب من مديرك التأكد من تعيينك على عقار.'
+      : 'Recurring passes raised for your gate appear here.\n\n'
+            'Never see any? Ask your manager to check that you are '
+            'assigned to a property.';
+  String get approvedNotice =>
+      ar ? 'تمت الموافقة على التصريح' : 'Pass approved';
+  String get rejectedNotice => ar ? 'تم رفض التصريح' : 'Pass rejected';
+  String get approveFailed => ar
+      ? 'تعذّرت الموافقة على التصريح. ما زال معلّقًا — حاول مرة أخرى.'
+      : 'Could not approve the pass. It is still pending — try again.';
+  String get rejectFailed => ar
+      ? 'تعذّر رفض التصريح. ما زال معلّقًا — حاول مرة أخرى.'
+      : 'Could not reject the pass. It is still pending — try again.';
+
+  String unitLabel(String unit) => ar ? 'وحدة $unit' : 'Unit $unit';
 }

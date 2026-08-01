@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
 import '../gatepass/pass_display.dart';
@@ -73,8 +74,11 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
       _exitError = null;
     });
 
+    final ar = context.isAr;
     try {
-      final response = await ref.read(gatePassServiceProvider).scan(
+      final response = await ref
+          .read(gatePassServiceProvider)
+          .scan(
             qrToken: widget.args.qrToken,
             numericCode: widget.args.numericCode,
             direction: 'EXIT',
@@ -88,12 +92,15 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
       // The gate refused the exit — most likely "no entry recorded". Report the
       // refusal rather than the tick: a screen that says "Exit logged" over a
       // rejected scan is a lie the audit trail will not back up.
-      setState(() => _exitError = describeRejection(
-            passString(response, 'reason'),
-          ));
+      setState(
+        () => _exitError = describeRejection(
+          passString(response, 'reason'),
+          ar: ar,
+        ),
+      );
     } catch (_) {
       if (!mounted) return;
-      setState(() => _exitError = 'Could not log the exit. Try again.');
+      setState(() => _exitError = _L(ar).exitFailed);
     } finally {
       if (mounted) setState(() => _loggingExit = false);
     }
@@ -103,6 +110,8 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final l = _L(context.isAr);
     final allowed = _allowed;
     final reason = passString(_response, 'reason');
 
@@ -122,33 +131,40 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
       // a back gesture is just Done by another name.
       canPop: true,
       child: Scaffold(
-        backgroundColor: AppColors.background,
+        backgroundColor: m.background,
         body: SafeArea(
           child: Column(
             children: [
-              _Verdict(allowed: allowed, reason: reason),
+              _Verdict(allowed: allowed, reason: reason, l: l),
               Expanded(
                 child: ListView(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
                   children: [
                     if (name != null)
-                      _BigField(label: 'Guest', value: name)
+                      _BigField(label: l.guest, value: name, l: l)
                     else if (!allowed)
                       // The blinded rejection: no guest, by design. Say why the
                       // screen is bare, or it reads as a bug at the worst moment.
-                      const _NoDetails(),
-                    if (unit != null) _BigField(label: 'Unit', value: unit),
-                    if (phone != null) _BigField(label: 'Phone', value: phone),
+                      _NoDetails(l: l),
+                    if (unit != null)
+                      _BigField(label: l.unit, value: unit, l: l),
+                    if (phone != null)
+                      _BigField(label: l.phone, value: phone, l: l),
                     if (vehicle != null)
-                      _BigField(label: 'Vehicle', value: vehicle),
+                      _BigField(label: l.vehicle, value: vehicle, l: l),
                     if (purpose != null)
-                      _BigField(label: 'Purpose', value: purpose),
+                      _BigField(label: l.purpose, value: purpose, l: l),
                     if (hasWindow)
-                      _BigField(label: 'Valid', value: formatWindow(from, to)),
+                      _BigField(
+                        label: l.valid,
+                        value: formatWindow(from, to, ar: l.ar),
+                        l: l,
+                      ),
                     if (passType != null)
                       _BigField(
-                        label: 'Pass type',
-                        value: passType.replaceAll('_', ' ').toLowerCase(),
+                        label: l.passType,
+                        value: l.passTypeValue(passType),
+                        l: l,
                       ),
                   ],
                 ),
@@ -160,6 +176,7 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
                 exitError: _exitError,
                 onLogExit: _logExit,
                 onDone: _done,
+                l: l,
               ),
             ],
           ),
@@ -173,16 +190,22 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
 /// word, maximum contrast — legible at arm's length in direct sun, where a badge
 /// or a coloured border would not be.
 class _Verdict extends StatelessWidget {
-  const _Verdict({required this.allowed, required this.reason});
+  const _Verdict({
+    required this.allowed,
+    required this.reason,
+    required this.l,
+  });
 
   final bool allowed;
   final String? reason;
+  final _L l;
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
     return Container(
       width: double.infinity,
-      color: allowed ? AppColors.success : AppColors.danger,
+      color: allowed ? m.success : m.danger,
       padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
       child: Column(
         children: [
@@ -193,26 +216,35 @@ class _Verdict extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Text(
-            allowed ? 'ALLOWED' : 'DO NOT ADMIT',
+            allowed ? l.allowed : l.doNotAdmit,
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 34,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 1.5,
-              color: Colors.white,
-            ),
+            style: l.ar
+                ? GoogleFonts.notoNaskhArabic(
+                    fontSize: 30,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  )
+                : GoogleFonts.cinzel(
+                    fontSize: 30,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 1.8,
+                    color: Colors.white,
+                  ),
           ),
           if (!allowed) ...[
             const SizedBox(height: 10),
             Text(
-              describeRejection(reason),
+              describeRejection(reason, ar: l.ar),
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 16,
-                height: 1.35,
-                fontWeight: FontWeight.w500,
-                color: Colors.white,
-              ),
+              style:
+                  (l.ar
+                  ? GoogleFonts.notoNaskhArabic
+                  : GoogleFonts.josefinSans)(
+                    fontSize: 15,
+                    height: 1.45,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.white,
+                  ),
             ),
           ],
         ],
@@ -224,26 +256,31 @@ class _Verdict extends StatelessWidget {
 /// Stands in for the guest block on a rejection the guard is not entitled to
 /// read.
 class _NoDetails extends StatelessWidget {
-  const _NoDetails();
+  const _NoDetails({required this.l});
+
+  final _L l;
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsetsDirectional.all(16),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: m.surface,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(color: m.border),
       ),
-      child: const Row(
+      child: Row(
         children: [
-          Icon(Icons.lock_outline, size: 20, color: AppColors.textMuted),
-          SizedBox(width: 10),
+          Icon(Icons.lock_outline, size: 20, color: m.textMuted),
+          const SizedBox(width: 10),
           Expanded(
             child: Text(
-              'No guest details for this pass. It belongs to a gate you are '
-              'not assigned to.',
-              style: TextStyle(fontSize: 14, color: AppColors.textSecondary),
+              l.noDetails,
+              style: (l.ar
+                  ? GoogleFonts.notoNaskhArabic
+                  : GoogleFonts
+                        .josefinSans)(fontSize: 14, color: m.textSecondary),
             ),
           ),
         ],
@@ -254,41 +291,60 @@ class _NoDetails extends StatelessWidget {
 
 /// A label over a large value. Sized for a phone held at arm's length.
 class _BigField extends StatelessWidget {
-  const _BigField({required this.label, required this.value});
+  const _BigField({required this.label, required this.value, required this.l});
 
   final String label;
   final String value;
+  final _L l;
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsetsDirectional.symmetric(
+        horizontal: 16,
+        vertical: 12,
+      ),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: m.surface,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(color: m.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            label.toUpperCase(),
-            style: const TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1,
-              color: AppColors.textMuted,
-            ),
+            // Arabic uppercase is a no-op and tracking breaks glyph joining, so
+            // the label only tracks/uppercases in English.
+            l.ar ? label : label.toUpperCase(),
+            style: l.ar
+                ? GoogleFonts.notoNaskhArabic(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                    color: m.textMuted,
+                  )
+                : GoogleFonts.josefinSans(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1,
+                    color: m.textMuted,
+                  ),
           ),
           const SizedBox(height: 3),
           Text(
             value,
-            style: const TextStyle(
-              fontSize: 21,
-              fontWeight: FontWeight.w700,
-              color: AppColors.textPrimary,
-            ),
+            style: l.ar
+                ? GoogleFonts.notoNaskhArabic(
+                    fontSize: 19,
+                    fontWeight: FontWeight.w600,
+                    color: m.textPrimary,
+                  )
+                : GoogleFonts.cinzel(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w600,
+                    color: m.textPrimary,
+                  ),
           ),
         ],
       ),
@@ -304,6 +360,7 @@ class _Actions extends StatelessWidget {
     required this.exitError,
     required this.onLogExit,
     required this.onDone,
+    required this.l,
   });
 
   final bool allowed;
@@ -312,14 +369,19 @@ class _Actions extends StatelessWidget {
   final String? exitError;
   final VoidCallback onLogExit;
   final VoidCallback onDone;
+  final _L l;
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final bodyFont = l.ar
+        ? GoogleFonts.notoNaskhArabic
+        : GoogleFonts.josefinSans;
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-      decoration: const BoxDecoration(
-        color: AppColors.surface,
-        border: Border(top: BorderSide(color: AppColors.border)),
+      decoration: BoxDecoration(
+        color: m.surface,
+        border: Border(top: BorderSide(color: m.border)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -327,15 +389,15 @@ class _Actions extends StatelessWidget {
           if (exitError != null) ...[
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsetsDirectional.all(10),
               decoration: BoxDecoration(
-                color: AppColors.dangerLight,
+                color: m.dangerBg,
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppColors.danger),
+                border: Border.all(color: m.danger),
               ),
               child: Text(
                 exitError!,
-                style: const TextStyle(fontSize: 13, color: AppColors.danger),
+                style: bodyFont(fontSize: 13, color: m.danger),
               ),
             ),
             const SizedBox(height: 10),
@@ -343,23 +405,22 @@ class _Actions extends StatelessWidget {
           if (exitLogged) ...[
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsetsDirectional.all(10),
               decoration: BoxDecoration(
-                color: AppColors.successLight,
+                color: m.successBg,
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppColors.success),
+                border: Border.all(color: m.success),
               ),
-              child: const Row(
+              child: Row(
                 children: [
-                  Icon(Icons.check_circle_outline,
-                      size: 18, color: AppColors.success),
-                  SizedBox(width: 8),
+                  Icon(Icons.check_circle_outline, size: 18, color: m.success),
+                  const SizedBox(width: 8),
                   Text(
-                    'Exit logged',
-                    style: TextStyle(
+                    l.exitLogged,
+                    style: bodyFont(
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
-                      color: AppColors.success,
+                      color: m.success,
                     ),
                   ),
                 ],
@@ -374,55 +435,28 @@ class _Actions extends StatelessWidget {
               // scan row for one departure.
               if (allowed && !exitLogged) ...[
                 Expanded(
-                  child: SizedBox(
+                  child: GoldButton.outlined(
+                    key: const Key('logExitButton'),
+                    label: loggingExit ? l.loggingExit : l.logExit,
+                    onPressed: loggingExit ? null : onLogExit,
                     height: 54,
-                    child: OutlinedButton.icon(
-                      key: const Key('logExitButton'),
-                      onPressed: loggingExit ? null : onLogExit,
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.primary,
-                        side: const BorderSide(color: AppColors.primary),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                      ),
-                      icon: loggingExit
-                          ? const SizedBox(
-                              height: 16,
-                              width: 16,
-                              child:
-                                  CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.logout),
-                      label: const Text(
-                        'Log exit',
-                        style: TextStyle(
-                            fontSize: 16, fontWeight: FontWeight.w700),
-                      ),
-                    ),
+                    icon: loggingExit
+                        ? const SizedBox(
+                            height: 16,
+                            width: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.logout),
                   ),
                 ),
                 const SizedBox(width: 10),
               ],
               Expanded(
-                child: SizedBox(
+                child: GoldButton(
+                  key: const Key('doneButton'),
+                  label: allowed ? l.done : l.scanAgain,
+                  onPressed: onDone,
                   height: 54,
-                  child: ElevatedButton(
-                    key: const Key('doneButton'),
-                    onPressed: onDone,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                    child: Text(
-                      allowed ? 'Done' : 'Scan again',
-                      style: const TextStyle(
-                          fontSize: 16, fontWeight: FontWeight.w700),
-                    ),
-                  ),
                 ),
               ),
             ],
@@ -430,5 +464,45 @@ class _Actions extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+/// Result screen strings (EN/AR). Lightweight per-screen pattern — see
+/// arabic-brief.
+class _L {
+  _L(this.ar);
+  final bool ar;
+
+  String get allowed => ar ? 'مسموح بالدخول' : 'ALLOWED';
+  String get doNotAdmit => ar ? 'رفض الدخول' : 'DO NOT ADMIT';
+  String get guest => ar ? 'الزائر' : 'Guest';
+  String get unit => ar ? 'الوحدة' : 'Unit';
+  String get phone => ar ? 'رقم الهاتف' : 'Phone';
+  String get vehicle => ar ? 'المركبة' : 'Vehicle';
+  String get purpose => ar ? 'الغرض' : 'Purpose';
+  String get valid => ar ? 'صالح خلال' : 'Valid';
+  String get passType => ar ? 'نوع التصريح' : 'Pass type';
+  String get noDetails => ar
+      ? 'لا توجد بيانات زائر لهذا التصريح. إنه يخص بوابة لست مكلفًا بها.'
+      : 'No guest details for this pass. It belongs to a gate you are not '
+            'assigned to.';
+  String get logExit => ar ? 'تسجيل الخروج' : 'Log exit';
+  String get loggingExit => ar ? 'جارٍ التسجيل…' : 'Logging…';
+  String get exitLogged => ar ? 'تم تسجيل الخروج' : 'Exit logged';
+  String get exitFailed => ar
+      ? 'تعذّر تسجيل الخروج. حاول مرة أخرى.'
+      : 'Could not log the exit. Try again.';
+  String get done => ar ? 'تم' : 'Done';
+  String get scanAgain => ar ? 'مسح مرة أخرى' : 'Scan again';
+
+  String passTypeValue(String value) {
+    switch (value) {
+      case 'SINGLE_USE':
+        return ar ? 'استخدام واحد' : 'single use';
+      case 'RECURRING':
+        return ar ? 'متكرر' : 'recurring';
+      default:
+        return value.replaceAll('_', ' ').toLowerCase();
+    }
   }
 }

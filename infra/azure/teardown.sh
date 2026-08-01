@@ -11,6 +11,14 @@ set -euo pipefail
 ENV_FILE="${1:?Usage: $0 <env-file>}"
 source "$ENV_FILE"
 
+# Point the CLI at the configured subscription BEFORE deleting anything, so the
+# resource group is destroyed in the intended subscription and not a same-named
+# one in whatever subscription is active. Blank keeps the CLI's current default.
+if [[ -n "${AZURE_SUBSCRIPTION:-}" ]]; then
+  echo "==> Using Azure subscription: $AZURE_SUBSCRIPTION"
+  az account set --subscription "$AZURE_SUBSCRIPTION"
+fi
+
 echo "!!! WARNING !!!"
 echo "This will DELETE the entire resource group: $AZURE_RESOURCE_GROUP"
 echo "Including: VM, data disk (database), storage account, network resources"

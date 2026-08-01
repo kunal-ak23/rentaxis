@@ -14,6 +14,9 @@ import 'package:intl/intl.dart';
 final DateFormat _timeFormat = DateFormat('h:mm a');
 final DateFormat _dayTimeFormat = DateFormat('d MMM, h:mm a');
 final DateFormat _dayFormat = DateFormat('d MMM');
+final DateFormat _timeFormatAr = DateFormat('h:mm a', 'ar');
+final DateFormat _dayTimeFormatAr = DateFormat('d MMMM, h:mm a', 'ar');
+final DateFormat _dayFormatAr = DateFormat('d MMMM', 'ar');
 
 /// Reads a display string, treating blank as absent.
 ///
@@ -46,23 +49,39 @@ DateTime? passInstant(Map<String, dynamic> pass, String key) {
 /// day (the overwhelmingly common case, and the one where a date is noise), and
 /// carries the day otherwise so an overnight or multi-day pass cannot be misread
 /// as ending this morning.
-String formatWindow(DateTime? from, DateTime? to) {
-  if (from == null && to == null) return 'No time limit given';
-  if (from == null) return 'Until ${_dayTimeFormat.format(to!)}';
-  if (to == null) return 'From ${_dayTimeFormat.format(from)}';
+///
+/// [ar] selects Arabic month names and wording, mirroring the manager app's
+/// copy of this helper; the times themselves stay in Western digits.
+String formatWindow(DateTime? from, DateTime? to, {bool ar = false}) {
+  final timeFormat = ar ? _timeFormatAr : _timeFormat;
+  final dayTimeFormat = ar ? _dayTimeFormatAr : _dayTimeFormat;
 
-  final sameDay = from.year == to.year &&
-      from.month == to.month &&
-      from.day == to.day;
-  if (sameDay) {
-    return '${_timeFormat.format(from)} – ${_timeFormat.format(to)}';
+  if (from == null && to == null) {
+    return ar ? 'لا يوجد حد زمني' : 'No time limit given';
   }
-  return '${_dayTimeFormat.format(from)} – ${_dayTimeFormat.format(to)}';
+  if (from == null) {
+    final until = dayTimeFormat.format(to!);
+    return ar ? 'حتى $until' : 'Until $until';
+  }
+  if (to == null) {
+    final fromStr = dayTimeFormat.format(from);
+    return ar ? 'من $fromStr' : 'From $fromStr';
+  }
+
+  final sameDay =
+      from.year == to.year && from.month == to.month && from.day == to.day;
+  // LTR-isolate the range so from/to keep their order inside RTL text: the
+  // range is all weak-directional characters (digits, dash) otherwise.
+  if (sameDay) {
+    return '\u2066${timeFormat.format(from)} – ${timeFormat.format(to)}\u2069';
+  }
+  return '\u2066${dayTimeFormat.format(from)} – ${dayTimeFormat.format(to)}\u2069';
 }
 
 /// Short label for the day a window falls on, used to head a visitor row that is
 /// not for today.
-String formatDay(DateTime day) => _dayFormat.format(day);
+String formatDay(DateTime day, {bool ar = false}) =>
+    (ar ? _dayFormatAr : _dayFormat).format(day);
 
 /// Turns the backend's terse rejection reason into something a guard can read
 /// aloud to the person in front of them.
@@ -72,32 +91,52 @@ String formatDay(DateTime day) => _dayFormat.format(day);
 /// change. That case falls back to the server's own text rather than a generic
 /// "denied": a guard reading an awkward phrase still knows why, whereas a guard
 /// reading "cannot be used" has nothing to tell the guest and no way to escalate.
-String describeRejection(String? reason) {
+///
+/// [ar] renders the same wording in Arabic. An unrecognised reason still falls
+/// back to the server's raw (English) text in either language — there is
+/// nothing to translate it from.
+String describeRejection(String? reason, {bool ar = false}) {
   switch (reason) {
     case 'not authorized for this property':
       // The one rejection that arrives with no guest details at all, by design.
       // The copy must therefore stand entirely on its own — there is no name on
       // screen to qualify it.
-      return 'This pass is for another property. Direct the guest to the gate '
-          'for their building.';
+      return ar
+          ? 'هذا التصريح خاص بمبنى آخر. وجّه الزائر إلى بوابة مبناه.'
+          : 'This pass is for another property. Direct the guest to the gate '
+                'for their building.';
     case 'not found':
-      return 'This code is not recognised. Ask the guest to check their pass.';
+      return ar
+          ? 'هذا الرمز غير معروف. اطلب من الزائر التحقق من تصريحه.'
+          : 'This code is not recognised. Ask the guest to check their pass.';
     case 'already used':
-      return 'This pass has already been used. It is valid for one entry only.';
+      return ar
+          ? 'تم استخدام هذا التصريح مسبقًا. وهو صالح لدخول واحد فقط.'
+          : 'This pass has already been used. It is valid for one entry only.';
     case 'expired':
-      return 'This pass has expired.';
+      return ar ? 'انتهت صلاحية هذا التصريح.' : 'This pass has expired.';
     case 'cancelled':
-      return 'This pass was cancelled by the resident.';
+      return ar
+          ? 'تم إلغاء هذا التصريح من قبل المقيم.'
+          : 'This pass was cancelled by the resident.';
     case 'pending approval':
-      return 'This pass is still waiting for approval.';
+      return ar
+          ? 'لا يزال هذا التصريح بانتظار الموافقة.'
+          : 'This pass is still waiting for approval.';
     case 'outside validity window':
-      return 'This pass is not valid right now. Check the time window below.';
+      return ar
+          ? 'هذا التصريح غير صالح الآن. تحقق من الفترة الزمنية أدناه.'
+          : 'This pass is not valid right now. Check the time window below.';
     case 'no entry recorded':
-      return 'No entry was recorded for this pass, so an exit cannot be logged.';
+      return ar
+          ? 'لم يُسجَّل دخول لهذا التصريح، لذا لا يمكن تسجيل الخروج.'
+          : 'No entry was recorded for this pass, so an exit cannot be logged.';
     case 'scan in progress, please retry':
-      return 'Another scan of this pass is in progress. Try again in a moment.';
+      return ar
+          ? 'يجري حاليًا مسح آخر لهذا التصريح. حاول مرة أخرى بعد لحظات.'
+          : 'Another scan of this pass is in progress. Try again in a moment.';
     case null:
-      return 'This pass cannot be used.';
+      return ar ? 'لا يمكن استخدام هذا التصريح.' : 'This pass cannot be used.';
     default:
       return reason;
   }
@@ -168,7 +207,11 @@ List<PropertyGroup> groupByProperty(List<Map<String, dynamic>> passes) {
 /// — it is a discriminator, not a name — but it still lets a two-property guard
 /// see that these are two different gates, which is the minimum the heading owes
 /// them.
-String propertyGroupLabel(String propertyId, int index, {String? propertyName}) {
+String propertyGroupLabel(
+  String propertyId,
+  int index, {
+  String? propertyName,
+}) {
   if (propertyName != null && propertyName.trim().isNotEmpty) {
     return propertyName.trim();
   }

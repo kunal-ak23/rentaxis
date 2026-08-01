@@ -39,6 +39,10 @@ final _propertiesForFilterProvider = FutureProvider.autoDispose<List<dynamic>>((
   return service.getProperties();
 });
 
+/// Manager cheque operations screen, per admin design 1f/2c: dark chrome
+/// header, scanner entry tile + "in hand" stat, filter chips, status strip,
+/// and an accent-stripped payment list. Behavior (providers, pagination,
+/// filtering, action sheet) is unchanged from the pre-restyle screen.
 class PaymentsScreen extends ConsumerStatefulWidget {
   const PaymentsScreen({super.key});
 
@@ -78,327 +82,176 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final l = _L(context.isAr);
     final summaryAsync = ref.watch(_paymentSummaryProvider);
     final paymentsAsync = ref.watch(_paymentsProvider);
     final propertiesAsync = ref.watch(_propertiesForFilterProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Payments')),
-      body: Column(
-        children: [
-          // Summary cards
-          summaryAsync.when(
-            loading: () => const SizedBox(
-              height: 90,
-              child: Center(child: ListShimmer(itemCount: 1)),
-            ),
-            error: (_, __) => const SizedBox.shrink(),
-            data: (summary) => _buildSummaryCards(summary),
-          ),
-
-          // Property filter
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
-            child: propertiesAsync.when(
-              loading: () => const SizedBox.shrink(),
-              error: (_, __) => const SizedBox.shrink(),
-              data: (properties) => DropdownButtonFormField<String?>(
-                value: _selectedPropertyId,
-                isExpanded: true,
-                decoration: const InputDecoration(
-                  contentPadding: EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
+      backgroundColor: m.background,
+      body: RefreshIndicator(
+        onRefresh: _refresh,
+        color: AppColors.primary,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.only(bottom: 24),
+          children: [
+            _ChromeHeader(l: l),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  summaryAsync.when(
+                    loading: () => const _TopCellsShimmer(),
+                    error: (_, _) => _TopCells(l: l, summary: const {}),
+                    data: (summary) => _TopCells(l: l, summary: summary),
                   ),
-                  hintText: 'All Properties',
-                ),
-                items: [
-                  const DropdownMenuItem<String?>(
-                    value: null,
-                    child: Text(
-                      'All Properties',
-                      style: TextStyle(fontSize: 13),
+                  const SizedBox(height: 16),
+                  propertiesAsync.when(
+                    loading: () => const SizedBox.shrink(),
+                    error: (_, _) => const SizedBox.shrink(),
+                    data: (properties) => _PropertyFilter(
+                      l: l,
+                      properties: properties,
+                      selectedId: _selectedPropertyId,
+                      onChanged: (v) => setState(() => _selectedPropertyId = v),
                     ),
                   ),
-                  ...properties.map(
-                    (p) => DropdownMenuItem<String?>(
-                      value: p['id'],
-                      child: Text(
-                        p['name'] ?? '',
-                        style: const TextStyle(fontSize: 13),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
+                  const SizedBox(height: 12),
+                  _FilterChips(controller: _tabController, l: l),
+                  const SizedBox(height: 6),
+                  summaryAsync.when(
+                    loading: () => const SizedBox.shrink(),
+                    error: (_, _) => const SizedBox.shrink(),
+                    data: (summary) => _StatusStrip(l: l, summary: summary),
                   ),
+                  const SizedBox(height: 4),
                 ],
-                onChanged: (v) => setState(() => _selectedPropertyId = v),
               ),
             ),
-          ),
-
-          // Status tabs
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
-            child: TabBar(
-              controller: _tabController,
-              indicatorSize: TabBarIndicatorSize.tab,
-              indicator: BoxDecoration(
-                color: AppColors.primary,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              labelColor: Colors.white,
-              unselectedLabelColor: AppColors.textSecondary,
-              labelStyle: GoogleFonts.josefinSans(
-                fontWeight: FontWeight.w600,
-                fontSize: 13,
-              ),
-              unselectedLabelStyle: GoogleFonts.josefinSans(
-                fontWeight: FontWeight.w500,
-                fontSize: 13,
-              ),
-              dividerHeight: 0,
-              tabs: const [
-                Tab(text: 'Upcoming'),
-                Tab(text: 'Overdue'),
-                Tab(text: 'Paid'),
-                Tab(text: 'All'),
-              ],
-            ),
-          ),
-
-          // Payment list
-          Expanded(
-            child: paymentsAsync.when(
-              loading: () => const ListShimmer(itemCount: 3),
-              error: (e, _) => ErrorState(
-                message: 'Failed to load payments',
-                onRetry: _refresh,
-              ),
-              data: (payments) {
-                var filtered = payments.where((p) {
-                  if (_selectedPropertyId != null &&
-                      p['propertyId'] != _selectedPropertyId) {
-                    return false;
-                  }
-                  final status = p['status'] ?? '';
-                  // Overdue exists in two forms: a stored OVERDUE status (set
-                  // by the penalty batch job) and a computed view (PENDING /
-                  // COLLECTED rows past their due date, before the batch
-                  // runs). Honour both, like the dashboard does.
-                  final due =
-                      DateTime.tryParse(p['dueDate']?.toString() ?? '');
-                  final now = DateTime.now();
-                  final isOverdue = status == 'OVERDUE' ||
-                      ((status == 'PENDING' || status == 'COLLECTED') &&
-                          due != null &&
-                          due.isBefore(
-                              DateTime(now.year, now.month, now.day)));
-                  switch (_tabController.index) {
-                    case 0: // Upcoming — pending dues in the current month only
-                      if (status != 'PENDING' && status != 'ONLINE_PENDING') {
-                        return false;
-                      }
-                      if (isOverdue) return false;
-                      if (due == null ||
-                          due.year != now.year ||
-                          due.month != now.month) {
-                        return false;
-                      }
-                      break;
-                    case 1: // Overdue
-                      if (!isOverdue) return false;
-                      break;
-                    case 2: // Paid
-                      if (status != 'CLEARED') return false;
-                      break;
-                    case 3: // All
-                      break;
-                  }
-                  return true;
-                }).toList();
-
-                if (filtered.isEmpty) {
-                  return const EmptyState(
-                    icon: Icons.payment_outlined,
-                    title: 'No payments found',
-                  );
-                }
-
-                final visibleCount = ((_currentPage + 1) * _pageSize).clamp(
-                  0,
-                  filtered.length,
-                );
-                final hasMore = visibleCount < filtered.length;
-
-                return RefreshIndicator(
-                  onRefresh: _refresh,
-                  color: AppColors.primary,
-                  child: ListView.builder(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 150),
-                    itemCount: visibleCount + (hasMore ? 1 : 0),
-                    itemBuilder: (context, index) {
-                      if (index == visibleCount) {
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          child: Center(
-                            child: OutlinedButton(
-                              onPressed: () => setState(() => _currentPage++),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: AppColors.primary,
-                                side: BorderSide(
-                                  color: AppColors.primary.withValues(
-                                    alpha: 0.3,
-                                  ),
-                                ),
-                              ),
-                              child: Text(
-                                'Show More (${filtered.length - visibleCount} remaining)',
-                                style: GoogleFonts.josefinSans(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ),
-                        );
-                      }
-                      final payment = filtered[index];
-                      return AnimatedListItem(
-                        index: index,
-                        child: _PaymentCard(
-                          payment: payment,
-                          onTap: () => _showPaymentActions(payment),
-                        ),
-                      );
-                    },
+            AnimatedBuilder(
+              animation: _tabController,
+              builder: (context, _) => paymentsAsync.when(
+                loading: () => const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  child: ListShimmer(itemCount: 4),
+                ),
+                error: (e, _) => Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
+                  child: ErrorState(
+                    message: l.failedToLoadPayments,
+                    onRetry: _refresh,
                   ),
-                );
-              },
+                ),
+                data: (payments) => _buildList(payments, l),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildSummaryCards(Map<String, dynamic> summary) {
-    final items = [
-      _SummaryData(
-        'Pending',
-        summary['pendingCount'] ?? 0,
-        Formatters.currencyCompact((summary['pendingAmount'] ?? 0).toDouble()),
-        AppColors.statusPending,
-      ),
-      _SummaryData(
-        'Collected',
-        summary['collectedCount'] ?? 0,
-        Formatters.currencyCompact(
-          (summary['collectedAmount'] ?? 0).toDouble(),
-        ),
-        AppColors.statusCollected,
-      ),
-      _SummaryData(
-        'Deposited',
-        summary['depositedCount'] ?? 0,
-        Formatters.currencyCompact(
-          (summary['depositedAmount'] ?? 0).toDouble(),
-        ),
-        AppColors.info,
-      ),
-      _SummaryData(
-        'Cleared',
-        summary['clearedCount'] ?? 0,
-        Formatters.currencyCompact((summary['clearedAmount'] ?? 0).toDouble()),
-        AppColors.statusCleared,
-      ),
-      _SummaryData(
-        'Bounced',
-        summary['bouncedCount'] ?? 0,
-        Formatters.currencyCompact((summary['bouncedAmount'] ?? 0).toDouble()),
-        AppColors.statusBounced,
-      ),
-      _SummaryData(
-        'Overdue',
-        summary['overdueCount'] ?? 0,
-        Formatters.currencyCompact((summary['overdueAmount'] ?? 0).toDouble()),
-        AppColors.statusOverdue,
-      ),
-    ];
+  Widget _buildList(List<dynamic> payments, _L l) {
+    var filtered = payments.where((p) {
+      if (_selectedPropertyId != null &&
+          p['propertyId'] != _selectedPropertyId) {
+        return false;
+      }
+      final status = p['status'] ?? '';
+      // Overdue exists in two forms: a stored OVERDUE status (set by the
+      // penalty batch job) and a computed view (PENDING / COLLECTED rows
+      // past their due date, before the batch runs). Honour both, like the
+      // dashboard does.
+      final due = DateTime.tryParse(p['dueDate']?.toString() ?? '');
+      final now = DateTime.now();
+      final isOverdue =
+          status == 'OVERDUE' ||
+          ((status == 'PENDING' || status == 'COLLECTED') &&
+              due != null &&
+              due.isBefore(DateTime(now.year, now.month, now.day)));
+      switch (_tabController.index) {
+        case 0: // Upcoming — pending dues in the current month only
+          if (status != 'PENDING' && status != 'ONLINE_PENDING') return false;
+          if (isOverdue) return false;
+          if (due == null || due.year != now.year || due.month != now.month) {
+            return false;
+          }
+          break;
+        case 1: // Overdue
+          if (!isOverdue) return false;
+          break;
+        case 2: // Paid
+          if (status != 'CLEARED') return false;
+          break;
+        case 3: // All
+          break;
+      }
+      return true;
+    }).toList();
 
-    return SizedBox(
-      height: 90,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-        itemCount: items.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 10),
-        itemBuilder: (context, index) {
-          final item = items[index];
-          return Container(
-            width: 120,
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: item.color.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: item.color.withValues(alpha: 0.2)),
+    if (filtered.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
+        child: EmptyState(
+          icon: Icons.payment_outlined,
+          title: l.noPaymentsFound,
+        ),
+      );
+    }
+
+    final visibleCount = ((_currentPage + 1) * _pageSize).clamp(
+      0,
+      filtered.length,
+    );
+    final hasMore = visibleCount < filtered.length;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 130),
+      child: Column(
+        children: [
+          for (var index = 0; index < visibleCount; index++)
+            AnimatedListItem(
+              index: index,
+              child: _PaymentCard(
+                payment: filtered[index],
+                l: l,
+                onTap: () => _showPaymentActions(filtered[index]),
+              ),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      '${item.count}',
-                      style: GoogleFonts.josefinSans(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 18,
-                        color: item.color,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Flexible(
-                      child: Text(
-                        item.label,
-                        style: GoogleFonts.josefinSans(
-                          fontSize: 11,
-                          color: item.color.withValues(alpha: 0.8),
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                ),
-                Text(
-                  item.amount,
-                  style: GoogleFonts.josefinSans(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: item.color,
-                  ),
-                ),
-              ],
+          if (hasMore)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: GoldButton.outlined(
+                label: l.showMore(filtered.length - visibleCount),
+                expanded: false,
+                onPressed: () => setState(() => _currentPage++),
+              ),
             ),
-          );
-        },
+        ],
       ),
     );
   }
 
   void _showPaymentActions(Map<String, dynamic> payment) {
     final paymentId = payment['id'] ?? '';
+    final l = _L(context.isAr);
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      backgroundColor: context.miftah.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) => _PaymentActionSheet(
         payment: payment,
+        l: l,
         onCollect: () async {
           Navigator.pop(ctx);
-          // Open the new 4-step scan wizard with this payment pre-selected.
+          // Open the 4-step scan wizard with this payment pre-selected.
           // Mirrors the web flow: pick a payment row → Collect → scan
           // wizard handles capture, extraction, confirmation, deposit.
           await context.push('/scan?paymentId=$paymentId');
@@ -410,14 +263,14 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
           Navigator.pop(ctx);
           await _performAction(
             () => ref.read(_paymentServiceProvider).depositPayment(paymentId),
-            'Payment deposited',
+            l.paymentDeposited,
           );
         },
         onClear: () async {
           Navigator.pop(ctx);
           await _performAction(
             () => ref.read(_paymentServiceProvider).clearPayment(paymentId),
-            'Payment cleared',
+            l.paymentCleared,
           );
         },
         onMarkFailed: () async {
@@ -432,15 +285,15 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
             paymentService: ref.read(_paymentServiceProvider),
           );
           if (result != null && mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Cheque marked as failed')),
-            );
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text(l.chequeMarkedFailed)));
             _refresh();
           }
         },
         onDownloadReceipt: () async {
           Navigator.pop(ctx);
-          await _downloadReceipt(paymentId);
+          await _downloadReceipt(paymentId, l);
         },
       ),
     );
@@ -460,9 +313,10 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
       }
     } catch (e) {
       if (mounted) {
+        final l = _L(context.isAr);
         // Surface the backend's message (same pattern as the
         // mark-cheque-failed dialog) instead of a generic failure string.
-        String message = 'Action failed';
+        String message = l.actionFailed;
         if (e is DioException) {
           final data = e.response?.data;
           if (data is Map && data['message'] != null) {
@@ -480,7 +334,7 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
     }
   }
 
-  Future<void> _downloadReceipt(String paymentId) async {
+  Future<void> _downloadReceipt(String paymentId, _L l) async {
     try {
       final bytes = await ref
           .read(_paymentServiceProvider)
@@ -491,116 +345,727 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
       await OpenFilex.open(file.path);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to download receipt')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(l.failedToDownloadReceipt)));
       }
     }
   }
 }
 
-class _SummaryData {
-  final String label;
-  final int count;
-  final String amount;
-  final Color color;
+// ─── Chrome header ──────────────────────────────────────────────────────────
 
-  _SummaryData(this.label, this.count, this.amount, this.color);
-}
-
-class _PaymentCard extends StatelessWidget {
-  final Map<String, dynamic> payment;
-  final VoidCallback onTap;
-
-  const _PaymentCard({required this.payment, required this.onTap});
+class _ChromeHeader extends StatelessWidget {
+  final _L l;
+  const _ChromeHeader({required this.l});
 
   @override
   Widget build(BuildContext context) {
-    final status = payment['status'] ?? 'PENDING';
-    final statusColor = StatusHelper.getPaymentStatusColor(status);
-    final amount = (payment['amount'] ?? 0).toDouble();
-
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: AppShadows.soft,
+        color: AppColors.primary,
+        border: Border(
+          bottom: BorderSide(color: AppColors.accent.withValues(alpha: 0.14)),
+        ),
       ),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: statusColor.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(
-                  Icons.receipt_outlined,
-                  color: statusColor,
-                  size: 20,
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            l.ar ? l.overline : l.overline.toUpperCase(),
+            style: l.ar
+                ? GoogleFonts.notoNaskhArabic(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.accent.withValues(alpha: 0.7),
+                  )
+                : GoogleFonts.josefinSans(
+                    fontSize: 11,
+                    letterSpacing: 2.0,
+                    color: AppColors.accent.withValues(alpha: 0.7),
+                  ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            l.title,
+            style: l.ar
+                ? GoogleFonts.notoNaskhArabic(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  )
+                : GoogleFonts.cinzel(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.white,
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Top cells: scan entry + "in hand" stat ────────────────────────────────
+
+class _TopCells extends StatelessWidget {
+  final _L l;
+  final Map<String, dynamic> summary;
+  const _TopCells({required this.l, required this.summary});
+
+  @override
+  Widget build(BuildContext context) {
+    final m = context.miftah;
+    final inHandCount = ((summary['collectedCount'] ?? 0) as num).toInt();
+    final inHandAmount = ((summary['collectedAmount'] ?? 0) as num).toDouble();
+
+    // No stretch: inside the screen ListView the vertical constraint is
+    // unbounded, and stretch would force infinite-height children.
+    return Row(
+      children: [
+        Expanded(
+          child: GestureDetector(
+            onTap: () => context.push('/scan'),
+            child: Container(
+              height: 106,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: m.surfaceAlt,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: AppColors.accent.withValues(alpha: 0.4),
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
+              child: DottedBorderFallback(
                 child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      payment['renterName'] ?? 'Unknown',
-                      style: GoogleFonts.josefinSans(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                      ),
+                    Icon(
+                      Icons.document_scanner_outlined,
+                      color: AppColors.accentDark,
+                      size: 22,
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(height: 8),
                     Text(
-                      '${payment['propertyName'] ?? '-'} | Unit ${payment['unitIdentifier'] ?? payment['unitNumber'] ?? '-'}',
-                      style: GoogleFonts.josefinSans(
-                        fontSize: 12,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Due: ${Formatters.date(payment['dueDate'])}',
-                      style: GoogleFonts.josefinSans(
-                        fontSize: 11,
-                        color: AppColors.textMuted,
-                      ),
+                      l.scanCheque,
+                      style: l.ar
+                          ? GoogleFonts.notoNaskhArabic(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: m.textPrimary,
+                            )
+                          : GoogleFonts.josefinSans(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 1.2,
+                              color: m.textPrimary,
+                            ),
                     ),
                   ],
                 ),
               ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    Formatters.currency(amount),
-                    style: GoogleFonts.josefinSans(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 14,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  StatusBadge(label: status, color: statusColor),
-                ],
-              ),
-            ],
+            ),
           ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Container(
+            height: 106,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: m.surface,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: m.border),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  l.ar ? l.inHand : l.inHand.toUpperCase(),
+                  style: l.ar
+                      ? GoogleFonts.notoNaskhArabic(
+                          fontSize: 11.5,
+                          color: m.textMuted,
+                        )
+                      : GoogleFonts.josefinSans(
+                          fontSize: 10,
+                          letterSpacing: 1.8,
+                          color: m.textMuted,
+                        ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '$inHandCount',
+                  style: GoogleFonts.cinzel(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w600,
+                    color: m.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  Formatters.currencyCompact(inHandAmount),
+                  style:
+                      (l.ar
+                      ? GoogleFonts.notoNaskhArabic
+                      : GoogleFonts.josefinSans)(
+                        fontSize: 11,
+                        color: AppColors.accentDark,
+                      ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Lightweight dashed-border look without a new dependency: paints a dashed
+/// rectangle behind [child] using a CustomPaint border.
+class DottedBorderFallback extends StatelessWidget {
+  final Widget child;
+  const DottedBorderFallback({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(painter: _DashedRectPainter(), child: child);
+  }
+}
+
+class _DashedRectPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = AppColors.accent.withValues(alpha: 0.55)
+      ..strokeWidth = 1.2
+      ..style = PaintingStyle.stroke;
+    final rrect = RRect.fromRectAndRadius(
+      Offset.zero & size,
+      const Radius.circular(10),
+    );
+    final path = Path()..addRRect(rrect);
+    const dashWidth = 5.0;
+    const dashSpace = 4.0;
+    for (final metric in path.computeMetrics()) {
+      var distance = 0.0;
+      while (distance < metric.length) {
+        final next = distance + dashWidth;
+        canvas.drawPath(
+          metric.extractPath(distance, next.clamp(0, metric.length)),
+          paint,
+        );
+        distance = next + dashSpace;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _TopCellsShimmer extends StatelessWidget {
+  const _TopCellsShimmer();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Row(
+      children: [
+        Expanded(child: ShimmerLoading(height: 106, borderRadius: 14)),
+        SizedBox(width: 10),
+        Expanded(child: ShimmerLoading(height: 106, borderRadius: 14)),
+      ],
+    );
+  }
+}
+
+// ─── Property filter ────────────────────────────────────────────────────────
+
+class _PropertyFilter extends StatelessWidget {
+  final _L l;
+  final List<dynamic> properties;
+  final String? selectedId;
+  final ValueChanged<String?> onChanged;
+  const _PropertyFilter({
+    required this.l,
+    required this.properties,
+    required this.selectedId,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final m = context.miftah;
+    return Container(
+      decoration: BoxDecoration(
+        color: m.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: m.border),
+      ),
+      padding: const EdgeInsetsDirectional.only(start: 14, end: 6),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButtonFormField<String?>(
+          value: selectedId,
+          isExpanded: true,
+          decoration: const InputDecoration(
+            filled: false,
+            border: InputBorder.none,
+            contentPadding: EdgeInsets.symmetric(vertical: 10),
+          ),
+          style: (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans)(
+            fontSize: 13,
+            color: m.textPrimary,
+          ),
+          dropdownColor: m.surface,
+          icon: Icon(Icons.expand_more, color: m.textMuted),
+          items: [
+            DropdownMenuItem<String?>(
+              value: null,
+              child: Text(
+                l.allProperties,
+                style: const TextStyle(fontSize: 13),
+              ),
+            ),
+            ...properties.map(
+              (p) => DropdownMenuItem<String?>(
+                value: p['id'],
+                child: Text(
+                  p['name'] ?? '',
+                  style: const TextStyle(fontSize: 13),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+          ],
+          onChanged: onChanged,
         ),
       ),
     );
   }
 }
 
+// ─── Filter chips (Upcoming / Overdue / Paid / All) ────────────────────────
+
+class _FilterChips extends StatelessWidget {
+  final TabController controller;
+  final _L l;
+  const _FilterChips({required this.controller, required this.l});
+
+  @override
+  Widget build(BuildContext context) {
+    final m = context.miftah;
+    final labels = [
+      l.filterUpcoming,
+      l.filterOverdue,
+      l.filterPaid,
+      l.filterAll,
+    ];
+
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (context, _) {
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              for (var i = 0; i < labels.length; i++)
+                Padding(
+                  padding: const EdgeInsetsDirectional.only(end: 8),
+                  child: GestureDetector(
+                    onTap: () => controller.animateTo(i),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 7,
+                      ),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(999),
+                        color: controller.index == i
+                            ? (m.isDark ? AppColors.accent : AppColors.primary)
+                            : Colors.transparent,
+                        border: controller.index == i
+                            ? null
+                            : Border.all(color: m.borderStrong),
+                      ),
+                      child: Text(
+                        labels[i],
+                        style: l.ar
+                            ? GoogleFonts.notoNaskhArabic(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: controller.index == i
+                                    ? (m.isDark
+                                          ? AppColors.primary
+                                          : AppColors.accent)
+                                    : m.textSecondary,
+                              )
+                            : GoogleFonts.josefinSans(
+                                fontSize: 11.5,
+                                letterSpacing: 1.4,
+                                fontWeight: FontWeight.w500,
+                                color: controller.index == i
+                                    ? (m.isDark
+                                          ? AppColors.primary
+                                          : AppColors.accent)
+                                    : m.textSecondary,
+                              ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ─── Status strip ───────────────────────────────────────────────────────────
+
+/// Semantic status cells. PENDING gets a distinct amber/clock treatment,
+/// COLLECTED/DEPOSITED are bronze (still-in-clearing, not settled), CLEARED
+/// is the only status that reads green, BOUNCED/OVERDUE stay danger red —
+/// each with its own icon so the two bronze-adjacent states never look alike.
+class _StatusStrip extends StatelessWidget {
+  final _L l;
+  final Map<String, dynamic> summary;
+  const _StatusStrip({required this.l, required this.summary});
+
+  @override
+  Widget build(BuildContext context) {
+    final m = context.miftah;
+    final items = [
+      _StatusCellData(
+        l.statusPending,
+        (summary['pendingCount'] ?? 0) as num,
+        Formatters.currencyCompact(
+          ((summary['pendingAmount'] ?? 0) as num).toDouble(),
+        ),
+        m.warning,
+        Icons.schedule,
+      ),
+      _StatusCellData(
+        l.statusCollected,
+        (summary['collectedCount'] ?? 0) as num,
+        Formatters.currencyCompact(
+          ((summary['collectedAmount'] ?? 0) as num).toDouble(),
+        ),
+        m.isDark ? AppColors.goldMid : AppColors.accentDark,
+        Icons.move_to_inbox_outlined,
+      ),
+      _StatusCellData(
+        l.statusDeposited,
+        (summary['depositedCount'] ?? 0) as num,
+        Formatters.currencyCompact(
+          ((summary['depositedAmount'] ?? 0) as num).toDouble(),
+        ),
+        m.isDark ? AppColors.goldMid : AppColors.accentDark,
+        Icons.account_balance_outlined,
+      ),
+      _StatusCellData(
+        l.statusCleared,
+        (summary['clearedCount'] ?? 0) as num,
+        Formatters.currencyCompact(
+          ((summary['clearedAmount'] ?? 0) as num).toDouble(),
+        ),
+        m.success,
+        Icons.check_circle_outline,
+      ),
+      _StatusCellData(
+        l.statusBounced,
+        (summary['bouncedCount'] ?? 0) as num,
+        Formatters.currencyCompact(
+          ((summary['bouncedAmount'] ?? 0) as num).toDouble(),
+        ),
+        m.danger,
+        Icons.cancel_outlined,
+      ),
+      _StatusCellData(
+        l.statusOverdue,
+        (summary['overdueCount'] ?? 0) as num,
+        Formatters.currencyCompact(
+          ((summary['overdueAmount'] ?? 0) as num).toDouble(),
+        ),
+        m.danger,
+        Icons.warning_amber_rounded,
+      ),
+    ];
+
+    return SizedBox(
+      height: 84,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: items.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
+        itemBuilder: (context, index) {
+          final item = items[index];
+          return Container(
+            width: 116,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: item.color.withValues(alpha: m.isDark ? 0.1 : 0.08),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: item.color.withValues(alpha: 0.24)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Icon(item.icon, size: 14, color: item.color),
+                    const SizedBox(width: 5),
+                    Text(
+                      '${item.count}',
+                      style: GoogleFonts.josefinSans(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 16,
+                        color: item.color,
+                      ),
+                    ),
+                  ],
+                ),
+                Text(
+                  l.ar ? item.label : item.label.toUpperCase(),
+                  style:
+                      (l.ar
+                      ? GoogleFonts.notoNaskhArabic
+                      : GoogleFonts.josefinSans)(
+                        fontSize: l.ar ? 11 : 9.5,
+                        letterSpacing: l.ar ? 0 : 0.8,
+                        color: item.color.withValues(alpha: 0.85),
+                      ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  item.amount,
+                  style: GoogleFonts.josefinSans(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: item.color,
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _StatusCellData {
+  final String label;
+  final num count;
+  final String amount;
+  final Color color;
+  final IconData icon;
+  _StatusCellData(this.label, this.count, this.amount, this.color, this.icon);
+}
+
+// ─── Payment card ────────────────────────────────────────────────────────────
+
+class _PaymentCard extends StatelessWidget {
+  final Map<String, dynamic> payment;
+  final _L l;
+  final VoidCallback onTap;
+
+  const _PaymentCard({
+    required this.payment,
+    required this.l,
+    required this.onTap,
+  });
+
+  ({Color color, IconData icon}) _statusMeta(MiftahColors m, String status) {
+    switch (status) {
+      case 'PENDING':
+      case 'ONLINE_PENDING':
+        return (color: m.warning, icon: Icons.schedule);
+      case 'COLLECTED':
+      case 'DEPOSITED':
+        return (
+          color: m.isDark ? AppColors.goldMid : AppColors.accentDark,
+          icon: status == 'COLLECTED'
+              ? Icons.move_to_inbox_outlined
+              : Icons.account_balance_outlined,
+        );
+      case 'CLEARED':
+        return (color: m.success, icon: Icons.check_circle_outline);
+      case 'BOUNCED':
+        return (color: m.danger, icon: Icons.cancel_outlined);
+      case 'OVERDUE':
+        return (color: m.danger, icon: Icons.warning_amber_rounded);
+      default:
+        return (color: m.textMuted, icon: Icons.receipt_outlined);
+    }
+  }
+
+  String _statusLabel(String status) => switch (status) {
+    'PENDING' || 'ONLINE_PENDING' => l.statusPending,
+    'COLLECTED' => l.statusCollected,
+    'DEPOSITED' => l.statusDeposited,
+    'CLEARED' => l.statusCleared,
+    'BOUNCED' => l.statusBounced,
+    'OVERDUE' => l.statusOverdue,
+    'REPLACED' => l.statusReplaced,
+    _ => status,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final m = context.miftah;
+    final status = payment['status'] ?? 'PENDING';
+    final meta = _statusMeta(m, status);
+    final amount = (payment['amount'] ?? 0).toDouble();
+
+    // A rounded border can't mix colors per side, so the status accent is an
+    // inner strip clipped to the card's radius instead of a left BorderSide.
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: m.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: m.border),
+      ),
+      clipBehavior: Clip.antiAlias,
+      // IntrinsicHeight bounds the stretch so the accent strip matches the
+      // card height without inheriting the ListView's unbounded constraint.
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(width: 4, color: meta.color),
+            Expanded(
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: onTap,
+                  child: Padding(
+                    padding: const EdgeInsetsDirectional.all(14),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: meta.color.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Icon(meta.icon, color: meta.color, size: 20),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                payment['renterName'] ?? l.unknownRenter,
+                                style:
+                                    (l.ar
+                                    ? GoogleFonts.notoNaskhArabic
+                                    : GoogleFonts.josefinSans)(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 14,
+                                      color: m.textPrimary,
+                                    ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                l.propertyUnitLine(
+                                  payment['propertyName']?.toString() ?? '-',
+                                  (payment['unitIdentifier'] ??
+                                          payment['unitNumber'] ??
+                                          '-')
+                                      .toString(),
+                                ),
+                                style:
+                                    (l.ar
+                                    ? GoogleFonts.notoNaskhArabic
+                                    : GoogleFonts.josefinSans)(
+                                      fontSize: 12,
+                                      color: m.textSecondary,
+                                    ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                l.dueLine(
+                                  Formatters.date(payment['dueDate'], ar: l.ar),
+                                ),
+                                style:
+                                    (l.ar
+                                    ? GoogleFonts.notoNaskhArabic
+                                    : GoogleFonts.josefinSans)(
+                                      fontSize: 11,
+                                      color: m.textMuted,
+                                    ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              Formatters.currency(amount),
+                              style: GoogleFonts.cinzel(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                                color: m.textPrimary,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 3,
+                              ),
+                              decoration: BoxDecoration(
+                                color: meta.color.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                l.ar
+                                    ? _statusLabel(status)
+                                    : _statusLabel(status).toUpperCase(),
+                                style: l.ar
+                                    ? GoogleFonts.notoNaskhArabic(
+                                        fontSize: 10.5,
+                                        fontWeight: FontWeight.w600,
+                                        color: meta.color,
+                                      )
+                                    : GoogleFonts.josefinSans(
+                                        fontSize: 10,
+                                        letterSpacing: 1.0,
+                                        fontWeight: FontWeight.w600,
+                                        color: meta.color,
+                                      ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Action sheet ────────────────────────────────────────────────────────────
+
 class _PaymentActionSheet extends StatelessWidget {
   final Map<String, dynamic> payment;
+  final _L l;
   final VoidCallback onCollect;
   final VoidCallback onDeposit;
   final VoidCallback onClear;
@@ -609,6 +1074,7 @@ class _PaymentActionSheet extends StatelessWidget {
 
   const _PaymentActionSheet({
     required this.payment,
+    required this.l,
     required this.onCollect,
     required this.onDeposit,
     required this.onClear,
@@ -618,9 +1084,9 @@ class _PaymentActionSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
     final status = payment['status'] ?? '';
     final amount = (payment['amount'] ?? 0).toDouble();
-    final statusColor = StatusHelper.getPaymentStatusColor(status);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
@@ -632,7 +1098,7 @@ class _PaymentActionSheet extends StatelessWidget {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: AppColors.border,
+                color: m.borderStrong,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -644,7 +1110,7 @@ class _PaymentActionSheet extends StatelessWidget {
             width: double.infinity,
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: AppColors.background,
+              color: m.surfaceAlt,
               borderRadius: BorderRadius.circular(12),
             ),
             child: Column(
@@ -653,14 +1119,30 @@ class _PaymentActionSheet extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        payment['renterName'] ?? 'Unknown',
-                        style: GoogleFonts.josefinSans(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 16,
-                        ),
+                        payment['renterName'] ?? l.unknownRenter,
+                        style:
+                            (l.ar
+                            ? GoogleFonts.notoNaskhArabic
+                            : GoogleFonts.josefinSans)(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 16,
+                              color: m.textPrimary,
+                            ),
                       ),
                     ),
-                    StatusBadge(label: status, color: statusColor),
+                    Text(
+                      l.ar
+                          ? _statusText(status, l)
+                          : _statusText(status, l).toUpperCase(),
+                      style:
+                          (l.ar
+                          ? GoogleFonts.notoNaskhArabic
+                          : GoogleFonts.josefinSans)(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: m.textSecondary,
+                          ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -668,19 +1150,22 @@ class _PaymentActionSheet extends StatelessWidget {
                   children: [
                     Text(
                       Formatters.currency(amount),
-                      style: GoogleFonts.josefinSans(
-                        fontWeight: FontWeight.w700,
+                      style: GoogleFonts.cinzel(
+                        fontWeight: FontWeight.w600,
                         fontSize: 20,
-                        color: AppColors.primary,
+                        color: m.textPrimary,
                       ),
                     ),
                     const Spacer(),
                     Text(
-                      'Due: ${Formatters.date(payment['dueDate'])}',
-                      style: GoogleFonts.josefinSans(
-                        fontSize: 12,
-                        color: AppColors.textSecondary,
-                      ),
+                      l.dueLine(Formatters.date(payment['dueDate'], ar: l.ar)),
+                      style:
+                          (l.ar
+                          ? GoogleFonts.notoNaskhArabic
+                          : GoogleFonts.josefinSans)(
+                            fontSize: 12,
+                            color: m.textSecondary,
+                          ),
                     ),
                   ],
                 ),
@@ -691,85 +1176,91 @@ class _PaymentActionSheet extends StatelessWidget {
 
           // Actions
           if (status == 'PENDING' || status == 'OVERDUE')
-            _ActionButton(
-              icon: Icons.receipt_long_outlined,
-              label: 'Collect Payment',
-              color: AppColors.primary,
-              onTap: onCollect,
-            ),
+            GoldButton(label: l.collectPayment, onPressed: onCollect),
           if (status == 'COLLECTED') ...[
-            _ActionButton(
-              icon: Icons.account_balance_outlined,
-              label: 'Deposit to Bank',
-              color: AppColors.info,
-              onTap: onDeposit,
-            ),
+            GoldButton(label: l.depositToBank, onPressed: onDeposit),
           ],
           if (status == 'DEPOSITED') ...[
-            _ActionButton(
-              icon: Icons.check_circle_outline,
-              label: 'Mark as Cleared',
-              color: AppColors.success,
-              onTap: onClear,
-            ),
-            const SizedBox(height: 8),
-            _ActionButton(
-              icon: Icons.cancel_outlined,
-              label: 'Mark Failed',
-              color: AppColors.danger,
-              onTap: onMarkFailed,
-            ),
+            GoldButton(label: l.markAsCleared, onPressed: onClear),
+            const SizedBox(height: 10),
+            GoldButton.outlined(label: l.markFailed, onPressed: onMarkFailed),
           ],
           if (status == 'BOUNCED')
-            _ActionButton(
-              icon: Icons.replay_outlined,
-              label: 'Replace Cheque',
-              color: AppColors.warning,
-              onTap: onCollect,
-            ),
+            GoldButton(label: l.replaceCheque, onPressed: onCollect),
           if (status == 'CLEARED')
-            _ActionButton(
-              icon: Icons.download_outlined,
-              label: 'Download Receipt',
-              color: AppColors.primary,
-              onTap: onDownloadReceipt,
+            GoldButton.outlined(
+              label: l.downloadReceipt,
+              onPressed: onDownloadReceipt,
             ),
         ],
       ),
     );
   }
+
+  String _statusText(String status, _L l) => switch (status) {
+    'PENDING' || 'ONLINE_PENDING' => l.statusPending,
+    'COLLECTED' => l.statusCollected,
+    'DEPOSITED' => l.statusDeposited,
+    'CLEARED' => l.statusCleared,
+    'BOUNCED' => l.statusBounced,
+    'OVERDUE' => l.statusOverdue,
+    _ => status,
+  };
 }
 
-class _ActionButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final Color color;
-  final VoidCallback onTap;
+// ─── Strings (EN/AR) ────────────────────────────────────────────────────────
 
-  const _ActionButton({
-    required this.icon,
-    required this.label,
-    required this.color,
-    required this.onTap,
-  });
+/// Screen strings (EN/AR). Lightweight per-screen pattern — see arabic-brief.
+class _L {
+  _L(this.ar);
+  final bool ar;
 
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: SizedBox(
-        width: double.infinity,
-        child: OutlinedButton.icon(
-          onPressed: onTap,
-          icon: Icon(icon, color: color, size: 20),
-          label: Text(label),
-          style: OutlinedButton.styleFrom(
-            foregroundColor: color,
-            side: BorderSide(color: color.withValues(alpha: 0.3)),
-            padding: const EdgeInsets.symmetric(vertical: 14),
-          ),
-        ),
-      ),
-    );
-  }
+  String get overline => ar ? 'عمليات الشيكات' : 'CHEQUE OPERATIONS';
+  String get title => ar ? 'المدفوعات' : 'Payments';
+
+  String get scanCheque => ar ? 'مسح شيك' : 'Scan cheque';
+  String get inHand => ar ? 'في الحوزة' : 'In hand';
+
+  String get allProperties => ar ? 'كل العقارات' : 'All Properties';
+
+  String get filterUpcoming => ar ? 'القادمة' : 'UPCOMING';
+  String get filterOverdue => ar ? 'المتأخرة' : 'OVERDUE';
+  String get filterPaid => ar ? 'مسدّدة' : 'PAID';
+  String get filterAll => ar ? 'الكل' : 'ALL';
+
+  String get statusPending => ar ? 'قيد الانتظار' : 'pending';
+  String get statusCollected => ar ? 'تم التحصيل' : 'collected';
+  String get statusDeposited => ar ? 'تم الإيداع' : 'deposited';
+  String get statusCleared => ar ? 'تمت التسوية' : 'cleared';
+  String get statusBounced => ar ? 'مرتجع' : 'bounced';
+  String get statusOverdue => ar ? 'متأخر' : 'overdue';
+  String get statusReplaced => ar ? 'مستبدل' : 'replaced';
+
+  String get failedToLoadPayments =>
+      ar ? 'تعذّر تحميل المدفوعات' : 'Failed to load payments';
+  String get noPaymentsFound => ar ? 'لا توجد مدفوعات' : 'No payments found';
+  String get unknownRenter => ar ? 'مستأجر غير معروف' : 'Unknown';
+
+  String propertyUnitLine(String property, String unit) =>
+      ar ? '$property — وحدة $unit' : '$property | Unit $unit';
+  String dueLine(String date) => ar ? 'الاستحقاق: $date' : 'Due: $date';
+
+  String showMore(int remaining) => ar
+      ? 'عرض المزيد ($remaining متبقية)'
+      : 'Show More ($remaining remaining)';
+
+  String get actionFailed => ar ? 'فشلت العملية' : 'Action failed';
+  String get paymentDeposited => ar ? 'تم إيداع الدفعة' : 'Payment deposited';
+  String get paymentCleared => ar ? 'تمت تسوية الدفعة' : 'Payment cleared';
+  String get chequeMarkedFailed =>
+      ar ? 'تم تحديد الشيك كمرتجع' : 'Cheque marked as failed';
+  String get failedToDownloadReceipt =>
+      ar ? 'تعذّر تنزيل الإيصال' : 'Failed to download receipt';
+
+  String get collectPayment => ar ? 'تحصيل الدفعة' : 'Collect Payment';
+  String get depositToBank => ar ? 'إيداع في البنك' : 'Deposit to Bank';
+  String get markAsCleared => ar ? 'تحديد كمسددة' : 'Mark as Cleared';
+  String get markFailed => ar ? 'تحديد كمرتجع' : 'Mark Failed';
+  String get replaceCheque => ar ? 'استبدال الشيك' : 'Replace Cheque';
+  String get downloadReceipt => ar ? 'تنزيل الإيصال' : 'Download Receipt';
 }

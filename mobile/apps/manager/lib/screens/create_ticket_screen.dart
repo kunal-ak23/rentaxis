@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
@@ -24,6 +25,78 @@ final _renterServiceProvider = Provider<RenterService>((ref) {
   final client = ref.watch(apiClientProvider);
   return RenterService(client.dio);
 });
+
+/// Screen strings (EN/AR). Lightweight per-screen pattern — see arabic-brief.
+/// Category/priority terms mirror the renter app's create_ticket_screen so
+/// vocabulary stays identical across apps.
+class _L {
+  _L(this.ar);
+  final bool ar;
+
+  String get newTicket => ar ? 'طلب جديد' : 'New Ticket';
+  String get property => ar ? 'العقار' : 'Property';
+  String get unitOptional => ar ? 'الوحدة (اختياري)' : 'Unit (optional)';
+  String unitLabel(String n) => ar ? 'وحدة $n' : 'Unit $n';
+  String get onBehalfOf =>
+      ar ? 'نيابة عن (اختياري)' : 'On behalf of (optional)';
+  String get category => ar ? 'الفئة' : 'Category';
+  String get title => ar ? 'العنوان' : 'Title';
+  String get titleRequired => ar ? 'العنوان مطلوب' : 'Title is required';
+  String get description => ar ? 'الوصف' : 'Description';
+  String get descriptionRequired =>
+      ar ? 'الوصف مطلوب' : 'Description is required';
+  String get priority => ar ? 'الأولوية' : 'Priority';
+  String get attachments => ar ? 'المرفقات' : 'Attachments';
+  String get add => ar ? 'إضافة' : 'Add';
+  String get camera => ar ? 'الكاميرا' : 'Camera';
+  String get gallery => ar ? 'المعرض' : 'Gallery';
+  String get file => ar ? 'ملف' : 'File';
+  String get submitTicket => ar ? 'إرسال الطلب' : 'Submit Ticket';
+  String get ticketCreated =>
+      ar ? 'تم إنشاء الطلب بنجاح' : 'Ticket created successfully';
+  String get ticketCreateFailed =>
+      ar ? 'فشل إنشاء الطلب' : 'Failed to create ticket';
+
+  String category_(String value) {
+    switch (value) {
+      case 'MAINTENANCE':
+        return ar ? 'صيانة' : 'Maintenance';
+      case 'PLUMBING':
+        return ar ? 'سباكة' : 'Plumbing';
+      case 'ELECTRICAL':
+        return ar ? 'كهرباء' : 'Electrical';
+      case 'HVAC':
+        return ar ? 'تكييف' : 'HVAC';
+      case 'PEST_CONTROL':
+        return ar ? 'مكافحة حشرات' : 'Pest Control';
+      case 'CLEANING':
+        return ar ? 'تنظيف' : 'Cleaning';
+      case 'SECURITY':
+        return ar ? 'أمن' : 'Security';
+      case 'GENERAL':
+        return ar ? 'عام' : 'General';
+      case 'OTHER':
+        return ar ? 'أخرى' : 'Other';
+      default:
+        return value.replaceAll('_', ' ');
+    }
+  }
+
+  String priority_(String value) {
+    switch (value) {
+      case 'LOW':
+        return ar ? 'منخفضة' : 'LOW';
+      case 'MEDIUM':
+        return ar ? 'متوسطة' : 'MEDIUM';
+      case 'HIGH':
+        return ar ? 'مرتفعة' : 'HIGH';
+      case 'URGENT':
+        return ar ? 'عاجلة' : 'URGENT';
+      default:
+        return value;
+    }
+  }
+}
 
 class CreateTicketScreen extends ConsumerStatefulWidget {
   const CreateTicketScreen({super.key});
@@ -122,24 +195,45 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
   }
 
   Future<void> _addAttachment() async {
+    final l = _L(context.isAr);
+    final m = context.miftah;
     final source = await showModalBottomSheet<String>(
       context: context,
+      backgroundColor: m.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (ctx) => SafeArea(
         child: Wrap(
           children: [
             ListTile(
-              leading: const Icon(Icons.camera_alt_outlined),
-              title: const Text('Camera'),
+              leading: const Icon(
+                Icons.camera_alt_outlined,
+                color: AppColors.accent,
+              ),
+              title: Text(
+                l.camera,
+                style: GoogleFonts.josefinSans(color: m.textPrimary),
+              ),
               onTap: () => Navigator.pop(ctx, 'camera'),
             ),
             ListTile(
-              leading: const Icon(Icons.photo_library_outlined),
-              title: const Text('Gallery'),
+              leading: const Icon(
+                Icons.photo_library_outlined,
+                color: AppColors.accent,
+              ),
+              title: Text(
+                l.gallery,
+                style: GoogleFonts.josefinSans(color: m.textPrimary),
+              ),
               onTap: () => Navigator.pop(ctx, 'gallery'),
             ),
             ListTile(
-              leading: const Icon(Icons.attach_file),
-              title: const Text('File'),
+              leading: const Icon(Icons.attach_file, color: AppColors.accent),
+              title: Text(
+                l.file,
+                style: GoogleFonts.josefinSans(color: m.textPrimary),
+              ),
               onTap: () => Navigator.pop(ctx, 'file'),
             ),
           ],
@@ -151,8 +245,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
     if (source == 'camera' || source == 'gallery') {
       final picker = ImagePicker();
       final image = await picker.pickImage(
-        source:
-            source == 'camera' ? ImageSource.camera : ImageSource.gallery,
+        source: source == 'camera' ? ImageSource.camera : ImageSource.gallery,
         imageQuality: 80,
       );
       if (image != null) {
@@ -172,6 +265,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    final l = _L(context.isAr);
 
     setState(() => _isSubmitting = true);
     try {
@@ -187,7 +281,6 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
         if (_selectedRenterId != null) 'renterId': _selectedRenterId,
       });
 
-      // Upload attachments
       final ticketId = ticket['id'];
       if (ticketId != null) {
         for (final path in _attachmentPaths) {
@@ -199,14 +292,20 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Ticket created successfully')),
+          SnackBar(
+            content: Text(l.ticketCreated),
+            backgroundColor: AppColors.success,
+          ),
         );
         context.pop();
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to create ticket')),
+          SnackBar(
+            content: Text(l.ticketCreateFailed),
+            backgroundColor: AppColors.danger,
+          ),
         );
       }
     } finally {
@@ -216,11 +315,26 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final l = _L(context.isAr);
+
     return Scaffold(
-      appBar: AppBar(title: const Text('New Ticket')),
+      backgroundColor: m.background,
+      appBar: AppBar(
+        backgroundColor: m.surface,
+        foregroundColor: m.textPrimary,
+        elevation: 0,
+        title: Text(
+          l.newTicket,
+          style: l.ar
+              ? GoogleFonts.notoNaskhArabic(fontWeight: FontWeight.w600)
+              : GoogleFonts.cinzel(fontSize: 16, letterSpacing: 1.2),
+        ),
+      ),
       body: _isLoading
           ? const Center(
-              child: CircularProgressIndicator(color: AppColors.primary))
+              child: CircularProgressIndicator(color: AppColors.accent),
+            )
           : LoadingOverlay(
               isLoading: _isSubmitting,
               child: SingleChildScrollView(
@@ -230,139 +344,192 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Property dropdown
-                      DropdownButtonFormField<String>(
-                        value: _selectedPropertyId,
-                        decoration: const InputDecoration(
-                          labelText: 'Property',
-                          prefixIcon: Icon(Icons.apartment_outlined),
-                        ),
-                        items: _properties
-                            .map((p) => DropdownMenuItem<String>(
+                      _dropdownContainer(
+                        m: m,
+                        child: DropdownButtonFormField<String>(
+                          value: _selectedPropertyId,
+                          decoration: InputDecoration(
+                            labelText: l.property,
+                            prefixIcon: const Icon(
+                              Icons.apartment_outlined,
+                              color: AppColors.accentDark,
+                            ),
+                            border: InputBorder.none,
+                          ),
+                          items: _properties
+                              .map(
+                                (p) => DropdownMenuItem<String>(
                                   value: p['id'],
-                                  child: Text(p['name'] ?? '',
-                                      overflow: TextOverflow.ellipsis),
-                                ))
-                            .toList(),
-                        onChanged: (v) {
-                          setState(() => _selectedPropertyId = v);
-                          if (v != null) _loadUnits(v);
-                        },
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Unit dropdown
-                      DropdownButtonFormField<String>(
-                        value: _selectedUnitId,
-                        decoration: const InputDecoration(
-                          labelText: 'Unit (optional)',
-                          prefixIcon: Icon(Icons.door_front_door_outlined),
+                                  child: Text(
+                                    p['name'] ?? '',
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (v) {
+                            setState(() => _selectedPropertyId = v);
+                            if (v != null) _loadUnits(v);
+                          },
                         ),
-                        items: _units
-                            .map((u) => DropdownMenuItem<String>(
+                      ),
+                      const SizedBox(height: 14),
+
+                      _dropdownContainer(
+                        m: m,
+                        child: DropdownButtonFormField<String>(
+                          value: _selectedUnitId,
+                          decoration: InputDecoration(
+                            labelText: l.unitOptional,
+                            prefixIcon: const Icon(
+                              Icons.door_front_door_outlined,
+                              color: AppColors.accentDark,
+                            ),
+                            border: InputBorder.none,
+                          ),
+                          items: _units
+                              .map(
+                                (u) => DropdownMenuItem<String>(
                                   value: u['id'],
                                   child: Text(
-                                      'Unit ${u['unitNumber'] ?? ''}'),
-                                ))
-                            .toList(),
-                        onChanged: (v) =>
-                            setState(() => _selectedUnitId = v),
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Renter selector
-                      DropdownButtonFormField<String>(
-                        value: _selectedRenterId,
-                        decoration: const InputDecoration(
-                          labelText: 'On behalf of (optional)',
-                          prefixIcon: Icon(Icons.person_outline),
+                                    l.unitLabel(
+                                      u['unitNumber']?.toString() ?? '',
+                                    ),
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (v) => setState(() => _selectedUnitId = v),
                         ),
-                        items: _renters
-                            .map((r) => DropdownMenuItem<String>(
+                      ),
+                      const SizedBox(height: 14),
+
+                      _dropdownContainer(
+                        m: m,
+                        child: DropdownButtonFormField<String>(
+                          value: _selectedRenterId,
+                          decoration: InputDecoration(
+                            labelText: l.onBehalfOf,
+                            prefixIcon: const Icon(
+                              Icons.person_outline,
+                              color: AppColors.accentDark,
+                            ),
+                            border: InputBorder.none,
+                          ),
+                          items: _renters
+                              .map(
+                                (r) => DropdownMenuItem<String>(
                                   value: r['id'],
-                                  child: Text(r['name'] ?? r['email'] ?? '',
-                                      overflow: TextOverflow.ellipsis),
-                                ))
-                            .toList(),
-                        onChanged: (v) =>
-                            setState(() => _selectedRenterId = v),
+                                  child: Text(
+                                    r['name'] ?? r['email'] ?? '',
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (v) =>
+                              setState(() => _selectedRenterId = v),
+                        ),
                       ),
                       const SizedBox(height: 24),
 
-                      // Category grid
-                      Text('Category',
-                          style: Theme.of(context).textTheme.titleMedium),
+                      _sectionLabel(l.category, l, m),
                       const SizedBox(height: 12),
                       Wrap(
                         spacing: 8,
                         runSpacing: 8,
                         children: _categories.map((cat) {
                           final isSelected = _selectedCategory == cat;
-                          return ChoiceChip(
-                            label: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  _categoryIcons[cat] ??
-                                      Icons.category_outlined,
-                                  size: 16,
-                                  color: isSelected
-                                      ? Colors.white
-                                      : AppColors.textSecondary,
-                                ),
-                                const SizedBox(width: 6),
-                                Text(cat.replaceAll('_', ' ')),
-                              ],
-                            ),
-                            selected: isSelected,
-                            selectedColor: AppColors.primary,
-                            labelStyle: TextStyle(
-                              fontSize: 12,
-                              color: isSelected
-                                  ? Colors.white
-                                  : AppColors.textPrimary,
-                            ),
-                            onSelected: (_) =>
+                          return GestureDetector(
+                            onTap: () =>
                                 setState(() => _selectedCategory = cat),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 150),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 9,
+                              ),
+                              decoration: BoxDecoration(
+                                color: isSelected
+                                    ? AppColors.accent
+                                    : m.surface,
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(
+                                  color: isSelected
+                                      ? AppColors.accent
+                                      : m.border,
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    _categoryIcons[cat] ??
+                                        Icons.category_outlined,
+                                    size: 15,
+                                    color: isSelected
+                                        ? AppColors.primary
+                                        : m.textSecondary,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    l.category_(cat),
+                                    style: GoogleFonts.josefinSans(
+                                      fontSize: 12,
+                                      fontWeight: isSelected
+                                          ? FontWeight.w600
+                                          : FontWeight.w400,
+                                      color: isSelected
+                                          ? AppColors.primary
+                                          : m.textSecondary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                           );
                         }).toList(),
                       ),
                       const SizedBox(height: 24),
 
-                      // Title
                       TextFormField(
                         controller: _titleCtrl,
-                        decoration: const InputDecoration(
-                          labelText: 'Title',
-                          prefixIcon: Icon(Icons.title),
+                        style: GoogleFonts.josefinSans(color: m.textPrimary),
+                        decoration: InputDecoration(
+                          labelText: l.title,
+                          prefixIcon: const Icon(
+                            Icons.title,
+                            color: AppColors.accentDark,
+                          ),
                         ),
                         validator: (v) => v == null || v.trim().isEmpty
-                            ? 'Title is required'
+                            ? l.titleRequired
                             : null,
                       ),
                       const SizedBox(height: 16),
 
-                      // Description
                       TextFormField(
                         controller: _descCtrl,
                         maxLines: 4,
-                        decoration: const InputDecoration(
-                          labelText: 'Description',
+                        style: GoogleFonts.josefinSans(color: m.textPrimary),
+                        decoration: InputDecoration(
+                          labelText: l.description,
                           alignLabelWithHint: true,
-                          prefixIcon: Padding(
+                          prefixIcon: const Padding(
                             padding: EdgeInsets.only(bottom: 60),
-                            child: Icon(Icons.description_outlined),
+                            child: Icon(
+                              Icons.description_outlined,
+                              color: AppColors.accentDark,
+                            ),
                           ),
                         ),
                         validator: (v) => v == null || v.trim().isEmpty
-                            ? 'Description is required'
+                            ? l.descriptionRequired
                             : null,
                       ),
                       const SizedBox(height: 24),
 
-                      // Priority
-                      Text('Priority',
-                          style: Theme.of(context).textTheme.titleMedium),
+                      _sectionLabel(l.priority, l, m),
                       const SizedBox(height: 12),
                       Row(
                         children: _priorities.map((p) {
@@ -373,33 +540,32 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                               onTap: () =>
                                   setState(() => _selectedPriority = p),
                               child: Container(
-                                margin: EdgeInsets.only(
-                                    right: p != 'URGENT' ? 8 : 0),
+                                margin: EdgeInsetsDirectional.only(
+                                  end: p != 'URGENT' ? 8 : 0,
+                                ),
                                 padding: const EdgeInsets.symmetric(
-                                    vertical: 10),
+                                  vertical: 10,
+                                ),
                                 decoration: BoxDecoration(
                                   color: isSelected
                                       ? color.withValues(alpha: 0.15)
-                                      : AppColors.surface,
+                                      : m.surface,
                                   borderRadius: BorderRadius.circular(8),
                                   border: Border.all(
-                                    color: isSelected
-                                        ? color
-                                        : AppColors.border,
+                                    color: isSelected ? color : m.border,
                                     width: isSelected ? 2 : 1,
                                   ),
                                 ),
                                 child: Text(
-                                  p,
+                                  l.priority_(p),
                                   textAlign: TextAlign.center,
-                                  style: TextStyle(
+                                  style: GoogleFonts.josefinSans(
                                     fontSize: 12,
+                                    letterSpacing: l.ar ? 0 : 0.8,
                                     fontWeight: isSelected
                                         ? FontWeight.w700
                                         : FontWeight.w500,
-                                    color: isSelected
-                                        ? color
-                                        : AppColors.textSecondary,
+                                    color: isSelected ? color : m.textSecondary,
                                   ),
                                 ),
                               ),
@@ -409,18 +575,23 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                       ),
                       const SizedBox(height: 24),
 
-                      // Attachments
                       Row(
                         children: [
-                          Text('Attachments',
-                              style:
-                                  Theme.of(context).textTheme.titleMedium),
+                          _sectionLabel(l.attachments, l, m),
                           const Spacer(),
                           TextButton.icon(
                             onPressed: _addAttachment,
-                            icon: const Icon(Icons.add_photo_alternate_outlined,
-                                size: 18),
-                            label: const Text('Add'),
+                            icon: const Icon(
+                              Icons.add_photo_alternate_outlined,
+                              size: 18,
+                              color: AppColors.accentDark,
+                            ),
+                            label: Text(
+                              l.add,
+                              style: GoogleFonts.josefinSans(
+                                color: AppColors.accentDark,
+                              ),
+                            ),
                           ),
                         ],
                       ),
@@ -429,55 +600,75 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                         Wrap(
                           spacing: 8,
                           runSpacing: 8,
-                          children: _attachmentPaths
-                              .asMap()
-                              .entries
-                              .map((entry) => Chip(
-                                    avatar: const Icon(
-                                        Icons.insert_drive_file_outlined,
-                                        size: 16),
-                                    label: Text(
-                                      entry.value.split('/').last,
-                                      style: const TextStyle(fontSize: 12),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                    deleteIcon:
-                                        const Icon(Icons.close, size: 16),
-                                    onDeleted: () => setState(() =>
-                                        _attachmentPaths
-                                            .removeAt(entry.key)),
-                                  ))
-                              .toList(),
+                          children: _attachmentPaths.asMap().entries.map((
+                            entry,
+                          ) {
+                            return Chip(
+                              backgroundColor: m.surfaceAlt,
+                              side: BorderSide(color: m.border),
+                              avatar: const Icon(
+                                Icons.insert_drive_file_outlined,
+                                size: 16,
+                                color: AppColors.accentDark,
+                              ),
+                              label: Text(
+                                entry.value.split('/').last,
+                                style: GoogleFonts.josefinSans(
+                                  fontSize: 12,
+                                  color: m.textPrimary,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              deleteIcon: const Icon(Icons.close, size: 16),
+                              onDeleted: () => setState(
+                                () => _attachmentPaths.removeAt(entry.key),
+                              ),
+                            );
+                          }).toList(),
                         ),
                       ],
                       const SizedBox(height: 32),
 
-                      // Submit
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          onPressed: _isSubmitting ? null : _submit,
-                          style: ElevatedButton.styleFrom(
-                            padding:
-                                const EdgeInsets.symmetric(vertical: 16),
-                          ),
-                          child: _isSubmitting
-                              ? const SizedBox(
-                                  height: 20,
-                                  width: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : const Text('Submit Ticket'),
-                        ),
+                      GoldButton(
+                        label: l.submitTicket,
+                        height: 50,
+                        onPressed: _isSubmitting ? null : _submit,
                       ),
                     ],
                   ),
                 ),
               ),
             ),
+    );
+  }
+
+  Widget _sectionLabel(String text, _L l, MiftahColors m) {
+    return Text(
+      text,
+      style: l.ar
+          ? GoogleFonts.notoNaskhArabic(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: m.textPrimary,
+            )
+          : GoogleFonts.josefinSans(
+              fontSize: 11,
+              letterSpacing: 1.6,
+              fontWeight: FontWeight.w600,
+              color: m.textPrimary,
+            ),
+    );
+  }
+
+  Widget _dropdownContainer({required MiftahColors m, required Widget child}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      decoration: BoxDecoration(
+        color: m.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: m.border),
+      ),
+      child: child,
     );
   }
 }

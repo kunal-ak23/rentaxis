@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
 import '../auth/firebase_auth_errors.dart';
@@ -42,6 +43,7 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
   }
 
   Future<void> _requestCode() async {
+    final ar = context.isAr;
     // Client-side E.164 check first so Firebase receives the canonical number
     // stored on the guard record.
     if (!_formKey.currentState!.validate()) return;
@@ -72,7 +74,7 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
       }
     } catch (error) {
       if (!mounted) return;
-      setState(() => _errorMessage = describePhoneAuthError(error));
+      setState(() => _errorMessage = describePhoneAuthError(error, ar: ar));
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
@@ -80,10 +82,12 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l = _L(context.isAr);
+
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
       child: Scaffold(
-        backgroundColor: AppColors.background,
+        backgroundColor: AppColors.navyDark,
         body: SafeArea(
           child: Center(
             child: SingleChildScrollView(
@@ -94,31 +98,84 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Icon(
-                      Icons.shield_outlined,
-                      size: 56,
-                      color: AppColors.primary,
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Security',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.navyDark,
+                    // Language pill, top-end.
+                    Align(
+                      alignment: AlignmentDirectional.centerEnd,
+                      child: _LanguagePill(
+                        language: ref.watch(appLanguageProvider),
+                        onChanged: (lang) => ref
+                            .read(appLanguageProvider.notifier)
+                            .setLanguage(lang),
                       ),
                     ),
-                    const SizedBox(height: 6),
-                    const Text(
-                      'Enter your registered phone number to get a login code.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: AppColors.textSecondary,
+                    const SizedBox(height: 10),
+                    // Brand mark (Arabic مفتاح).
+                    Center(
+                      child: Image.asset(
+                        'assets/logo_mark.png',
+                        width: 90,
+                        height: 90,
                       ),
                     ),
-                    const SizedBox(height: 32),
+                    const SizedBox(height: 14),
+                    // Horizontal logo with text.
+                    Center(
+                      child: Image.asset(
+                        'assets/logo_horizontal.png',
+                        height: 30,
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    // Tracked "GUARD CONSOLE" divider.
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Divider(
+                            color: AppColors.accent.withValues(alpha: 0.22),
+                            height: 1,
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: Text(
+                            l.guardConsole,
+                            style: l.ar
+                                ? GoogleFonts.notoNaskhArabic(
+                                    fontSize: 12,
+                                    color: AppColors.goldMid,
+                                  )
+                                : GoogleFonts.josefinSans(
+                                    fontSize: 9.5,
+                                    letterSpacing: 3.4,
+                                    color: AppColors.goldMid,
+                                  ),
+                          ),
+                        ),
+                        Expanded(
+                          child: Divider(
+                            color: AppColors.accent.withValues(alpha: 0.22),
+                            height: 1,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 34),
+
+                    // Phone field, underline style.
+                    Text(
+                      l.ar ? l.phoneNumber : l.phoneNumber.toUpperCase(),
+                      style: l.ar
+                          ? GoogleFonts.notoNaskhArabic(
+                              fontSize: 12,
+                              color: Colors.white.withValues(alpha: 0.4),
+                            )
+                          : GoogleFonts.josefinSans(
+                              fontSize: 9,
+                              letterSpacing: 2.0,
+                              color: Colors.white.withValues(alpha: 0.4),
+                            ),
+                    ),
                     TextFormField(
                       key: const Key('phoneField'),
                       controller: _phoneController,
@@ -130,84 +187,105 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
                         // alphabet our E.164 normalizer accepts.
                         FilteringTextInputFormatter.allow(RegExp(r'[\d\s+-]')),
                       ],
-                      style: const TextStyle(
-                        fontSize: 16,
-                        color: AppColors.textPrimary,
+                      style: GoogleFonts.josefinSans(
+                        fontSize: 14.5,
+                        color: Colors.white,
                       ),
-                      decoration: _inputDecoration(
-                        label: 'Phone number',
-                        icon: Icons.phone_outlined,
-                      ),
+                      decoration: _underlineDecoration(l),
                       onFieldSubmitted: (_) => _requestCode(),
                       validator: (value) {
                         final normalized = normalizePhone(value ?? '');
                         if (normalized.isEmpty) {
-                          return 'Phone number is required';
+                          return l.phoneRequired;
                         }
                         if (!isValidE164(normalized)) {
-                          return 'Enter a full number with country code, '
-                              'e.g. $_phoneExample';
+                          return l.phoneInvalid(_phoneExample);
                         }
                         return null;
                       },
                     ),
                     if (_errorMessage != null) ...[
                       const SizedBox(height: 16),
-                      _ErrorBanner(message: _errorMessage!),
+                      _ErrorBanner(message: _errorMessage!, ar: l.ar),
                     ],
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 30),
+
+                    // Continue button.
                     SizedBox(
                       height: 52,
-                      child: ElevatedButton(
-                        onPressed: _isSubmitting ? null : _requestCode,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
-                          disabledBackgroundColor: AppColors.primary.withValues(
-                            alpha: 0.4,
-                          ),
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: MiftahGradients.gold,
+                          borderRadius: BorderRadius.circular(10),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.accent.withValues(alpha: 0.25),
+                              blurRadius: 16,
+                              offset: const Offset(0, 6),
+                            ),
+                          ],
                         ),
-                        child: _isSubmitting
-                            ? const SizedBox(
-                                height: 20,
-                                width: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
+                        child: ElevatedButton(
+                          onPressed: _isSubmitting ? null : _requestCode,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.transparent,
+                            shadowColor: Colors.transparent,
+                            disabledBackgroundColor: Colors.transparent,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          child: _isSubmitting
+                              ? const SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: AppColors.primary,
+                                  ),
+                                )
+                              : Text(
+                                  l.continueLabel,
+                                  style: l.ar
+                                      ? GoogleFonts.notoNaskhArabic(
+                                          fontSize: 14.5,
+                                          fontWeight: FontWeight.w600,
+                                          color: AppColors.primary,
+                                        )
+                                      : GoogleFonts.josefinSans(
+                                          fontSize: 13.5,
+                                          fontWeight: FontWeight.w600,
+                                          color: AppColors.primary,
+                                          letterSpacing: 2.8,
+                                        ),
                                 ),
-                              )
-                            : const Text(
-                                'Continue',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                  letterSpacing: 0.5,
-                                ),
-                              ),
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 24),
-                    const Text(
-                      'By continuing, you agree to receive an SMS verification '
-                      'code. Standard messaging rates may apply.',
+
+                    const SizedBox(height: 28),
+                    Text(
+                      l.disclaimer,
                       textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: AppColors.textMuted,
-                      ),
+                      style:
+                          (l.ar
+                          ? GoogleFonts.notoNaskhArabic
+                          : GoogleFonts.josefinSans)(
+                            fontSize: 11,
+                            color: Colors.white.withValues(alpha: 0.35),
+                          ),
                     ),
                     const SizedBox(height: 16),
-                    const Text(
-                      'Powered by RentAxis',
+                    Text(
+                      l.poweredBy,
                       textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: AppColors.textMuted,
-                        letterSpacing: 0.5,
-                      ),
+                      style:
+                          (l.ar
+                          ? GoogleFonts.notoNaskhArabic
+                          : GoogleFonts.josefinSans)(
+                            fontSize: 11,
+                            color: AppColors.gold400.withValues(alpha: 0.6),
+                          ),
                     ),
                   ],
                 ),
@@ -218,13 +296,40 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
       ),
     );
   }
+
+  InputDecoration _underlineDecoration(_L l) {
+    return InputDecoration(
+      isDense: true,
+      filled: false,
+      contentPadding: const EdgeInsets.symmetric(vertical: 9),
+      border: UnderlineInputBorder(
+        borderSide: BorderSide(color: AppColors.accent.withValues(alpha: 0.3)),
+      ),
+      enabledBorder: UnderlineInputBorder(
+        borderSide: BorderSide(color: AppColors.accent.withValues(alpha: 0.3)),
+      ),
+      focusedBorder: const UnderlineInputBorder(
+        borderSide: BorderSide(color: AppColors.accent, width: 1.5),
+      ),
+      errorBorder: UnderlineInputBorder(
+        borderSide: BorderSide(color: AppColorsDark.danger),
+      ),
+      focusedErrorBorder: UnderlineInputBorder(
+        borderSide: BorderSide(color: AppColorsDark.danger, width: 1.5),
+      ),
+      errorStyle: (l.ar
+          ? GoogleFonts.notoNaskhArabic
+          : GoogleFonts.josefinSans)(color: AppColorsDark.danger, fontSize: 12),
+    );
+  }
 }
 
-/// Shared inline error presentation for both auth screens.
+/// Shared inline error presentation for both auth screens, on dark chrome.
 class _ErrorBanner extends StatelessWidget {
-  const _ErrorBanner({required this.message});
+  const _ErrorBanner({required this.message, required this.ar});
 
   final String message;
+  final bool ar;
 
   @override
   Widget build(BuildContext context) {
@@ -232,18 +337,26 @@ class _ErrorBanner extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: AppColors.danger.withValues(alpha: 0.08),
+        color: AppColorsDark.danger.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.danger.withValues(alpha: 0.2)),
+        border: Border.all(color: AppColorsDark.danger.withValues(alpha: 0.3)),
       ),
       child: Row(
         children: [
-          const Icon(Icons.error_outline, color: AppColors.danger, size: 18),
+          const Icon(
+            Icons.error_outline,
+            color: AppColorsDark.danger,
+            size: 18,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               message,
-              style: const TextStyle(color: AppColors.danger, fontSize: 13),
+              style:
+                  (ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans)(
+                    color: AppColorsDark.danger,
+                    fontSize: 13,
+                  ),
             ),
           ),
         ],
@@ -252,36 +365,89 @@ class _ErrorBanner extends StatelessWidget {
   }
 }
 
-InputDecoration _inputDecoration({
-  required String label,
-  required IconData icon,
-}) {
-  return InputDecoration(
-    labelText: label,
-    labelStyle: const TextStyle(color: AppColors.textMuted, fontSize: 14),
-    prefixIcon: Icon(icon, color: AppColors.textMuted, size: 20),
-    filled: true,
-    fillColor: Colors.white,
-    border: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(14),
-      borderSide: const BorderSide(color: AppColors.border),
-    ),
-    enabledBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(14),
-      borderSide: const BorderSide(color: AppColors.border),
-    ),
-    focusedBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(14),
-      borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
-    ),
-    errorBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(14),
-      borderSide: const BorderSide(color: AppColors.danger),
-    ),
-    focusedErrorBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(14),
-      borderSide: const BorderSide(color: AppColors.danger, width: 1.5),
-    ),
-    errorStyle: const TextStyle(color: AppColors.danger, fontSize: 12),
-  );
+/// Screen strings (EN/AR). Lightweight per-screen pattern — see arabic-brief.
+class _L {
+  _L(this.ar);
+  final bool ar;
+
+  String get guardConsole => ar ? 'بوابة الحراسة' : 'Guard Console';
+  String get phoneNumber => ar ? 'رقم الهاتف' : 'Phone number';
+  String get continueLabel => ar ? 'متابعة' : 'CONTINUE';
+  String get phoneRequired =>
+      ar ? 'رقم الهاتف مطلوب' : 'Phone number is required';
+  String phoneInvalid(String example) => ar
+      ? 'أدخل رقمًا كاملاً مع رمز الدولة، مثل $example'
+      : 'Enter a full number with country code, e.g. $example';
+  String get disclaimer => ar
+      ? 'بالمتابعة، أنت توافق على استلام رمز تحقق عبر رسالة نصية. قد تُطبَّق '
+            'رسوم الرسائل القياسية.'
+      : 'By continuing, you agree to receive an SMS verification code. '
+            'Standard messaging rates may apply.';
+  String get poweredBy => ar ? 'بدعم من مفتاح' : 'Powered by Miftah';
+}
+
+/// EN / ع pill on the dark login chrome, per design.
+class _LanguagePill extends StatelessWidget {
+  final AppLanguage language;
+  final ValueChanged<AppLanguage> onChanged;
+  const _LanguagePill({required this.language, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    Widget option(AppLanguage value, Widget child) {
+      final selected = language == value;
+      return GestureDetector(
+        onTap: () => onChanged(value),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(999),
+            color: selected ? AppColors.accent : Colors.transparent,
+          ),
+          child: child,
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: AppColors.accent.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          option(
+            AppLanguage.en,
+            Text(
+              'EN',
+              style: GoogleFonts.josefinSans(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 1.4,
+                color: language == AppLanguage.en
+                    ? AppColors.primary
+                    : Colors.white.withValues(alpha: 0.5),
+              ),
+            ),
+          ),
+          option(
+            AppLanguage.ar,
+            Text(
+              'ع',
+              style: GoogleFonts.notoNaskhArabic(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                height: 1.1,
+                color: language == AppLanguage.ar
+                    ? AppColors.primary
+                    : Colors.white.withValues(alpha: 0.5),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

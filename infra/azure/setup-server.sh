@@ -25,6 +25,13 @@ fi
 # shellcheck source=/dev/null
 source "$ENV_FILE"
 
+# Point the CLI at the configured subscription so `az` calls target it.
+# Blank AZURE_SUBSCRIPTION keeps the CLI's current default.
+if [[ -n "${AZURE_SUBSCRIPTION:-}" ]]; then
+  echo "==> Using Azure subscription: $AZURE_SUBSCRIPTION"
+  az account set --subscription "$AZURE_SUBSCRIPTION"
+fi
+
 # Resolve public IP
 PUBLIC_IP=$(az network public-ip show \
   --resource-group "$AZURE_RESOURCE_GROUP" \
