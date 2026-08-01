@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
@@ -9,23 +10,117 @@ final _ticketServiceProvider = Provider<TicketService>((ref) {
   return TicketService(client.dio);
 });
 
-final _ticketDetailProvider =
-    FutureProvider.autoDispose.family<Map<String, dynamic>, String>((ref, id) {
-  final service = ref.watch(_ticketServiceProvider);
-  return service.getTicketById(id);
-});
+final _ticketDetailProvider = FutureProvider.autoDispose
+    .family<Map<String, dynamic>, String>((ref, id) {
+      final service = ref.watch(_ticketServiceProvider);
+      return service.getTicketById(id);
+    });
 
-final _ticketRepliesProvider =
-    FutureProvider.autoDispose.family<List<dynamic>, String>((ref, id) {
-  final service = ref.watch(_ticketServiceProvider);
-  return service.getReplies(id);
-});
+final _ticketRepliesProvider = FutureProvider.autoDispose
+    .family<List<dynamic>, String>((ref, id) {
+      final service = ref.watch(_ticketServiceProvider);
+      return service.getReplies(id);
+    });
 
-final _ticketAttachmentsProvider =
-    FutureProvider.autoDispose.family<List<dynamic>, String>((ref, id) {
-  final service = ref.watch(_ticketServiceProvider);
-  return service.getAttachments(id);
-});
+final _ticketAttachmentsProvider = FutureProvider.autoDispose
+    .family<List<dynamic>, String>((ref, id) {
+      final service = ref.watch(_ticketServiceProvider);
+      return service.getAttachments(id);
+    });
+
+String _shortId(String id) {
+  if (id.isEmpty) return '----';
+  final s = id.replaceAll('-', '');
+  return s.substring(0, s.length > 6 ? 6 : s.length).toUpperCase();
+}
+
+/// Screen strings (EN/AR). Lightweight per-screen pattern — see arabic-brief.
+class _L {
+  _L(this.ar);
+  final bool ar;
+
+  String ticketRef(String id) => ar ? 'الطلب #$id' : 'TICKET #$id';
+  String get untitled => ar ? 'بدون عنوان' : 'Untitled';
+  String get description => ar ? 'الوصف' : 'DESCRIPTION';
+  String get photos => ar ? 'الصور' : 'PHOTOS';
+  String get addPhoto => ar ? '+ إضافة' : '+ ADD';
+  String get photoUploadSoon =>
+      ar ? 'رفع الصور قريبًا' : 'Photo upload coming soon';
+  String get closingOtp => ar ? 'رمز إغلاق الطلب' : 'Closing OTP';
+  String get shareOtp => ar
+      ? 'شارك هذا الرمز مع مدير العقار لإغلاق الطلب'
+      : 'Share this code with your property manager to close the ticket';
+  String get copyOtp => ar ? 'نسخ الرمز' : 'Copy OTP';
+  String get otpCopied => ar ? 'تم نسخ الرمز' : 'OTP copied to clipboard';
+  String get rateService => ar ? 'قيّم هذه الخدمة' : 'Rate This Service';
+  String get optionalComment => ar ? 'تعليق اختياري...' : 'Optional comment...';
+  String get submitRating => ar ? 'إرسال التقييم' : 'Submit Rating';
+  String get yourRating => ar ? 'تقييمك' : 'Your Rating';
+  String get updates => ar ? 'التحديثات' : 'UPDATES';
+  String get noUpdatesYet => ar ? 'لا توجد تحديثات بعد' : 'No updates yet';
+  String get failedToLoadReplies =>
+      ar ? 'فشل تحميل الردود' : 'Failed to load replies';
+  String get failedToLoadTicket =>
+      ar ? 'فشل تحميل الطلب' : 'Failed to load ticket';
+  String get addUpdateHint => ar ? 'أضف تحديثًا...' : 'Add an update...';
+  String get failedToSendReply =>
+      ar ? 'فشل إرسال الرد' : 'Failed to send reply';
+  String get thankYouFeedback =>
+      ar ? 'شكرًا لملاحظاتك!' : 'Thank you for your feedback!';
+  String get failedToSubmitRating =>
+      ar ? 'فشل إرسال التقييم' : 'Failed to submit rating';
+  String get you => ar ? 'أنت' : 'You';
+  String get user => ar ? 'مستخدم' : 'User';
+  String get assignedTechnician => ar ? 'الفني المسند' : 'Assigned technician';
+  String get cameraPermissionRequired =>
+      ar ? 'إذن الكاميرا مطلوب' : 'Camera permission required';
+
+  String category(String value) {
+    switch (value) {
+      case 'PLUMBING':
+        return ar ? 'سباكة' : 'Plumbing';
+      case 'ELECTRICAL':
+        return ar ? 'كهرباء' : 'Electrical';
+      case 'HVAC':
+        return ar ? 'تكييف' : 'HVAC';
+      case 'APPLIANCE':
+        return ar ? 'أجهزة' : 'Appliance';
+      case 'STRUCTURAL':
+        return ar ? 'إنشائي' : 'Structural';
+      case 'PEST_CONTROL':
+        return ar ? 'مكافحة حشرات' : 'Pest Control';
+      case 'CLEANING':
+        return ar ? 'تنظيف' : 'Cleaning';
+      case 'SECURITY':
+        return ar ? 'أمن' : 'Security';
+      case 'OTHER':
+      case '':
+        return ar ? 'عام' : 'Other';
+      default:
+        return value.replaceAll('_', ' ');
+    }
+  }
+
+  String priority(String value) {
+    switch (value) {
+      case 'LOW':
+        return ar ? 'منخفضة' : 'LOW';
+      case 'MEDIUM':
+        return ar ? 'متوسطة' : 'MEDIUM';
+      case 'HIGH':
+        return ar ? 'مرتفعة' : 'HIGH';
+      case 'URGENT':
+        return ar ? 'عاجلة' : 'URGENT';
+      default:
+        return value.replaceAll('_', ' ');
+    }
+  }
+}
+
+/// 4-step status rail labels (EN/AR).
+List<String> _railLabels(bool ar) => ar
+    ? ['أُثيرت', 'أُسندت', 'في الموقع', 'مغلقة']
+    : ['RAISED', 'ASSIGNED', 'ON SITE', 'CLOSED'];
 
 class TicketDetailScreen extends ConsumerStatefulWidget {
   final String ticketId;
@@ -33,8 +128,7 @@ class TicketDetailScreen extends ConsumerStatefulWidget {
   const TicketDetailScreen({super.key, required this.ticketId});
 
   @override
-  ConsumerState<TicketDetailScreen> createState() =>
-      _TicketDetailScreenState();
+  ConsumerState<TicketDetailScreen> createState() => _TicketDetailScreenState();
 }
 
 class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
@@ -59,16 +153,14 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
 
     setState(() => _isSendingReply = true);
     try {
-      await ref
-          .read(_ticketServiceProvider)
-          .addReply(widget.ticketId, message);
+      await ref.read(_ticketServiceProvider).addReply(widget.ticketId, message);
       _replyController.clear();
       ref.invalidate(_ticketRepliesProvider(widget.ticketId));
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to send reply'),
+          SnackBar(
+            content: Text(_L(context.isAr).failedToSendReply),
             backgroundColor: AppColors.danger,
           ),
         );
@@ -81,7 +173,9 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
     if (_rating == 0) return;
     setState(() => _isSubmittingRating = true);
     try {
-      await ref.read(_ticketServiceProvider).rateTicket(
+      await ref
+          .read(_ticketServiceProvider)
+          .rateTicket(
             widget.ticketId,
             _rating,
             comment: _ratingCommentController.text.trim().isNotEmpty
@@ -91,8 +185,8 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
       ref.invalidate(_ticketDetailProvider(widget.ticketId));
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Thank you for your feedback!'),
+          SnackBar(
+            content: Text(_L(context.isAr).thankYouFeedback),
             backgroundColor: AppColors.success,
           ),
         );
@@ -100,8 +194,8 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to submit rating'),
+          SnackBar(
+            content: Text(_L(context.isAr).failedToSubmitRating),
             backgroundColor: AppColors.danger,
           ),
         );
@@ -112,356 +206,424 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final l = _L(context.isAr);
     final ticketAsync = ref.watch(_ticketDetailProvider(widget.ticketId));
     final repliesAsync = ref.watch(_ticketRepliesProvider(widget.ticketId));
-    final attachmentsAsync =
-        ref.watch(_ticketAttachmentsProvider(widget.ticketId));
+    final attachmentsAsync = ref.watch(
+      _ticketAttachmentsProvider(widget.ticketId),
+    );
     final currentUserId = ref.watch(authProvider).userId;
 
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: AppColors.surface,
-        title: Text(
-          'Ticket Details',
-          style: GoogleFonts.cinzel(
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: AppColors.textPrimary,
-          ),
-        ),
-      ),
-      body: ticketAsync.when(
-        data: (ticket) {
-          final status = ticket['status'] ?? 'OPEN';
-          final isResolved = status == 'RESOLVED';
-          final isClosed = status == 'CLOSED';
-          final hasRating = ticket['rating'] != null;
+      backgroundColor: m.background,
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            _buildHeader(ticketAsync, l),
+            Expanded(
+              child: ticketAsync.when(
+                data: (ticket) {
+                  final status = ticket['status'] ?? 'OPEN';
+                  final isClosed = status == 'CLOSED';
+                  final isResolved = status == 'RESOLVED';
+                  final hasRating =
+                      ticket['rating'] != null ||
+                      ticket['satisfactionRating'] != null;
+                  final assigneeName =
+                      (ticket['assigneeName'] ?? ticket['assignedToName'])
+                          ?.toString();
 
-          return Column(
-            children: [
-              Expanded(
-                child: RefreshIndicator(
-                  color: AppColors.primary,
-                  onRefresh: () async {
-                    ref.invalidate(
-                        _ticketDetailProvider(widget.ticketId));
-                    ref.invalidate(
-                        _ticketRepliesProvider(widget.ticketId));
-                  },
-                  child: ListView(
-                    padding: EdgeInsets.fromLTRB(20, 16, 20, AppInsets.bottomNav(context)),
+                  return Column(
                     children: [
-                      // Status timeline
-                      AnimatedListItem(
-                        index: 0,
-                        child: _StatusTimeline(currentStatus: status),
-                      ),
-                      const SizedBox(height: 24),
-
-                      // Title & Info
-                      AnimatedListItem(
-                        index: 1,
-                        child: Text(
-                          ticket['title'] ?? 'Untitled',
-                          style: Theme.of(context).textTheme.headlineSmall,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      AnimatedListItem(
-                        index: 2,
-                        child: Row(
-                          children: [
-                            StatusBadge(
-                              label: status,
-                              color: StatusHelper.getTicketStatusColor(
-                                  status),
+                      Expanded(
+                        child: RefreshIndicator(
+                          color: AppColors.accent,
+                          onRefresh: () async {
+                            ref.invalidate(
+                              _ticketDetailProvider(widget.ticketId),
+                            );
+                            ref.invalidate(
+                              _ticketRepliesProvider(widget.ticketId),
+                            );
+                          },
+                          child: ListView(
+                            padding: EdgeInsets.fromLTRB(
+                              20,
+                              16,
+                              20,
+                              AppInsets.bottomNav(context),
                             ),
-                            const SizedBox(width: 8),
-                            StatusBadge(
-                              label: ticket['priority'] ?? 'MEDIUM',
-                              color: StatusHelper.getPriorityColor(
-                                  ticket['priority'] ?? 'MEDIUM'),
-                            ),
-                            const Spacer(),
-                            Text(
-                              Formatters.timeAgo(ticket['createdAt']),
-                              style:
-                                  Theme.of(context).textTheme.labelSmall,
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-
-                      // Description
-                      if (ticket['description'] != null &&
-                          (ticket['description'] as String)
-                              .isNotEmpty) ...[
-                        Text('Description',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleMedium),
-                        const SizedBox(height: 8),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: AppColors.background,
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          child: Text(
-                            ticket['description'],
-                            style:
-                                Theme.of(context).textTheme.bodyMedium,
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-                      ],
-
-                      // Attachments
-                      attachmentsAsync.when(
-                        data: (attachments) {
-                          if (attachments.isEmpty) {
-                            return const SizedBox.shrink();
-                          }
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('Attachments',
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .titleMedium),
-                              const SizedBox(height: 10),
-                              SizedBox(
-                                height: 84,
-                                child: ListView.builder(
-                                  scrollDirection: Axis.horizontal,
-                                  itemCount: attachments.length,
-                                  itemBuilder: (context, index) {
-                                    final att = attachments[index];
-                                    final url = att['url'] ?? '';
-                                    final name = att['fileName'] ??
-                                        att['name'] ??
-                                        '';
-                                    final isImage = name
-                                            .toString()
-                                            .toLowerCase()
-                                            .endsWith('.jpg') ||
-                                        name
-                                            .toString()
-                                            .toLowerCase()
-                                            .endsWith('.png') ||
-                                        name
-                                            .toString()
-                                            .toLowerCase()
-                                            .endsWith('.jpeg');
+                              // Priority + raised time
+                              AnimatedListItem(
+                                index: 0,
+                                child: Row(
+                                  children: [
+                                    StatusBadge(
+                                      label: l.priority(
+                                        ticket['priority'] ?? 'MEDIUM',
+                                      ),
+                                      color: StatusHelper.getPriorityColor(
+                                        ticket['priority'] ?? 'MEDIUM',
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    Text(
+                                      Formatters.timeAgo(
+                                        ticket['createdAt'],
+                                        ar: context.isAr,
+                                      ),
+                                      style: GoogleFonts.josefinSans(
+                                        fontSize: 11.5,
+                                        color: m.textMuted,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 16),
 
-                                    return Padding(
-                                      padding: const EdgeInsets.only(
-                                          right: 10),
-                                      child: GestureDetector(
-                                        onTap: () {
-                                          if (isImage &&
-                                              url.isNotEmpty) {
-                                            _showFullScreenImage(
-                                                context, url);
-                                          }
-                                        },
-                                        child: Container(
-                                          width: 76,
-                                          height: 76,
-                                          decoration: BoxDecoration(
-                                            borderRadius:
-                                                BorderRadius.circular(
-                                                    12),
-                                            color: AppColors.background,
-                                            boxShadow: AppShadows.soft,
-                                          ),
-                                          clipBehavior: Clip.hardEdge,
-                                          child: isImage &&
-                                                  url.isNotEmpty
-                                              ? Stack(
-                                                  fit: StackFit.expand,
-                                                  children: [
-                                                    Image.network(
-                                                      url,
-                                                      fit: BoxFit.cover,
-                                                      errorBuilder: (_,
-                                                              __,
-                                                              ___) =>
-                                                          const Icon(
-                                                              Icons
-                                                                  .broken_image,
-                                                              color: AppColors
-                                                                  .textMuted),
+                              // Assignee / technician card
+                              if (assigneeName != null &&
+                                  assigneeName.isNotEmpty) ...[
+                                AnimatedListItem(
+                                  index: 1,
+                                  child: _AssigneeCard(
+                                    name: assigneeName,
+                                    category: ticket['category'] ?? '',
+                                    l: l,
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                              ],
+
+                              // Description
+                              if (ticket['description'] != null &&
+                                  (ticket['description'] as String)
+                                      .isNotEmpty) ...[
+                                _sectionLabel(l.description),
+                                const SizedBox(height: 8),
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: m.surfaceAlt,
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(color: m.border),
+                                  ),
+                                  child: Text(
+                                    ticket['description'],
+                                    style: GoogleFonts.josefinSans(
+                                      fontSize: 14,
+                                      color: m.textPrimary,
+                                      height: 1.5,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 20),
+                              ],
+
+                              // Attachments
+                              attachmentsAsync.when(
+                                data: (attachments) {
+                                  if (attachments.isEmpty && isClosed) {
+                                    return const SizedBox.shrink();
+                                  }
+                                  return Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      _sectionLabel(l.photos),
+                                      const SizedBox(height: 10),
+                                      SizedBox(
+                                        height: 84,
+                                        child: ListView(
+                                          scrollDirection: Axis.horizontal,
+                                          children: [
+                                            for (final att in attachments)
+                                              Padding(
+                                                padding:
+                                                    const EdgeInsetsDirectional.only(
+                                                      end: 10,
                                                     ),
-                                                    Container(
-                                                      decoration:
-                                                          BoxDecoration(
-                                                        color: Colors
-                                                            .black
-                                                            .withValues(
-                                                                alpha:
-                                                                    0.05),
-                                                      ),
-                                                    ),
-                                                  ],
-                                                )
-                                              : Column(
-                                                  mainAxisAlignment:
-                                                      MainAxisAlignment
-                                                          .center,
-                                                  children: [
-                                                    const Icon(
-                                                      Icons
-                                                          .insert_drive_file,
-                                                      color: AppColors
-                                                          .textMuted,
-                                                      size: 24,
-                                                    ),
-                                                    const SizedBox(
-                                                        height: 4),
-                                                    Padding(
-                                                      padding:
-                                                          const EdgeInsets
-                                                              .symmetric(
-                                                              horizontal:
-                                                                  4),
-                                                      child: Text(
-                                                        name,
-                                                        style:
-                                                            GoogleFonts
-                                                                .josefinSans(
-                                                          fontSize: 8,
-                                                          color: AppColors
-                                                              .textMuted,
-                                                        ),
-                                                        maxLines: 2,
-                                                        overflow:
-                                                            TextOverflow
-                                                                .ellipsis,
-                                                        textAlign:
-                                                            TextAlign
-                                                                .center,
-                                                      ),
-                                                    ),
-                                                  ],
+                                                child: _AttachmentThumb(
+                                                  att: att,
+                                                  onTap: () {
+                                                    final url =
+                                                        att['url'] ?? '';
+                                                    final name =
+                                                        (att['fileName'] ??
+                                                                att['name'] ??
+                                                                '')
+                                                            .toString();
+                                                    final isImage =
+                                                        name
+                                                            .toLowerCase()
+                                                            .endsWith('.jpg') ||
+                                                        name
+                                                            .toLowerCase()
+                                                            .endsWith('.png') ||
+                                                        name
+                                                            .toLowerCase()
+                                                            .endsWith('.jpeg');
+                                                    if (isImage &&
+                                                        url.isNotEmpty) {
+                                                      _showFullScreenImage(
+                                                        context,
+                                                        url,
+                                                      );
+                                                    }
+                                                  },
                                                 ),
+                                              ),
+                                            if (!isClosed)
+                                              _AddPhotoTile(
+                                                l: l,
+                                                onTap: () {
+                                                  ScaffoldMessenger.of(
+                                                    context,
+                                                  ).showSnackBar(
+                                                    SnackBar(
+                                                      content: Text(
+                                                        l.photoUploadSoon,
+                                                      ),
+                                                    ),
+                                                  );
+                                                },
+                                              ),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(height: 20),
+                                    ],
+                                  );
+                                },
+                                loading: () => const SizedBox.shrink(),
+                                error: (_, __) => const SizedBox.shrink(),
+                              ),
+
+                              // OTP Section (RESOLVED status)
+                              if (isResolved) ...[
+                                _OtpSection(
+                                  otp: ticket['closingOtp'] ?? ticket['otp'],
+                                  l: l,
+                                ),
+                                const SizedBox(height: 20),
+                              ],
+
+                              // Rating Section (CLOSED, no rating)
+                              if (isClosed && !hasRating) ...[
+                                _buildRatingSection(l),
+                                const SizedBox(height: 20),
+                              ],
+
+                              // Existing rating display
+                              if (hasRating) ...[
+                                _buildExistingRating(ticket, l),
+                                const SizedBox(height: 20),
+                              ],
+
+                              // Updates / replies
+                              Divider(color: m.divider),
+                              const SizedBox(height: 14),
+                              Text(
+                                l.updates,
+                                style: l.ar
+                                    ? GoogleFonts.notoNaskhArabic(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                        color: m.textPrimary,
+                                      )
+                                    : GoogleFonts.cinzel(
+                                        fontSize: 13,
+                                        letterSpacing: 2.4,
+                                        color: m.textPrimary,
+                                      ),
+                              ),
+                              const SizedBox(height: 14),
+                              repliesAsync.when(
+                                data: (replies) {
+                                  if (replies.isEmpty) {
+                                    return Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 20,
+                                      ),
+                                      child: Center(
+                                        child: Text(
+                                          l.noUpdatesYet,
+                                          style: GoogleFonts.josefinSans(
+                                            fontSize: 12.5,
+                                            color: m.textMuted,
+                                          ),
                                         ),
                                       ),
                                     );
-                                  },
+                                  }
+                                  return Column(
+                                    children: replies
+                                        .asMap()
+                                        .entries
+                                        .map<Widget>((entry) {
+                                          return AnimatedListItem(
+                                            index: entry.key,
+                                            child: _UpdateCard(
+                                              reply: entry.value,
+                                              isCurrentUser:
+                                                  entry.value['userId'] ==
+                                                  currentUserId,
+                                              l: l,
+                                            ),
+                                          );
+                                        })
+                                        .toList(),
+                                  );
+                                },
+                                loading: () => const ListShimmer(itemCount: 2),
+                                error: (_, __) => Text(
+                                  l.failedToLoadReplies,
+                                  style: GoogleFonts.josefinSans(
+                                    color: m.textMuted,
+                                  ),
                                 ),
                               ),
-                              const SizedBox(height: 20),
+                              const SizedBox(height: 80),
                             ],
-                          );
-                        },
-                        loading: () => const SizedBox.shrink(),
-                        error: (_, __) => const SizedBox.shrink(),
+                          ),
+                        ),
                       ),
 
-                      // OTP Section (RESOLVED status)
-                      if (isResolved) ...[
-                        _OtpSection(
-                            otp: ticket['closingOtp'] ?? ticket['otp']),
-                        const SizedBox(height: 20),
-                      ],
-
-                      // Rating Section (CLOSED, no rating)
-                      if (isClosed && !hasRating) ...[
-                        _buildRatingSection(),
-                        const SizedBox(height: 20),
-                      ],
-
-                      // Existing rating display
-                      if (hasRating) ...[
-                        _buildExistingRating(ticket),
-                        const SizedBox(height: 20),
-                      ],
-
-                      // Replies
-                      Divider(
-                        color: AppColors.border.withValues(alpha: 0.5),
-                      ),
-                      const SizedBox(height: 10),
-                      Text('Replies',
-                          style:
-                              Theme.of(context).textTheme.titleMedium),
-                      const SizedBox(height: 14),
-                      repliesAsync.when(
-                        data: (replies) {
-                          if (replies.isEmpty) {
-                            return Padding(
-                              padding: const EdgeInsets.symmetric(
-                                  vertical: 20),
-                              child: Center(
-                                child: Text(
-                                  'No replies yet',
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .bodySmall
-                                      ?.copyWith(
-                                          color: AppColors.textMuted),
-                                ),
-                              ),
-                            );
-                          }
-                          return Column(
-                            children:
-                                replies.asMap().entries.map<Widget>((entry) {
-                              return AnimatedListItem(
-                                index: entry.key,
-                                child: _ReplyBubble(
-                                  reply: entry.value,
-                                  isCurrentUser:
-                                      entry.value['userId'] ==
-                                          currentUserId,
-                                ),
-                              );
-                            }).toList(),
-                          );
-                        },
-                        loading: () => const ListShimmer(itemCount: 2),
-                        error: (_, __) =>
-                            const Text('Failed to load replies'),
-                      ),
-                      const SizedBox(height: 80),
+                      // Reply input
+                      if (!isClosed) _buildReplyInput(l),
                     ],
-                  ),
+                  );
+                },
+                loading: () => Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: ListShimmer(itemCount: 3),
+                ),
+                error: (err, _) => ErrorState(
+                  message: l.failedToLoadTicket,
+                  onRetry: () =>
+                      ref.invalidate(_ticketDetailProvider(widget.ticketId)),
                 ),
               ),
-
-              // Reply input
-              if (!isClosed) _buildReplyInput(),
-            ],
-          );
-        },
-        loading: () => Padding(
-          padding: const EdgeInsets.all(20),
-          child: ListShimmer(itemCount: 3),
-        ),
-        error: (err, _) => ErrorState(
-          message: 'Failed to load ticket',
-          onRetry: () =>
-              ref.invalidate(_ticketDetailProvider(widget.ticketId)),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildRatingSection() {
+  Widget _sectionLabel(String text) {
+    final m = context.miftah;
+    return Text(
+      text,
+      style: GoogleFonts.josefinSans(
+        fontSize: 11,
+        fontWeight: FontWeight.w500,
+        letterSpacing: 2.0,
+        color: m.textMuted,
+      ),
+    );
+  }
+
+  /// Dark chrome header per design 1g: gold back chevron, tracked
+  /// "TICKET #ID", Cinzel title, and the 4-step status rail.
+  Widget _buildHeader(AsyncValue<Map<String, dynamic>> ticketAsync, _L l) {
+    final ticket = ticketAsync.valueOrNull;
+    final status = ticket?['status'] ?? 'OPEN';
+
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.navyDark,
+        border: Border(
+          bottom: BorderSide(color: AppColors.accent.withValues(alpha: 0.14)),
+        ),
+      ),
+      padding: const EdgeInsets.fromLTRB(8, 4, 20, 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              IconButton(
+                onPressed: () => context.pop(),
+                icon: const Icon(
+                  Icons.chevron_left,
+                  color: AppColors.accent,
+                  size: 26,
+                ),
+              ),
+              Text(
+                l.ticketRef(_shortId(widget.ticketId)),
+                style: l.ar
+                    ? GoogleFonts.notoNaskhArabic(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      )
+                    : GoogleFonts.cinzel(
+                        fontSize: 14,
+                        letterSpacing: 2.4,
+                        color: Colors.white,
+                      ),
+              ),
+            ],
+          ),
+          if (ticket != null) ...[
+            const SizedBox(height: 6),
+            Padding(
+              padding: const EdgeInsetsDirectional.only(start: 4),
+              child: Text(
+                ticket['title'] ?? l.untitled,
+                style: l.ar
+                    ? GoogleFonts.notoNaskhArabic(
+                        fontSize: 20,
+                        height: 1.35,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      )
+                    : GoogleFonts.cinzel(
+                        fontSize: 21,
+                        height: 1.35,
+                        letterSpacing: 0.3,
+                        color: Colors.white,
+                      ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: _StatusRail(status: status, ar: l.ar),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRatingSection(_L l) {
+    final m = context.miftah;
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: AppColors.accent.withValues(alpha: 0.04),
-        borderRadius: BorderRadius.circular(16),
+        color: m.surfaceAlt,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: m.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Rate This Service',
-              style: Theme.of(context).textTheme.titleMedium),
+          Text(
+            l.rateService,
+            style: GoogleFonts.josefinSans(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: m.textPrimary,
+            ),
+          ),
           const SizedBox(height: 14),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -500,65 +662,83 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
           const SizedBox(height: 14),
           TextField(
             controller: _ratingCommentController,
-            style: GoogleFonts.josefinSans(fontSize: 14),
+            style: GoogleFonts.josefinSans(fontSize: 14, color: m.textPrimary),
             decoration: InputDecoration(
-              hintText: 'Optional comment...',
+              hintText: l.optionalComment,
               hintStyle: GoogleFonts.josefinSans(
-                color: AppColors.textMuted,
+                color: m.textMuted,
                 fontSize: 14,
               ),
               contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 14, vertical: 12),
+                horizontal: 14,
+                vertical: 12,
+              ),
+              filled: true,
+              fillColor: m.surface,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: m.border),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: m.border),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: AppColors.accent),
               ),
             ),
             maxLines: 2,
           ),
           const SizedBox(height: 14),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: _rating > 0 && !_isSubmittingRating
-                  ? _submitRating
-                  : null,
-              child: _isSubmittingRating
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white),
-                    )
-                  : const Text('Submit Rating'),
-            ),
-          ),
+          _isSubmittingRating
+              ? const Center(
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                )
+              : GoldButton(
+                  label: l.submitRating,
+                  height: 46,
+                  onPressed: _rating > 0 ? _submitRating : null,
+                ),
         ],
       ),
     );
   }
 
-  Widget _buildExistingRating(Map<String, dynamic> ticket) {
-    final rating = ticket['rating'] as int? ?? 0;
-    final comment = ticket['ratingComment'] ?? '';
+  Widget _buildExistingRating(Map<String, dynamic> ticket, _L l) {
+    final m = context.miftah;
+    final rating =
+        ticket['rating'] as int? ?? ticket['satisfactionRating'] as int? ?? 0;
+    final comment =
+        ticket['ratingComment'] ?? ticket['satisfactionComment'] ?? '';
 
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: AppColors.success.withValues(alpha: 0.04),
-        borderRadius: BorderRadius.circular(16),
+        color: m.successBg,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: m.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Your Rating',
-              style: Theme.of(context).textTheme.titleMedium),
+          Text(
+            l.yourRating,
+            style: GoogleFonts.josefinSans(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: m.textPrimary,
+            ),
+          ),
           const SizedBox(height: 10),
           Row(
             children: List.generate(5, (index) {
               return Icon(
-                index < rating
-                    ? Icons.star_rounded
-                    : Icons.star_border_rounded,
+                index < rating ? Icons.star_rounded : Icons.star_border_rounded,
                 color: AppColors.accent,
                 size: 28,
               );
@@ -566,14 +746,21 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
           ),
           if (comment.isNotEmpty) ...[
             const SizedBox(height: 10),
-            Text(comment, style: Theme.of(context).textTheme.bodySmall),
+            Text(
+              comment,
+              style: GoogleFonts.josefinSans(
+                fontSize: 13,
+                color: m.textPrimary,
+              ),
+            ),
           ],
         ],
       ),
     );
   }
 
-  Widget _buildReplyInput() {
+  Widget _buildReplyInput(_L l) {
+    final m = context.miftah;
     return Container(
       padding: EdgeInsets.only(
         left: 16,
@@ -582,29 +769,28 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
         top: 10,
       ),
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 8,
-            offset: const Offset(0, -2),
-          ),
-        ],
+        color: m.surface,
+        border: Border(top: BorderSide(color: m.border)),
       ),
       child: Row(
         children: [
           Expanded(
             child: TextField(
               controller: _replyController,
-              style: GoogleFonts.josefinSans(fontSize: 14),
+              style: GoogleFonts.josefinSans(
+                fontSize: 14,
+                color: m.textPrimary,
+              ),
               decoration: InputDecoration(
-                hintText: 'Type a reply...',
+                hintText: l.addUpdateHint,
                 hintStyle: GoogleFonts.josefinSans(
-                  color: AppColors.textMuted,
+                  color: m.textMuted,
                   fontSize: 14,
                 ),
                 contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 18, vertical: 12),
+                  horizontal: 18,
+                  vertical: 12,
+                ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(24),
                   borderSide: BorderSide.none,
@@ -616,10 +802,12 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(24),
                   borderSide: const BorderSide(
-                      color: AppColors.primary, width: 1.5),
+                    color: AppColors.accent,
+                    width: 1.5,
+                  ),
                 ),
                 filled: true,
-                fillColor: AppColors.background,
+                fillColor: m.surfaceAlt,
               ),
               maxLines: 3,
               minLines: 1,
@@ -629,18 +817,11 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
           ),
           const SizedBox(width: 10),
           Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: AppColors.primary,
+            width: 46,
+            height: 46,
+            decoration: const BoxDecoration(
+              gradient: MiftahGradients.gold,
               shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.primary.withValues(alpha: 0.3),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
             ),
             child: IconButton(
               onPressed: _isSendingReply ? null : _sendReply,
@@ -649,9 +830,11 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
                       width: 18,
                       height: 18,
                       child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white),
+                        strokeWidth: 2,
+                        color: AppColors.primary,
+                      ),
                     )
-                  : const Icon(Icons.send, color: Colors.white, size: 20),
+                  : const Icon(Icons.send, color: AppColors.primary, size: 20),
             ),
           ),
         ],
@@ -668,9 +851,268 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
             backgroundColor: Colors.black,
             iconTheme: const IconThemeData(color: Colors.white),
           ),
-          body: Center(
-            child: InteractiveViewer(
-              child: Image.network(url),
+          body: Center(child: InteractiveViewer(child: Image.network(url))),
+        ),
+      ),
+    );
+  }
+}
+
+/// 4-step status rail per design 1g: dots + connecting hairlines, gold for
+/// completed steps, white-30% hollow for pending. Maps the app's five
+/// ticket statuses onto the four displayed stages.
+class _StatusRail extends StatelessWidget {
+  final String status;
+  final bool ar;
+
+  const _StatusRail({required this.status, required this.ar});
+
+  int get _currentStep => switch (status) {
+    'OPEN' => 0,
+    'ASSIGNED' => 1,
+    'IN_PROGRESS' => 2,
+    'RESOLVED' => 3,
+    'CLOSED' => 3,
+    _ => 0,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final current = _currentStep;
+    final labels = _railLabels(ar);
+    return Column(
+      children: [
+        Row(
+          children: List.generate(labels.length * 2 - 1, (index) {
+            if (index.isOdd) {
+              final segIndex = index ~/ 2;
+              final filled = segIndex < current;
+              return Expanded(
+                child: Container(
+                  height: 1,
+                  color: filled
+                      ? AppColors.accent
+                      : Colors.white.withValues(alpha: 0.18),
+                ),
+              );
+            }
+            final stepIndex = index ~/ 2;
+            // RESOLVED reaches the final stage but the ticket isn't closed
+            // yet (OTP handshake pending) — show that dot as active-hollow,
+            // filled only once the status is actually CLOSED.
+            final reachedFinalUnclosed =
+                stepIndex == 3 && current == 3 && status != 'CLOSED';
+            final completed = stepIndex <= current && !reachedFinalUnclosed;
+            return Container(
+              width: 9,
+              height: 9,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: completed ? AppColors.accent : Colors.transparent,
+                border: completed
+                    ? null
+                    : Border.all(
+                        color: reachedFinalUnclosed
+                            ? AppColors.accent
+                            : Colors.white.withValues(alpha: 0.3),
+                      ),
+              ),
+            );
+          }),
+        ),
+        const SizedBox(height: 6),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: labels
+              .map(
+                (label) => Text(
+                  label,
+                  style: GoogleFonts.josefinSans(
+                    fontSize: 10,
+                    letterSpacing: ar ? 0 : 1.0,
+                    color: Colors.white.withValues(alpha: 0.5),
+                  ),
+                ),
+              )
+              .toList(),
+        ),
+      ],
+    );
+  }
+}
+
+class _AssigneeCard extends StatelessWidget {
+  final String name;
+  final String category;
+  final _L l;
+
+  const _AssigneeCard({
+    required this.name,
+    required this.category,
+    required this.l,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final m = context.miftah;
+    final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: m.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: m.border),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: m.surfaceAlt,
+              border: Border.all(color: m.border),
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              initial,
+              style: GoogleFonts.cinzel(
+                fontSize: 16,
+                color: m.isDark ? AppColors.accent : AppColors.primary,
+              ),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  category.isNotEmpty
+                      ? '$name · ${l.category(category)}'
+                      : name,
+                  style: GoogleFonts.josefinSans(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w500,
+                    color: m.textPrimary,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  l.assignedTechnician,
+                  style: GoogleFonts.josefinSans(
+                    fontSize: 11.5,
+                    color: m.textMuted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AttachmentThumb extends StatelessWidget {
+  final Map<String, dynamic> att;
+  final VoidCallback onTap;
+
+  const _AttachmentThumb({required this.att, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final m = context.miftah;
+    final url = att['url'] ?? '';
+    final name = (att['fileName'] ?? att['name'] ?? '').toString();
+    final isImage =
+        name.toLowerCase().endsWith('.jpg') ||
+        name.toLowerCase().endsWith('.png') ||
+        name.toLowerCase().endsWith('.jpeg');
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 76,
+        height: 76,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          color: m.surfaceAlt,
+          border: Border.all(color: m.border),
+        ),
+        clipBehavior: Clip.hardEdge,
+        child: isImage && url.isNotEmpty
+            ? Stack(
+                fit: StackFit.expand,
+                children: [
+                  Image.network(
+                    url,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) =>
+                        Icon(Icons.broken_image, color: m.textMuted),
+                  ),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.05),
+                    ),
+                  ),
+                ],
+              )
+            : Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.insert_drive_file, color: m.textMuted, size: 24),
+                  const SizedBox(height: 4),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Text(
+                      name,
+                      style: GoogleFonts.josefinSans(
+                        fontSize: 8,
+                        color: m.textMuted,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+}
+
+class _AddPhotoTile extends StatelessWidget {
+  final VoidCallback onTap;
+  final _L l;
+
+  const _AddPhotoTile({required this.onTap, required this.l});
+
+  @override
+  Widget build(BuildContext context) {
+    final m = context.miftah;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 76,
+        height: 76,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: AppColors.accent.withValues(alpha: 0.4),
+            style: BorderStyle.solid,
+          ),
+        ),
+        child: Center(
+          child: Text(
+            l.addPhoto,
+            style: GoogleFonts.josefinSans(
+              fontSize: 11,
+              letterSpacing: l.ar ? 0 : 1.0,
+              color: m.isDark ? AppColors.accent : AppColors.accentDark,
             ),
           ),
         ),
@@ -679,153 +1121,40 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
   }
 }
 
-class _StatusTimeline extends StatelessWidget {
-  final String currentStatus;
-
-  const _StatusTimeline({required this.currentStatus});
-
-  @override
-  Widget build(BuildContext context) {
-    final statuses = [
-      'OPEN',
-      'ASSIGNED',
-      'IN_PROGRESS',
-      'RESOLVED',
-      'CLOSED'
-    ];
-    final currentIndex =
-        statuses.indexOf(currentStatus).clamp(0, statuses.length - 1);
-
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: AppShadows.soft,
-      ),
-      child: Row(
-        children: List.generate(statuses.length * 2 - 1, (index) {
-          if (index.isOdd) {
-            final stepIndex = index ~/ 2;
-            return Expanded(
-              child: TweenAnimationBuilder<double>(
-                tween: Tween(
-                  begin: 0.0,
-                  end: stepIndex < currentIndex ? 1.0 : 0.0,
-                ),
-                duration: Duration(milliseconds: 300 + stepIndex * 100),
-                curve: Curves.easeOutCubic,
-                builder: (context, value, child) {
-                  return Container(
-                    height: 2,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          AppColors.primary,
-                          Color.lerp(AppColors.primary, AppColors.border,
-                                  1 - value) ??
-                              AppColors.border,
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
-            );
-          }
-          final stepIndex = index ~/ 2;
-          final isCompleted = stepIndex <= currentIndex;
-          final isCurrent = stepIndex == currentIndex;
-
-          return Column(
-            children: [
-              TweenAnimationBuilder<double>(
-                tween: Tween(
-                  begin: 0.0,
-                  end: isCompleted ? 1.0 : 0.0,
-                ),
-                duration: Duration(milliseconds: 400 + stepIndex * 80),
-                curve: Curves.easeOutCubic,
-                builder: (context, value, child) {
-                  final size = isCurrent ? 28.0 : 22.0;
-                  return Container(
-                    width: size,
-                    height: size,
-                    decoration: BoxDecoration(
-                      color: Color.lerp(
-                          AppColors.background, AppColors.primary, value),
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: Color.lerp(AppColors.border,
-                                AppColors.primary, value) ??
-                            AppColors.border,
-                        width: isCurrent ? 2.5 : 1.5,
-                      ),
-                      boxShadow: isCompleted
-                          ? [
-                              BoxShadow(
-                                color: AppColors.primary
-                                    .withValues(alpha: 0.2 * value),
-                                blurRadius: 6,
-                                offset: const Offset(0, 2),
-                              ),
-                            ]
-                          : null,
-                    ),
-                    child: isCompleted
-                        ? Icon(Icons.check,
-                            size: isCurrent ? 16 : 12,
-                            color:
-                                Colors.white.withValues(alpha: value))
-                        : null,
-                  );
-                },
-              ),
-              const SizedBox(height: 6),
-              Text(
-                statuses[stepIndex].replaceAll('_', '\n'),
-                style: GoogleFonts.josefinSans(
-                  fontSize: 8,
-                  fontWeight:
-                      isCurrent ? FontWeight.w700 : FontWeight.w400,
-                  color: isCompleted
-                      ? AppColors.primary
-                      : AppColors.textMuted,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          );
-        }),
-      ),
-    );
-  }
-}
-
 class _OtpSection extends StatelessWidget {
   final String? otp;
+  final _L l;
 
-  const _OtpSection({this.otp});
+  const _OtpSection({this.otp, required this.l});
 
   @override
   Widget build(BuildContext context) {
     if (otp == null || otp!.isEmpty) return const SizedBox.shrink();
+    final m = context.miftah;
 
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: AppColors.primary.withValues(alpha: 0.04),
-        borderRadius: BorderRadius.circular(16),
+        color: m.surfaceAlt,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.accent.withValues(alpha: 0.3)),
       ),
       child: Column(
         children: [
-          const Icon(Icons.verified_outlined,
-              color: AppColors.primary, size: 36),
+          const Icon(
+            Icons.verified_outlined,
+            color: AppColors.accent,
+            size: 36,
+          ),
           const SizedBox(height: 10),
           Text(
-            'Closing OTP',
-            style: Theme.of(context).textTheme.titleMedium,
+            l.closingOtp,
+            style: GoogleFonts.josefinSans(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: m.textPrimary,
+            ),
           ),
           const SizedBox(height: 16),
           // OTP display with individual boxes
@@ -844,12 +1173,11 @@ class _OtpSection extends StatelessWidget {
                       child: Container(
                         width: 44,
                         height: 52,
-                        margin:
-                            const EdgeInsets.symmetric(horizontal: 5),
+                        margin: const EdgeInsets.symmetric(horizontal: 5),
                         decoration: BoxDecoration(
-                          color: AppColors.surface,
+                          color: m.surface,
                           borderRadius: BorderRadius.circular(12),
-                          boxShadow: AppShadows.soft,
+                          border: Border.all(color: m.border),
                         ),
                         child: Center(
                           child: Text(
@@ -857,7 +1185,9 @@ class _OtpSection extends StatelessWidget {
                             style: GoogleFonts.josefinSans(
                               fontSize: 24,
                               fontWeight: FontWeight.w700,
-                              color: AppColors.primary,
+                              color: m.isDark
+                                  ? AppColors.accent
+                                  : AppColors.accentDark,
                             ),
                           ),
                         ),
@@ -870,25 +1200,24 @@ class _OtpSection extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           Text(
-            'Share this code with your property manager to close the ticket',
-            style: Theme.of(context)
-                .textTheme
-                .bodySmall
-                ?.copyWith(color: AppColors.textMuted),
+            l.shareOtp,
+            style: GoogleFonts.josefinSans(fontSize: 12.5, color: m.textMuted),
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 12),
-          OutlinedButton.icon(
+          const SizedBox(height: 14),
+          GoldButton.outlined(
+            label: l.copyOtp,
+            height: 42,
+            expanded: false,
+            onDark: m.isDark,
+            icon: const Icon(Icons.copy, size: 16),
             onPressed: () {
               Clipboard.setData(ClipboardData(text: otp!));
               HapticFeedback.lightImpact();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                    content: Text('OTP copied to clipboard')),
-              );
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(SnackBar(content: Text(l.otpCopied)));
             },
-            icon: const Icon(Icons.copy, size: 16),
-            label: const Text('Copy OTP'),
           ),
         ],
       ),
@@ -896,131 +1225,71 @@ class _OtpSection extends StatelessWidget {
   }
 }
 
-class _ReplyBubble extends StatelessWidget {
+/// A single ticket update per design 1g: left hairline rail + card. Own
+/// messages render on [MiftahColors.surfaceAlt] to stand out from replies.
+class _UpdateCard extends StatelessWidget {
   final Map<String, dynamic> reply;
   final bool isCurrentUser;
+  final _L l;
 
-  const _ReplyBubble(
-      {required this.reply, required this.isCurrentUser});
+  const _UpdateCard({
+    required this.reply,
+    required this.isCurrentUser,
+    required this.l,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
     final message = reply['message'] ?? '';
-    final userName =
-        reply['userName'] ?? reply['user']?['name'] ?? 'User';
-    final time = Formatters.timeAgo(reply['createdAt']);
+    final userName = isCurrentUser
+        ? l.you
+        : (reply['userName'] ?? reply['user']?['name'] ?? l.user);
+    final time = Formatters.timeAgo(reply['createdAt'], ar: l.ar);
 
-    return Align(
-      alignment:
-          isCurrentUser ? Alignment.centerRight : Alignment.centerLeft,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          if (!isCurrentUser) ...[
-            // Avatar circle
-            Container(
-              width: 28,
-              height: 28,
-              decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: 0.1),
-                shape: BoxShape.circle,
-              ),
-              child: Center(
-                child: Text(
-                  userName.isNotEmpty ? userName[0].toUpperCase() : 'U',
-                  style: GoogleFonts.josefinSans(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.primary,
-                  ),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(width: 1, child: ColoredBox(color: m.border)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 15,
+                  vertical: 13,
                 ),
-              ),
-            ),
-            const SizedBox(width: 8),
-          ],
-          Flexible(
-            child: Container(
-              constraints: BoxConstraints(
-                  maxWidth:
-                      MediaQuery.of(context).size.width * 0.72),
-              margin: const EdgeInsets.only(bottom: 12),
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: isCurrentUser
-                    ? AppColors.primary.withValues(alpha: 0.08)
-                    : AppColors.surface,
-                borderRadius: BorderRadius.only(
-                  topLeft: const Radius.circular(18),
-                  topRight: const Radius.circular(18),
-                  bottomLeft:
-                      Radius.circular(isCurrentUser ? 18 : 4),
-                  bottomRight:
-                      Radius.circular(isCurrentUser ? 4 : 18),
+                decoration: BoxDecoration(
+                  color: isCurrentUser ? m.surfaceAlt : m.surface,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: m.border),
                 ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.03),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: isCurrentUser
-                    ? CrossAxisAlignment.end
-                    : CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    userName,
-                    style: GoogleFonts.josefinSans(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: isCurrentUser
-                          ? AppColors.primary
-                          : AppColors.textSecondary,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      message,
+                      style: GoogleFonts.josefinSans(
+                        fontSize: 13,
+                        color: m.textPrimary,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    message,
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    time,
-                    style: GoogleFonts.josefinSans(
-                      fontSize: 10,
-                      color: AppColors.textMuted,
+                    const SizedBox(height: 6),
+                    Text(
+                      '$userName · $time',
+                      style: GoogleFonts.josefinSans(
+                        fontSize: 11,
+                        color: m.textMuted,
+                      ),
                     ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (isCurrentUser) ...[
-            const SizedBox(width: 8),
-            Container(
-              width: 28,
-              height: 28,
-              decoration: BoxDecoration(
-                color: AppColors.accent.withValues(alpha: 0.15),
-                shape: BoxShape.circle,
-              ),
-              child: Center(
-                child: Text(
-                  userName.isNotEmpty ? userName[0].toUpperCase() : 'U',
-                  style: GoogleFonts.josefinSans(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.accent,
-                  ),
+                  ],
                 ),
               ),
             ),
           ],
-        ],
+        ),
       ),
     );
   }

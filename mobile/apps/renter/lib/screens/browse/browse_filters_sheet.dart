@@ -4,6 +4,39 @@ import 'package:rentaxis_core/rentaxis_core.dart';
 
 import 'browse_filters.dart';
 
+// ── Strings (EN/AR) ─────────────────────────────────────────────────────────
+
+/// Screen strings (EN/AR). Lightweight per-screen pattern — see arabic-brief.
+class _L {
+  _L(this.ar);
+  final bool ar;
+
+  String get title => ar ? 'الفلاتر' : 'Filters';
+  String get reset => ar ? 'إعادة تعيين' : 'Reset';
+  String get minBedrooms => ar ? 'أدنى عدد غرف نوم' : 'Minimum bedrooms';
+  String get annualRentRange =>
+      ar ? 'نطاق الإيجار السنوي' : 'Annual rent range';
+  String get furnishing => ar ? 'التأثيث' : 'Furnishing';
+  String get availableNowOnly => ar ? 'المتاح الآن فقط' : 'Available now only';
+  String get applyFilters => ar ? 'تطبيق الفلاتر' : 'Apply filters';
+  String get any => ar ? 'الكل' : 'Any';
+  String get unfurnished => ar ? 'غير مفروش' : 'Unfurnished';
+  String get semiFurnished => ar ? 'مفروش جزئياً' : 'Semi-furnished';
+  String get fullyFurnished => ar ? 'مفروش بالكامل' : 'Fully furnished';
+}
+
+TextStyle _display(bool ar, {double size = 18, Color? color}) => ar
+    ? GoogleFonts.notoNaskhArabic(
+        fontSize: size + 1,
+        fontWeight: FontWeight.w700,
+        color: color,
+      )
+    : GoogleFonts.cinzel(
+        fontSize: size,
+        fontWeight: FontWeight.w700,
+        color: color,
+      );
+
 // ── Bottom sheet ──────────────────────────────────────────────────────────────
 
 class BrowseFiltersSheet extends StatefulWidget {
@@ -27,10 +60,11 @@ class _BrowseFiltersSheetState extends State<BrowseFiltersSheet> {
   late bool _availableNow;
 
   static const double _maxRentLimit = 500000;
-  static const _furnishingOptions = [
-    ('UNFURNISHED', 'Unfurnished'),
-    ('SEMI_FURNISHED', 'Semi-furnished'),
-    ('FULLY_FURNISHED', 'Fully furnished'),
+
+  List<(String, String)> _furnishingOptions(_L l) => [
+    ('UNFURNISHED', l.unfurnished),
+    ('SEMI_FURNISHED', l.semiFurnished),
+    ('FULLY_FURNISHED', l.fullyFurnished),
   ];
 
   @override
@@ -38,16 +72,15 @@ class _BrowseFiltersSheetState extends State<BrowseFiltersSheet> {
     super.initState();
     final f = widget.current;
     _minBedrooms = f.minBedrooms;
-    _rentRange = RangeValues(
-      f.minRent ?? 0,
-      f.maxRent ?? _maxRentLimit,
-    );
+    _rentRange = RangeValues(f.minRent ?? 0, f.maxRent ?? _maxRentLimit);
     _furnishing = f.furnishing;
     _availableNow = f.availableNow ?? false;
   }
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final l = _L(context.isAr);
     final viewInsets = MediaQuery.of(context).viewInsets.bottom;
     final safeBottom = MediaQuery.of(context).padding.bottom;
     // 84 = frosted nav height (72) + gap (6) + extra (6)
@@ -56,7 +89,7 @@ class _BrowseFiltersSheetState extends State<BrowseFiltersSheet> {
       margin: EdgeInsets.fromLTRB(12, 0, 12, navOffset),
       padding: EdgeInsets.fromLTRB(20, 20, 20, 20 + viewInsets),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: m.surface,
         borderRadius: BorderRadius.circular(24),
       ),
       child: SingleChildScrollView(
@@ -67,12 +100,8 @@ class _BrowseFiltersSheetState extends State<BrowseFiltersSheet> {
             Row(
               children: [
                 Text(
-                  'Filters',
-                  style: GoogleFonts.cinzel(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
-                  ),
+                  l.title,
+                  style: _display(l.ar, size: 18, color: m.textPrimary),
                 ),
                 const Spacer(),
                 TextButton(
@@ -85,9 +114,11 @@ class _BrowseFiltersSheetState extends State<BrowseFiltersSheet> {
                     });
                   },
                   child: Text(
-                    'Reset',
+                    l.reset,
                     style: GoogleFonts.josefinSans(
-                        color: AppColors.primary, fontWeight: FontWeight.w600),
+                      color: m.isDark ? AppColors.accent : AppColors.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ],
@@ -95,16 +126,17 @@ class _BrowseFiltersSheetState extends State<BrowseFiltersSheet> {
             const SizedBox(height: 20),
 
             // Bedrooms
-            _Label('Minimum bedrooms'),
+            _Label(l.minBedrooms),
             const SizedBox(height: 10),
             _BedroomSelector(
               selected: _minBedrooms,
+              anyLabel: l.any,
               onSelect: (v) => setState(() => _minBedrooms = v),
             ),
             const SizedBox(height: 20),
 
             // Rent range
-            _Label('Annual rent range'),
+            _Label(l.annualRentRange),
             const SizedBox(height: 4),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -112,23 +144,27 @@ class _BrowseFiltersSheetState extends State<BrowseFiltersSheet> {
                 Text(
                   'AED ${(_rentRange.start / 1000).round()}k',
                   style: GoogleFonts.josefinSans(
-                      fontSize: 13, color: AppColors.textSecondary),
+                    fontSize: 13,
+                    color: m.textSecondary,
+                  ),
                 ),
                 Text(
                   _rentRange.end >= _maxRentLimit
                       ? 'AED 500k+'
                       : 'AED ${(_rentRange.end / 1000).round()}k',
                   style: GoogleFonts.josefinSans(
-                      fontSize: 13, color: AppColors.textSecondary),
+                    fontSize: 13,
+                    color: m.textSecondary,
+                  ),
                 ),
               ],
             ),
             SliderTheme(
               data: SliderTheme.of(context).copyWith(
-                activeTrackColor: AppColors.primary,
-                thumbColor: AppColors.primary,
-                inactiveTrackColor: AppColors.border,
-                overlayColor: AppColors.primary.withValues(alpha: 0.12),
+                activeTrackColor: AppColors.accent,
+                thumbColor: AppColors.accent,
+                inactiveTrackColor: m.border,
+                overlayColor: AppColors.accent.withValues(alpha: 0.12),
               ),
               child: RangeSlider(
                 values: _rentRange,
@@ -141,37 +177,33 @@ class _BrowseFiltersSheetState extends State<BrowseFiltersSheet> {
             const SizedBox(height: 16),
 
             // Furnishing
-            _Label('Furnishing'),
+            _Label(l.furnishing),
             const SizedBox(height: 10),
             Wrap(
               spacing: 8,
-              children: _furnishingOptions.map((opt) {
+              children: _furnishingOptions(l).map((opt) {
                 final isSelected = _furnishing == opt.$1;
                 return GestureDetector(
-                  onTap: () => setState(
-                      () => _furnishing = isSelected ? null : opt.$1),
+                  onTap: () =>
+                      setState(() => _furnishing = isSelected ? null : opt.$1),
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 180),
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 8),
+                      horizontal: 14,
+                      vertical: 8,
+                    ),
                     decoration: BoxDecoration(
-                      color: isSelected
-                          ? AppColors.primary
-                          : AppColors.background,
+                      color: isSelected ? AppColors.primary : m.background,
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(
-                        color: isSelected
-                            ? AppColors.primary
-                            : AppColors.border,
+                        color: isSelected ? AppColors.primary : m.borderStrong,
                       ),
                     ),
                     child: Text(
                       opt.$2,
                       style: GoogleFonts.josefinSans(
                         fontSize: 13,
-                        color: isSelected
-                            ? Colors.white
-                            : AppColors.textSecondary,
+                        color: isSelected ? AppColors.accent : m.textSecondary,
                         fontWeight: isSelected
                             ? FontWeight.w600
                             : FontWeight.w400,
@@ -188,32 +220,33 @@ class _BrowseFiltersSheetState extends State<BrowseFiltersSheet> {
               children: [
                 Expanded(
                   child: Text(
-                    'Available now only',
+                    l.availableNowOnly,
                     style: GoogleFonts.josefinSans(
-                        fontSize: 15, color: AppColors.textPrimary),
+                      fontSize: 15,
+                      color: m.textPrimary,
+                    ),
                   ),
                 ),
                 Switch.adaptive(
                   value: _availableNow,
                   onChanged: (v) => setState(() => _availableNow = v),
-                  activeColor: AppColors.primary,
+                  activeColor: AppColors.accent,
                 ),
               ],
             ),
             const SizedBox(height: 24),
 
             // Apply
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () {
-                  // Preserve proximity coordinates seeded by the location
-                  // service — they are not exposed as user-editable fields
-                  // in this sheet.
-                  widget.onApply(BrowseFilters(
+            GoldButton(
+              label: l.applyFilters,
+              onPressed: () {
+                // Preserve proximity coordinates seeded by the location
+                // service — they are not exposed as user-editable fields
+                // in this sheet.
+                widget.onApply(
+                  BrowseFilters(
                     minBedrooms: _minBedrooms,
-                    minRent:
-                        _rentRange.start > 0 ? _rentRange.start : null,
+                    minRent: _rentRange.start > 0 ? _rentRange.start : null,
                     maxRent: _rentRange.end < _maxRentLimit
                         ? _rentRange.end
                         : null,
@@ -222,22 +255,10 @@ class _BrowseFiltersSheetState extends State<BrowseFiltersSheet> {
                     nearLat: widget.current.nearLat,
                     nearLng: widget.current.nearLng,
                     radiusKm: widget.current.radiusKm,
-                  ));
-                  Navigator.of(context).pop();
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14)),
-                ),
-                child: Text(
-                  'Apply filters',
-                  style: GoogleFonts.josefinSans(
-                      fontSize: 15, fontWeight: FontWeight.w700),
-                ),
-              ),
+                  ),
+                );
+                Navigator.of(context).pop();
+              },
             ),
           ],
         ),
@@ -259,7 +280,7 @@ class _Label extends StatelessWidget {
       style: GoogleFonts.josefinSans(
         fontSize: 13,
         fontWeight: FontWeight.w600,
-        color: AppColors.textMuted,
+        color: context.miftah.textMuted,
         letterSpacing: 0.3,
       ),
     );
@@ -268,18 +289,27 @@ class _Label extends StatelessWidget {
 
 class _BedroomSelector extends StatelessWidget {
   final int? selected;
+  final String anyLabel;
   final ValueChanged<int?> onSelect;
-  const _BedroomSelector({required this.selected, required this.onSelect});
+  const _BedroomSelector({
+    required this.selected,
+    required this.anyLabel,
+    required this.onSelect,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
-        _BedBtn(label: 'Any', value: null, selected: selected, onTap: onSelect),
+        _BedBtn(
+          label: anyLabel,
+          value: null,
+          selected: selected,
+          onTap: onSelect,
+        ),
         const SizedBox(width: 8),
         for (final n in [1, 2, 3, 4, 5]) ...[
-          _BedBtn(
-              label: '$n+', value: n, selected: selected, onTap: onSelect),
+          _BedBtn(label: '$n+', value: n, selected: selected, onTap: onSelect),
           const SizedBox(width: 8),
         ],
       ],
@@ -292,14 +322,16 @@ class _BedBtn extends StatelessWidget {
   final int? value;
   final int? selected;
   final ValueChanged<int?> onTap;
-  const _BedBtn(
-      {required this.label,
-      required this.value,
-      required this.selected,
-      required this.onTap});
+  const _BedBtn({
+    required this.label,
+    required this.value,
+    required this.selected,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
     final isSelected = selected == value;
     return GestureDetector(
       onTap: () => onTap(value),
@@ -308,10 +340,9 @@ class _BedBtn extends StatelessWidget {
         width: 40,
         height: 36,
         decoration: BoxDecoration(
-          color: isSelected ? AppColors.primary : AppColors.background,
+          color: isSelected ? AppColors.primary : m.background,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-              color: isSelected ? AppColors.primary : AppColors.border),
+          border: Border.all(color: isSelected ? AppColors.primary : m.border),
         ),
         child: Center(
           child: Text(
@@ -319,7 +350,7 @@ class _BedBtn extends StatelessWidget {
             style: GoogleFonts.josefinSans(
               fontSize: 12,
               fontWeight: FontWeight.w600,
-              color: isSelected ? Colors.white : AppColors.textSecondary,
+              color: isSelected ? AppColors.accent : m.textSecondary,
             ),
           ),
         ),

@@ -8,6 +8,104 @@ import 'package:photo_view/photo_view_gallery.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+// ── Strings (EN/AR) ─────────────────────────────────────────────────────────
+
+/// Screen strings (EN/AR). Lightweight per-screen pattern — see arabic-brief.
+class _L {
+  _L(this.ar);
+  final bool ar;
+
+  String get tenantNotConfigured =>
+      ar ? 'المستأجر غير مهيّأ' : 'Tenant not configured';
+  String get failedToLoad =>
+      ar ? 'فشل تحميل القائمة' : 'Failed to load listing';
+  String get listingFallback => ar ? 'قائمة' : 'Listing';
+  String failedToUpdateWishlist(Object e) =>
+      ar ? 'تعذّر تحديث المفضلة: $e' : 'Failed to update wishlist: $e';
+
+  String get description => ar ? 'الوصف' : 'Description';
+  String get amenities => ar ? 'المرافق' : 'Amenities';
+  String get location => ar ? 'الموقع' : 'Location';
+  String get getDirections => ar ? 'الاتجاهات' : 'Get directions';
+  String get moreMedia => ar ? 'المزيد من الوسائط' : 'More media';
+  String get floorPlan => ar ? 'مخطط الطابق' : 'Floor plan';
+  String get videoTour => ar ? 'جولة فيديو' : 'Video tour';
+  String get tour360 => ar ? 'جولة 360°' : '360° tour';
+
+  String get beds => ar ? 'غرف' : 'BEDS';
+  String get baths => ar ? 'حمامات' : 'BATHS';
+  String get sqft => ar ? 'قدم مربع' : 'SQ FT';
+  String get parking => ar ? 'موقف' : 'PARK';
+
+  String get perYear => ar ? '/سنة' : '/year';
+  String get yrSuffix => ar ? '/سنة' : '/yr';
+  String get from => ar ? 'ابتداءً من' : 'FROM';
+  String get scheduleVisit => ar ? 'حجز موعد معاينة' : 'Schedule a visit';
+
+  static const _viewsAr = {
+    'sea': 'بحرية',
+    'city': 'على المدينة',
+    'garden': 'على الحديقة',
+    'pool': 'على المسبح',
+    'community': 'على المجمّع',
+    'golf': 'على ملعب الجولف',
+    'canal': 'على القناة',
+    'street': 'على الشارع',
+    'road': 'على الشارع',
+  };
+
+  String viewLabel(String viewType) =>
+      ar ? 'إطلالة ${_viewsAr[viewType] ?? 'مميزة'}' : '$viewType view';
+  String availableFrom(String date) => ar ? 'من $date' : 'From $date';
+  String depositLabel(String amount) => ar ? 'التأمين $amount' : 'Dep. $amount';
+  String chequesLabel(int n) =>
+      ar ? '$n شيكات' : '$n cheque${n != 1 ? 's' : ''}';
+
+  String get furnishingUnfurnished => ar ? 'غير مفروش' : 'unfurnished';
+  String get furnishingSemi => ar ? 'مفروش جزئياً' : 'semi furnished';
+  String get furnishingFully => ar ? 'مفروش بالكامل' : 'fully furnished';
+
+  String furnishingLabel(String value) => switch (value) {
+    'UNFURNISHED' => furnishingUnfurnished,
+    'SEMI_FURNISHED' => furnishingSemi,
+    'FULLY_FURNISHED' => furnishingFully,
+    _ => value.replaceAll('_', ' ').toLowerCase(),
+  };
+}
+
+/// Wide-tracked display heading — Cinzel (EN) / Noto Naskh Arabic (AR),
+/// dropping letter-spacing for AR per arabic-brief typography rules.
+TextStyle _display(
+  bool ar, {
+  double fontSize = 16,
+  double letterSpacing = 0.8,
+  Color? color,
+}) => ar
+    ? GoogleFonts.notoNaskhArabic(
+        fontSize: fontSize + 1,
+        fontWeight: FontWeight.w600,
+        color: color,
+      )
+    : GoogleFonts.cinzel(
+        fontSize: fontSize,
+        fontWeight: FontWeight.w600,
+        letterSpacing: letterSpacing,
+        color: color,
+      );
+
+/// Wide-tracked overline label — Josefin Sans, dropping letter-spacing for AR.
+TextStyle _overline(
+  bool ar, {
+  double fontSize = 11,
+  double letterSpacing = 2.0,
+  Color? color,
+}) => GoogleFonts.josefinSans(
+  fontSize: fontSize,
+  fontWeight: FontWeight.w500,
+  letterSpacing: ar ? 0 : letterSpacing,
+  color: color,
+);
+
 // ── Providers ─────────────────────────────────────────────────────────────────
 
 final _listingDetailProvider = FutureProvider.autoDispose
@@ -39,7 +137,9 @@ class ListingDetailScreen extends ConsumerWidget {
     final tenantSlug = resolveTenantSlug(authState);
 
     if (tenantSlug == null) {
-      return const Scaffold(body: Center(child: Text('Tenant not configured')));
+      return Scaffold(
+        body: Center(child: Text(_L(context.isAr).tenantNotConfigured)),
+      );
     }
 
     final detailAsync = ref.watch(
@@ -49,12 +149,12 @@ class ListingDetailScreen extends ConsumerWidget {
     return detailAsync.when(
       loading: () => Scaffold(
         appBar: AppBar(backgroundColor: Colors.transparent),
-        body: const Center(child: CircularProgressIndicator()),
+        body: Center(child: CircularProgressIndicator(color: AppColors.accent)),
       ),
       error: (e, _) => Scaffold(
         appBar: AppBar(),
         body: ErrorState(
-          message: 'Failed to load listing',
+          message: _L(context.isAr).failedToLoad,
           onRetry: () => ref.invalidate(
             _listingDetailProvider(_DetailParams(tenantSlug, slug)),
           ),
@@ -91,6 +191,8 @@ class _ListingDetailViewState extends ConsumerState<_ListingDetailView> {
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final strings = _L(context.isAr);
     final l = widget.listing;
     final status = l['status'] as String? ?? '';
     final isUpcoming = status == 'UPCOMING';
@@ -98,7 +200,7 @@ class _ListingDetailViewState extends ConsumerState<_ListingDetailView> {
     final _wishlisted = ref.watch(wishlistIdsProvider).contains(_listingId);
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: m.background,
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
@@ -108,10 +210,17 @@ class _ListingDetailViewState extends ConsumerState<_ListingDetailView> {
           child: Container(
             margin: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.4),
+              color: const Color(0xFF111111).withValues(alpha: 0.72),
               shape: BoxShape.circle,
+              border: Border.all(
+                color: AppColors.accent.withValues(alpha: 0.4),
+              ),
             ),
-            child: const Icon(Icons.arrow_back, color: Colors.white, size: 20),
+            child: const Icon(
+              Icons.arrow_back,
+              color: AppColors.accent,
+              size: 20,
+            ),
           ),
         ),
       ),
@@ -123,19 +232,19 @@ class _ListingDetailViewState extends ConsumerState<_ListingDetailView> {
                 child: _HeroCarousel(photos: _photos, listing: l),
               ),
               SliverPadding(
-                padding: EdgeInsets.fromLTRB(16, 20, 16, AppInsets.bottomNav(context)),
+                padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
                 sliver: SliverList(
                   delegate: SliverChildListDelegate([
                     _QuickFacts(listing: l),
                     const SizedBox(height: 20),
                     if (l['descriptionEn'] != null) ...[
-                      _SectionTitle('Description'),
+                      _SectionTitle(strings.description),
                       const SizedBox(height: 8),
                       Text(
                         l['descriptionEn'] as String,
                         style: GoogleFonts.josefinSans(
                           fontSize: 14,
-                          color: AppColors.textSecondary,
+                          color: m.textSecondary,
                           height: 1.6,
                         ),
                       ),
@@ -147,8 +256,6 @@ class _ListingDetailViewState extends ConsumerState<_ListingDetailView> {
                     ),
                     const SizedBox(height: 20),
                     _MapCard(listing: l),
-                    const SizedBox(height: 16),
-                    _ScheduleVisitButton(),
                     const SizedBox(height: 20),
                     _MediaLinks(listing: l),
                   ]),
@@ -158,12 +265,16 @@ class _ListingDetailViewState extends ConsumerState<_ListingDetailView> {
           ),
           // Save / Notify me FAB — positioned directly to avoid Scaffold FAB
           // placement issues when nested inside a ShellRoute with extendBody:true
-          Positioned(
-            right: 16,
-            bottom: MediaQuery.of(context).viewPadding.bottom + 160,
+          PositionedDirectional(
+            end: 16,
+            bottom: 108,
             child: FloatingActionButton(
-              onPressed: _wishlistLoading ? null : () => _toggleWishlist(_wishlisted),
-              backgroundColor: isUpcoming ? AppColors.accent : AppColors.primary,
+              onPressed: _wishlistLoading
+                  ? null
+                  : () => _toggleWishlist(_wishlisted),
+              backgroundColor: isUpcoming
+                  ? AppColors.accent
+                  : AppColors.primary,
               elevation: 4,
               child: _wishlistLoading
                   ? const SizedBox(
@@ -177,13 +288,16 @@ class _ListingDetailViewState extends ConsumerState<_ListingDetailView> {
                   : Icon(
                       isUpcoming
                           ? Icons.notifications_outlined
-                          : (_wishlisted ? Icons.favorite : Icons.favorite_border),
+                          : (_wishlisted
+                                ? Icons.favorite
+                                : Icons.favorite_border),
                       color: Colors.white,
                     ),
             ),
           ),
         ],
       ),
+      bottomNavigationBar: _BookingBar(listing: l),
     );
   }
 
@@ -209,7 +323,7 @@ class _ListingDetailViewState extends ConsumerState<_ListingDetailView> {
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to update wishlist: $e')),
+          SnackBar(content: Text(_L(context.isAr).failedToUpdateWishlist(e))),
         );
       }
     } finally {
@@ -234,16 +348,13 @@ class _HeroCarouselState extends State<_HeroCarousel> {
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
     if (widget.photos.isEmpty) {
       return Container(
         height: 280,
-        color: AppColors.background,
-        child: const Center(
-          child: Icon(
-            Icons.apartment_outlined,
-            size: 64,
-            color: AppColors.textMuted,
-          ),
+        color: m.background,
+        child: Center(
+          child: Icon(Icons.apartment_outlined, size: 64, color: m.textMuted),
         ),
       );
     }
@@ -264,11 +375,11 @@ class _HeroCarouselState extends State<_HeroCarousel> {
                   fit: BoxFit.cover,
                   width: double.infinity,
                   errorBuilder: (_, __, ___) => Container(
-                    color: AppColors.background,
-                    child: const Icon(
+                    color: m.background,
+                    child: Icon(
                       Icons.broken_image_outlined,
                       size: 48,
-                      color: AppColors.textMuted,
+                      color: m.textMuted,
                     ),
                   ),
                 ),
@@ -276,10 +387,10 @@ class _HeroCarouselState extends State<_HeroCarousel> {
             },
           ),
           if (widget.photos.length > 1)
-            Positioned(
+            PositionedDirectional(
               bottom: 12,
-              left: 0,
-              right: 0,
+              start: 0,
+              end: 0,
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: List.generate(widget.photos.length.clamp(0, 8), (i) {
@@ -299,9 +410,9 @@ class _HeroCarouselState extends State<_HeroCarousel> {
                 }),
               ),
             ),
-          Positioned(
+          PositionedDirectional(
             bottom: 12,
-            right: 12,
+            end: 12,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               decoration: BoxDecoration(
@@ -386,108 +497,177 @@ class _QuickFacts extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final title = listing['titleEn'] as String? ?? 'Listing';
+    final m = context.miftah;
+    final l = _L(context.isAr);
+    final title = listing['titleEn'] as String? ?? l.listingFallback;
     final status = listing['status'] as String? ?? '';
     final rent = listing['annualRent'] as num?;
     final beds = listing['bedrooms'] as int?;
     final baths = listing['bathrooms'] as int?;
     final size = listing['sizeSqft'] as num?;
+    final parking = listing['parkingSpaces'] as int?;
     final furnishing = listing['furnishing'] as String?;
     final viewType = listing['viewType'] as String?;
     final availableFrom = listing['availableFrom'] as String?;
     final deposit = listing['securityDeposit'] as num?;
     final cheques = listing['chequesAccepted'] as int?;
 
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: AppShadows.soft,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  title,
-                  style: GoogleFonts.cinzel(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-              ),
-              _StatusBadgeInline(status: status),
-            ],
-          ),
-          if (rent != null) ...[
-            const SizedBox(height: 8),
-            Text(
-              '${Formatters.currencyCompact(rent)}/year',
-              style: GoogleFonts.josefinSans(
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
-                color: AppColors.primary,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Text(
+                title,
+                style: MiftahType.display(fontSize: 22, color: m.textPrimary),
               ),
             ),
+            const SizedBox(width: 8),
+            _StatusBadgeInline(status: status),
           ],
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 12,
-            runSpacing: 8,
-            children: [
-              if (beds != null)
-                _FactChip(
-                  Icons.bed_outlined,
-                  '$beds bed${beds != 1 ? 's' : ''}',
-                ),
-              if (baths != null)
-                _FactChip(
-                  Icons.bathtub_outlined,
-                  '$baths bath${baths != 1 ? 's' : ''}',
-                ),
-              if (size != null)
-                _FactChip(Icons.square_foot, '${size.round()} sqft'),
-              if (furnishing != null)
-                _FactChip(
-                  Icons.chair_outlined,
-                  furnishing.replaceAll('_', ' ').toLowerCase(),
-                ),
-              if (viewType != null)
-                _FactChip(
-                  Icons.landscape_outlined,
-                  '${viewType.toLowerCase()} view',
-                ),
-            ],
+        ),
+        if (rent != null) ...[
+          const SizedBox(height: 6),
+          Text(
+            '${Formatters.currencyCompact(rent)}${l.perYear}',
+            style: GoogleFonts.josefinSans(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: m.isDark ? AppColors.accent : AppColors.accentDark,
+            ),
           ),
-          if (availableFrom != null || deposit != null || cheques != null) ...[
-            const Divider(height: 24),
-            Wrap(
-              spacing: 16,
-              runSpacing: 8,
+        ],
+        const SizedBox(height: 16),
+        // Spec strip — beds/baths/sqft/parking, Cinzel numbers over tracked
+        // labels, separated by hairlines (design mock 1e).
+        if (beds != null || baths != null || size != null || parking != null)
+          Container(
+            decoration: BoxDecoration(
+              color: m.surface,
+              border: Border.all(color: m.border),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Row(
               children: [
-                if (availableFrom != null)
-                  _FactChip(
-                    Icons.calendar_today_outlined,
-                    'From ${Formatters.date(availableFrom)}',
+                if (beds != null)
+                  _SpecCell(
+                    value: '$beds',
+                    label: l.beds,
+                    ar: l.ar,
+                    border: true,
                   ),
-                if (deposit != null)
-                  _FactChip(
-                    Icons.security_outlined,
-                    'Dep. ${Formatters.currencyCompact(deposit)}',
+                if (baths != null)
+                  _SpecCell(
+                    value: '$baths',
+                    label: l.baths,
+                    ar: l.ar,
+                    border: true,
                   ),
-                if (cheques != null)
-                  _FactChip(
-                    Icons.receipt_long_outlined,
-                    '$cheques cheque${cheques != 1 ? 's' : ''}',
+                if (size != null)
+                  _SpecCell(
+                    value: size.round().toString(),
+                    label: l.sqft,
+                    ar: l.ar,
+                    border: parking != null,
+                  ),
+                if (parking != null)
+                  _SpecCell(
+                    value: '$parking',
+                    label: l.parking,
+                    ar: l.ar,
+                    border: false,
                   ),
               ],
             ),
+          ),
+        const SizedBox(height: 16),
+        Wrap(
+          spacing: 12,
+          runSpacing: 8,
+          children: [
+            if (furnishing != null)
+              _FactChip(Icons.chair_outlined, l.furnishingLabel(furnishing)),
+            if (viewType != null)
+              _FactChip(
+                Icons.landscape_outlined,
+                l.viewLabel(viewType.toLowerCase()),
+              ),
           ],
+        ),
+        if (availableFrom != null || deposit != null || cheques != null) ...[
+          Divider(height: 24, color: m.divider),
+          Wrap(
+            spacing: 16,
+            runSpacing: 8,
+            children: [
+              if (availableFrom != null)
+                _FactChip(
+                  Icons.calendar_today_outlined,
+                  l.availableFrom(Formatters.date(availableFrom, ar: l.ar)),
+                ),
+              if (deposit != null)
+                _FactChip(
+                  Icons.security_outlined,
+                  l.depositLabel(Formatters.currencyCompact(deposit)),
+                ),
+              if (cheques != null)
+                _FactChip(Icons.receipt_long_outlined, l.chequesLabel(cheques)),
+            ],
+          ),
         ],
+      ],
+    );
+  }
+}
+
+class _SpecCell extends StatelessWidget {
+  final String value;
+  final String label;
+  final bool ar;
+  final bool border;
+  const _SpecCell({
+    required this.value,
+    required this.label,
+    required this.ar,
+    required this.border,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final m = context.miftah;
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+        decoration: BoxDecoration(
+          border: border
+              ? BorderDirectional(end: BorderSide(color: m.divider))
+              : null,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              value,
+              style: MiftahType.display(
+                fontSize: 17,
+                letterSpacing: 0.4,
+                color: m.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: _overline(
+                ar,
+                fontSize: 10.5,
+                letterSpacing: 1.6,
+                color: m.textMuted,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -500,17 +680,15 @@ class _FactChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 16, color: AppColors.textMuted),
+        Icon(icon, size: 16, color: m.textMuted),
         const SizedBox(width: 4),
         Text(
           label,
-          style: GoogleFonts.josefinSans(
-            fontSize: 13,
-            color: AppColors.textSecondary,
-          ),
+          style: GoogleFonts.josefinSans(fontSize: 13, color: m.textSecondary),
         ),
       ],
     );
@@ -527,7 +705,7 @@ class _StatusBadgeInline extends StatelessWidget {
       'PUBLISHED' => AppColors.success,
       'UPCOMING' => AppColors.accent,
       'UNLISTED' => const Color(0xFFF59E0B), // amber
-      _ => AppColors.textMuted,
+      _ => context.miftah.textMuted,
     };
     return StatusBadge(label: status, color: color);
   }
@@ -542,35 +720,41 @@ class _AmenitiesGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (amenities.isEmpty) return const SizedBox.shrink();
+    final isAr = context.isAr;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _SectionTitle('Amenities'),
+        _SectionTitle(_L(isAr).amenities),
         const SizedBox(height: 10),
         Wrap(
           spacing: 8,
           runSpacing: 8,
           children: amenities.map((a) {
-            final name = (a['amenity'] as String? ?? '')
-                .replaceAll('_', ' ')
-                .toLowerCase();
-            final label = a['customLabel'] as String? ?? name;
+            final label = amenityLabel(
+              a['amenity'] as String? ?? '',
+              ar: isAr,
+              customLabel: a['customLabel'] as String?,
+            );
+            final m = context.miftah;
             return Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
               decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: AppColors.primary.withValues(alpha: 0.2),
-                ),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: m.borderStrong),
               ),
               child: Text(
                 label,
-                style: GoogleFonts.josefinSans(
-                  fontSize: 12,
-                  color: AppColors.primary,
-                  fontWeight: FontWeight.w500,
-                ),
+                // Naskh + no tracking for Arabic labels (joining).
+                style: context.isAr
+                    ? GoogleFonts.notoNaskhArabic(
+                        fontSize: 12,
+                        color: m.textPrimary,
+                      )
+                    : GoogleFonts.josefinSans(
+                        fontSize: 11.5,
+                        letterSpacing: 0.6,
+                        color: m.textPrimary,
+                      ),
               ),
             );
           }).toList(),
@@ -588,6 +772,7 @@ class _MapCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l = _L(context.isAr);
     final lat = listing['lat'] as num?;
     final lng = listing['lng'] as num?;
     if (lat == null || lng == null) return const SizedBox.shrink();
@@ -597,7 +782,7 @@ class _MapCard extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _SectionTitle('Location'),
+        _SectionTitle(l.location),
         const SizedBox(height: 10),
         ClipRRect(
           borderRadius: BorderRadius.circular(16),
@@ -619,10 +804,12 @@ class _MapCard extends StatelessWidget {
         GestureDetector(
           onTap: () => _openMaps(lat.toDouble(), lng.toDouble()),
           child: Text(
-            'Get directions',
+            l.getDirections,
             style: GoogleFonts.josefinSans(
               fontSize: 13,
-              color: AppColors.primary,
+              color: context.miftah.isDark
+                  ? AppColors.accent
+                  : AppColors.accentDark,
               fontWeight: FontWeight.w600,
               decoration: TextDecoration.underline,
             ),
@@ -659,10 +846,11 @@ class _MediaLinks extends StatelessWidget {
     if (floorPlans.isEmpty && videos.isEmpty && tours.isEmpty)
       return const SizedBox.shrink();
 
+    final l = _L(context.isAr);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _SectionTitle('More media'),
+        _SectionTitle(l.moreMedia),
         const SizedBox(height: 10),
         Wrap(
           spacing: 8,
@@ -671,19 +859,19 @@ class _MediaLinks extends StatelessWidget {
             for (final fp in floorPlans)
               _MediaBtn(
                 icon: Icons.architecture_outlined,
-                label: 'Floor plan',
+                label: l.floorPlan,
                 url: fp['url'] as String,
               ),
             for (final v in videos)
               _MediaBtn(
                 icon: Icons.play_circle_outline,
-                label: 'Video tour',
+                label: l.videoTour,
                 url: v['url'] as String,
               ),
             for (final t in tours)
               _MediaBtn(
                 icon: Icons.threesixty,
-                label: '360° tour',
+                label: l.tour360,
                 url: t['url'] as String,
               ),
           ],
@@ -701,6 +889,8 @@ class _MediaBtn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final fg = m.isDark ? AppColors.accent : AppColors.primary;
     return GestureDetector(
       onTap: () async {
         final uri = Uri.parse(url);
@@ -709,21 +899,18 @@ class _MediaBtn extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: AppColors.surface,
+          color: m.surface,
           borderRadius: BorderRadius.circular(12),
-          boxShadow: AppShadows.soft,
+          border: Border.all(color: m.border),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 18, color: AppColors.primary),
+            Icon(icon, size: 18, color: fg),
             const SizedBox(width: 6),
             Text(
               label,
-              style: GoogleFonts.josefinSans(
-                fontSize: 13,
-                color: AppColors.primary,
-              ),
+              style: GoogleFonts.josefinSans(fontSize: 13, color: fg),
             ),
           ],
         ),
@@ -732,32 +919,78 @@ class _MediaBtn extends StatelessWidget {
   }
 }
 
-// ── Schedule Visit Button ─────────────────────────────────────────────────────
+// ── Booking bar ───────────────────────────────────────────────────────────────
 
-class _ScheduleVisitButton extends StatelessWidget {
-  const _ScheduleVisitButton();
+/// Fixed near-black footer with the annual rent and the visit-scheduling CTA,
+/// per design mock 1e (FROM overline + Cinzel price + gold CTA).
+class _BookingBar extends StatelessWidget {
+  final Map<String, dynamic> listing;
+  const _BookingBar({required this.listing});
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      child: ElevatedButton.icon(
-        onPressed: () => context.push('/meetings/create'),
-        icon: const Icon(Icons.calendar_month_outlined, color: Colors.white, size: 18),
-        label: Text(
-          'Schedule a Visit',
-          style: GoogleFonts.josefinSans(
-            color: Colors.white,
-            fontWeight: FontWeight.w600,
-            fontSize: 15,
-          ),
+    final l = _L(context.isAr);
+    final rent = listing['annualRent'] as num?;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xFF111111),
+        border: Border(
+          top: BorderSide(color: AppColors.accent.withValues(alpha: 0.18)),
         ),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.primary,
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
+          child: Row(
+            children: [
+              if (rent != null) ...[
+                Column(
+                  // min, or the bar expands to the Scaffold's full height and
+                  // crushes the body to zero.
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      l.from,
+                      style: _overline(
+                        l.ar,
+                        fontSize: 10.5,
+                        letterSpacing: 2.4,
+                        color: Colors.white.withValues(alpha: 0.45),
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    RichText(
+                      text: TextSpan(
+                        style: _display(
+                          l.ar,
+                          fontSize: 19,
+                          color: Colors.white,
+                        ),
+                        children: [
+                          TextSpan(text: Formatters.currencyCompact(rent)),
+                          TextSpan(
+                            text: ' ${l.yrSuffix}',
+                            style: GoogleFonts.josefinSans(
+                              fontSize: 12,
+                              color: Colors.white.withValues(alpha: 0.5),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(width: 16),
+              ],
+              Expanded(
+                child: GoldButton(
+                  label: l.scheduleVisit,
+                  onPressed: () => context.push('/meetings/create'),
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -773,12 +1006,14 @@ class _SectionTitle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final ar = context.isAr;
     return Text(
-      text,
-      style: GoogleFonts.cinzel(
-        fontSize: 14,
-        fontWeight: FontWeight.w600,
-        color: AppColors.textPrimary,
+      ar ? text : text.toUpperCase(),
+      style: _display(
+        ar,
+        fontSize: 13,
+        letterSpacing: 1.8,
+        color: context.miftah.textPrimary,
       ),
     );
   }

@@ -13,13 +13,48 @@ final _penaltyServiceProvider = Provider<PenaltyService>((ref) {
 });
 
 /// Family provider keyed by status string: 'open' | 'cleared' | 'all'.
-final penaltiesProvider =
-    FutureProvider.family.autoDispose<List<Map<String, dynamic>>, String>(
-  (ref, status) {
-    final service = ref.watch(_penaltyServiceProvider);
-    return service.listPenalties(status: status);
-  },
-);
+final penaltiesProvider = FutureProvider.family
+    .autoDispose<List<Map<String, dynamic>>, String>((ref, status) {
+      final service = ref.watch(_penaltyServiceProvider);
+      return service.listPenalties(status: status);
+    });
+
+// ---------------------------------------------------------------------------
+// Fonts helper — Arabic uses Noto Naskh instead of Cinzel/Josefin Sans, and
+// never carries the EN tracked-uppercase letterSpacing (breaks glyph joining).
+// ---------------------------------------------------------------------------
+
+TextStyle _display(
+  bool ar, {
+  double size = 16,
+  FontWeight weight = FontWeight.w600,
+  Color? color,
+}) => ar
+    ? GoogleFonts.notoNaskhArabic(
+        fontSize: size + 1,
+        fontWeight: weight,
+        color: color,
+      )
+    : GoogleFonts.cinzel(fontSize: size, fontWeight: weight, color: color);
+
+TextStyle _body(
+  bool ar, {
+  double size = 13,
+  FontWeight weight = FontWeight.w400,
+  Color? color,
+  double letterSpacing = 0,
+}) => ar
+    ? GoogleFonts.notoNaskhArabic(
+        fontSize: size,
+        fontWeight: weight,
+        color: color,
+      )
+    : GoogleFonts.josefinSans(
+        fontSize: size,
+        fontWeight: weight,
+        color: color,
+        letterSpacing: letterSpacing,
+      );
 
 // ---------------------------------------------------------------------------
 // Screen
@@ -36,13 +71,12 @@ class _PenaltiesScreenState extends ConsumerState<PenaltiesScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
-  static const _tabs = ['Open', 'Cleared'];
   static const _statuses = ['open', 'cleared'];
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: _tabs.length, vsync: this);
+    _tabController = TabController(length: _statuses.length, vsync: this);
   }
 
   @override
@@ -53,15 +87,17 @@ class _PenaltiesScreenState extends ConsumerState<PenaltiesScreen>
 
   @override
   Widget build(BuildContext context) {
+    final l = _L(context.isAr);
     return Scaffold(
       appBar: AppBar(
         backgroundColor: AppColors.navyDark,
         title: Text(
-          'Penalties',
-          style: GoogleFonts.cinzel(
+          l.penalties,
+          style: _display(
+            l.ar,
+            size: 18,
+            weight: FontWeight.w600,
             color: Colors.white,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
           ),
         ),
         bottom: TabBar(
@@ -69,20 +105,17 @@ class _PenaltiesScreenState extends ConsumerState<PenaltiesScreen>
           indicatorColor: AppColors.accent,
           labelColor: Colors.white,
           unselectedLabelColor: Colors.white54,
-          labelStyle: GoogleFonts.josefinSans(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-          ),
-          unselectedLabelStyle: GoogleFonts.josefinSans(
-            fontSize: 13,
-            fontWeight: FontWeight.w400,
-          ),
-          tabs: _tabs.map((t) => Tab(text: t)).toList(),
+          labelStyle: _body(l.ar, size: 13, weight: FontWeight.w600),
+          unselectedLabelStyle: _body(l.ar, size: 13, weight: FontWeight.w400),
+          tabs: [
+            Tab(text: l.tabOpen),
+            Tab(text: l.tabCleared),
+          ],
         ),
       ),
       body: TabBarView(
         controller: _tabController,
-        children: List.generate(_tabs.length, (i) {
+        children: List.generate(_statuses.length, (i) {
           return _PenaltyTabBody(
             status: _statuses[i],
             showHowToPay: _statuses[i] == 'open',
@@ -101,18 +134,17 @@ class _PenaltyTabBody extends ConsumerWidget {
   final String status;
   final bool showHowToPay;
 
-  const _PenaltyTabBody({
-    required this.status,
-    required this.showHowToPay,
-  });
+  const _PenaltyTabBody({required this.status, required this.showHowToPay});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final penaltiesAsync = ref.watch(penaltiesProvider(status));
+    final m = context.miftah;
+    final l = _L(context.isAr);
 
     return penaltiesAsync.when(
       data: (penalties) => RefreshIndicator(
-        color: AppColors.primary,
+        color: m.isDark ? AppColors.accent : AppColors.primary,
         onRefresh: () async => ref.invalidate(penaltiesProvider(status)),
         child: penalties.isEmpty
             ? ListView(
@@ -123,26 +155,31 @@ class _PenaltyTabBody extends ConsumerWidget {
                         ? Icons.check_circle_outline
                         : Icons.history,
                     title: status == 'open'
-                        ? 'No Open Penalties'
-                        : 'No Cleared Penalties',
+                        ? l.noOpenPenalties
+                        : l.noClearedPenalties,
                     subtitle: status == 'open'
-                        ? 'You have no outstanding penalties'
-                        : 'No penalties have been cleared yet',
+                        ? l.noOpenPenaltiesSub
+                        : l.noClearedPenaltiesSub,
                   ),
                 ],
               )
             : ListView(
-                padding: EdgeInsets.fromLTRB(16, 16, 16, AppInsets.bottomNav(context)),
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  16,
+                  16,
+                  AppInsets.bottomNav(context),
+                ),
                 children: [
                   ...penalties.asMap().entries.map(
-                        (entry) => AnimatedListItem(
-                          index: entry.key,
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: 14),
-                            child: _PenaltyCard(penalty: entry.value),
-                          ),
-                        ),
+                    (entry) => AnimatedListItem(
+                      index: entry.key,
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 14),
+                        child: _PenaltyCard(penalty: entry.value),
                       ),
+                    ),
+                  ),
                   if (showHowToPay) ...[
                     const SizedBox(height: 8),
                     const _HowToPayCard(),
@@ -155,7 +192,7 @@ class _PenaltyTabBody extends ConsumerWidget {
         child: ListShimmer(itemCount: 3),
       ),
       error: (err, _) => ErrorState(
-        message: 'Failed to load penalties',
+        message: l.failedToLoad,
         onRetry: () => ref.invalidate(penaltiesProvider(status)),
       ),
     );
@@ -180,34 +217,24 @@ class _PenaltyCard extends StatelessWidget {
     return 'OPEN';
   }
 
-  Color _reasonColor(String reason) {
+  Color _reasonColor(BuildContext context, String reason) {
+    final m = context.miftah;
     switch (reason.toUpperCase()) {
       case 'BOUNCE':
-        return AppColors.danger;
+        return m.danger;
       case 'SIGNATURE_MISMATCH':
-        return AppColors.warning;
+        return m.warning;
       case 'ACCOUNT_CLOSED':
-        return AppColors.danger;
+        return m.danger;
       default:
-        return AppColors.textSecondary;
-    }
-  }
-
-  String _reasonLabel(String reason) {
-    switch (reason.toUpperCase()) {
-      case 'BOUNCE':
-        return 'Bounced Cheque';
-      case 'SIGNATURE_MISMATCH':
-        return 'Signature Mismatch';
-      case 'ACCOUNT_CLOSED':
-        return 'Account Closed';
-      default:
-        return reason;
+        return m.textSecondary;
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final l = _L(context.isAr);
     final derivedStatus = _deriveStatus();
     final isOpen = derivedStatus == 'OPEN';
 
@@ -217,9 +244,12 @@ class _PenaltyCard extends StatelessWidget {
     final outstanding = (penalty['outstanding'] as num?) ?? 0;
     final daysOverdue = (penalty['daysOverdue'] as num?) ?? 0;
     final accrued = currentTotal - penaltyAmount;
-    final createdAt = Formatters.date(penalty['createdAt'] as String?);
-    final reasonColor = _reasonColor(failureReason);
-    final reasonLabel = _reasonLabel(failureReason);
+    final createdAt = Formatters.date(
+      penalty['createdAt'] as String?,
+      ar: context.isAr,
+    );
+    final reasonColor = _reasonColor(context, failureReason);
+    final reasonLabel = l.reasonLabel(failureReason);
 
     // Status badge color
     Color statusColor;
@@ -227,20 +257,18 @@ class _PenaltyCard extends StatelessWidget {
       case 'WAIVED':
         statusColor = AppColors.info;
       case 'CLEARED':
-        statusColor = AppColors.success;
+        statusColor = m.success;
       default:
-        statusColor = AppColors.danger;
+        statusColor = m.danger;
     }
 
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: m.surface,
         borderRadius: BorderRadius.circular(16),
         boxShadow: AppShadows.soft,
         border: isOpen
-            ? Border.all(
-                color: AppColors.danger.withValues(alpha: 0.15),
-              )
+            ? Border.all(color: m.danger.withValues(alpha: 0.15))
             : null,
       ),
       child: ClipRRect(
@@ -250,10 +278,7 @@ class _PenaltyCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               // Left accent stripe
-              Container(
-                width: 5,
-                color: isOpen ? AppColors.danger : AppColors.success,
-              ),
+              Container(width: 5, color: isOpen ? m.danger : m.success),
               Expanded(
                 child: Padding(
                   padding: const EdgeInsets.all(16),
@@ -265,7 +290,9 @@ class _PenaltyCard extends StatelessWidget {
                         children: [
                           Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 4),
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
                             decoration: BoxDecoration(
                               color: reasonColor.withValues(alpha: 0.10),
                               borderRadius: BorderRadius.circular(8),
@@ -275,16 +302,17 @@ class _PenaltyCard extends StatelessWidget {
                             ),
                             child: Text(
                               reasonLabel,
-                              style: GoogleFonts.josefinSans(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
+                              style: _body(
+                                l.ar,
+                                size: 11,
+                                weight: FontWeight.w700,
                                 color: reasonColor,
                               ),
                             ),
                           ),
                           const Spacer(),
                           StatusBadge(
-                            label: derivedStatus,
+                            label: l.statusLabel(derivedStatus),
                             color: statusColor,
                           ),
                         ],
@@ -294,15 +322,15 @@ class _PenaltyCard extends StatelessWidget {
                         const SizedBox(height: 8),
                         Row(
                           children: [
-                            Icon(Icons.schedule,
-                                size: 13, color: AppColors.danger),
+                            Icon(Icons.schedule, size: 13, color: m.danger),
                             const SizedBox(width: 4),
                             Text(
-                              '$daysOverdue days overdue',
-                              style: GoogleFonts.josefinSans(
-                                fontSize: 12,
-                                color: AppColors.danger,
-                                fontWeight: FontWeight.w600,
+                              l.daysOverdue(daysOverdue.toInt()),
+                              style: _body(
+                                l.ar,
+                                size: 12,
+                                weight: FontWeight.w600,
+                                color: m.danger,
                               ),
                             ),
                           ],
@@ -315,17 +343,17 @@ class _PenaltyCard extends StatelessWidget {
                       Row(
                         children: [
                           _AmountDetail(
-                            label: 'Base Fine',
+                            label: l.baseFine,
                             value: Formatters.currency(penaltyAmount),
                           ),
                           if (accrued > 0)
                             _AmountDetail(
-                              label: 'Accrued',
+                              label: l.accrued,
                               value: Formatters.currency(accrued),
-                              valueColor: AppColors.warning,
+                              valueColor: m.warning,
                             ),
                           _AmountDetail(
-                            label: 'Current Total',
+                            label: l.currentTotal,
                             value: Formatters.currency(currentTotal),
                           ),
                         ],
@@ -334,7 +362,7 @@ class _PenaltyCard extends StatelessWidget {
                       const SizedBox(height: 10),
                       Divider(
                         height: 1,
-                        color: AppColors.border.withValues(alpha: 0.5),
+                        color: m.border.withValues(alpha: 0.5),
                       ),
                       const SizedBox(height: 10),
 
@@ -346,17 +374,16 @@ class _PenaltyCard extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Outstanding',
+                                l.outstanding,
                                 style: Theme.of(context).textTheme.labelSmall,
                               ),
                               Text(
                                 Formatters.currency(outstanding),
-                                style: GoogleFonts.josefinSans(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w700,
-                                  color: isOpen
-                                      ? AppColors.danger
-                                      : AppColors.textPrimary,
+                                style: _body(
+                                  l.ar,
+                                  size: 18,
+                                  weight: FontWeight.w700,
+                                  color: isOpen ? m.danger : m.textPrimary,
                                 ),
                               ),
                             ],
@@ -365,14 +392,15 @@ class _PenaltyCard extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
                               Text(
-                                'Raised',
+                                l.raised,
                                 style: Theme.of(context).textTheme.labelSmall,
                               ),
                               Text(
                                 createdAt,
-                                style: GoogleFonts.josefinSans(
-                                  fontSize: 12,
-                                  color: AppColors.textSecondary,
+                                style: _body(
+                                  l.ar,
+                                  size: 12,
+                                  color: m.textSecondary,
                                 ),
                               ),
                             ],
@@ -400,14 +428,14 @@ class _HowToPayCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final l = _L(context.isAr);
     return Card(
       elevation: 0,
-      color: AppColors.background,
+      color: m.background,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: AppColors.border.withValues(alpha: 0.8),
-        ),
+        side: BorderSide(color: m.border.withValues(alpha: 0.8)),
       ),
       child: Padding(
         padding: const EdgeInsets.all(20),
@@ -416,15 +444,19 @@ class _HowToPayCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(Icons.info_outline_rounded,
-                    size: 18, color: AppColors.primary),
+                Icon(
+                  Icons.info_outline_rounded,
+                  size: 18,
+                  color: m.isDark ? AppColors.accent : AppColors.primary,
+                ),
                 const SizedBox(width: 8),
                 Text(
-                  'How to Pay',
-                  style: GoogleFonts.cinzel(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
+                  l.howToPay,
+                  style: _display(
+                    l.ar,
+                    size: 14,
+                    weight: FontWeight.w600,
+                    color: m.textPrimary,
                   ),
                 ),
               ],
@@ -432,35 +464,35 @@ class _HowToPayCard extends StatelessWidget {
             const SizedBox(height: 12),
             _InfoRow(
               icon: Icons.account_balance_outlined,
-              label: 'Bank Transfer',
-              value: 'Account details will be provided by your property manager',
+              label: l.bankTransfer,
+              value: l.bankTransferValue,
             ),
             const SizedBox(height: 10),
             _InfoRow(
               icon: Icons.location_on_outlined,
-              label: 'Office Payment',
-              value: 'Visit the management office with a cheque or cash',
+              label: l.officePayment,
+              value: l.officePaymentValue,
             ),
             const SizedBox(height: 10),
             _InfoRow(
               icon: Icons.access_time_outlined,
-              label: 'Office Hours',
-              value: 'Sunday – Thursday, 9:00 AM – 6:00 PM',
+              label: l.officeHours,
+              value: l.officeHoursValue,
             ),
             const SizedBox(height: 12),
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
-                color: AppColors.warning.withValues(alpha: 0.08),
+                color: m.warningBg,
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
-                'Contact your property manager for updated payment instructions.',
-                style: GoogleFonts.josefinSans(
-                  fontSize: 11,
-                  color: AppColors.warning,
-                  fontWeight: FontWeight.w500,
+                l.contactManager,
+                style: _body(
+                  l.ar,
+                  size: 11,
+                  weight: FontWeight.w500,
+                  color: m.warning,
                 ),
               ),
             ),
@@ -484,10 +516,12 @@ class _InfoRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final ar = context.isAr;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 16, color: AppColors.textSecondary),
+        Icon(icon, size: 16, color: m.textSecondary),
         const SizedBox(width: 10),
         Expanded(
           child: Column(
@@ -495,21 +529,15 @@ class _InfoRow extends StatelessWidget {
             children: [
               Text(
                 label,
-                style: GoogleFonts.josefinSans(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textSecondary,
-                  letterSpacing: 0.3,
+                style: _body(
+                  ar,
+                  size: 11,
+                  weight: FontWeight.w700,
+                  color: m.textSecondary,
                 ),
               ),
               const SizedBox(height: 2),
-              Text(
-                value,
-                style: GoogleFonts.josefinSans(
-                  fontSize: 12,
-                  color: AppColors.textPrimary,
-                ),
-              ),
+              Text(value, style: _body(ar, size: 12, color: m.textPrimary)),
             ],
           ),
         ),
@@ -535,6 +563,8 @@ class _AmountDetail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final ar = context.isAr;
     return Expanded(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -543,14 +573,90 @@ class _AmountDetail extends StatelessWidget {
           const SizedBox(height: 3),
           Text(
             value,
-            style: GoogleFonts.josefinSans(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: valueColor ?? AppColors.textPrimary,
+            style: _body(
+              ar,
+              size: 12,
+              weight: FontWeight.w600,
+              color: valueColor ?? m.textPrimary,
             ),
           ),
         ],
       ),
     );
+  }
+}
+
+/// Screen strings (EN/AR). Lightweight per-screen pattern — see arabic-brief.
+class _L {
+  _L(this.ar);
+  final bool ar;
+
+  String get penalties => ar ? 'الغرامات' : 'Penalties';
+  String get tabOpen => ar ? 'مفتوحة' : 'Open';
+  String get tabCleared => ar ? 'مسددة' : 'Cleared';
+  String get noOpenPenalties =>
+      ar ? 'لا توجد غرامات مفتوحة' : 'No Open Penalties';
+  String get noOpenPenaltiesSub => ar
+      ? 'ليس لديك أي غرامات مستحقة حالياً'
+      : 'You have no outstanding penalties';
+  String get noClearedPenalties =>
+      ar ? 'لا توجد غرامات مسددة' : 'No Cleared Penalties';
+  String get noClearedPenaltiesSub =>
+      ar ? 'لم يتم تسوية أي غرامات بعد' : 'No penalties have been cleared yet';
+  String get failedToLoad =>
+      ar ? 'تعذر تحميل الغرامات' : 'Failed to load penalties';
+  String get baseFine => ar ? 'الغرامة الأساسية' : 'Base Fine';
+  String get accrued => ar ? 'المتراكم' : 'Accrued';
+  String get currentTotal => ar ? 'الإجمالي الحالي' : 'Current Total';
+  String get outstanding => ar ? 'المستحق' : 'Outstanding';
+  String get raised => ar ? 'تاريخ الإصدار' : 'Raised';
+  String get howToPay => ar ? 'كيفية دفع الغرامة' : 'How to Pay';
+  String get bankTransfer => ar ? 'تحويل بنكي' : 'Bank Transfer';
+  String get bankTransferValue => ar
+      ? 'سيتم تزويدك ببيانات الحساب من قبل مدير العقار'
+      : 'Account details will be provided by your property manager';
+  String get officePayment => ar ? 'الدفع في المكتب' : 'Office Payment';
+  String get officePaymentValue => ar
+      ? 'قم بزيارة مكتب الإدارة بشيك أو نقداً'
+      : 'Visit the management office with a cheque or cash';
+  String get officeHours => ar ? 'ساعات العمل' : 'Office Hours';
+  String get officeHoursValue => ar
+      ? 'الأحد – الخميس، 9:00 صباحاً – 6:00 مساءً'
+      : 'Sunday – Thursday, 9:00 AM – 6:00 PM';
+  String get contactManager => ar
+      ? 'تواصل مع مدير العقار للحصول على تعليمات الدفع المحدّثة.'
+      : 'Contact your property manager for updated payment instructions.';
+
+  // Arabic numeral–noun agreement: 1 يوم واحد · 2 يومين · 3–10 أيام · 11+ يوماً
+  String daysOverdue(int n) {
+    if (!ar) return '$n days overdue';
+    if (n == 1) return 'متأخر يوماً واحداً';
+    if (n == 2) return 'متأخر يومين';
+    if (n >= 3 && n <= 10) return 'متأخر $n أيام';
+    return 'متأخر $n يوماً';
+  }
+
+  String statusLabel(String status) {
+    switch (status) {
+      case 'WAIVED':
+        return ar ? 'معفوة' : 'WAIVED';
+      case 'CLEARED':
+        return ar ? 'مسددة' : 'CLEARED';
+      default:
+        return ar ? 'مفتوحة' : 'OPEN';
+    }
+  }
+
+  String reasonLabel(String reason) {
+    switch (reason.toUpperCase()) {
+      case 'BOUNCE':
+        return ar ? 'ارتداد الشيك' : 'Bounced Cheque';
+      case 'SIGNATURE_MISMATCH':
+        return ar ? 'عدم تطابق التوقيع' : 'Signature Mismatch';
+      case 'ACCOUNT_CLOSED':
+        return ar ? 'الحساب مغلق' : 'Account Closed';
+      default:
+        return reason;
+    }
   }
 }

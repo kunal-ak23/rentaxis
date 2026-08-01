@@ -29,25 +29,29 @@ final _myPaymentsProvider = FutureProvider.autoDispose<List<dynamic>>((ref) {
 });
 
 final _openPenaltyCountProvider = FutureProvider.autoDispose<int>((ref) async {
-  final list =
-      await ref.watch(_homePenaltyServiceProvider).listPenalties(status: 'open', size: 50);
+  final list = await ref
+      .watch(_homePenaltyServiceProvider)
+      .listPenalties(status: 'open', size: 50);
   return list.length;
 });
 
-/// Renter Home — redesigned to match the handoff (mobile-renter.jsx ·
-/// `RenterHome`). Calm, billing-focused subscription manager feel.
+/// Renter Home — Miftah dashboard. Dark chrome greeting strip, near-black
+/// "next payment" hero with gold hairline + progress, quick-action tiles,
+/// and a recent-activity list — restyled to match the Miftah design system
+/// (`context.miftah` tokens so it renders correctly in light and dark mode).
 ///
 /// Layout from top:
-///   1. Header: "Tenancy at" eyebrow + property/unit + avatar
-///   2. Hero balance card: navy gradient with gold radial, amount due,
-///      mini progress (cleared / total), Pay-now + Set-reminder buttons
-///   3. Quick actions: 4-col grid (Cheques · Maintain · Contract · Contact)
+///   1. Header: dark chrome greeting + property/tenancy line + avatar
+///   2. Hero balance card: near-black card, gold hairline, amount due,
+///      gold progress bar, Pay-now + Set-reminder buttons
+///   3. Quick actions: 4-col grid (Cheques · Maintain · Contract · Inbox)
 ///   4. Recent activity: list of recent payments
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final m = context.miftah;
     final leasesAsync = ref.watch(_myLeasesProvider);
     final paymentsAsync = ref.watch(_myPaymentsProvider);
     final auth = ref.watch(authProvider);
@@ -61,35 +65,47 @@ class HomeScreen extends ConsumerWidget {
     }
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: m.background,
       body: RefreshIndicator(
-        color: AppColors.primary,
+        color: AppColors.accent,
+        backgroundColor: m.surface,
         onRefresh: refresh,
         child: ListView(
-          padding: EdgeInsets.fromLTRB(20, 12, 20, AppInsets.bottomNav(context)),
+          padding: EdgeInsets.only(bottom: AppInsets.bottomNav(context)),
           physics: const AlwaysScrollableScrollPhysics(),
           children: [
+            // Header is full-bleed chrome; the rest of the content is inset.
             leasesAsync.when(
-              data: (leases) => _Header(
-                lease: _findActiveLease(leases),
-                userName: auth.name,
-              ),
+              data: (leases) =>
+                  _Header(lease: _findActiveLease(leases), userName: auth.name),
               loading: () => _Header(lease: null, userName: auth.name),
               error: (_, _) => _Header(lease: null, userName: auth.name),
             ),
-            const SizedBox(height: 16),
-            _MaybeHero(leasesAsync: leasesAsync, paymentsAsync: paymentsAsync),
-            const SizedBox(height: 18),
-            _QuickActions(
-              penaltyBadge: ref.watch(_openPenaltyCountProvider).valueOrNull,
-            ),
-            const SizedBox(height: 22),
-            _RecentActivityHeader(),
-            const SizedBox(height: 10),
-            paymentsAsync.when(
-              loading: () => const _ActivityShimmer(),
-              error: (_, _) => const SizedBox.shrink(),
-              data: (payments) => _RecentActivity(payments: payments),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _MaybeHero(
+                    leasesAsync: leasesAsync,
+                    paymentsAsync: paymentsAsync,
+                  ),
+                  const SizedBox(height: 18),
+                  _QuickActions(
+                    penaltyBadge: ref
+                        .watch(_openPenaltyCountProvider)
+                        .valueOrNull,
+                  ),
+                  const SizedBox(height: 22),
+                  _RecentActivityHeader(),
+                  const SizedBox(height: 10),
+                  paymentsAsync.when(
+                    loading: () => const _ActivityShimmer(),
+                    error: (_, _) => const SizedBox.shrink(),
+                    data: (payments) => _RecentActivity(payments: payments),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -111,25 +127,28 @@ Map<String, dynamic>? _findActiveLease(List<dynamic> leases) {
   return null;
 }
 
-Map<String, dynamic>? _nextPaymentFor(
-    List<dynamic> payments, String? leaseId) {
+Map<String, dynamic>? _nextPaymentFor(List<dynamic> payments, String? leaseId) {
   if (leaseId == null) return null;
   // OVERDUE takes priority, then PENDING, then ONLINE_PENDING (checkout in
   // flight) — mirrors the web renter portal's nextPayment selection.
   const statusPriority = {'OVERDUE': 0, 'PENDING': 1, 'ONLINE_PENDING': 2};
-  final mine = payments
-      .whereType<Map<String, dynamic>>()
-      .where((p) =>
-          p['leaseId'] == leaseId && statusPriority.containsKey(p['status']))
-      .toList()
-    ..sort((a, b) {
-      final ap = statusPriority[a['status']] ?? 9;
-      final bp = statusPriority[b['status']] ?? 9;
-      if (ap != bp) return ap.compareTo(bp);
-      final ad = (a['installmentNumber'] ?? 0) as num;
-      final bd = (b['installmentNumber'] ?? 0) as num;
-      return ad.compareTo(bd);
-    });
+  final mine =
+      payments
+          .whereType<Map<String, dynamic>>()
+          .where(
+            (p) =>
+                p['leaseId'] == leaseId &&
+                statusPriority.containsKey(p['status']),
+          )
+          .toList()
+        ..sort((a, b) {
+          final ap = statusPriority[a['status']] ?? 9;
+          final bp = statusPriority[b['status']] ?? 9;
+          if (ap != bp) return ap.compareTo(bp);
+          final ad = (a['installmentNumber'] ?? 0) as num;
+          final bd = (b['installmentNumber'] ?? 0) as num;
+          return ad.compareTo(bd);
+        });
   return mine.isEmpty ? null : mine.first;
 }
 
@@ -156,8 +175,7 @@ double _clearedAmountFor(List<dynamic> payments, String? leaseId) {
   return payments
       .whereType<Map<String, dynamic>>()
       .where((p) => p['leaseId'] == leaseId && p['status'] == 'CLEARED')
-      .fold<double>(
-          0, (s, p) => s + ((p['amount'] ?? 0) as num).toDouble());
+      .fold<double>(0, (s, p) => s + ((p['amount'] ?? 0) as num).toDouble());
 }
 
 /// Sum of `amount` over the entire lease schedule. Matches the
@@ -168,12 +186,13 @@ double _scheduleTotalFor(List<dynamic> payments, String? leaseId) {
   if (leaseId == null) return 0;
   return payments
       .whereType<Map<String, dynamic>>()
-      .where((p) =>
-          p['leaseId'] == leaseId &&
-          p['status'] != 'CANCELLED' &&
-          p['status'] != 'REPLACED')
-      .fold<double>(
-          0, (s, p) => s + ((p['amount'] ?? 0) as num).toDouble());
+      .where(
+        (p) =>
+            p['leaseId'] == leaseId &&
+            p['status'] != 'CANCELLED' &&
+            p['status'] != 'REPLACED',
+      )
+      .fold<double>(0, (s, p) => s + ((p['amount'] ?? 0) as num).toDouble());
 }
 
 // ─── Header ─────────────────────────────────────────────────────────────────
@@ -189,64 +208,130 @@ class _Header extends StatelessWidget {
     final parts = name.split(RegExp(r'\s+'));
     if (parts.first.isEmpty) return 'ME';
     if (parts.length == 1) return parts.first.substring(0, 1).toUpperCase();
-    return (parts[0].substring(0, 1) + parts[1].substring(0, 1))
-        .toUpperCase();
+    return (parts[0].substring(0, 1) + parts[1].substring(0, 1)).toUpperCase();
+  }
+
+  String _greeting(_L l) {
+    final hour = DateTime.now().hour;
+    if (hour < 12) return l.goodMorning;
+    if (hour < 17) return l.goodAfternoon;
+    return l.goodEvening;
   }
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final l = _L(context.isAr);
     final propertyName = lease?['propertyName']?.toString();
     // Backend's LeaseDTO uses `unitIdentifier`. We fall back to
     // `unitNumber` defensively in case other endpoints emit it.
-    final unit = (lease?['unitIdentifier'] ?? lease?['unitNumber'])
-        ?.toString();
-    final tenancyLabel = (propertyName != null && unit != null && unit.isNotEmpty)
+    final unit = (lease?['unitIdentifier'] ?? lease?['unitNumber'])?.toString();
+    final tenancyLabel =
+        (propertyName != null && unit != null && unit.isNotEmpty)
         ? '$propertyName · $unit'
-        : (propertyName ?? 'No active lease');
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+        : (propertyName ?? l.noActiveLease);
+    final displayName = (userName != null && userName!.trim().isNotEmpty)
+        ? userName!
+        : l.defaultRenterName;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+      decoration: BoxDecoration(
+        color: AppColors.primary,
+        border: Border(bottom: BorderSide(color: m.chromeBorder)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Text(
-                'Tenancy at',
-                style: GoogleFonts.inter(
-                    fontSize: 12, color: AppColors.textMuted),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                tenancyLabel,
-                style: GoogleFonts.inter(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textPrimary,
+              Image.asset('assets/logo_mark.png', width: 40, height: 40),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _greeting(l),
+                      style: l.ar
+                          ? GoogleFonts.notoNaskhArabic(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.white.withValues(alpha: 0.45),
+                            )
+                          : MiftahType.overline(
+                              fontSize: 10.5,
+                              letterSpacing: 2.4,
+                              color: Colors.white.withValues(alpha: 0.45),
+                            ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      displayName,
+                      style: l.ar
+                          ? GoogleFonts.notoNaskhArabic(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            )
+                          : MiftahType.display(
+                              fontSize: 16,
+                              letterSpacing: 0.6,
+                              color: Colors.white,
+                            ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                 ),
-                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(width: 12),
+              Container(
+                width: 36,
+                height: 36,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: AppColors.accent.withValues(alpha: 0.4),
+                  ),
+                ),
+                child: Text(
+                  _initials(),
+                  style: GoogleFonts.josefinSans(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.accent,
+                  ),
+                ),
               ),
             ],
           ),
-        ),
-        const SizedBox(width: 12),
-        Container(
-          width: 34,
-          height: 34,
-          alignment: Alignment.center,
-          decoration: const BoxDecoration(
-            shape: BoxShape.circle,
-            color: AppColors.accent,
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Container(width: 14, height: 1, color: AppColors.goldMid),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  tenancyLabel,
+                  style: l.ar
+                      ? GoogleFonts.notoNaskhArabic(
+                          fontSize: 13,
+                          color: Colors.white.withValues(alpha: 0.62),
+                        )
+                      : GoogleFonts.josefinSans(
+                          fontSize: 12.5,
+                          letterSpacing: 0.4,
+                          color: Colors.white.withValues(alpha: 0.62),
+                        ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
           ),
-          child: Text(
-            _initials(),
-            style: GoogleFonts.inter(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: AppColors.primary,
-            ),
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -256,16 +341,16 @@ class _Header extends StatelessWidget {
 class _MaybeHero extends StatelessWidget {
   final AsyncValue<List<dynamic>> leasesAsync;
   final AsyncValue<List<dynamic>> paymentsAsync;
-  const _MaybeHero({
-    required this.leasesAsync,
-    required this.paymentsAsync,
-  });
+  const _MaybeHero({required this.leasesAsync, required this.paymentsAsync});
 
   @override
   Widget build(BuildContext context) {
     if (leasesAsync.isLoading || paymentsAsync.isLoading) {
       return const ShimmerLoading(
-          height: 220, width: double.infinity, borderRadius: 18);
+        height: 220,
+        width: double.infinity,
+        borderRadius: 18,
+      );
     }
     final leases = leasesAsync.valueOrNull ?? const [];
     final payments = paymentsAsync.valueOrNull ?? const [];
@@ -293,25 +378,28 @@ class _NoLeaseCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final l = _L(context.isAr);
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        border: Border.all(color: AppColors.border),
+        color: m.surface,
+        border: Border.all(color: m.border),
         borderRadius: BorderRadius.circular(18),
       ),
       child: Row(
         children: [
-          const Icon(Icons.info_outline,
-              color: AppColors.textMuted, size: 18),
+          Icon(Icons.info_outline, color: m.textMuted, size: 18),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              "You don't have an active lease yet. Once your tenancy starts you'll see your balance here.",
-              style: GoogleFonts.inter(
-                fontSize: 12.5,
-                color: AppColors.textSecondary,
-              ),
+              l.noLeaseMessage,
+              style: l.ar
+                  ? GoogleFonts.notoNaskhArabic(
+                      fontSize: 13,
+                      color: m.textSecondary,
+                    )
+                  : GoogleFonts.inter(fontSize: 12.5, color: m.textSecondary),
             ),
           ),
         ],
@@ -338,6 +426,8 @@ class _HeroBalanceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final l = _L(context.isAr);
     final amount = (next?['amount'] ?? 0) as num;
     final dueRaw = next?['dueDate']?.toString();
     final installmentNumber = next?['installmentNumber'];
@@ -348,164 +438,237 @@ class _HeroBalanceCard extends StatelessWidget {
     final isInFlight = status == 'ONLINE_PENDING';
     // If the schedule sum is unavailable (e.g. payments not loaded), fall
     // back to lease.rentAmount so the totals slot isn't empty.
-    final totalAmount =
-        scheduleTotal > 0 ? scheduleTotal : ((lease['rentAmount'] ?? 0) as num).toDouble();
+    final totalAmount = scheduleTotal > 0
+        ? scheduleTotal
+        : ((lease['rentAmount'] ?? 0) as num).toDouble();
+
+    final ({String label, Color fg, Color bg, Color border}) pill;
+    if (next == null) {
+      pill = (
+        label: l.allClear,
+        fg: AppColorsDark.success,
+        bg: AppColorsDark.success.withValues(alpha: 0.16),
+        border: AppColorsDark.success.withValues(alpha: 0.4),
+      );
+    } else if (isOverdue) {
+      pill = (
+        label: l.overdue,
+        fg: AppColorsDark.danger,
+        bg: AppColorsDark.danger.withValues(alpha: 0.16),
+        border: AppColorsDark.danger.withValues(alpha: 0.45),
+      );
+    } else if (isInFlight) {
+      pill = (
+        label: l.processing,
+        fg: AppColorsDark.warning,
+        bg: AppColorsDark.warning.withValues(alpha: 0.16),
+        border: AppColorsDark.warning.withValues(alpha: 0.45),
+      );
+    } else {
+      pill = (
+        label: daysToDue == 'today'
+            ? l.dueToday
+            : l.due(l.daysToDueLabel(daysToDue)),
+        fg: AppColors.accent,
+        bg: AppColors.accent.withValues(alpha: 0.14),
+        border: AppColors.accent.withValues(alpha: 0.4),
+      );
+    }
 
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [AppColors.primary, AppColors.primaryLight],
+        color: m.isDark ? null : AppColors.navyDark,
+        gradient: m.isDark ? MiftahGradients.heroDark : null,
+        border: Border.all(
+          color: AppColors.accent.withValues(alpha: m.isDark ? 0.3 : 0.22),
         ),
+        boxShadow: AppShadows.hero,
       ),
-      child: Stack(
-        children: [
-          Positioned(
-            top: -40,
-            right: -40,
-            child: Container(
-              width: 140,
-              height: 140,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [
-                    AppColors.accent.withValues(alpha: 0.35),
-                    Colors.transparent,
-                  ],
-                  stops: const [0, 0.7],
-                ),
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  next == null
-                      ? 'NO PAYMENTS DUE'
-                      : isOverdue
-                          ? 'PAYMENT OVERDUE'
-                          : isInFlight
-                              ? 'PAYMENT IN PROGRESS'
-                              : 'NEXT PAYMENT DUE',
-                  style: GoogleFonts.inter(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.8,
-                    color: Colors.white.withValues(alpha: 0.6),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  next == null ? 'All caught up' : _formatAmount(amount),
-                  style: GoogleFonts.sourceSerif4(
-                    fontSize: 36,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: -0.7,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                if (next != null)
-                  RichText(
-                    text: TextSpan(
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        color: Colors.white.withValues(alpha: 0.7),
-                      ),
-                      children: [
-                        TextSpan(
-                          text: installmentNumber != null
-                              ? 'Cheque $installmentNumber'
-                              : 'Cheque',
-                        ),
-                        if (installmentTotal > 0)
-                          TextSpan(text: ' of $installmentTotal'),
-                        TextSpan(
-                            text: isOverdue
-                                ? ' · '
-                                : isInFlight
-                                    ? ' · payment '
-                                    : daysToDue == 'today'
-                                        ? ' · due '
-                                        : ' · due in '),
-                        TextSpan(
-                          text: isOverdue
-                              ? 'overdue'
-                              : isInFlight
-                                  ? 'processing'
-                                  : daysToDue,
-                          style: GoogleFonts.inter(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: isOverdue
-                                ? const Color(0xFFFCA5A5)
-                                : AppColors.gold400,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                const SizedBox(height: 16),
-                Container(
-                  height: 1,
-                  color: Colors.white.withValues(alpha: 0.1),
-                ),
-                const SizedBox(height: 12),
-                if (totalCount > 0) ...[
-                  _Progress(cleared: clearedCount, total: totalCount),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        '$clearedCount of $totalCount cleared',
-                        style: GoogleFonts.inter(
-                          fontSize: 11.5,
-                          color: Colors.white.withValues(alpha: 0.7),
-                        ),
-                      ),
-                      Text(
-                        '${_formatAmount(clearedAmount)} / ${_formatAmount(totalAmount)}',
-                        style: GoogleFonts.jetBrainsMono(
+                  l.nextPayment,
+                  style: l.ar
+                      ? GoogleFonts.notoNaskhArabic(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white.withValues(alpha: 0.5),
+                        )
+                      : MiftahType.overline(
                           fontSize: 11,
-                          color: Colors.white.withValues(alpha: 0.7),
+                          letterSpacing: 3.2,
+                          color: Colors.white.withValues(alpha: 0.5),
                         ),
-                      ),
-                    ],
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
                   ),
-                ],
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _PrimaryButton(
-                        label: 'View cheques',
-                        onTap: () => context.push('/payments'),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    _GhostButton(
-                      label: 'Set reminder',
-                      onTap: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Reminders coming soon'),
+                  decoration: BoxDecoration(
+                    color: pill.bg,
+                    border: Border.all(color: pill.border),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    pill.label,
+                    style: l.ar
+                        ? GoogleFonts.notoNaskhArabic(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: pill.fg,
+                          )
+                        : GoogleFonts.josefinSans(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 1.6,
+                            color: pill.fg,
                           ),
-                        );
-                      },
-                    ),
-                  ],
+                  ),
                 ),
               ],
             ),
-          ),
-        ],
+            const SizedBox(height: 14),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                if (next != null)
+                  Padding(
+                    padding: const EdgeInsetsDirectional.only(end: 9),
+                    child: Text(
+                      'AED',
+                      style: MiftahType.display(
+                        fontSize: 15,
+                        letterSpacing: 1.4,
+                        color: AppColors.goldMid,
+                      ),
+                    ),
+                  ),
+                Text(
+                  next == null
+                      ? l.allCaughtUp
+                      : NumberFormat('#,##0').format(amount),
+                  style: (next == null && l.ar)
+                      ? GoogleFonts.notoNaskhArabic(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        )
+                      : MiftahType.display(
+                          fontSize: next == null ? 22 : 40,
+                          letterSpacing: 0.4,
+                          color: Colors.white,
+                        ),
+                ),
+              ],
+            ),
+            if (next != null) ...[
+              const SizedBox(height: 4),
+              RichText(
+                text: TextSpan(
+                  style:
+                      (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.inter)(
+                        fontSize: 12,
+                        color: Colors.white.withValues(alpha: 0.7),
+                      ),
+                  children: [
+                    TextSpan(
+                      text: l.chequeLabel(installmentNumber, installmentTotal),
+                    ),
+                    TextSpan(
+                      text: isOverdue
+                          ? l.sepOverdue
+                          : isInFlight
+                          ? l.sepProcessing
+                          : daysToDue == 'today'
+                          ? l.sepDueToday
+                          : l.sepDueIn,
+                    ),
+                    TextSpan(
+                      text: isOverdue
+                          ? l.overdueWord
+                          : isInFlight
+                          ? l.processingWord
+                          : l.daysToDueLabel(daysToDue),
+                      style:
+                          (l.ar
+                          ? GoogleFonts.notoNaskhArabic
+                          : GoogleFonts.inter)(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: isOverdue
+                                ? AppColorsDark.danger
+                                : AppColors.gold400,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            const SizedBox(height: 16),
+            Container(height: 1, color: Colors.white.withValues(alpha: 0.1)),
+            const SizedBox(height: 12),
+            if (totalCount > 0) ...[
+              _Progress(cleared: clearedCount, total: totalCount),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    l.clearedCountLabel(clearedCount, totalCount),
+                    style:
+                        (l.ar
+                        ? GoogleFonts.notoNaskhArabic
+                        : GoogleFonts.inter)(
+                          fontSize: 11.5,
+                          color: Colors.white.withValues(alpha: 0.7),
+                        ),
+                  ),
+                  Text(
+                    '${_formatAmount(clearedAmount)} / ${_formatAmount(totalAmount)}',
+                    style: GoogleFonts.jetBrainsMono(
+                      fontSize: 11,
+                      color: Colors.white.withValues(alpha: 0.7),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: GoldButton(
+                    label: l.viewCheques,
+                    height: 44,
+                    onPressed: () => context.push('/payments'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: GoldButton.outlined(
+                    label: l.setReminder,
+                    height: 44,
+                    onDark: true,
+                    onPressed: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(l.remindersComingSoon)),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -540,14 +703,26 @@ class _Progress extends StatelessWidget {
     // hairlines that read poorly. Render a single proportional bar instead.
     if (total > 6) {
       final ratio = total > 0 ? (cleared / total).clamp(0.0, 1.0) : 0.0;
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(2),
-        child: LinearProgressIndicator(
-          value: ratio,
-          minHeight: 4,
-          backgroundColor: Colors.white.withValues(alpha: 0.15),
-          valueColor: const AlwaysStoppedAnimation(AppColors.accent),
-        ),
+      return Stack(
+        children: [
+          Container(
+            height: 3,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(3),
+            ),
+          ),
+          FractionallySizedBox(
+            widthFactor: ratio,
+            child: Container(
+              height: 3,
+              decoration: BoxDecoration(
+                gradient: MiftahGradients.goldProgress,
+                borderRadius: BorderRadius.circular(3),
+              ),
+            ),
+          ),
+        ],
       );
     }
     return Row(
@@ -555,75 +730,16 @@ class _Progress extends StatelessWidget {
         final filled = i < cleared;
         return Expanded(
           child: Container(
-            height: 4,
-            margin: EdgeInsets.only(right: i == total - 1 ? 0 : 6),
+            height: 3,
+            margin: EdgeInsetsDirectional.only(end: i == total - 1 ? 0 : 6),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(2),
-              color: filled
-                  ? AppColors.accent
-                  : Colors.white.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(3),
+              gradient: filled ? MiftahGradients.goldProgress : null,
+              color: filled ? null : Colors.white.withValues(alpha: 0.12),
             ),
           ),
         );
       }),
-    );
-  }
-}
-
-class _PrimaryButton extends StatelessWidget {
-  final String label;
-  final VoidCallback? onTap;
-  const _PrimaryButton({required this.label, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 44,
-      child: ElevatedButton(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.accent,
-          disabledBackgroundColor: AppColors.accent.withValues(alpha: 0.3),
-          foregroundColor: AppColors.primary,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          padding: EdgeInsets.zero,
-        ),
-        onPressed: onTap,
-        child: Text(
-          label,
-          style: GoogleFonts.inter(
-              fontSize: 14, fontWeight: FontWeight.w600),
-        ),
-      ),
-    );
-  }
-}
-
-class _GhostButton extends StatelessWidget {
-  final String label;
-  final VoidCallback onTap;
-  const _GhostButton({required this.label, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 44,
-      child: OutlinedButton(
-        style: OutlinedButton.styleFrom(
-          side: BorderSide(color: Colors.white.withValues(alpha: 0.3)),
-          foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
-        onPressed: onTap,
-        child: Text(
-          label,
-          style: GoogleFonts.inter(
-              fontSize: 13, fontWeight: FontWeight.w500),
-        ),
-      ),
     );
   }
 }
@@ -636,30 +752,34 @@ class _QuickActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final l = _L(context.isAr);
     final actions = [
       (
         icon: Icons.receipt_long_outlined,
-        label: 'Cheques',
+        label: l.cheques,
         route: '/payments',
-        badge: (penaltyBadge != null && penaltyBadge! > 0) ? penaltyBadge : null
+        badge: (penaltyBadge != null && penaltyBadge! > 0)
+            ? penaltyBadge
+            : null,
       ),
       (
         icon: Icons.build_outlined,
-        label: 'Maintain',
+        label: l.maintain,
         route: '/tickets',
-        badge: null
+        badge: null,
       ),
       (
         icon: Icons.description_outlined,
-        label: 'Contract',
+        label: l.contract,
         route: '/profile',
-        badge: null
+        badge: null,
       ),
       (
         icon: Icons.contact_mail_outlined,
-        label: 'Inbox',
+        label: l.inbox,
         route: '/notifications',
-        badge: null
+        badge: null,
       ),
       // "Visitors" rather than "Gate Pass": it is what the renter is arranging,
       // it matches the guard app's language for the same objects, and it is
@@ -688,73 +808,75 @@ class _QuickActions extends StatelessWidget {
       mainAxisSpacing: 8,
       childAspectRatio: 0.75,
       children: actions
-          .map((a) => InkWell(
-                borderRadius: BorderRadius.circular(14),
-                onTap: () => context.go(a.route),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    border: Border.all(color: AppColors.border),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          Container(
-                            width: 32,
-                            height: 32,
-                            decoration: BoxDecoration(
-                              color: AppColors.surface2,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Icon(a.icon,
-                                size: 16, color: AppColors.primary),
-                          ),
-                          if (a.badge != null)
-                            Positioned(
-                              top: -4,
-                              right: -4,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 4),
-                                constraints: const BoxConstraints(
-                                    minWidth: 16, minHeight: 16),
-                                decoration: BoxDecoration(
-                                  color: AppColors.danger,
-                                  borderRadius: BorderRadius.circular(999),
-                                  border: Border.all(
-                                      color: AppColors.surface, width: 2),
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    '${a.badge}',
-                                    style: GoogleFonts.inter(
-                                      fontSize: 9,
-                                      fontWeight: FontWeight.w700,
-                                      color: Colors.white,
-                                    ),
+          .map(
+            (a) => InkWell(
+              borderRadius: BorderRadius.circular(14),
+              onTap: () => context.go(a.route),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: m.surface,
+                  border: Border.all(color: m.border),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Icon(a.icon, size: 22, color: AppColors.accentDark),
+                        if (a.badge != null)
+                          PositionedDirectional(
+                            top: -6,
+                            end: -8,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 4,
+                              ),
+                              constraints: const BoxConstraints(
+                                minWidth: 16,
+                                minHeight: 16,
+                              ),
+                              decoration: BoxDecoration(
+                                color: m.danger,
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(color: m.surface, width: 2),
+                              ),
+                              child: Center(
+                                child: Text(
+                                  '${a.badge}',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
                                   ),
                                 ),
                               ),
                             ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        a.label,
-                        style: GoogleFonts.inter(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w500,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 9),
+                    Text(
+                      l.ar ? a.label : a.label.toUpperCase(),
+                      style: l.ar
+                          ? GoogleFonts.notoNaskhArabic(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w600,
+                              color: m.textSecondary,
+                            )
+                          : GoogleFonts.josefinSans(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w500,
+                              letterSpacing: 1.4,
+                              color: m.textSecondary,
+                            ),
+                    ),
+                  ],
                 ),
-              ))
+              ),
+            ),
+          )
           .toList(),
     );
   }
@@ -765,28 +887,43 @@ class _QuickActions extends StatelessWidget {
 class _RecentActivityHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final l = _L(context.isAr);
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       crossAxisAlignment: CrossAxisAlignment.baseline,
       textBaseline: TextBaseline.alphabetic,
       children: [
         Text(
-          'Recent activity',
-          style: GoogleFonts.inter(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: AppColors.textPrimary,
-          ),
+          l.recentActivity,
+          style: l.ar
+              ? GoogleFonts.notoNaskhArabic(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: m.textPrimary,
+                )
+              : MiftahType.display(
+                  fontSize: 14,
+                  letterSpacing: 2.2,
+                  color: m.textPrimary,
+                ),
         ),
         InkWell(
           onTap: () => context.go('/payments'),
           child: Text(
-            'See all',
-            style: GoogleFonts.inter(
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-              color: AppColors.accent,
-            ),
+            l.all,
+            style: l.ar
+                ? GoogleFonts.notoNaskhArabic(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: m.isDark ? AppColors.accent : AppColors.accentDark,
+                  )
+                : GoogleFonts.josefinSans(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 1.6,
+                    color: m.isDark ? AppColors.accent : AppColors.accentDark,
+                  ),
           ),
         ),
       ],
@@ -800,185 +937,316 @@ class _RecentActivity extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final visible = payments
-        .whereType<Map<String, dynamic>>()
-        .where((p) => p['status'] != 'CANCELLED' && p['status'] != 'REPLACED')
-        .toList()
-      ..sort((a, b) {
-        DateTime parse(String? s) =>
-            s == null ? DateTime(1900) : DateTime.tryParse(s) ?? DateTime(1900);
-        final ad = parse(a['statusChangedAt']?.toString() ??
-            a['dueDate']?.toString());
-        final bd = parse(b['statusChangedAt']?.toString() ??
-            b['dueDate']?.toString());
-        return bd.compareTo(ad);
-      });
+    final m = context.miftah;
+    final l = _L(context.isAr);
+    final visible =
+        payments
+            .whereType<Map<String, dynamic>>()
+            .where(
+              (p) => p['status'] != 'CANCELLED' && p['status'] != 'REPLACED',
+            )
+            .toList()
+          ..sort((a, b) {
+            DateTime parse(String? s) => s == null
+                ? DateTime(1900)
+                : DateTime.tryParse(s) ?? DateTime(1900);
+            final ad = parse(
+              a['statusChangedAt']?.toString() ?? a['dueDate']?.toString(),
+            );
+            final bd = parse(
+              b['statusChangedAt']?.toString() ?? b['dueDate']?.toString(),
+            );
+            return bd.compareTo(ad);
+          });
     final top = visible.take(5).toList();
     if (top.isEmpty) {
       return Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: AppColors.surface,
-          border: Border.all(color: AppColors.border),
-          borderRadius: BorderRadius.circular(12),
+          color: m.surface,
+          border: Border.all(color: m.border),
+          borderRadius: BorderRadius.circular(14),
         ),
         child: Row(
           children: [
-            const Icon(Icons.inbox_outlined, color: AppColors.textMuted),
+            Icon(Icons.inbox_outlined, color: m.textMuted),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
-                'No recent activity yet.',
-                style: GoogleFonts.inter(
-                    fontSize: 12.5, color: AppColors.textSecondary),
+                l.noRecentActivity,
+                style: (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.inter)(
+                  fontSize: 12.5,
+                  color: m.textSecondary,
+                ),
               ),
             ),
           ],
         ),
       );
     }
-    return Column(
-      children: top
-          .map((p) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: _ActivityRow(payment: p),
-              ))
-          .toList(),
+    return Container(
+      decoration: BoxDecoration(
+        color: m.surface,
+        border: Border.all(color: m.border),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        children: List.generate(top.length, (i) {
+          return _ActivityRow(
+            payment: top[i],
+            showDivider: i != top.length - 1,
+          );
+        }),
+      ),
     );
   }
 }
 
 class _ActivityRow extends StatelessWidget {
   final Map<String, dynamic> payment;
-  const _ActivityRow({required this.payment});
+  final bool showDivider;
+  const _ActivityRow({required this.payment, required this.showDivider});
 
-  ({IconData icon, Color fg, Color bg, String title}) _meta(String status) {
+  ({Color color, String title, String word}) _meta(
+    MiftahColors m,
+    String status,
+    _L l,
+  ) {
     switch (status) {
       case 'CLEARED':
-        return (
-          icon: Icons.check,
-          fg: AppColors.success,
-          bg: AppColors.successLight,
-          title: 'Cheque cleared',
-        );
+        return (color: m.success, title: l.chequeCleared, word: l.wordCleared);
       case 'COLLECTED':
         return (
-          icon: Icons.receipt_long_outlined,
-          fg: AppColors.info,
-          bg: const Color(0xFFD6EBEB),
-          title: 'Cheque received',
+          color: AppColors.accentDark,
+          title: l.chequeReceived,
+          word: l.wordReceived,
         );
       case 'DEPOSITED':
         return (
-          icon: Icons.savings_outlined,
-          fg: AppColors.info,
-          bg: const Color(0xFFD6EBEB),
-          title: 'Cheque deposited',
+          color: AppColors.accentDark,
+          title: l.chequeDeposited,
+          word: l.wordDeposited,
         );
       case 'BOUNCED':
-        return (
-          icon: Icons.error_outline,
-          fg: AppColors.danger,
-          bg: AppColors.dangerLight,
-          title: 'Cheque bounced',
-        );
+        return (color: m.danger, title: l.chequeBounced, word: l.wordBounced);
       case 'PENDING':
+        return (color: m.warning, title: l.upcomingPayment, word: l.wordDue);
       case 'OVERDUE':
-        return (
-          icon: Icons.schedule,
-          fg: AppColors.accentDark,
-          bg: AppColors.accentLight,
-          title: status == 'OVERDUE' ? 'Payment overdue' : 'Upcoming payment',
-        );
+        return (color: m.danger, title: l.paymentOverdue, word: l.wordOverdue);
       default:
         return (
-          icon: Icons.receipt_outlined,
-          fg: AppColors.textMuted,
-          bg: AppColors.surface2,
-          title: 'Payment',
+          color: m.textMuted,
+          title: l.paymentGeneric,
+          word: l.wordLogged,
         );
     }
   }
 
-  String _formatDate(dynamic raw) {
+  String _formatDate(dynamic raw, {bool ar = false}) {
     final s = raw?.toString();
     if (s == null || s.isEmpty) return '';
     final dt = DateTime.tryParse(s);
     if (dt == null) return '';
-    return DateFormat('d MMM').format(dt);
+    if (ar) return DateFormat('d MMMM', 'ar').format(dt);
+    // LTR isolate keeps "1 Oct" ordered inside RTL text.
+    return '\u2066${DateFormat('d MMM').format(dt)}\u2069';
   }
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final l = _L(context.isAr);
     final status = payment['status']?.toString() ?? 'PENDING';
-    final m = _meta(status);
+    final meta = _meta(m, status, l);
     final amount = (payment['amount'] ?? 0) as num;
     final installment = payment['installmentNumber'];
     final bank = payment['bankName']?.toString();
     final dateLabel = _formatDate(
-        payment['statusChangedAt'] ?? payment['dueDate']);
+      payment['statusChangedAt'] ?? payment['dueDate'],
+      ar: l.ar,
+    );
     final subtitle = [
       if (bank != null && bank.isNotEmpty) bank,
       if (dateLabel.isNotEmpty) dateLabel,
     ].join(' · ');
-    final title = installment != null ? '${m.title} · #$installment' : m.title;
+    final title = installment != null
+        ? '${meta.title} · #$installment'
+        : meta.title;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        border: Border.all(color: AppColors.border),
-        borderRadius: BorderRadius.circular(12),
+        border: showDivider
+            ? Border(bottom: BorderSide(color: m.divider))
+            : null,
       ),
       child: Row(
         children: [
           Container(
-            width: 32,
-            height: 32,
+            width: 6,
+            height: 6,
             decoration: BoxDecoration(
-              color: m.bg,
-              borderRadius: BorderRadius.circular(10),
+              shape: BoxShape.circle,
+              color: meta.color,
             ),
-            child: Icon(m.icon, size: 16, color: m.fg),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 13),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   title,
-                  style: GoogleFonts.inter(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                    color: AppColors.textPrimary,
-                  ),
+                  style:
+                      (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.inter)(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w500,
+                        color: m.textPrimary,
+                      ),
                 ),
                 if (subtitle.isNotEmpty) ...[
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 3),
                   Text(
                     subtitle,
-                    style: GoogleFonts.inter(
-                      fontSize: 11,
-                      color: AppColors.textMuted,
-                    ),
+                    style: (l.ar
+                        ? GoogleFonts.notoNaskhArabic
+                        : GoogleFonts
+                              .inter)(fontSize: 11.5, color: m.textMuted),
                   ),
                 ],
               ],
             ),
           ),
-          if (amount > 0)
-            Text(
-              'AED ${NumberFormat('#,##0').format(amount)}',
-              style: GoogleFonts.jetBrainsMono(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: AppColors.textPrimary,
+          const SizedBox(width: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                meta.word,
+                style: l.ar
+                    ? GoogleFonts.notoNaskhArabic(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: meta.color,
+                      )
+                    : GoogleFonts.josefinSans(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 1.4,
+                        color: meta.color,
+                      ),
               ),
-            ),
+              if (amount > 0) ...[
+                const SizedBox(height: 3),
+                Text(
+                  'AED ${NumberFormat('#,##0').format(amount)}',
+                  style: GoogleFonts.jetBrainsMono(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                    color: m.textSecondary,
+                  ),
+                ),
+              ],
+            ],
+          ),
         ],
       ),
     );
   }
+}
+
+// ─── Strings (EN/AR) ────────────────────────────────────────────────────────
+
+/// Screen strings (EN/AR). Lightweight per-screen pattern — see arabic-brief.
+class _L {
+  _L(this.ar);
+  final bool ar;
+
+  // Header
+  String get goodMorning => ar ? 'صباح الخير' : 'GOOD MORNING';
+  String get goodAfternoon => ar ? 'طاب يومك' : 'GOOD AFTERNOON';
+  String get goodEvening => ar ? 'مساء الخير' : 'GOOD EVENING';
+  String get defaultRenterName => ar ? 'مستأجر' : 'Renter';
+  String get noActiveLease => ar ? 'لا يوجد عقد نشط' : 'No active lease';
+  String get noLeaseMessage => ar
+      ? 'لا يوجد لديك عقد إيجار نشط بعد. بمجرد بدء عقدك سيظهر رصيدك هنا.'
+      : "You don't have an active lease yet. Once your tenancy starts you'll see your balance here.";
+
+  // Hero balance card
+  String get nextPayment => ar ? 'الدفعة القادمة' : 'NEXT PAYMENT';
+  String get allClear => ar ? 'لا مستحقات' : 'ALL CLEAR';
+  String get overdue => ar ? 'متأخر' : 'OVERDUE';
+  String get processing => ar ? 'قيد المعالجة' : 'PROCESSING';
+  String get dueToday => ar ? 'مستحق اليوم' : 'DUE TODAY';
+  String due(String duration) =>
+      ar ? 'مستحق $duration' : 'DUE ${duration.toUpperCase()}';
+  String get allCaughtUp => ar ? 'لا توجد مستحقات حالياً' : 'All caught up';
+
+  String chequeLabel(dynamic n, int total) {
+    final base = n != null
+        ? (ar ? 'شيك $n' : 'Cheque $n')
+        : (ar ? 'شيك' : 'Cheque');
+    if (total <= 0) return base;
+    return ar ? '$base من $total' : '$base of $total';
+  }
+
+  String get sepOverdue => ' · ';
+  String get sepProcessing => ar ? ' · الدفع ' : ' · payment ';
+  String get sepDueToday => ar ? ' · مستحق ' : ' · due ';
+  String get sepDueIn => ar ? ' · مستحق خلال ' : ' · due in ';
+  String get overdueWord => ar ? 'متأخر' : 'overdue';
+  String get processingWord => ar ? 'قيد المعالجة' : 'processing';
+
+  /// Translates the raw EN token returned by `_daysUntil` ('—', 'today',
+  /// 'overdue', '1 day', '$n days') into the Arabic equivalent. Pass-through
+  /// for EN.
+  String daysToDueLabel(String raw) {
+    if (!ar) return raw;
+    if (raw == 'today') return 'اليوم';
+    if (raw == 'overdue') return 'متأخر';
+    final match = RegExp(r'^(\d+) days?$').firstMatch(raw);
+    if (match != null) {
+      final n = int.parse(match.group(1)!);
+      if (n == 1) return 'يوم واحد';
+      if (n == 2) return 'يومان';
+      return '$n أيام';
+    }
+    return raw;
+  }
+
+  String clearedCountLabel(int cleared, int total) =>
+      ar ? '$cleared من $total تمت تسويتها' : '$cleared of $total cleared';
+
+  String get viewCheques => ar ? 'عرض الشيكات' : 'View cheques';
+  String get setReminder => ar ? 'تذكيرني' : 'Set reminder';
+  String get remindersComingSoon =>
+      ar ? 'ميزة التذكيرات قريباً' : 'Reminders coming soon';
+
+  // Quick actions
+  String get cheques => ar ? 'الشيكات' : 'Cheques';
+  String get maintain => ar ? 'الصيانة' : 'Maintain';
+  String get contract => ar ? 'العقد' : 'Contract';
+  String get inbox => ar ? 'الرسائل' : 'Inbox';
+
+  // Recent activity
+  String get recentActivity => ar ? 'آخر التحديثات' : 'RECENT ACTIVITY';
+  String get all => ar ? 'الكل' : 'ALL';
+  String get noRecentActivity =>
+      ar ? 'لا يوجد نشاط حديث بعد.' : 'No recent activity yet.';
+
+  String get chequeCleared => ar ? 'تمت تسوية الشيك' : 'Cheque cleared';
+  String get chequeReceived => ar ? 'تم استلام الشيك' : 'Cheque received';
+  String get chequeDeposited => ar ? 'تم إيداع الشيك' : 'Cheque deposited';
+  String get chequeBounced => ar ? 'ارتدّ الشيك' : 'Cheque bounced';
+  String get upcomingPayment => ar ? 'دفعة قادمة' : 'Upcoming payment';
+  String get paymentOverdue => ar ? 'دفعة متأخرة' : 'Payment overdue';
+  String get paymentGeneric => ar ? 'دفعة' : 'Payment';
+  String get wordCleared => ar ? 'تمت التسوية' : 'CLEARED';
+  String get wordReceived => ar ? 'مستلم' : 'RECEIVED';
+  String get wordDeposited => ar ? 'مودَع' : 'DEPOSITED';
+  String get wordBounced => ar ? 'مرتجع' : 'BOUNCED';
+  String get wordDue => ar ? 'مستحق' : 'DUE';
+  String get wordOverdue => ar ? 'متأخر' : 'OVERDUE';
+  String get wordLogged => ar ? 'مسجّل' : 'LOGGED';
 }
 
 class _ActivityShimmer extends StatelessWidget {

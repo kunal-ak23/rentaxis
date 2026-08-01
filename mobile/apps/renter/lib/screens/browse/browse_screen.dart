@@ -8,6 +8,44 @@ import 'browse_filters.dart';
 import 'browse_filters_sheet.dart';
 import 'browse_map.dart';
 
+// ── Strings (EN/AR) ─────────────────────────────────────────────────────────
+
+/// Screen strings (EN/AR). Lightweight per-screen pattern — see arabic-brief.
+class _L {
+  _L(this.ar);
+  final bool ar;
+
+  String get searchHint => ar ? 'ابحث عن قوائم…' : 'Search listings…';
+  String get listView => ar ? 'عرض القائمة' : 'List view';
+  String get mapView => ar ? 'عرض الخريطة' : 'Map view';
+  String get filters => ar ? 'الفلاتر' : 'Filters';
+  String get failedToLoad =>
+      ar ? 'فشل تحميل القوائم' : 'Failed to load listings';
+  String get noListingsFound => ar ? 'لا توجد قوائم' : 'No listings found';
+  String get tryAdjustingFilters =>
+      ar ? 'حاول تعديل الفلاتر' : 'Try adjusting your filters';
+  String get bedSuffix => ar ? '+ غرفة' : '+ bed';
+  String get availableNow => ar ? 'متاح الآن' : 'Available now';
+  String get nearMe => ar ? 'بالقرب مني' : 'Near me';
+  String kmSuffix(int km) => ar ? ' ($km كم)' : ' ($km km)';
+  String showingFirst(int count) => ar
+      ? 'عرض أول $count نتيجة — عدّل الفلاتر لرؤية المزيد'
+      : 'Showing first $count results — refine filters to see more';
+  String get wishlistUpdateFailed => ar
+      ? 'تعذّر تحديث المفضلة — حاول مرة أخرى'
+      : 'Could not update wishlist — please try again';
+  String get furnishingUnfurnished => ar ? 'غير مفروش' : 'Unfurnished';
+  String get furnishingSemi => ar ? 'مفروش جزئياً' : 'Semi furnished';
+  String get furnishingFully => ar ? 'مفروش بالكامل' : 'Fully furnished';
+
+  String furnishingLabel(String value) => switch (value) {
+    'UNFURNISHED' => furnishingUnfurnished,
+    'SEMI_FURNISHED' => furnishingSemi,
+    'FULLY_FURNISHED' => furnishingFully,
+    _ => value.replaceAll('_', ' ').toLowerCase(),
+  };
+}
+
 // ── Providers ────────────────────────────────────────────────────────────────
 
 final _listingApiProvider = Provider<ListingApiService>((ref) {
@@ -104,12 +142,14 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final l = _L(context.isAr);
     final listingsAsync = ref.watch(browseListingsProvider);
     final filters = ref.watch(browseFiltersProvider);
     final activeFilterCount = filters.activeCount;
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: m.background,
       body: SafeArea(
         bottom: false,
         child: Column(
@@ -126,7 +166,7 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
               child: listingsAsync.when(
                 loading: () => _buildShimmer(),
                 error: (e, _) => ErrorState(
-                  message: 'Failed to load listings',
+                  message: l.failedToLoad,
                   onRetry: () => ref.invalidate(browseListingsProvider),
                 ),
                 data: (data) {
@@ -136,8 +176,8 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
                   if (items.isEmpty) {
                     return EmptyState(
                       icon: Icons.apartment_outlined,
-                      title: 'No listings found',
-                      subtitle: 'Try adjusting your filters',
+                      title: l.noListingsFound,
+                      subtitle: l.tryAdjustingFilters,
                     );
                   }
                   if (_mapMode) {
@@ -207,6 +247,8 @@ class _SearchBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final l = _L(context.isAr);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
       child: Row(
@@ -215,24 +257,23 @@ class _SearchBar extends StatelessWidget {
             child: Container(
               height: 48,
               decoration: BoxDecoration(
-                color: AppColors.surface,
+                color: m.surface,
                 borderRadius: BorderRadius.circular(14),
-                boxShadow: AppShadows.soft,
+                border: Border.all(color: m.border),
               ),
               child: TextField(
                 controller: controller,
-                style: GoogleFonts.josefinSans(fontSize: 14),
+                style: GoogleFonts.josefinSans(
+                  fontSize: 14,
+                  color: m.textPrimary,
+                ),
                 decoration: InputDecoration(
-                  hintText: 'Search listings…',
+                  hintText: l.searchHint,
                   hintStyle: GoogleFonts.josefinSans(
                     fontSize: 14,
-                    color: AppColors.textMuted,
+                    color: m.textMuted,
                   ),
-                  prefixIcon: const Icon(
-                    Icons.search,
-                    size: 20,
-                    color: AppColors.textMuted,
-                  ),
+                  prefixIcon: Icon(Icons.search, size: 20, color: m.textMuted),
                   border: InputBorder.none,
                   contentPadding: const EdgeInsets.symmetric(vertical: 14),
                 ),
@@ -243,7 +284,7 @@ class _SearchBar extends StatelessWidget {
           _IconBtn(
             icon: mapMode ? Icons.list_rounded : Icons.map_outlined,
             onTap: onToggleMap,
-            tooltip: mapMode ? 'List view' : 'Map view',
+            tooltip: mapMode ? l.listView : l.mapView,
           ),
           const SizedBox(width: 8),
           Badge(
@@ -256,7 +297,7 @@ class _SearchBar extends StatelessWidget {
             child: _IconBtn(
               icon: Icons.tune_rounded,
               onTap: onFilterTap,
-              tooltip: 'Filters',
+              tooltip: l.filters,
             ),
           ),
         ],
@@ -278,17 +319,18 @@ class _IconBtn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
     return GestureDetector(
       onTap: onTap,
       child: Container(
         width: 44,
         height: 44,
         decoration: BoxDecoration(
-          color: AppColors.surface,
+          color: m.surface,
           borderRadius: BorderRadius.circular(12),
-          boxShadow: AppShadows.soft,
+          border: Border.all(color: m.border),
         ),
-        child: Icon(icon, size: 20, color: AppColors.textSecondary),
+        child: Icon(icon, size: 20, color: m.textSecondary),
       ),
     );
   }
@@ -302,11 +344,12 @@ class _ActiveFilterChips extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l = _L(context.isAr);
     final chips = <_ChipData>[];
     if (filters.minBedrooms != null)
       chips.add(
         _ChipData(
-          '${filters.minBedrooms}+ bed',
+          '${filters.minBedrooms}${l.bedSuffix}',
           () => ref.read(browseFiltersProvider.notifier).state = filters
               .copyWith(clearMinBedrooms: true),
         ),
@@ -314,7 +357,7 @@ class _ActiveFilterChips extends ConsumerWidget {
     if (filters.furnishing != null)
       chips.add(
         _ChipData(
-          filters.furnishing!.replaceAll('_', ' ').toLowerCase(),
+          l.furnishingLabel(filters.furnishing!),
           () => ref.read(browseFiltersProvider.notifier).state = filters
               .copyWith(clearFurnishing: true),
         ),
@@ -322,7 +365,7 @@ class _ActiveFilterChips extends ConsumerWidget {
     if (filters.availableNow == true)
       chips.add(
         _ChipData(
-          'Available now',
+          l.availableNow,
           () => ref.read(browseFiltersProvider.notifier).state = filters
               .copyWith(clearAvailableNow: true),
         ),
@@ -345,7 +388,7 @@ class _ActiveFilterChips extends ConsumerWidget {
     if (filters.nearLat != null)
       chips.add(
         _ChipData(
-          'Near me${filters.radiusKm != null ? ' (${filters.radiusKm!.round()} km)' : ''}',
+          '${l.nearMe}${filters.radiusKm != null ? l.kmSuffix(filters.radiusKm!.round()) : ''}',
           () => ref.read(browseFiltersProvider.notifier).state = filters
               .copyWith(clearNearby: true),
         ),
@@ -392,12 +435,12 @@ class _FilterChip extends StatelessWidget {
               data.label,
               style: GoogleFonts.josefinSans(
                 fontSize: 12,
-                color: Colors.white,
+                color: AppColors.accent,
                 fontWeight: FontWeight.w600,
               ),
             ),
             const SizedBox(width: 4),
-            const Icon(Icons.close, size: 14, color: Colors.white),
+            const Icon(Icons.close, size: 14, color: AppColors.accent),
           ],
         ),
       ),
@@ -417,8 +460,12 @@ class _ListingListView extends ConsumerWidget {
     this.serverCount = 0,
   });
 
-  Future<void> _toggleWishlist(BuildContext context, WidgetRef ref,
-      String listingId, bool isWishlisted) async {
+  Future<void> _toggleWishlist(
+    BuildContext context,
+    WidgetRef ref,
+    String listingId,
+    bool isWishlisted,
+  ) async {
     final notifier = ref.read(wishlistIdsProvider.notifier);
     final service = ref.read(_listingApiProvider);
     try {
@@ -439,8 +486,7 @@ class _ListingListView extends ConsumerWidget {
       }
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('Could not update wishlist — please try again')),
+          SnackBar(content: Text(_L(context.isAr).wishlistUpdateFailed)),
         );
       }
     }
@@ -448,6 +494,8 @@ class _ListingListView extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final m = context.miftah;
+    final l = _L(context.isAr);
     final wishlistedIds = ref.watch(wishlistIdsProvider);
     final count = listings.length + (truncated ? 1 : 0);
     return ListView.builder(
@@ -458,12 +506,9 @@ class _ListingListView extends ConsumerWidget {
           return Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: Text(
-              'Showing first $serverCount results — refine filters to see more',
+              l.showingFirst(serverCount),
               textAlign: TextAlign.center,
-              style: GoogleFonts.josefinSans(
-                fontSize: 12,
-                color: AppColors.textMuted,
-              ),
+              style: GoogleFonts.josefinSans(fontSize: 12, color: m.textMuted),
             ),
           );
         }

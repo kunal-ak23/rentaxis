@@ -2,11 +2,22 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
-import '../utils/formatters.dart';
+import '../utils/l10n.dart';
 import 'distance_chip.dart';
 import 'price_label.dart';
 import 'shimmer_loading.dart';
-import 'status_badge.dart';
+
+/// Screen strings (EN/AR). Lightweight per-widget pattern — see arabic-brief.
+class _L {
+  _L(this.ar);
+  final bool ar;
+
+  String get listingFallback => ar ? 'قائمة' : 'Listing';
+  String get statusLive => ar ? 'متاح' : 'Live';
+  String get statusUpcoming => ar ? 'قادم' : 'Upcoming';
+  String get statusUnlisted => ar ? 'غير مدرج' : 'Unlisted';
+  String get statusDraft => ar ? 'مسودة' : 'Draft';
+}
 
 /// Card showing a `UnitListingSummaryDTO` in browse/list views.
 /// Pass [distanceKm] to show the distance chip.
@@ -29,21 +40,24 @@ class ListingCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l = _L(context.isAr);
     final coverUrl = listing['coverPhotoUrl'] as String?;
-    final title = listing['title'] as String? ?? 'Listing';
+    final title = listing['title'] as String? ?? l.listingFallback;
     final propertyName = listing['propertyName'] as String?;
     final beds = listing['bedrooms'] as int?;
     final rent = listing['annualRent'] as num?;
     final status = listing['status'] as String? ?? '';
     final interestsCount = listing['interestsCount'] as int? ?? 0;
 
+    final m = context.miftah;
     return GestureDetector(
       onTap: onTap,
       child: Container(
         decoration: BoxDecoration(
-          color: AppColors.surface,
+          color: m.surface,
           borderRadius: BorderRadius.circular(18),
-          boxShadow: AppShadows.soft,
+          border: Border.all(color: m.border),
+          boxShadow: m.isDark ? null : AppShadows.soft,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -52,41 +66,44 @@ class ListingCard extends StatelessWidget {
             Stack(
               children: [
                 ClipRRect(
-                  borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(18)),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(18),
+                  ),
                   child: coverUrl != null
                       ? CachedNetworkImage(
                           imageUrl: coverUrl,
                           height: 180,
                           width: double.infinity,
                           fit: BoxFit.cover,
-                          placeholder: (_, __) =>
-                              ShimmerLoading(height: 180, width: double.infinity),
+                          placeholder: (_, __) => ShimmerLoading(
+                            height: 180,
+                            width: double.infinity,
+                          ),
                           errorWidget: (_, __, ___) => _PlaceholderImage(),
                         )
                       : _PlaceholderImage(),
                 ),
-                // Status badge top-left
-                Positioned(
+                // Status badge, leading edge
+                PositionedDirectional(
                   top: 10,
-                  left: 10,
-                  child: _StatusPill(status: status),
+                  start: 10,
+                  child: _StatusPill(status: status, l: l),
                 ),
-                // Wishlist heart top-right
+                // Wishlist heart, trailing edge
                 if (onWishlistToggle != null)
-                  Positioned(
+                  PositionedDirectional(
                     top: 8,
-                    right: 8,
+                    end: 8,
                     child: _WishlistHeart(
                       isWishlisted: isWishlisted ?? false,
                       onTap: onWishlistToggle!,
                     ),
                   ),
-                // Distance chip bottom-left
+                // Distance chip, leading edge
                 if (distanceKm != null)
-                  Positioned(
+                  PositionedDirectional(
                     bottom: 8,
-                    left: 10,
+                    start: 10,
                     child: DistanceChip(km: distanceKm!),
                   ),
               ],
@@ -105,15 +122,18 @@ class ListingCard extends StatelessWidget {
                     style: GoogleFonts.josefinSans(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
-                      color: AppColors.textPrimary,
+                      color: m.textPrimary,
                     ),
                   ),
                   if (propertyName != null) ...[
                     const SizedBox(height: 2),
                     Row(
                       children: [
-                        const Icon(Icons.location_on_outlined,
-                            size: 13, color: AppColors.textMuted),
+                        Icon(
+                          Icons.location_on_outlined,
+                          size: 13,
+                          color: m.textMuted,
+                        ),
                         const SizedBox(width: 2),
                         Expanded(
                           child: Text(
@@ -122,7 +142,7 @@ class ListingCard extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             style: GoogleFonts.josefinSans(
                               fontSize: 12,
-                              color: AppColors.textMuted,
+                              color: m.textMuted,
                             ),
                           ),
                         ),
@@ -133,24 +153,30 @@ class ListingCard extends StatelessWidget {
                   Row(
                     children: [
                       if (beds != null) ...[
-                        const Icon(Icons.bed_outlined,
-                            size: 15, color: AppColors.textMuted),
+                        Icon(Icons.bed_outlined, size: 15, color: m.textMuted),
                         const SizedBox(width: 3),
                         Text(
                           '$beds',
                           style: GoogleFonts.josefinSans(
-                              fontSize: 12, color: AppColors.textSecondary),
+                            fontSize: 12,
+                            color: m.textSecondary,
+                          ),
                         ),
                         const SizedBox(width: 10),
                       ],
                       if (interestsCount > 0) ...[
-                        const Icon(Icons.favorite_border,
-                            size: 14, color: AppColors.textMuted),
+                        Icon(
+                          Icons.favorite_border,
+                          size: 14,
+                          color: m.textMuted,
+                        ),
                         const SizedBox(width: 3),
                         Text(
                           '$interestsCount',
                           style: GoogleFonts.josefinSans(
-                              fontSize: 12, color: AppColors.textSecondary),
+                            fontSize: 12,
+                            color: m.textSecondary,
+                          ),
                         ),
                         const SizedBox(width: 10),
                       ],
@@ -171,27 +197,28 @@ class ListingCard extends StatelessWidget {
 class _PlaceholderImage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
     return Container(
       height: 180,
       width: double.infinity,
-      color: AppColors.background,
-      child: const Icon(Icons.apartment_outlined,
-          size: 48, color: AppColors.textMuted),
+      color: m.surfaceAlt,
+      child: Icon(Icons.apartment_outlined, size: 48, color: m.textMuted),
     );
   }
 }
 
 class _StatusPill extends StatelessWidget {
   final String status;
-  const _StatusPill({required this.status});
+  final _L l;
+  const _StatusPill({required this.status, required this.l});
 
   @override
   Widget build(BuildContext context) {
     final (label, color) = switch (status) {
-      'PUBLISHED' => ('Live', AppColors.success),
-      'UPCOMING' => ('Upcoming', AppColors.accent),
-      'UNLISTED' => ('Unlisted', const Color(0xFFF59E0B)), // amber
-      'DRAFT' => ('Draft', AppColors.textMuted),
+      'PUBLISHED' => (l.statusLive, AppColors.success),
+      'UPCOMING' => (l.statusUpcoming, AppColors.accent),
+      'UNLISTED' => (l.statusUnlisted, const Color(0xFFF59E0B)), // amber
+      'DRAFT' => (l.statusDraft, AppColors.textMuted),
       _ => (status, AppColors.textMuted),
     };
     return Container(
@@ -203,7 +230,10 @@ class _StatusPill extends StatelessWidget {
       child: Text(
         label,
         style: GoogleFonts.josefinSans(
-            fontSize: 10, color: Colors.white, fontWeight: FontWeight.w600),
+          fontSize: 10,
+          color: Colors.white,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }

@@ -18,11 +18,85 @@ final _leaseServiceProvider = Provider<LeaseService>((ref) {
   return LeaseService(client.dio);
 });
 
-final _myLeasesForTicketProvider =
-    FutureProvider.autoDispose<List<dynamic>>((ref) {
+final _myLeasesForTicketProvider = FutureProvider.autoDispose<List<dynamic>>((
+  ref,
+) {
   final service = ref.watch(_leaseServiceProvider);
   return service.getMyLeases();
 });
+
+/// Screen strings (EN/AR). Lightweight per-screen pattern — see arabic-brief.
+class _L {
+  _L(this.ar);
+  final bool ar;
+
+  String get createTicket => ar ? 'إنشاء طلب' : 'Create Ticket';
+  String get propertyUnit => ar ? 'العقار / الوحدة' : 'Property / Unit';
+  String get property => ar ? 'عقار' : 'Property';
+  String get title => ar ? 'العنوان' : 'Title';
+  String get titleHint =>
+      ar ? 'وصف موجز للمشكلة' : 'Brief description of the issue';
+  String get titleRequired => ar ? 'العنوان مطلوب' : 'Title is required';
+  String get category => ar ? 'الفئة' : 'Category';
+  String get description => ar ? 'الوصف' : 'Description';
+  String get descriptionHint => ar
+      ? 'قدّم مزيدًا من التفاصيل حول المشكلة...'
+      : 'Provide more details about the issue...';
+  String get priority => ar ? 'الأولوية' : 'Priority';
+  String get attachments => ar ? 'المرفقات' : 'Attachments';
+  String get camera => ar ? 'الكاميرا' : 'Camera';
+  String get gallery => ar ? 'المعرض' : 'Gallery';
+  String get document => ar ? 'مستند' : 'Document';
+  String get submitTicket => ar ? 'إرسال الطلب' : 'Submit Ticket';
+  String get cameraPermissionRequired =>
+      ar ? 'إذن الكاميرا مطلوب' : 'Camera permission required';
+  String get selectCategory =>
+      ar ? 'الرجاء اختيار فئة' : 'Please select a category';
+  String get ticketCreated =>
+      ar ? 'تم إنشاء الطلب بنجاح' : 'Ticket created successfully';
+  String get ticketCreateFailed =>
+      ar ? 'فشل إنشاء الطلب' : 'Failed to create ticket';
+
+  String category_(String value) {
+    switch (value) {
+      case 'PLUMBING':
+        return ar ? 'سباكة' : 'Plumbing';
+      case 'ELECTRICAL':
+        return ar ? 'كهرباء' : 'Electrical';
+      case 'HVAC':
+        return ar ? 'تكييف' : 'HVAC';
+      case 'APPLIANCE':
+        return ar ? 'أجهزة' : 'Appliance';
+      case 'STRUCTURAL':
+        return ar ? 'إنشائي' : 'Structural';
+      case 'PEST_CONTROL':
+        return ar ? 'مكافحة حشرات' : 'Pest Control';
+      case 'CLEANING':
+        return ar ? 'تنظيف' : 'Cleaning';
+      case 'SECURITY':
+        return ar ? 'أمن' : 'Security';
+      case 'OTHER':
+        return ar ? 'أخرى' : 'Other';
+      default:
+        return value;
+    }
+  }
+
+  String priority_(String value) {
+    switch (value) {
+      case 'LOW':
+        return ar ? 'منخفضة' : 'LOW';
+      case 'MEDIUM':
+        return ar ? 'متوسطة' : 'MEDIUM';
+      case 'HIGH':
+        return ar ? 'مرتفعة' : 'HIGH';
+      case 'URGENT':
+        return ar ? 'عاجلة' : 'URGENT';
+      default:
+        return value;
+    }
+  }
+}
 
 class CreateTicketScreen extends ConsumerStatefulWidget {
   const CreateTicketScreen({super.key});
@@ -59,11 +133,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
       'value': 'PEST_CONTROL',
       'icon': Icons.pest_control,
     },
-    {
-      'label': 'Cleaning',
-      'value': 'CLEANING',
-      'icon': Icons.cleaning_services,
-    },
+    {'label': 'Cleaning', 'value': 'CLEANING', 'icon': Icons.cleaning_services},
     {'label': 'Security', 'value': 'SECURITY', 'icon': Icons.security},
     {'label': 'Other', 'value': 'OTHER', 'icon': Icons.more_horiz},
   ];
@@ -82,7 +152,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
     if (!status.isGranted) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Camera permission required')),
+          SnackBar(content: Text(_L(context.isAr).cameraPermissionRequired)),
         );
       }
       return;
@@ -145,10 +215,11 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    final l = _L(context.isAr);
     if (_selectedCategory == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a category')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(l.selectCategory)));
       return;
     }
 
@@ -164,8 +235,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
         if (_selectedUnitId != null) 'unitId': _selectedUnitId,
       };
 
-      final ticket =
-          await ref.read(_ticketServiceProvider).createTicket(data);
+      final ticket = await ref.read(_ticketServiceProvider).createTicket(data);
 
       // Upload attachments
       if (_attachments.isNotEmpty && ticket['id'] != null) {
@@ -181,8 +251,8 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Ticket created successfully'),
+          SnackBar(
+            content: Text(l.ticketCreated),
             backgroundColor: AppColors.success,
           ),
         );
@@ -191,8 +261,8 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to create ticket'),
+          SnackBar(
+            content: Text(l.ticketCreateFailed),
             backgroundColor: AppColors.danger,
           ),
         );
@@ -205,15 +275,17 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
   @override
   Widget build(BuildContext context) {
     final leasesAsync = ref.watch(_myLeasesForTicketProvider);
+    final m = context.miftah;
+    final l = _L(context.isAr);
 
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
       child: Scaffold(
         appBar: AppBar(
-          backgroundColor: AppColors.surface,
-          foregroundColor: AppColors.textPrimary,
+          backgroundColor: m.surface,
+          foregroundColor: m.textPrimary,
           elevation: 0,
-          title: const Text('Create Ticket'),
+          title: Text(l.createTicket),
         ),
         body: LoadingOverlay(
           isLoading: _isSubmitting,
@@ -231,7 +303,8 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                           setState(() {
                             _selectedLeaseId = leases[0]['id'];
                             _selectedPropertyId =
-                                leases[0]['propertyId'] ?? leases[0]['property']?['id'];
+                                leases[0]['propertyId'] ??
+                                leases[0]['property']?['id'];
                             _selectedUnitId =
                                 leases[0]['unitId'] ?? leases[0]['unit']?['id'];
                           });
@@ -243,15 +316,17 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
 
                     return DropdownButtonFormField<String>(
                       value: _selectedLeaseId,
-                      decoration: const InputDecoration(
-                        labelText: 'Property / Unit',
-                        prefixIcon: Icon(Icons.apartment, size: 20),
+                      decoration: InputDecoration(
+                        labelText: l.propertyUnit,
+                        prefixIcon: const Icon(Icons.apartment, size: 20),
                       ),
                       items: leases.map<DropdownMenuItem<String>>((lease) {
-                        final propName = lease['propertyName'] ??
+                        final propName =
+                            lease['propertyName'] ??
                             lease['property']?['nameEn'] ??
-                            'Property';
-                        final unitId = lease['unitIdentifier'] ??
+                            l.property;
+                        final unitId =
+                            lease['unitIdentifier'] ??
                             lease['unit']?['unitNumber'] ??
                             '';
                         final display = unitId.isNotEmpty
@@ -263,7 +338,9 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                         );
                       }).toList(),
                       onChanged: (value) {
-                        final lease = leases.firstWhere((l) => l['id'] == value);
+                        final lease = leases.firstWhere(
+                          (lse) => lse['id'] == value,
+                        );
                         setState(() {
                           _selectedLeaseId = value;
                           _selectedPropertyId =
@@ -282,14 +359,14 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                 // Title (first for quick input)
                 TextFormField(
                   controller: _titleController,
-                  decoration: const InputDecoration(
-                    labelText: 'Title',
-                    hintText: 'Brief description of the issue',
-                    prefixIcon: Icon(Icons.title, size: 20),
+                  decoration: InputDecoration(
+                    labelText: l.title,
+                    hintText: l.titleHint,
+                    prefixIcon: const Icon(Icons.title, size: 20),
                   ),
                   validator: (value) {
                     if (value == null || value.trim().isEmpty) {
-                      return 'Title is required';
+                      return l.titleRequired;
                     }
                     return null;
                   },
@@ -297,8 +374,12 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                 const SizedBox(height: 16),
 
                 // Category grid (compact)
-                Text('Category',
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(color: AppColors.textSecondary)),
+                Text(
+                  l.category,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleSmall?.copyWith(color: m.textSecondary),
+                ),
                 const SizedBox(height: 8),
                 GridView.builder(
                   shrinkWrap: true,
@@ -314,19 +395,18 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                     final cat = _categories[index];
                     final isSelected = _selectedCategory == cat['value'];
                     return InkWell(
-                      onTap: () =>
-                          setState(() => _selectedCategory = cat['value'] as String),
+                      onTap: () => setState(
+                        () => _selectedCategory = cat['value'] as String,
+                      ),
                       borderRadius: BorderRadius.circular(10),
                       child: Container(
                         decoration: BoxDecoration(
                           color: isSelected
                               ? AppColors.primary.withValues(alpha: 0.1)
-                              : AppColors.surface,
+                              : m.surface,
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
-                            color: isSelected
-                                ? AppColors.primary
-                                : AppColors.border,
+                            color: isSelected ? AppColors.primary : m.border,
                             width: isSelected ? 1.5 : 1,
                           ),
                         ),
@@ -337,12 +417,12 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                               cat['icon'] as IconData,
                               color: isSelected
                                   ? AppColors.primary
-                                  : AppColors.textSecondary,
+                                  : m.textSecondary,
                               size: 20,
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              cat['label'] as String,
+                              l.category_(cat['value'] as String),
                               style: TextStyle(
                                 fontSize: 9,
                                 fontWeight: isSelected
@@ -350,7 +430,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                                     : FontWeight.w400,
                                 color: isSelected
                                     ? AppColors.primary
-                                    : AppColors.textSecondary,
+                                    : m.textSecondary,
                               ),
                               textAlign: TextAlign.center,
                             ),
@@ -365,9 +445,9 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                 // Description
                 TextFormField(
                   controller: _descriptionController,
-                  decoration: const InputDecoration(
-                    labelText: 'Description',
-                    hintText: 'Provide more details about the issue...',
+                  decoration: InputDecoration(
+                    labelText: l.description,
+                    hintText: l.descriptionHint,
                     alignLabelWithHint: true,
                   ),
                   maxLines: 4,
@@ -376,8 +456,12 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                 const SizedBox(height: 16),
 
                 // Priority
-                Text('Priority',
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(color: AppColors.textSecondary)),
+                Text(
+                  l.priority,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleSmall?.copyWith(color: m.textSecondary),
+                ),
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 8,
@@ -385,17 +469,16 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                     final isSelected = _selectedPriority == priority;
                     final color = StatusHelper.getPriorityColor(priority);
                     return ChoiceChip(
-                      label: Text(priority),
+                      label: Text(l.priority_(priority)),
                       selected: isSelected,
                       selectedColor: color.withValues(alpha: 0.2),
-                      backgroundColor: AppColors.background,
-                      side: BorderSide(
-                        color: isSelected ? color : AppColors.border,
-                      ),
+                      backgroundColor: m.background,
+                      side: BorderSide(color: isSelected ? color : m.border),
                       labelStyle: TextStyle(
-                        color: isSelected ? color : AppColors.textSecondary,
-                        fontWeight:
-                            isSelected ? FontWeight.w600 : FontWeight.w400,
+                        color: isSelected ? color : m.textSecondary,
+                        fontWeight: isSelected
+                            ? FontWeight.w600
+                            : FontWeight.w400,
                         fontSize: 12,
                       ),
                       onSelected: (_) =>
@@ -406,26 +489,28 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                 const SizedBox(height: 20),
 
                 // Attachments
-                Text('Attachments',
-                    style: Theme.of(context).textTheme.titleMedium),
+                Text(
+                  l.attachments,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
                 const SizedBox(height: 10),
                 Row(
                   children: [
                     _AttachButton(
                       icon: Icons.camera_alt_outlined,
-                      label: 'Camera',
+                      label: l.camera,
                       onTap: _pickFromCamera,
                     ),
                     const SizedBox(width: 10),
                     _AttachButton(
                       icon: Icons.photo_library_outlined,
-                      label: 'Gallery',
+                      label: l.gallery,
                       onTap: _pickFromGallery,
                     ),
                     const SizedBox(width: 10),
                     _AttachButton(
                       icon: Icons.attach_file,
-                      label: 'Document',
+                      label: l.document,
                       onTap: _pickDocument,
                     ),
                   ],
@@ -440,13 +525,14 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                       itemCount: _attachments.length,
                       itemBuilder: (context, index) {
                         final file = _attachments[index];
-                        final isImage = file.path.endsWith('.jpg') ||
+                        final isImage =
+                            file.path.endsWith('.jpg') ||
                             file.path.endsWith('.jpeg') ||
                             file.path.endsWith('.png') ||
                             file.path.endsWith('.heic');
 
                         return Padding(
-                          padding: const EdgeInsets.only(right: 8),
+                          padding: const EdgeInsetsDirectional.only(end: 8),
                           child: Stack(
                             children: [
                               Container(
@@ -454,8 +540,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                                 height: 80,
                                 decoration: BoxDecoration(
                                   borderRadius: BorderRadius.circular(8),
-                                  border:
-                                      Border.all(color: AppColors.border),
+                                  border: Border.all(color: m.border),
                                 ),
                                 clipBehavior: Clip.hardEdge,
                                 child: isImage
@@ -464,14 +549,13 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                                         mainAxisAlignment:
                                             MainAxisAlignment.center,
                                         children: [
-                                          const Icon(
+                                          Icon(
                                             Icons.insert_drive_file,
-                                            color: AppColors.textMuted,
+                                            color: m.textMuted,
                                           ),
                                           Text(
                                             file.path.split('/').last,
-                                            style: const TextStyle(
-                                                fontSize: 8),
+                                            style: const TextStyle(fontSize: 8),
                                             maxLines: 2,
                                             overflow: TextOverflow.ellipsis,
                                             textAlign: TextAlign.center,
@@ -479,20 +563,23 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                                         ],
                                       ),
                               ),
-                              Positioned(
+                              PositionedDirectional(
                                 top: -4,
-                                right: -4,
+                                end: -4,
                                 child: GestureDetector(
                                   onTap: () => _removeAttachment(index),
                                   child: Container(
                                     width: 22,
                                     height: 22,
-                                    decoration: const BoxDecoration(
-                                      color: AppColors.danger,
+                                    decoration: BoxDecoration(
+                                      color: m.danger,
                                       shape: BoxShape.circle,
                                     ),
-                                    child: const Icon(Icons.close,
-                                        color: Colors.white, size: 14),
+                                    child: const Icon(
+                                      Icons.close,
+                                      color: Colors.white,
+                                      size: 14,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -511,7 +598,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                   height: 50,
                   child: ElevatedButton(
                     onPressed: _isSubmitting ? null : _submit,
-                    child: const Text('Submit Ticket'),
+                    child: Text(l.submitTicket),
                   ),
                 ),
                 const SizedBox(height: 16),
