@@ -536,6 +536,15 @@ class AppTheme {
           ),
         ),
       ),
+      // Without this the caret falls back to ColorScheme.primary, which in
+      // light mode is the near-black brand colour — invisible on the dark
+      // chrome the login screens paint regardless of theme mode. Gold reads on
+      // both backgrounds, so both modes use it.
+      textSelectionTheme: TextSelectionThemeData(
+        cursorColor: AppColors.accent,
+        selectionHandleColor: AppColors.accent,
+        selectionColor: AppColors.accent.withValues(alpha: 0.32),
+      ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: c.surface,

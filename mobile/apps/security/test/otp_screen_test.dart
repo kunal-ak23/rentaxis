@@ -11,14 +11,18 @@ Future<ProviderContainer> reachOtpScreen(
   WidgetTester tester, {
   required FakeAuthService authService,
   required FakePhoneAuthService phoneAuthService,
-  String phone = '+971501234567',
+  String nationalNumber = '501234567',
 }) async {
   final container = await pumpSecurityApp(
     tester,
     authService: authService,
     phoneAuthService: phoneAuthService,
   );
-  await tester.enterText(find.byKey(const Key('phoneField')), phone);
+  // UAE is the default country, so this composes to +971501234567.
+  await tester.enterText(
+    find.byKey(const Key('phoneNationalField')),
+    nationalNumber,
+  );
   await tester.tap(find.text('CONTINUE'));
   await settleRoute(tester);
   expect(find.text('Enter your code'), findsOneWidget);
