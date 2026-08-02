@@ -97,7 +97,12 @@ class _GatePassCreateScreenState extends ConsumerState<GatePassCreateScreen> {
       child: Form(
         key: _formKey,
         child: ListView(
-          padding: EdgeInsets.fromLTRB(16, 16, 16, AppInsets.bottomNav(context, spacing: 32)),
+          padding: EdgeInsets.fromLTRB(
+            16,
+            16,
+            16,
+            AppInsets.bottomNav(context, spacing: 32),
+          ),
           children: [
             if (leases.length > 1) ...[
               _label('Unit'),
@@ -188,59 +193,59 @@ class _GatePassCreateScreenState extends ConsumerState<GatePassCreateScreen> {
   }
 
   List<Widget> _singleFields() => [
-        _label('Visit date'),
-        _DateField(
-          value: _visitDate,
-          hint: 'Pick a date',
-          onPick: (d) => setState(() => _visitDate = d),
-        ),
-        const SizedBox(height: 14),
-        Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _label('From'),
-                  _TimeField(
-                    value: _startTime,
-                    onPick: (t) => setState(() => _startTime = t),
-                  ),
-                ],
+    _label('Visit date'),
+    _DateField(
+      value: _visitDate,
+      hint: 'Pick a date',
+      onPick: (d) => setState(() => _visitDate = d),
+    ),
+    const SizedBox(height: 14),
+    Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _label('From'),
+              _TimeField(
+                value: _startTime,
+                onPick: (t) => setState(() => _startTime = t),
               ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _label('Until'),
-                  _TimeField(
-                    value: _endTime,
-                    onPick: (t) => setState(() => _endTime = t),
-                  ),
-                ],
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ];
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _label('Until'),
+              _TimeField(
+                value: _endTime,
+                onPick: (t) => setState(() => _endTime = t),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  ];
 
   List<Widget> _recurringFields() => [
-        _label('Starts'),
-        _DateField(
-          value: _recurStart,
-          hint: 'First day',
-          onPick: (d) => setState(() => _recurStart = d),
-        ),
-        const SizedBox(height: 14),
-        _label('Expires'),
-        _DateField(
-          value: _recurEnd,
-          hint: 'Last day',
-          onPick: (d) => setState(() => _recurEnd = d),
-        ),
-      ];
+    _label('Starts'),
+    _DateField(
+      value: _recurStart,
+      hint: 'First day',
+      onPick: (d) => setState(() => _recurStart = d),
+    ),
+    const SizedBox(height: 14),
+    _label('Expires'),
+    _DateField(
+      value: _recurEnd,
+      hint: 'Last day',
+      onPick: (d) => setState(() => _recurEnd = d),
+    ),
+  ];
 
   /// The window as two local DateTimes, or null when the form has not been
   /// filled in far enough to have one.
@@ -262,10 +267,20 @@ class _GatePassCreateScreenState extends ConsumerState<GatePassCreateScreen> {
     final date = _visitDate;
     if (date == null) return null;
     return (
-      from: DateTime(date.year, date.month, date.day, _startTime.hour,
-          _startTime.minute),
+      from: DateTime(
+        date.year,
+        date.month,
+        date.day,
+        _startTime.hour,
+        _startTime.minute,
+      ),
       to: DateTime(
-          date.year, date.month, date.day, _endTime.hour, _endTime.minute),
+        date.year,
+        date.month,
+        date.day,
+        _endTime.hour,
+        _endTime.minute,
+      ),
     );
   }
 
@@ -280,18 +295,22 @@ class _GatePassCreateScreenState extends ConsumerState<GatePassCreateScreen> {
 
     final window = _window();
     if (window == null) {
-      _toast(_recurring
-          ? 'Pick the first and last day this pass should work.'
-          : 'Pick the date of the visit.');
+      _toast(
+        _recurring
+            ? 'Pick the first and last day this pass should work.'
+            : 'Pick the date of the visit.',
+      );
       return;
     }
     // The backend 400s on validTo <= validFrom. Catching it here names the
     // actual mistake instead of relaying a validation error about field names
     // the renter never saw.
     if (!window.to.isAfter(window.from)) {
-      _toast(_recurring
-          ? 'The last day must be after the first day.'
-          : 'The end time must be after the start time.');
+      _toast(
+        _recurring
+            ? 'The last day must be after the first day.'
+            : 'The end time must be after the start time.',
+      );
       return;
     }
 
@@ -332,7 +351,9 @@ class _GatePassCreateScreenState extends ConsumerState<GatePassCreateScreen> {
   }
 
   void _toast(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 }
 
@@ -359,16 +380,16 @@ String _describeCreateError(Object error) {
 }
 
 Widget _label(String text) => Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Text(
-        text,
-        style: const TextStyle(
-          fontSize: 12.5,
-          fontWeight: FontWeight.w700,
-          color: AppColors.textSecondary,
-        ),
-      ),
-    );
+  padding: const EdgeInsets.only(bottom: 6),
+  child: Text(
+    text,
+    style: const TextStyle(
+      fontSize: 12.5,
+      fontWeight: FontWeight.w700,
+      color: AppColors.textSecondary,
+    ),
+  ),
+);
 
 /// Shown instead of the form when the renter has no ACTIVE lease.
 ///
@@ -383,7 +404,8 @@ class _NoActiveLease extends StatelessWidget {
     return const EmptyState(
       icon: Icons.home_outlined,
       title: 'No active tenancy',
-      subtitle: 'Gate passes are raised against the unit you are renting, so '
+      subtitle:
+          'Gate passes are raised against the unit you are renting, so '
           'you need an active lease to create one. If your tenancy has just '
           'started, ask your property manager to activate it.',
     );
@@ -410,13 +432,16 @@ class _UnitPicker extends StatelessWidget {
         final unitId = lease['unitId']?.toString();
         final unit = lease['unitIdentifier']?.toString();
         final property = lease['propertyName']?.toString();
-        final label = [property, unit == null ? null : 'Unit $unit']
-            .whereType<String>()
-            .join(' · ');
+        final label = [
+          property,
+          unit == null ? null : 'Unit $unit',
+        ].whereType<String>().join(' · ');
         return DropdownMenuItem(
           value: unitId,
-          child: Text(label.isEmpty ? 'Unit' : label,
-              overflow: TextOverflow.ellipsis),
+          child: Text(
+            label.isEmpty ? 'Unit' : label,
+            overflow: TextOverflow.ellipsis,
+          ),
         );
       }).toList(),
       onChanged: onChanged,
@@ -493,7 +518,9 @@ class _TypeExplainer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = recurring ? AppColors.warning : AppColors.success;
-    final background = recurring ? AppColors.warningLight : AppColors.successLight;
+    final background = recurring
+        ? AppColors.warningLight
+        : AppColors.successLight;
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -527,10 +554,10 @@ class _TypeExplainer extends StatelessWidget {
                 Text(
                   recurring
                       ? 'For a maid, driver or regular visitor. A manager must '
-                          'approve this pass before it opens the gate — it will '
-                          'not work today unless it is approved.'
+                            'approve this pass before it opens the gate — it will '
+                            'not work today unless it is approved.'
                       : 'For a one-off visit. The pass is active as soon as you '
-                          'create it and lets your guest in once.',
+                            'create it and lets your guest in once.',
                   style: const TextStyle(
                     fontSize: 12,
                     height: 1.35,
@@ -562,7 +589,7 @@ class _DateField extends StatelessWidget {
     final label = value == null
         ? hint
         : '${value!.day.toString().padLeft(2, '0')}/'
-            '${value!.month.toString().padLeft(2, '0')}/${value!.year}';
+              '${value!.month.toString().padLeft(2, '0')}/${value!.year}';
 
     return _PickerField(
       icon: Icons.calendar_today_outlined,
@@ -595,8 +622,10 @@ class _TimeField extends StatelessWidget {
       label: value.format(context),
       muted: false,
       onTap: () async {
-        final picked =
-            await showTimePicker(context: context, initialTime: value);
+        final picked = await showTimePicker(
+          context: context,
+          initialTime: value,
+        );
         if (picked != null) onPick(picked);
       },
     );

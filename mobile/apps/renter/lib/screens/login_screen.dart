@@ -70,7 +70,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authProvider);
-    final m = context.miftah;
     final l = _L(context.isAr);
 
     return GestureDetector(
@@ -182,7 +181,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                               (l.ar
                               ? GoogleFonts.notoNaskhArabic
                               : GoogleFonts.josefinSans)(
-                                color: m.textPrimary,
+                                color: Colors.white,
                                 fontSize: 15,
                               ),
                           decoration: _inputDecoration(
@@ -214,7 +213,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                               (l.ar
                               ? GoogleFonts.notoNaskhArabic
                               : GoogleFonts.josefinSans)(
-                                color: m.textPrimary,
+                                color: Colors.white,
                                 fontSize: 15,
                               ),
                           onFieldSubmitted: (_) => _handleLogin(),
@@ -228,7 +227,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                 _obscurePassword
                                     ? Icons.visibility_off_outlined
                                     : Icons.visibility_outlined,
-                                color: m.textMuted,
+                                color: Colors.white.withValues(alpha: 0.45),
                                 size: 20,
                               ),
                               onPressed: () => setState(
@@ -404,7 +403,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     required IconData icon,
     Widget? suffixIcon,
   }) {
-    final m = context.miftah;
     return InputDecoration(
       labelText: label,
       // The form sits on dark chrome: a floating label would render the
@@ -414,20 +412,29 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       floatingLabelStyle: (l.ar
           ? GoogleFonts.notoNaskhArabic
           : GoogleFonts.josefinSans)(color: AppColors.accent, fontSize: 13),
-      labelStyle: (l.ar
-          ? GoogleFonts.notoNaskhArabic
-          : GoogleFonts.josefinSans)(color: m.textMuted, fontSize: 14),
-      prefixIcon: Icon(icon, color: m.textMuted, size: 20),
+      labelStyle:
+          (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans)(
+            color: Colors.white.withValues(alpha: 0.45),
+            fontSize: 14,
+          ),
+      prefixIcon: Icon(
+        icon,
+        color: Colors.white.withValues(alpha: 0.45),
+        size: 20,
+      ),
       suffixIcon: suffixIcon,
       filled: true,
-      fillColor: m.surface,
+      // This form sits on dark chrome in BOTH theme modes, so the fill and
+      // border come from the chrome rather than from `m.surface`, which is
+      // white in light mode and painted an opaque box here.
+      fillColor: Colors.white.withValues(alpha: 0.06),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide(color: m.border),
+        borderSide: BorderSide(color: AppColors.accent.withValues(alpha: 0.25)),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide(color: m.border),
+        borderSide: BorderSide(color: AppColors.accent.withValues(alpha: 0.25)),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),

@@ -871,7 +871,7 @@ class _QuickActions extends StatelessWidget {
         icon: Icons.qr_code_2_outlined,
         label: 'Visitors',
         route: '/gatepass',
-        badge: null
+        badge: null,
       ),
     ];
     // Five across rather than four, so the row stays whole instead of leaving a
@@ -884,6 +884,10 @@ class _QuickActions extends StatelessWidget {
     // ratio. 0.75 leaves room for that second line rather than betting no label
     // ever needs one.
     return GridView.count(
+      // Nested in a scroll view: without this the sliver auto-pads
+      // with MediaQuery.padding, which under extendBody carries the
+      // floating nav height and opens a gap below the content.
+      padding: EdgeInsets.zero,
       crossAxisCount: 5,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
@@ -940,20 +944,30 @@ class _QuickActions extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 9),
-                    Text(
-                      l.ar ? a.label : a.label.toUpperCase(),
-                      style: l.ar
-                          ? GoogleFonts.notoNaskhArabic(
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.w600,
-                              color: m.textSecondary,
-                            )
-                          : GoogleFonts.josefinSans(
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w500,
-                              letterSpacing: 1.4,
-                              color: m.textSecondary,
-                            ),
+                    // Single-word labels ("CONTRACT") cannot wrap on a word
+                    // boundary, so without this they split mid-word. Scale the
+                    // long ones down rather than breaking them.
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        l.ar ? a.label : a.label.toUpperCase(),
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        style: l.ar
+                            ? GoogleFonts.notoNaskhArabic(
+                                fontSize: 11.5,
+                                height: 1.25,
+                                fontWeight: FontWeight.w600,
+                                color: m.textSecondary,
+                              )
+                            : GoogleFonts.josefinSans(
+                                fontSize: 10.5,
+                                height: 1.25,
+                                fontWeight: FontWeight.w500,
+                                letterSpacing: 1.1,
+                                color: m.textSecondary,
+                              ),
+                      ),
                     ),
                   ],
                 ),

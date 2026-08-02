@@ -127,25 +127,29 @@ String buildShareText({
 }) {
   final lines = <String>[];
   final guest = passString(pass, 'guestName');
-  lines.add(guest == null
-      ? 'You have a gate pass.'
-      : 'Hi $guest, here is your gate pass.');
+  lines.add(
+    guest == null
+        ? 'You have a gate pass.'
+        : 'Hi $guest, here is your gate pass.',
+  );
 
-  final place = [propertyName, unitIdentifier == null ? null : 'Unit $unitIdentifier']
-      .whereType<String>()
-      .join(' · ');
+  final place = [
+    propertyName,
+    unitIdentifier == null ? null : 'Unit $unitIdentifier',
+  ].whereType<String>().join(' · ');
   if (place.isNotEmpty) lines.add('Where: $place');
 
-  lines.add('When: ${formatWindow(
-    passInstant(pass, 'validFrom'),
-    passInstant(pass, 'validTo'),
-  )}');
+  lines.add(
+    'When: ${formatWindow(passInstant(pass, 'validFrom'), passInstant(pass, 'validTo'))}',
+  );
 
   final code = passString(pass, 'numericCode');
   if (code != null) lines.add('Entry code: $code');
 
-  lines.add('Show the QR code in your pass at the gate, or give the guard the '
-      'entry code above.');
+  lines.add(
+    'Show the QR code in your pass at the gate, or give the guard the '
+    'entry code above.',
+  );
 
   return lines.join('\n');
 }

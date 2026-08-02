@@ -33,24 +33,25 @@ final _propertyServiceProvider = Provider<PropertyService>((ref) {
 /// admits them. Do not reach for those fields here; they are absent by design.
 final approvalsProvider =
     FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
-  final service = ref.watch(gatePassServiceProvider);
-  return _asRows(await service.approvals());
-});
+      final service = ref.watch(gatePassServiceProvider);
+      return _asRows(await service.approvals());
+    });
 
 /// The tenant's properties, for the assignment picker.
 final propertiesProvider =
     FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
-  final service = ref.watch(_propertyServiceProvider);
-  return _asRows(await service.getProperties());
-});
+      final service = ref.watch(_propertyServiceProvider);
+      return _asRows(await service.getProperties());
+    });
 
 /// Every SECURITY_GUARD in the tenant.
 ///
 /// `/admin/users` has no role filter, so the filter is here. Matching on the
 /// wire string rather than an enum is the house convention (raw maps, no
 /// models) and matches what `UserResponseDTO` serializes.
-final guardsProvider =
-    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+final guardsProvider = FutureProvider.autoDispose<List<Map<String, dynamic>>>((
+  ref,
+) async {
   final service = ref.watch(guardAdminServiceProvider);
   final users = _asRows(await service.users());
   return users.where((u) => u['role'] == 'SECURITY_GUARD').toList();
@@ -85,8 +86,8 @@ class GuardPropertiesNotifier
 
 final guardPropertiesProvider = AsyncNotifierProvider.autoDispose
     .family<GuardPropertiesNotifier, List<String>, String>(
-  GuardPropertiesNotifier.new,
-);
+      GuardPropertiesNotifier.new,
+    );
 
 List<Map<String, dynamic>> _asRows(List<dynamic> rows) =>
     rows.whereType<Map>().map((r) => Map<String, dynamic>.from(r)).toList();

@@ -84,8 +84,10 @@ String generateUnusedGuardPassword() {
   const alphabet =
       'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#%^&*';
   final rng = Random.secure();
-  return List.generate(32, (_) => alphabet[rng.nextInt(alphabet.length)])
-      .join();
+  return List.generate(
+    32,
+    (_) => alphabet[rng.nextInt(alphabet.length)],
+  ).join();
 }
 
 /// Thin wrapper over `/admin/users`, scoped to what guard management needs.
@@ -118,13 +120,16 @@ class GuardAdminService {
     required String email,
     required String phoneNumber,
   }) async {
-    final response = await _dio.post('/admin/users', data: {
-      'name': name.trim(),
-      'email': email.trim(),
-      'phoneNumber': normalizeGuardPhone(phoneNumber),
-      'role': 'SECURITY_GUARD',
-      'password': generateUnusedGuardPassword(),
-    });
+    final response = await _dio.post(
+      '/admin/users',
+      data: {
+        'name': name.trim(),
+        'email': email.trim(),
+        'phoneNumber': normalizeGuardPhone(phoneNumber),
+        'role': 'SECURITY_GUARD',
+        'password': generateUnusedGuardPassword(),
+      },
+    );
     return response.data as Map<String, dynamic>;
   }
 }
@@ -152,8 +157,9 @@ String describeGuardCreateFailure(Object error) {
 
   final status = error.response?.statusCode;
   final data = error.response?.data;
-  final serverMessage =
-      (data is Map && data['message'] is String) ? (data['message'] as String).trim() : null;
+  final serverMessage = (data is Map && data['message'] is String)
+      ? (data['message'] as String).trim()
+      : null;
 
   if (status == 403) {
     return 'Your account is not allowed to add guards. Ask a tenant admin to '

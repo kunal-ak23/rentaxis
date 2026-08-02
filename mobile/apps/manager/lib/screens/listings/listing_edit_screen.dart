@@ -1097,6 +1097,10 @@ class _MediaTabState extends State<_MediaTab> {
           // Existing server media
           if (s._existingMedia.isNotEmpty)
             GridView.builder(
+              // Nested in a scroll view: without this the sliver auto-pads
+              // with MediaQuery.padding, which under extendBody carries the
+              // floating nav height and opens a gap below the content.
+              padding: EdgeInsets.zero,
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -1180,6 +1184,10 @@ class _MediaTabState extends State<_MediaTab> {
             _SectionLabel(l.pendingUpload(s._pendingUploads.length)),
             const SizedBox(height: 8),
             GridView.builder(
+              // Nested in a scroll view: without this the sliver auto-pads
+              // with MediaQuery.padding, which under extendBody carries the
+              // floating nav height and opens a gap below the content.
+              padding: EdgeInsets.zero,
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
