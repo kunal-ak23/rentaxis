@@ -1475,6 +1475,10 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
     bool readOnly,
   ) {
     return GridView.builder(
+      // Nested in a scroll view: without this the sliver auto-pads
+      // with MediaQuery.padding, which under extendBody carries the
+      // floating nav height and opens a gap below the content.
+      padding: EdgeInsets.zero,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -1914,6 +1918,10 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
             if (attachments.isNotEmpty) ...[
               const SizedBox(height: 8),
               GridView.builder(
+                // Nested in a scroll view: without this the sliver auto-pads
+                // with MediaQuery.padding, which under extendBody carries the
+                // floating nav height and opens a gap below the content.
+                padding: EdgeInsets.zero,
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(

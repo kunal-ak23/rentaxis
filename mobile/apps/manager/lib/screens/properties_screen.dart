@@ -431,6 +431,10 @@ class _ChromeHeaderState extends State<_ChromeHeader> {
                           ),
                     decoration: InputDecoration(
                       isDense: true,
+                      // The pill behind this field is the dark header chrome;
+                      // without this the theme's light fillColor paints a
+                      // white box inside it.
+                      filled: false,
                       hintText: l.searchHint,
                       hintStyle: l.ar
                           ? GoogleFonts.notoNaskhArabic(

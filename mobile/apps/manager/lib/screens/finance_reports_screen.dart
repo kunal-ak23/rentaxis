@@ -331,6 +331,10 @@ class _FinanceReportsScreenState extends ConsumerState<FinanceReportsScreen> {
                       ),
                       const SizedBox(height: 20),
                       GridView.count(
+                        // Nested in a scroll view: without this the sliver auto-pads
+                        // with MediaQuery.padding, which under extendBody carries the
+                        // floating nav height and opens a gap below the content.
+                        padding: EdgeInsets.zero,
                         crossAxisCount: 2,
                         childAspectRatio: 1.4,
                         crossAxisSpacing: 12,
@@ -602,6 +606,10 @@ class _PickerDialog extends StatelessWidget {
                 ),
               )
             : ListView.builder(
+                // Nested in a scroll view: without this the sliver auto-pads
+                // with MediaQuery.padding, which under extendBody carries the
+                // floating nav height and opens a gap below the content.
+                padding: EdgeInsets.zero,
                 shrinkWrap: true,
                 itemCount: items.length,
                 itemBuilder: (ctx, index) {

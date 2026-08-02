@@ -277,6 +277,9 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                           decoration: const InputDecoration(
                             counterText: '',
                             border: InputBorder.none,
+                            // Sits on navyDark chrome — the theme's light
+                            // fillColor would paint a white box behind it.
+                            filled: false,
                           ),
                           onChanged: (value) {
                             // Auto-submit: the code is a fixed 6 digits, so a

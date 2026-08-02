@@ -69,7 +69,12 @@ class _PassBodyState extends ConsumerState<_PassBody> {
     return LoadingOverlay(
       isLoading: _cancelling,
       child: ListView(
-        padding: EdgeInsets.fromLTRB(16, 16, 16, AppInsets.bottomNav(context, spacing: 32)),
+        padding: EdgeInsets.fromLTRB(
+          16,
+          16,
+          16,
+          AppInsets.bottomNav(context, spacing: 32),
+        ),
         children: [
           Row(
             children: [
@@ -123,8 +128,10 @@ class _PassBodyState extends ConsumerState<_PassBody> {
               child: TextButton.icon(
                 onPressed: _cancelling ? null : _confirmCancel,
                 icon: const Icon(Icons.block, color: AppColors.danger),
-                label: const Text('Cancel pass',
-                    style: TextStyle(color: AppColors.danger)),
+                label: const Text(
+                  'Cancel pass',
+                  style: TextStyle(color: AppColors.danger),
+                ),
               ),
             ),
           ],
@@ -167,8 +174,10 @@ class _PassBodyState extends ConsumerState<_PassBody> {
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Cancel pass',
-                style: TextStyle(color: AppColors.danger)),
+            child: const Text(
+              'Cancel pass',
+              style: TextStyle(color: AppColors.danger),
+            ),
           ),
         ],
       ),
@@ -182,9 +191,9 @@ class _PassBodyState extends ConsumerState<_PassBody> {
       ref.invalidate(passByIdProvider(widget.passId));
       if (!mounted) return;
       setState(() => _cancelling = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Pass cancelled.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Pass cancelled.')));
     } catch (_) {
       if (!mounted) return;
       setState(() => _cancelling = false);
@@ -193,8 +202,10 @@ class _PassBodyState extends ConsumerState<_PassBody> {
       ref.invalidate(passByIdProvider(widget.passId));
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Could not cancel this pass — it may have just been '
-              'used. Pull to check its status.'),
+          content: Text(
+            'Could not cancel this pass — it may have just been '
+            'used. Pull to check its status.',
+          ),
         ),
       );
     }
@@ -359,7 +370,10 @@ class _CodeCard extends StatelessWidget {
           ),
           IconButton(
             tooltip: 'Copy code',
-            icon: const Icon(Icons.copy_rounded, color: AppColors.textSecondary),
+            icon: const Icon(
+              Icons.copy_rounded,
+              color: AppColors.textSecondary,
+            ),
             onPressed: () async {
               // The grouping in the label is for reading aloud; what gets copied
               // is the code the guard actually keys in.
@@ -388,7 +402,7 @@ class _DetailCard extends StatelessWidget {
         value: formatWindow(
           passInstant(pass, 'validFrom'),
           passInstant(pass, 'validTo'),
-        )
+        ),
       ),
       if (passString(pass, 'guestPhone') != null)
         (label: 'Phone', value: passString(pass, 'guestPhone')!),
