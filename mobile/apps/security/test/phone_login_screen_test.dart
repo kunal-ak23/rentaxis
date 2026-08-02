@@ -174,17 +174,8 @@ void main() {
 
         await tester.tap(find.byKey(const Key('phoneCountrySelector')));
         await tester.pumpAndSettle();
-        // The open menu draws the flag, dial code and full country name in a
-        // row sized to match the closed button, which only shows flag + dial
-        // code; on the fixed-width menu overlay that overflows by a few
-        // pixels. It is a benign, non-clipping layout warning (harmless on a
-        // real device, where the button and menu widths differ) rather than a
-        // failure of the behaviour under test, so it is drained rather than
-        // asserted on.
-        drainBenignOverflowExceptions(tester);
         await tester.tap(find.text('India').last);
         await tester.pumpAndSettle();
-        drainBenignOverflowExceptions(tester);
 
         await tester.enterText(
           find.byKey(const Key('phoneNationalField')),
