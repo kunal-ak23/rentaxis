@@ -139,3 +139,7 @@ databaseChangeLog:
       file: db/changelog/changesets/66-firebase-phone-auth.yaml
   - include:
       file: db/changelog/changesets/67-gate-walk-in-visitors.yaml
+  - include:
+      file: db/changelog/changesets/68-backfill-unit-lease-metrics.yaml
+  - include:
+      file: db/changelog/changesets/69-amenities-parking.yaml
