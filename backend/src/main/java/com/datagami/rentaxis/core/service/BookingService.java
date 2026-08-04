@@ -142,7 +142,7 @@ public class BookingService {
         try {
             saved = bookingRepository.saveAndFlush(booking);
         } catch (DataIntegrityViolationException e) {
-            return translateCreateConstraintViolation(e, booking);
+            throw translateCreateConstraintViolation(e);
         }
         eventPublisher.publishEvent(new BookingRequestedEvent(saved.getId(), tenantId));
         return saved;
@@ -151,33 +151,31 @@ public class BookingService {
     /**
      * A concurrent create beat this one to the insert. uq_booking_pending_renter_*
      * means the renter already has a PENDING request for this exact resource —
-     * re-read and return it (idempotent, mirrors the happy-path findFirstBy
-     * check above). uq_booking_spot_active means the spot is already APPROVED
+     * surfaced as a retryable {@link SlotConflictException} rather than an
+     * idempotent re-read: Postgres aborts the whole transaction on a
+     * unique-constraint violation, so no further statement on this connection
+     * (including a re-read) can succeed. The pre-flight findFirstBy check
+     * earlier in {@link #create} is what actually delivers idempotency — it
+     * runs in a fresh, non-aborted transaction, so a client that retries after
+     * hitting this narrow race lands on that pre-flight and gets the existing
+     * row back. uq_booking_spot_active means the spot is already APPROVED
      * elsewhere — surfaced as a conflict rather than silently handed back.
      * Anything else wasn't the violation being guarded against, so it is
      * rethrown rather than mislabeled — same shape as
      * FacilityService#translateConstraintViolation.
      */
-    private BookingRequest translateCreateConstraintViolation(DataIntegrityViolationException e, BookingRequest booking) {
+    private static RuntimeException translateCreateConstraintViolation(DataIntegrityViolationException e) {
         Throwable cause = e.getMostSpecificCause();
         String causeMessage = cause != null ? cause.getMessage() : null;
         if (causeMessage != null && (causeMessage.contains(UQ_BOOKING_PENDING_RENTER_AMENITY)
                 || causeMessage.contains(UQ_BOOKING_PENDING_RENTER_SPOT))) {
-            // No re-read is possible here: Postgres aborts the whole transaction on a
-            // unique-constraint violation, so any further statement on this connection
-            // (including the "idempotent" re-read we'd like to do) fails with
-            // "current transaction is aborted, commands ignored until end of transaction
-            // block" — trading a 409 for a 500. The pre-flight findFirstBy check earlier
-            // in create() is what actually handles the practical idempotent case (it runs
-            // in a fresh, non-aborted transaction); a client that retries after hitting
-            // this narrow race lands on that pre-flight and gets the existing row back.
-            throw new SlotConflictException(
+            return new SlotConflictException(
                     "A request for this resource is already in flight, please retry", null);
         }
         if (causeMessage != null && causeMessage.contains(UQ_BOOKING_SPOT_ACTIVE)) {
-            throw new SlotConflictException("Parking spot is already assigned", null);
+            return new SlotConflictException("Parking spot is already assigned", null);
         }
-        throw e;
+        return e;
     }
 
     /** Unlocked read for display purposes (GET detail, otherRequests context) — not a transition. */
