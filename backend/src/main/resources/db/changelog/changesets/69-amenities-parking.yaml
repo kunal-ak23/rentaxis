@@ -88,7 +88,7 @@ databaseChangeLog:
               - column: { name: decided_at, type: timestamptz }
               - column: { name: created_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
               - column: { name: updated_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
-        - createIndex: { tableName: booking_requests, indexName: idx_booking_tenant_property_status, columns: [ { column: { name: tenant_id } }, { column: { name: property_id } }, { column: { name: status } } ] }
+        - createIndex: { tableName: booking_requests, indexName: idx_booking_tenant_property_status, columns: [ { column: { name: tenant_id } }, { column: { name: property_id } }, { column: { name: status } }, { column: { name: created_at } } ] }
         - createIndex: { tableName: booking_requests, indexName: idx_booking_tenant_renter, columns: [ { column: { name: tenant_id } }, { column: { name: renter_user_id } } ] }
         - createIndex: { tableName: booking_requests, indexName: idx_booking_amenity, columns: [ { column: { name: amenity_id } } ] }
         - createIndex: { tableName: booking_requests, indexName: idx_booking_spot, columns: [ { column: { name: parking_spot_id } } ] }
@@ -100,9 +100,10 @@ databaseChangeLog:
             splitStatements: false
             sql: |
               ALTER TABLE booking_requests ADD CONSTRAINT chk_booking_exactly_one_resource
-                CHECK ((amenity_id IS NULL) <> (parking_spot_id IS NULL));
+                CHECK ((resource_type = 'AMENITY' AND amenity_id IS NOT NULL AND parking_spot_id IS NULL)
+                    OR (resource_type = 'PARKING_SPOT' AND parking_spot_id IS NOT NULL AND amenity_id IS NULL));
               CREATE UNIQUE INDEX uq_booking_spot_active
-                ON booking_requests (parking_spot_id) WHERE status = 'APPROVED';
+                ON booking_requests (parking_spot_id) WHERE status = 'APPROVED' AND parking_spot_id IS NOT NULL;
               CREATE UNIQUE INDEX uq_booking_pending_renter_amenity
                 ON booking_requests (renter_user_id, amenity_id)
                 WHERE status = 'PENDING' AND amenity_id IS NOT NULL;
