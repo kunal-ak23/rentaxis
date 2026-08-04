@@ -1,0 +1,341 @@
+package com.datagami.rentaxis.core.service;
+
+import com.datagami.rentaxis.api.dto.BookingCreateRequest;
+import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
+import com.datagami.rentaxis.api.exception.NotFoundException;
+import com.datagami.rentaxis.api.exception.SlotConflictException;
+import com.datagami.rentaxis.core.event.BookingDecidedEvent;
+import com.datagami.rentaxis.core.event.BookingRequestedEvent;
+import com.datagami.rentaxis.domain.entity.BookingRequest;
+import com.datagami.rentaxis.domain.entity.ParkingSpot;
+import com.datagami.rentaxis.domain.entity.PropertyAmenity;
+import com.datagami.rentaxis.domain.entity.Unit;
+import com.datagami.rentaxis.domain.entity.enums.BookingRequestStatus;
+import com.datagami.rentaxis.domain.entity.enums.BookingResourceType;
+import com.datagami.rentaxis.domain.repository.BookingRequestRepository;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.PessimisticLockingFailureException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.UUID;
+
+/**
+ * Booking request lifecycle. No role logic — RBAC and the renter's
+ * active-lease ownership check live in {@code BookingController}, same split
+ * as the gate-pass module. The {@code unit} passed to {@link #create} must
+ * already be verified as leased by the caller. Cross-tenant and
+ * not-visible-to-caller lookups throw {@link NotFoundException} (404, never
+ * 403) so ids cannot be probed. The partial unique indexes
+ * uq_booking_spot_active / uq_booking_pending_renter_* (migration 69) are the
+ * DB backstops behind the conflict and idempotency checks here.
+ *
+ * <p><b>Concurrency.</b> Every status transition (approve/reject/cancel/
+ * release) loads its row under a {@code PESSIMISTIC_WRITE} lock via
+ * {@link BookingRequestRepository#findByIdForUpdate}, taken by the query that
+ * first loads the entity in the transaction — same reasoning as
+ * {@code GatePassScanService}: an unlocked read followed by a locking re-read
+ * would hand back the already-managed (stale) instance from the persistence
+ * context, and the lock would do nothing. The lock is NOWAIT, so a decision
+ * racing a concurrent one fails fast with {@link PessimisticLockingFailureException}
+ * (Spring's translated type — not the raw JPA exception) rather than queueing;
+ * that is translated here into a {@link SlotConflictException} retry hint.
+ */
+@Service
+@Transactional
+public class BookingService {
+
+    /** Migration 69's constraint/index names — kept in sync with the translation below. */
+    static final String UQ_BOOKING_PENDING_RENTER_AMENITY = "uq_booking_pending_renter_amenity";
+    static final String UQ_BOOKING_PENDING_RENTER_SPOT = "uq_booking_pending_renter_spot";
+    static final String UQ_BOOKING_SPOT_ACTIVE = "uq_booking_spot_active";
+
+    private static final List<BookingRequestStatus> OPEN_STATUSES =
+            List.of(BookingRequestStatus.PENDING, BookingRequestStatus.APPROVED);
+
+    private final BookingRequestRepository bookingRepository;
+    private final FacilityService facilityService;
+    private final ApplicationEventPublisher eventPublisher;
+
+    public BookingService(BookingRequestRepository bookingRepository,
+                          FacilityService facilityService,
+                          ApplicationEventPublisher eventPublisher) {
+        this.bookingRepository = bookingRepository;
+        this.facilityService = facilityService;
+        this.eventPublisher = eventPublisher;
+    }
+
+    public BookingRequest create(UUID tenantId, UUID renterUserId, Unit unit, BookingCreateRequest req) {
+        if (req.resourceType() == null) {
+            throw new BusinessRuleViolationException("resourceType is required");
+        }
+        if (req.resourceId() == null) {
+            throw new BusinessRuleViolationException("resourceId is required");
+        }
+
+        BookingRequest booking = new BookingRequest();
+        booking.setTenantId(tenantId);
+        booking.setUnitId(unit.getId());
+        booking.setRenterUserId(renterUserId);
+        booking.setResourceType(req.resourceType());
+        booking.setNote(req.note());
+        booking.setPreferredDate(req.preferredDate());
+        booking.setStatus(BookingRequestStatus.PENDING);
+
+        if (req.resourceType() == BookingResourceType.AMENITY) {
+            PropertyAmenity amenity = facilityService.getAmenity(tenantId, req.resourceId());
+            // Inactive or out-of-scope resources are indistinguishable from missing ones.
+            if (!amenity.isActive() || !facilityService.amenityVisibleToUnit(amenity, unit)) {
+                throw new NotFoundException("Amenity not found");
+            }
+            if (!amenity.isBookable()) {
+                throw new BusinessRuleViolationException("This amenity is not bookable");
+            }
+            Optional<BookingRequest> existing =
+                    bookingRepository.findFirstByTenantIdAndRenterUserIdAndAmenityIdAndStatus(
+                            tenantId, renterUserId, amenity.getId(), BookingRequestStatus.PENDING);
+            if (existing.isPresent()) {
+                return existing.get(); // idempotent, like InterestService.addInterest
+            }
+            booking.setAmenityId(amenity.getId());
+            // propertyId always derives from the resource, never from the client.
+            booking.setPropertyId(amenity.getPropertyId());
+        } else {
+            ParkingSpot spot = facilityService.getParkingSpot(tenantId, req.resourceId());
+            if (!spot.isActive() || !facilityService.parkingSpotVisibleToUnit(spot, unit)) {
+                throw new NotFoundException("Parking spot not found");
+            }
+            Optional<BookingRequest> existing =
+                    bookingRepository.findFirstByTenantIdAndRenterUserIdAndParkingSpotIdAndStatus(
+                            tenantId, renterUserId, spot.getId(), BookingRequestStatus.PENDING);
+            if (existing.isPresent()) {
+                return existing.get();
+            }
+            if (bookingRepository.existsByParkingSpotIdAndStatus(spot.getId(), BookingRequestStatus.APPROVED)) {
+                throw new SlotConflictException("Parking spot is already assigned", null);
+            }
+            booking.setParkingSpotId(spot.getId());
+            booking.setPropertyId(spot.getPropertyId());
+        }
+
+        return saveNewBooking(tenantId, booking);
+    }
+
+    /**
+     * saveAndFlush (not save) so the INSERT actually executes inside this try —
+     * GenerationType.UUID assigns the id in memory, so Hibernate is otherwise
+     * free to defer the INSERT past this catch (same reasoning as
+     * FacilityService#saveSpot). The existsBy/findFirstBy pre-checks above are
+     * happy-path guards, but they're TOCTOU against the DB-level partial unique
+     * indexes from migration 69 — a concurrent request can still slip in
+     * between the check and this save.
+     */
+    private BookingRequest saveNewBooking(UUID tenantId, BookingRequest booking) {
+        BookingRequest saved;
+        try {
+            saved = bookingRepository.saveAndFlush(booking);
+        } catch (DataIntegrityViolationException e) {
+            return translateCreateConstraintViolation(e, booking);
+        }
+        eventPublisher.publishEvent(new BookingRequestedEvent(saved.getId(), tenantId));
+        return saved;
+    }
+
+    /**
+     * A concurrent create beat this one to the insert. uq_booking_pending_renter_*
+     * means the renter already has a PENDING request for this exact resource —
+     * re-read and return it (idempotent, mirrors the happy-path findFirstBy
+     * check above). uq_booking_spot_active means the spot is already APPROVED
+     * elsewhere — surfaced as a conflict rather than silently handed back.
+     * Anything else wasn't the violation being guarded against, so it is
+     * rethrown rather than mislabeled — same shape as
+     * FacilityService#translateConstraintViolation.
+     */
+    private BookingRequest translateCreateConstraintViolation(DataIntegrityViolationException e, BookingRequest booking) {
+        Throwable cause = e.getMostSpecificCause();
+        String causeMessage = cause != null ? cause.getMessage() : null;
+        if (causeMessage != null && (causeMessage.contains(UQ_BOOKING_PENDING_RENTER_AMENITY)
+                || causeMessage.contains(UQ_BOOKING_PENDING_RENTER_SPOT))) {
+            Optional<BookingRequest> existing = booking.getResourceType() == BookingResourceType.AMENITY
+                    ? bookingRepository.findFirstByTenantIdAndRenterUserIdAndAmenityIdAndStatus(
+                            booking.getTenantId(), booking.getRenterUserId(), booking.getAmenityId(),
+                            BookingRequestStatus.PENDING)
+                    : bookingRepository.findFirstByTenantIdAndRenterUserIdAndParkingSpotIdAndStatus(
+                            booking.getTenantId(), booking.getRenterUserId(), booking.getParkingSpotId(),
+                            BookingRequestStatus.PENDING);
+            if (existing.isPresent()) {
+                return existing.get();
+            }
+            throw e; // the violating row must exist — unreachable in practice
+        }
+        if (causeMessage != null && causeMessage.contains(UQ_BOOKING_SPOT_ACTIVE)) {
+            throw new SlotConflictException("Parking spot is already assigned", null);
+        }
+        throw e;
+    }
+
+    /** Unlocked read for display purposes (GET detail, otherRequests context) — not a transition. */
+    @Transactional(readOnly = true)
+    public BookingRequest get(UUID tenantId, UUID id) {
+        BookingRequest booking = bookingRepository.findById(id)
+                .orElseThrow(() -> new NotFoundException("Booking not found"));
+        if (!Objects.equals(booking.getTenantId(), tenantId)) {
+            throw new NotFoundException("Booking not found");
+        }
+        return booking;
+    }
+
+    /**
+     * Locked read for status transitions. Must be the first load of this row in
+     * the transaction — see the class javadoc. findByIdForUpdate has no
+     * tenantId param, so the tenant check happens explicitly after the load.
+     */
+    private BookingRequest getForUpdate(UUID tenantId, UUID id) {
+        Optional<BookingRequest> found;
+        try {
+            found = bookingRepository.findByIdForUpdate(id);
+        } catch (PessimisticLockingFailureException e) {
+            // NOWAIT fired: another decision holds this row's lock. Better a 409
+            // retry hint than a 500 or blocking the request thread.
+            throw new SlotConflictException("A decision on this booking is already in progress, please retry", null);
+        }
+        BookingRequest booking = found.orElseThrow(() -> new NotFoundException("Booking not found"));
+        if (!Objects.equals(booking.getTenantId(), tenantId)) {
+            throw new NotFoundException("Booking not found");
+        }
+        return booking;
+    }
+
+    public BookingRequest approve(UUID tenantId, UUID id, UUID adminUserId, String adminNote) {
+        BookingRequest booking = getForUpdate(tenantId, id);
+        requirePending(booking);
+        if (booking.getResourceType() == BookingResourceType.PARKING_SPOT
+                && bookingRepository.existsByParkingSpotIdAndStatus(
+                        booking.getParkingSpotId(), BookingRequestStatus.APPROVED)) {
+            throw new SlotConflictException("Parking spot is already assigned to another renter", null);
+        }
+        return decide(booking, BookingRequestStatus.APPROVED, adminUserId, adminNote);
+    }
+
+    public BookingRequest reject(UUID tenantId, UUID id, UUID adminUserId, String adminNote) {
+        BookingRequest booking = getForUpdate(tenantId, id);
+        requirePending(booking);
+        return decide(booking, BookingRequestStatus.REJECTED, adminUserId, adminNote);
+    }
+
+    /** Renter withdraws their own PENDING request. 404 on someone else's — no probing. */
+    public BookingRequest cancel(UUID tenantId, UUID id, UUID renterUserId) {
+        BookingRequest booking = getForUpdate(tenantId, id);
+        if (!renterUserId.equals(booking.getRenterUserId())) {
+            throw new NotFoundException("Booking not found");
+        }
+        requirePending(booking);
+        booking.setStatus(BookingRequestStatus.CANCELLED);
+        return bookingRepository.saveAndFlush(booking);
+    }
+
+    /** APPROVED parking only. actorIsAdmin=false enforces the renter-owner rule. */
+    public BookingRequest release(UUID tenantId, UUID id, UUID actorUserId, boolean actorIsAdmin) {
+        BookingRequest booking = getForUpdate(tenantId, id);
+        if (!actorIsAdmin && !actorUserId.equals(booking.getRenterUserId())) {
+            throw new NotFoundException("Booking not found");
+        }
+        if (booking.getResourceType() != BookingResourceType.PARKING_SPOT) {
+            throw new BusinessRuleViolationException("Only parking bookings can be released");
+        }
+        if (booking.getStatus() != BookingRequestStatus.APPROVED) {
+            throw new BusinessRuleViolationException("Only approved bookings can be released");
+        }
+        booking.setStatus(BookingRequestStatus.RELEASED);
+        booking.setDecidedByUserId(actorUserId);
+        booking.setDecidedAt(Instant.now());
+        BookingRequest saved = bookingRepository.saveAndFlush(booking);
+        eventPublisher.publishEvent(new BookingDecidedEvent(
+                saved.getId(), tenantId, saved.getRenterUserId(), BookingRequestStatus.RELEASED));
+        return saved;
+    }
+
+    @Transactional(readOnly = true)
+    public Page<BookingRequest> search(UUID tenantId, UUID propertyId, BookingRequestStatus status,
+                                       BookingResourceType resourceType, Pageable pageable) {
+        return bookingRepository.search(tenantId, propertyId, status, resourceType, pageable);
+    }
+
+    @Transactional(readOnly = true)
+    public List<BookingRequest> listMine(UUID tenantId, UUID renterUserId) {
+        return bookingRepository.findByTenantIdAndRenterUserIdOrderByCreatedAtAsc(tenantId, renterUserId);
+    }
+
+    /** All other PENDING/APPROVED requests for the same resource — the admin's context. */
+    @Transactional(readOnly = true)
+    public List<BookingRequest> otherRequests(BookingRequest booking) {
+        List<BookingRequest> siblings = booking.getResourceType() == BookingResourceType.AMENITY
+                ? bookingRepository.findByAmenityIdAndStatusInOrderByCreatedAtAsc(
+                        booking.getAmenityId(), OPEN_STATUSES)
+                : bookingRepository.findByParkingSpotIdAndStatusInOrderByCreatedAtAsc(
+                        booking.getParkingSpotId(), OPEN_STATUSES);
+        return siblings.stream().filter(b -> !b.getId().equals(booking.getId())).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public long countPendingForAmenity(UUID amenityId) {
+        return bookingRepository.countByAmenityIdAndStatus(amenityId, BookingRequestStatus.PENDING);
+    }
+
+    @Transactional(readOnly = true)
+    public long countPendingForSpot(UUID parkingSpotId) {
+        return bookingRepository.countByParkingSpotIdAndStatus(parkingSpotId, BookingRequestStatus.PENDING);
+    }
+
+    @Transactional(readOnly = true)
+    public boolean spotHeld(UUID parkingSpotId) {
+        return bookingRepository.existsByParkingSpotIdAndStatus(parkingSpotId, BookingRequestStatus.APPROVED);
+    }
+
+    /**
+     * saveAndFlush for the same reason as {@link #saveNewBooking}: the write
+     * must happen inside this try so a uq_booking_spot_active race on approve
+     * (concurrent decisions on two different PENDING requests for the same
+     * spot) is caught here rather than surfacing later as an unhandled 500.
+     * The pre-flight existsByParkingSpotIdAndStatus check in {@link #approve}
+     * is the happy-path guard; this is the DB backstop.
+     */
+    private BookingRequest decide(BookingRequest booking, BookingRequestStatus status,
+                                  UUID adminUserId, String adminNote) {
+        booking.setStatus(status);
+        booking.setAdminNote(adminNote);
+        booking.setDecidedByUserId(adminUserId);
+        booking.setDecidedAt(Instant.now());
+        BookingRequest saved;
+        try {
+            saved = bookingRepository.saveAndFlush(booking);
+        } catch (DataIntegrityViolationException e) {
+            throw translateDecideConstraintViolation(e);
+        }
+        eventPublisher.publishEvent(new BookingDecidedEvent(
+                saved.getId(), saved.getTenantId(), saved.getRenterUserId(), status));
+        return saved;
+    }
+
+    private static RuntimeException translateDecideConstraintViolation(DataIntegrityViolationException e) {
+        Throwable cause = e.getMostSpecificCause();
+        String causeMessage = cause != null ? cause.getMessage() : null;
+        if (causeMessage != null && causeMessage.contains(UQ_BOOKING_SPOT_ACTIVE)) {
+            return new SlotConflictException("Parking spot is already assigned to another renter", null);
+        }
+        return e;
+    }
+
+    private static void requirePending(BookingRequest booking) {
+        if (booking.getStatus() != BookingRequestStatus.PENDING) {
+            throw new BusinessRuleViolationException("Booking is not pending");
+        }
+    }
+}
