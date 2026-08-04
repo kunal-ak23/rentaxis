@@ -163,17 +163,16 @@ public class BookingService {
         String causeMessage = cause != null ? cause.getMessage() : null;
         if (causeMessage != null && (causeMessage.contains(UQ_BOOKING_PENDING_RENTER_AMENITY)
                 || causeMessage.contains(UQ_BOOKING_PENDING_RENTER_SPOT))) {
-            Optional<BookingRequest> existing = booking.getResourceType() == BookingResourceType.AMENITY
-                    ? bookingRepository.findFirstByTenantIdAndRenterUserIdAndAmenityIdAndStatus(
-                            booking.getTenantId(), booking.getRenterUserId(), booking.getAmenityId(),
-                            BookingRequestStatus.PENDING)
-                    : bookingRepository.findFirstByTenantIdAndRenterUserIdAndParkingSpotIdAndStatus(
-                            booking.getTenantId(), booking.getRenterUserId(), booking.getParkingSpotId(),
-                            BookingRequestStatus.PENDING);
-            if (existing.isPresent()) {
-                return existing.get();
-            }
-            throw e; // the violating row must exist — unreachable in practice
+            // No re-read is possible here: Postgres aborts the whole transaction on a
+            // unique-constraint violation, so any further statement on this connection
+            // (including the "idempotent" re-read we'd like to do) fails with
+            // "current transaction is aborted, commands ignored until end of transaction
+            // block" — trading a 409 for a 500. The pre-flight findFirstBy check earlier
+            // in create() is what actually handles the practical idempotent case (it runs
+            // in a fresh, non-aborted transaction); a client that retries after hitting
+            // this narrow race lands on that pre-flight and gets the existing row back.
+            throw new SlotConflictException(
+                    "A request for this resource is already in flight, please retry", null);
         }
         if (causeMessage != null && causeMessage.contains(UQ_BOOKING_SPOT_ACTIVE)) {
             throw new SlotConflictException("Parking spot is already assigned", null);
@@ -258,7 +257,7 @@ public class BookingService {
         booking.setDecidedAt(Instant.now());
         BookingRequest saved = bookingRepository.saveAndFlush(booking);
         eventPublisher.publishEvent(new BookingDecidedEvent(
-                saved.getId(), tenantId, saved.getRenterUserId(), BookingRequestStatus.RELEASED));
+                saved.getId(), saved.getTenantId(), saved.getRenterUserId(), BookingRequestStatus.RELEASED));
         return saved;
     }
 
