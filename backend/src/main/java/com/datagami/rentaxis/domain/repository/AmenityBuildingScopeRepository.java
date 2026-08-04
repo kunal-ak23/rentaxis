@@ -15,5 +15,5 @@ public interface AmenityBuildingScopeRepository extends JpaRepository<AmenityBui
 
     List<AmenityBuildingScope> findByAmenityIdIn(Collection<UUID> amenityIds);
 
-    void deleteByAmenityId(UUID amenityId);
+    void deleteByTenantIdAndAmenityId(UUID tenantId, UUID amenityId);
 }
