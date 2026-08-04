@@ -4,6 +4,7 @@ import com.datagami.rentaxis.api.dto.AmenityCreateRequest;
 import com.datagami.rentaxis.api.dto.AmenityUpdateRequest;
 import com.datagami.rentaxis.api.dto.ParkingSpotBulkCreateRequest;
 import com.datagami.rentaxis.api.dto.ParkingSpotCreateRequest;
+import com.datagami.rentaxis.api.dto.ParkingSpotUpdateRequest;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.domain.entity.AmenityBuildingScope;
@@ -98,6 +99,17 @@ class FacilityServiceTest {
         a.setNameEn("Gym");
         a.setBookable(bookable);
         return a;
+    }
+
+    private ParkingSpot spot(String spotNumber) {
+        ParkingSpot s = new ParkingSpot();
+        s.setId(UUID.randomUUID());
+        s.setTenantId(tenantId);
+        s.setPropertyId(propertyId);
+        s.setSpotNumber(spotNumber);
+        s.setCovered(true);
+        s.setActive(true);
+        return s;
     }
 
     // ---- amenity CRUD ----
@@ -235,6 +247,31 @@ class FacilityServiceTest {
         assertThatThrownBy(() -> service.bulkCreateParkingSpots(tenantId,
                 new ParkingSpotBulkCreateRequest(propertyId, List.of("B1-01", "B1-02"), null, null, null)))
                 .isInstanceOf(BusinessRuleViolationException.class);
+    }
+
+    @Test
+    void updateParkingSpot_changedNumberCollidesWithAnotherSpot_throws400() {
+        ParkingSpot existing = spot("B1-01");
+        when(spotRepository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(spotRepository.existsByTenantIdAndPropertyIdAndSpotNumberAndIdNot(
+                tenantId, propertyId, "B1-02", existing.getId())).thenReturn(true);
+
+        assertThatThrownBy(() -> service.updateParkingSpot(tenantId, existing.getId(),
+                new ParkingSpotUpdateRequest("B1-02", null, null, null, null)))
+                .isInstanceOf(BusinessRuleViolationException.class);
+    }
+
+    @Test
+    void updateParkingSpot_changedNumberFree_updatesSuccessfully() {
+        ParkingSpot existing = spot("B1-01");
+        when(spotRepository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(spotRepository.existsByTenantIdAndPropertyIdAndSpotNumberAndIdNot(
+                tenantId, propertyId, "B1-02", existing.getId())).thenReturn(false);
+
+        ParkingSpot updated = service.updateParkingSpot(tenantId, existing.getId(),
+                new ParkingSpotUpdateRequest("B1-02", null, null, null, null));
+
+        assertThat(updated.getSpotNumber()).isEqualTo("B1-02");
     }
 
     // ---- renter visibility ----
