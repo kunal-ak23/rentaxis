@@ -17,4 +17,8 @@ public interface PropertyAmenityRepository extends JpaRepository<PropertyAmenity
     Page<PropertyAmenity> findByTenantIdAndPropertyId(UUID tenantId, UUID propertyId, Pageable pageable);
 
     List<PropertyAmenity> findByTenantIdAndPropertyIdAndActiveTrue(UUID tenantId, UUID propertyId);
+
+    List<PropertyAmenity> findByTenantIdAndPropertyIdOrderByCreatedAtAsc(UUID tenantId, UUID propertyId);
+
+    List<PropertyAmenity> findByTenantIdAndPropertyIdAndActiveTrueOrderByCreatedAtAsc(UUID tenantId, UUID propertyId);
 }

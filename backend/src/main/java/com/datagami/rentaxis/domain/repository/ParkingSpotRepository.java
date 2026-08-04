@@ -18,5 +18,11 @@ public interface ParkingSpotRepository extends JpaRepository<ParkingSpot, UUID> 
 
     List<ParkingSpot> findByTenantIdAndPropertyIdAndActiveTrue(UUID tenantId, UUID propertyId);
 
+    List<ParkingSpot> findByTenantIdAndPropertyIdOrderByCreatedAtAsc(UUID tenantId, UUID propertyId);
+
+    List<ParkingSpot> findByTenantIdAndPropertyIdAndActiveTrueOrderByCreatedAtAsc(UUID tenantId, UUID propertyId);
+
     boolean existsByTenantIdAndPropertyIdAndSpotNumber(UUID tenantId, UUID propertyId, String spotNumber);
+
+    boolean existsByTenantIdAndPropertyIdAndSpotNumberAndIdNot(UUID tenantId, UUID propertyId, String spotNumber, UUID id);
 }

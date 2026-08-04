@@ -15,5 +15,5 @@ public interface ParkingSpotBuildingScopeRepository extends JpaRepository<Parkin
 
     List<ParkingSpotBuildingScope> findByParkingSpotIdIn(Collection<UUID> parkingSpotIds);
 
-    void deleteByParkingSpotId(UUID parkingSpotId);
+    void deleteByTenantIdAndParkingSpotId(UUID tenantId, UUID parkingSpotId);
 }
