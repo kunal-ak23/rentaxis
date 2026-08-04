@@ -19,6 +19,7 @@ import com.datagami.rentaxis.domain.repository.ParkingSpotBuildingScopeRepositor
 import com.datagami.rentaxis.domain.repository.ParkingSpotRepository;
 import com.datagami.rentaxis.domain.repository.PropertyAmenityRepository;
 import com.datagami.rentaxis.domain.repository.PropertyRepository;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -42,6 +43,14 @@ import java.util.stream.Collectors;
 @Service
 @Transactional
 public class FacilityService {
+
+    /** Migration 69's unique index names — kept in sync with the constraint translation below. */
+    static final String UQ_PARKING_SPOT_NUMBER = "uq_parking_spot_number";
+    static final String UQ_AMENITY_BUILDING = "uq_amenity_building";
+    static final String UQ_PARKING_SPOT_BUILDING = "uq_parking_spot_building";
+
+    /** Bulk-import guardrail: keeps a single request from generating an unbounded insert batch. */
+    static final int MAX_BULK_SPOT_NUMBERS = 500;
 
     private final PropertyAmenityRepository amenityRepository;
     private final AmenityBuildingScopeRepository amenityScopeRepository;
@@ -105,7 +114,12 @@ public class FacilityService {
         amenity.setBookable(req.bookable() == null || req.bookable());
         amenity.setActive(true);
         PropertyAmenity saved = amenityRepository.save(amenity);
-        replaceAmenityScopes(tenantId, saved, req.buildingIds() == null ? List.of() : req.buildingIds());
+
+        // Freshly created — no existing scope rows to replace, so insert directly
+        // instead of routing through the delete+flush+insert replace path.
+        List<UUID> requested = validateBuildings(req.propertyId(),
+                req.buildingIds() == null ? List.of() : req.buildingIds());
+        insertAmenityScopeRows(tenantId, saved.getId(), requested);
         return saved;
     }
 
@@ -165,9 +179,14 @@ public class FacilityService {
         String spotNumber = requireSpotNumber(req.spotNumber());
         requireSpotNumberFree(tenantId, req.propertyId(), spotNumber);
 
-        ParkingSpot spot = newSpot(tenantId, req.propertyId(), spotNumber, req.level(), req.covered());
-        ParkingSpot saved = spotRepository.save(spot);
-        replaceSpotScopes(tenantId, saved, req.buildingIds() == null ? List.of() : req.buildingIds());
+        ParkingSpot saved = saveSpot(
+                newSpot(tenantId, req.propertyId(), spotNumber, req.level(), req.covered()), spotNumber);
+
+        // Freshly created — no existing scope rows to replace, so insert directly
+        // instead of routing through the delete+flush+insert replace path.
+        List<UUID> requested = validateBuildings(req.propertyId(),
+                req.buildingIds() == null ? List.of() : req.buildingIds());
+        insertSpotScopeRows(tenantId, saved.getId(), requested);
         return saved;
     }
 
@@ -179,6 +198,10 @@ public class FacilityService {
         if (req.spotNumbers() == null || req.spotNumbers().isEmpty()) {
             throw new BusinessRuleViolationException("spotNumbers must not be empty");
         }
+        if (req.spotNumbers().size() > MAX_BULK_SPOT_NUMBERS) {
+            throw new BusinessRuleViolationException(
+                    "Too many spots in one request (max " + MAX_BULK_SPOT_NUMBERS + ")");
+        }
         // Dedupe while preserving order; validate every number before creating any.
         Set<String> numbers = new LinkedHashSet<>();
         for (String raw : req.spotNumbers()) {
@@ -187,12 +210,16 @@ public class FacilityService {
         for (String number : numbers) {
             requireSpotNumberFree(tenantId, req.propertyId(), number);
         }
-        List<UUID> buildingIds = req.buildingIds() == null ? List.of() : req.buildingIds();
+        // propertyId and buildingIds are identical for every spot in this batch —
+        // validate the requested scope once (loop-invariant) instead of
+        // re-querying buildingRepository on every iteration.
+        List<UUID> requestedBuildingIds = validateBuildings(req.propertyId(),
+                req.buildingIds() == null ? List.of() : req.buildingIds());
         List<ParkingSpot> created = new ArrayList<>();
         for (String number : numbers) {
-            ParkingSpot saved = spotRepository.save(
-                    newSpot(tenantId, req.propertyId(), number, req.level(), req.covered()));
-            replaceSpotScopes(tenantId, saved, buildingIds);
+            ParkingSpot saved = saveSpot(
+                    newSpot(tenantId, req.propertyId(), number, req.level(), req.covered()), number);
+            insertSpotScopeRows(tenantId, saved.getId(), requestedBuildingIds);
             created.add(saved);
         }
         return created;
@@ -203,8 +230,11 @@ public class FacilityService {
         if (req.spotNumber() != null) {
             String spotNumber = requireSpotNumber(req.spotNumber());
             if (!spotNumber.equals(spot.getSpotNumber())) {
-                // Self-excluding uniqueness check: the create-path exists query would
-                // collide with this row's own (unchanged) number.
+                // Number actually changed — the unchanged-number case is already
+                // short-circuited by the equals check above, so a genuine self-match
+                // against this row's own (not-yet-persisted) new number can't occur.
+                // The AndIdNot variant here is defense-in-depth, not the mechanism
+                // that avoids a false positive.
                 requireSpotNumberFreeForUpdate(tenantId, spot.getPropertyId(), spotNumber, id);
                 spot.setSpotNumber(spotNumber);
             }
@@ -329,11 +359,34 @@ public class FacilityService {
     }
 
     private void requireSpotNumberFreeForUpdate(UUID tenantId, UUID propertyId, String spotNumber, UUID excludingId) {
-        // Self-excluding variant for the edit path: the create-path exists query
-        // would collide with this same row when the number is left unchanged.
+        // Self-excluding variant for the edit path. Callers only reach this after
+        // a genuine number change (the unchanged-number case is short-circuited
+        // before this is called), so a self-match can't actually happen here —
+        // excluding the row's own id is defense-in-depth, not what prevents a
+        // false positive.
         if (spotRepository.existsByTenantIdAndPropertyIdAndSpotNumberAndIdNot(
                 tenantId, propertyId, spotNumber, excludingId)) {
             throw new BusinessRuleViolationException("Spot number already exists: " + spotNumber);
+        }
+    }
+
+    /**
+     * Saves a newly created spot and translates a uq_parking_spot_number race
+     * into a friendly 400. The existsBy pre-check above is a happy-path
+     * message-quality guard, but it's TOCTOU against the DB-level unique
+     * constraint (migration 69) — a concurrent request can still slip in
+     * between the check and this save. saveAndFlush (not save) so the INSERT
+     * actually executes inside this try — GenerationType.UUID assigns the id
+     * in memory, so Hibernate is otherwise free to defer the INSERT to a later
+     * auto-flush or commit, past this catch (same reasoning as
+     * UserService#createUser's saveAndFlush).
+     */
+    private ParkingSpot saveSpot(ParkingSpot spot, String spotNumber) {
+        try {
+            return spotRepository.saveAndFlush(spot);
+        } catch (DataIntegrityViolationException e) {
+            throw translateConstraintViolation(e, UQ_PARKING_SPOT_NUMBER,
+                    "Spot number already exists: " + spotNumber);
         }
     }
 
@@ -352,6 +405,7 @@ public class FacilityService {
         return spot;
     }
 
+    /** Delete+flush+insert: only for the edit path, where scope rows may already exist. */
     private void replaceAmenityScopes(UUID tenantId, PropertyAmenity amenity, List<UUID> buildingIds) {
         List<UUID> requested = validateBuildings(amenity.getPropertyId(), buildingIds);
         amenityScopeRepository.deleteByTenantIdAndAmenityId(tenantId, amenity.getId());
@@ -359,23 +413,54 @@ public class FacilityService {
         // building does not collide with its own pending delete (same reasoning
         // as GatePassController.setGuardProperties).
         amenityScopeRepository.flush();
-        for (UUID buildingId : requested) {
+        insertAmenityScopeRows(tenantId, amenity.getId(), requested);
+        try {
+            amenityScopeRepository.flush();
+        } catch (DataIntegrityViolationException e) {
+            throw translateConstraintViolation(e, UQ_AMENITY_BUILDING,
+                    "Duplicate building scope for amenity " + amenity.getId());
+        }
+    }
+
+    /** Delete+flush+insert: only for the edit path, where scope rows may already exist. */
+    private void replaceSpotScopes(UUID tenantId, ParkingSpot spot, List<UUID> buildingIds) {
+        List<UUID> requested = validateBuildings(spot.getPropertyId(), buildingIds);
+        spotScopeRepository.deleteByTenantIdAndParkingSpotId(tenantId, spot.getId());
+        spotScopeRepository.flush();
+        insertSpotScopeRows(tenantId, spot.getId(), requested);
+        try {
+            spotScopeRepository.flush();
+        } catch (DataIntegrityViolationException e) {
+            throw translateConstraintViolation(e, UQ_PARKING_SPOT_BUILDING,
+                    "Duplicate building scope for parking spot " + spot.getId());
+        }
+    }
+
+    /**
+     * Insert-only: for the create paths, where the resource is brand new and has
+     * no existing scope rows to replace, so there's nothing to delete and no
+     * pending-delete collision to flush around.
+     */
+    private void insertAmenityScopeRows(UUID tenantId, UUID amenityId, List<UUID> buildingIds) {
+        for (UUID buildingId : buildingIds) {
             AmenityBuildingScope scope = new AmenityBuildingScope();
             scope.setTenantId(tenantId);
-            scope.setAmenityId(amenity.getId());
+            scope.setAmenityId(amenityId);
             scope.setBuildingId(buildingId);
             amenityScopeRepository.save(scope);
         }
     }
 
-    private void replaceSpotScopes(UUID tenantId, ParkingSpot spot, List<UUID> buildingIds) {
-        List<UUID> requested = validateBuildings(spot.getPropertyId(), buildingIds);
-        spotScopeRepository.deleteByTenantIdAndParkingSpotId(tenantId, spot.getId());
-        spotScopeRepository.flush();
-        for (UUID buildingId : requested) {
+    /**
+     * Insert-only: for the create paths, where the resource is brand new and has
+     * no existing scope rows to replace, so there's nothing to delete and no
+     * pending-delete collision to flush around.
+     */
+    private void insertSpotScopeRows(UUID tenantId, UUID parkingSpotId, List<UUID> buildingIds) {
+        for (UUID buildingId : buildingIds) {
             ParkingSpotBuildingScope scope = new ParkingSpotBuildingScope();
             scope.setTenantId(tenantId);
-            scope.setParkingSpotId(spot.getId());
+            scope.setParkingSpotId(parkingSpotId);
             scope.setBuildingId(buildingId);
             spotScopeRepository.save(scope);
         }
@@ -395,5 +480,25 @@ public class FacilityService {
             }
         }
         return requested;
+    }
+
+    /**
+     * Translates a unique-constraint race into a friendly 400. Follows the
+     * catch-and-translate pattern in PropertyService#createProperty: the
+     * happy-path existsBy/validate checks above are message-quality guards, but
+     * they're TOCTOU against the DB-level unique constraints from migration 69
+     * — a concurrent request can still slip through between the check and the
+     * save this wraps. An unrecognized constraint name means this violation
+     * wasn't the one being guarded against, so the original exception is
+     * rethrown rather than mislabeled.
+     */
+    private static RuntimeException translateConstraintViolation(
+            DataIntegrityViolationException e, String constraintName, String message) {
+        Throwable cause = e.getMostSpecificCause();
+        String causeMessage = cause != null ? cause.getMessage() : null;
+        if (causeMessage != null && causeMessage.contains(constraintName)) {
+            return new BusinessRuleViolationException(message);
+        }
+        return e;
     }
 }
