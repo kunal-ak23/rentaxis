@@ -49,15 +49,18 @@ final parkingSpotsProvider = FutureProvider.autoDispose
 /// family member (records have value equality).
 typedef BookingFilter = ({String? propertyId, String? status});
 
+/// Paged like the inventory providers above — a busy tenant can have more
+/// open requests than fit in one page, and the screen needs `total` to show
+/// a truncation footer rather than silently dropping rows.
 final bookingsProvider = FutureProvider.autoDispose
-    .family<List<Map<String, dynamic>>, BookingFilter>((ref, filter) async {
+    .family<FacilityPage, BookingFilter>((ref, filter) async {
   final service = ref.watch(facilityServiceProvider);
   final page = await service.getBookings(
     propertyId: filter.propertyId,
     status: filter.status,
     size: 200,
   );
-  return _asRows(page['content'] as List? ?? const []);
+  return _asPage(page);
 });
 
 /// One request + its competitors, re-fetched on open so the decision sheet

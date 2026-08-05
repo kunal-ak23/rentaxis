@@ -1,11 +1,16 @@
-/// Pure helpers for the facilities screen, split out from
-/// `facilities_screen.dart` so they can be unit tested without a
-/// `BuildContext` (see `test/facilities_parse_test.dart`).
+/// Helpers shared by the facilities screens, split out from
+/// `facilities_screen.dart` and `booking_approvals_screen.dart`.
+///
+/// Most of this is pure logic kept `BuildContext`-free so it can be unit
+/// tested directly (see `test/facilities_parse_test.dart`); [FacilityScrollable]
+/// is the one small exception — a tiny layout widget duplicated identically
+/// across both screens before, now shared instead.
 library;
 
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/material.dart';
 
 /// Backend's cap on `spotNumbers` per bulk-create request
 /// (`ParkingSpotBulkCreateRequest`) — also the ceiling for range expansion.
@@ -115,4 +120,27 @@ BulkSpotValidation validateBulkSpotNumbers(List<String> parsed) {
     return BulkSpotValidation.tooLong;
   }
   return BulkSpotValidation.ok;
+}
+
+/// A [RefreshIndicator] over a non-scrolling child cannot be pulled, so empty
+/// and error states are given something to scroll. Shared by
+/// `facilities_screen.dart` and `booking_approvals_screen.dart` (was a private
+/// `_Scrollable` duplicated in both).
+class FacilityScrollable extends StatelessWidget {
+  const FacilityScrollable({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: constraints.maxHeight),
+          child: child,
+        ),
+      ),
+    );
+  }
 }

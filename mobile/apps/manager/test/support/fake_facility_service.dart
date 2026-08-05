@@ -9,13 +9,24 @@ class FakeFacilityService implements FacilityApiService {
     Map<String, dynamic>? detail,
     this.amenities = const [],
     this.parkingSpots = const [],
-  }) : detail = detail ??
-            {'request': <String, dynamic>{}, 'otherRequests': <dynamic>[]};
+    this.approveError,
+    this.rejectError,
+    this.releaseError,
+  }) : detail =
+           detail ??
+           {'request': <String, dynamic>{}, 'otherRequests': <dynamic>[]};
 
   final List<Map<String, dynamic>> bookings;
   final Map<String, dynamic> detail;
   final List<Map<String, dynamic>> amenities;
   final List<Map<String, dynamic>> parkingSpots;
+
+  /// Thrown by the respective decision call instead of returning normally —
+  /// lets a test drive the screen's 409/400/other-failure branches without a
+  /// real Dio error arriving over the wire.
+  Object? approveError;
+  Object? rejectError;
+  Object? releaseError;
 
   int bookingsReads = 0;
   final List<(String, String?)> approveCalls = [];
@@ -23,16 +34,17 @@ class FakeFacilityService implements FacilityApiService {
   final List<String> releaseCalls = [];
   final List<Map<String, dynamic>> createCalls = [];
 
-  Map<String, dynamic> _page(List<Map<String, dynamic>> rows) =>
-      {'content': rows, 'totalElements': rows.length};
+  Map<String, dynamic> _page(List<Map<String, dynamic>> rows) => {
+    'content': rows,
+    'totalElements': rows.length,
+  };
 
   @override
   Future<Map<String, dynamic>> getAmenities({
     required String propertyId,
     int page = 0,
     int size = 20,
-  }) async =>
-      _page(amenities);
+  }) async => _page(amenities);
 
   @override
   Future<Map<String, dynamic>> createAmenity(Map<String, dynamic> body) async =>
@@ -42,8 +54,7 @@ class FakeFacilityService implements FacilityApiService {
   Future<Map<String, dynamic>> updateAmenity(
     String id,
     Map<String, dynamic> body,
-  ) async =>
-      {'id': id, ...body};
+  ) async => {'id': id, ...body};
 
   @override
   Future<void> deactivateAmenity(String id) async {}
@@ -53,27 +64,23 @@ class FakeFacilityService implements FacilityApiService {
     required String propertyId,
     int page = 0,
     int size = 20,
-  }) async =>
-      _page(parkingSpots);
+  }) async => _page(parkingSpots);
 
   @override
   Future<Map<String, dynamic>> createParkingSpot(
     Map<String, dynamic> body,
-  ) async =>
-      {'id': 'spot-new', ...body};
+  ) async => {'id': 'spot-new', ...body};
 
   @override
   Future<List<dynamic>> bulkCreateParkingSpots(
     Map<String, dynamic> body,
-  ) async =>
-      const [];
+  ) async => const [];
 
   @override
   Future<Map<String, dynamic>> updateParkingSpot(
     String id,
     Map<String, dynamic> body,
-  ) async =>
-      {'id': id, ...body};
+  ) async => {'id': id, ...body};
 
   @override
   Future<void> deactivateParkingSpot(String id) async {}
@@ -102,6 +109,8 @@ class FakeFacilityService implements FacilityApiService {
     String? adminNote,
   }) async {
     approveCalls.add((id, adminNote));
+    final error = approveError;
+    if (error != null) throw error;
     return {'id': id, 'status': 'APPROVED'};
   }
 
@@ -111,18 +120,24 @@ class FakeFacilityService implements FacilityApiService {
     String? adminNote,
   }) async {
     rejectCalls.add((id, adminNote));
+    final error = rejectError;
+    if (error != null) throw error;
     return {'id': id, 'status': 'REJECTED'};
   }
 
   @override
   Future<Map<String, dynamic>> releaseBooking(String id) async {
     releaseCalls.add(id);
+    final error = releaseError;
+    if (error != null) throw error;
     return {'id': id, 'status': 'RELEASED'};
   }
 
   @override
-  Future<Map<String, dynamic>> myFacilities() async =>
-      {'amenities': amenities, 'parkingSpots': parkingSpots};
+  Future<Map<String, dynamic>> myFacilities() async => {
+    'amenities': amenities,
+    'parkingSpots': parkingSpots,
+  };
 
   @override
   Future<Map<String, dynamic>> createBooking(Map<String, dynamic> body) async {
@@ -134,6 +149,8 @@ class FakeFacilityService implements FacilityApiService {
   Future<List<dynamic>> myBookings() async => bookings;
 
   @override
-  Future<Map<String, dynamic>> cancelBooking(String id) async =>
-      {'id': id, 'status': 'CANCELLED'};
+  Future<Map<String, dynamic>> cancelBooking(String id) async => {
+    'id': id,
+    'status': 'CANCELLED',
+  };
 }

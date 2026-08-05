@@ -218,7 +218,7 @@ class _FacilitiesScreenState extends ConsumerState<FacilitiesScreen> {
       onRefresh: () => ref.refresh(amenitiesProvider(propertyId).future),
       child: async.when(
         loading: () => const ListShimmer(itemCount: 4),
-        error: (error, _) => _Scrollable(
+        error: (error, _) => FacilityScrollable(
           child: ErrorState(
             message: l.loadFailed,
             onRetry: () => ref.invalidate(amenitiesProvider(propertyId)),
@@ -227,7 +227,7 @@ class _FacilitiesScreenState extends ConsumerState<FacilitiesScreen> {
         data: (page) {
           final items = page.rows;
           if (items.isEmpty) {
-            return _Scrollable(
+            return FacilityScrollable(
               child: EmptyState(
                 icon: Icons.pool_outlined,
                 title: l.noAmenities,
@@ -275,7 +275,7 @@ class _FacilitiesScreenState extends ConsumerState<FacilitiesScreen> {
       onRefresh: () => ref.refresh(parkingSpotsProvider(propertyId).future),
       child: async.when(
         loading: () => const ListShimmer(itemCount: 4),
-        error: (error, _) => _Scrollable(
+        error: (error, _) => FacilityScrollable(
           child: ErrorState(
             message: l.loadFailed,
             onRetry: () => ref.invalidate(parkingSpotsProvider(propertyId)),
@@ -284,7 +284,7 @@ class _FacilitiesScreenState extends ConsumerState<FacilitiesScreen> {
         data: (page) {
           final items = page.rows;
           if (items.isEmpty) {
-            return _Scrollable(
+            return FacilityScrollable(
               child: EmptyState(
                 icon: Icons.local_parking_outlined,
                 title: l.noSpots,
@@ -1148,27 +1148,6 @@ class _ParkingSheetState extends ConsumerState<_ParkingSheet> {
               ),
             ),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-/// A [RefreshIndicator] over a non-scrolling child cannot be pulled, so the
-/// empty and error states are given something to scroll.
-class _Scrollable extends StatelessWidget {
-  const _Scrollable({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) => SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(minHeight: constraints.maxHeight),
-          child: child,
         ),
       ),
     );
