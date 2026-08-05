@@ -7,10 +7,14 @@
 /// across both screens before, now shared instead.
 library;
 
-import 'dart:convert';
-
-import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+
+/// `errorMessage` moved to `rentaxis_core`'s `utils/error_message.dart` so
+/// the renter app (which can only depend on `rentaxis_core`, not on this
+/// manager-only file) can use it too. Re-exported here so existing imports
+/// of this file — including `test/facilities_parse_test.dart` — keep working
+/// unchanged.
+export 'package:rentaxis_core/rentaxis_core.dart' show errorMessage;
 
 /// Backend's cap on `spotNumbers` per bulk-create request
 /// (`ParkingSpotBulkCreateRequest`) — also the ceiling for range expansion.
@@ -66,41 +70,6 @@ List<String> parseSpotNumbers(String raw) {
     add(entry);
   }
   return result;
-}
-
-/// Extracts a user-facing message from a caught error. `FacilityApiService`
-/// documents two response shapes: the app's usual `{error: true, message,
-/// ...}` envelope, and the booking 409 shape `{error: "message text", ...}`
-/// — so this prefers `message` when it is a String, else `error` when it is
-/// a String, else falls back to a generic localized message. A response
-/// body that arrived as a raw (unparsed) JSON string is decoded first;
-/// anything else non-JSON (HTML, empty) is never surfaced directly, and a
-/// non-Dio error always falls back.
-String errorMessage(Object error, String fallback) {
-  if (error is DioException) {
-    final body = _asErrorBody(error.response?.data);
-    if (body != null) {
-      final message = body['message'];
-      if (message is String && message.isNotEmpty) return message;
-      final err = body['error'];
-      if (err is String && err.isNotEmpty) return err;
-    }
-  }
-  return fallback;
-}
-
-Map<String, dynamic>? _asErrorBody(Object? data) {
-  if (data is Map) return Map<String, dynamic>.from(data);
-  if (data is String && data.trim().isNotEmpty) {
-    try {
-      final decoded = jsonDecode(data);
-      if (decoded is Map) return Map<String, dynamic>.from(decoded);
-    } catch (_) {
-      // Not JSON (e.g. a proxy error page) — caller uses the generic
-      // fallback rather than surfacing raw HTML/text.
-    }
-  }
-  return null;
 }
 
 /// Result of validating a bulk spot-numbers entry, decoupled from
