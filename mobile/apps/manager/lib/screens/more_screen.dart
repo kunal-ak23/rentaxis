@@ -76,6 +76,21 @@ class MoreScreen extends ConsumerWidget {
                     ),
                   ],
                 ),
+                _sectionLabel(l.community, l.ar, m),
+                _MenuCard(
+                  items: [
+                    _MenuRow(
+                      icon: Icons.pool_outlined,
+                      label: l.facilities,
+                      onTap: () => context.push('/facilities'),
+                    ),
+                    _MenuRow(
+                      icon: Icons.event_available_outlined,
+                      label: l.bookingRequests,
+                      onTap: () => context.push('/bookings'),
+                    ),
+                  ],
+                ),
                 _sectionLabel(l.finance, l.ar, m),
                 _MenuCard(
                   items: [
@@ -623,6 +638,10 @@ class _L {
       ar ? 'سياسة الدخول للبوابة' : 'Gate Access Policy';
   String get registerUnitVendor =>
       ar ? 'تسجيل مورّد للوحدة' : 'Register Unit Vendor';
+  String get community => ar ? 'المجتمع' : 'Community';
+  String get facilities =>
+      ar ? 'المرافق ومواقف السيارات' : 'Amenities & Parking';
+  String get bookingRequests => ar ? 'طلبات الحجز' : 'Booking Requests';
   String get finance => ar ? 'المالية' : 'Finance';
   String get accountsTransactions =>
       ar ? 'الحسابات والمعاملات' : 'Accounts & Transactions';
