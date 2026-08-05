@@ -42,6 +42,7 @@ class _L {
   String get bookableSub => ar
       ? 'يمكن للمستأجرين إرسال طلبات حجز لهذا المرفق'
       : 'Renters can send booking requests for it';
+  String get active => ar ? 'نشط' : 'Active';
   String get towers => ar ? 'الأبراج' : 'Towers';
   String get allTowers => ar ? 'كل الأبراج' : 'All towers';
   String get towersHint => ar
@@ -731,6 +732,7 @@ class _AmenitySheetState extends ConsumerState<_AmenitySheet> {
   late final TextEditingController _nameArCtrl;
   late final TextEditingController _descCtrl;
   late bool _bookable;
+  late bool _active;
   late Set<String> _towerIds;
   bool _saving = false;
 
@@ -743,6 +745,7 @@ class _AmenitySheetState extends ConsumerState<_AmenitySheet> {
     _descCtrl =
         TextEditingController(text: e?['description']?.toString() ?? '');
     _bookable = e == null || e['bookable'] == true;
+    _active = e == null || e['active'] != false;
     _towerIds = {
       for (final id in (e?['buildingIds'] as List? ?? const [])) id.toString(),
     };
@@ -777,11 +780,16 @@ class _AmenitySheetState extends ConsumerState<_AmenitySheet> {
       } else {
         // Patch semantics: absent = unchanged. A non-null buildingIds
         // REPLACES the scope set, which is exactly what the chips represent.
+        // Raw strings (not `if (...isNotEmpty)`): the backend treats a
+        // missing field as "unchanged" but an explicit "" as "clear it", so
+        // an edit that blanks nameAr/description must send "" verbatim, not
+        // fall back to omitting the field.
         await service.updateAmenity(existing['id'].toString(), {
           'nameEn': _nameEnCtrl.text.trim(),
-          if (nameAr.isNotEmpty) 'nameAr': nameAr,
-          if (description.isNotEmpty) 'description': description,
+          'nameAr': nameAr,
+          'description': description,
           'bookable': _bookable,
+          'active': _active,
           'buildingIds': _towerIds.toList(),
         });
       }
@@ -844,6 +852,7 @@ class _AmenitySheetState extends ConsumerState<_AmenitySheet> {
                   ),
                   const SizedBox(height: 12),
                   TextFormField(
+                    key: const Key('amenity-name-ar'),
                     controller: _nameArCtrl,
                     maxLength: 160,
                     textDirection: TextDirection.rtl,
@@ -878,6 +887,21 @@ class _AmenitySheetState extends ConsumerState<_AmenitySheet> {
                     ),
                     onChanged: (v) => setState(() => _bookable = v),
                   ),
+                  if (widget.existing != null)
+                    SwitchListTile(
+                      key: const Key('amenity-active'),
+                      contentPadding: EdgeInsets.zero,
+                      value: _active,
+                      title: Text(
+                        l.active,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: m.textPrimary,
+                        ),
+                      ),
+                      onChanged: (v) => setState(() => _active = v),
+                    ),
                   const SizedBox(height: 8),
                   Text(
                     l.towers,
@@ -925,6 +949,7 @@ class _ParkingSheetState extends ConsumerState<_ParkingSheet> {
   late final TextEditingController _spotCtrl;
   late final TextEditingController _levelCtrl;
   late bool _covered;
+  late bool _active;
   late Set<String> _towerIds;
   bool _bulk = false;
   bool _saving = false;
@@ -936,6 +961,7 @@ class _ParkingSheetState extends ConsumerState<_ParkingSheet> {
     _spotCtrl = TextEditingController(text: e?['spotNumber']?.toString() ?? '');
     _levelCtrl = TextEditingController(text: e?['level']?.toString() ?? '');
     _covered = e == null || e['covered'] == true;
+    _active = e == null || e['active'] != false;
     _towerIds = {
       for (final id in (e?['buildingIds'] as List? ?? const [])) id.toString(),
     };
@@ -957,10 +983,15 @@ class _ParkingSheetState extends ConsumerState<_ParkingSheet> {
     try {
       final existing = widget.existing;
       if (existing != null) {
+        // Raw `level` (not `if (...isNotEmpty)`): the backend treats a
+        // missing field as "unchanged" but an explicit "" as "clear it", so
+        // an edit that blanks the level must send "" verbatim, not fall back
+        // to omitting the field.
         await service.updateParkingSpot(existing['id'].toString(), {
           'spotNumber': _spotCtrl.text.trim(),
-          if (level.isNotEmpty) 'level': level,
+          'level': level,
           'covered': _covered,
+          'active': _active,
           'buildingIds': _towerIds.toList(),
         });
         if (mounted) Navigator.pop(context, true);
@@ -1121,6 +1152,21 @@ class _ParkingSheetState extends ConsumerState<_ParkingSheet> {
                     ),
                     onChanged: (v) => setState(() => _covered = v),
                   ),
+                  if (!creating)
+                    SwitchListTile(
+                      key: const Key('parking-active'),
+                      contentPadding: EdgeInsets.zero,
+                      value: _active,
+                      title: Text(
+                        l.active,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: m.textPrimary,
+                        ),
+                      ),
+                      onChanged: (v) => setState(() => _active = v),
+                    ),
                   const SizedBox(height: 8),
                   Text(
                     l.towers,

@@ -34,6 +34,11 @@ class FakeFacilityService implements FacilityApiService {
   final List<String> releaseCalls = [];
   final List<Map<String, dynamic>> createCalls = [];
 
+  /// Records every `updateAmenity`/`updateParkingSpot` call as
+  /// `(id, body)` — lets a test assert on the exact payload shape sent for
+  /// an edit (e.g. that a cleared field arrives as `''`, not omitted).
+  final List<(String, Map<String, dynamic>)> updateCalls = [];
+
   Map<String, dynamic> _page(List<Map<String, dynamic>> rows) => {
     'content': rows,
     'totalElements': rows.length,
@@ -54,7 +59,10 @@ class FakeFacilityService implements FacilityApiService {
   Future<Map<String, dynamic>> updateAmenity(
     String id,
     Map<String, dynamic> body,
-  ) async => {'id': id, ...body};
+  ) async {
+    updateCalls.add((id, body));
+    return {'id': id, ...body};
+  }
 
   @override
   Future<void> deactivateAmenity(String id) async {}
@@ -80,7 +88,10 @@ class FakeFacilityService implements FacilityApiService {
   Future<Map<String, dynamic>> updateParkingSpot(
     String id,
     Map<String, dynamic> body,
-  ) async => {'id': id, ...body};
+  ) async {
+    updateCalls.add((id, body));
+    return {'id': id, ...body};
+  }
 
   @override
   Future<void> deactivateParkingSpot(String id) async {}
