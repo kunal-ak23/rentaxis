@@ -94,8 +94,23 @@ public class ParkingSpotController {
         checkPropertyManagerAccess(req.propertyId());
         UUID tenantId = TenantContextHolder.getTenantId();
         List<ParkingSpot> created = facilityService.bulkCreateParkingSpots(tenantId, req);
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(created.stream().map(this::toDTO).toList());
+
+        // Batch mapping, same as list() — a 500-spot bulk create must not turn into
+        // up to 1500 per-row lookups. Freshly created spots always come back with
+        // pendingCount 0 / held false, but the batch calls stay here (they'll just
+        // return empty maps) so this path can't silently regress to per-row lookups.
+        List<UUID> ids = created.stream().map(ParkingSpot::getId).toList();
+        Map<UUID, Long> pendingCounts = batchCounts(tenantId, ids, BookingRequestStatus.PENDING);
+        Map<UUID, Long> approvedCounts = batchCounts(tenantId, ids, BookingRequestStatus.APPROVED);
+        Map<UUID, List<UUID>> buildingIdsBySpot = batchBuildingIds(ids);
+
+        List<ParkingSpotDTO> dtos = created.stream()
+                .map(s -> toDTO(s,
+                        buildingIdsBySpot.getOrDefault(s.getId(), List.of()),
+                        approvedCounts.getOrDefault(s.getId(), 0L) > 0,
+                        pendingCounts.getOrDefault(s.getId(), 0L)))
+                .toList();
+        return ResponseEntity.status(HttpStatus.CREATED).body(dtos);
     }
 
     @PutMapping("/{id}")
@@ -151,7 +166,7 @@ public class ParkingSpotController {
                         Collectors.mapping(ParkingSpotBuildingScope::getBuildingId, Collectors.toList())));
     }
 
-    /** Single-resource mapping for create/update/delete/bulk responses — batch mapping is used for list(). */
+    /** Single-resource mapping for create/update/delete responses — batch mapping is used for list() and bulkCreate(). */
     private ParkingSpotDTO toDTO(ParkingSpot s) {
         return toDTO(s, facilityService.parkingSpotBuildingIds(s.getId()),
                 bookingService.spotHeld(s.getId()), bookingService.countPendingForSpot(s.getId()));

@@ -110,8 +110,13 @@ class ParkingSpotControllerTest {
     void list_returns200WithBatchMappedCountsAndHeld() {
         ParkingSpot s1 = spot("B1-01");
         ParkingSpot s2 = spot("B1-02");
+        // Page 1 of 2, 45 total — deliberately different from the 2-item content list,
+        // so a rewrite that rebuilds the page as `new PageImpl<>(dtoList)` (dropping
+        // pageable/total) rather than `page.map(...)` (preserving them) fails loudly.
+        Pageable requestedPageable = PageRequest.of(1, 2);
+        Page<ParkingSpot> sourcePage = new PageImpl<>(List.of(s1, s2), requestedPageable, 45L);
         when(facilityService.listParkingSpots(eq(tenantId), eq(propertyId), any(Pageable.class)))
-                .thenReturn(new PageImpl<>(List.of(s1, s2)));
+                .thenReturn(sourcePage);
         when(bookingRequestRepository.countByParkingSpotIdIn(eq(tenantId), any(), eq(BookingRequestStatus.PENDING)))
                 .thenReturn(List.<Object[]>of(new Object[]{s1.getId(), 1L}));
         when(bookingRequestRepository.countByParkingSpotIdIn(eq(tenantId), any(), eq(BookingRequestStatus.APPROVED)))
@@ -123,13 +128,17 @@ class ParkingSpotControllerTest {
         when(spotScopeRepository.findByParkingSpotIdIn(any())).thenReturn(List.of(scope));
 
         ResponseEntity<Page<ParkingSpotDTO>> response =
-                controller.list(propertyId, PageRequest.of(0, 20));
+                controller.list(propertyId, requestedPageable);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        List<ParkingSpotDTO> dtos = response.getBody().getContent();
+        Page<ParkingSpotDTO> body = response.getBody();
+        List<ParkingSpotDTO> dtos = body.getContent();
         assertThat(dtos).extracting(ParkingSpotDTO::pendingCount).containsExactly(1L, 0L);
         assertThat(dtos).extracting(ParkingSpotDTO::held).containsExactly(false, true);
         assertThat(dtos.get(0).buildingIds()).containsExactly(buildingId);
+        assertThat(body.getTotalElements()).isEqualTo(45L);
+        assertThat(body.getNumber()).isEqualTo(1);
+        assertThat(body.getSize()).isEqualTo(2);
 
         verify(bookingRequestRepository, times(1))
                 .countByParkingSpotIdIn(eq(tenantId), any(), eq(BookingRequestStatus.PENDING));
@@ -185,17 +194,34 @@ class ParkingSpotControllerTest {
     void bulk_returns201WithAllSpots() {
         List<ParkingSpot> created = List.of(spot("B1-01"), spot("B1-02"));
         when(facilityService.bulkCreateParkingSpots(eq(tenantId), any())).thenReturn(created);
-        for (ParkingSpot s : created) {
-            when(facilityService.parkingSpotBuildingIds(s.getId())).thenReturn(List.of());
-            when(bookingService.countPendingForSpot(s.getId())).thenReturn(0L);
-            when(bookingService.spotHeld(s.getId())).thenReturn(false);
-        }
+        // Batch stubs, not per-row: bulkCreate must map through the same
+        // countByParkingSpotIdIn/findByParkingSpotIdIn helpers as list(), never
+        // per-spot FacilityService/BookingService lookups (up to 1500 queries on a
+        // 500-spot bulk otherwise).
+        when(bookingRequestRepository.countByParkingSpotIdIn(eq(tenantId), any(), eq(BookingRequestStatus.PENDING)))
+                .thenReturn(List.of());
+        when(bookingRequestRepository.countByParkingSpotIdIn(eq(tenantId), any(), eq(BookingRequestStatus.APPROVED)))
+                .thenReturn(List.of());
+        when(spotScopeRepository.findByParkingSpotIdIn(any())).thenReturn(List.of());
 
         ResponseEntity<List<ParkingSpotDTO>> response = controller.bulkCreate(
                 new ParkingSpotBulkCreateRequest(propertyId, List.of("B1-01", "B1-02"), null, null, null));
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(response.getBody()).hasSize(2);
+        assertThat(response.getBody()).allSatisfy(dto -> {
+            assertThat(dto.pendingCount()).isEqualTo(0L);
+            assertThat(dto.held()).isFalse();
+        });
+
+        verify(bookingRequestRepository, times(1))
+                .countByParkingSpotIdIn(eq(tenantId), any(), eq(BookingRequestStatus.PENDING));
+        verify(bookingRequestRepository, times(1))
+                .countByParkingSpotIdIn(eq(tenantId), any(), eq(BookingRequestStatus.APPROVED));
+        verify(spotScopeRepository, times(1)).findByParkingSpotIdIn(any());
+        verify(bookingService, never()).countPendingForSpot(any());
+        verify(bookingService, never()).spotHeld(any());
+        verify(facilityService, never()).parkingSpotBuildingIds(any());
     }
 
     @Test
@@ -206,6 +232,23 @@ class ParkingSpotControllerTest {
         assertThatThrownBy(() -> controller.bulkCreate(
                 new ParkingSpotBulkCreateRequest(propertyId, List.of("B1-01", "B1-02"), null, null, null)))
                 .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void bulk_pmWithAssignment_allowed() {
+        authenticateAs(pmUserId, "ROLE_PROPERTY_MANAGER");
+        when(assignmentRepository.existsByUserIdAndPropertyId(pmUserId, propertyId)).thenReturn(true);
+        List<ParkingSpot> created = List.of(spot("B1-01"), spot("B1-02"));
+        when(facilityService.bulkCreateParkingSpots(eq(tenantId), any())).thenReturn(created);
+        when(bookingRequestRepository.countByParkingSpotIdIn(eq(tenantId), any(), any(BookingRequestStatus.class)))
+                .thenReturn(List.of());
+        when(spotScopeRepository.findByParkingSpotIdIn(any())).thenReturn(List.of());
+
+        ResponseEntity<List<ParkingSpotDTO>> response = controller.bulkCreate(
+                new ParkingSpotBulkCreateRequest(propertyId, List.of("B1-01", "B1-02"), null, null, null));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(response.getBody()).hasSize(2);
     }
 
     @Test
