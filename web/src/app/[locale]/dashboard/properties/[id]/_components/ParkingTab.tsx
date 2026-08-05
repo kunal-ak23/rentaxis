@@ -14,6 +14,7 @@ import {
     deactivateParkingSpot,
     parseSpotNumbers,
     ApiError,
+    MAX_BULK_SPOT_NUMBERS,
 } from "@/lib/api/facilities";
 import type { ParkingSpotDTO } from "@/types/facility";
 import type { BuildingOption } from "./AmenitiesTab";
@@ -27,7 +28,6 @@ interface ParkingTabProps {
 type FormMode = { kind: "add" } | { kind: "edit"; spot: ParkingSpotDTO } | { kind: "bulk" };
 
 const PAGE_SIZE = 10;
-const MAX_BULK_SPOT_NUMBERS = 500;
 
 export function ParkingTab({ propertyId, buildings, canManage }: ParkingTabProps) {
     const t = useTranslations("Facilities");
@@ -122,7 +122,7 @@ export function ParkingTab({ propertyId, buildings, canManage }: ParkingTabProps
             } else {
                 const spotNumbers = parseSpotNumbers(bulkInput);
                 if (spotNumbers.length === 0) {
-                    setFormError(t("saveError"));
+                    setFormError(t("bulkEmpty"));
                     return;
                 }
                 if (spotNumbers.length > MAX_BULK_SPOT_NUMBERS) {
@@ -225,12 +225,16 @@ export function ParkingTab({ propertyId, buildings, canManage }: ParkingTabProps
                                     </td>
                                     <td className="px-6 py-4 text-muted text-xs font-medium">{towerLabel(s)}</td>
                                     <td className="px-6 py-4">
-                                        <span className={cn(
-                                            "px-2 py-1 text-[10px] font-bold uppercase tracking-widest rounded-md",
-                                            s.held ? "bg-warning/10 text-warning" : "bg-success/10 text-success"
-                                        )}>
-                                            {s.held ? t("held") : t("available")}
-                                        </span>
+                                        {s.active ? (
+                                            <span className={cn(
+                                                "px-2 py-1 text-[10px] font-bold uppercase tracking-widest rounded-md",
+                                                s.held ? "bg-warning/10 text-warning" : "bg-success/10 text-success"
+                                            )}>
+                                                {s.held ? t("held") : t("available")}
+                                            </span>
+                                        ) : (
+                                            <span className="text-muted text-xs">—</span>
+                                        )}
                                     </td>
                                     <td className="px-6 py-4">
                                         <span className={cn(

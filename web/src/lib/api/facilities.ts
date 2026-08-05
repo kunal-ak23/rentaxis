@@ -23,6 +23,9 @@ const SPOTS = '/api/proxy/v1/parking-spots'
 const BOOKINGS = '/api/proxy/v1/bookings'
 const FACILITIES = '/api/proxy/v1/facilities'
 
+/** Backend's cap on spotNumbers per bulk-create request (ParkingSpotBulkCreateRequest). */
+export const MAX_BULK_SPOT_NUMBERS = 500
+
 const JSON_HEADERS = { 'Content-Type': 'application/json' }
 
 /**
@@ -235,8 +238,8 @@ export async function cancelBooking(id: string): Promise<BookingRequestDTO> {
  *   "10-12"         -> ["10", "11", "12"]
  *   "A1\nA2;A3"     -> ["A1", "A2", "A3"]
  * Zero-padding of the start bound is preserved ("P08-P10" -> P08, P09, P10).
- * A range that would expand to more than 500 entries — the backend's
- * spotNumbers cap — is kept literal to guard against typos.
+ * A range that would expand to more than MAX_BULK_SPOT_NUMBERS entries —
+ * the backend's spotNumbers cap — is kept literal to guard against typos.
  * Duplicates are removed; order of first appearance is kept.
  */
 export function parseSpotNumbers(input: string): string[] {
@@ -250,7 +253,7 @@ export function parseSpotNumbers(input: string): string[] {
       const start = parseInt(m[2], 10)
       const end = parseInt(m[4], 10)
       const width = m[2].length
-      if (end >= start && end - start < 500) {
+      if (end >= start && end - start < MAX_BULK_SPOT_NUMBERS) {
         for (let n = start; n <= end; n++) {
           out.push(`${prefix}${String(n).padStart(width, '0')}`)
         }
