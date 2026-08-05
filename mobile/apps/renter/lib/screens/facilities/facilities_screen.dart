@@ -130,7 +130,18 @@ class FacilitiesScreen extends ConsumerWidget {
     Future<void> refresh() async {
       ref.invalidate(myFacilitiesProvider);
       ref.invalidate(myBookingRequestsProvider);
-      await ref.read(myFacilitiesProvider.future);
+      // Await both refetches (not just facilities) so the pull-to-refresh
+      // spinner stays up until the requests join also resolves — otherwise
+      // it retracts while `mine` is still loading. Either future can reject
+      // independently (each provider's own `.when(error: ...)` already
+      // renders that failure in place), so a rejection here is swallowed
+      // rather than left as an unhandled Future error.
+      try {
+        await Future.wait([
+          ref.read(myFacilitiesProvider.future),
+          ref.read(myBookingRequestsProvider.future),
+        ]);
+      } catch (_) {}
     }
 
     return Scaffold(
