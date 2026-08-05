@@ -145,7 +145,7 @@ Shared plumbing in `rentaxis_core`:
 - Routes `/facilities`, `/bookings` in `router.dart` (ShellRoute, parameterless screens that self-fetch — no `extra`); entries in More menu + dashboard quick action
 
 ### Renter app (`apps/renter`)
-- `screens/facilities/facilities_screen.dart` — browse amenities + parking for my unit; request bottom-sheet (preferred date?, note?) mirroring gate-pass create; optimistic-with-rollback submit pattern (browse-screen style)
+- `screens/facilities/facilities_screen.dart` — browse amenities + parking for my unit; request bottom-sheet (preferred date?, note?) mirroring gate-pass create; refresh-on-success submit (await create, surface server errors in the sheet, invalidate providers on success) — booking creates can fail for business reasons (409 spot conflict, 400 non-bookable), so the optimistic-with-rollback pattern used for wishlist toggles does not fit here (same rationale as gate_pass_approvals_screen)
 - `screens/facilities/my_requests_screen.dart` — status list, cancel/release
 - Routes `/facilities`, `/facilities/requests`; entry on home screen
 
