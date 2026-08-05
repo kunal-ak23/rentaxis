@@ -42,6 +42,8 @@ import 'screens/gatepass/gate_pass_approvals_screen.dart';
 import 'screens/gatepass/guard_management_screen.dart';
 import 'screens/gatepass/gate_access_policy_screen.dart';
 import 'screens/gatepass/register_gate_vendor_screen.dart';
+import 'screens/facilities/facilities_screen.dart';
+import 'screens/facilities/booking_approvals_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authProvider);
@@ -214,6 +216,19 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/gate-passes/vendors',
             builder: (context, state) => const RegisterGateVendorScreen(),
+          ),
+          // Facility screens are parameterless and self-fetching for the same
+          // reason as the gate-pass screens above: this router rebuilds on
+          // authProvider and would discard `extra`.
+          GoRoute(
+            path: '/facilities',
+            pageBuilder: (context, state) =>
+                fadeTransition(const FacilitiesScreen(), state),
+          ),
+          GoRoute(
+            path: '/bookings',
+            pageBuilder: (context, state) =>
+                fadeTransition(const BookingApprovalsScreen(), state),
           ),
           GoRoute(
             path: '/vendors',
