@@ -48,13 +48,17 @@ class _L {
       : 'Could not send the request. Try again.';
   String get leasesLoadFailed =>
       ar ? 'تعذر التحقق من عقد إيجارك.' : 'Could not check your tenancy.';
-  String requestTitle(String name) =>
-      ar ? 'طلب حجز $name' : 'Request $name';
+  String get joinErrorBanner => ar
+      ? 'تعذر تحميل طلباتك — قد لا تظهر الشارات وحالة الحجز بدقة.'
+      : "Could not load your requests — badges and booking status "
+            'may be inaccurate.';
+  String get whichUnit => ar ? 'أي وحدة؟' : 'Which unit?';
+  String requestTitle(String name) => ar ? 'طلب حجز $name' : 'Request $name';
   String pendingHint(int n) => ar
       ? '$n قيد الانتظار'
       : n == 1
-          ? '1 pending request'
-          : '$n pending requests';
+      ? '1 pending request'
+      : '$n pending requests';
   String levelLabel(String level) => ar ? 'الطابق $level' : 'Level $level';
   String get coveredPill => ar ? 'مسقوف' : 'Covered';
 
@@ -170,44 +174,121 @@ class FacilitiesScreen extends ConsumerWidget {
                 ),
               );
             }
-            final open = _openByResource(mine.valueOrNull ?? const []);
-            return ListView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: EdgeInsets.fromLTRB(
-                16,
-                12,
-                16,
-                AppInsets.bottomNav(context),
+            // The cards need `mine` to know which resources already carry an
+            // open request of the renter's own — rendering them before it
+            // resolves would show a Request button about to flip out from
+            // under the renter's thumb. And a failed `/bookings/my` must
+            // never be silently read as "no requests" (the W6 `leasesOk`
+            // lesson): the cards still render on error — `facilities` itself
+            // loaded fine — but with a banner instead of quietly pretending
+            // every resource is free to request.
+            return mine.when(
+              loading: () => const ListShimmer(itemCount: 4),
+              error: (error, _) => _cardList(
+                context,
+                l,
+                amenities,
+                spots,
+                const {},
+                joinError: true,
               ),
-              children: [
-                if (amenities.isNotEmpty) ...[
-                  _SectionLabel(text: l.amenitiesSection),
-                  for (final (i, row) in amenities.indexed)
-                    AnimatedListItem(
-                      index: i,
-                      child: _AmenityCard(
-                        row: row,
-                        myOpen: open[row['id']?.toString()],
-                        l: l,
-                      ),
-                    ),
-                ],
-                if (spots.isNotEmpty) ...[
-                  _SectionLabel(text: l.parkingSection),
-                  for (final (i, row) in spots.indexed)
-                    AnimatedListItem(
-                      index: i,
-                      child: _SpotCard(
-                        row: row,
-                        myOpen: open[row['id']?.toString()],
-                        l: l,
-                      ),
-                    ),
-                ],
-              ],
+              data: (rows) => _cardList(
+                context,
+                l,
+                amenities,
+                spots,
+                _openByResource(rows),
+                joinError: false,
+              ),
             );
           },
         ),
+      ),
+    );
+  }
+}
+
+/// The facilities list body, shared by the join-resolved and join-failed
+/// paths (see `FacilitiesScreen.build`'s `mine.when`) so there is exactly one
+/// place that lays out the amenity/parking sections.
+Widget _cardList(
+  BuildContext context,
+  _L l,
+  List<Map<String, dynamic>> amenities,
+  List<Map<String, dynamic>> spots,
+  Map<String, Map<String, dynamic>> open, {
+  required bool joinError,
+}) {
+  return ListView(
+    physics: const AlwaysScrollableScrollPhysics(),
+    padding: EdgeInsets.fromLTRB(16, 12, 16, AppInsets.bottomNav(context)),
+    children: [
+      if (joinError) _JoinErrorBanner(l: l),
+      if (amenities.isNotEmpty) ...[
+        _SectionLabel(text: l.amenitiesSection),
+        for (final (i, row) in amenities.indexed)
+          AnimatedListItem(
+            index: i,
+            child: _AmenityCard(
+              row: row,
+              myOpen: open[row['id']?.toString()],
+              l: l,
+            ),
+          ),
+      ],
+      if (spots.isNotEmpty) ...[
+        _SectionLabel(text: l.parkingSection),
+        for (final (i, row) in spots.indexed)
+          AnimatedListItem(
+            index: i,
+            child: _SpotCard(
+              row: row,
+              myOpen: open[row['id']?.toString()],
+              l: l,
+            ),
+          ),
+      ],
+    ],
+  );
+}
+
+/// Non-blocking warning shown above the cards when `/bookings/my` failed to
+/// load: the facilities themselves are still shown (they loaded fine), but
+/// badges and the Request-button gate cannot be trusted without `mine`.
+class _JoinErrorBanner extends StatelessWidget {
+  final _L l;
+  const _JoinErrorBanner({required this.l});
+
+  @override
+  Widget build(BuildContext context) {
+    final m = context.miftah;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: m.warningBg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: m.warning.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.info_outline, size: 16, color: m.warning),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              l.joinErrorBanner,
+              style:
+                  (l.ar
+                  ? GoogleFonts.notoNaskhArabic
+                  : GoogleFonts.josefinSans)(
+                    fontSize: 12,
+                    color: m.warning,
+                    height: 1.4,
+                  ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -243,12 +324,23 @@ class _AmenityCard extends ConsumerWidget {
   final Map<String, dynamic> row;
   final Map<String, dynamic>? myOpen;
   final _L l;
-  const _AmenityCard({required this.row, required this.myOpen, required this.l});
+  const _AmenityCard({
+    required this.row,
+    required this.myOpen,
+    required this.l,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final m = context.miftah;
     final bookable = row['bookable'] == true;
+    // Only a PENDING own-request blocks a new one. The backend has no
+    // transition out of APPROVED for an amenity (unlike a parking spot,
+    // which the `held` flag already covers) and its create-idempotency
+    // only short-circuits a PENDING duplicate — so gating on `myOpen !=
+    // null` would make a once-approved amenity unbookable forever. The
+    // APPROVED badge below still shows; it is informational only.
+    final blocking = myOpen?['status'] == 'PENDING';
     final pendingCount = (row['pendingCount'] as num?)?.toInt() ?? 0;
     final property = row['propertyName']?.toString();
     final description = row['description']?.toString();
@@ -297,10 +389,10 @@ class _AmenityCard extends ConsumerWidget {
             const SizedBox(height: 4),
             Text(
               property,
-              style: GoogleFonts.josefinSans(
-                fontSize: 11.5,
-                color: m.textMuted,
-              ),
+              style: (l.ar
+                  ? GoogleFonts.notoNaskhArabic
+                  : GoogleFonts
+                        .josefinSans)(fontSize: 11.5, color: m.textMuted),
             ),
           ],
           if (description != null && description.isNotEmpty) ...[
@@ -309,13 +401,14 @@ class _AmenityCard extends ConsumerWidget {
               description,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: (l.ar
+              style:
+                  (l.ar
                   ? GoogleFonts.notoNaskhArabic
                   : GoogleFonts.josefinSans)(
-                fontSize: 12.5,
-                color: m.textSecondary,
-                height: 1.4,
-              ),
+                    fontSize: 12.5,
+                    color: m.textSecondary,
+                    height: 1.4,
+                  ),
             ),
           ],
           if (pendingCount > 0) ...[
@@ -327,7 +420,7 @@ class _AmenityCard extends ConsumerWidget {
                   : GoogleFonts.josefinSans)(fontSize: 12, color: m.warning),
             ),
           ],
-          if (bookable && myOpen == null) ...[
+          if (bookable && !blocking) ...[
             const SizedBox(height: 12),
             GoldButton(
               label: l.request,
@@ -388,6 +481,9 @@ class _SpotCard extends ConsumerWidget {
               Expanded(
                 child: Text(
                   row['spotNumber']?.toString() ?? '—',
+                  // Spot codes are alphanumeric (e.g. "P-12") and read wrong
+                  // mirrored inside an RTL layout.
+                  textDirection: TextDirection.ltr,
                   style: GoogleFonts.josefinSans(
                     fontSize: 14.5,
                     fontWeight: FontWeight.w600,
@@ -408,10 +504,10 @@ class _SpotCard extends ConsumerWidget {
             const SizedBox(height: 4),
             Text(
               meta,
-              style: GoogleFonts.josefinSans(
-                fontSize: 11.5,
-                color: m.textMuted,
-              ),
+              style: (l.ar
+                  ? GoogleFonts.notoNaskhArabic
+                  : GoogleFonts
+                        .josefinSans)(fontSize: 11.5, color: m.textMuted),
             ),
           ],
           if (pendingCount > 0) ...[
@@ -470,17 +566,27 @@ Future<void> _openRequestSheet(
       resourceName: name,
     ),
   );
-  if (created != true) return;
   // The sheet awaited a network round trip before popping — the calling
   // widget (this card) may have been disposed in the meantime (e.g. a pull
   // to refresh swapped the list out from under it), so `ref`/`context` are
   // only safe to touch past this await once `mounted` is re-checked.
   if (!context.mounted) return;
+  // Invalidate unconditionally, not just on `created == true` — belt and
+  // braces: if a create actually succeeded but the sheet's `true` result
+  // never made it back here (a dismissed-mid-pop edge case, a future
+  // refactor that adds another way to close the sheet), a stale list would
+  // otherwise never notice. The snackbar alone stays conditional; it is the
+  // only part that claims success.
   ref.invalidate(myFacilitiesProvider);
   ref.invalidate(myBookingRequestsProvider);
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(content: Text(l.requestSent), behavior: SnackBarBehavior.floating),
-  );
+  if (created == true) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(l.requestSent),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
 }
 
 /// Booking-request sheet: preferred date + note, unit resolved from the
@@ -579,188 +685,217 @@ class _RequestSheetState extends ConsumerState<_RequestSheet> {
     final l = _L(context.isAr);
     final leases = ref.watch(activeLeasesProvider);
 
-    return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
-      child: SafeArea(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.sizeOf(context).height * 0.85,
-          ),
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
-            child: leases.when(
-              loading: () => const SizedBox(
-                height: 180,
-                child: Center(
-                  child: CircularProgressIndicator(color: AppColors.accent),
+    // A drag-to-dismiss or barrier tap must not pop the sheet mid-submit —
+    // that would abandon the in-flight POST with no way back to it (and,
+    // worse, race the eventual response against a sheet that no longer
+    // exists to show it).
+    return PopScope(
+      canPop: !_submitting,
+      child: Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.viewInsetsOf(context).bottom,
+        ),
+        child: SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(context).height * 0.85,
+            ),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+              child: leases.when(
+                loading: () => const SizedBox(
+                  height: 180,
+                  child: Center(
+                    child: CircularProgressIndicator(color: AppColors.accent),
+                  ),
                 ),
-              ),
-              error: (error, _) => ErrorState(
-                message: l.leasesLoadFailed,
-                onRetry: () => ref.invalidate(activeLeasesProvider),
-              ),
-              data: (rows) {
-                final mine = rows
-                    .where(
-                      (r) => r['propertyId']?.toString() == widget.propertyId,
-                    )
-                    .toList();
-                if (mine.isEmpty) {
-                  // Every field below would be filled in for a request the
-                  // server will 404; carry the explanation here instead.
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 24),
-                    child: Text(
-                      l.noLeaseForProperty,
-                      style: (l.ar
-                          ? GoogleFonts.notoNaskhArabic
-                          : GoogleFonts.josefinSans)(
-                        fontSize: 13.5,
-                        color: m.textSecondary,
-                        height: 1.5,
-                      ),
-                    ),
-                  );
-                }
-                // One lease is the common case; select it silently.
-                _selectedUnitId ??= mine.first['unitId']?.toString();
-                return Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      l.requestTitle(widget.resourceName),
-                      style: l.ar
-                          ? GoogleFonts.notoNaskhArabic(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w600,
-                              color: m.textPrimary,
-                            )
-                          : GoogleFonts.josefinSans(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: m.textPrimary,
-                            ),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      l.unit,
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w700,
-                        color: m.textSecondary,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    if (mine.length > 1)
-                      DropdownButtonFormField<String>(
-                        initialValue: _selectedUnitId,
-                        decoration: const InputDecoration(),
-                        items: [
-                          for (final lease in mine)
-                            DropdownMenuItem(
-                              value: lease['unitId']?.toString(),
-                              child: Text(
-                                lease['unitIdentifier']?.toString() ?? '—',
-                              ),
-                            ),
-                        ],
-                        onChanged: (id) =>
-                            setState(() => _selectedUnitId = id),
+                error: (error, _) => ErrorState(
+                  message: l.leasesLoadFailed,
+                  onRetry: () => ref.invalidate(activeLeasesProvider),
+                ),
+                data: (rows) {
+                  final mine = rows
+                      .where(
+                        (r) => r['propertyId']?.toString() == widget.propertyId,
                       )
-                    else
+                      .toList();
+                  if (mine.isEmpty) {
+                    // Every field below would be filled in for a request the
+                    // server will 404; carry the explanation here instead.
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 24),
+                      child: Text(
+                        l.noLeaseForProperty,
+                        style:
+                            (l.ar
+                            ? GoogleFonts.notoNaskhArabic
+                            : GoogleFonts.josefinSans)(
+                              fontSize: 13.5,
+                              color: m.textSecondary,
+                              height: 1.5,
+                            ),
+                      ),
+                    );
+                  }
+                  // One lease is the common case; select it silently. With
+                  // more than one match the renter has to choose — starting
+                  // from an unpicked null (rather than defaulting to the
+                  // first) is the same rule `gate_pass_create_screen.dart`
+                  // follows, so a request is never quietly filed against
+                  // whichever unit happened to sort first.
+                  if (mine.length == 1) {
+                    _selectedUnitId = mine.first['unitId']?.toString();
+                  } else if (_selectedUnitId != null &&
+                      !mine.any(
+                        (lease) =>
+                            lease['unitId']?.toString() == _selectedUnitId,
+                      )) {
+                    // The previously chosen unit fell out of the matching set
+                    // (e.g. `activeLeasesProvider` refreshed mid-sheet) —
+                    // clear it rather than handing DropdownButtonFormField a
+                    // value with no matching item, which asserts.
+                    _selectedUnitId = null;
+                  }
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                       Text(
-                        mine.first['unitIdentifier']?.toString() ?? '—',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: m.textPrimary,
-                        ),
-                      ),
-                    const SizedBox(height: 12),
-                    Text(
-                      l.preferredDate,
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w700,
-                        color: m.textSecondary,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    InkWell(
-                      borderRadius: BorderRadius.circular(12),
-                      onTap: () async {
-                        final now = DateTime.now();
-                        final picked = await showDatePicker(
-                          context: context,
-                          initialDate: _preferredDate ?? now,
-                          firstDate: DateTime(now.year, now.month, now.day),
-                          lastDate: now.add(const Duration(days: 365)),
-                        );
-                        if (picked != null) {
-                          setState(() => _preferredDate = picked);
-                        }
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 15,
-                        ),
-                        decoration: BoxDecoration(
-                          color: m.surface,
-                          border: Border.all(color: m.border),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.calendar_today_outlined,
-                              size: 17,
-                              color: m.textMuted,
-                            ),
-                            const SizedBox(width: 10),
-                            Text(
-                              _preferredDate == null
-                                  ? l.pickADate
-                                  : '${_preferredDate!.day.toString().padLeft(2, '0')}/'
-                                      '${_preferredDate!.month.toString().padLeft(2, '0')}/'
-                                      '${_preferredDate!.year}',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: _preferredDate == null
-                                    ? m.textMuted
-                                    : m.textPrimary,
-                                fontWeight: _preferredDate == null
-                                    ? FontWeight.w400
-                                    : FontWeight.w600,
+                        l.requestTitle(widget.resourceName),
+                        style: l.ar
+                            ? GoogleFonts.notoNaskhArabic(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w600,
+                                color: m.textPrimary,
+                              )
+                            : GoogleFonts.josefinSans(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: m.textPrimary,
                               ),
-                            ),
-                          ],
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        l.unit,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                          color: m.textSecondary,
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      key: const Key('booking-note'),
-                      controller: _noteCtrl,
-                      maxLength: 2000,
-                      maxLines: 2,
-                      decoration: InputDecoration(
-                        labelText: l.noteOptional,
-                        hintText: l.noteHint,
-                        counterText: '',
+                      const SizedBox(height: 6),
+                      if (mine.length > 1)
+                        DropdownButtonFormField<String>(
+                          initialValue: _selectedUnitId,
+                          decoration: InputDecoration(hintText: l.whichUnit),
+                          items: [
+                            for (final lease in mine)
+                              DropdownMenuItem(
+                                value: lease['unitId']?.toString(),
+                                child: Text(
+                                  lease['unitIdentifier']?.toString() ?? '—',
+                                ),
+                              ),
+                          ],
+                          onChanged: (id) =>
+                              setState(() => _selectedUnitId = id),
+                        )
+                      else
+                        Text(
+                          mine.first['unitIdentifier']?.toString() ?? '—',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: m.textPrimary,
+                          ),
+                        ),
+                      const SizedBox(height: 12),
+                      Text(
+                        l.preferredDate,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                          color: m.textSecondary,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                    GoldButton(
-                      key: const Key('booking-submit'),
-                      label: l.sendRequest,
-                      height: 48,
-                      onPressed: _submitting ? null : _submit,
-                    ),
-                  ],
-                );
-              },
+                      const SizedBox(height: 6),
+                      InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: () async {
+                          final now = DateTime.now();
+                          final picked = await showDatePicker(
+                            context: context,
+                            initialDate: _preferredDate ?? now,
+                            firstDate: DateTime(now.year, now.month, now.day),
+                            lastDate: now.add(const Duration(days: 365)),
+                          );
+                          if (picked != null) {
+                            setState(() => _preferredDate = picked);
+                          }
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 15,
+                          ),
+                          decoration: BoxDecoration(
+                            color: m.surface,
+                            border: Border.all(color: m.border),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.calendar_today_outlined,
+                                size: 17,
+                                color: m.textMuted,
+                              ),
+                              const SizedBox(width: 10),
+                              Text(
+                                _preferredDate == null
+                                    ? l.pickADate
+                                    : '${_preferredDate!.day.toString().padLeft(2, '0')}/'
+                                          '${_preferredDate!.month.toString().padLeft(2, '0')}/'
+                                          '${_preferredDate!.year}',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: _preferredDate == null
+                                      ? m.textMuted
+                                      : m.textPrimary,
+                                  fontWeight: _preferredDate == null
+                                      ? FontWeight.w400
+                                      : FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        key: const Key('booking-note'),
+                        controller: _noteCtrl,
+                        maxLength: 2000,
+                        maxLines: 2,
+                        decoration: InputDecoration(
+                          labelText: l.noteOptional,
+                          hintText: l.noteHint,
+                          counterText: '',
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      GoldButton(
+                        key: const Key('booking-submit'),
+                        label: l.sendRequest,
+                        height: 48,
+                        onPressed: (_submitting || _selectedUnitId == null)
+                            ? null
+                            : _submit,
+                      ),
+                    ],
+                  );
+                },
+              ),
             ),
           ),
         ),
