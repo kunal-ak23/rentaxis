@@ -50,6 +50,7 @@ export 'theme/status_helpers.dart';
 // Utils
 export 'utils/formatters.dart';
 export 'utils/l10n.dart';
+export 'utils/error_message.dart';
 
 // Widgets
 export 'widgets/status_badge.dart';
