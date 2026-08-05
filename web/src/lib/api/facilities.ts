@@ -42,18 +42,26 @@ export class ApiError extends Error {
 }
 
 /**
- * Extracts a safe, displayable message from a response body. The backend's
- * error shape is `{error, message, status}`; a proxy failure (e.g. a 502)
- * can instead return raw HTML, so JSON parsing is attempted and any failure
- * (or a parsed value without a string `message`) falls back to a generic,
- * synthesized message — the raw text is never surfaced to callers directly.
+ * Extracts a safe, displayable message from a response body. Most handlers
+ * use the `{error: true, message, status}` shape; a proxy failure (e.g. a
+ * 502) can instead return raw HTML, so JSON parsing is attempted first.
+ * `SlotConflictException` (409 — e.g. approving a booking for an
+ * already-held parking spot) is the one exception: GlobalExceptionHandler
+ * puts its text directly in `error` (`{error: "<message>", nextAvailableSlot}`,
+ * no `message` key — see CreateMeetingModal's own 409 handling, which reads
+ * `err.error` for the same reason), so a string `error` is checked as a
+ * fallback. Any other shape (or a JSON-parse failure) falls back to a
+ * generic, synthesized message — the raw text is never surfaced to callers
+ * directly.
  */
 function parseErrorMessage(text: string, status: number): string {
   if (text) {
     try {
       const parsed: unknown = JSON.parse(text)
-      if (parsed && typeof parsed === 'object' && typeof (parsed as { message?: unknown }).message === 'string') {
-        return (parsed as { message: string }).message
+      if (parsed && typeof parsed === 'object') {
+        const body = parsed as { message?: unknown; error?: unknown }
+        if (typeof body.message === 'string') return body.message
+        if (typeof body.error === 'string') return body.error
       }
     } catch {
       // Not JSON (e.g. a proxy 502 HTML page) — fall through to the generic message.
