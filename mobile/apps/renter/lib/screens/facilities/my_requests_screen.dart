@@ -19,7 +19,7 @@ class _L {
   _L(this.ar);
   final bool ar;
 
-  String get title => ar ? 'طلبات الحجز' : 'My Requests';
+  String get title => ar ? 'طلباتي' : 'My Requests';
   String get loadFailed =>
       ar ? 'فشل تحميل الطلبات' : 'Failed to load your requests';
   String get nothingYet => ar ? 'لا توجد طلبات بعد' : 'No requests yet';

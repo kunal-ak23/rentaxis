@@ -41,7 +41,7 @@ class _L {
   String get call => ar ? 'اتصال' : 'Call';
   String get email => ar ? 'بريد' : 'Email';
   String get otherRequests =>
-      ar ? 'طلبات أخرى لنفس المرفق' : 'Other requests for this resource';
+      ar ? 'طلبات أخرى لهذا العنصر' : 'Other requests for this resource';
   String get noOtherRequests => ar ? 'لا توجد طلبات أخرى' : 'No other requests';
   String get adminNote =>
       ar ? 'ملاحظة للمستأجر (اختياري)' : 'Note to renter (optional)';
