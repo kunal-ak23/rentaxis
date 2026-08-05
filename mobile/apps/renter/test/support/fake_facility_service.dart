@@ -13,6 +13,7 @@ class FakeFacilityService implements FacilityApiService {
     this.rejectError,
     this.releaseError,
     this.createError,
+    this.cancelError,
   }) : detail =
            detail ??
            {'request': <String, dynamic>{}, 'otherRequests': <dynamic>[]};
@@ -29,12 +30,14 @@ class FakeFacilityService implements FacilityApiService {
   Object? rejectError;
   Object? releaseError;
   Object? createError;
+  Object? cancelError;
 
   int bookingsReads = 0;
   final List<(String, String?)> approveCalls = [];
   final List<(String, String?)> rejectCalls = [];
   final List<String> releaseCalls = [];
   final List<Map<String, dynamic>> createCalls = [];
+  final List<String> cancelCalls = [];
 
   Map<String, dynamic> _page(List<Map<String, dynamic>> rows) => {
     'content': rows,
@@ -153,8 +156,10 @@ class FakeFacilityService implements FacilityApiService {
   Future<List<dynamic>> myBookings() async => bookings;
 
   @override
-  Future<Map<String, dynamic>> cancelBooking(String id) async => {
-    'id': id,
-    'status': 'CANCELLED',
-  };
+  Future<Map<String, dynamic>> cancelBooking(String id) async {
+    cancelCalls.add(id);
+    final error = cancelError;
+    if (error != null) throw error;
+    return {'id': id, 'status': 'CANCELLED'};
+  }
 }
