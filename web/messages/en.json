@@ -1193,6 +1193,7 @@
     "subtitle": "Review amenity and parking requests from renters.",
     "noAccess": "You do not have access to booking requests.",
     "allProperties": "All properties",
+    "selectPropertyPrompt": "Select a property to view its booking requests.",
     "allStatuses": "All statuses",
     "allTypes": "All types",
     "typeAMENITY": "Amenity",
