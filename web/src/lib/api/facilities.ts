@@ -25,26 +25,56 @@ const FACILITIES = '/api/proxy/v1/facilities'
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' }
 
-/** Error carrying the HTTP status so callers can branch on 409 (spot held) / 400. */
+/**
+ * Error carrying the HTTP status so callers can branch on 409 (spot held) / 400.
+ * `message` is always a safe, displayable string (parsed from the backend's
+ * `{error, message, status}` JSON shape, never raw HTML/JSON); the original
+ * response text is kept on `body` for debugging.
+ */
 export class ApiError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(public status: number, message: string, public body?: string) {
     super(message)
     this.name = 'ApiError'
   }
 }
 
-async function handle<T>(res: Response, action: string): Promise<T> {
-  if (!res.ok) {
-    const text = await res.text().catch(() => '')
-    throw new ApiError(res.status, text || `${action} failed: ${res.status}`)
+/**
+ * Extracts a safe, displayable message from a response body. The backend's
+ * error shape is `{error, message, status}`; a proxy failure (e.g. a 502)
+ * can instead return raw HTML, so JSON parsing is attempted and any failure
+ * (or a parsed value without a string `message`) falls back to a generic,
+ * synthesized message — the raw text is never surfaced to callers directly.
+ */
+function parseErrorMessage(text: string, status: number): string {
+  if (text) {
+    try {
+      const parsed: unknown = JSON.parse(text)
+      if (parsed && typeof parsed === 'object' && typeof (parsed as { message?: unknown }).message === 'string') {
+        return (parsed as { message: string }).message
+      }
+    } catch {
+      // Not JSON (e.g. a proxy 502 HTML page) — fall through to the generic message.
+    }
   }
-  return res.json() as Promise<T>
+  return `Request failed (status ${status})`
+}
+
+async function handle<T>(res: Response, action: string): Promise<T> {
+  const text = await res.text().catch(() => '')
+  if (!res.ok) {
+    throw new ApiError(res.status, parseErrorMessage(text, res.status), text)
+  }
+  // 204 No Content (or any other empty-bodied success response) has nothing to parse.
+  if (res.status === 204 || !text) {
+    return undefined as T
+  }
+  return JSON.parse(text) as T
 }
 
 async function handleVoid(res: Response, action: string): Promise<void> {
+  const text = await res.text().catch(() => '')
   if (!res.ok) {
-    const text = await res.text().catch(() => '')
-    throw new ApiError(res.status, text || `${action} failed: ${res.status}`)
+    throw new ApiError(res.status, parseErrorMessage(text, res.status), text)
   }
 }
 
@@ -197,17 +227,21 @@ export async function cancelBooking(id: string): Promise<BookingRequestDTO> {
 // ─── Bulk spot-number entry parser ───────────────────────────────────────────
 
 /**
- * Parses comma-separated spot numbers with numeric range expansion.
+ * Parses comma/semicolon/newline-separated spot numbers (comma for typed
+ * entry, semicolon/newline for spreadsheet-paste input) with numeric range
+ * expansion.
  *   "B1-05, B1-06"  -> ["B1-05", "B1-06"]        (prefixes differ around the dash → literal)
  *   "P10-P20"       -> ["P10", "P11", ..., "P20"] (same prefix both sides → expanded)
  *   "10-12"         -> ["10", "11", "12"]
+ *   "A1\nA2;A3"     -> ["A1", "A2", "A3"]
  * Zero-padding of the start bound is preserved ("P08-P10" -> P08, P09, P10).
- * Ranges longer than 500 entries are kept literal to guard against typos.
+ * A range that would expand to more than 500 entries — the backend's
+ * spotNumbers cap — is kept literal to guard against typos.
  * Duplicates are removed; order of first appearance is kept.
  */
 export function parseSpotNumbers(input: string): string[] {
   const out: string[] = []
-  for (const raw of input.split(',')) {
+  for (const raw of input.split(/[,;\n]/)) {
     const entry = raw.trim()
     if (!entry) continue
     const m = entry.match(/^(.*?)(\d+)\s*-\s*(.*?)(\d+)$/)
@@ -216,7 +250,7 @@ export function parseSpotNumbers(input: string): string[] {
       const start = parseInt(m[2], 10)
       const end = parseInt(m[4], 10)
       const width = m[2].length
-      if (end >= start && end - start <= 500) {
+      if (end >= start && end - start < 500) {
         for (let n = start; n <= end; n++) {
           out.push(`${prefix}${String(n).padStart(width, '0')}`)
         }
