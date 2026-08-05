@@ -24,6 +24,7 @@ import {
     Building2,
     CalendarDays,
     ScanLine,
+    CalendarCheck,
 } from 'lucide-react';
 import Image from "next/image";
 import { Link } from "@/i18n/routing";
@@ -48,6 +49,7 @@ export default function MvpSidebar() {
     const tBankAccounts = useTranslations("BankAccounts");
     const tStaff = useTranslations("Staff");
     const tGatePass = useTranslations("GatePass");
+    const tBookings = useTranslations("Bookings");
     const pathname = usePathname();
     const [isCollapsed, setIsCollapsed] = useState(() => {
         if (typeof window !== 'undefined') {
@@ -87,6 +89,9 @@ export default function MvpSidebar() {
                 // decision covering all five flags, not a gate-pass one.
                 ...(hasPermission(userRole, 'canViewGatePassReport')
                     ? [{ name: tGatePass("navLabel"), href: "/dashboard/gatepass", icon: ScanLine, tourId: 'sidebar-gatepass' }]
+                    : []),
+                ...(hasPermission(userRole, 'canManageFacilities')
+                    ? [{ name: tBookings("navLabel"), href: "/dashboard/bookings", icon: CalendarCheck, tourId: 'sidebar-bookings' }]
                     : []),
             ]
             : []),

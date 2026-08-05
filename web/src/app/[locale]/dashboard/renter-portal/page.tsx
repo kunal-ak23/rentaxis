@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useTranslations } from "next-intl";
-import { FileText, Calendar, DollarSign, Home, CheckCircle, XCircle, Download, Clock, AlertCircle, CreditCard, CalendarDays, Plus, Eye, ChevronLeft, ChevronRight, ChevronDown } from "lucide-react";
+import { FileText, Calendar, DollarSign, Home, CheckCircle, XCircle, Download, Clock, AlertCircle, CreditCard, CalendarDays, Plus, Eye, ChevronLeft, ChevronRight, ChevronDown, Dumbbell } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import { formatCurrencyCompact } from "@/lib/format";
@@ -54,6 +54,7 @@ const MEETINGS_PER_PAGE = 5;
 export default function RenterPortalPage() {
     const t = useTranslations("MasterData");
     const tPayments = useTranslations("OnlinePayments");
+    const tFacilities = useTranslations("Facilities");
     const [leases, setLeases] = useState<Lease[]>([]);
     const [loading, setLoading] = useState(true);
     const [nextPayment, setNextPayment] = useState<{ dueDate: string; amount: number; daysUntilDue: number; isOverdue: boolean } | null>(null);
@@ -335,6 +336,22 @@ export default function RenterPortalPage() {
                             </div>
                         </div>
                     )}
+                </div>
+            </Link>
+
+            {/* Facilities & Parking entry card */}
+            <Link href="/dashboard/renter-portal/facilities">
+                <div className="bg-surface rounded-xl border border-border hover:shadow-md transition-all duration-200 mb-6 cursor-pointer p-5 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center text-primary border border-primary/20">
+                            <Dumbbell size={18} />
+                        </div>
+                        <div>
+                            <p className="text-sm font-bold text-foreground">{tFacilities("entryCardTitle")}</p>
+                            <p className="text-[10px] text-muted">{tFacilities("entryCardDesc")}</p>
+                        </div>
+                    </div>
+                    <ChevronRight size={16} className="text-primary rtl:rotate-180" />
                 </div>
             </Link>
 
