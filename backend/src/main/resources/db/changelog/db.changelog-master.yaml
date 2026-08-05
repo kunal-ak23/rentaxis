@@ -143,3 +143,5 @@ databaseChangeLog:
       file: db/changelog/changesets/68-backfill-unit-lease-metrics.yaml
   - include:
       file: db/changelog/changesets/69-amenities-parking.yaml
+  - include:
+      file: db/changelog/changesets/70-reset-stale-occupied-units.yaml
