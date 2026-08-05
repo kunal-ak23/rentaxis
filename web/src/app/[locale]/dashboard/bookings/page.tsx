@@ -33,6 +33,33 @@ function parseDateOnly(value: string): Date {
     return new Date(y, m - 1, d);
 }
 
+/**
+ * Throws an ApiError (parsed from the `{error, message}` shape where
+ * possible, same convention as facilities.ts's parseErrorMessage) when a raw
+ * fetch response isn't ok. The properties list uses a plain fetch (it isn't
+ * wrapped by lib/api/facilities), so without this a 4xx/5xx here would be
+ * silently swallowed — same fix as renter-portal/facilities/page.tsx's
+ * throwIfNotOk.
+ */
+async function throwIfNotOk(res: Response): Promise<void> {
+    if (res.ok) return;
+    const text = await res.text().catch(() => "");
+    let message = `Request failed (status ${res.status})`;
+    if (text) {
+        try {
+            const parsed: unknown = JSON.parse(text);
+            if (parsed && typeof parsed === "object") {
+                const body = parsed as { message?: unknown; error?: unknown };
+                if (typeof body.message === "string") message = body.message;
+                else if (typeof body.error === "string") message = body.error;
+            }
+        } catch {
+            // Not JSON — keep the generic message.
+        }
+    }
+    throw new ApiError(res.status, message, text);
+}
+
 export default function BookingsPage() {
     const t = useTranslations("Bookings");
     const locale = useLocale();
@@ -64,20 +91,23 @@ export default function BookingsPage() {
     // clobbering fresher state with stale data.
     const requestIdRef = useRef(0);
 
+    // A failed load here must surface, not just silently leave the property
+    // filter empty — the caller has no other way to know why "All properties"
+    // (or, for a PM, every property) is missing from the dropdown. Errors
+    // share the page-level banner/retry with `load` below.
+    const loadProperties = useCallback(async () => {
+        const res = await fetch("/api/proxy/v1/properties");
+        await throwIfNotOk(res);
+        const data: Array<{ property: PropertyOption }> = await res.json();
+        setProperties(data.map(s => s.property));
+    }, []);
+
     useEffect(() => {
         if (sessionStatus !== "authenticated" || !canView) return;
-        (async () => {
-            try {
-                const res = await fetch("/api/proxy/v1/properties");
-                if (res.ok) {
-                    const data: Array<{ property: PropertyOption }> = await res.json();
-                    setProperties(data.map(s => s.property));
-                }
-            } catch (err) {
-                console.error(err);
-            }
-        })();
-    }, [sessionStatus, canView]);
+        loadProperties().catch(err => {
+            setError(err instanceof ApiError ? err.message : t("loadError"));
+        });
+    }, [sessionStatus, canView, loadProperties, t]);
 
     const load = useCallback(async (p: number) => {
         if (needsPropertySelection) {
@@ -186,7 +216,17 @@ export default function BookingsPage() {
             {error && (
                 <div className="mb-4 px-4 py-3 rounded-xl bg-error/10 text-error border border-error/20 text-xs font-semibold flex items-center justify-between">
                     <span>{error}</span>
-                    <button onClick={() => load(page)} className="font-bold underline cursor-pointer">{t("retry")}</button>
+                    <button
+                        onClick={() => {
+                            load(page);
+                            loadProperties().catch(err => {
+                                setError(err instanceof ApiError ? err.message : t("loadError"));
+                            });
+                        }}
+                        className="font-bold underline cursor-pointer"
+                    >
+                        {t("retry")}
+                    </button>
                 </div>
             )}
 
