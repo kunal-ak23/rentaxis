@@ -96,6 +96,8 @@ class HomeScreen extends ConsumerWidget {
                         .watch(_openPenaltyCountProvider)
                         .valueOrNull,
                   ),
+                  const SizedBox(height: 14),
+                  const _FacilitiesCard(),
                   const SizedBox(height: 22),
                   _RecentActivityHeader(),
                   const SizedBox(height: 10),
@@ -746,6 +748,87 @@ class _Progress extends StatelessWidget {
 
 // ─── Quick actions ──────────────────────────────────────────────────────────
 
+/// Entry card for the amenities & parking booking flow (route /facilities).
+/// A full-width card rather than a sixth quick-action tile: the grid above is
+/// deliberately five-across so the row stays whole (see its comment), and a
+/// sixth tile would strand one on a second row.
+class _FacilitiesCard extends StatelessWidget {
+  const _FacilitiesCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final m = context.miftah;
+    final l = _L(context.isAr);
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: () => context.push('/facilities'),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: m.surface,
+          border: Border.all(color: m.border),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.accent.withValues(alpha: 0.1),
+                border: Border.all(
+                  color: AppColors.accent.withValues(alpha: 0.35),
+                ),
+              ),
+              child: const Icon(
+                Icons.pool_outlined,
+                size: 20,
+                color: AppColors.accentDark,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    l.facilitiesTitle,
+                    style: l.ar
+                        ? GoogleFonts.notoNaskhArabic(
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w600,
+                            color: m.textPrimary,
+                          )
+                        : GoogleFonts.josefinSans(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: m.textPrimary,
+                          ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    l.facilitiesSub,
+                    style:
+                        (l.ar
+                        ? GoogleFonts.notoNaskhArabic
+                        : GoogleFonts.josefinSans)(
+                          fontSize: 12,
+                          color: m.textSecondary,
+                        ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, size: 18, color: m.textMuted),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _QuickActions extends StatelessWidget {
   final int? penaltyBadge;
   const _QuickActions({this.penaltyBadge});
@@ -1226,6 +1309,11 @@ class _L {
   String get maintain => ar ? 'الصيانة' : 'Maintain';
   String get contract => ar ? 'العقد' : 'Contract';
   String get inbox => ar ? 'الرسائل' : 'Inbox';
+  String get facilitiesTitle =>
+      ar ? 'المرافق ومواقف السيارات' : 'Amenities & Parking';
+  String get facilitiesSub => ar
+      ? 'اطلب حجز المسبح أو القاعة أو موقف سيارة'
+      : 'Request the pool, hall or a parking spot';
 
   // Recent activity
   String get recentActivity => ar ? 'آخر التحديثات' : 'RECENT ACTIVITY';
