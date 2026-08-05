@@ -108,8 +108,13 @@ class AmenityControllerTest {
     void list_returns200WithBatchMappedCounts() {
         PropertyAmenity a1 = amenity();
         PropertyAmenity a2 = amenity();
+        // Page 1 of 2, 45 total — deliberately different from the 2-item content list,
+        // so a rewrite that rebuilds the page as `new PageImpl<>(dtoList)` (dropping
+        // pageable/total) rather than `page.map(...)` (preserving them) fails loudly.
+        Pageable requestedPageable = PageRequest.of(1, 2);
+        Page<PropertyAmenity> sourcePage = new PageImpl<>(List.of(a1, a2), requestedPageable, 45L);
         when(facilityService.listAmenities(eq(tenantId), eq(propertyId), any(Pageable.class)))
-                .thenReturn(new PageImpl<>(List.of(a1, a2)));
+                .thenReturn(sourcePage);
         when(bookingRequestRepository.countByAmenityIdIn(eq(tenantId), any(), eq(BookingRequestStatus.PENDING)))
                 .thenReturn(List.of(new Object[]{a1.getId(), 2L}, new Object[]{a2.getId(), 0L}));
         AmenityBuildingScope scope = new AmenityBuildingScope();
@@ -119,14 +124,18 @@ class AmenityControllerTest {
         when(amenityScopeRepository.findByAmenityIdIn(any())).thenReturn(List.of(scope));
 
         ResponseEntity<Page<AmenityDTO>> response =
-                controller.list(propertyId, PageRequest.of(0, 20));
+                controller.list(propertyId, requestedPageable);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        List<AmenityDTO> dtos = response.getBody().getContent();
+        Page<AmenityDTO> body = response.getBody();
+        List<AmenityDTO> dtos = body.getContent();
         assertThat(dtos).extracting(AmenityDTO::nameEn).containsExactly("Gym", "Gym");
         assertThat(dtos).extracting(AmenityDTO::pendingCount).containsExactly(2L, 0L);
         assertThat(dtos.get(0).buildingIds()).containsExactly(buildingId);
         assertThat(dtos.get(1).buildingIds()).isEmpty();
+        assertThat(body.getTotalElements()).isEqualTo(45L);
+        assertThat(body.getNumber()).isEqualTo(1);
+        assertThat(body.getSize()).isEqualTo(2);
 
         // N+1 guard: exactly one batch call for the whole page, never the singular per-row methods.
         verify(bookingRequestRepository, times(1))
