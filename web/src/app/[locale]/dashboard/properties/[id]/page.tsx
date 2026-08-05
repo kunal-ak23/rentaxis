@@ -4,7 +4,8 @@ import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useTranslations, useLocale } from "next-intl";
 import { Link } from "@/i18n/routing";
-import { Building2, Home, FileText, ArrowLeft, Plus, MapPin, Upload, Calendar, DollarSign, Settings, Wrench, Zap, Hammer, Shield, Hospital, Pill, Siren, HelpCircle, Phone, Mail, Pencil, Trash2 } from "lucide-react";
+import { Building2, Home, FileText, ArrowLeft, Plus, MapPin, Upload, Calendar, DollarSign, Settings, Wrench, Zap, Hammer, Shield, Hospital, Pill, Siren, HelpCircle, Phone, Mail, Pencil, Trash2, Dumbbell } from "lucide-react";
+import { AmenitiesTab } from "./_components/AmenitiesTab";
 import { cn } from "@/lib/utils";
 import { useSession } from "next-auth/react";
 import { hasPermission, canConfigureRentSettings, type UserRole } from "@/lib/rbac";
@@ -63,6 +64,7 @@ export default function PropertyDetailPage() {
     const t = useTranslations("MasterData");
     const e = useTranslations("Emirates");
     const tOnlinePayments = useTranslations("OnlinePayments");
+    const tFacilities = useTranslations("Facilities");
     const locale = useLocale();
     const propertyId = params.id as string;
 
@@ -70,8 +72,9 @@ export default function PropertyDetailPage() {
     const userRole = session?.user?.role as UserRole | undefined;
     const canCreate = hasPermission(userRole, 'canCreateProperties');
     const canManageRentSettings = userRole ? canConfigureRentSettings(userRole) : false;
+    const canManageFacilities = hasPermission(userRole, 'canManageFacilities');
 
-    const [activeTab, setActiveTab] = useState<"overview" | "buildings" | "units" | "leases">("overview");
+    const [activeTab, setActiveTab] = useState<"overview" | "buildings" | "units" | "leases" | "amenities" | "parking">("overview");
     const [property, setProperty] = useState<any>(null);
     const [buildings, setBuildings] = useState<any[]>([]);
     const [units, setUnits] = useState<any[]>([]);
@@ -237,7 +240,8 @@ export default function PropertyDetailPage() {
                     { id: "overview", label: "Overview", icon: Home },
                     { id: "buildings", label: "Buildings", icon: Building2 },
                     { id: "units", label: "Units", icon: Home },
-                    { id: "leases", label: "Leases", icon: FileText }
+                    { id: "leases", label: "Leases", icon: FileText },
+                    { id: "amenities", label: tFacilities("amenitiesTab"), icon: Dumbbell }
                 ].map(tab => {
                     const Icon = tab.icon;
                     const isActive = activeTab === tab.id;
@@ -474,6 +478,10 @@ export default function PropertyDetailPage() {
 
             {activeTab === "leases" && (
                 <LeasesTab propertyId={propertyId} />
+            )}
+
+            {activeTab === "amenities" && (
+                <AmenitiesTab propertyId={propertyId} buildings={buildings} canManage={canManageFacilities} />
             )}
         </div>
     );

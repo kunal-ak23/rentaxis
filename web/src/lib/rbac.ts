@@ -29,6 +29,11 @@ export const PERMISSIONS = {
     // hitting it gets a 403, and offering the nav item would only surface that as a
     // broken page. Widen this only alongside the annotation.
     canViewGatePassReport: ['TENANT_ADMIN', 'PROPERTY_MANAGER'] as UserRole[],
+    // Mirrors the amenities/parking/bookings controllers' @PreAuthorize
+    // hasAnyRole('SUPER_ADMIN','TENANT_ADMIN','PROPERTY_MANAGER'). Unlike
+    // canViewGatePassReport, SUPER_ADMIN is deliberately included here because
+    // the backend admits it.
+    canManageFacilities: ['SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER'] as UserRole[],
 } as const;
 
 export type Permission = keyof typeof PERMISSIONS;
