@@ -1,4 +1,6 @@
 package com.datagami.rentaxis.api.dto;
 
-public record DecisionRequest(String adminNote) {
+import jakarta.validation.constraints.Size;
+
+public record DecisionRequest(@Size(max = 2000) String adminNote) {
 }

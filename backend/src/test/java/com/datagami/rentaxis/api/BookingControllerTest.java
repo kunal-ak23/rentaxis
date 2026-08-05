@@ -122,11 +122,15 @@ class BookingControllerTest {
     }
 
     private Lease activeLease() {
+        return activeLeaseForRenter(renter);
+    }
+
+    private Lease activeLeaseForRenter(Renter r) {
         Lease lease = new Lease();
         lease.setTenantId(tenantId);
         lease.setStatus(LeaseStatus.ACTIVE);
         lease.setUnit(unit);
-        lease.setRenter(renter);
+        lease.setRenter(r);
         return lease;
     }
 
@@ -149,8 +153,43 @@ class BookingControllerTest {
     @Test
     void createBooking_unitNotOnCallerActiveLease_throwsNotFound() {
         when(renterRepository.findByUserId(renterUserId)).thenReturn(Optional.of(renter));
+        // Non-empty on purpose: the unit IS actively leased, just not by this caller.
+        // An empty list can't distinguish the renter-id filter from dead code — a
+        // mutant deleting that filter would still throw on an empty stream.
+        Renter otherRenter = new Renter();
+        otherRenter.setId(UUID.randomUUID());
+        otherRenter.setTenantId(tenantId);
+        otherRenter.setUserId(UUID.randomUUID());
         when(leaseRepository.findByUnitIdAndStatus(unit.getId(), LeaseStatus.ACTIVE))
-                .thenReturn(List.of());
+                .thenReturn(List.of(activeLeaseForRenter(otherRenter)));
+
+        assertThatThrownBy(() -> controller.create(new BookingCreateRequest(
+                BookingResourceType.AMENITY, UUID.randomUUID(), unit.getId(), null, null)))
+                .isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    void createBooking_leaseBelongsToForeignTenant_throwsNotFound() {
+        when(renterRepository.findByUserId(renterUserId)).thenReturn(Optional.of(renter));
+        // Same renter as the caller, but the lease row is stamped with a different
+        // tenant — exercises the tenant filter independently of the renter-id filter.
+        Lease foreignTenantLease = activeLease();
+        foreignTenantLease.setTenantId(UUID.randomUUID());
+        when(leaseRepository.findByUnitIdAndStatus(unit.getId(), LeaseStatus.ACTIVE))
+                .thenReturn(List.of(foreignTenantLease));
+
+        assertThatThrownBy(() -> controller.create(new BookingCreateRequest(
+                BookingResourceType.AMENITY, UUID.randomUUID(), unit.getId(), null, null)))
+                .isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    void createBooking_renterProfileBelongsToForeignTenant_throwsNotFound() {
+        Renter foreignRenter = new Renter();
+        foreignRenter.setId(UUID.randomUUID());
+        foreignRenter.setTenantId(UUID.randomUUID());
+        foreignRenter.setUserId(renterUserId);
+        when(renterRepository.findByUserId(renterUserId)).thenReturn(Optional.of(foreignRenter));
 
         assertThatThrownBy(() -> controller.create(new BookingCreateRequest(
                 BookingResourceType.AMENITY, UUID.randomUUID(), unit.getId(), null, null)))
@@ -187,12 +226,18 @@ class BookingControllerTest {
         BookingRequest released = booking(BookingResourceType.PARKING_SPOT);
         released.setStatus(BookingRequestStatus.RELEASED);
         when(bookingService.release(tenantId, released.getId(), renterUserId, false)).thenReturn(released);
-        when(parkingSpotRepository.findAllById(List.of(released.getParkingSpotId()))).thenReturn(List.of());
+        ParkingSpot spot = new ParkingSpot();
+        spot.setId(released.getParkingSpotId());
+        spot.setSpotNumber("C2-14");
+        when(parkingSpotRepository.findAllById(List.of(released.getParkingSpotId()))).thenReturn(List.of(spot));
 
         ResponseEntity<BookingRequestDTO> response = controller.release(released.getId());
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody().status()).isEqualTo(BookingRequestStatus.RELEASED);
+        // Populated resourceName, keyed by the correct spot id — kills a mutant that
+        // maps the wrong id in BookingController.resourceNames' parking-spot loop.
+        assertThat(response.getBody().resourceName()).isEqualTo("C2-14");
     }
 
     @Test
@@ -208,6 +253,19 @@ class BookingControllerTest {
         when(parkingSpotRepository.findAllById(List.of(released.getParkingSpotId()))).thenReturn(List.of());
 
         assertThat(controller.release(approved.getId()).getStatusCode()).isEqualTo(HttpStatus.OK);
+    }
+
+    @Test
+    void release_pmWithoutAssignment_throwsAccessDenied() {
+        UUID pmId = UUID.randomUUID();
+        authenticateAs(pmId, "ROLE_PROPERTY_MANAGER");
+        BookingRequest approved = booking(BookingResourceType.PARKING_SPOT);
+        approved.setStatus(BookingRequestStatus.APPROVED);
+        when(bookingService.get(tenantId, approved.getId())).thenReturn(approved);
+        when(assignmentRepository.existsByUserIdAndPropertyId(pmId, propertyId)).thenReturn(false);
+
+        assertThatThrownBy(() -> controller.release(approved.getId()))
+                .isInstanceOf(AccessDeniedException.class);
     }
 
     // ------------------------------------------------------------- admin get/list
@@ -363,13 +421,24 @@ class BookingControllerTest {
         s.setPropertyId(propertyId);
         s.setSpotNumber("B1-07");
         s.setCovered(true);
+        // Second spot has PENDING requests but zero APPROVED ones — proves held is
+        // derived per-spot from the APPROVED batch, not defaulted true (>=0 mutant).
+        ParkingSpot s2 = new ParkingSpot();
+        s2.setId(UUID.randomUUID());
+        s2.setPropertyId(propertyId);
+        s2.setSpotNumber("B1-08");
+        s2.setCovered(false);
         when(facilityService.visibleFacilities(tenantId, unit))
-                .thenReturn(new FacilityService.VisibleFacilities(List.of(a), List.of(s)));
+                .thenReturn(new FacilityService.VisibleFacilities(List.of(a), List.of(s, s2)));
         when(bookingRequestRepository.countByAmenityIdIn(tenantId, List.of(a.getId()), BookingRequestStatus.PENDING))
                 .thenReturn(List.<Object[]>of(new Object[]{a.getId(), 3L}));
-        when(bookingRequestRepository.countByParkingSpotIdIn(tenantId, List.of(s.getId()), BookingRequestStatus.PENDING))
-                .thenReturn(List.<Object[]>of(new Object[]{s.getId(), 1L}));
-        when(bookingRequestRepository.countByParkingSpotIdIn(tenantId, List.of(s.getId()), BookingRequestStatus.APPROVED))
+        // PENDING and APPROVED stubbed to distinct values per spot so a mutant that
+        // swaps which status feeds pendingCount vs. held would be caught.
+        when(bookingRequestRepository.countByParkingSpotIdIn(
+                tenantId, List.of(s.getId(), s2.getId()), BookingRequestStatus.PENDING))
+                .thenReturn(List.<Object[]>of(new Object[]{s.getId(), 2L}, new Object[]{s2.getId(), 5L}));
+        when(bookingRequestRepository.countByParkingSpotIdIn(
+                tenantId, List.of(s.getId(), s2.getId()), BookingRequestStatus.APPROVED))
                 .thenReturn(List.<Object[]>of(new Object[]{s.getId(), 1L}));
 
         ResponseEntity<MyFacilitiesDTO> response = controller.myFacilities();
@@ -378,13 +447,32 @@ class BookingControllerTest {
         assertThat(body.amenities()).hasSize(1);
         assertThat(body.amenities().getFirst().propertyName()).isEqualTo("Marina Heights");
         assertThat(body.amenities().getFirst().pendingCount()).isEqualTo(3L);
-        assertThat(body.parkingSpots().getFirst().held()).isTrue();
-        assertThat(body.parkingSpots().getFirst().pendingCount()).isEqualTo(1L);
+
+        MyFacilitiesDTO.RenterParkingSpotDTO heldSpot = body.parkingSpots().stream()
+                .filter(dto -> dto.id().equals(s.getId())).findFirst().orElseThrow();
+        MyFacilitiesDTO.RenterParkingSpotDTO unheldSpot = body.parkingSpots().stream()
+                .filter(dto -> dto.id().equals(s2.getId())).findFirst().orElseThrow();
+        assertThat(heldSpot.held()).isTrue();
+        assertThat(heldSpot.pendingCount()).isEqualTo(2L);
+        assertThat(unheldSpot.held()).isFalse();
+        assertThat(unheldSpot.pendingCount()).isEqualTo(5L);
         // Deviation from the plan: pendingCount/held must come from the batch
         // repository queries above, never from per-resource BookingService calls.
         verify(bookingService, never()).countPendingForAmenity(any());
         verify(bookingService, never()).countPendingForSpot(any());
         verify(bookingService, never()).spotHeld(any());
+    }
+
+    @Test
+    void myFacilities_renterProfileBelongsToForeignTenant_throwsNotFound() {
+        Renter foreignRenter = new Renter();
+        foreignRenter.setId(UUID.randomUUID());
+        foreignRenter.setTenantId(UUID.randomUUID());
+        foreignRenter.setUserId(renterUserId);
+        when(renterRepository.findByUserId(renterUserId)).thenReturn(Optional.of(foreignRenter));
+
+        assertThatThrownBy(() -> controller.myFacilities())
+                .isInstanceOf(NotFoundException.class);
     }
 
     @Test
