@@ -125,7 +125,12 @@ public class FacilityService {
 
     public PropertyAmenity updateAmenity(UUID tenantId, UUID id, AmenityUpdateRequest req) {
         PropertyAmenity amenity = getAmenity(tenantId, id);
-        if (req.nameEn() != null) amenity.setNameEn(req.nameEn().trim());
+        if (req.nameEn() != null) {
+            if (req.nameEn().isBlank()) {
+                throw new BusinessRuleViolationException("nameEn is required");
+            }
+            amenity.setNameEn(req.nameEn().trim());
+        }
         if (req.nameAr() != null) amenity.setNameAr(req.nameAr());
         if (req.description() != null) amenity.setDescription(req.description());
         if (req.bookable() != null) amenity.setBookable(req.bookable());
