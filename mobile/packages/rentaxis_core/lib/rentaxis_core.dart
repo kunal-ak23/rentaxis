@@ -30,6 +30,7 @@ export 'api/services/location_service.dart';
 export 'api/services/meeting_service.dart';
 export 'api/services/cheque_extraction_service.dart';
 export 'api/services/gate_pass_service.dart';
+export 'api/services/facility_service.dart';
 
 // Models
 export 'models/auth_response.dart';
@@ -49,6 +50,7 @@ export 'theme/status_helpers.dart';
 // Utils
 export 'utils/formatters.dart';
 export 'utils/l10n.dart';
+export 'utils/error_message.dart';
 
 // Widgets
 export 'widgets/status_badge.dart';

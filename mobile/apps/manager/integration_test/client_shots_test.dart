@@ -86,6 +86,8 @@ void main() {
       ('/finance-reports', 'reports'),
       ('/listings', 'listings'),
       ('/gate-passes/approvals', 'gate-passes'),
+      ('/facilities', 'facilities'),
+      ('/bookings', 'booking-approvals'),
       ('/notifications', 'notifications'),
       ('/more', 'settings-hub'),
     ];

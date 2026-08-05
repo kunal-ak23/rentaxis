@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../api/api_client.dart';
 import '../api/services/auth_service.dart';
+import '../api/services/facility_service.dart';
 import '../api/services/gate_pass_service.dart';
 import '../api/services/listing_api_service.dart';
 import '../api/services/location_service.dart';
@@ -27,6 +28,13 @@ final listingApiServiceProvider = Provider<ListingApiService>((ref) {
 final gatePassServiceProvider = Provider<GatePassApiService>((ref) {
   final client = ref.watch(apiClientProvider);
   return GatePassApiService(client.dio);
+});
+
+/// Single shared FacilityApiService — amenities, parking spots and booking
+/// requests. Used by the manager and renter apps.
+final facilityServiceProvider = Provider<FacilityApiService>((ref) {
+  final client = ref.watch(apiClientProvider);
+  return FacilityApiService(client.dio);
 });
 
 /// Single shared LocationService (geolocator wrapper).

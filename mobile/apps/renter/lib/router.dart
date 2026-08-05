@@ -23,6 +23,8 @@ import 'screens/gatepass/gate_pass_list_screen.dart';
 import 'screens/gatepass/gate_pass_create_screen.dart';
 import 'screens/gatepass/gate_pass_detail_screen.dart';
 import 'screens/gatepass/resident_approvals_screen.dart';
+import 'screens/facilities/facilities_screen.dart';
+import 'screens/facilities/my_requests_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authProvider);
@@ -150,6 +152,21 @@ final routerProvider = Provider<GoRouter>((ref) {
                 path: ':id',
                 builder: (context, state) =>
                     GatePassDetailScreen(passId: state.pathParameters['id']!),
+              ),
+            ],
+          ),
+          // Facility screens are parameterless and self-fetching for the same
+          // reason as the gate-pass screens above: this router rebuilds on
+          // authProvider and would discard `extra`.
+          GoRoute(
+            path: '/facilities',
+            pageBuilder: (context, state) =>
+                fadeTransition(const FacilitiesScreen(), state),
+            routes: [
+              GoRoute(
+                path: 'requests',
+                pageBuilder: (context, state) =>
+                    slideUpTransition(const MyRequestsScreen(), state),
               ),
             ],
           ),
