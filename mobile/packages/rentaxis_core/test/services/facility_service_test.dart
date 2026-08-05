@@ -40,6 +40,22 @@ void main() {
       expect(adapter.captured[2].path, '/v1/bookings/bk-1/reject');
       expect(adapter.captured[2].data, isEmpty);
     });
+
+    test(
+        'releaseBooking POSTs to the release endpoint and returns the '
+        'decoded map', () async {
+      final adapter = _StubAdapter(
+        responseBody: {'id': 'bk-2', 'status': 'RELEASED'},
+      );
+      final service = FacilityApiService(_dio(adapter));
+
+      final result = await service.releaseBooking('bk-2');
+
+      final request = adapter.captured.single;
+      expect(request.path, '/v1/bookings/bk-2/release');
+      expect(request.method, 'POST');
+      expect(result, {'id': 'bk-2', 'status': 'RELEASED'});
+    });
   });
 
   group('FacilityApiService inventory', () {
@@ -62,6 +78,30 @@ void main() {
       expect(request.path, '/v1/parking-spots/bulk');
       expect(request.method, 'POST');
       expect(created, hasLength(2));
+    });
+
+    test('deactivateAmenity DELETEs and completes on an empty 204 body',
+        () async {
+      final adapter = _StubAdapter(statusCode: 204);
+      final service = FacilityApiService(_dio(adapter));
+
+      await service.deactivateAmenity('am-1');
+
+      final request = adapter.captured.single;
+      expect(request.path, '/v1/amenities/am-1');
+      expect(request.method, 'DELETE');
+    });
+
+    test('deactivateParkingSpot DELETEs and completes on an empty 204 body',
+        () async {
+      final adapter = _StubAdapter(statusCode: 204);
+      final service = FacilityApiService(_dio(adapter));
+
+      await service.deactivateParkingSpot('spot-1');
+
+      final request = adapter.captured.single;
+      expect(request.path, '/v1/parking-spots/spot-1');
+      expect(request.method, 'DELETE');
     });
   });
 
@@ -100,6 +140,22 @@ void main() {
       await service.myFacilities();
       expect(adapter.captured.single.path, '/v1/facilities/my');
     });
+
+    test(
+        'cancelBooking POSTs to the cancel endpoint and returns the '
+        'decoded map', () async {
+      final adapter = _StubAdapter(
+        responseBody: {'id': 'bk-3', 'status': 'CANCELLED'},
+      );
+      final service = FacilityApiService(_dio(adapter));
+
+      final result = await service.cancelBooking('bk-3');
+
+      final request = adapter.captured.single;
+      expect(request.path, '/v1/bookings/bk-3/cancel');
+      expect(request.method, 'POST');
+      expect(result, {'id': 'bk-3', 'status': 'CANCELLED'});
+    });
   });
 }
 
@@ -110,9 +166,13 @@ Dio _dio(_StubAdapter adapter) {
 }
 
 class _StubAdapter implements HttpClientAdapter {
-  _StubAdapter({required this.responseBody});
+  /// [responseBody] is left null for a 204/empty-body response — Dio's
+  /// transformer maps zero bytes to `null` data rather than attempting (and
+  /// failing) a JSON decode.
+  _StubAdapter({this.responseBody, this.statusCode = 200});
 
-  final Object responseBody;
+  final Object? responseBody;
+  final int statusCode;
   final List<RequestOptions> captured = [];
 
   @override
@@ -122,9 +182,12 @@ class _StubAdapter implements HttpClientAdapter {
     Future<void>? cancelFuture,
   ) async {
     captured.add(options);
+    final bytes = responseBody == null
+        ? Uint8List(0)
+        : utf8.encode(jsonEncode(responseBody));
     return ResponseBody.fromBytes(
-      utf8.encode(jsonEncode(responseBody)),
-      200,
+      bytes,
+      statusCode,
       headers: {
         'content-type': ['application/json'],
       },
