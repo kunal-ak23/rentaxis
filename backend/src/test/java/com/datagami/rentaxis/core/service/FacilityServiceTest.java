@@ -210,6 +210,21 @@ class FacilityServiceTest {
     }
 
     @Test
+    void updateAmenity_blankNameEn_throws400() {
+        PropertyAmenity existing = amenity(true);
+        when(amenityRepository.findById(existing.getId())).thenReturn(Optional.of(existing));
+
+        assertThatThrownBy(() -> service.updateAmenity(tenantId, existing.getId(),
+                new AmenityUpdateRequest("   ", null, null, null, null, null)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("nameEn is required");
+
+        // Same guard as createAmenity: reject before persisting the blank name.
+        assertThat(existing.getNameEn()).isEqualTo("Gym");
+        verify(amenityRepository, never()).save(any());
+    }
+
+    @Test
     void updateAmenity_nonNullBuildingIdsReplacesScopeSet() {
         PropertyAmenity existing = amenity(true);
         when(amenityRepository.findById(existing.getId())).thenReturn(Optional.of(existing));
