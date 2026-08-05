@@ -8,11 +8,13 @@ import '../../providers/facility_provider.dart';
 
 /// Screen strings (EN/AR). Lightweight per-screen pattern — see arabic-brief.
 ///
-/// Status/action wording mirrors web's `Facilities`/`Bookings` namespaces
-/// (`web/messages/ar.json`) verbatim — `cancelRequest`/`releaseSpot` and the
-/// status labels — so a bilingual renter sees the same words on web and
-/// mobile, and `adminNote`/`decidedAt` match `Bookings` (the same fields the
-/// manager app's decision sheet shows).
+/// Arabic wording matches web's `Facilities`/`Bookings` namespaces
+/// (`web/messages/ar.json`) — `cancelRequest`/`releaseSpot`, the status
+/// labels, and `adminNote`/`decidedAt` (the same fields the manager app's
+/// decision sheet shows). English status labels are the app's own uppercase
+/// status-chip convention (raw codes, e.g. "PENDING") rather than web's
+/// title case — matches facilities_screen.dart and
+/// booking_approvals_screen.dart's own EN chips.
 class _L {
   _L(this.ar);
   final bool ar;
@@ -193,7 +195,7 @@ class _RequestCardState extends ConsumerState<_RequestCard> {
         ],
       ),
     );
-    if (confirmed != true || !mounted) return;
+    if (confirmed != true || !mounted || _busy) return;
     setState(() => _busy = true);
     try {
       final service = ref.read(facilityServiceProvider);
@@ -211,8 +213,11 @@ class _RequestCardState extends ConsumerState<_RequestCard> {
       if (error.response?.statusCode == 400) {
         // The request left the state this action needs (someone decided it,
         // or it was already released). Refresh instead of advising a retry —
-        // mirrors booking_approvals_screen.dart's `_decide` 400 branch.
+        // mirrors booking_approvals_screen.dart's `_decide` 400 branch. Both
+        // providers, not just the requests list: a 400 means server state
+        // already moved, so the held/pendingCount facts below are stale too.
         ref.invalidate(myBookingRequestsProvider);
+        ref.invalidate(myFacilitiesProvider);
         _toast(l.alreadyDecided, AppColors.warning);
       } else {
         _toast(errorMessage(error, l.actionFailed), AppColors.danger);
@@ -304,7 +309,8 @@ class _RequestCardState extends ConsumerState<_RequestCard> {
                 '${l.unit} ${request['unitNumber']}',
               if (request['preferredDate'] != null)
                 '${l.preferred} ${Formatters.date(request['preferredDate']?.toString(), ar: l.ar)}',
-              Formatters.timeAgo(request['createdAt']?.toString(), ar: l.ar),
+              if (request['createdAt'] != null)
+                Formatters.timeAgo(request['createdAt']?.toString(), ar: l.ar),
               if (decidedAt != null)
                 '${l.decidedAtLabel} ${Formatters.date(decidedAt, ar: l.ar)}',
             ].join(' · '),

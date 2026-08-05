@@ -55,7 +55,7 @@ class _L {
   String get release => ar ? 'إخلاء' : 'Release spot';
   String get approvedToast => ar ? 'تم اعتماد الطلب' : 'Request approved';
   String get rejectedToast => ar ? 'تم رفض الطلب' : 'Request rejected';
-  String get releasedToast => ar ? 'تم تحرير الموقف' : 'Spot released';
+  String get releasedToast => ar ? 'تم إخلاء الموقف' : 'Spot released';
   String get alreadyDecided => ar
       ? 'تم البت في هذا الطلب مسبقًا. جارٍ تحديث القائمة.'
       : 'This request was already decided. Refreshing the list.';

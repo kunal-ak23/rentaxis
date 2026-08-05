@@ -555,6 +555,11 @@ Future<void> _openRequestSheet(
   final created = await showModalBottomSheet<bool>(
     context: context,
     isScrollControlled: true,
+    // A drag-to-dismiss fling bypasses the sheet's own PopScope(canPop:
+    // !_submitting) guard — the drag gesture pops the route directly,
+    // abandoning an in-flight POST. Only the barrier tap and the explicit
+    // pop in _submit go through PopScope's canPop check.
+    enableDrag: false,
     backgroundColor: context.miftah.surface,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),

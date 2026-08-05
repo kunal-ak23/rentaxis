@@ -180,6 +180,10 @@ void main() {
         );
         await _pump(tester, fake: fake);
 
+        // Anchors the fixture actually landed in the intended status (and
+        // covers the EN terminal chip label) rather than only proving the
+        // negative.
+        expect(find.text(terminal), findsOneWidget);
         expect(find.text('CANCEL REQUEST'), findsNothing);
         expect(find.text('RELEASE SPOT'), findsNothing);
       });
