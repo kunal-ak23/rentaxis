@@ -237,7 +237,7 @@ export function ParkingTab({ propertyId, buildings, canManage }: ParkingTabProps
                             {rows.map(s => (
                                 <tr key={s.id} className="hover:bg-background/50 transition-all duration-200">
                                     <td className="px-6 py-4 font-bold text-foreground">{s.spotNumber}</td>
-                                    <td className="px-6 py-4 text-muted text-xs">{s.level ?? "—"}</td>
+                                    <td className="px-6 py-4 text-muted text-xs">{s.level || "—"}</td>
                                     <td className="px-6 py-4 text-xs font-semibold text-muted">
                                         {s.covered ? t("yes") : t("no")}
                                     </td>
