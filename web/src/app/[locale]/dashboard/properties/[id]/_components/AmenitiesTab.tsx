@@ -6,7 +6,7 @@ import { Plus, Pencil, Ban } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Pagination } from "@/components/ui/Pagination";
-import { fetchAmenities, createAmenity, updateAmenity, deactivateAmenity } from "@/lib/api/facilities";
+import { fetchAmenities, createAmenity, updateAmenity, deactivateAmenity, ApiError } from "@/lib/api/facilities";
 import type { AmenityDTO } from "@/types/facility";
 
 export type BuildingOption = { id: string; nameEn: string; nameAr?: string | null };
@@ -43,8 +43,8 @@ export function AmenitiesTab({ propertyId, buildings, canManage }: AmenitiesTabP
             setRows(data.content);
             setTotalElements(data.totalElements);
             setPage(data.number);
-        } catch {
-            setError(t("loadError"));
+        } catch (err) {
+            setError(err instanceof ApiError ? err.message : t("loadError"));
         } finally {
             setLoading(false);
         }
@@ -105,9 +105,20 @@ export function AmenitiesTab({ propertyId, buildings, canManage }: AmenitiesTabP
                 });
             }
             setShowForm(false);
-            load(editing ? page : 0);
-        } catch {
-            setFormError(t("saveError"));
+            if (editing) {
+                load(page);
+            } else {
+                // Rows are sorted createdAt ASC (backend default), so a freshly
+                // created amenity is always the last row overall and lands on the
+                // last page, not page 0. `totalElements` here is still the
+                // pre-create count N (state hasn't been refetched yet); after
+                // insertion there are N+1 rows, so the new row's 0-based index is
+                // N and its page is floor(N / PAGE_SIZE) — i.e. simply
+                // Math.floor(totalElements / PAGE_SIZE).
+                load(Math.floor(totalElements / PAGE_SIZE));
+            }
+        } catch (err) {
+            setFormError(err instanceof ApiError ? err.message : t("saveError"));
         } finally {
             setSubmitting(false);
         }
@@ -119,9 +130,9 @@ export function AmenitiesTab({ propertyId, buildings, canManage }: AmenitiesTabP
             await deactivateAmenity(deactivating.id);
             setDeactivating(null);
             load(page);
-        } catch {
+        } catch (err) {
             setDeactivating(null);
-            setError(t("saveError"));
+            setError(err instanceof ApiError ? err.message : t("saveError"));
         }
     };
 
@@ -254,7 +265,7 @@ export function AmenitiesTab({ propertyId, buildings, canManage }: AmenitiesTabP
 
             {/* Add / Edit dialog */}
             {showForm && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowForm(false)}>
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowForm(false)} onKeyDown={(e) => { if (e.key === 'Escape') setShowForm(false); }}>
                     <div className="bg-surface rounded-xl border border-border shadow-xl w-full max-w-lg mx-4 p-6" onClick={(e) => e.stopPropagation()}>
                         <h3 className="text-lg font-bold text-foreground mb-4">
                             {editing ? t("editAmenity") : t("addAmenity")}
@@ -265,6 +276,7 @@ export function AmenitiesTab({ propertyId, buildings, canManage }: AmenitiesTabP
                                     <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">{t("nameEn")} *</label>
                                     <input
                                         required
+                                        maxLength={160}
                                         className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
                                         value={form.nameEn}
                                         onChange={e => setForm({ ...form, nameEn: e.target.value })}
@@ -274,6 +286,7 @@ export function AmenitiesTab({ propertyId, buildings, canManage }: AmenitiesTabP
                                     <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">{t("nameAr")}</label>
                                     <input
                                         dir="rtl"
+                                        maxLength={160}
                                         className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
                                         value={form.nameAr}
                                         onChange={e => setForm({ ...form, nameAr: e.target.value })}
