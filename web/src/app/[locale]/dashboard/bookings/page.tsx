@@ -7,7 +7,7 @@ import { CalendarCheck, Loader2, Building2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { Pagination } from "@/components/ui/Pagination";
-import { fetchBookings, ApiError } from "@/lib/api/facilities";
+import { fetchBookings, ApiError, throwIfNotOk } from "@/lib/api/facilities";
 import type { BookingRequestDTO, BookingRequestStatus, BookingResourceType } from "@/types/facility";
 import { BookingDetailDrawer, BOOKING_STATUS_CLASSES } from "./_components/BookingDetailDrawer";
 
@@ -31,33 +31,6 @@ function dateLocale(locale: string): string {
 function parseDateOnly(value: string): Date {
     const [y, m, d] = value.split("-").map(Number);
     return new Date(y, m - 1, d);
-}
-
-/**
- * Throws an ApiError (parsed from the `{error, message}` shape where
- * possible, same convention as facilities.ts's parseErrorMessage) when a raw
- * fetch response isn't ok. The properties list uses a plain fetch (it isn't
- * wrapped by lib/api/facilities), so without this a 4xx/5xx here would be
- * silently swallowed — same fix as renter-portal/facilities/page.tsx's
- * throwIfNotOk.
- */
-async function throwIfNotOk(res: Response): Promise<void> {
-    if (res.ok) return;
-    const text = await res.text().catch(() => "");
-    let message = `Request failed (status ${res.status})`;
-    if (text) {
-        try {
-            const parsed: unknown = JSON.parse(text);
-            if (parsed && typeof parsed === "object") {
-                const body = parsed as { message?: unknown; error?: unknown };
-                if (typeof body.message === "string") message = body.message;
-                else if (typeof body.error === "string") message = body.error;
-            }
-        } catch {
-            // Not JSON — keep the generic message.
-        }
-    }
-    throw new ApiError(res.status, message, text);
 }
 
 export default function BookingsPage() {

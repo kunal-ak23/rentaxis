@@ -242,8 +242,13 @@ export default function PropertyDetailPage() {
                     { id: "buildings", label: "Buildings", icon: Building2 },
                     { id: "units", label: "Units", icon: Home },
                     { id: "leases", label: "Leases", icon: FileText },
-                    { id: "amenities", label: tFacilities("amenitiesTab"), icon: Dumbbell },
-                    { id: "parking", label: tFacilities("parkingTab"), icon: Car }
+                    // Gated behind the same canManageFacilities flag passed as
+                    // `canManage` to AmenitiesTab/ParkingTab below, so the nav
+                    // tabs and the in-tab edit controls can't drift out of sync.
+                    ...(canManageFacilities ? [
+                        { id: "amenities", label: tFacilities("amenitiesTab"), icon: Dumbbell },
+                        { id: "parking", label: tFacilities("parkingTab"), icon: Car },
+                    ] : []),
                 ].map(tab => {
                     const Icon = tab.icon;
                     const isActive = activeTab === tab.id;

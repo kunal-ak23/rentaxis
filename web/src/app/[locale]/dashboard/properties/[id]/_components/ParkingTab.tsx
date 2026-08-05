@@ -42,6 +42,7 @@ export function ParkingTab({ propertyId, buildings, canManage }: ParkingTabProps
     const [bulkInput, setBulkInput] = useState("");
     const [level, setLevel] = useState("");
     const [covered, setCovered] = useState(true);
+    const [active, setActive] = useState(true);
     const [buildingIds, setBuildingIds] = useState<string[]>([]);
     const [submitting, setSubmitting] = useState(false);
     const [formError, setFormError] = useState<string | null>(null);
@@ -71,12 +72,14 @@ export function ParkingTab({ propertyId, buildings, canManage }: ParkingTabProps
             setSpotNumber(m.spot.spotNumber);
             setLevel(m.spot.level ?? "");
             setCovered(m.spot.covered);
+            setActive(m.spot.active);
             setBuildingIds(m.spot.buildingIds);
         } else {
             setSpotNumber("");
             setBulkInput("");
             setLevel("");
             setCovered(true);
+            setActive(true);
             setBuildingIds([]);
         }
     };
@@ -95,10 +98,15 @@ export function ParkingTab({ propertyId, buildings, canManage }: ParkingTabProps
         setFormError(null);
         try {
             if (mode.kind === "edit") {
+                // Raw `level` (not `|| undefined`): the backend treats a
+                // missing field as "unchanged" but an explicit "" as
+                // "clear it", so an edit that blanks the level must send ""
+                // verbatim, not fall back to omitting the field.
                 await updateParkingSpot(mode.spot.id, {
                     spotNumber,
-                    level: level || undefined,
+                    level,
                     covered,
+                    active,
                     buildingIds,
                 });
                 setMode(null);
@@ -370,6 +378,17 @@ export function ParkingTab({ propertyId, buildings, canManage }: ParkingTabProps
                                     <span className="text-xs font-semibold text-foreground">{t("covered")}</span>
                                 </label>
                             </div>
+                            {mode.kind === "edit" && (
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={active}
+                                        onChange={e => setActive(e.target.checked)}
+                                        className="accent-[var(--gold-500)]"
+                                    />
+                                    <span className="text-xs font-semibold text-foreground">{t("active")}</span>
+                                </label>
+                            )}
                             <div>
                                 <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">{t("towers")}</label>
                                 <p className="text-[10px] text-muted mb-2">{t("towersHint")}</p>
