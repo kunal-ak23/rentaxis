@@ -108,6 +108,12 @@ void main() {
     await _go(tester, '/penalties');
     await binding.takeScreenshot('09-penalties-light');
 
+    await _go(tester, '/facilities');
+    await binding.takeScreenshot('09b-facilities-light');
+
+    await _go(tester, '/facilities/requests');
+    await binding.takeScreenshot('09c-facility-requests-light');
+
     await _go(tester, '/profile');
     await binding.takeScreenshot('10-profile-light');
 
