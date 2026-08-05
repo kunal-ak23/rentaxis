@@ -27,17 +27,38 @@ import java.util.Set;
  * Listens for {@link BookingRequestedEvent} / {@link BookingDecidedEvent}
  * published by {@code BookingService} and turns them into in-app
  * {@link com.datagami.rentaxis.domain.entity.Notification} rows. Modeled on
- * {@link ListingNotificationService}: {@code AFTER_COMMIT} so a listener
- * failure can never roll back the booking transaction, {@code REQUIRES_NEW}
- * so each listener runs its own transaction rather than piggybacking on one
- * that has already committed, and per-recipient try/catch so one bad
- * notification (e.g. a stale user row) does not stop the rest of the batch.
+ * {@link ListingNotificationService}: {@code AFTER_COMMIT} so a listener only
+ * runs once the booking transaction has already committed, and
+ * {@code REQUIRES_NEW} so the listener body runs in its own transaction
+ * rather than piggybacking on one that is already gone.
+ *
+ * <p><b>Per-recipient failure isolation.</b> The obvious approach —
+ * per-recipient try/catch around {@link NotificationService#notify} — does
+ * NOT isolate failures: {@code notify} is {@code @Transactional} with default
+ * ({@code REQUIRED}) propagation, so each call simply joins this listener's
+ * one {@code REQUIRES_NEW} transaction instead of opening its own. A failure
+ * for one recipient marks that shared transaction rollback-only; the
+ * try/catch swallows the exception and the loop continues, but at method
+ * exit Spring finds the rollback-only flag set and throws
+ * {@link org.springframework.transaction.UnexpectedRollbackException} instead
+ * of committing — losing every recipient's row, not just the failing one
+ * (rows are only queued in the persistence context until the shared
+ * transaction commits/flushes, so "earlier" successes were never actually
+ * durable). This was verified against real Postgres. The fix is
+ * {@link NotificationService#notifyInAppInNewTx}, whose javadoc exists for
+ * exactly this hazard: its own {@code REQUIRES_NEW} suspends the listener's
+ * transaction and opens an independent one <em>per call</em>, which commits
+ * (or rolls back) on its own before the next recipient is processed. A
+ * failure there rolls back only that one recipient's row; every other
+ * recipient's row — already committed or not yet attempted — is unaffected.
  *
  * <p>{@code BOOKING_REQUESTED}/{@code BOOKING_APPROVED}/{@code BOOKING_REJECTED}/
  * {@code BOOKING_RELEASED} have no case in {@link NotificationService#mapLegacyType}
- * (verified by reading it), so {@link NotificationService#notify} publishes no
- * {@code EmailEvent} for these types — only the in-app row is written, matching
- * the spec that booking notifications are in-app only.
+ * (verified by reading it), so {@link NotificationService#notify} would publish no
+ * {@code EmailEvent} for these types anyway — {@code notifyInAppInNewTx} (which never
+ * publishes one) is therefore behaviorally identical to {@code notify} here, on top of
+ * fixing the transaction hazard above. Only the in-app row is written, matching the
+ * spec that booking notifications are in-app only.
  */
 @Service
 @RequiredArgsConstructor
@@ -67,7 +88,7 @@ public class BookingNotificationService {
                 .toList();
         for (User recipient : recipients) {
             try {
-                notificationService.notify(
+                notificationService.notifyInAppInNewTx(
                         event.tenantId(),
                         recipient.getId(),
                         "BOOKING_REQUESTED",
@@ -107,7 +128,7 @@ public class BookingNotificationService {
             default -> "Your parking booking for " + resourceName + " has been released.";
         };
         try {
-            notificationService.notify(event.tenantId(), event.renterUserId(), type,
+            notificationService.notifyInAppInNewTx(event.tenantId(), event.renterUserId(), type,
                     "Booking update", message, "BOOKING", event.bookingId());
         } catch (Exception ex) {
             log.error("Failed to notify renter {} for booking {} — {}",
