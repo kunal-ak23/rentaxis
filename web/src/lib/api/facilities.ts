@@ -45,13 +45,20 @@ export class ApiError extends Error {
  * Extracts a safe, displayable message from a response body. Most handlers
  * use the `{error: true, message, status}` shape; a proxy failure (e.g. a
  * 502) can instead return raw HTML, so JSON parsing is attempted first.
- * `SlotConflictException` (409 — e.g. approving a booking for an
- * already-held parking spot) is the one exception: GlobalExceptionHandler
- * puts its text directly in `error` (`{error: "<message>", nextAvailableSlot}`,
- * no `message` key — see CreateMeetingModal's own 409 handling, which reads
- * `err.error` for the same reason), so a string `error` is checked as a
- * fallback. Any other shape (or a JSON-parse failure) falls back to a
- * generic, synthesized message — the raw text is never surfaced to callers
+ *
+ * The string-`error` fallback exists specifically for
+ * `GlobalExceptionHandler.handleSlotConflict`'s 409 shape (`{error:
+ * "<message>", nextAvailableSlot}`, no `message` key — see
+ * CreateMeetingModal's own 409 handling, which reads `err.error` for the
+ * same reason). Other handlers also put non-message values in `error` —
+ * `true` for the standard shape above, or a machine code like
+ * `"validation_failed"` for `handleBulkAttach` — so this fallback is only
+ * safe because none of facilities.ts's routes are wired to throw those
+ * today. If one ever is, this needs a narrower check than "any string
+ * `error`", not a blanket read of it as a message.
+ *
+ * Any other shape (or a JSON-parse failure) falls back to a generic,
+ * synthesized message — the raw text is never surfaced to callers
  * directly.
  */
 function parseErrorMessage(text: string, status: number): string {

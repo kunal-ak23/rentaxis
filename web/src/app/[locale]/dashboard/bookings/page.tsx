@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { useSession } from "next-auth/react";
-import { CalendarCheck } from "lucide-react";
+import { CalendarCheck, Loader2, Building2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { Pagination } from "@/components/ui/Pagination";
-import { fetchBookings } from "@/lib/api/facilities";
+import { fetchBookings, ApiError } from "@/lib/api/facilities";
 import type { BookingRequestDTO, BookingRequestStatus, BookingResourceType } from "@/types/facility";
 import { BookingDetailDrawer, BOOKING_STATUS_CLASSES } from "./_components/BookingDetailDrawer";
 
@@ -16,12 +16,30 @@ const STATUSES: BookingRequestStatus[] = ["PENDING", "APPROVED", "REJECTED", "CA
 
 type PropertyOption = { id: string; nameEn: string; nameAr: string | null };
 
+/** Locale tag for toLocaleDateString — mirrors gatepass/page.tsx's ar-AE/en-GB split. */
+function dateLocale(locale: string): string {
+    return locale === "ar" ? "ar-AE" : "en-GB";
+}
+
+/**
+ * Parses a `YYYY-MM-DD` date-only string (BookingRequestDTO.preferredDate is
+ * a LocalDate) as a local calendar date rather than `new Date(str)`, which
+ * the spec parses as UTC midnight — a renter picking the 9th would render as
+ * the 8th for anyone west of UTC. Same fix as gatepass/page.tsx's
+ * dayBoundsIso; createdAt is an Instant and doesn't need it.
+ */
+function parseDateOnly(value: string): Date {
+    const [y, m, d] = value.split("-").map(Number);
+    return new Date(y, m - 1, d);
+}
+
 export default function BookingsPage() {
     const t = useTranslations("Bookings");
     const locale = useLocale();
-    const { data: session } = useSession();
+    const { data: session, status: sessionStatus } = useSession();
     const userRole = session?.user?.role as UserRole | undefined;
     const canView = hasPermission(userRole, "canManageFacilities");
+    const isPropertyManager = userRole === "PROPERTY_MANAGER";
 
     const [rows, setRows] = useState<BookingRequestDTO[]>([]);
     const [totalElements, setTotalElements] = useState(0);
@@ -34,7 +52,20 @@ export default function BookingsPage() {
     const [resourceType, setResourceType] = useState<"" | BookingResourceType>("");
     const [openId, setOpenId] = useState<string | null>(null);
 
+    // The backend 403s a PROPERTY_MANAGER's list request without a propertyId
+    // (BookingController.checkPropertyManagerAccess) — the request must never
+    // fire until one is picked, and "All properties" isn't a valid choice for
+    // this role in the first place.
+    const needsPropertySelection = isPropertyManager && !propertyId;
+
+    // Guards every fetch below against a slow response landing after a newer
+    // one already has (filters changed mid-flight, or the drawer closing
+    // triggers a resync while a previous load() is still in flight) and
+    // clobbering fresher state with stale data.
+    const requestIdRef = useRef(0);
+
     useEffect(() => {
+        if (sessionStatus !== "authenticated" || !canView) return;
         (async () => {
             try {
                 const res = await fetch("/api/proxy/v1/properties");
@@ -46,9 +77,17 @@ export default function BookingsPage() {
                 console.error(err);
             }
         })();
-    }, []);
+    }, [sessionStatus, canView]);
 
     const load = useCallback(async (p: number) => {
+        if (needsPropertySelection) {
+            setRows([]);
+            setTotalElements(0);
+            setError(null);
+            setLoading(false);
+            return;
+        }
+        const requestId = ++requestIdRef.current;
         setLoading(true);
         setError(null);
         try {
@@ -59,19 +98,32 @@ export default function BookingsPage() {
                 page: p,
                 size: PAGE_SIZE,
             });
+            if (requestId !== requestIdRef.current) return; // a newer request already landed
             setRows(data.content);
             setTotalElements(data.totalElements);
             setPage(data.number);
-        } catch {
-            setError(t("loadError"));
+        } catch (err) {
+            if (requestId !== requestIdRef.current) return;
+            setError(err instanceof ApiError ? err.message : t("loadError"));
         } finally {
-            setLoading(false);
+            if (requestId === requestIdRef.current) setLoading(false);
         }
-    }, [propertyId, status, resourceType, t]);
+    }, [propertyId, status, resourceType, t, needsPropertySelection]);
 
-    useEffect(() => { load(0); }, [load]);
+    useEffect(() => {
+        if (sessionStatus !== "authenticated" || !canView) return;
+        load(0);
+    }, [sessionStatus, canView, load]);
 
-    if (session && !canView) {
+    if (sessionStatus === "loading") {
+        return (
+            <div className="flex items-center justify-center py-24">
+                <Loader2 className="w-6 h-6 animate-spin text-primary opacity-60" />
+            </div>
+        );
+    }
+
+    if (!canView) {
         return (
             <div className="p-8 max-w-7xl mx-auto">
                 <p className="text-sm font-semibold text-muted">{t("noAccess")}</p>
@@ -99,7 +151,13 @@ export default function BookingsPage() {
                     onChange={e => setPropertyId(e.target.value)}
                     className="bg-input border border-border rounded-lg px-3 py-2 text-xs font-semibold text-foreground cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                 >
-                    <option value="">{t("allProperties")}</option>
+                    {/* PMs are scoped to their assigned properties by the backend — "all" isn't a valid choice for
+                        them. A disabled placeholder (rather than just omitting the blank option) keeps the select
+                        showing "nothing chosen" instead of the browser silently defaulting to the first <option> in
+                        the list while propertyId (and the prompt below) still say otherwise. */}
+                    {isPropertyManager
+                        ? (!propertyId && <option value="" disabled>{t("selectPropertyPrompt")}</option>)
+                        : <option value="">{t("allProperties")}</option>}
                     {properties.map(p => (
                         <option key={p.id} value={p.id}>{propertyName(p)}</option>
                     ))}
@@ -132,6 +190,12 @@ export default function BookingsPage() {
                 </div>
             )}
 
+            {needsPropertySelection ? (
+                <div className="bg-surface border border-border rounded-xl px-6 py-16 text-center">
+                    <Building2 size={28} className="mx-auto mb-3 text-muted opacity-40" />
+                    <p className="text-sm text-muted font-medium">{t("selectPropertyPrompt")}</p>
+                </div>
+            ) : (
             <div className="bg-surface border border-border rounded-xl overflow-hidden">
                 <div className="overflow-x-auto">
                     <table className="w-full text-sm">
@@ -162,10 +226,10 @@ export default function BookingsPage() {
                                     <td className="px-6 py-4 text-muted font-medium">{r.renterName ?? "—"}</td>
                                     <td className="px-6 py-4 text-muted text-xs">{r.unitNumber ?? "—"}</td>
                                     <td className="px-6 py-4 text-muted text-xs tabular-nums">
-                                        {r.preferredDate ? new Date(r.preferredDate).toLocaleDateString() : "—"}
+                                        {r.preferredDate ? parseDateOnly(r.preferredDate).toLocaleDateString(dateLocale(locale)) : "—"}
                                     </td>
                                     <td className="px-6 py-4 text-muted text-xs tabular-nums">
-                                        {new Date(r.createdAt).toLocaleDateString()}
+                                        {new Date(r.createdAt).toLocaleDateString(dateLocale(locale))}
                                     </td>
                                     <td className="px-6 py-4">
                                         <span className={cn(
@@ -197,11 +261,19 @@ export default function BookingsPage() {
                     </div>
                 )}
             </div>
+            )}
 
             {openId && (
                 <BookingDetailDrawer
                     bookingId={openId}
-                    onClose={() => setOpenId(null)}
+                    // The drawer patches its row in place while open (using the
+                    // returned DTO from approve/reject/release), but that can drift
+                    // from the backend's actual paged/filtered state — e.g. a row
+                    // decided out of the current status filter is still shown, and
+                    // totalElements doesn't reflect it. Resync from the server once
+                    // the user is done looking, which also refreshes otherRequests
+                    // staleness for the next row opened.
+                    onClose={() => { setOpenId(null); load(page); }}
                     onChanged={(updated) => setRows(prev => prev.map(r => (r.id === updated.id ? updated : r)))}
                 />
             )}

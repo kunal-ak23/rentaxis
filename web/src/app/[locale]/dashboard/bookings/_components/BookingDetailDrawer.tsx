@@ -1,11 +1,28 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useTranslations } from "next-intl";
+import { useTranslations, useLocale } from "next-intl";
 import { X, Loader2, CalendarCheck, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fetchBooking, approveBooking, rejectBooking, releaseBooking, ApiError } from "@/lib/api/facilities";
 import type { BookingDetailDTO, BookingRequestDTO, BookingRequestStatus } from "@/types/facility";
+
+/** Locale tag for toLocaleDateString — mirrors gatepass/page.tsx's ar-AE/en-GB split. */
+function dateLocale(locale: string): string {
+  return locale === "ar" ? "ar-AE" : "en-GB";
+}
+
+/**
+ * Parses a `YYYY-MM-DD` date-only string (BookingRequestDTO.preferredDate is
+ * a LocalDate) as a local calendar date rather than `new Date(str)`, which
+ * the spec parses as UTC midnight — a renter picking the 9th would render as
+ * the 8th for anyone west of UTC. Same fix as gatepass/page.tsx's
+ * dayBoundsIso; createdAt/decidedAt are Instants and don't need it.
+ */
+function parseDateOnly(value: string): Date {
+  const [y, m, d] = value.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
 
 export const BOOKING_STATUS_CLASSES: Record<BookingRequestStatus, string> = {
   PENDING: "bg-warning/10 text-warning border border-warning/20",
@@ -24,6 +41,7 @@ interface BookingDetailDrawerProps {
 
 export function BookingDetailDrawer({ bookingId, onClose, onChanged }: BookingDetailDrawerProps) {
   const t = useTranslations("Bookings");
+  const locale = useLocale();
   const [detail, setDetail] = useState<BookingDetailDTO | null>(null);
   const [loading, setLoading] = useState(true);
   const [adminNote, setAdminNote] = useState("");
@@ -62,7 +80,13 @@ export function BookingDetailDrawer({ bookingId, onClose, onChanged }: BookingDe
       setDetail(prev => (prev ? { ...prev, request: updated } : prev));
       onChanged(updated);
     } catch (err) {
-      if (err instanceof ApiError) setError(err.message);
+      // 409 (spot already held elsewhere) and 400 (business-rule violation,
+      // e.g. deciding a request that's no longer PENDING) get the localized
+      // copy so the message reads in the active locale; any other ApiError
+      // status falls back to the backend's own (already-parsed) message.
+      if (err instanceof ApiError && err.status === 409) setError(t("spotConflict"));
+      else if (err instanceof ApiError && err.status === 400) setError(t("actionError"));
+      else if (err instanceof ApiError) setError(err.message);
       else setError(t("actionError"));
     } finally {
       setWorking(false);
@@ -153,12 +177,12 @@ export function BookingDetailDrawer({ bookingId, onClose, onChanged }: BookingDe
               <div className="space-y-2 text-xs">
                 <p className="text-muted">
                   <span className="font-semibold">{t("requestedOn")}:</span>{" "}
-                  {new Date(req.createdAt).toLocaleDateString()}
+                  {new Date(req.createdAt).toLocaleDateString(dateLocale(locale))}
                 </p>
                 {req.preferredDate && (
                   <p className="text-muted">
                     <span className="font-semibold">{t("preferredDate")}:</span>{" "}
-                    {new Date(req.preferredDate).toLocaleDateString()}
+                    {parseDateOnly(req.preferredDate).toLocaleDateString(dateLocale(locale))}
                   </p>
                 )}
                 {req.note && (
@@ -174,7 +198,7 @@ export function BookingDetailDrawer({ bookingId, onClose, onChanged }: BookingDe
                 {req.decidedAt && (
                   <p className="text-muted">
                     <span className="font-semibold">{t("decidedAt")}:</span>{" "}
-                    {new Date(req.decidedAt).toLocaleDateString()}
+                    {new Date(req.decidedAt).toLocaleDateString(dateLocale(locale))}
                   </p>
                 )}
               </div>
@@ -192,7 +216,7 @@ export function BookingDetailDrawer({ bookingId, onClose, onChanged }: BookingDe
                           <p className="text-xs font-semibold text-foreground truncate">{o.renterName ?? "—"}</p>
                           <p className="text-[10px] text-muted">
                             {o.unitNumber ? `${t("colUnit")} ${o.unitNumber} · ` : ""}
-                            {new Date(o.createdAt).toLocaleDateString()}
+                            {new Date(o.createdAt).toLocaleDateString(dateLocale(locale))}
                           </p>
                         </div>
                         <span className={cn(
