@@ -156,8 +156,8 @@ export async function approveBooking(id: string, body: DecisionRequest): Promise
   )
 }
 
-export async function rejectBooking(id: string, body: DecisionRequest): Promise<void> {
-  return handleVoid(
+export async function rejectBooking(id: string, body: DecisionRequest): Promise<BookingRequestDTO> {
+  return handle(
     await fetch(`${BOOKINGS}/${id}/reject`, {
       method: 'POST',
       headers: JSON_HEADERS,
@@ -168,8 +168,8 @@ export async function rejectBooking(id: string, body: DecisionRequest): Promise<
 }
 
 /** Admin OR the owning renter; APPROVED parking only. */
-export async function releaseBooking(id: string): Promise<void> {
-  return handleVoid(await fetch(`${BOOKINGS}/${id}/release`, { method: 'POST' }), 'releaseBooking')
+export async function releaseBooking(id: string): Promise<BookingRequestDTO> {
+  return handle(await fetch(`${BOOKINGS}/${id}/release`, { method: 'POST' }), 'releaseBooking')
 }
 
 // ─── Renter side ─────────────────────────────────────────────────────────────
@@ -190,8 +190,8 @@ export async function fetchMyBookings(): Promise<BookingRequestDTO[]> {
   return handle(await fetch(`${BOOKINGS}/my`), 'fetchMyBookings')
 }
 
-export async function cancelBooking(id: string): Promise<void> {
-  return handleVoid(await fetch(`${BOOKINGS}/${id}/cancel`, { method: 'POST' }), 'cancelBooking')
+export async function cancelBooking(id: string): Promise<BookingRequestDTO> {
+  return handle(await fetch(`${BOOKINGS}/${id}/cancel`, { method: 'POST' }), 'cancelBooking')
 }
 
 // ─── Bulk spot-number entry parser ───────────────────────────────────────────
