@@ -6,6 +6,7 @@ import 'package:rentaxis_core/rentaxis_core.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../providers/facility_provider.dart';
+import '../../providers/gate_pass_provider.dart' show propertiesProvider;
 import 'facilities_utils.dart';
 
 /// Screen strings (EN/AR). Lightweight per-screen pattern — see arabic-brief.
@@ -18,6 +19,13 @@ class _L {
   final bool ar;
 
   String get title => ar ? 'طلبات الحجز' : 'Booking Requests';
+  String get property => ar ? 'العقار' : 'Property';
+  String get allProperties => ar ? 'كل العقارات' : 'All properties';
+  String get selectPropertyPrompt => ar
+      ? 'اختر عقارًا لعرض طلبات الحجز الخاصة به.'
+      : 'Select a property to view its booking requests.';
+  String get propertiesLoadFailed =>
+      ar ? 'فشل تحميل العقارات' : 'Failed to load properties';
   String get loadFailed =>
       ar ? 'فشل تحميل طلبات الحجز' : 'Failed to load booking requests';
   String get pendingFilter => ar ? 'قيد الانتظار' : 'Pending';
@@ -37,6 +45,11 @@ class _L {
   String get noOtherRequests => ar ? 'لا توجد طلبات أخرى' : 'No other requests';
   String get adminNote =>
       ar ? 'ملاحظة للمستأجر (اختياري)' : 'Note to renter (optional)';
+  // Distinct from `adminNote` above (the compose field's label): this is the
+  // display label for a note already on a decided request — matches web
+  // ar.json's `adminNote` key (the compose field there is `adminNoteLabel`).
+  String get decidedAdminNoteLabel => ar ? 'ملاحظة الإدارة' : 'Admin note';
+  String get decidedAtLabel => ar ? 'تاريخ القرار' : 'Decided on';
   String get approve => ar ? 'قبول' : 'Approve';
   String get reject => ar ? 'رفض' : 'Reject';
   String get release => ar ? 'إخلاء' : 'Release spot';
@@ -52,13 +65,15 @@ class _L {
   String get actionFailed => ar
       ? 'تعذر تنفيذ الإجراء. حاول مرة أخرى.'
       : 'Could not complete the action. Try again.';
+  String showingCount(int shown, int total) =>
+      ar ? 'عرض $shown من $total' : 'Showing $shown of $total';
 
   String status(String value) => switch (value) {
-    'PENDING' => ar ? 'قيد الانتظار' : 'PENDING',
-    'APPROVED' => ar ? 'مقبول' : 'APPROVED',
-    'REJECTED' => ar ? 'مرفوض' : 'REJECTED',
-    'CANCELLED' => ar ? 'ملغي' : 'CANCELLED',
-    'RELEASED' => ar ? 'تم الإخلاء' : 'RELEASED',
+    'PENDING' => ar ? 'قيد الانتظار' : 'Pending',
+    'APPROVED' => ar ? 'مقبول' : 'Approved',
+    'REJECTED' => ar ? 'مرفوض' : 'Rejected',
+    'CANCELLED' => ar ? 'ملغي' : 'Cancelled',
+    'RELEASED' => ar ? 'تم الإخلاء' : 'Released',
     _ => value.replaceAll('_', ' '),
   };
 
@@ -84,9 +99,14 @@ Future<void> _launch(String url) async {
 
 /// The tenant's booking-request inbox, pending first.
 ///
-/// Tenant-wide (no propertyId filter is sent), like the gate-pass approvals
-/// queue: scope is decided server-side by role, so every card names what and
-/// who rather than assuming one property.
+/// Scope is *not* purely server-side the way the gate-pass approvals queue
+/// is: the backend 403s a PROPERTY_MANAGER's `/v1/bookings` call that omits
+/// `propertyId` (`BookingController.checkPropertyManagerAccess`), so this
+/// screen must never fire that request for a PM until one is picked — mirrors
+/// web's `dashboard/bookings/page.tsx` `needsPropertySelection` gate exactly.
+/// SUPER_ADMIN/TENANT_ADMIN aren't scoped to a property at all and default to
+/// the tenant-wide view (no `propertyId`), with the same dropdown available
+/// as an optional filter rather than a requirement.
 class BookingApprovalsScreen extends ConsumerStatefulWidget {
   const BookingApprovalsScreen({super.key});
 
@@ -98,14 +118,16 @@ class BookingApprovalsScreen extends ConsumerStatefulWidget {
 class _BookingApprovalsScreenState
     extends ConsumerState<BookingApprovalsScreen> {
   String? _status = 'PENDING';
+  String? _propertyId;
 
-  BookingFilter get _filter => (propertyId: null, status: _status);
+  BookingFilter get _filter => (propertyId: _propertyId, status: _status);
 
   @override
   Widget build(BuildContext context) {
     final m = context.miftah;
     final l = _L(context.isAr);
-    final bookings = ref.watch(bookingsProvider(_filter));
+    final isPM = ref.watch(authProvider).role == 'PROPERTY_MANAGER';
+    final properties = ref.watch(propertiesProvider);
 
     return Scaffold(
       backgroundColor: m.background,
@@ -121,77 +143,85 @@ class _BookingApprovalsScreenState
               : null,
         ),
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-            child: Row(
-              children: [
-                _FilterChip(
-                  label: l.pendingFilter,
-                  selected: _status == 'PENDING',
-                  onTap: () => setState(() => _status = 'PENDING'),
-                ),
-                const SizedBox(width: 8),
-                _FilterChip(
-                  label: l.approvedFilter,
-                  selected: _status == 'APPROVED',
-                  onTap: () => setState(() => _status = 'APPROVED'),
-                ),
-                const SizedBox(width: 8),
-                _FilterChip(
-                  label: l.allFilter,
-                  selected: _status == null,
-                  onTap: () => setState(() => _status = null),
-                ),
-              ],
-            ),
+      body: properties.when(
+        loading: () => const Center(
+          child: CircularProgressIndicator(color: AppColors.accent),
+        ),
+        error: (error, _) => FacilityScrollable(
+          child: ErrorState(
+            message: l.propertiesLoadFailed,
+            onRetry: () => ref.invalidate(propertiesProvider),
           ),
-          Expanded(
-            child: RefreshIndicator(
-              color: AppColors.accent,
-              onRefresh: () => ref.refresh(bookingsProvider(_filter).future),
-              child: bookings.when(
-                loading: () => const ListShimmer(itemCount: 4),
-                error: (error, _) => _Scrollable(
-                  child: ErrorState(
-                    message: l.loadFailed,
-                    onRetry: () => ref.invalidate(bookingsProvider(_filter)),
-                  ),
+        ),
+        data: (propertyRows) {
+          final needsPropertySelection = isPM && _propertyId == null;
+
+          return Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: DropdownButtonFormField<String?>(
+                  key: const Key('booking-property'),
+                  initialValue: _propertyId,
+                  decoration: InputDecoration(labelText: l.property),
+                  hint: isPM ? Text(l.selectPropertyPrompt) : null,
+                  items: [
+                    // Not a valid choice for a PM — the backend 403s a null
+                    // propertyId for that role.
+                    if (!isPM)
+                      DropdownMenuItem(
+                        value: null,
+                        child: Text(l.allProperties),
+                      ),
+                    for (final p in propertyRows)
+                      DropdownMenuItem(
+                        value: p['id']?.toString(),
+                        child: Text(
+                          p['name']?.toString() ?? '—',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                  ],
+                  onChanged: (id) => setState(() => _propertyId = id),
                 ),
-                data: (rows) {
-                  if (rows.isEmpty) {
-                    return _Scrollable(
-                      child: EmptyState(
-                        icon: Icons.event_available_outlined,
-                        title: l.nothingHere,
-                        subtitle: l.nothingHereSub,
-                      ),
-                    );
-                  }
-                  return ListView.builder(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    padding: EdgeInsets.fromLTRB(
-                      16,
-                      8,
-                      16,
-                      AppInsets.bottomNav(context),
-                    ),
-                    itemCount: rows.length,
-                    itemBuilder: (context, i) => AnimatedListItem(
-                      index: i,
-                      child: _BookingCard(
-                        booking: rows[i],
-                        l: l,
-                        onTap: () => _openDetail(rows[i]),
-                      ),
-                    ),
-                  );
-                },
               ),
-            ),
-          ),
-        ],
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                child: Row(
+                  children: [
+                    _FilterChip(
+                      label: l.pendingFilter,
+                      selected: _status == 'PENDING',
+                      onTap: () => setState(() => _status = 'PENDING'),
+                    ),
+                    const SizedBox(width: 8),
+                    _FilterChip(
+                      label: l.approvedFilter,
+                      selected: _status == 'APPROVED',
+                      onTap: () => setState(() => _status = 'APPROVED'),
+                    ),
+                    const SizedBox(width: 8),
+                    _FilterChip(
+                      label: l.allFilter,
+                      selected: _status == null,
+                      onTap: () => setState(() => _status = null),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: needsPropertySelection
+                    ? FacilityScrollable(
+                        child: EmptyState(
+                          icon: Icons.apartment_outlined,
+                          title: l.selectPropertyPrompt,
+                        ),
+                      )
+                    : _BookingList(filter: _filter, l: l, onOpen: _openDetail),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -199,7 +229,7 @@ class _BookingApprovalsScreenState
   Future<void> _openDetail(Map<String, dynamic> booking) async {
     final id = booking['id']?.toString();
     if (id == null) return;
-    final changed = await showModalBottomSheet<bool>(
+    await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: context.miftah.surface,
@@ -208,12 +238,124 @@ class _BookingApprovalsScreenState
       ),
       builder: (_) => _BookingDetailSheet(bookingId: id),
     );
+    // Resync unconditionally, not only on a successful decision: a barrier
+    // tap or drag-to-dismiss closes the sheet too, and the list can still be
+    // stale by then (another admin decided the same row while this one was
+    // open, or the sheet's own 400 branch already closed it). Invalidate the
+    // whole family: a decision changes every filtered view, not just this one.
+    //
     // riverpod 2.6.1's `invalidate` throws StateError after the provider's
     // container is disposed, and this router rebuilds on `authProvider` — the
     // state backing `context`/`ref` can already be gone by the time the
     // awaited sheet returns (same guard as facilities_screen.dart).
-    // Invalidate the whole family: a decision changes every filtered view.
-    if (changed == true && mounted) ref.invalidate(bookingsProvider);
+    if (mounted) ref.invalidate(bookingsProvider);
+  }
+}
+
+/// The refreshable, paged list of bookings for one filter — split out of
+/// [BookingApprovalsScreen] so the property/status filter row above it stays
+/// on screen (and interactive) independent of this section's own loading and
+/// error states.
+class _BookingList extends ConsumerWidget {
+  final BookingFilter filter;
+  final _L l;
+  final ValueChanged<Map<String, dynamic>> onOpen;
+
+  const _BookingList({
+    required this.filter,
+    required this.l,
+    required this.onOpen,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final bookings = ref.watch(bookingsProvider(filter));
+    return RefreshIndicator(
+      color: AppColors.accent,
+      onRefresh: () => ref.refresh(bookingsProvider(filter).future),
+      child: bookings.when(
+        loading: () => const ListShimmer(itemCount: 4),
+        error: (error, _) => FacilityScrollable(
+          child: ErrorState(
+            message: l.loadFailed,
+            onRetry: () => ref.invalidate(bookingsProvider(filter)),
+          ),
+        ),
+        data: (page) {
+          final rows = page.rows;
+          if (rows.isEmpty) {
+            return FacilityScrollable(
+              child: EmptyState(
+                icon: Icons.event_available_outlined,
+                title: l.nothingHere,
+                subtitle: l.nothingHereSub,
+              ),
+            );
+          }
+          final truncated = rows.length < page.total;
+          return ListView.builder(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: EdgeInsets.fromLTRB(
+              16,
+              8,
+              16,
+              AppInsets.bottomNav(context),
+            ),
+            itemCount: rows.length + (truncated ? 1 : 0),
+            itemBuilder: (context, i) {
+              if (i == rows.length) {
+                return _TruncationFooter(
+                  shown: rows.length,
+                  total: page.total,
+                  l: l,
+                );
+              }
+              return AnimatedListItem(
+                index: i,
+                child: _BookingCard(
+                  booking: rows[i],
+                  l: l,
+                  onTap: () => onOpen(rows[i]),
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// Shown under a list that a page `size` truncated — same pattern as
+/// facilities_screen.dart's, kept as a small private duplicate here since
+/// each screen's `_L` type differs (this one takes an already-formatted
+/// label rather than sharing the localization class).
+class _TruncationFooter extends StatelessWidget {
+  final int shown;
+  final int total;
+  final _L l;
+
+  const _TruncationFooter({
+    required this.shown,
+    required this.total,
+    required this.l,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final m = context.miftah;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Center(
+        child: Text(
+          l.showingCount(shown, total),
+          style: (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans)(
+            fontSize: 12,
+            color: m.textMuted,
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -338,10 +480,8 @@ class _BookingCard extends StatelessWidget {
                 ].join(' · '),
                 style: (l.ar
                     ? GoogleFonts.notoNaskhArabic
-                    : GoogleFonts.josefinSans)(
-                  fontSize: 12.5,
-                  color: m.textSecondary,
-                ),
+                    : GoogleFonts
+                          .josefinSans)(fontSize: 12.5, color: m.textSecondary),
               ),
             ],
           ),
@@ -390,41 +530,41 @@ class _BookingDetailSheetState extends ConsumerState<_BookingDetailSheet> {
             widget.bookingId,
             adminNote: note.isEmpty ? null : note,
           );
-        default:
+        case 'release':
           await service.releaseBooking(widget.bookingId);
       }
       if (!mounted) return;
-      // The decision endpoints return the updated booking; invalidating the
-      // whole family here (rather than leaving it solely to the parent's
-      // post-pop invalidate) means the queue is already refreshing while the
-      // sheet's close animation plays, instead of waiting on the pop to
-      // resolve first.
-      ref.invalidate(bookingsProvider);
-      _toast(
-        switch (action) {
-          'approve' => l.approvedToast,
-          'reject' => l.rejectedToast,
-          _ => l.releasedToast,
-        },
-        AppColors.success,
-      );
-      Navigator.pop(context, true);
+      // No invalidate here: the parent's `_openDetail` always resyncs the
+      // list once this sheet closes (on every close, not just a successful
+      // decision — see its comment), so doing it here too would just be a
+      // second, redundant refetch racing the first.
+      _toast(switch (action) {
+        'approve' => l.approvedToast,
+        'reject' => l.rejectedToast,
+        _ => l.releasedToast,
+      }, AppColors.success);
+      Navigator.pop(context);
     } on DioException catch (error) {
       if (!mounted) return;
       final code = error.response?.statusCode;
       if (code == 409) {
         // The spot is APPROVED to someone else. Retrying cannot fix it, but
-        // the manager may still want to reject this request — keep the sheet.
-        // The 409 body is the booking endpoints' `{error: "<msg>"}` shape
-        // (not the app's usual `{message}` envelope) — errorMessage checks
-        // both, so the server's actual conflict message is shown rather than
-        // a generic one.
+        // the manager may still want to reject this request — keep the sheet
+        // open. The 409 body is the booking endpoints' `{error: "<msg>"}`
+        // shape (not the app's usual `{message}` envelope) — errorMessage
+        // checks both, so the server's actual conflict message is shown
+        // rather than a generic one. Also refresh the detail provider: the
+        // competitor that just won the race now belongs in `otherRequests`
+        // with an APPROVED badge instead of the stale PENDING one fetched
+        // when this sheet first opened.
         setState(() => _deciding = false);
+        ref.invalidate(bookingDetailProvider(widget.bookingId));
         _toast(errorMessage(error, l.spotHeld), AppColors.warning);
       } else if (code == 400) {
-        // Someone else decided first; the sheet is stale — close and refresh.
+        // Someone else decided first; the sheet is stale — close (the
+        // parent's always-on-close resync picks up the fresher state).
         _toast(l.alreadyDecided, AppColors.warning);
-        Navigator.pop(context, true);
+        Navigator.pop(context);
       } else {
         setState(() => _deciding = false);
         _toast(errorMessage(error, l.actionFailed), AppColors.danger);
@@ -475,8 +615,9 @@ class _BookingDetailSheetState extends ConsumerState<_BookingDetailSheet> {
               ),
             ),
             data: (data) {
-              final request =
-                  Map<String, dynamic>.from(data['request'] as Map? ?? {});
+              final request = Map<String, dynamic>.from(
+                data['request'] as Map? ?? {},
+              );
               final others = (data['otherRequests'] as List? ?? const [])
                   .whereType<Map>()
                   .map((r) => Map<String, dynamic>.from(r))
@@ -486,6 +627,8 @@ class _BookingDetailSheetState extends ConsumerState<_BookingDetailSheet> {
               final phone = request['renterPhone']?.toString();
               final email = request['renterEmail']?.toString();
               final note = request['note']?.toString();
+              final decidedNote = request['adminNote']?.toString();
+              final decidedAt = request['decidedAt']?.toString();
 
               return SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
@@ -554,6 +697,13 @@ class _BookingDetailSheetState extends ConsumerState<_BookingDetailSheet> {
                         ),
                         m: m,
                       ),
+                    if (decidedAt != null)
+                      _DetailRow(
+                        icon: Icons.event_available_outlined,
+                        value:
+                            '${l.decidedAtLabel} ${Formatters.date(decidedAt, ar: l.ar)}',
+                        m: m,
+                      ),
                     if (note != null && note.isNotEmpty) ...[
                       const SizedBox(height: 6),
                       Container(
@@ -565,12 +715,52 @@ class _BookingDetailSheetState extends ConsumerState<_BookingDetailSheet> {
                         ),
                         child: Text(
                           note,
-                          style: (l.ar
+                          style:
+                              (l.ar
                               ? GoogleFonts.notoNaskhArabic
                               : GoogleFonts.josefinSans)(
-                            fontSize: 13,
-                            color: m.textSecondary,
-                            height: 1.5,
+                                fontSize: 13,
+                                color: m.textSecondary,
+                                height: 1.5,
+                              ),
+                        ),
+                      ),
+                    ],
+                    if (decidedNote != null && decidedNote.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: m.surfaceAlt,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text.rich(
+                          TextSpan(
+                            children: [
+                              TextSpan(
+                                text: '${l.decidedAdminNoteLabel}: ',
+                                style:
+                                    (l.ar
+                                    ? GoogleFonts.notoNaskhArabic
+                                    : GoogleFonts.josefinSans)(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: m.textSecondary,
+                                    ),
+                              ),
+                              TextSpan(
+                                text: decidedNote,
+                                style:
+                                    (l.ar
+                                    ? GoogleFonts.notoNaskhArabic
+                                    : GoogleFonts.josefinSans)(
+                                      fontSize: 13,
+                                      color: m.textSecondary,
+                                      height: 1.5,
+                                    ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
@@ -620,12 +810,13 @@ class _BookingDetailSheetState extends ConsumerState<_BookingDetailSheet> {
                     if (others.isEmpty)
                       Text(
                         l.noOtherRequests,
-                        style: (l.ar
+                        style:
+                            (l.ar
                             ? GoogleFonts.notoNaskhArabic
                             : GoogleFonts.josefinSans)(
-                          fontSize: 12.5,
-                          color: m.textMuted,
-                        ),
+                              fontSize: 12.5,
+                              color: m.textMuted,
+                            ),
                       )
                     else
                       for (final other in others)
@@ -649,8 +840,9 @@ class _BookingDetailSheetState extends ConsumerState<_BookingDetailSheet> {
                               key: const Key('booking-reject'),
                               label: l.reject,
                               height: 46,
-                              onPressed:
-                                  _deciding ? null : () => _decide('reject'),
+                              onPressed: _deciding
+                                  ? null
+                                  : () => _decide('reject'),
                             ),
                           ),
                           const SizedBox(width: 10),
@@ -659,8 +851,9 @@ class _BookingDetailSheetState extends ConsumerState<_BookingDetailSheet> {
                               key: const Key('booking-approve'),
                               label: l.approve,
                               height: 46,
-                              onPressed:
-                                  _deciding ? null : () => _decide('approve'),
+                              onPressed: _deciding
+                                  ? null
+                                  : () => _decide('approve'),
                             ),
                           ),
                         ],
@@ -707,13 +900,14 @@ class _OtherRequestRow extends StatelessWidget {
               children: [
                 Text(
                   row['renterName']?.toString() ?? l.renter,
-                  style: (l.ar
+                  style:
+                      (l.ar
                       ? GoogleFonts.notoNaskhArabic
                       : GoogleFonts.josefinSans)(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: m.textPrimary,
-                  ),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: m.textPrimary,
+                      ),
                 ),
                 Text(
                   [
@@ -806,34 +1000,13 @@ class _ContactBtn extends StatelessWidget {
               label,
               style:
                   (ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans)(
-                fontSize: 12,
-                color: m.isDark ? AppColors.accent : AppColors.accentDark,
-                fontWeight: FontWeight.w600,
-                letterSpacing: ar ? 0 : 0.4,
-              ),
+                    fontSize: 12,
+                    color: m.isDark ? AppColors.accent : AppColors.accentDark,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: ar ? 0 : 0.4,
+                  ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-/// A [RefreshIndicator] over a non-scrolling child cannot be pulled, so the
-/// empty and error states are given something to scroll.
-class _Scrollable extends StatelessWidget {
-  const _Scrollable({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) => SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(minHeight: constraints.maxHeight),
-          child: child,
         ),
       ),
     );
