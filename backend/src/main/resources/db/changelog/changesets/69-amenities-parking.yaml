@@ -1,0 +1,112 @@
+databaseChangeLog:
+  - changeSet:
+      id: 69-amenities-parking
+      author: rentaxis-system
+      changes:
+        # ---- property_amenities: free-form bookable amenities on a property ----
+        # fk_amenity_property RESTRICTs: inventory is soft-deactivated (active=false),
+        # never hard-deleted, so a property with amenities must be emptied first.
+        - createTable:
+            tableName: property_amenities
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: property_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_amenity_property, referencedTableName: properties, referencedColumnNames: id } }
+              - column: { name: name_en, type: varchar(160), constraints: { nullable: false } }
+              - column: { name: name_ar, type: varchar(160) }
+              - column: { name: description, type: text }
+              - column: { name: bookable, type: boolean, constraints: { nullable: false }, defaultValueBoolean: true }
+              - column: { name: active, type: boolean, constraints: { nullable: false }, defaultValueBoolean: true }
+              - column: { name: created_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
+              - column: { name: updated_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
+        - createIndex: { tableName: property_amenities, indexName: idx_property_amenities_tenant, columns: [ { column: { name: tenant_id } }, { column: { name: property_id } } ] }
+
+        # ---- amenity_building_scopes: zero rows for an amenity = visible to all towers ----
+        # Pure join rows, not audit data — cascade both ways (same reasoning as
+        # guard_property_assignments in changeset 65).
+        - createTable:
+            tableName: amenity_building_scopes
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: amenity_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_abs_amenity, referencedTableName: property_amenities, referencedColumnNames: id, deleteCascade: true } }
+              - column: { name: building_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_abs_building, referencedTableName: buildings, referencedColumnNames: id, deleteCascade: true } }
+              - column: { name: created_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
+        - addUniqueConstraint: { tableName: amenity_building_scopes, columnNames: "amenity_id, building_id", constraintName: uq_amenity_building }
+
+        # ---- parking_spots: real numbered inventory ----
+        - createTable:
+            tableName: parking_spots
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: property_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_spot_property, referencedTableName: properties, referencedColumnNames: id } }
+              - column: { name: spot_number, type: varchar(32), constraints: { nullable: false } }
+              - column: { name: level, type: varchar(32) }
+              - column: { name: covered, type: boolean, constraints: { nullable: false }, defaultValueBoolean: true }
+              - column: { name: active, type: boolean, constraints: { nullable: false }, defaultValueBoolean: true }
+              - column: { name: created_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
+              - column: { name: updated_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
+        - addUniqueConstraint: { tableName: parking_spots, columnNames: "property_id, spot_number", constraintName: uq_parking_spot_number }
+        - createIndex: { tableName: parking_spots, indexName: idx_parking_spots_tenant, columns: [ { column: { name: tenant_id } }, { column: { name: property_id } } ] }
+
+        # ---- parking_spot_building_scopes: same semantics as amenity scopes ----
+        - createTable:
+            tableName: parking_spot_building_scopes
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: parking_spot_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_psbs_spot, referencedTableName: parking_spots, referencedColumnNames: id, deleteCascade: true } }
+              - column: { name: building_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_psbs_building, referencedTableName: buildings, referencedColumnNames: id, deleteCascade: true } }
+              - column: { name: created_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
+        - addUniqueConstraint: { tableName: parking_spot_building_scopes, columnNames: "parking_spot_id, building_id", constraintName: uq_parking_spot_building }
+
+        # ---- booking_requests: one shared request table for both resource types ----
+        # property_id is derived server-side from the resource, never client-supplied.
+        # fk_booking_renter_user RESTRICTs on user deletion: booking requests are an
+        # audit trail of who asked for what — a renter with booking history must be
+        # deactivated, not hard-deleted (same reasoning as fk_gate_pass_creator in
+        # changeset 65). amenity_id/parking_spot_id RESTRICT so request history
+        # survives; inventory is soft-deactivated, not deleted. decided_by_user_id
+        # deliberately has no FK, matching gate_passes.approved_by_user_id.
+        - createTable:
+            tableName: booking_requests
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: property_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_booking_property, referencedTableName: properties, referencedColumnNames: id } }
+              - column: { name: resource_type, type: varchar(20), constraints: { nullable: false } }
+              - column: { name: amenity_id, type: uuid, constraints: { foreignKeyName: fk_booking_amenity, referencedTableName: property_amenities, referencedColumnNames: id } }
+              - column: { name: parking_spot_id, type: uuid, constraints: { foreignKeyName: fk_booking_spot, referencedTableName: parking_spots, referencedColumnNames: id } }
+              - column: { name: unit_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_booking_unit, referencedTableName: units, referencedColumnNames: id } }
+              - column: { name: renter_user_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_booking_renter_user, referencedTableName: users, referencedColumnNames: id } }
+              - column: { name: note, type: text }
+              - column: { name: preferred_date, type: date }
+              - column: { name: status, type: varchar(20), constraints: { nullable: false }, defaultValue: PENDING }
+              - column: { name: admin_note, type: text }
+              - column: { name: decided_by_user_id, type: uuid }
+              - column: { name: decided_at, type: timestamptz }
+              - column: { name: created_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
+              - column: { name: updated_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
+        - createIndex: { tableName: booking_requests, indexName: idx_booking_tenant_property_status, columns: [ { column: { name: tenant_id } }, { column: { name: property_id } }, { column: { name: status } }, { column: { name: created_at } } ] }
+        - createIndex: { tableName: booking_requests, indexName: idx_booking_tenant_renter, columns: [ { column: { name: tenant_id } }, { column: { name: renter_user_id } } ] }
+        - createIndex: { tableName: booking_requests, indexName: idx_booking_amenity, columns: [ { column: { name: amenity_id } } ] }
+        - createIndex: { tableName: booking_requests, indexName: idx_booking_spot, columns: [ { column: { name: parking_spot_id } } ] }
+        # XOR check + partial unique indexes (raw sql, gate-pass style):
+        # - exactly one of amenity_id / parking_spot_id
+        # - at most one APPROVED row per parking spot (the DB backstop behind the 409)
+        # - no duplicate PENDING by the same renter for the same resource (idempotency backstop)
+        - sql:
+            splitStatements: false
+            sql: |
+              ALTER TABLE booking_requests ADD CONSTRAINT chk_booking_exactly_one_resource
+                CHECK ((resource_type = 'AMENITY' AND amenity_id IS NOT NULL AND parking_spot_id IS NULL)
+                    OR (resource_type = 'PARKING_SPOT' AND parking_spot_id IS NOT NULL AND amenity_id IS NULL));
+              CREATE UNIQUE INDEX uq_booking_spot_active
+                ON booking_requests (parking_spot_id) WHERE status = 'APPROVED' AND parking_spot_id IS NOT NULL;
+              CREATE UNIQUE INDEX uq_booking_pending_renter_amenity
+                ON booking_requests (renter_user_id, amenity_id)
+                WHERE status = 'PENDING' AND amenity_id IS NOT NULL;
+              CREATE UNIQUE INDEX uq_booking_pending_renter_spot
+                ON booking_requests (renter_user_id, parking_spot_id)
+                WHERE status = 'PENDING' AND parking_spot_id IS NOT NULL;
