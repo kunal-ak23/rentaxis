@@ -1128,6 +1128,7 @@
     "spotNumbers": "Spot Numbers",
     "bulkHint": "Comma-separated; ranges expand (e.g. P10-P20 becomes P10, P11 ... P20).",
     "bulkPreview": "{count} spots will be created",
+    "bulkTooMany": "Maximum 500 spots per request — you entered {count}.",
     "level": "Level",
     "levelPlaceholder": "e.g. B1",
     "covered": "Covered",
