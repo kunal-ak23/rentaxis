@@ -34,6 +34,7 @@ type ActiveLease = {
     id: string;
     unitId: string;
     unitIdentifier: string;
+    propertyId: string;
     propertyName: string;
     status: string;
 };
@@ -42,6 +43,7 @@ type RequestTarget = {
     resourceType: BookingResourceType;
     resourceId: string;
     name: string;
+    propertyId: string;
 };
 
 type PendingAction = { kind: "cancel" | "release"; booking: BookingRequestDTO };
@@ -63,6 +65,39 @@ function parseDateOnly(value: string): Date {
     return new Date(y, m - 1, d);
 }
 
+/** Formats a local `Date` as `YYYY-MM-DD` — mirrors gatepass/page.tsx's toDateInput. */
+function toDateInput(date: Date): string {
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+/**
+ * Throws an ApiError (parsed from the `{error, message}` shape where
+ * possible, same convention as facilities.ts's parseErrorMessage) when a raw
+ * fetch response isn't ok. loadLeases uses a plain fetch (my-leases isn't
+ * wrapped by lib/api/facilities), so without this a 4xx/5xx here would be
+ * silently swallowed and misread as "renter genuinely has zero active
+ * leases" instead of "the request failed".
+ */
+async function throwIfNotOk(res: Response): Promise<void> {
+    if (res.ok) return;
+    const text = await res.text().catch(() => "");
+    let message = `Request failed (status ${res.status})`;
+    if (text) {
+        try {
+            const parsed: unknown = JSON.parse(text);
+            if (parsed && typeof parsed === "object") {
+                const body = parsed as { message?: unknown; error?: unknown };
+                if (typeof body.message === "string") message = body.message;
+                else if (typeof body.error === "string") message = body.error;
+            }
+        } catch {
+            // Not JSON — keep the generic message.
+        }
+    }
+    throw new ApiError(res.status, message, text);
+}
+
 export default function RenterFacilitiesPage() {
     const t = useTranslations("Facilities");
     const tB = useTranslations("Bookings");
@@ -72,6 +107,10 @@ export default function RenterFacilitiesPage() {
     const [facilities, setFacilities] = useState<MyFacilitiesDTO | null>(null);
     const [bookings, setBookings] = useState<BookingRequestDTO[]>([]);
     const [activeLeases, setActiveLeases] = useState<ActiveLease[]>([]);
+    // Distinguishes "leases fetch hasn't succeeded yet" (incl. failed) from
+    // "fetch succeeded and the renter truly has zero active leases" — the
+    // noActiveLease banner must only render for the latter.
+    const [leasesOk, setLeasesOk] = useState(false);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
@@ -97,10 +136,10 @@ export default function RenterFacilitiesPage() {
 
     const loadLeases = useCallback(async () => {
         const res = await fetch("/api/proxy/v1/leases/my-leases");
-        if (res.ok) {
-            const all: ActiveLease[] = await res.json();
-            setActiveLeases(all.filter(l => l.status === "ACTIVE"));
-        }
+        await throwIfNotOk(res);
+        const all: ActiveLease[] = await res.json();
+        setActiveLeases(all.filter(l => l.status === "ACTIVE"));
+        setLeasesOk(true);
     }, []);
 
     useEffect(() => {
@@ -123,8 +162,23 @@ export default function RenterFacilitiesPage() {
         setPreferredDate("");
         setNote("");
         setDialogError(null);
-        setUnitId(activeLeases[0]?.unitId ?? "");
+        // Only leases against the resource's own property are valid — a
+        // renter with units in two properties must not be able to submit
+        // against a unit in the wrong one (the backend 404s with a raw
+        // English "Amenity not found" if they do).
+        const matching = activeLeases.filter(l => l.propertyId === rt.propertyId);
+        setUnitId(matching[0]?.unitId ?? "");
     };
+
+    // Escape closes the request dialog while it's open — document-level
+    // listener (same pattern as BookingDetailDrawer.tsx) rather than a
+    // backdrop onKeyDown, which only fires when focus is already inside it.
+    useEffect(() => {
+        if (!target) return;
+        const handler = (e: KeyboardEvent) => { if (e.key === "Escape") setTarget(null); };
+        document.addEventListener("keydown", handler);
+        return () => document.removeEventListener("keydown", handler);
+    }, [target]);
 
     const submitRequest = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -139,8 +193,6 @@ export default function RenterFacilitiesPage() {
                 preferredDate: preferredDate || undefined,
                 note: note || undefined,
             });
-            setTarget(null);
-            await Promise.all([loadFacilities(), loadBookings()]);
         } catch (err) {
             // 409 (spot already held elsewhere) gets the localized copy; 400
             // (e.g. requesting a non-bookable amenity) and any other ApiError
@@ -148,8 +200,19 @@ export default function RenterFacilitiesPage() {
             if (err instanceof ApiError && err.status === 409) setDialogError(tB("spotConflict"));
             else if (err instanceof ApiError) setDialogError(err.message);
             else setDialogError(t("requestError"));
-        } finally {
             setSubmitting(false);
+            return;
+        }
+        // The booking now exists — close the dialog regardless of what
+        // happens next. A failure refreshing the lists below is a stale-UI
+        // problem, not a failed request, so it must not be reported as one
+        // (and dialogError can no longer be seen once the dialog is closed).
+        setTarget(null);
+        setSubmitting(false);
+        try {
+            await Promise.all([loadFacilities(), loadBookings()]);
+        } catch {
+            setError(t("refreshError"));
         }
     };
 
@@ -159,13 +222,18 @@ export default function RenterFacilitiesPage() {
         try {
             if (pendingAction.kind === "cancel") await cancelBooking(pendingAction.booking.id);
             else await releaseBooking(pendingAction.booking.id);
-            setPendingAction(null);
-            await Promise.all([loadFacilities(), loadBookings()]);
         } catch (err) {
             setPendingAction(null);
-            setError(err instanceof ApiError ? err.message : t("requestError"));
-        } finally {
             setActionLoading(false);
+            setError(err instanceof ApiError ? err.message : t("requestError"));
+            return;
+        }
+        setPendingAction(null);
+        setActionLoading(false);
+        try {
+            await Promise.all([loadFacilities(), loadBookings()]);
+        } catch {
+            setError(t("refreshError"));
         }
     };
 
@@ -192,7 +260,10 @@ export default function RenterFacilitiesPage() {
 
     const amenities = facilities?.amenities ?? [];
     const parkingSpots = facilities?.parkingSpots ?? [];
-    const noActiveLease = activeLeases.length === 0;
+    // Only true once the leases fetch has actually succeeded — a failed
+    // fetch (see loadLeases/throwIfNotOk) must surface as the page-level
+    // error banner above, not be misread as "you have zero active leases".
+    const noActiveLease = leasesOk && activeLeases.length === 0;
 
     return (
         <div className="p-8 max-w-5xl mx-auto">
@@ -251,7 +322,7 @@ export default function RenterFacilitiesPage() {
                                 )}
                                 {a.bookable && (
                                     <button
-                                        onClick={() => openRequest({ resourceType: "AMENITY", resourceId: a.id, name: amenityName(a.nameEn, a.nameAr) })}
+                                        onClick={() => openRequest({ resourceType: "AMENITY", resourceId: a.id, name: amenityName(a.nameEn, a.nameAr), propertyId: a.propertyId })}
                                         disabled={noActiveLease}
                                         className="mt-auto self-start px-4 py-2 bg-primary/10 text-primary hover:bg-primary/20 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
@@ -290,7 +361,7 @@ export default function RenterFacilitiesPage() {
                                 </p>
                                 <p className="text-[10px] text-muted">{t("pendingHint", { count: s.pendingCount })}</p>
                                 <button
-                                    onClick={() => openRequest({ resourceType: "PARKING_SPOT", resourceId: s.id, name: s.spotNumber })}
+                                    onClick={() => openRequest({ resourceType: "PARKING_SPOT", resourceId: s.id, name: s.spotNumber, propertyId: s.propertyId })}
                                     disabled={noActiveLease || s.held}
                                     className="mt-auto self-start px-4 py-2 bg-primary/10 text-primary hover:bg-primary/20 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
@@ -383,36 +454,55 @@ export default function RenterFacilitiesPage() {
             </div>
 
             {/* ── Request dialog ────────────────────────────────────── */}
-            {target && (
+            {target && (() => {
+                // Scoped to leases on the resource's own property — a renter
+                // with units in two properties must never submit a request
+                // against a unit that isn't served by this facility.
+                const matchingLeases = activeLeases.filter(l => l.propertyId === target.propertyId);
+                return (
                 <div
                     className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
-                    onClick={() => setTarget(null)}
-                    onKeyDown={(e) => { if (e.key === "Escape") setTarget(null); }}
+                    onClick={submitting ? undefined : () => setTarget(null)}
                 >
-                    <div className="bg-surface rounded-xl border border-border shadow-xl w-full max-w-md mx-4 p-6" onClick={(e) => e.stopPropagation()}>
-                        <h3 className="text-lg font-bold text-foreground mb-4">
+                    <div
+                        className="bg-surface rounded-xl border border-border shadow-xl w-full max-w-md mx-4 p-6"
+                        onClick={(e) => e.stopPropagation()}
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="facility-request-dialog-title"
+                    >
+                        <h3 id="facility-request-dialog-title" className="text-lg font-bold text-foreground mb-4">
                             {t("requestTitle", { name: target.name })}
                         </h3>
                         <form onSubmit={submitRequest} className="space-y-4">
                             <div>
                                 <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">{t("unit")}</label>
-                                <select
-                                    required
-                                    value={unitId}
-                                    onChange={e => setUnitId(e.target.value)}
-                                    className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
-                                >
-                                    {activeLeases.map(l => (
-                                        <option key={l.id} value={l.unitId}>
-                                            {l.unitIdentifier} — {l.propertyName}
-                                        </option>
-                                    ))}
-                                </select>
+                                {matchingLeases.length > 1 ? (
+                                    <select
+                                        required
+                                        value={unitId}
+                                        onChange={e => setUnitId(e.target.value)}
+                                        className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
+                                    >
+                                        {matchingLeases.map(l => (
+                                            <option key={l.id} value={l.unitId}>
+                                                {l.unitIdentifier} — {l.propertyName}
+                                            </option>
+                                        ))}
+                                    </select>
+                                ) : matchingLeases.length === 1 ? (
+                                    <p className="w-full bg-input border border-border rounded-lg p-2 text-xs text-foreground font-semibold">
+                                        {matchingLeases[0].unitIdentifier} — {matchingLeases[0].propertyName}
+                                    </p>
+                                ) : (
+                                    <p className="text-xs font-semibold text-error">{t("noMatchingUnit")}</p>
+                                )}
                             </div>
                             <div>
                                 <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">{t("preferredDate")}</label>
                                 <input
                                     type="date"
+                                    min={toDateInput(new Date())}
                                     value={preferredDate}
                                     onChange={e => setPreferredDate(e.target.value)}
                                     className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200"
@@ -451,7 +541,8 @@ export default function RenterFacilitiesPage() {
                         </form>
                     </div>
                 </div>
-            )}
+                );
+            })()}
 
             <ConfirmDialog
                 isOpen={pendingAction !== null}

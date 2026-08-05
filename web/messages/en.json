@@ -1170,6 +1170,7 @@
     "request": "Request",
     "requestTitle": "Request {name}",
     "unit": "Unit",
+    "noMatchingUnit": "No active lease found for this property.",
     "preferredDate": "Preferred date (optional)",
     "note": "Note (optional)",
     "notePlaceholder": "Anything the manager should know",
@@ -1185,7 +1186,8 @@
     "releaseSpot": "Release Spot",
     "releaseSpotConfirm": "Give up this parking spot? It becomes available to others.",
     "noFacilities": "No facilities are available for your unit yet.",
-    "noActiveLease": "You need an active lease to request facilities."
+    "noActiveLease": "You need an active lease to request facilities.",
+    "refreshError": "That went through, but the page couldn't refresh — please reload."
   },
   "Bookings": {
     "navLabel": "Bookings",
