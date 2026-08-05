@@ -23,21 +23,26 @@ final buildingsProvider = FutureProvider.autoDispose
   return _asRows(rows);
 });
 
+/// One page's rows plus the server's total row count, so the UI can tell
+/// when `size` truncated the list (a property with more amenities/spots than
+/// fit in one page).
+typedef FacilityPage = ({List<Map<String, dynamic>> rows, int total});
+
 /// Amenity inventory of one property. The endpoint is paged; one large page
 /// keeps the screen simple (a property has tens of facilities, not thousands).
 final amenitiesProvider = FutureProvider.autoDispose
-    .family<List<Map<String, dynamic>>, String>((ref, propertyId) async {
+    .family<FacilityPage, String>((ref, propertyId) async {
   final service = ref.watch(facilityServiceProvider);
   final page = await service.getAmenities(propertyId: propertyId, size: 200);
-  return _asRows(page['content'] as List? ?? const []);
+  return _asPage(page);
 });
 
 final parkingSpotsProvider = FutureProvider.autoDispose
-    .family<List<Map<String, dynamic>>, String>((ref, propertyId) async {
+    .family<FacilityPage, String>((ref, propertyId) async {
   final service = ref.watch(facilityServiceProvider);
   final page =
       await service.getParkingSpots(propertyId: propertyId, size: 200);
-  return _asRows(page['content'] as List? ?? const []);
+  return _asPage(page);
 });
 
 /// Admin booking inbox filter. A record so equal filters resolve to the same
@@ -65,3 +70,9 @@ final bookingDetailProvider = FutureProvider.autoDispose
 
 List<Map<String, dynamic>> _asRows(List<dynamic> rows) =>
     rows.whereType<Map>().map((r) => Map<String, dynamic>.from(r)).toList();
+
+FacilityPage _asPage(Map<String, dynamic> page) {
+  final rows = _asRows(page['content'] as List? ?? const []);
+  final total = (page['totalElements'] as num?)?.toInt() ?? rows.length;
+  return (rows: rows, total: total);
+}

@@ -1,4 +1,3 @@
-import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -6,6 +5,7 @@ import 'package:rentaxis_core/rentaxis_core.dart';
 
 import '../../providers/facility_provider.dart';
 import '../../providers/gate_pass_provider.dart' show propertiesProvider;
+import 'facilities_utils.dart';
 
 /// Screen strings (EN/AR). Lightweight per-screen pattern — see arabic-brief.
 class _L {
@@ -49,9 +49,11 @@ class _L {
       : 'None selected = visible to all towers. Selecting restricts visibility.';
   String get spotNumber => ar ? 'رقم الموقف' : 'Spot number';
   String get spotNumbers => ar ? 'أرقام المواقف' : 'Spot numbers';
+  // Mirrors web's Facilities.bulkHint copy (range-expansion example) while
+  // keeping mobile's own comma-or-newline separator wording.
   String get spotNumbersHint => ar
-      ? 'مفصولة بفواصل أو أسطر: B1-01, B1-02, B1-03'
-      : 'Comma or newline separated: B1-01, B1-02, B1-03';
+      ? 'مفصولة بفواصل أو أسطر؛ يتم توسيع النطاقات (مثال: P10-P20 تصبح P10، P11 ... P20).'
+      : 'Comma or newline separated; ranges expand (e.g. P10-P20 becomes P10, P11 ... P20).';
   String get spotRequired => ar ? 'أدخل رقم الموقف' : 'Enter a spot number';
   String get bulkEmpty =>
       ar ? 'أدخل رقم موقف واحد على الأقل' : 'Enter at least one spot number';
@@ -64,6 +66,7 @@ class _L {
   String get level => ar ? 'الطابق (اختياري)' : 'Level (optional)';
   String get covered => ar ? 'مظلل' : 'Covered';
   String get bulkMode => ar ? 'إضافة متعددة' : 'Bulk add';
+  String bulkCreated(int n) => ar ? 'تم إنشاء $n موقف' : 'Created $n spots';
   String get save => ar ? 'حفظ' : 'Save';
   String get saveFailed =>
       ar ? 'تعذر الحفظ. حاول مرة أخرى.' : 'Could not save. Try again.';
@@ -81,43 +84,14 @@ class _L {
       : 'Deactivate "$name"? Renters stop seeing it; existing requests are kept.';
   String pending(int n) => ar ? '$n قيد الانتظار' : '$n pending';
   String towersCount(int n) => ar ? 'الأبراج: $n' : '$n towers';
+  String showingCount(int shown, int total) =>
+      ar ? 'عرض $shown من $total' : 'Showing $shown of $total';
 }
 
 String _displayName(Map<String, dynamic> row, bool ar) {
   final nameAr = row['nameAr']?.toString();
   if (ar && nameAr != null && nameAr.isNotEmpty) return nameAr;
   return row['nameEn']?.toString() ?? '—';
-}
-
-/// Splits comma/semicolon/newline-separated spot numbers, trimming blanks and
-/// de-duplicating while preserving order.
-List<String> _parseSpotNumbers(String raw) {
-  final seen = <String>{};
-  final result = <String>[];
-  for (final part in raw.split(RegExp(r'[,\n;]+'))) {
-    final trimmed = part.trim();
-    if (trimmed.isEmpty || !seen.add(trimmed)) continue;
-    result.add(trimmed);
-  }
-  return result;
-}
-
-/// Extracts a user-facing message from a caught error. `FacilityApiService`
-/// documents two response shapes: the app's usual `{error: true, message,
-/// ...}` envelope, and the booking 409 shape `{error: "message text", ...}` —
-/// so this prefers `message` when it is a String, else `error` when it is a
-/// String, else falls back to a generic localized message.
-String _errorMessage(Object error, String fallback) {
-  if (error is DioException) {
-    final body = error.response?.data;
-    if (body is Map) {
-      final message = body['message'];
-      if (message is String && message.isNotEmpty) return message;
-      final err = body['error'];
-      if (err is String && err.isNotEmpty) return err;
-    }
-  }
-  return fallback;
 }
 
 /// Inventory management: free-form amenities and numbered parking spots per
@@ -182,7 +156,14 @@ class _FacilitiesScreenState extends ConsumerState<FacilitiesScreen> {
           }
           // One property is the overwhelmingly common case; select it
           // silently rather than making the manager pick between one option.
-          _propertyId ??= rows.first['id']?.toString();
+          // Also re-validate against the loaded rows: a stale id (the
+          // property list changed under a kept selection) falls back to the
+          // first row instead of handing the dropdown a value it doesn't
+          // have an item for.
+          final validIds = rows.map((p) => p['id']?.toString()).toSet();
+          if (_propertyId == null || !validIds.contains(_propertyId)) {
+            _propertyId = rows.first['id']?.toString();
+          }
           final propertyId = _propertyId!;
           return Column(
             children: [
@@ -204,7 +185,9 @@ class _FacilitiesScreenState extends ConsumerState<FacilitiesScreen> {
                             ),
                           ),
                       ],
-                      onChanged: (id) => setState(() => _propertyId = id),
+                      onChanged: (id) {
+                        if (id != null) setState(() => _propertyId = id);
+                      },
                     ),
                     const SizedBox(height: 12),
                     _TabToggle(
@@ -241,7 +224,8 @@ class _FacilitiesScreenState extends ConsumerState<FacilitiesScreen> {
             onRetry: () => ref.invalidate(amenitiesProvider(propertyId)),
           ),
         ),
-        data: (items) {
+        data: (page) {
+          final items = page.rows;
           if (items.isEmpty) {
             return _Scrollable(
               child: EmptyState(
@@ -253,21 +237,31 @@ class _FacilitiesScreenState extends ConsumerState<FacilitiesScreen> {
               ),
             );
           }
+          final truncated = items.length < page.total;
           return ListView.builder(
             physics: const AlwaysScrollableScrollPhysics(),
             padding:
                 EdgeInsets.fromLTRB(16, 8, 16, AppInsets.bottomNav(context)),
-            itemCount: items.length,
-            itemBuilder: (context, i) => AnimatedListItem(
-              index: i,
-              child: _FacilityCard(
-                row: items[i],
-                parking: false,
-                l: l,
-                onEdit: () => _openAmenitySheet(existing: items[i]),
-                onDeactivate: () => _deactivate(items[i], parking: false),
-              ),
-            ),
+            itemCount: items.length + (truncated ? 1 : 0),
+            itemBuilder: (context, i) {
+              if (i == items.length) {
+                return _TruncationFooter(
+                  shown: items.length,
+                  total: page.total,
+                  l: l,
+                );
+              }
+              return AnimatedListItem(
+                index: i,
+                child: _FacilityCard(
+                  row: items[i],
+                  parking: false,
+                  l: l,
+                  onEdit: () => _openAmenitySheet(existing: items[i]),
+                  onDeactivate: () => _deactivate(items[i], parking: false),
+                ),
+              );
+            },
           );
         },
       ),
@@ -287,7 +281,8 @@ class _FacilitiesScreenState extends ConsumerState<FacilitiesScreen> {
             onRetry: () => ref.invalidate(parkingSpotsProvider(propertyId)),
           ),
         ),
-        data: (items) {
+        data: (page) {
+          final items = page.rows;
           if (items.isEmpty) {
             return _Scrollable(
               child: EmptyState(
@@ -299,21 +294,31 @@ class _FacilitiesScreenState extends ConsumerState<FacilitiesScreen> {
               ),
             );
           }
+          final truncated = items.length < page.total;
           return ListView.builder(
             physics: const AlwaysScrollableScrollPhysics(),
             padding:
                 EdgeInsets.fromLTRB(16, 8, 16, AppInsets.bottomNav(context)),
-            itemCount: items.length,
-            itemBuilder: (context, i) => AnimatedListItem(
-              index: i,
-              child: _FacilityCard(
-                row: items[i],
-                parking: true,
-                l: l,
-                onEdit: () => _openParkingSheet(existing: items[i]),
-                onDeactivate: () => _deactivate(items[i], parking: true),
-              ),
-            ),
+            itemCount: items.length + (truncated ? 1 : 0),
+            itemBuilder: (context, i) {
+              if (i == items.length) {
+                return _TruncationFooter(
+                  shown: items.length,
+                  total: page.total,
+                  l: l,
+                );
+              }
+              return AnimatedListItem(
+                index: i,
+                child: _FacilityCard(
+                  row: items[i],
+                  parking: true,
+                  l: l,
+                  onEdit: () => _openParkingSheet(existing: items[i]),
+                  onDeactivate: () => _deactivate(items[i], parking: true),
+                ),
+              );
+            },
           );
         },
       ),
@@ -332,13 +337,20 @@ class _FacilitiesScreenState extends ConsumerState<FacilitiesScreen> {
       ),
       builder: (_) => _AmenitySheet(propertyId: propertyId, existing: existing),
     );
-    if (changed == true) ref.invalidate(amenitiesProvider(propertyId));
+    // riverpod 2.6.1's `invalidate` throws StateError after the provider's
+    // container is disposed, and this router rebuilds on `authProvider` —
+    // the state backing `context`/`ref` can already be gone by the time the
+    // awaited sheet returns.
+    if (changed == true && mounted) ref.invalidate(amenitiesProvider(propertyId));
   }
 
+  /// The sheet pops `true` for a plain create/update, or an `int` (the
+  /// created count) for a bulk create — `null` means the sheet was
+  /// dismissed without saving.
   Future<void> _openParkingSheet({Map<String, dynamic>? existing}) async {
     final propertyId = _propertyId;
     if (propertyId == null) return;
-    final changed = await showModalBottomSheet<bool>(
+    final result = await showModalBottomSheet<Object?>(
       context: context,
       isScrollControlled: true,
       backgroundColor: context.miftah.surface,
@@ -347,7 +359,9 @@ class _FacilitiesScreenState extends ConsumerState<FacilitiesScreen> {
       ),
       builder: (_) => _ParkingSheet(propertyId: propertyId, existing: existing),
     );
-    if (changed == true) ref.invalidate(parkingSpotsProvider(propertyId));
+    if (result == null || !mounted) return;
+    ref.invalidate(parkingSpotsProvider(propertyId));
+    if (result is int) _toast(_L(context.isAr).bulkCreated(result));
   }
 
   Future<void> _deactivate(
@@ -390,7 +404,7 @@ class _FacilitiesScreenState extends ConsumerState<FacilitiesScreen> {
       }
       if (mounted) _toast(l.deactivated);
     } catch (e) {
-      if (mounted) _toast(_errorMessage(e, l.deactivateFailed));
+      if (mounted) _toast(errorMessage(e, l.deactivateFailed));
     }
   }
 
@@ -457,6 +471,38 @@ class _TabToggle extends StatelessWidget {
               fontWeight: FontWeight.w700,
               color: selected ? m.textPrimary : m.textMuted,
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Shown under a list that a page `size` truncated — a property with more
+/// amenities/spots than fit in one page (see `FacilityPage.total` in
+/// facility_provider.dart).
+class _TruncationFooter extends StatelessWidget {
+  final int shown;
+  final int total;
+  final _L l;
+
+  const _TruncationFooter({
+    required this.shown,
+    required this.total,
+    required this.l,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final m = context.miftah;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Center(
+        child: Text(
+          l.showingCount(shown, total),
+          style: (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans)(
+            fontSize: 12,
+            color: m.textMuted,
           ),
         ),
       ),
@@ -745,7 +791,7 @@ class _AmenitySheetState extends ConsumerState<_AmenitySheet> {
       setState(() => _saving = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(_errorMessage(e, l.saveFailed)),
+          content: Text(errorMessage(e, l.saveFailed)),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -917,16 +963,22 @@ class _ParkingSheetState extends ConsumerState<_ParkingSheet> {
           'covered': _covered,
           'buildingIds': _towerIds.toList(),
         });
+        if (mounted) Navigator.pop(context, true);
       } else if (_bulk) {
-        // The >500 / empty-parse guards live in the field's validator below,
-        // so the request is never sent for either case.
-        await service.bulkCreateParkingSpots({
+        // The >500 / empty-parse / too-long guards live in the field's
+        // validator below, so the request is never sent for any of them.
+        final created = await service.bulkCreateParkingSpots({
           'propertyId': widget.propertyId,
-          'spotNumbers': _parseSpotNumbers(_spotCtrl.text),
+          'spotNumbers': parseSpotNumbers(_spotCtrl.text),
           if (level.isNotEmpty) 'level': level,
           'covered': _covered,
           'buildingIds': _towerIds.toList(),
         });
+        // Pop the created count (not just `true`) so the parent screen can
+        // toast how many spots landed — the manager typed a range/blob, not
+        // a count, and bulk requests can silently produce fewer rows than
+        // expected if entries collide with existing spots.
+        if (mounted) Navigator.pop(context, created.length);
       } else {
         await service.createParkingSpot({
           'propertyId': widget.propertyId,
@@ -935,14 +987,14 @@ class _ParkingSheetState extends ConsumerState<_ParkingSheet> {
           'covered': _covered,
           'buildingIds': _towerIds.toList(),
         });
+        if (mounted) Navigator.pop(context, true);
       }
-      if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(_errorMessage(e, l.saveFailed)),
+          content: Text(errorMessage(e, l.saveFailed)),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -997,17 +1049,30 @@ class _ParkingSheetState extends ConsumerState<_ParkingSheet> {
                           color: m.textPrimary,
                         ),
                       ),
-                      onChanged: (v) => setState(() => _bulk = v),
+                      onChanged: (v) => setState(() {
+                        _bulk = v;
+                        // Switching bulk off with a comma/newline blob still
+                        // in the field would let it ride through untouched
+                        // as a single literal "spot number" — clear it so
+                        // the manager retypes one value on purpose.
+                        if (!v) _spotCtrl.clear();
+                      }),
                     ),
                   const SizedBox(height: 4),
                   TextFormField(
                     key: const Key('spot-numbers'),
                     controller: _spotCtrl,
                     maxLines: _bulk ? 3 : 1,
-                    // Bulk text carries many comma/newline-separated numbers,
-                    // so only the single-entry field gets the DB's 32-char
-                    // cap; bulk entries are checked individually below.
-                    maxLength: _bulk ? null : 32,
+                    // Spot codes are alphanumeric IDs, not natural-language
+                    // text — always left-to-right regardless of app locale
+                    // (mirrors the amenity sheet's explicit rtl on the
+                    // Arabic-name field, just the other direction).
+                    textDirection: TextDirection.ltr,
+                    // Bulk text carries many comma/newline-separated numbers
+                    // (and ranges expand to more), so only the single-entry
+                    // field gets the DB's 32-char cap; bulk entries are
+                    // checked individually via the validator below.
+                    maxLength: _bulk ? null : kSpotFieldMaxLength,
                     decoration: InputDecoration(
                       labelText: _bulk ? l.spotNumbers : l.spotNumber,
                       hintText: _bulk ? l.spotNumbersHint : 'B1-01',
@@ -1015,15 +1080,17 @@ class _ParkingSheetState extends ConsumerState<_ParkingSheet> {
                     ),
                     validator: (v) {
                       if (_bulk) {
-                        final parsed = _parseSpotNumbers(v ?? '');
-                        if (parsed.isEmpty) return l.bulkEmpty;
-                        if (parsed.length > 500) {
-                          return l.bulkTooMany(parsed.length);
+                        final parsed = parseSpotNumbers(v ?? '');
+                        switch (validateBulkSpotNumbers(parsed)) {
+                          case BulkSpotValidation.empty:
+                            return l.bulkEmpty;
+                          case BulkSpotValidation.tooMany:
+                            return l.bulkTooMany(parsed.length);
+                          case BulkSpotValidation.tooLong:
+                            return l.spotTooLong;
+                          case BulkSpotValidation.ok:
+                            return null;
                         }
-                        if (parsed.any((s) => s.length > 32)) {
-                          return l.spotTooLong;
-                        }
-                        return null;
                       }
                       return (v == null || v.trim().isEmpty)
                           ? l.spotRequired
@@ -1033,7 +1100,7 @@ class _ParkingSheetState extends ConsumerState<_ParkingSheet> {
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _levelCtrl,
-                    maxLength: 32,
+                    maxLength: kSpotFieldMaxLength,
                     decoration: InputDecoration(
                       labelText: l.level,
                       hintText: 'B1',
