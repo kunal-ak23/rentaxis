@@ -77,7 +77,7 @@ function parseErrorMessage(text: string, status: number): string {
   return `Request failed (status ${status})`
 }
 
-async function handle<T>(res: Response, action: string): Promise<T> {
+async function handle<T>(res: Response): Promise<T> {
   const text = await res.text().catch(() => '')
   if (!res.ok) {
     throw new ApiError(res.status, parseErrorMessage(text, res.status), text)
@@ -89,7 +89,7 @@ async function handle<T>(res: Response, action: string): Promise<T> {
   return JSON.parse(text) as T
 }
 
-async function handleVoid(res: Response, action: string): Promise<void> {
+async function handleVoid(res: Response): Promise<void> {
   const text = await res.text().catch(() => '')
   if (!res.ok) {
     throw new ApiError(res.status, parseErrorMessage(text, res.status), text)
@@ -104,25 +104,23 @@ export async function fetchAmenities(
   size = 10
 ): Promise<PageResponse<AmenityDTO>> {
   const q = new URLSearchParams({ propertyId, page: String(page), size: String(size) })
-  return handle(await fetch(`${AMENITIES}?${q}`), 'fetchAmenities')
+  return handle(await fetch(`${AMENITIES}?${q}`))
 }
 
 export async function createAmenity(body: AmenityCreateRequest): Promise<AmenityDTO> {
   return handle(
-    await fetch(AMENITIES, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(body) }),
-    'createAmenity'
+    await fetch(AMENITIES, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(body) })
   )
 }
 
 export async function updateAmenity(id: string, body: AmenityUpdateRequest): Promise<AmenityDTO> {
   return handle(
-    await fetch(`${AMENITIES}/${id}`, { method: 'PUT', headers: JSON_HEADERS, body: JSON.stringify(body) }),
-    'updateAmenity'
+    await fetch(`${AMENITIES}/${id}`, { method: 'PUT', headers: JSON_HEADERS, body: JSON.stringify(body) })
   )
 }
 
 export async function deactivateAmenity(id: string): Promise<void> {
-  return handleVoid(await fetch(`${AMENITIES}/${id}`, { method: 'DELETE' }), 'deactivateAmenity')
+  return handleVoid(await fetch(`${AMENITIES}/${id}`, { method: 'DELETE' }))
 }
 
 // ─── Parking spots (admin) ───────────────────────────────────────────────────
@@ -133,13 +131,12 @@ export async function fetchParkingSpots(
   size = 10
 ): Promise<PageResponse<ParkingSpotDTO>> {
   const q = new URLSearchParams({ propertyId, page: String(page), size: String(size) })
-  return handle(await fetch(`${SPOTS}?${q}`), 'fetchParkingSpots')
+  return handle(await fetch(`${SPOTS}?${q}`))
 }
 
 export async function createParkingSpot(body: ParkingSpotCreateRequest): Promise<ParkingSpotDTO> {
   return handle(
-    await fetch(SPOTS, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(body) }),
-    'createParkingSpot'
+    await fetch(SPOTS, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(body) })
   )
 }
 
@@ -147,8 +144,7 @@ export async function bulkCreateParkingSpots(
   body: ParkingSpotBulkCreateRequest
 ): Promise<ParkingSpotDTO[]> {
   return handle(
-    await fetch(`${SPOTS}/bulk`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(body) }),
-    'bulkCreateParkingSpots'
+    await fetch(`${SPOTS}/bulk`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(body) })
   )
 }
 
@@ -157,13 +153,12 @@ export async function updateParkingSpot(
   body: ParkingSpotUpdateRequest
 ): Promise<ParkingSpotDTO> {
   return handle(
-    await fetch(`${SPOTS}/${id}`, { method: 'PUT', headers: JSON_HEADERS, body: JSON.stringify(body) }),
-    'updateParkingSpot'
+    await fetch(`${SPOTS}/${id}`, { method: 'PUT', headers: JSON_HEADERS, body: JSON.stringify(body) })
   )
 }
 
 export async function deactivateParkingSpot(id: string): Promise<void> {
-  return handleVoid(await fetch(`${SPOTS}/${id}`, { method: 'DELETE' }), 'deactivateParkingSpot')
+  return handleVoid(await fetch(`${SPOTS}/${id}`, { method: 'DELETE' }))
 }
 
 // ─── Bookings (admin inbox) ──────────────────────────────────────────────────
@@ -185,11 +180,11 @@ export async function fetchBookings(
   if (filters.resourceType) q.set('resourceType', filters.resourceType)
   if (filters.page !== undefined) q.set('page', String(filters.page))
   if (filters.size !== undefined) q.set('size', String(filters.size))
-  return handle(await fetch(`${BOOKINGS}?${q}`), 'fetchBookings')
+  return handle(await fetch(`${BOOKINGS}?${q}`))
 }
 
 export async function fetchBooking(id: string): Promise<BookingDetailDTO> {
-  return handle(await fetch(`${BOOKINGS}/${id}`), 'fetchBooking')
+  return handle(await fetch(`${BOOKINGS}/${id}`))
 }
 
 /** Throws ApiError with status 409 when the parking spot is already APPROVED elsewhere. */
@@ -199,8 +194,7 @@ export async function approveBooking(id: string, body: DecisionRequest): Promise
       method: 'POST',
       headers: JSON_HEADERS,
       body: JSON.stringify(body),
-    }),
-    'approveBooking'
+    })
   )
 }
 
@@ -210,36 +204,34 @@ export async function rejectBooking(id: string, body: DecisionRequest): Promise<
       method: 'POST',
       headers: JSON_HEADERS,
       body: JSON.stringify(body),
-    }),
-    'rejectBooking'
+    })
   )
 }
 
 /** Admin OR the owning renter; APPROVED parking only. */
 export async function releaseBooking(id: string): Promise<BookingRequestDTO> {
-  return handle(await fetch(`${BOOKINGS}/${id}/release`, { method: 'POST' }), 'releaseBooking')
+  return handle(await fetch(`${BOOKINGS}/${id}/release`, { method: 'POST' }))
 }
 
 // ─── Renter side ─────────────────────────────────────────────────────────────
 
 export async function fetchMyFacilities(): Promise<MyFacilitiesDTO> {
-  return handle(await fetch(`${FACILITIES}/my`), 'fetchMyFacilities')
+  return handle(await fetch(`${FACILITIES}/my`))
 }
 
 /** Idempotent: an existing PENDING request by the caller for the same resource is returned. */
 export async function createBooking(body: BookingCreateRequest): Promise<BookingRequestDTO> {
   return handle(
-    await fetch(BOOKINGS, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(body) }),
-    'createBooking'
+    await fetch(BOOKINGS, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(body) })
   )
 }
 
 export async function fetchMyBookings(): Promise<BookingRequestDTO[]> {
-  return handle(await fetch(`${BOOKINGS}/my`), 'fetchMyBookings')
+  return handle(await fetch(`${BOOKINGS}/my`))
 }
 
 export async function cancelBooking(id: string): Promise<BookingRequestDTO> {
-  return handle(await fetch(`${BOOKINGS}/${id}/cancel`, { method: 'POST' }), 'cancelBooking')
+  return handle(await fetch(`${BOOKINGS}/${id}/cancel`, { method: 'POST' }))
 }
 
 // ─── Bulk spot-number entry parser ───────────────────────────────────────────

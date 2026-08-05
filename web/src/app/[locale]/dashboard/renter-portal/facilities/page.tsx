@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { useSession } from "next-auth/react";
 import { ArrowLeft, Dumbbell, Car, Loader2 } from "lucide-react";
@@ -240,6 +240,25 @@ export default function RenterFacilitiesPage() {
     const amenityName = (nameEn: string, nameAr: string | null) =>
         locale === "ar" && nameAr ? nameAr : nameEn;
 
+    /**
+     * The caller's own PENDING/APPROVED request per resource id, keyed off
+     * `bookings` (already fetched for the My Requests table below). Mirrors
+     * mobile's `_openByResource` in facilities_screen.dart — terminal
+     * statuses (REJECTED/CANCELLED/RELEASED) don't block a new request, so
+     * only PENDING/APPROVED are indexed. `fetchMyBookings` is createdAt ASC,
+     * so a later entry for the same resource overwrites an earlier one,
+     * landing on the newest open request.
+     */
+    const openByResource = useMemo(() => {
+        const map = new Map<string, BookingRequestDTO>();
+        for (const b of bookings) {
+            if (b.status !== "PENDING" && b.status !== "APPROVED") continue;
+            const resourceId = b.amenityId ?? b.parkingSpotId;
+            if (resourceId) map.set(resourceId, b);
+        }
+        return map;
+    }, [bookings]);
+
     if (sessionStatus === "loading") {
         return (
             <div className="p-8 max-w-5xl mx-auto flex flex-col items-center justify-center h-64 gap-3">
@@ -305,11 +324,29 @@ export default function RenterFacilitiesPage() {
                         <h2 className="text-sm font-bold text-foreground tracking-tight">{t("amenitiesSection")}</h2>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {amenities.map(a => (
+                        {amenities.map(a => {
+                            const myOpen = openByResource.get(a.id);
+                            // Only a PENDING own-request blocks a new one — mirrors
+                            // facilities_screen.dart's `_AmenityCard`. There is no
+                            // transition out of APPROVED for an amenity (unlike a
+                            // parking spot, which `held` already covers), and
+                            // create-idempotency only short-circuits a PENDING
+                            // duplicate, so gating on `myOpen != null` would make a
+                            // once-approved amenity unbookable forever. The
+                            // APPROVED badge below is informational only.
+                            const blocking = myOpen?.status === "PENDING";
+                            return (
                             <div key={a.id} className="bg-surface rounded-xl p-4 border border-border hover:shadow-md transition-all duration-200 flex flex-col gap-2">
                                 <div className="flex items-start justify-between gap-2">
                                     <p className="text-sm font-bold text-foreground">{amenityName(a.nameEn, a.nameAr)}</p>
-                                    {!a.bookable && (
+                                    {myOpen ? (
+                                        <span className={cn(
+                                            "px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest rounded-md shrink-0",
+                                            STATUS_CLASSES[myOpen.status]
+                                        )}>
+                                            {tB(`status${myOpen.status}`)}
+                                        </span>
+                                    ) : !a.bookable && (
                                         <span className="px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest bg-input text-muted rounded-md shrink-0">
                                             {t("notBookable")}
                                         </span>
@@ -320,7 +357,7 @@ export default function RenterFacilitiesPage() {
                                 {a.bookable && (
                                     <p className="text-[10px] text-muted">{t("pendingHint", { count: a.pendingCount })}</p>
                                 )}
-                                {a.bookable && (
+                                {a.bookable && !blocking && (
                                     <button
                                         onClick={() => openRequest({ resourceType: "AMENITY", resourceId: a.id, name: amenityName(a.nameEn, a.nameAr), propertyId: a.propertyId })}
                                         disabled={noActiveLease}
@@ -330,7 +367,8 @@ export default function RenterFacilitiesPage() {
                                     </button>
                                 )}
                             </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </div>
             )}
@@ -343,16 +381,33 @@ export default function RenterFacilitiesPage() {
                         <h2 className="text-sm font-bold text-foreground tracking-tight">{t("parkingSection")}</h2>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {parkingSpots.map(s => (
+                        {parkingSpots.map(s => {
+                            const myOpen = openByResource.get(s.id);
+                            return (
                             <div key={s.id} className="bg-surface rounded-xl p-4 border border-border hover:shadow-md transition-all duration-200 flex flex-col gap-2">
                                 <div className="flex items-start justify-between gap-2">
                                     <p className="text-sm font-bold text-foreground" dir="ltr">{s.spotNumber}</p>
-                                    <span className={cn(
-                                        "px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest rounded-md shrink-0",
-                                        s.held ? "bg-warning/10 text-warning" : "bg-success/10 text-success"
-                                    )}>
-                                        {s.held ? t("held") : t("available")}
-                                    </span>
+                                    {/* The held gate itself is unchanged (a PENDING
+                                        own-request doesn't block a spot the way it
+                                        blocks an amenity — see mobile's `_SpotCard`).
+                                        Only when the caller is the actual holder
+                                        (own APPROVED) does the badge swap from the
+                                        generic Held/Available to their own status. */}
+                                    {myOpen?.status === "APPROVED" ? (
+                                        <span className={cn(
+                                            "px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest rounded-md shrink-0",
+                                            STATUS_CLASSES[myOpen.status]
+                                        )}>
+                                            {tB(`status${myOpen.status}`)}
+                                        </span>
+                                    ) : (
+                                        <span className={cn(
+                                            "px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest rounded-md shrink-0",
+                                            s.held ? "bg-warning/10 text-warning" : "bg-success/10 text-success"
+                                        )}>
+                                            {s.held ? t("held") : t("available")}
+                                        </span>
+                                    )}
                                 </div>
                                 {s.propertyName && <p className="text-[10px] font-bold text-muted">{s.propertyName}</p>}
                                 <p className="text-xs text-muted">
@@ -368,7 +423,8 @@ export default function RenterFacilitiesPage() {
                                     {t("request")}
                                 </button>
                             </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </div>
             )}

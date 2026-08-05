@@ -129,6 +129,16 @@ export function ParkingTab({ propertyId, buildings, canManage }: ParkingTabProps
                     setFormError(t("bulkTooMany", { count: spotNumbers.length }));
                     return;
                 }
+                // Mirrors the single-add spotNumber input's maxLength={32} —
+                // the backend column (and ParkingSpotCreateRequest validation)
+                // caps spotNumber at 32 chars, but bulk entries never pass
+                // through that input, so a pasted/expanded entry over the
+                // limit would otherwise reach the backend and fail the whole
+                // batch with a generic 400 instead of naming the culprit here.
+                if (spotNumbers.some(n => n.length > 32)) {
+                    setFormError(t("spotTooLong"));
+                    return;
+                }
                 await bulkCreateParkingSpots({
                     propertyId,
                     spotNumbers,
