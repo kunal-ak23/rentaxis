@@ -96,6 +96,19 @@ async function handleVoid(res: Response): Promise<void> {
   }
 }
 
+/**
+ * Throws an ApiError (parsed via parseErrorMessage) when a raw fetch
+ * response isn't ok; resolves without consuming the body otherwise, so
+ * callers using a plain `fetch` for an endpoint this module doesn't wrap
+ * (e.g. /v1/leases/my-leases) can still call `res.json()` themselves
+ * afterward. Unlike `handleVoid`, the body is only read on the error path.
+ */
+export async function throwIfNotOk(res: Response): Promise<void> {
+  if (res.ok) return
+  const text = await res.text().catch(() => '')
+  throw new ApiError(res.status, parseErrorMessage(text, res.status), text)
+}
+
 // ─── Amenities (admin) ───────────────────────────────────────────────────────
 
 export async function fetchAmenities(

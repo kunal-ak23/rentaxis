@@ -18,7 +18,12 @@ interface AmenitiesTabProps {
 }
 
 const PAGE_SIZE = 10;
-const EMPTY_FORM = { nameEn: "", nameAr: "", description: "", bookable: true, buildingIds: [] as string[] };
+const EMPTY_FORM = { nameEn: "", nameAr: "", description: "", bookable: true, active: true, buildingIds: [] as string[] };
+
+/** Locale tag for toLocaleDateString — mirrors bookings/page.tsx's ar-AE/en-GB split. */
+function dateLocale(locale: string): string {
+    return locale === "ar" ? "ar-AE" : "en-GB";
+}
 
 export function AmenitiesTab({ propertyId, buildings, canManage }: AmenitiesTabProps) {
     const t = useTranslations("Facilities");
@@ -66,6 +71,7 @@ export function AmenitiesTab({ propertyId, buildings, canManage }: AmenitiesTabP
             nameAr: a.nameAr ?? "",
             description: a.description ?? "",
             bookable: a.bookable,
+            active: a.active,
             buildingIds: a.buildingIds,
         });
         setFormError(null);
@@ -87,11 +93,16 @@ export function AmenitiesTab({ propertyId, buildings, canManage }: AmenitiesTabP
         setFormError(null);
         try {
             if (editing) {
+                // Raw strings (not `|| undefined`): the backend treats a
+                // missing field as "unchanged" but an explicit "" as
+                // "clear it", so an edit that blanks nameAr/description
+                // must send "" verbatim, not fall back to omitting the field.
                 await updateAmenity(editing.id, {
                     nameEn: form.nameEn,
-                    nameAr: form.nameAr || undefined,
-                    description: form.description || undefined,
+                    nameAr: form.nameAr,
+                    description: form.description,
                     bookable: form.bookable,
+                    active: form.active,
                     buildingIds: form.buildingIds,
                 });
             } else {
@@ -216,7 +227,7 @@ export function AmenitiesTab({ propertyId, buildings, canManage }: AmenitiesTabP
                                         )}
                                     </td>
                                     <td className="px-6 py-4 text-muted text-xs tabular-nums">
-                                        {new Date(a.createdAt).toLocaleDateString()}
+                                        {new Date(a.createdAt).toLocaleDateString(dateLocale(locale))}
                                     </td>
                                     {canManage && (
                                         <td className="px-6 py-4">
@@ -311,6 +322,17 @@ export function AmenitiesTab({ propertyId, buildings, canManage }: AmenitiesTabP
                                 />
                                 <span className="text-xs font-semibold text-foreground">{t("bookable")}</span>
                             </label>
+                            {editing && (
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={form.active}
+                                        onChange={e => setForm({ ...form, active: e.target.checked })}
+                                        className="accent-[var(--gold-500)]"
+                                    />
+                                    <span className="text-xs font-semibold text-foreground">{t("active")}</span>
+                                </label>
+                            )}
                             <div>
                                 <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">{t("towers")}</label>
                                 <p className="text-[10px] text-muted mb-2">{t("towersHint")}</p>
