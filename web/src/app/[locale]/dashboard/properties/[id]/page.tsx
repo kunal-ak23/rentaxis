@@ -4,8 +4,9 @@ import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useTranslations, useLocale } from "next-intl";
 import { Link } from "@/i18n/routing";
-import { Building2, Home, FileText, ArrowLeft, Plus, MapPin, Upload, Calendar, DollarSign, Settings, Wrench, Zap, Hammer, Shield, Hospital, Pill, Siren, HelpCircle, Phone, Mail, Pencil, Trash2, Dumbbell } from "lucide-react";
+import { Building2, Home, FileText, ArrowLeft, Plus, MapPin, Upload, Calendar, DollarSign, Settings, Wrench, Zap, Hammer, Shield, Hospital, Pill, Siren, HelpCircle, Phone, Mail, Pencil, Trash2, Dumbbell, Car } from "lucide-react";
 import { AmenitiesTab } from "./_components/AmenitiesTab";
+import { ParkingTab } from "./_components/ParkingTab";
 import { cn } from "@/lib/utils";
 import { useSession } from "next-auth/react";
 import { hasPermission, canConfigureRentSettings, type UserRole } from "@/lib/rbac";
@@ -241,7 +242,8 @@ export default function PropertyDetailPage() {
                     { id: "buildings", label: "Buildings", icon: Building2 },
                     { id: "units", label: "Units", icon: Home },
                     { id: "leases", label: "Leases", icon: FileText },
-                    { id: "amenities", label: tFacilities("amenitiesTab"), icon: Dumbbell }
+                    { id: "amenities", label: tFacilities("amenitiesTab"), icon: Dumbbell },
+                    { id: "parking", label: tFacilities("parkingTab"), icon: Car }
                 ].map(tab => {
                     const Icon = tab.icon;
                     const isActive = activeTab === tab.id;
@@ -482,6 +484,10 @@ export default function PropertyDetailPage() {
 
             {activeTab === "amenities" && (
                 <AmenitiesTab propertyId={propertyId} buildings={buildings} canManage={canManageFacilities} />
+            )}
+
+            {activeTab === "parking" && (
+                <ParkingTab propertyId={propertyId} buildings={buildings} canManage={canManageFacilities} />
             )}
         </div>
     );
