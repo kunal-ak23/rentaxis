@@ -74,7 +74,11 @@ public class ListingNotificationService {
      * was actually written — a failed recipient stays ACTIVE so a future
      * publish retries it instead of suppressing the notification forever.
      * The interest writes stay in this listener's transaction; only the
-     * notification write runs in its own (see class javadoc).
+     * notification write runs in its own (see class javadoc). Delivery is
+     * therefore at-least-once: the notification row commits before the
+     * interest transition does, so a crash between the two re-notifies that
+     * renter on the next publish — preferred over marking first, which would
+     * silently drop the notification instead.
      */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     @Transactional(propagation = Propagation.REQUIRES_NEW)

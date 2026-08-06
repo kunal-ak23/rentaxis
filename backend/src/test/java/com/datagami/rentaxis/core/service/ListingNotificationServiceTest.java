@@ -12,6 +12,7 @@ import com.datagami.rentaxis.domain.repository.UnitListingRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.util.List;
 import java.util.Optional;
@@ -142,6 +143,45 @@ class ListingNotificationServiceTest {
         assertThat(healthy.getStatus()).isEqualTo(InterestStatus.NOTIFIED);
         assertThat(healthy.getNotifiedAt()).isNotNull();
         verify(interestRepository).save(healthy);
+    }
+
+    @Test
+    void onListingPublished_missingListing_usesFallbackTitle() {
+        UUID tenantId = UUID.randomUUID();
+        UUID listingId = UUID.randomUUID();
+        UUID renter1 = UUID.randomUUID();
+
+        UnitListingInterest i1 = interest(listingId, renter1, InterestStatus.ACTIVE);
+        when(interestRepository.findByListingIdAndStatus(listingId, InterestStatus.ACTIVE))
+                .thenReturn(List.of(i1));
+        // listingRepository.findById(listingId) unstubbed -> Optional.empty()
+        ArgumentCaptor<String> messageCaptor = ArgumentCaptor.forClass(String.class);
+
+        service.onListingPublished(new ListingPublishedEvent(listingId, tenantId));
+
+        verify(notificationService).notifyInAppInNewTx(
+                eq(tenantId), eq(renter1), eq("LISTING_AVAILABLE"),
+                anyString(), messageCaptor.capture(), eq("LISTING"), eq(listingId));
+        assertThat(messageCaptor.getValue()).contains("A listing you wishlisted");
+    }
+
+    @Test
+    void onInterestReceived_missingListing_usesFallbackTitle() {
+        UUID tenantId = UUID.randomUUID();
+        UUID listingId = UUID.randomUUID();
+
+        User admin = user(tenantId, UserRole.TENANT_ADMIN);
+        when(userRepository.findByTenantId(tenantId)).thenReturn(List.of(admin));
+        // listingRepository.findById(listingId) unstubbed -> Optional.empty()
+        ArgumentCaptor<String> messageCaptor = ArgumentCaptor.forClass(String.class);
+
+        service.onInterestReceived(new InterestReceivedEvent(
+                UUID.randomUUID(), listingId, UUID.randomUUID(), tenantId));
+
+        verify(notificationService).notifyInAppInNewTx(
+                eq(tenantId), eq(admin.getId()), eq("LISTING_INTEREST_RECEIVED"),
+                anyString(), messageCaptor.capture(), eq("LISTING"), eq(listingId));
+        assertThat(messageCaptor.getValue()).contains("your listing");
     }
 
     @Test

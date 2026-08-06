@@ -31,6 +31,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -134,9 +135,8 @@ class ListingNotificationPerRecipientTxIT {
     }
 
     private long notificationCount(UUID userId, String type) {
-        Long count = jdbcTemplate.queryForObject(
-                "SELECT count(*) FROM notifications WHERE user_id = ? AND type = ?", Long.class, userId, type);
-        return count != null ? count : -1;
+        return Objects.requireNonNull(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM notifications WHERE user_id = ? AND type = ?", Long.class, userId, type));
     }
 
     private Map<String, Object> interestRow(UUID interestId) {
