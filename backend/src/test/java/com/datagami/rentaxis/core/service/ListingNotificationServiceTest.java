@@ -19,6 +19,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -56,13 +57,13 @@ class ListingNotificationServiceTest {
         return i;
     }
 
-    private User adminUser(UUID tenantId) {
+    private User user(UUID tenantId, UserRole role) {
         User u = new User();
         u.setId(UUID.randomUUID());
         u.setTenantId(tenantId);
-        u.setRole(UserRole.TENANT_ADMIN);
-        u.setEmail("admin@test.com");
-        u.setName("Admin");
+        u.setRole(role);
+        u.setEmail(role + "-" + UUID.randomUUID() + "@test.com");
+        u.setName("User " + role);
         u.setPasswordHash("hash");
         return u;
     }
@@ -83,11 +84,13 @@ class ListingNotificationServiceTest {
 
         service.onListingPublished(new ListingPublishedEvent(listingId, tenantId));
 
-        verify(notificationService, times(2)).notify(
+        verify(notificationService, times(2)).notifyInAppInNewTx(
                 eq(tenantId), any(UUID.class), eq("LISTING_AVAILABLE"), any(), any(), eq("LISTING"), eq(listingId));
         verify(interestRepository, times(2)).save(any(UnitListingInterest.class));
         assertThat(i1.getStatus()).isEqualTo(InterestStatus.NOTIFIED);
+        assertThat(i1.getNotifiedAt()).isNotNull();
         assertThat(i2.getStatus()).isEqualTo(InterestStatus.NOTIFIED);
+        assertThat(i2.getNotifiedAt()).isNotNull();
     }
 
     @Test
@@ -105,32 +108,86 @@ class ListingNotificationServiceTest {
 
         service.onListingPublished(new ListingPublishedEvent(listingId, tenantId));
 
-        verify(notificationService, never()).notify(any(), any(), any(), any(), any(), any(), any());
+        verify(notificationService, never()).notifyInAppInNewTx(any(), any(), any(), any(), any(), any(), any());
         verify(interestRepository, never()).save(any());
     }
 
     @Test
-    void onInterestReceived_notifiesLandlord() {
+    void onListingPublished_failedNotify_leavesInterestActiveForRetry_andContinuesBatch() {
+        UUID tenantId = UUID.randomUUID();
+        UUID listingId = UUID.randomUUID();
+        UUID failingRenter = UUID.randomUUID();
+        UUID healthyRenter = UUID.randomUUID();
+
+        UnitListingInterest failing = interest(listingId, failingRenter, InterestStatus.ACTIVE);
+        UnitListingInterest healthy = interest(listingId, healthyRenter, InterestStatus.ACTIVE);
+
+        when(interestRepository.findByListingIdAndStatus(listingId, InterestStatus.ACTIVE))
+                .thenReturn(List.of(failing, healthy));
+        when(listingRepository.findById(listingId)).thenReturn(Optional.of(listing(tenantId, listingId)));
+        doThrow(new RuntimeException("boom")).when(notificationService).notifyInAppInNewTx(
+                eq(tenantId), eq(failingRenter), anyString(), any(), any(), anyString(), any());
+
+        service.onListingPublished(new ListingPublishedEvent(listingId, tenantId));
+
+        // The failed interest must NOT be marked NOTIFIED — it stays ACTIVE so a
+        // future publish retries the notification instead of suppressing it forever.
+        assertThat(failing.getStatus()).isEqualTo(InterestStatus.ACTIVE);
+        assertThat(failing.getNotifiedAt()).isNull();
+        verify(interestRepository, never()).save(failing);
+
+        // The rest of the batch still goes out and transitions to NOTIFIED.
+        verify(notificationService).notifyInAppInNewTx(
+                eq(tenantId), eq(healthyRenter), eq("LISTING_AVAILABLE"), any(), any(), eq("LISTING"), eq(listingId));
+        assertThat(healthy.getStatus()).isEqualTo(InterestStatus.NOTIFIED);
+        assertThat(healthy.getNotifiedAt()).isNotNull();
+        verify(interestRepository).save(healthy);
+    }
+
+    @Test
+    void onInterestReceived_notifiesAdminsAndPMsOnly() {
         UUID tenantId = UUID.randomUUID();
         UUID listingId = UUID.randomUUID();
         UUID renterUserId = UUID.randomUUID();
         UUID interestId = UUID.randomUUID();
 
-        User admin = adminUser(tenantId);
+        User admin = user(tenantId, UserRole.TENANT_ADMIN);
+        User pm = user(tenantId, UserRole.PROPERTY_MANAGER);
+        User renter = user(tenantId, UserRole.RENTER);
+        User tenantUser = user(tenantId, UserRole.TENANT_USER);
 
         when(listingRepository.findById(listingId)).thenReturn(Optional.of(listing(tenantId, listingId)));
-        when(userRepository.findByTenantId(tenantId)).thenReturn(List.of(admin));
+        when(userRepository.findByTenantId(tenantId)).thenReturn(List.of(admin, pm, renter, tenantUser));
 
         service.onInterestReceived(new InterestReceivedEvent(interestId, listingId, renterUserId, tenantId));
 
-        verify(notificationService).notify(
-                eq(tenantId),
-                eq(admin.getId()),
-                eq("LISTING_INTEREST_RECEIVED"),
-                any(),
-                any(),
-                eq("LISTING"),
-                eq(listingId)
-        );
+        verify(notificationService).notifyInAppInNewTx(
+                eq(tenantId), eq(admin.getId()), eq("LISTING_INTEREST_RECEIVED"), any(), any(), eq("LISTING"), eq(listingId));
+        verify(notificationService).notifyInAppInNewTx(
+                eq(tenantId), eq(pm.getId()), eq("LISTING_INTEREST_RECEIVED"), any(), any(), eq("LISTING"), eq(listingId));
+        verify(notificationService, never()).notifyInAppInNewTx(
+                eq(tenantId), eq(renter.getId()), anyString(), any(), any(), anyString(), any());
+        verify(notificationService, never()).notifyInAppInNewTx(
+                eq(tenantId), eq(tenantUser.getId()), anyString(), any(), any(), anyString(), any());
+    }
+
+    @Test
+    void onInterestReceived_failedNotify_continuesToRemainingRecipients() {
+        UUID tenantId = UUID.randomUUID();
+        UUID listingId = UUID.randomUUID();
+        UUID interestId = UUID.randomUUID();
+
+        User failingAdmin = user(tenantId, UserRole.TENANT_ADMIN);
+        User healthyAdmin = user(tenantId, UserRole.TENANT_ADMIN);
+
+        when(listingRepository.findById(listingId)).thenReturn(Optional.of(listing(tenantId, listingId)));
+        when(userRepository.findByTenantId(tenantId)).thenReturn(List.of(failingAdmin, healthyAdmin));
+        doThrow(new RuntimeException("boom")).when(notificationService).notifyInAppInNewTx(
+                eq(tenantId), eq(failingAdmin.getId()), anyString(), any(), any(), anyString(), any());
+
+        service.onInterestReceived(new InterestReceivedEvent(interestId, listingId, UUID.randomUUID(), tenantId));
+
+        verify(notificationService).notifyInAppInNewTx(
+                eq(tenantId), eq(healthyAdmin.getId()), eq("LISTING_INTEREST_RECEIVED"), any(), any(), eq("LISTING"), eq(listingId));
     }
 }
