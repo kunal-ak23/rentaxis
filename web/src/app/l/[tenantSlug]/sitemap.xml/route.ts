@@ -1,5 +1,10 @@
 import { NextResponse } from 'next/server'
 
+// The tenant slug is only known at request time. Forcing this route dynamic
+// prevents Next.js from prerendering a placeholder sitemap during the Docker
+// build, when the production backend hostname is not resolvable yet.
+export const dynamic = 'force-dynamic'
+
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ tenantSlug: string }> }
