@@ -22,6 +22,7 @@ import com.datagami.rentaxis.domain.repository.UnitListingAmenityRepository;
 import com.datagami.rentaxis.domain.repository.UnitListingInterestRepository;
 import com.datagami.rentaxis.domain.repository.UnitListingMediaRepository;
 import com.datagami.rentaxis.domain.repository.UnitListingRepository;
+import com.datagami.rentaxis.domain.repository.UnitRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -37,7 +38,9 @@ import java.util.Set;
 
 import java.time.LocalDateTime;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -52,6 +55,7 @@ public class UnitListingService {
     private final UnitListingInterestRepository interestRepository;
     private final UserRepository userRepository;
     private final LeaseRepository leaseRepository;
+    private final UnitRepository unitRepository;
     private final NotificationService notificationService;
     private final SlugService slugService;
     private final ApplicationEventPublisher eventPublisher;
@@ -70,6 +74,7 @@ public class UnitListingService {
             UnitListingInterestRepository interestRepository,
             UserRepository userRepository,
             LeaseRepository leaseRepository,
+            UnitRepository unitRepository,
             NotificationService notificationService,
             SlugService slugService,
             ApplicationEventPublisher eventPublisher,
@@ -80,6 +85,7 @@ public class UnitListingService {
         this.interestRepository = interestRepository;
         this.userRepository = userRepository;
         this.leaseRepository = leaseRepository;
+        this.unitRepository = unitRepository;
         this.notificationService = notificationService;
         this.slugService = slugService;
         this.eventPublisher = eventPublisher;
@@ -232,6 +238,48 @@ public class UnitListingService {
         return mediaRepository.findByListingIdOrderBySortOrderAsc(listingId).stream()
                 .map(this::toMediaDto)
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public long countActiveInterests(UUID listingId) {
+        return interestRepository.countByListingIdAndStatus(listingId, InterestStatus.ACTIVE);
+    }
+
+    @Transactional(readOnly = true)
+    public Map<UUID, ListingSummaryData> getSummaryData(List<UnitListing> listings) {
+        if (listings.isEmpty()) {
+            return Map.of();
+        }
+
+        List<UUID> listingIds = listings.stream().map(UnitListing::getId).toList();
+        Map<UUID, String> propertyNamesByUnitId = new HashMap<>();
+        unitRepository.findByIdIn(listings.stream().map(UnitListing::getUnitId).distinct().toList())
+                .forEach(unit -> propertyNamesByUnitId.put(
+                        unit.getId(),
+                        unit.getProperty() == null ? null : unit.getProperty().getNameEn()));
+
+        Map<UUID, String> coverUrlsByListingId = new HashMap<>();
+        mediaRepository.findByListingIdInOrderByListingIdAscSortOrderAsc(listingIds)
+                .forEach(media -> coverUrlsByListingId.merge(
+                        media.getListingId(),
+                        media.getUrl(),
+                        (current, candidate) -> Boolean.TRUE.equals(media.getIsCover()) ? candidate : current));
+
+        Map<UUID, Long> interestCountsByListingId = new HashMap<>();
+        interestRepository.countByListingIdsAndStatus(listingIds, InterestStatus.ACTIVE)
+                .forEach(count -> interestCountsByListingId.put(count.getListingId(), count.getInterestCount()));
+
+        Map<UUID, ListingSummaryData> result = new HashMap<>();
+        listings.forEach(listing -> result.put(
+                listing.getId(),
+                new ListingSummaryData(
+                        propertyNamesByUnitId.get(listing.getUnitId()),
+                        coverUrlsByListingId.get(listing.getId()),
+                        interestCountsByListingId.getOrDefault(listing.getId(), 0L))));
+        return result;
+    }
+
+    public record ListingSummaryData(String propertyName, String coverPhotoUrl, long interestsCount) {
     }
 
     @Transactional(readOnly = true)

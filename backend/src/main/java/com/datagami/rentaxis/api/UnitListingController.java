@@ -65,7 +65,12 @@ public class UnitListingController {
         checkEnabled();
         UUID tenantId = TenantContextHolder.getTenantId();
         Page<UnitListing> page = service.list(tenantId, status, pageable);
-        return ResponseEntity.ok(page.map(this::toSummary));
+        var summaryData = service.getSummaryData(page.getContent());
+        return ResponseEntity.ok(page.map(listing -> toSummary(
+                listing,
+                summaryData.getOrDefault(
+                        listing.getId(),
+                        new UnitListingService.ListingSummaryData(null, null, 0L)))));
     }
 
     @GetMapping("/{id}")
@@ -184,16 +189,16 @@ public class UnitListingController {
 
     // ---- Mapping ----
 
-    private UnitListingSummaryDTO toSummary(UnitListing l) {
+    private UnitListingSummaryDTO toSummary(UnitListing l, UnitListingService.ListingSummaryData summaryData) {
         return new UnitListingSummaryDTO(
                 l.getId(),
                 l.getTitleEn(),
-                null,
+                summaryData.propertyName(),
                 l.getBedrooms(),
                 l.getAnnualRent(),
                 l.getStatus(),
-                null,
-                0L,
+                summaryData.coverPhotoUrl(),
+                summaryData.interestsCount(),
                 l.getUpdatedAt(),
                 l.getSlug()
         );
