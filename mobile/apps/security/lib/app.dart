@@ -14,7 +14,7 @@ class SecurityApp extends ConsumerWidget {
     final language = ref.watch(appLanguageProvider);
 
     return MaterialApp.router(
-      title: 'Miftah Guard',
+      title: 'Miftah Security',
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: themeMode,

@@ -12,7 +12,7 @@
     <uses-feature android:name="android.hardware.camera.any" android:required="false" tools:replace="android:required"/>
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false"/>
     <application
-        android:label="Miftah Admin"
+        android:label="Miftah Manager"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

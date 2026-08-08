@@ -5,7 +5,7 @@
     "display": "standalone",
     "background_color": "#1B1B1B",
     "theme_color": "#1B1B1B",
-    "description": "Miftah Renter Portal",
+    "description": "Miftah Resident Portal",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

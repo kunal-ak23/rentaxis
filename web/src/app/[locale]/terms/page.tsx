@@ -1,11 +1,14 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "Terms of Use | Miftah",
   description: "Terms governing use of the Miftah mobile applications.",
 };
 
-export default function TermsPage() {
+export default async function TermsPage({ params }: { params: Promise<{ locale: string }> }) {
+  const { locale } = await params;
+
   return (
     <main className="min-h-screen bg-[#0d0d0d] px-6 py-16 text-[#f7f2e8]">
       <article className="mx-auto max-w-3xl">
@@ -18,7 +21,7 @@ export default function TermsPage() {
           <p>Payment and cheque information reflects records managed by the relevant property organisation. Property, lease, charge, visitor and access decisions are made by that organisation; Miftah presents and processes authorised instructions.</p>
           <p>The service may change, be suspended for maintenance or be restricted when required for security, policy or legal reasons. To the extent permitted by law, DTSPL is not liable for indirect or consequential loss or for decisions made by a property organisation or third-party provider.</p>
           <p>We may suspend access for misuse or when instructed by the account-providing organisation. Applicable mandatory consumer rights are not limited by these terms.</p>
-          <p>Questions can be sent to <a className="text-[#f1c84c] underline" href="mailto:reports@theplahouse.com">reports@theplahouse.com</a>. Our <a className="text-[#f1c84c] underline" href="/en/privacy">Privacy Policy</a> explains how information is handled.</p>
+          <p>Questions can be sent to <a className="text-[#f1c84c] underline" href="mailto:reports@theplahouse.com">reports@theplahouse.com</a>. Our <Link className="text-[#f1c84c] underline" href={`/${locale}/privacy`}>Privacy Policy</Link> explains how information is handled.</p>
         </div>
       </article>
     </main>

@@ -1,11 +1,14 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "Data Deletion | Miftah",
   description: "Request deletion of a Miftah account and associated personal data.",
 };
 
-export default function DataDeletionPage() {
+export default async function DataDeletionPage({ params }: { params: Promise<{ locale: string }> }) {
+  const { locale } = await params;
+
   return (
     <main className="min-h-screen bg-[#0d0d0d] px-6 py-16 text-[#f7f2e8]">
       <article className="mx-auto max-w-3xl">
@@ -33,7 +36,7 @@ export default function DataDeletionPage() {
         </section>
 
         <p className="mt-12 border-t border-[#4a3b17] pt-8 text-[#bcb5a8]">
-          Read the full <a className="text-[#f1c84c] underline" href="/en/privacy">Miftah Privacy Policy</a>.
+          Read the full <Link className="text-[#f1c84c] underline" href={`/${locale}/privacy`}>Miftah Privacy Policy</Link>.
         </p>
       </article>
     </main>

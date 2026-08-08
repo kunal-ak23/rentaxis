@@ -1,4 +1,4 @@
-# Miftah Renter — Google Play listing
+# Miftah Resident — Google Play listing
 
 ## Store configuration
 

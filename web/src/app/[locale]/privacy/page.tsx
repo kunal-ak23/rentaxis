@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "Privacy Policy | Miftah",
@@ -12,7 +13,7 @@ const sections = [
       "Account and identity information, including your name, email address, phone number, role, organisation and property membership.",
       "Property-service information, such as leases, payment records and transaction references, maintenance requests, messages, meetings, listings, visitor passes and access events.",
       "Content you choose to upload, such as maintenance photos, documents, cheque images, visitor photos and vehicle details.",
-      "Optional location information in the Miftah Renter app when you ask to find or sort nearby properties. We do not use location in the background.",
+      "Optional location information in the Miftah Resident app when you ask to find or sort nearby properties. We do not use location in the background.",
       "Camera access when you choose to capture an attachment, scan a cheque, photograph a walk-in visitor or scan a visitor pass.",
       "Technical, diagnostic and security information needed to operate, protect and troubleshoot the service.",
     ],
@@ -28,7 +29,7 @@ const sections = [
     title: "Sharing and service providers",
     body: [
       "Information is available to the property owner, manager or organisation that provides your Miftah account, according to your assigned role.",
-      "We use contracted service providers for cloud hosting and storage, Firebase phone authentication in Miftah Security, and Google Maps in Miftah Renter and Miftah Manager. These providers process information only to deliver their services and under their own applicable privacy terms.",
+      "We use contracted service providers for cloud hosting and storage, Firebase phone authentication in Miftah Security, and Google Maps in Miftah Resident and Miftah Manager. These providers process information only to deliver their services and under their own applicable privacy terms.",
       "We may disclose information when required by law, to protect people or property, or in connection with a lawful business reorganisation.",
     ],
   },
@@ -49,7 +50,9 @@ const sections = [
   },
 ];
 
-export default function PrivacyPage() {
+export default async function PrivacyPage({ params }: { params: Promise<{ locale: string }> }) {
+  const { locale } = await params;
+
   return (
     <main className="min-h-screen bg-[#0d0d0d] px-6 py-16 text-[#f7f2e8]">
       <article className="mx-auto max-w-3xl">
@@ -57,7 +60,7 @@ export default function PrivacyPage() {
         <h1 className="font-serif text-4xl font-semibold md:text-5xl" style={{ color: "#f7f2e8" }}>Privacy Policy</h1>
         <p className="mt-5 text-sm text-[#bcb5a8]">Effective 7 August 2026</p>
         <p className="mt-8 text-lg leading-8 text-[#ddd6ca]">
-          This policy explains how DTSPL handles information through the Miftah Renter, Miftah Manager and Miftah Security mobile applications and the related RentAxis services.
+          This policy explains how DTSPL handles information through the Miftah Resident, Miftah Manager and Miftah Security mobile applications and the related RentAxis services.
         </p>
 
         <div className="mt-12 space-y-10">
@@ -78,7 +81,7 @@ export default function PrivacyPage() {
             <a className="text-[#f1c84c] underline" href="mailto:reports@theplahouse.com">reports@theplahouse.com</a>.
           </p>
           <p className="mt-3 leading-7 text-[#d7d0c4]">
-            To request deletion, visit <a className="text-[#f1c84c] underline" href="/en/data-deletion">the Miftah data-deletion page</a>.
+            To request deletion, visit <Link className="text-[#f1c84c] underline" href={`/${locale}/data-deletion`}>the Miftah data-deletion page</Link>.
           </p>
         </section>
       </article>
