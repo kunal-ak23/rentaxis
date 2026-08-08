@@ -30,9 +30,11 @@ void main() {
     testWidgets('renders a pass with its guest and window', (tester) async {
       await pumpList(
         tester,
-        gatePass: FakeGatePassService(mineRows: [
-          passFixture(guestName: 'Ahmed Khan', vehicleNumber: 'DXB 4412'),
-        ]),
+        gatePass: FakeGatePassService(
+          mineRows: [
+            passFixture(guestName: 'Ahmed Khan', vehicleNumber: 'DXB 4412'),
+          ],
+        ),
       );
 
       expect(find.text('Ahmed Khan'), findsOneWidget);
@@ -43,15 +45,23 @@ void main() {
         'work at the gate?"', (tester) async {
       await pumpList(
         tester,
-        gatePass: FakeGatePassService(mineRows: [
-          passFixture(id: 'a', guestName: 'Active Guest', status: 'ACTIVE'),
-          passFixture(
-              id: 'b', guestName: 'Pending Guest', status: 'PENDING_APPROVAL'),
-          passFixture(id: 'c', guestName: 'Used Guest', status: 'USED'),
-          passFixture(id: 'd', guestName: 'Expired Guest', status: 'EXPIRED'),
-          passFixture(
-              id: 'e', guestName: 'Cancelled Guest', status: 'CANCELLED'),
-        ]),
+        gatePass: FakeGatePassService(
+          mineRows: [
+            passFixture(id: 'a', guestName: 'Active Guest', status: 'ACTIVE'),
+            passFixture(
+              id: 'b',
+              guestName: 'Pending Guest',
+              status: 'PENDING_APPROVAL',
+            ),
+            passFixture(id: 'c', guestName: 'Used Guest', status: 'USED'),
+            passFixture(id: 'd', guestName: 'Expired Guest', status: 'EXPIRED'),
+            passFixture(
+              id: 'e',
+              guestName: 'Cancelled Guest',
+              status: 'CANCELLED',
+            ),
+          ],
+        ),
       );
 
       Color colorOf(String label) => tester
@@ -76,32 +86,36 @@ void main() {
     testWidgets('marks a recurring pass as such', (tester) async {
       await pumpList(
         tester,
-        gatePass: FakeGatePassService(mineRows: [
-          passFixture(passType: 'RECURRING'),
-        ]),
+        gatePass: FakeGatePassService(
+          mineRows: [passFixture(passType: 'RECURRING')],
+        ),
       );
 
       expect(find.text('Recurring'), findsOneWidget);
     });
 
-    testWidgets('shows the empty state when there are no passes',
-        (tester) async {
+    testWidgets('shows the empty state when there are no passes', (
+      tester,
+    ) async {
       await pumpList(tester, gatePass: FakeGatePassService(mineRows: []));
 
       expect(find.byType(EmptyState), findsOneWidget);
-      expect(find.text('No gate passes yet'), findsOneWidget);
+      expect(find.text('NO GATE PASSES YET'), findsOneWidget);
     });
 
-    testWidgets('renders the passes in the order the server sent them',
-        (tester) async {
+    testWidgets('renders the passes in the order the server sent them', (
+      tester,
+    ) async {
       // The backend orders `mine` by createdAt desc and the screen does not
       // re-sort, so this pins that the screen does not reorder behind its back.
       await pumpList(
         tester,
-        gatePass: FakeGatePassService(mineRows: [
-          passFixture(id: 'newest', guestName: 'Newest Guest'),
-          passFixture(id: 'oldest', guestName: 'Oldest Guest'),
-        ]),
+        gatePass: FakeGatePassService(
+          mineRows: [
+            passFixture(id: 'newest', guestName: 'Newest Guest'),
+            passFixture(id: 'oldest', guestName: 'Oldest Guest'),
+          ],
+        ),
       );
 
       final newest = tester.getTopLeft(find.text('Newest Guest')).dy;
@@ -109,8 +123,9 @@ void main() {
       expect(newest, lessThan(oldest));
     });
 
-    testWidgets('offers a retry when the passes cannot be loaded',
-        (tester) async {
+    testWidgets('offers a retry when the passes cannot be loaded', (
+      tester,
+    ) async {
       await pumpList(
         tester,
         gatePass: FakeGatePassService(mineError: Exception('network down')),

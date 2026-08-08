@@ -239,15 +239,31 @@ class _StatusPill extends StatelessWidget {
   }
 }
 
-class _WishlistHeart extends StatelessWidget {
+class _WishlistHeart extends StatefulWidget {
   final bool isWishlisted;
   final VoidCallback onTap;
   const _WishlistHeart({required this.isWishlisted, required this.onTap});
 
   @override
+  State<_WishlistHeart> createState() => _WishlistHeartState();
+}
+
+class _WishlistHeartState extends State<_WishlistHeart> {
+  // Bumped on wishlisting so the TweenAnimationBuilder restarts; the heart
+  // scale-bounces (1.0 → 1.25 → 1.0) as the only feedback that the
+  // optimistic add landed.
+  int _bounceKey = 0;
+
+  @override
+  void didUpdateWidget(_WishlistHeart old) {
+    super.didUpdateWidget(old);
+    if (!old.isWishlisted && widget.isWishlisted) _bounceKey++;
+  }
+
+  @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: widget.onTap,
       child: Container(
         width: 34,
         height: 34,
@@ -255,10 +271,18 @@ class _WishlistHeart extends StatelessWidget {
           color: Colors.black.withValues(alpha: 0.35),
           shape: BoxShape.circle,
         ),
-        child: Icon(
-          isWishlisted ? Icons.favorite : Icons.favorite_border,
-          size: 18,
-          color: isWishlisted ? AppColors.danger : Colors.white,
+        child: TweenAnimationBuilder<double>(
+          key: ValueKey(_bounceKey),
+          tween: Tween(begin: _bounceKey == 0 ? 1.0 : 1.25, end: 1.0),
+          duration: const Duration(milliseconds: 350),
+          curve: Curves.elasticOut,
+          builder: (context, scale, child) =>
+              Transform.scale(scale: scale, child: child),
+          child: Icon(
+            widget.isWishlisted ? Icons.favorite : Icons.favorite_border,
+            size: 18,
+            color: widget.isWishlisted ? AppColors.danger : Colors.white,
+          ),
         ),
       ),
     );

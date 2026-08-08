@@ -40,8 +40,10 @@ void main() {
   }
 
   /// Fills the guest fields — the two the server requires.
-  Future<void> fillGuest(WidgetTester tester,
-      {String phone = '+971501234567'}) async {
+  Future<void> fillGuest(
+    WidgetTester tester, {
+    String phone = '+971501234567',
+  }) async {
     await tester.enterText(find.byType(TextFormField).at(0), 'Ahmed Khan');
     await tester.enterText(find.byType(TextFormField).at(1), phone);
     await tester.pumpAndSettle();
@@ -59,8 +61,9 @@ void main() {
   }
 
   group('GatePassCreateScreen — no active lease', () {
-    testWidgets('blocks creation with a reason and makes no network call',
-        (tester) async {
+    testWidgets('blocks creation with a reason and makes no network call', (
+      tester,
+    ) async {
       final gatePass = FakeGatePassService();
       await pumpCreate(
         tester,
@@ -72,7 +75,7 @@ void main() {
         ),
       );
 
-      expect(find.text('No active tenancy'), findsOneWidget);
+      expect(find.text('NO ACTIVE TENANCY'), findsOneWidget);
       expect(find.textContaining('active lease'), findsOneWidget);
       // The form is not merely disabled — it is not there.
       expect(find.byType(TextFormField), findsNothing);
@@ -87,7 +90,7 @@ void main() {
         leases: FakeLeaseService(leases: []),
       );
 
-      expect(find.text('No active tenancy'), findsOneWidget);
+      expect(find.text('NO ACTIVE TENANCY'), findsOneWidget);
       expect(gatePass.created, isEmpty);
     });
   });
@@ -187,8 +190,9 @@ void main() {
       expect(body.containsKey('propertyId'), isFalse);
     });
 
-    testWidgets('posts RECURRING when the recurring type is chosen',
-        (tester) async {
+    testWidgets('posts RECURRING when the recurring type is chosen', (
+      tester,
+    ) async {
       final gatePass = FakeGatePassService();
       await pumpCreate(
         tester,
@@ -210,8 +214,9 @@ void main() {
       // day is inclusive — it runs to the end of that day, not its first
       // instant, which the backend would reject as validTo <= validFrom.
       expect(
-        DateTime.parse(body['validTo'] as String)
-            .isAfter(DateTime.parse(body['validFrom'] as String)),
+        DateTime.parse(
+          body['validTo'] as String,
+        ).isAfter(DateTime.parse(body['validFrom'] as String)),
         isTrue,
       );
     });
@@ -247,8 +252,9 @@ void main() {
       expect(gatePass.created, isEmpty);
     });
 
-    testWidgets('rejects a phone the server would 400 on, before sending it',
-        (tester) async {
+    testWidgets('rejects a phone the server would 400 on, before sending it', (
+      tester,
+    ) async {
       final gatePass = FakeGatePassService();
       await pumpCreate(
         tester,
@@ -289,10 +295,12 @@ void main() {
       await pumpCreate(
         tester,
         gatePass: FakeGatePassService(),
-        leases: FakeLeaseService(leases: [
-          leaseFixture(unitId: 'unit-1', unitIdentifier: '1204'),
-          leaseFixture(unitId: 'unit-2', unitIdentifier: '905'),
-        ]),
+        leases: FakeLeaseService(
+          leases: [
+            leaseFixture(unitId: 'unit-1', unitIdentifier: '1204'),
+            leaseFixture(unitId: 'unit-2', unitIdentifier: '905'),
+          ],
+        ),
       );
 
       expect(find.text('Unit'), findsOneWidget);
@@ -304,10 +312,12 @@ void main() {
       await pumpCreate(
         tester,
         gatePass: gatePass,
-        leases: FakeLeaseService(leases: [
-          leaseFixture(unitId: 'unit-1', unitIdentifier: '1204'),
-          leaseFixture(unitId: 'unit-2', unitIdentifier: '905'),
-        ]),
+        leases: FakeLeaseService(
+          leases: [
+            leaseFixture(unitId: 'unit-1', unitIdentifier: '1204'),
+            leaseFixture(unitId: 'unit-2', unitIdentifier: '905'),
+          ],
+        ),
       );
 
       await tester.tap(find.byType(DropdownButtonFormField<String>));

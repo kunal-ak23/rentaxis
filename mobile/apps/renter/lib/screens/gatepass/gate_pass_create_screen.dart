@@ -7,6 +7,91 @@ import 'package:rentaxis_core/rentaxis_core.dart';
 import '../../gatepass/phone_format.dart';
 import '../../providers/gate_pass_provider.dart';
 
+/// Screen strings (EN/AR). Lightweight per-screen pattern — see arabic-brief.
+class _L {
+  _L(this.ar);
+  final bool ar;
+
+  String get title => ar ? 'تصريح دخول جديد' : 'New Gate Pass';
+  String get tenancyCheckFailed =>
+      ar ? 'تعذر التحقق من عقد إيجارك.' : 'Could not check your tenancy.';
+  String get unit => ar ? 'الوحدة' : 'Unit';
+  String get guestName => ar ? 'اسم الضيف' : 'Guest name';
+  String get whoIsVisiting => ar ? 'من الزائر؟' : 'Who is visiting?';
+  String get enterGuestName =>
+      ar ? 'أدخل اسم الضيف' : 'Enter the guest\'s name';
+  String get guestPhone => ar ? 'هاتف الضيف' : 'Guest phone';
+  String get enterGuestPhone =>
+      ar ? 'أدخل رقم هاتف الضيف' : 'Enter the guest\'s phone number';
+  String get phoneCountryCode => ar
+      ? 'استخدم الرقم كاملاً مع رمز الدولة، مثال: ‎+971501234567'
+      : 'Use the full number with country code, e.g. +971501234567';
+  String get purposeOptional => ar ? 'الغرض (اختياري)' : 'Purpose (optional)';
+  String get purposeHint => ar
+      ? 'توصيل، زيارة عائلية، صيانة…'
+      : 'Delivery, family visit, maintenance…';
+  String get vehicleOptional =>
+      ar ? 'رقم المركبة (اختياري)' : 'Vehicle number (optional)';
+  String get passType => ar ? 'نوع التصريح' : 'Pass type';
+  String get singleVisit => ar ? 'زيارة واحدة' : 'Single visit';
+  String get recurring => ar ? 'متكرر' : 'Recurring';
+  String get requestPass => ar ? 'طلب تصريح' : 'Request pass';
+  String get createPass => ar ? 'إنشاء تصريح' : 'Create pass';
+  String get visitDate => ar ? 'تاريخ الزيارة' : 'Visit date';
+  String get pickADate => ar ? 'اختر تاريخًا' : 'Pick a date';
+  String get from => ar ? 'من' : 'From';
+  String get until => ar ? 'حتى' : 'Until';
+  String get starts => ar ? 'يبدأ' : 'Starts';
+  String get firstDay => ar ? 'اليوم الأول' : 'First day';
+  String get expires => ar ? 'ينتهي' : 'Expires';
+  String get lastDay => ar ? 'اليوم الأخير' : 'Last day';
+  String get needsApproval =>
+      ar ? 'يحتاج إلى موافقة المدير' : 'Needs manager approval';
+  String get worksStraightAway =>
+      ar ? 'يعمل فورًا' : 'Works straight away';
+  String get recurringExplainer => ar
+      ? 'لخادمة أو سائق أو زائر منتظم. يجب أن يوافق المدير على هذا التصريح '
+            'قبل أن يفتح البوابة — لن يعمل اليوم ما لم تتم الموافقة عليه.'
+      : 'For a maid, driver or regular visitor. A manager must '
+            'approve this pass before it opens the gate — it will '
+            'not work today unless it is approved.';
+  String get singleExplainer => ar
+      ? 'لزيارة لمرة واحدة. يصبح التصريح نشطًا فور إنشائه ويسمح لضيفك بالدخول '
+            'مرة واحدة.'
+      : 'For a one-off visit. The pass is active as soon as you '
+            'create it and lets your guest in once.';
+  String get chooseUnit =>
+      ar ? 'اختر الوحدة التي سيكون هذا التصريح لها.' : 'Choose which unit this pass is for.';
+  String get pickRecurringWindow => ar
+      ? 'اختر أول وآخر يوم يجب أن يعمل فيه هذا التصريح.'
+      : 'Pick the first and last day this pass should work.';
+  String get pickVisitDate =>
+      ar ? 'اختر تاريخ الزيارة.' : 'Pick the date of the visit.';
+  String get lastDayAfterFirst => ar
+      ? 'يجب أن يكون اليوم الأخير بعد اليوم الأول.'
+      : 'The last day must be after the first day.';
+  String get endAfterStart => ar
+      ? 'يجب أن يكون وقت الانتهاء بعد وقت البدء.'
+      : 'The end time must be after the start time.';
+  String get unitNotOnActiveLease => ar
+      ? 'هذه الوحدة ليست ضمن عقد إيجار نشط لك. تواصل مع مدير العقار إذا كان '
+            'يجب أن يكون عقدك نشطًا.'
+      : 'That unit is not on an active lease of yours. '
+            'Contact your manager if your tenancy should be active.';
+  String get createFailed =>
+      ar ? 'تعذر إنشاء التصريح. حاول مرة أخرى.' : 'Could not create the pass. Please try again.';
+  String get noActiveTenancy => ar ? 'لا يوجد عقد إيجار نشط' : 'No active tenancy';
+  String get noActiveTenancySub => ar
+      ? 'تُصدر تصاريح الدخول للوحدة التي تستأجرها، لذا تحتاج إلى عقد إيجار '
+            'نشط لإنشاء واحد. إذا بدأ عقدك للتو، اطلب من مدير العقار تفعيله.'
+      : 'Gate passes are raised against the unit you are renting, so '
+            'you need an active lease to create one. If your tenancy has just '
+            'started, ask your property manager to activate it.';
+  String get whichUnit => ar ? 'أي وحدة؟' : 'Which unit?';
+  String get unitFallback => ar ? 'وحدة' : 'Unit';
+  String unitLabel(String number) => ar ? 'وحدة $number' : 'Unit $number';
+}
+
 /// Raise a gate pass for a guest.
 ///
 /// Two things here are load-bearing and easy to lose in a refactor:
@@ -62,30 +147,33 @@ class _GatePassCreateScreenState extends ConsumerState<GatePassCreateScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final l = _L(context.isAr);
     final leases = ref.watch(activeLeasesProvider);
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: m.background,
       appBar: AppBar(
-        backgroundColor: AppColors.surface,
+        backgroundColor: m.surface,
+        foregroundColor: m.textPrimary,
         elevation: 0,
-        title: const Text('New Gate Pass'),
+        title: Text(l.title),
       ),
       body: leases.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => ErrorState(
-          message: 'Could not check your tenancy.',
+          message: l.tenancyCheckFailed,
           onRetry: () => ref.invalidate(activeLeasesProvider),
         ),
         data: (rows) {
-          if (rows.isEmpty) return const _NoActiveLease();
-          return _form(rows);
+          if (rows.isEmpty) return _NoActiveLease(l: l);
+          return _form(rows, m, l);
         },
       ),
     );
   }
 
-  Widget _form(List<Map<String, dynamic>> leases) {
+  Widget _form(List<Map<String, dynamic>> leases, MiftahColors m, _L l) {
     // One lease is the overwhelmingly common case; choosing between one option
     // is not a choice, so it is made silently and the picker never appears.
     if (_selectedUnitId == null && leases.length == 1) {
@@ -105,31 +193,31 @@ class _GatePassCreateScreenState extends ConsumerState<GatePassCreateScreen> {
           ),
           children: [
             if (leases.length > 1) ...[
-              _label('Unit'),
+              _label(l.unit, m),
               _UnitPicker(
                 leases: leases,
                 selectedUnitId: _selectedUnitId,
+                l: l,
                 onChanged: (id) => setState(() => _selectedUnitId = id),
               ),
               const SizedBox(height: 18),
             ],
-            _label('Guest name'),
+            _label(l.guestName, m),
             TextFormField(
               controller: _nameCtrl,
               textCapitalization: TextCapitalization.words,
               // 160 is the server's @Size cap; stopping the field here turns a
               // 400 into a keystroke that simply does not land.
               maxLength: 160,
-              decoration: const InputDecoration(
-                hintText: 'Who is visiting?',
+              decoration: InputDecoration(
+                hintText: l.whoIsVisiting,
                 counterText: '',
               ),
-              validator: (v) => (v == null || v.trim().isEmpty)
-                  ? 'Enter the guest\'s name'
-                  : null,
+              validator: (v) =>
+                  (v == null || v.trim().isEmpty) ? l.enterGuestName : null,
             ),
             const SizedBox(height: 14),
-            _label('Guest phone'),
+            _label(l.guestPhone, m),
             TextFormField(
               controller: _phoneCtrl,
               keyboardType: TextInputType.phone,
@@ -140,25 +228,25 @@ class _GatePassCreateScreenState extends ConsumerState<GatePassCreateScreen> {
               ),
               validator: (v) {
                 final raw = (v ?? '').trim();
-                if (raw.isEmpty) return 'Enter the guest\'s phone number';
+                if (raw.isEmpty) return l.enterGuestPhone;
                 if (!isValidE164(normalizePhone(raw))) {
-                  return 'Use the full number with country code, e.g. +971501234567';
+                  return l.phoneCountryCode;
                 }
                 return null;
               },
             ),
             const SizedBox(height: 14),
-            _label('Purpose (optional)'),
+            _label(l.purposeOptional, m),
             TextFormField(
               controller: _purposeCtrl,
               maxLength: 240,
-              decoration: const InputDecoration(
-                hintText: 'Delivery, family visit, maintenance…',
+              decoration: InputDecoration(
+                hintText: l.purposeHint,
                 counterText: '',
               ),
             ),
             const SizedBox(height: 14),
-            _label('Vehicle number (optional)'),
+            _label(l.vehicleOptional, m),
             TextFormField(
               controller: _vehicleCtrl,
               textCapitalization: TextCapitalization.characters,
@@ -169,21 +257,22 @@ class _GatePassCreateScreenState extends ConsumerState<GatePassCreateScreen> {
               ),
             ),
             const SizedBox(height: 22),
-            _label('Pass type'),
+            _label(l.passType, m),
             _TypeToggle(
               recurring: _recurring,
+              l: l,
               onChanged: (value) => setState(() => _recurring = value),
             ),
             const SizedBox(height: 10),
-            _TypeExplainer(recurring: _recurring),
+            _TypeExplainer(recurring: _recurring, l: l),
             const SizedBox(height: 22),
-            if (_recurring) ..._recurringFields() else ..._singleFields(),
+            if (_recurring) ..._recurringFields(l) else ..._singleFields(l),
             const SizedBox(height: 26),
             SizedBox(
               height: 52,
               child: ElevatedButton(
                 onPressed: _submitting ? null : _submit,
-                child: Text(_recurring ? 'Request pass' : 'Create pass'),
+                child: Text(_recurring ? l.requestPass : l.createPass),
               ),
             ),
           ],
@@ -192,11 +281,11 @@ class _GatePassCreateScreenState extends ConsumerState<GatePassCreateScreen> {
     );
   }
 
-  List<Widget> _singleFields() => [
-    _label('Visit date'),
+  List<Widget> _singleFields(_L l) => [
+    _label(l.visitDate, context.miftah),
     _DateField(
       value: _visitDate,
-      hint: 'Pick a date',
+      hint: l.pickADate,
       onPick: (d) => setState(() => _visitDate = d),
     ),
     const SizedBox(height: 14),
@@ -206,7 +295,7 @@ class _GatePassCreateScreenState extends ConsumerState<GatePassCreateScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _label('From'),
+              _label(l.from, context.miftah),
               _TimeField(
                 value: _startTime,
                 onPick: (t) => setState(() => _startTime = t),
@@ -219,7 +308,7 @@ class _GatePassCreateScreenState extends ConsumerState<GatePassCreateScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _label('Until'),
+              _label(l.until, context.miftah),
               _TimeField(
                 value: _endTime,
                 onPick: (t) => setState(() => _endTime = t),
@@ -231,18 +320,18 @@ class _GatePassCreateScreenState extends ConsumerState<GatePassCreateScreen> {
     ),
   ];
 
-  List<Widget> _recurringFields() => [
-    _label('Starts'),
+  List<Widget> _recurringFields(_L l) => [
+    _label(l.starts, context.miftah),
     _DateField(
       value: _recurStart,
-      hint: 'First day',
+      hint: l.firstDay,
       onPick: (d) => setState(() => _recurStart = d),
     ),
     const SizedBox(height: 14),
-    _label('Expires'),
+    _label(l.expires, context.miftah),
     _DateField(
       value: _recurEnd,
-      hint: 'Last day',
+      hint: l.lastDay,
       onPick: (d) => setState(() => _recurEnd = d),
     ),
   ];
@@ -285,32 +374,25 @@ class _GatePassCreateScreenState extends ConsumerState<GatePassCreateScreen> {
   }
 
   Future<void> _submit() async {
+    final l = _L(context.isAr);
     if (!_formKey.currentState!.validate()) return;
 
     final unitId = _selectedUnitId;
     if (unitId == null) {
-      _toast('Choose which unit this pass is for.');
+      _toast(l.chooseUnit);
       return;
     }
 
     final window = _window();
     if (window == null) {
-      _toast(
-        _recurring
-            ? 'Pick the first and last day this pass should work.'
-            : 'Pick the date of the visit.',
-      );
+      _toast(_recurring ? l.pickRecurringWindow : l.pickVisitDate);
       return;
     }
     // The backend 400s on validTo <= validFrom. Catching it here names the
     // actual mistake instead of relaying a validation error about field names
     // the renter never saw.
     if (!window.to.isAfter(window.from)) {
-      _toast(
-        _recurring
-            ? 'The last day must be after the first day.'
-            : 'The end time must be after the start time.',
-      );
+      _toast(_recurring ? l.lastDayAfterFirst : l.endAfterStart);
       return;
     }
 
@@ -346,7 +428,7 @@ class _GatePassCreateScreenState extends ConsumerState<GatePassCreateScreen> {
     } catch (error) {
       if (!mounted) return;
       setState(() => _submitting = false);
-      _toast(_describeCreateError(error));
+      _toast(_describeCreateError(error, l));
     }
   }
 
@@ -363,12 +445,11 @@ class _GatePassCreateScreenState extends ConsumerState<GatePassCreateScreen> {
 /// is not on the caller's active lease, so the bare status reads as "missing"
 /// when it means "not yours / not active". Relaying "not found" would send the
 /// renter looking for a bug.
-String _describeCreateError(Object error) {
+String _describeCreateError(Object error, _L l) {
   if (error is DioException) {
     final status = error.response?.statusCode;
     if (status == 404) {
-      return 'That unit is not on an active lease of yours. '
-          'Contact your manager if your tenancy should be active.';
+      return l.unitNotOnActiveLease;
     }
     final data = error.response?.data;
     if (data is Map && data['message'] is String) {
@@ -376,17 +457,17 @@ String _describeCreateError(Object error) {
       if (message.isNotEmpty) return message;
     }
   }
-  return 'Could not create the pass. Please try again.';
+  return l.createFailed;
 }
 
-Widget _label(String text) => Padding(
+Widget _label(String text, MiftahColors m) => Padding(
   padding: const EdgeInsets.only(bottom: 6),
   child: Text(
     text,
-    style: const TextStyle(
+    style: TextStyle(
       fontSize: 12.5,
       fontWeight: FontWeight.w700,
-      color: AppColors.textSecondary,
+      color: m.textSecondary,
     ),
   ),
 );
@@ -397,17 +478,15 @@ Widget _label(String text) => Padding(
 /// unit the server will refuse, and the refusal is a 404 that explains nothing —
 /// so the block has to carry the explanation itself.
 class _NoActiveLease extends StatelessWidget {
-  const _NoActiveLease();
+  final _L l;
+  const _NoActiveLease({required this.l});
 
   @override
   Widget build(BuildContext context) {
-    return const EmptyState(
+    return EmptyState(
       icon: Icons.home_outlined,
-      title: 'No active tenancy',
-      subtitle:
-          'Gate passes are raised against the unit you are renting, so '
-          'you need an active lease to create one. If your tenancy has just '
-          'started, ask your property manager to activate it.',
+      title: l.noActiveTenancy,
+      subtitle: l.noActiveTenancySub,
     );
   }
 }
@@ -415,11 +494,13 @@ class _NoActiveLease extends StatelessWidget {
 class _UnitPicker extends StatelessWidget {
   final List<Map<String, dynamic>> leases;
   final String? selectedUnitId;
+  final _L l;
   final ValueChanged<String?> onChanged;
 
   const _UnitPicker({
     required this.leases,
     required this.selectedUnitId,
+    required this.l,
     required this.onChanged,
   });
 
@@ -427,19 +508,19 @@ class _UnitPicker extends StatelessWidget {
   Widget build(BuildContext context) {
     return DropdownButtonFormField<String>(
       initialValue: selectedUnitId,
-      decoration: const InputDecoration(hintText: 'Which unit?'),
+      decoration: InputDecoration(hintText: l.whichUnit),
       items: leases.map((lease) {
         final unitId = lease['unitId']?.toString();
         final unit = lease['unitIdentifier']?.toString();
         final property = lease['propertyName']?.toString();
         final label = [
           property,
-          unit == null ? null : 'Unit $unit',
+          unit == null ? null : l.unitLabel(unit),
         ].whereType<String>().join(' · ');
         return DropdownMenuItem(
           value: unitId,
           child: Text(
-            label.isEmpty ? 'Unit' : label,
+            label.isEmpty ? l.unitFallback : label,
             overflow: TextOverflow.ellipsis,
           ),
         );
@@ -451,28 +532,35 @@ class _UnitPicker extends StatelessWidget {
 
 class _TypeToggle extends StatelessWidget {
   final bool recurring;
+  final _L l;
   final ValueChanged<bool> onChanged;
 
-  const _TypeToggle({required this.recurring, required this.onChanged});
+  const _TypeToggle({
+    required this.recurring,
+    required this.l,
+    required this.onChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: AppColors.surface2,
+        color: m.surfaceAlt,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         children: [
-          _segment(label: 'Single visit', selected: !recurring, value: false),
-          _segment(label: 'Recurring', selected: recurring, value: true),
+          _segment(m, label: l.singleVisit, selected: !recurring, value: false),
+          _segment(m, label: l.recurring, selected: recurring, value: true),
         ],
       ),
     );
   }
 
-  Widget _segment({
+  Widget _segment(
+    MiftahColors m, {
     required String label,
     required bool selected,
     required bool value,
@@ -484,9 +572,9 @@ class _TypeToggle extends StatelessWidget {
           duration: const Duration(milliseconds: 160),
           padding: const EdgeInsets.symmetric(vertical: 11),
           decoration: BoxDecoration(
-            color: selected ? AppColors.surface : Colors.transparent,
+            color: selected ? m.surface : Colors.transparent,
             borderRadius: BorderRadius.circular(9),
-            border: selected ? Border.all(color: AppColors.border) : null,
+            border: selected ? Border.all(color: m.border) : null,
           ),
           child: Text(
             label,
@@ -494,7 +582,7 @@ class _TypeToggle extends StatelessWidget {
             style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w700,
-              color: selected ? AppColors.navyDark : AppColors.textMuted,
+              color: selected ? m.textPrimary : m.textMuted,
             ),
           ),
         ),
@@ -513,14 +601,14 @@ class _TypeToggle extends StatelessWidget {
 /// explain itself.
 class _TypeExplainer extends StatelessWidget {
   final bool recurring;
-  const _TypeExplainer({required this.recurring});
+  final _L l;
+  const _TypeExplainer({required this.recurring, required this.l});
 
   @override
   Widget build(BuildContext context) {
-    final color = recurring ? AppColors.warning : AppColors.success;
-    final background = recurring
-        ? AppColors.warningLight
-        : AppColors.successLight;
+    final m = context.miftah;
+    final color = recurring ? m.warning : m.success;
+    final background = recurring ? m.warningBg : m.successBg;
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -543,7 +631,7 @@ class _TypeExplainer extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  recurring ? 'Needs manager approval' : 'Works straight away',
+                  recurring ? l.needsApproval : l.worksStraightAway,
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
@@ -552,16 +640,11 @@ class _TypeExplainer extends StatelessWidget {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  recurring
-                      ? 'For a maid, driver or regular visitor. A manager must '
-                            'approve this pass before it opens the gate — it will '
-                            'not work today unless it is approved.'
-                      : 'For a one-off visit. The pass is active as soon as you '
-                            'create it and lets your guest in once.',
-                  style: const TextStyle(
+                  recurring ? l.recurringExplainer : l.singleExplainer,
+                  style: TextStyle(
                     fontSize: 12,
                     height: 1.35,
-                    color: AppColors.textSecondary,
+                    color: m.textSecondary,
                   ),
                 ),
               ],
@@ -647,26 +730,27 @@ class _PickerField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
     return InkWell(
       borderRadius: BorderRadius.circular(12),
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
         decoration: BoxDecoration(
-          color: AppColors.surface,
-          border: Border.all(color: AppColors.border),
+          color: m.surface,
+          border: Border.all(color: m.border),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
           children: [
-            Icon(icon, size: 17, color: AppColors.textMuted),
+            Icon(icon, size: 17, color: m.textMuted),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
                 label,
                 style: TextStyle(
                   fontSize: 14,
-                  color: muted ? AppColors.textMuted : AppColors.navyDark,
+                  color: muted ? m.textMuted : m.textPrimary,
                   fontWeight: muted ? FontWeight.w400 : FontWeight.w600,
                 ),
               ),

@@ -198,6 +198,9 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
         child: EmptyState(
           icon: Icons.payment_outlined,
           title: l.noPaymentsFound,
+          // "Upcoming" is scoped to the current month while the stat tiles
+          // above are not — say so, or an empty month reads as a bug.
+          subtitle: _tabController.index == 0 ? l.noDuesThisMonth : null,
         ),
       );
     }
@@ -609,7 +612,7 @@ class _PropertyFilter extends StatelessWidget {
       padding: const EdgeInsetsDirectional.only(start: 14, end: 6),
       child: DropdownButtonHideUnderline(
         child: DropdownButtonFormField<String?>(
-          value: selectedId,
+          initialValue: selectedId,
           isExpanded: true,
           decoration: const InputDecoration(
             filled: false,
@@ -1239,6 +1242,8 @@ class _L {
   String get failedToLoadPayments =>
       ar ? 'تعذّر تحميل المدفوعات' : 'Failed to load payments';
   String get noPaymentsFound => ar ? 'لا توجد مدفوعات' : 'No payments found';
+  String get noDuesThisMonth =>
+      ar ? 'لا مستحقات هذا الشهر' : 'Nothing due this month';
   String get unknownRenter => ar ? 'مستأجر غير معروف' : 'Unknown';
 
   String propertyUnitLine(String property, String unit) =>

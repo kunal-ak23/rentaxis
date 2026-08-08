@@ -1,8 +1,39 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+val keystoreProperties = Properties()
+val keystorePropertiesFile = rootProject.file("key.properties")
+val mapsProperties = Properties()
+val mapsPropertiesFile = rootProject.file("maps.properties")
+val releaseBuildRequested = gradle.startParameter.taskNames.any {
+    it.contains("Release", ignoreCase = true)
+}
+
+if (mapsPropertiesFile.exists()) {
+    mapsPropertiesFile.inputStream().use(mapsProperties::load)
+} else if (releaseBuildRequested) {
+    throw GradleException(
+        "Google Maps is not configured. Add android/maps.properties with GOOGLE_MAPS_API_KEY.",
+    )
+}
+
+val googleMapsApiKey = mapsProperties.getProperty("GOOGLE_MAPS_API_KEY", "")
+if (releaseBuildRequested && googleMapsApiKey.isBlank()) {
+    throw GradleException("GOOGLE_MAPS_API_KEY must not be blank for a release build.")
+}
+
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.inputStream().use(keystoreProperties::load)
+} else if (releaseBuildRequested) {
+    throw GradleException(
+        "Release signing is not configured. Add android/key.properties and an upload keystore.",
+    )
 }
 
 android {
@@ -28,13 +59,23 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        manifestPlaceholders["GOOGLE_MAPS_API_KEY"] = googleMapsApiKey
+    }
+
+    signingConfigs {
+        create("release") {
+            if (keystorePropertiesFile.exists()) {
+                keyAlias = keystoreProperties["keyAlias"] as String
+                keyPassword = keystoreProperties["keyPassword"] as String
+                storeFile = rootProject.file(keystoreProperties["storeFile"] as String)
+                storePassword = keystoreProperties["storePassword"] as String
+            }
+        }
     }
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 }

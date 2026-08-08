@@ -401,7 +401,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
                                   );
                                 },
                                 loading: () => const SizedBox.shrink(),
-                                error: (_, __) => const SizedBox.shrink(),
+                                error: (_, _) => const SizedBox.shrink(),
                               ),
 
                               // OTP Section (RESOLVED status)
@@ -481,7 +481,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
                                   );
                                 },
                                 loading: () => const ListShimmer(itemCount: 2),
-                                error: (_, __) => Text(
+                                error: (_, _) => Text(
                                   l.failedToLoadReplies,
                                   style: GoogleFonts.josefinSans(
                                     color: m.textMuted,
@@ -851,7 +851,18 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
             backgroundColor: Colors.black,
             iconTheme: const IconThemeData(color: Colors.white),
           ),
-          body: Center(child: InteractiveViewer(child: Image.network(url))),
+          body: Center(
+            child: InteractiveViewer(
+              child: Image.network(
+                url,
+                errorBuilder: (_, _, _) => const Icon(
+                  Icons.broken_image_outlined,
+                  color: Colors.white54,
+                  size: 64,
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -922,19 +933,25 @@ class _StatusRail extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: labels
-              .map(
-                (label) => Text(
-                  label,
+          children: [
+            for (var i = 0; i < labels.length; i++)
+              Expanded(
+                child: Text(
+                  labels[i],
+                  textAlign: i == 0
+                      ? TextAlign.start
+                      : (i == labels.length - 1
+                            ? TextAlign.end
+                            : TextAlign.center),
+                  overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.josefinSans(
                     fontSize: 10,
                     letterSpacing: ar ? 0 : 1.0,
                     color: Colors.white.withValues(alpha: 0.5),
                   ),
                 ),
-              )
-              .toList(),
+              ),
+          ],
         ),
       ],
     );
@@ -1050,7 +1067,7 @@ class _AttachmentThumb extends StatelessWidget {
                   Image.network(
                     url,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) =>
+                    errorBuilder: (_, _, _) =>
                         Icon(Icons.broken_image, color: m.textMuted),
                   ),
                   Container(

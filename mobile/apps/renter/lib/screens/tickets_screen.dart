@@ -30,8 +30,7 @@ class _L {
   String get searchHint =>
       ar ? 'ابحث في طلبات الصيانة...' : 'Search tickets...';
   String get noMatching => ar ? 'لا توجد طلبات مطابقة' : 'No Matching Tickets';
-  String get nothingPending =>
-      ar ? 'لا يوجد شيء معلّق' : 'Nothing Else Pending';
+  String get nothingPending => ar ? 'لا توجد طلبات بعد' : 'No Requests Yet';
   String get tryDifferentFilter => ar
       ? 'جرّب تصفية أو كلمة بحث مختلفة'
       : 'Try a different filter or search term';

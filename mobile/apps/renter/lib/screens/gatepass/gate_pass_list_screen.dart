@@ -6,6 +6,27 @@ import 'package:rentaxis_core/rentaxis_core.dart';
 import '../../gatepass/pass_display.dart';
 import '../../providers/gate_pass_provider.dart';
 
+/// Screen strings (EN/AR). Lightweight per-screen pattern — see arabic-brief.
+class _L {
+  _L(this.ar);
+  final bool ar;
+
+  String get title => ar ? 'تصاريح الدخول' : 'Gate Passes';
+  String get visitorApprovals => ar ? 'موافقات الزوار' : 'Visitor approvals';
+  String get newPass => ar ? 'تصريح جديد' : 'New pass';
+  String get loadFailed =>
+      ar ? 'تعذر تحميل تصاريح الدخول الخاصة بك.' : 'Could not load your gate passes.';
+  String get noPasses => ar ? 'لا توجد تصاريح دخول بعد' : 'No gate passes yet';
+  String get noPassesSub => ar
+      ? 'أنشئ تصريحًا ليتمكن ضيفك من إظهاره عند البوابة بدلاً من '
+            'تسجيله يدويًا من قبل الحارس.'
+      : 'Create a pass and your guest can show it at the gate '
+            'instead of being signed in by the guard.';
+  String get createPass => ar ? 'إنشاء تصريح' : 'Create a pass';
+  String get guestFallback => ar ? 'ضيف' : 'Guest';
+  String get recurring => ar ? 'متكرر' : 'Recurring';
+}
+
 /// The renter's gate passes, newest first.
 ///
 /// Rows carry no QR and no code: the credential lives one tap away on the detail
@@ -17,17 +38,20 @@ class GatePassListScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final m = context.miftah;
+    final l = _L(context.isAr);
     final passes = ref.watch(myPassesProvider);
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: m.background,
       appBar: AppBar(
-        backgroundColor: AppColors.surface,
+        backgroundColor: m.surface,
+        foregroundColor: m.textPrimary,
         elevation: 0,
-        title: const Text('Gate Passes'),
+        title: Text(l.title),
         actions: [
           IconButton(
-            tooltip: 'Visitor approvals',
+            tooltip: l.visitorApprovals,
             onPressed: () => context.push('/gatepass/approvals'),
             icon: const Icon(Icons.approval_outlined),
           ),
@@ -37,21 +61,21 @@ class GatePassListScreen extends ConsumerWidget {
         onPressed: () => context.push('/gatepass/create'),
         backgroundColor: AppColors.primary,
         icon: const Icon(Icons.add, color: Colors.white),
-        label: const Text('New pass', style: TextStyle(color: Colors.white)),
+        label: Text(l.newPass, style: const TextStyle(color: Colors.white)),
       ),
       body: RefreshIndicator(
-        color: AppColors.primary,
+        color: m.isDark ? AppColors.accent : AppColors.primary,
         onRefresh: () => ref.refresh(myPassesProvider.future),
         child: passes.when(
           loading: () => const _ListShimmer(),
           error: (error, _) => _Scrollable(
             child: ErrorState(
-              message: 'Could not load your gate passes.',
+              message: l.loadFailed,
               onRetry: () => ref.invalidate(myPassesProvider),
             ),
           ),
           data: (rows) {
-            if (rows.isEmpty) return const _Scrollable(child: _NoPasses());
+            if (rows.isEmpty) return _Scrollable(child: _NoPasses(l: l));
             return ListView.builder(
               physics: const AlwaysScrollableScrollPhysics(),
               padding: EdgeInsets.fromLTRB(
@@ -63,7 +87,7 @@ class GatePassListScreen extends ConsumerWidget {
               itemCount: rows.length,
               itemBuilder: (context, index) => AnimatedListItem(
                 index: index,
-                child: _PassRow(pass: rows[index]),
+                child: _PassRow(pass: rows[index], l: l),
               ),
             );
           },
@@ -95,17 +119,16 @@ class _Scrollable extends StatelessWidget {
 }
 
 class _NoPasses extends StatelessWidget {
-  const _NoPasses();
+  final _L l;
+  const _NoPasses({required this.l});
 
   @override
   Widget build(BuildContext context) {
     return EmptyState(
       icon: Icons.qr_code_2_outlined,
-      title: 'No gate passes yet',
-      subtitle:
-          'Create a pass and your guest can show it at the gate '
-          'instead of being signed in by the guard.',
-      actionLabel: 'Create a pass',
+      title: l.noPasses,
+      subtitle: l.noPassesSub,
+      actionLabel: l.createPass,
       onAction: () => context.push('/gatepass/create'),
     );
   }
@@ -113,13 +136,15 @@ class _NoPasses extends StatelessWidget {
 
 class _PassRow extends StatelessWidget {
   final Map<String, dynamic> pass;
-  const _PassRow({required this.pass});
+  final _L l;
+  const _PassRow({required this.pass, required this.l});
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
     final status = passString(pass, 'status');
     final id = passString(pass, 'id');
-    final guest = passString(pass, 'guestName') ?? 'Guest';
+    final guest = passString(pass, 'guestName') ?? l.guestFallback;
     final purpose = passString(pass, 'purpose');
     final vehicle = passString(pass, 'vehicleNumber');
     final recurring = passString(pass, 'passType') == 'RECURRING';
@@ -127,7 +152,7 @@ class _PassRow extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Material(
-        color: AppColors.surface,
+        color: m.surface,
         borderRadius: BorderRadius.circular(14),
         child: InkWell(
           borderRadius: BorderRadius.circular(14),
@@ -138,7 +163,7 @@ class _PassRow extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              border: Border.all(color: AppColors.border),
+              border: Border.all(color: m.border),
               borderRadius: BorderRadius.circular(14),
             ),
             child: Column(
@@ -149,17 +174,17 @@ class _PassRow extends StatelessWidget {
                     Expanded(
                       child: Text(
                         guest,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w700,
-                          color: AppColors.navyDark,
+                          color: m.textPrimary,
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     const SizedBox(width: 8),
                     StatusBadge(
-                      label: gatePassStatusLabel(status),
+                      label: gatePassStatusLabel(status, ar: l.ar),
                       color: gatePassStatusColor(status),
                     ),
                   ],
@@ -169,11 +194,9 @@ class _PassRow extends StatelessWidget {
                   formatWindow(
                     passInstant(pass, 'validFrom'),
                     passInstant(pass, 'validTo'),
+                    ar: l.ar,
                   ),
-                  style: const TextStyle(
-                    fontSize: 12.5,
-                    color: AppColors.textSecondary,
-                  ),
+                  style: TextStyle(fontSize: 12.5, color: m.textSecondary),
                 ),
                 if (purpose != null || vehicle != null || recurring) ...[
                   const SizedBox(height: 8),
@@ -182,7 +205,7 @@ class _PassRow extends StatelessWidget {
                     runSpacing: 6,
                     children: [
                       if (recurring)
-                        const _Tag(icon: Icons.repeat, label: 'Recurring'),
+                        _Tag(icon: Icons.repeat, label: l.recurring),
                       if (purpose != null)
                         _Tag(icon: Icons.notes_outlined, label: purpose),
                       if (vehicle != null)
@@ -206,26 +229,24 @@ class _Tag extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: AppColors.surface2,
+        color: m.surfaceAlt,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 13, color: AppColors.textMuted),
+          Icon(icon, size: 13, color: m.textMuted),
           const SizedBox(width: 5),
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 180),
             child: Text(
               label,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 11.5,
-                color: AppColors.textSecondary,
-              ),
+              style: TextStyle(fontSize: 11.5, color: m.textSecondary),
             ),
           ),
         ],

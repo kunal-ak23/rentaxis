@@ -90,7 +90,6 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
   bool _isActioning = false;
   String? _error;
 
-  DateTime? _extendDate;
   bool _isExtending = false;
   bool _isGeneratingContract = false;
 
@@ -303,10 +302,7 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
       return;
     }
 
-    if (!context.mounted) {
-      setState(() => _isGeneratingContract = false);
-      return;
-    }
+    if (!mounted) return;
 
     // 2) Confirm save after the user has reviewed the preview.
     final confirmed = await showDialog<bool>(
@@ -441,13 +437,13 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
                         await ref
                             .read(_leaseServiceProvider)
                             .extendLease(widget.leaseId, newEndDate);
-                        if (mounted) {
-                          Navigator.pop(ctx);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text(l.leaseExtended)),
-                          );
-                          _loadData();
-                        }
+                        if (!mounted || !ctx.mounted) return;
+                        setDialogState(() => _isExtending = false);
+                        Navigator.pop(ctx);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(l.leaseExtended)),
+                        );
+                        _loadData();
                       } catch (e) {
                         if (mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
@@ -455,7 +451,9 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
                           );
                         }
                       } finally {
-                        if (mounted) setDialogState(() => _isExtending = false);
+                        if (ctx.mounted) {
+                          setDialogState(() => _isExtending = false);
+                        }
                       }
                     },
               style: ElevatedButton.styleFrom(

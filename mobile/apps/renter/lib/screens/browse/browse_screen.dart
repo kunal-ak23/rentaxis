@@ -180,17 +180,22 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
                       subtitle: l.tryAdjustingFilters,
                     );
                   }
-                  if (_mapMode) {
-                    return BrowseMap(listings: items);
-                  }
-                  return RefreshIndicator(
-                    onRefresh: () async =>
-                        ref.invalidate(browseListingsProvider),
-                    child: _ListingListView(
-                      listings: items,
-                      truncated: allItems.length >= 50,
-                      serverCount: allItems.length,
-                    ),
+                  // Cross-fade the list↔map mode switch instead of a hard cut
+                  // (same AnimatedSwitcher pattern as shell_screen).
+                  return AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 250),
+                    child: _mapMode
+                        ? BrowseMap(key: const ValueKey('map'), listings: items)
+                        : RefreshIndicator(
+                            key: const ValueKey('list'),
+                            onRefresh: () async =>
+                                ref.invalidate(browseListingsProvider),
+                            child: _ListingListView(
+                              listings: items,
+                              truncated: allItems.length >= 50,
+                              serverCount: allItems.length,
+                            ),
+                          ),
                   );
                 },
               ),
@@ -346,7 +351,7 @@ class _ActiveFilterChips extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l = _L(context.isAr);
     final chips = <_ChipData>[];
-    if (filters.minBedrooms != null)
+    if (filters.minBedrooms != null) {
       chips.add(
         _ChipData(
           '${filters.minBedrooms}${l.bedSuffix}',
@@ -354,7 +359,8 @@ class _ActiveFilterChips extends ConsumerWidget {
               .copyWith(clearMinBedrooms: true),
         ),
       );
-    if (filters.furnishing != null)
+    }
+    if (filters.furnishing != null) {
       chips.add(
         _ChipData(
           l.furnishingLabel(filters.furnishing!),
@@ -362,7 +368,8 @@ class _ActiveFilterChips extends ConsumerWidget {
               .copyWith(clearFurnishing: true),
         ),
       );
-    if (filters.availableNow == true)
+    }
+    if (filters.availableNow == true) {
       chips.add(
         _ChipData(
           l.availableNow,
@@ -370,6 +377,7 @@ class _ActiveFilterChips extends ConsumerWidget {
               .copyWith(clearAvailableNow: true),
         ),
       );
+    }
     if (filters.minRent != null || filters.maxRent != null) {
       final label = [
         if (filters.minRent != null)
@@ -385,7 +393,7 @@ class _ActiveFilterChips extends ConsumerWidget {
         ),
       );
     }
-    if (filters.nearLat != null)
+    if (filters.nearLat != null) {
       chips.add(
         _ChipData(
           '${l.nearMe}${filters.radiusKm != null ? l.kmSuffix(filters.radiusKm!.round()) : ''}',
@@ -393,6 +401,7 @@ class _ActiveFilterChips extends ConsumerWidget {
               .copyWith(clearNearby: true),
         ),
       );
+    }
     if (chips.isEmpty) return const SizedBox.shrink();
 
     return SizedBox(
@@ -401,7 +410,7 @@ class _ActiveFilterChips extends ConsumerWidget {
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16),
         itemCount: chips.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
         itemBuilder: (_, i) => _FilterChip(data: chips[i]),
       ),
     );

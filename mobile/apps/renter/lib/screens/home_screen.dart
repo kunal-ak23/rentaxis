@@ -103,7 +103,11 @@ class HomeScreen extends ConsumerWidget {
                   const SizedBox(height: 10),
                   paymentsAsync.when(
                     loading: () => const _ActivityShimmer(),
-                    error: (_, _) => const SizedBox.shrink(),
+                    // Surface the failure instead of a silent blank section.
+                    error: (_, _) => ErrorState(
+                      message: _L(context.isAr).activityLoadFailed,
+                      onRetry: refresh,
+                    ),
                     data: (payments) => _RecentActivity(payments: payments),
                   ),
                 ],
@@ -624,16 +628,20 @@ class _HeroBalanceCard extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    l.clearedCountLabel(clearedCount, totalCount),
-                    style:
-                        (l.ar
-                        ? GoogleFonts.notoNaskhArabic
-                        : GoogleFonts.inter)(
-                          fontSize: 11.5,
-                          color: Colors.white.withValues(alpha: 0.7),
-                        ),
+                  Flexible(
+                    child: Text(
+                      l.clearedCountLabel(clearedCount, totalCount),
+                      overflow: TextOverflow.ellipsis,
+                      style:
+                          (l.ar
+                          ? GoogleFonts.notoNaskhArabic
+                          : GoogleFonts.inter)(
+                            fontSize: 11.5,
+                            color: Colors.white.withValues(alpha: 0.7),
+                          ),
+                    ),
                   ),
+                  const SizedBox(width: 8),
                   Text(
                     '${_formatAmount(clearedAmount)} / ${_formatAmount(totalAmount)}',
                     style: GoogleFonts.jetBrainsMono(
@@ -869,7 +877,7 @@ class _QuickActions extends StatelessWidget {
       // short enough to sit under the icon on a narrow phone.
       (
         icon: Icons.qr_code_2_outlined,
-        label: 'Visitors',
+        label: l.visitors,
         route: '/gatepass',
         badge: null,
       ),
@@ -1328,6 +1336,9 @@ class _L {
   String get facilitiesSub => ar
       ? 'اطلب حجز المسبح أو القاعة أو موقف سيارة'
       : 'Request the pool, hall or a parking spot';
+  String get visitors => ar ? 'الزوار' : 'Visitors';
+  String get activityLoadFailed =>
+      ar ? 'تعذر تحميل آخر التحديثات' : 'Failed to load recent activity';
 
   // Recent activity
   String get recentActivity => ar ? 'آخر التحديثات' : 'RECENT ACTIVITY';

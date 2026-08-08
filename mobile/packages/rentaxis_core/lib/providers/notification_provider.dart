@@ -13,21 +13,29 @@ class NotificationState {
   final List<dynamic> notifications;
   final bool isLoading;
 
+  /// True when the last list fetch failed. Lets screens distinguish "no
+  /// notifications" from "couldn't load them" instead of showing a false
+  /// empty state on network errors.
+  final bool hasError;
+
   const NotificationState({
     this.unreadCount = 0,
     this.notifications = const [],
     this.isLoading = false,
+    this.hasError = false,
   });
 
   NotificationState copyWith({
     int? unreadCount,
     List<dynamic>? notifications,
     bool? isLoading,
+    bool? hasError,
   }) {
     return NotificationState(
       unreadCount: unreadCount ?? this.unreadCount,
       notifications: notifications ?? this.notifications,
       isLoading: isLoading ?? this.isLoading,
+      hasError: hasError ?? this.hasError,
     );
   }
 }
@@ -72,9 +80,13 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
                 (n) => !state.notifications.any((e) => e['id'] == n['id']),
               ),
             ];
-      state = state.copyWith(notifications: merged, isLoading: false);
+      state = state.copyWith(
+        notifications: merged,
+        isLoading: false,
+        hasError: false,
+      );
     } catch (_) {
-      state = state.copyWith(isLoading: false);
+      state = state.copyWith(isLoading: false, hasError: true);
     }
   }
 

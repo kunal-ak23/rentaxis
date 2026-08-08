@@ -407,7 +407,7 @@ class _PropertyDetailScreenState extends ConsumerState<PropertyDetailScreen> {
                   ),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
-                    value: unitType,
+                    initialValue: unitType,
                     decoration: InputDecoration(
                       labelText: l.type,
                       prefixIcon: const Icon(Icons.category_outlined),

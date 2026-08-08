@@ -105,104 +105,109 @@ class _MeetingsScreenState extends ConsumerState<MeetingsScreen> {
                   AppInsets.bottomNav(context),
                 ),
                 itemCount: _meetings.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 10),
+                separatorBuilder: (_, _) => const SizedBox(height: 10),
                 itemBuilder: (_, i) {
                   final meeting = _meetings[i] as Map<String, dynamic>;
                   final status = meeting['status'] ?? 'REQUESTED';
                   final purpose = meeting['purpose'] ?? '';
-                  return InkWell(
-                    onTap: () => context.push('/meetings/${meeting['id']}'),
-                    borderRadius: BorderRadius.circular(16),
-                    child: Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: m.surface,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: m.border),
-                        boxShadow: m.isDark ? null : AppShadows.soft,
-                      ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Container(
-                            width: 44,
-                            height: 44,
-                            decoration: BoxDecoration(
-                              color: accentColor.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(12),
+                  return AnimatedListItem(
+                    index: i,
+                    child: InkWell(
+                      onTap: () => context.push('/meetings/${meeting['id']}'),
+                      borderRadius: BorderRadius.circular(16),
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: m.surface,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: m.border),
+                          boxShadow: m.isDark ? null : AppShadows.soft,
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              width: 44,
+                              height: 44,
+                              decoration: BoxDecoration(
+                                color: accentColor.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Icon(
+                                Icons.event_outlined,
+                                color: accentColor,
+                                size: 22,
+                              ),
                             ),
-                            child: Icon(
-                              Icons.event_outlined,
-                              color: accentColor,
-                              size: 22,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        meeting['title'] ??
-                                            l.purposeLabel(purpose),
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 14,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 7,
-                                        vertical: 2,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: _statusColor(
-                                          status,
-                                        ).withValues(alpha: 0.12),
-                                        borderRadius: BorderRadius.circular(6),
-                                      ),
-                                      child: Text(
-                                        l.statusLabel(status),
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w700,
-                                          color: _statusColor(status),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          meeting['title'] ??
+                                              l.purposeLabel(purpose),
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 14,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
                                         ),
                                       ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  l.formatSlot(
-                                    meeting['slotStart']?.toString(),
+                                      const SizedBox(width: 8),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 7,
+                                          vertical: 2,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: _statusColor(
+                                            status,
+                                          ).withValues(alpha: 0.12),
+                                          borderRadius: BorderRadius.circular(
+                                            6,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          l.statusLabel(status),
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w700,
+                                            color: _statusColor(status),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                  style: TextStyle(
-                                    color: m.textMuted,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                                if (meeting['hostName'] != null) ...[
-                                  const SizedBox(height: 2),
+                                  const SizedBox(height: 4),
                                   Text(
-                                    l.withHost(meeting['hostName']),
+                                    l.formatSlot(
+                                      meeting['slotStart']?.toString(),
+                                    ),
                                     style: TextStyle(
                                       color: m.textMuted,
                                       fontSize: 12,
                                     ),
                                   ),
+                                  if (meeting['hostName'] != null) ...[
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      l.withHost(meeting['hostName']),
+                                      style: TextStyle(
+                                        color: m.textMuted,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
                                 ],
-                              ],
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   );

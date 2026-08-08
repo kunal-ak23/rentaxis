@@ -128,12 +128,17 @@ class _PropertiesScreenState extends ConsumerState<PropertiesScreen> {
                       final occupancy = unitCount > 0
                           ? occupiedCount / unitCount
                           : 0.0;
-                      final monthlyRent = units.fold<double>(
-                        0,
-                        (s, u) =>
-                            s +
-                            (((u['annualRent'] ?? 0) as num).toDouble() / 12),
-                      );
+                      // Units carry `expectedRent` (asking) and `actualRent`
+                      // (leased); there is no `annualRent` key, which left
+                      // this card permanently at AED 0. Prefer the leased
+                      // figure when present, else the asking rent.
+                      final monthlyRent = units.fold<double>(0, (s, u) {
+                        final actual = ((u['actualRent'] ?? 0) as num)
+                            .toDouble();
+                        final expected = ((u['expectedRent'] ?? 0) as num)
+                            .toDouble();
+                        return s + (actual > 0 ? actual : expected) / 12;
+                      });
                       final maintenanceUnits = units
                           .where((u) => u['status'] == 'MAINTENANCE')
                           .length;
@@ -242,7 +247,7 @@ class _PropertiesScreenState extends ConsumerState<PropertiesScreen> {
                 ),
                 const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
-                  value: selectedEmirate,
+                  initialValue: selectedEmirate,
                   decoration: InputDecoration(
                     labelText: l.emirate,
                     prefixIcon: const Icon(Icons.flag_outlined),

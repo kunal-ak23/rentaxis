@@ -55,6 +55,7 @@ export 'utils/error_message.dart';
 // Widgets
 export 'widgets/status_badge.dart';
 export 'widgets/loading_overlay.dart';
+export 'widgets/offline_status_banner.dart';
 export 'widgets/empty_state.dart';
 export 'widgets/error_state.dart';
 export 'widgets/video_splash_screen.dart';

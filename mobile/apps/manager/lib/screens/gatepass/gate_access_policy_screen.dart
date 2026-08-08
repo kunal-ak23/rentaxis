@@ -89,7 +89,11 @@ class _GateAccessPolicyScreenState
             .whereType<Map>()
             .map((row) => Map<String, dynamic>.from(row))
             .toList();
-        _apply(Map<String, dynamic>.from(results[1] as Map));
+        _apply(
+          results[1] is Map
+              ? Map<String, dynamic>.from(results[1] as Map)
+              : const <String, dynamic>{},
+        );
         _loading = false;
       });
     } catch (_) {

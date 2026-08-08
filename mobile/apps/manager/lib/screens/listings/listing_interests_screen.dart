@@ -63,7 +63,7 @@ class ListingInterestsScreen extends ConsumerWidget {
               loading: () => ListView.builder(
                 padding: const EdgeInsets.all(16),
                 itemCount: 4,
-                itemBuilder: (_, __) => Padding(
+                itemBuilder: (_, _) => Padding(
                   padding: const EdgeInsets.only(bottom: 12),
                   child: ShimmerLoading(height: 80, width: double.infinity),
                 ),
