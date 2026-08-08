@@ -157,7 +157,7 @@ class MoreScreen extends ConsumerWidget {
                       onTap: () {
                         showAboutDialog(
                           context: context,
-                          applicationName: 'Miftah Admin',
+                          applicationName: 'Miftah Manager',
                           applicationVersion: '1.0.0',
                           applicationLegalese: l.aboutLegalese,
                         );

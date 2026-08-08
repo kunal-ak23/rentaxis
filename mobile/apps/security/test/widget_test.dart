@@ -21,6 +21,6 @@ void main() {
     // does nothing is not a smoke test.
     await pumpSecurityApp(tester, authService: FakeAuthService());
 
-    expect(find.byKey(const Key('phoneField')), findsOneWidget);
+    expect(find.byKey(const Key('phoneNationalField')), findsOneWidget);
   });
 }

@@ -7,12 +7,16 @@ import com.datagami.rentaxis.core.event.ListingPublishedEvent;
 import com.datagami.rentaxis.core.event.ListingUnlistedEvent;
 import com.datagami.rentaxis.domain.entity.UnitListing;
 import com.datagami.rentaxis.domain.entity.UnitListingMedia;
+import com.datagami.rentaxis.domain.entity.Property;
+import com.datagami.rentaxis.domain.entity.Unit;
+import com.datagami.rentaxis.domain.entity.enums.InterestStatus;
 import com.datagami.rentaxis.domain.entity.enums.ListingStatus;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.UnitListingAmenityRepository;
 import com.datagami.rentaxis.domain.repository.UnitListingInterestRepository;
 import com.datagami.rentaxis.domain.repository.UnitListingMediaRepository;
 import com.datagami.rentaxis.domain.repository.UnitListingRepository;
+import com.datagami.rentaxis.domain.repository.UnitRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -20,6 +24,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.mock.web.MockMultipartFile;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -39,6 +44,7 @@ class UnitListingServiceTest {
     private UnitListingInterestRepository interestRepository;
     private UserRepository userRepository;
     private LeaseRepository leaseRepository;
+    private UnitRepository unitRepository;
     private NotificationService notificationService;
     private SlugService slugService;
     private ApplicationEventPublisher eventPublisher;
@@ -53,13 +59,14 @@ class UnitListingServiceTest {
         interestRepository = mock(UnitListingInterestRepository.class);
         userRepository = mock(UserRepository.class);
         leaseRepository = mock(LeaseRepository.class);
+        unitRepository = mock(UnitRepository.class);
         notificationService = mock(NotificationService.class);
         slugService = new SlugService();
         eventPublisher = mock(ApplicationEventPublisher.class);
         blobStorageService = mock(BlobStorageService.class);
         service = new UnitListingService(
                 listingRepository, amenityRepository, mediaRepository,
-                interestRepository, userRepository, leaseRepository, notificationService,
+                interestRepository, userRepository, leaseRepository, unitRepository, notificationService,
                 slugService, eventPublisher, blobStorageService);
 
         when(listingRepository.save(any(UnitListing.class))).thenAnswer(inv -> {
@@ -181,5 +188,57 @@ class UnitListingServiceTest {
         verify(blobStorageService).upload(tenantId, listingId, file);
         verify(mediaRepository).save(any(UnitListingMedia.class));
         verify(listingRepository, never()).delete(any(UnitListing.class));
+    }
+
+    @Test
+    void countActiveInterests_countsOnlyActiveRows() {
+        UUID listingId = UUID.randomUUID();
+        when(interestRepository.countByListingIdAndStatus(listingId, InterestStatus.ACTIVE))
+                .thenReturn(4L);
+
+        assertThat(service.countActiveInterests(listingId)).isEqualTo(4L);
+    }
+
+    @Test
+    void getSummaryData_batchesPropertyMediaAndInterestLookups() {
+        UUID listingId = UUID.randomUUID();
+        UUID unitId = UUID.randomUUID();
+        UnitListing listing = new UnitListing();
+        listing.setId(listingId);
+        listing.setUnitId(unitId);
+
+        Property property = new Property();
+        property.setNameEn("Marina Heights");
+        Unit unit = new Unit();
+        unit.setId(unitId);
+        unit.setProperty(property);
+
+        UnitListingMedia first = new UnitListingMedia();
+        first.setListingId(listingId);
+        first.setUrl("https://cdn/first.jpg");
+        first.setIsCover(false);
+        UnitListingMedia cover = new UnitListingMedia();
+        cover.setListingId(listingId);
+        cover.setUrl("https://cdn/cover.jpg");
+        cover.setIsCover(true);
+
+        UnitListingInterestRepository.ListingInterestCount count =
+                mock(UnitListingInterestRepository.ListingInterestCount.class);
+        when(count.getListingId()).thenReturn(listingId);
+        when(count.getInterestCount()).thenReturn(3L);
+        when(unitRepository.findByIdIn(List.of(unitId))).thenReturn(List.of(unit));
+        when(mediaRepository.findByListingIdInOrderByListingIdAscSortOrderAsc(List.of(listingId)))
+                .thenReturn(List.of(first, cover));
+        when(interestRepository.countByListingIdsAndStatus(List.of(listingId), InterestStatus.ACTIVE))
+                .thenReturn(List.of(count));
+
+        Map<UUID, UnitListingService.ListingSummaryData> result = service.getSummaryData(List.of(listing));
+
+        assertThat(result.get(listingId).propertyName()).isEqualTo("Marina Heights");
+        assertThat(result.get(listingId).coverPhotoUrl()).isEqualTo("https://cdn/cover.jpg");
+        assertThat(result.get(listingId).interestsCount()).isEqualTo(3L);
+        verify(unitRepository).findByIdIn(List.of(unitId));
+        verify(mediaRepository).findByListingIdInOrderByListingIdAscSortOrderAsc(List.of(listingId));
+        verify(interestRepository).countByListingIdsAndStatus(List.of(listingId), InterestStatus.ACTIVE);
     }
 }

@@ -115,8 +115,10 @@ class _Header extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final m = context.miftah;
+    // Arabic uses "،" not "·": the middot is visually identical to the
+    // Arabic-Indic zero (٠), so "الأحد · ٢ أغسطس" reads as "20 August".
     final dateLine = l.ar
-        ? DateFormat('EEE · d MMMM', 'ar').format(DateTime.now())
+        ? DateFormat('EEE، d MMMM', 'ar').format(DateTime.now())
         : DateFormat('EEE · dd MMM').format(DateTime.now());
     return Row(
       children: [
@@ -240,6 +242,10 @@ class _KpiGrid extends StatelessWidget {
     final drafts = (data['draftLeases'] ?? 0) as num;
 
     return GridView.count(
+      // Nested in a scroll view: without this the sliver auto-pads
+      // with MediaQuery.padding, which under extendBody carries the
+      // floating nav height and opens a gap below the content.
+      padding: EdgeInsets.zero,
       crossAxisCount: 2,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
@@ -705,6 +711,10 @@ class _QuickActions extends StatelessWidget {
       ),
     ];
     return GridView.count(
+      // Nested in a scroll view: without this the sliver auto-pads
+      // with MediaQuery.padding, which under extendBody carries the
+      // floating nav height and opens a gap below the content.
+      padding: EdgeInsets.zero,
       crossAxisCount: 4,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
@@ -742,25 +752,35 @@ class _QuickActions extends StatelessWidget {
                           : AppColors.accentDark,
                     ),
                     const SizedBox(height: 6),
-                    Text(
-                      l.ar ? a.label : a.label.toUpperCase(),
-                      textAlign: TextAlign.center,
-                      style: l.ar
-                          ? GoogleFonts.notoNaskhArabic(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: a.primary
-                                  ? AppColors.primary
-                                  : m.textSecondary,
-                            )
-                          : GoogleFonts.josefinSans(
-                              fontSize: 9.5,
-                              letterSpacing: 1.0,
-                              fontWeight: FontWeight.w600,
-                              color: a.primary
-                                  ? AppColors.primary
-                                  : m.textSecondary,
-                            ),
+                    // A label may be one long word ("MAINTENANCE"), which no
+                    // amount of wrapping can break on a word boundary — it
+                    // would split mid-word. Two lines for the labels that can
+                    // wrap, and scale-down for the ones that cannot.
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        l.ar ? a.label : a.label.toUpperCase(),
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        style: l.ar
+                            ? GoogleFonts.notoNaskhArabic(
+                                fontSize: 11,
+                                height: 1.25,
+                                fontWeight: FontWeight.w600,
+                                color: a.primary
+                                    ? AppColors.primary
+                                    : m.textSecondary,
+                              )
+                            : GoogleFonts.josefinSans(
+                                fontSize: 9.5,
+                                height: 1.25,
+                                letterSpacing: 0.8,
+                                fontWeight: FontWeight.w600,
+                                color: a.primary
+                                    ? AppColors.primary
+                                    : m.textSecondary,
+                              ),
+                      ),
                     ),
                   ],
                 ),
@@ -939,6 +959,10 @@ class _DashboardShimmer extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         GridView.count(
+          // Nested in a scroll view: without this the sliver auto-pads
+          // with MediaQuery.padding, which under extendBody carries the
+          // floating nav height and opens a gap below the content.
+          padding: EdgeInsets.zero,
           crossAxisCount: 2,
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
@@ -970,6 +994,10 @@ class _DashboardShimmer extends StatelessWidget {
         ),
         const SizedBox(height: 20),
         GridView.count(
+          // Nested in a scroll view: without this the sliver auto-pads
+          // with MediaQuery.padding, which under extendBody carries the
+          // floating nav height and opens a gap below the content.
+          padding: EdgeInsets.zero,
           crossAxisCount: 4,
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),

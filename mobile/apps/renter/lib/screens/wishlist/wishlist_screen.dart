@@ -89,7 +89,7 @@ class _WishlistScreenState extends ConsumerState<WishlistScreen> {
             AppInsets.bottomNav(context),
           ),
           itemCount: 4,
-          itemBuilder: (_, __) => Padding(
+          itemBuilder: (_, _) => Padding(
             padding: const EdgeInsets.only(bottom: 14),
             child: ShimmerLoading(height: 100, width: double.infinity),
           ),
@@ -181,12 +181,11 @@ class _WishlistScreenState extends ConsumerState<WishlistScreen> {
       final service = ref.read(listingApiServiceProvider);
       await service.removeInterest(id);
     } catch (e) {
+      if (!mounted) return;
       setState(() => _removedIds.remove(id));
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(_L(context.isAr).removeFailed)));
-      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_L(context.isAr).removeFailed)));
     }
   }
 }
@@ -300,6 +299,15 @@ class _WishlistItem extends StatelessWidget {
                       width: 100,
                       height: 100,
                       fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => Container(
+                        width: 100,
+                        height: 100,
+                        color: m.background,
+                        child: Icon(
+                          Icons.apartment_outlined,
+                          color: m.textMuted,
+                        ),
+                      ),
                     )
                   : Container(
                       width: 100,

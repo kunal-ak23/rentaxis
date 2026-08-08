@@ -654,6 +654,7 @@ class _AssignPropertiesSheetState
           ],
           const SizedBox(height: 16),
           GoldButton(
+            key: const Key('save-assignments'),
             label: _saving ? l.saving : l.save,
             onPressed: _saving || _selected == null ? null : _save,
             icon: _saving

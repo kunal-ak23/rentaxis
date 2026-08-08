@@ -20,24 +20,27 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('Approvals queue', () {
-    testWidgets('renders each pending pass with its property and guest',
-        (tester) async {
+    testWidgets('renders each pending pass with its property and guest', (
+      tester,
+    ) async {
       await pumpApprovals(
         tester,
-        gatePass: FakeGatePassService(approvalRows: [
-          summaryFixture(
-            id: 'pass-1',
-            guestName: 'Ahmed Khan',
-            propertyName: 'Marina Heights',
-            purpose: 'Weekly cleaning',
-          ),
-          summaryFixture(
-            id: 'pass-2',
-            guestName: 'Priya Nair',
-            propertyName: 'Downtown Residences',
-            vehicleNumber: 'DXB 12345',
-          ),
-        ]),
+        gatePass: FakeGatePassService(
+          approvalRows: [
+            summaryFixture(
+              id: 'pass-1',
+              guestName: 'Ahmed Khan',
+              propertyName: 'Marina Heights',
+              purpose: 'Weekly cleaning',
+            ),
+            summaryFixture(
+              id: 'pass-2',
+              guestName: 'Priya Nair',
+              propertyName: 'Downtown Residences',
+              vehicleNumber: 'DXB 12345',
+            ),
+          ],
+        ),
       );
 
       expect(find.text('Ahmed Khan'), findsOneWidget);
@@ -48,17 +51,20 @@ void main() {
       expect(find.text('Downtown Residences'), findsOneWidget);
       expect(find.text('Weekly cleaning'), findsOneWidget);
       expect(find.text('DXB 12345'), findsOneWidget);
-      expect(find.text('Approve'), findsNWidgets(2));
-      expect(find.text('Reject'), findsNWidgets(2));
+      expect(find.text('APPROVE'), findsNWidgets(2));
+      expect(find.text('REJECT'), findsNWidgets(2));
     });
 
-    testWidgets('renders no raw property id when the name is absent',
-        (tester) async {
+    testWidgets('renders no raw property id when the name is absent', (
+      tester,
+    ) async {
       await pumpApprovals(
         tester,
-        gatePass: FakeGatePassService(approvalRows: [
-          summaryFixture(propertyId: 'prop-uuid-1', propertyName: null),
-        ]),
+        gatePass: FakeGatePassService(
+          approvalRows: [
+            summaryFixture(propertyId: 'prop-uuid-1', propertyName: null),
+          ],
+        ),
       );
 
       expect(find.text('Ahmed Khan'), findsOneWidget);
@@ -66,14 +72,18 @@ void main() {
     });
 
     testWidgets('an empty queue shows the empty state', (tester) async {
-      await pumpApprovals(tester, gatePass: FakeGatePassService(approvalRows: []));
+      await pumpApprovals(
+        tester,
+        gatePass: FakeGatePassService(approvalRows: []),
+      );
 
-      expect(find.text('Nothing waiting for approval'), findsOneWidget);
-      expect(find.text('Approve'), findsNothing);
+      expect(find.text('NOTHING WAITING FOR APPROVAL'), findsOneWidget);
+      expect(find.text('APPROVE'), findsNothing);
     });
 
-    testWidgets('Approve posts decide(id, true) and re-reads the queue',
-        (tester) async {
+    testWidgets('Approve posts decide(id, true) and re-reads the queue', (
+      tester,
+    ) async {
       final gatePass = FakeGatePassService(
         approvalRows: [summaryFixture(id: 'pass-1')],
       );
@@ -104,46 +114,53 @@ void main() {
     /// The realistic race: a guard sees the same queue (their scope is a subset
     /// of the manager's) and can decide a pass out from under this screen.
     testWidgets(
-        'a 400 (already decided) says so and refreshes, without claiming success',
-        (tester) async {
-      final gatePass = FakeGatePassService(
-        approvalRows: [summaryFixture(id: 'pass-1')],
-        decideError: httpError(400,
-            message: 'Gate pass is not pending approval'),
-      );
-      await pumpApprovals(tester, gatePass: gatePass);
-      expect(gatePass.approvalsCalls, 1);
+      'a 400 (already decided) says so and refreshes, without claiming success',
+      (tester) async {
+        final gatePass = FakeGatePassService(
+          approvalRows: [summaryFixture(id: 'pass-1')],
+          decideError: httpError(
+            400,
+            message: 'Gate pass is not pending approval',
+          ),
+        );
+        await pumpApprovals(tester, gatePass: gatePass);
+        expect(gatePass.approvalsCalls, 1);
 
-      await tester.tap(find.byKey(const Key('approve-pass-1')));
-      await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('approve-pass-1')));
+        await tester.pumpAndSettle();
 
-      expect(find.textContaining('already decided'), findsOneWidget);
-      // Never the success wording, and never the "still pending, try again"
-      // wording either — the pass is settled, retrying cannot help.
-      expect(find.text('Pass approved'), findsNothing);
-      expect(find.textContaining('try again'), findsNothing);
-      expect(gatePass.approvalsCalls, 2,
-          reason: 'the stale queue is refreshed so the decided card goes');
-    });
+        expect(find.textContaining('already decided'), findsOneWidget);
+        // Never the success wording, and never the "still pending, try again"
+        // wording either — the pass is settled, retrying cannot help.
+        expect(find.text('Pass approved'), findsNothing);
+        expect(find.textContaining('try again'), findsNothing);
+        expect(
+          gatePass.approvalsCalls,
+          2,
+          reason: 'the stale queue is refreshed so the decided card goes',
+        );
+      },
+    );
 
     testWidgets(
-        'a transport failure keeps the pass pending and invites a retry',
-        (tester) async {
-      final gatePass = FakeGatePassService(
-        approvalRows: [summaryFixture(id: 'pass-1')],
-        decideError: httpError(500, message: 'boom'),
-      );
-      await pumpApprovals(tester, gatePass: gatePass);
+      'a transport failure keeps the pass pending and invites a retry',
+      (tester) async {
+        final gatePass = FakeGatePassService(
+          approvalRows: [summaryFixture(id: 'pass-1')],
+          decideError: httpError(500, message: 'boom'),
+        );
+        await pumpApprovals(tester, gatePass: gatePass);
 
-      await tester.tap(find.byKey(const Key('approve-pass-1')));
-      await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('approve-pass-1')));
+        await tester.pumpAndSettle();
 
-      expect(find.textContaining('still pending'), findsOneWidget);
-      expect(find.text('Pass approved'), findsNothing);
-      // The card stays: the queue is not re-read, because nothing changed.
-      expect(gatePass.approvalsCalls, 1);
-      expect(find.byKey(const Key('approve-pass-1')), findsOneWidget);
-    });
+        expect(find.textContaining('still pending'), findsOneWidget);
+        expect(find.text('Pass approved'), findsNothing);
+        // The card stays: the queue is not re-read, because nothing changed.
+        expect(gatePass.approvalsCalls, 1);
+        expect(find.byKey(const Key('approve-pass-1')), findsOneWidget);
+      },
+    );
 
     testWidgets('a failed load offers a retry', (tester) async {
       await pumpApprovals(

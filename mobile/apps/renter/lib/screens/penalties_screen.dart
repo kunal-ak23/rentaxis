@@ -288,28 +288,32 @@ class _PenaltyCard extends StatelessWidget {
                       // Row: reason badge + status chip
                       Row(
                         children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: reasonColor.withValues(alpha: 0.10),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: reasonColor.withValues(alpha: 0.30),
+                          Flexible(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 4,
                               ),
-                            ),
-                            child: Text(
-                              reasonLabel,
-                              style: _body(
-                                l.ar,
-                                size: 11,
-                                weight: FontWeight.w700,
-                                color: reasonColor,
+                              decoration: BoxDecoration(
+                                color: reasonColor.withValues(alpha: 0.10),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: reasonColor.withValues(alpha: 0.30),
+                                ),
+                              ),
+                              child: Text(
+                                reasonLabel,
+                                overflow: TextOverflow.ellipsis,
+                                style: _body(
+                                  l.ar,
+                                  size: 11,
+                                  weight: FontWeight.w700,
+                                  color: reasonColor,
+                                ),
                               ),
                             ),
                           ),
+                          const SizedBox(width: 8),
                           const Spacer(),
                           StatusBadge(
                             label: l.statusLabel(derivedStatus),

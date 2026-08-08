@@ -147,32 +147,48 @@ class _WalkInStatusScreenState extends ConsumerState<WalkInStatusScreen> {
                 children: [
                   const Spacer(),
                   Center(
-                    child: Container(
-                      width: 96,
-                      height: 96,
-                      decoration: BoxDecoration(
-                        color: statusBg,
-                        shape: BoxShape.circle,
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 300),
+                      transitionBuilder: (child, animation) => FadeTransition(
+                        opacity: animation,
+                        child: ScaleTransition(scale: animation, child: child),
                       ),
-                      child: Icon(
-                        pending
-                            ? Icons.hourglass_top
-                            : active
-                            ? Icons.verified
-                            : admitted
-                            ? Icons.login
-                            : Icons.cancel,
-                        size: 48,
-                        color: statusColor,
+                      child: Container(
+                        key: ValueKey(status),
+                        width: 96,
+                        height: 96,
+                        decoration: BoxDecoration(
+                          color: statusBg,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          pending
+                              ? Icons.hourglass_top
+                              : active
+                              ? Icons.verified
+                              : admitted
+                              ? Icons.login
+                              : Icons.cancel,
+                          size: 48,
+                          color: statusColor,
+                        ),
                       ),
                     ),
                   ),
                   const SizedBox(height: 18),
                   Center(
-                    child: _StatusPill(
-                      label: l.statusLabel(status),
-                      color: statusColor,
-                      ar: l.ar,
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 300),
+                      transitionBuilder: (child, animation) => FadeTransition(
+                        opacity: animation,
+                        child: ScaleTransition(scale: animation, child: child),
+                      ),
+                      child: _StatusPill(
+                        key: ValueKey(status),
+                        label: l.statusLabel(status),
+                        color: statusColor,
+                        ar: l.ar,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 14),
@@ -237,6 +253,7 @@ class _WalkInStatusScreenState extends ConsumerState<WalkInStatusScreen> {
 
 class _StatusPill extends StatelessWidget {
   const _StatusPill({
+    super.key,
     required this.label,
     required this.color,
     required this.ar,

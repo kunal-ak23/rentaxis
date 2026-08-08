@@ -1,2 +1,9 @@
 #include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"
 #include "Generated.xcconfig"
+
+// NOTE: unlike the renter/manager apps, do NOT re-allow arm64 for simulator
+// builds here. mobile_scanner's podspec excludes arm64-simulator (GoogleMLKit
+// ships no arm64-sim slice), so forcing the Runner target to arm64 makes the
+// scanner module unbuildable ("Module 'mobile_scanner' not found"). iOS
+// simulators on Apple Silicon cannot run this app; use an Android emulator
+// or a physical device.

@@ -5,8 +5,11 @@ import com.datagami.rentaxis.domain.entity.enums.InterestStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -18,7 +21,25 @@ public interface UnitListingInterestRepository extends JpaRepository<UnitListing
 
     Page<UnitListingInterest> findByListingIdAndStatus(UUID listingId, InterestStatus status, Pageable pageable);
 
+    long countByListingIdAndStatus(UUID listingId, InterestStatus status);
+
+    @Query("""
+            select interest.listingId as listingId, count(interest) as interestCount
+            from UnitListingInterest interest
+            where interest.listingId in :listingIds and interest.status = :status
+            group by interest.listingId
+            """)
+    List<ListingInterestCount> countByListingIdsAndStatus(
+            @Param("listingIds") Collection<UUID> listingIds,
+            @Param("status") InterestStatus status);
+
     Optional<UnitListingInterest> findByListingIdAndRenterUserId(UUID listingId, UUID renterUserId);
 
     List<UnitListingInterest> findByRenterUserIdAndStatus(UUID renterUserId, InterestStatus status);
+
+    interface ListingInterestCount {
+        UUID getListingId();
+
+        long getInterestCount();
+    }
 }

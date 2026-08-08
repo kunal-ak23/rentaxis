@@ -226,11 +226,14 @@ class _MeetingDetailScreenState extends ConsumerState<MeetingDetailScreen> {
                             color: Colors.white60,
                           ),
                           const SizedBox(width: 6),
-                          Text(
-                            l.withHost(meeting['hostName'] ?? '-'),
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 13,
+                          Expanded(
+                            child: Text(
+                              l.withHost(meeting['hostName'] ?? '-'),
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 13,
+                              ),
                             ),
                           ),
                         ],

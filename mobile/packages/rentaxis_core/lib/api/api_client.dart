@@ -8,23 +8,30 @@ class ApiClient {
   late final Dio dio;
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
 
-  // Base URL configurable per environment
-  static const String _defaultBaseUrl =
-      'https://rentaxis.uaenorth.cloudapp.azure.com/api';
+  // Base URL configurable per environment. Overridable at build time for
+  // local-stack testing: --dart-define=API_BASE_URL=http://localhost:8080/api
+  // (Android emulator: http://10.0.2.2:8080/api). Defaults to prod.
+  static const String _defaultBaseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'https://rentaxis.uaenorth.cloudapp.azure.com/api',
+  );
 
   ApiClient({String? baseUrl}) {
-    dio = Dio(BaseOptions(
-      baseUrl: baseUrl ?? _defaultBaseUrl,
-      connectTimeout: const Duration(seconds: 15),
-      receiveTimeout: const Duration(seconds: 15),
-      headers: {'Content-Type': 'application/json'},
-    ));
+    dio = Dio(
+      BaseOptions(
+        baseUrl: baseUrl ?? _defaultBaseUrl,
+        connectTimeout: const Duration(seconds: 15),
+        receiveTimeout: const Duration(seconds: 15),
+        headers: {'Content-Type': 'application/json'},
+      ),
+    );
 
     dio.interceptors.add(AuthInterceptor(_storage));
     dio.interceptors.add(TenantInterceptor());
     if (kDebugMode) {
-      dio.interceptors
-          .add(LogInterceptor(requestBody: true, responseBody: true));
+      dio.interceptors.add(
+        LogInterceptor(requestBody: true, responseBody: true),
+      );
     }
   }
 }

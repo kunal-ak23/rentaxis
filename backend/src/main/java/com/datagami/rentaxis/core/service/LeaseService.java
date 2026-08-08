@@ -450,6 +450,8 @@ public class LeaseService {
 
         Unit unit = lease.getUnit();
         unit.setStatus(UnitStatus.OCCUPIED);
+        unit.setCurrentTenantName(lease.getRenter().getNameEn());
+        unit.setActualRent(lease.getRentAmount() != null ? lease.getRentAmount() : BigDecimal.ZERO);
         unitRepository.save(unit);
 
         Lease savedLease = leaseRepository.save(lease);
@@ -479,6 +481,8 @@ public class LeaseService {
 
         Unit unit = lease.getUnit();
         unit.setStatus(UnitStatus.VACANT);
+        unit.setCurrentTenantName(null);
+        unit.setActualRent(BigDecimal.ZERO);
         unitRepository.save(unit);
 
         // Cancel pending payment schedules
@@ -576,6 +580,8 @@ public class LeaseService {
 
         Unit unit = lease.getUnit();
         unit.setStatus(UnitStatus.OCCUPIED);
+        unit.setCurrentTenantName(lease.getRenter().getNameEn());
+        unit.setActualRent(lease.getRentAmount() != null ? lease.getRentAmount() : BigDecimal.ZERO);
         unitRepository.save(unit);
 
         Lease savedLease = leaseRepository.save(lease);

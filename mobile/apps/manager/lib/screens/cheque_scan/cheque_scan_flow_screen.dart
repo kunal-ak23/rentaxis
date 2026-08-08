@@ -203,7 +203,30 @@ class _ChequeScanFlowScreenState extends ConsumerState<ChequeScanFlowScreen> {
     final m = context.miftah;
     return Scaffold(
       backgroundColor: m.background,
-      body: SafeArea(child: _buildBody()),
+      body: SafeArea(
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 280),
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeOutCubic,
+          transitionBuilder: (child, animation) {
+            final curved = CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeOutCubic,
+            );
+            return FadeTransition(
+              opacity: curved,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(0, 0.04),
+                  end: Offset.zero,
+                ).animate(curved),
+                child: child,
+              ),
+            );
+          },
+          child: KeyedSubtree(key: ValueKey(_step), child: _buildBody()),
+        ),
+      ),
     );
   }
 

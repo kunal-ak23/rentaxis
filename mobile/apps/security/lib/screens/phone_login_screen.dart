@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
 import '../auth/firebase_auth_errors.dart';
-import '../auth/phone_format.dart';
+import '../auth/phone_country.dart';
+import '../auth/phone_number_field.dart';
 import '../auth/phone_auth_service.dart';
 
 /// Phone entry for Firebase SMS authentication.
@@ -20,8 +20,8 @@ class PhoneLoginScreen extends ConsumerStatefulWidget {
 class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
   final _formKey = GlobalKey<FormState>();
 
-  late final TextEditingController _phoneController;
-  late final String _phoneExample;
+  final _phoneController = TextEditingController();
+  late PhoneCountry _country;
 
   bool _isSubmitting = false;
   String? _errorMessage;
@@ -29,11 +29,9 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
   @override
   void initState() {
     super.initState();
-    final prefix = defaultPhonePrefixForCountry(
+    _country = PhoneCountry.forLocale(
       WidgetsBinding.instance.platformDispatcher.locale.countryCode,
     );
-    _phoneController = TextEditingController(text: prefix);
-    _phoneExample = examplePhoneForPrefix(prefix);
   }
 
   @override
@@ -48,7 +46,7 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
     // stored on the guard record.
     if (!_formKey.currentState!.validate()) return;
 
-    final phone = normalizePhone(_phoneController.text);
+    final phone = _country.toE164(stripTrunkPrefix(_phoneController.text));
 
     setState(() {
       _isSubmitting = true;
@@ -162,47 +160,16 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
                     ),
                     const SizedBox(height: 34),
 
-                    // Phone field, underline style.
-                    Text(
-                      l.ar ? l.phoneNumber : l.phoneNumber.toUpperCase(),
-                      style: l.ar
-                          ? GoogleFonts.notoNaskhArabic(
-                              fontSize: 12,
-                              color: Colors.white.withValues(alpha: 0.4),
-                            )
-                          : GoogleFonts.josefinSans(
-                              fontSize: 9,
-                              letterSpacing: 2.0,
-                              color: Colors.white.withValues(alpha: 0.4),
-                            ),
-                    ),
-                    TextFormField(
-                      key: const Key('phoneField'),
+                    // Phone entry: country picker + national digits.
+                    PhoneNumberField(
                       controller: _phoneController,
-                      keyboardType: TextInputType.phone,
+                      country: _country,
+                      onCountryChanged: (c) => setState(() => _country = c),
+                      ar: l.ar,
+                      dark: true,
+                      label: l.phoneNumber,
                       textInputAction: TextInputAction.done,
-                      autofillHints: const [AutofillHints.telephoneNumber],
-                      inputFormatters: [
-                        // '+', digits, spaces and hyphens only — the same
-                        // alphabet our E.164 normalizer accepts.
-                        FilteringTextInputFormatter.allow(RegExp(r'[\d\s+-]')),
-                      ],
-                      style: GoogleFonts.josefinSans(
-                        fontSize: 14.5,
-                        color: Colors.white,
-                      ),
-                      decoration: _underlineDecoration(l),
-                      onFieldSubmitted: (_) => _requestCode(),
-                      validator: (value) {
-                        final normalized = normalizePhone(value ?? '');
-                        if (normalized.isEmpty) {
-                          return l.phoneRequired;
-                        }
-                        if (!isValidE164(normalized)) {
-                          return l.phoneInvalid(_phoneExample);
-                        }
-                        return null;
-                      },
+                      onSubmitted: (_) => _requestCode(),
                     ),
                     if (_errorMessage != null) ...[
                       const SizedBox(height: 16),
@@ -294,32 +261,6 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
           ),
         ),
       ),
-    );
-  }
-
-  InputDecoration _underlineDecoration(_L l) {
-    return InputDecoration(
-      isDense: true,
-      filled: false,
-      contentPadding: const EdgeInsets.symmetric(vertical: 9),
-      border: UnderlineInputBorder(
-        borderSide: BorderSide(color: AppColors.accent.withValues(alpha: 0.3)),
-      ),
-      enabledBorder: UnderlineInputBorder(
-        borderSide: BorderSide(color: AppColors.accent.withValues(alpha: 0.3)),
-      ),
-      focusedBorder: const UnderlineInputBorder(
-        borderSide: BorderSide(color: AppColors.accent, width: 1.5),
-      ),
-      errorBorder: UnderlineInputBorder(
-        borderSide: BorderSide(color: AppColorsDark.danger),
-      ),
-      focusedErrorBorder: UnderlineInputBorder(
-        borderSide: BorderSide(color: AppColorsDark.danger, width: 1.5),
-      ),
-      errorStyle: (l.ar
-          ? GoogleFonts.notoNaskhArabic
-          : GoogleFonts.josefinSans)(color: AppColorsDark.danger, fontSize: 12),
     );
   }
 }

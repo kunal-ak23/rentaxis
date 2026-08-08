@@ -1,5 +1,5 @@
 name: renter
-description: "Miftah Renter App"
+description: "Miftah Resident App"
 publish_to: 'none'
 version: 1.1.0+2
 
@@ -22,10 +22,7 @@ dependencies:
   image_picker: ^1.1.2
   file_picker: ^8.1.6
   permission_handler: ^11.3.1
-  open_filex: ^4.5.0
   intl: ^0.20.2
-  path_provider: ^2.1.5
-  razorpay_flutter: ^1.3.7
   google_fonts: ^6.2.1
   url_launcher: ^6.3.1
   google_maps_flutter: ^2.9.0

@@ -266,52 +266,52 @@ class MiftahGradients {
 
 class AppShadows {
   static List<BoxShadow> get soft => [
-        BoxShadow(
-          color: Colors.black.withValues(alpha: 0.04),
-          blurRadius: 12,
-          offset: const Offset(0, 4),
-        ),
-        BoxShadow(
-          color: Colors.black.withValues(alpha: 0.02),
-          blurRadius: 4,
-          offset: const Offset(0, 2),
-        ),
-      ];
+    BoxShadow(
+      color: Colors.black.withValues(alpha: 0.04),
+      blurRadius: 12,
+      offset: const Offset(0, 4),
+    ),
+    BoxShadow(
+      color: Colors.black.withValues(alpha: 0.02),
+      blurRadius: 4,
+      offset: const Offset(0, 2),
+    ),
+  ];
 
   static List<BoxShadow> get medium => [
-        BoxShadow(
-          color: Colors.black.withValues(alpha: 0.06),
-          blurRadius: 20,
-          offset: const Offset(0, 8),
-        ),
-        BoxShadow(
-          color: Colors.black.withValues(alpha: 0.03),
-          blurRadius: 6,
-          offset: const Offset(0, 3),
-        ),
-      ];
+    BoxShadow(
+      color: Colors.black.withValues(alpha: 0.06),
+      blurRadius: 20,
+      offset: const Offset(0, 8),
+    ),
+    BoxShadow(
+      color: Colors.black.withValues(alpha: 0.03),
+      blurRadius: 6,
+      offset: const Offset(0, 3),
+    ),
+  ];
 
   static List<BoxShadow> get elevated => [
-        BoxShadow(
-          color: Colors.black.withValues(alpha: 0.08),
-          blurRadius: 32,
-          offset: const Offset(0, 12),
-        ),
-        BoxShadow(
-          color: Colors.black.withValues(alpha: 0.04),
-          blurRadius: 8,
-          offset: const Offset(0, 4),
-        ),
-      ];
+    BoxShadow(
+      color: Colors.black.withValues(alpha: 0.08),
+      blurRadius: 32,
+      offset: const Offset(0, 12),
+    ),
+    BoxShadow(
+      color: Colors.black.withValues(alpha: 0.04),
+      blurRadius: 8,
+      offset: const Offset(0, 4),
+    ),
+  ];
 
   /// Deep shadow under the hero payment card.
   static List<BoxShadow> get hero => [
-        BoxShadow(
-          color: const Color(0xFF111111).withValues(alpha: 0.24),
-          blurRadius: 36,
-          offset: const Offset(0, 18),
-        ),
-      ];
+    BoxShadow(
+      color: const Color(0xFF111111).withValues(alpha: 0.24),
+      blurRadius: 36,
+      offset: const Offset(0, 18),
+    ),
+  ];
 }
 
 /// Miftah type helpers: Cinzel for display (Trajan-style, tracks wide,
@@ -323,14 +323,13 @@ class MiftahType {
     Color? color,
     double letterSpacing = 0.8,
     double? height,
-  }) =>
-      GoogleFonts.cinzel(
-        fontSize: fontSize,
-        fontWeight: fontWeight,
-        color: color,
-        letterSpacing: letterSpacing,
-        height: height,
-      );
+  }) => GoogleFonts.cinzel(
+    fontSize: fontSize,
+    fontWeight: fontWeight,
+    color: color,
+    letterSpacing: letterSpacing,
+    height: height,
+  );
 
   /// Wide-tracked uppercase label (section headers, overlines).
   static TextStyle overline({
@@ -338,13 +337,12 @@ class MiftahType {
     Color? color,
     double letterSpacing = 2.0,
     FontWeight fontWeight = FontWeight.w500,
-  }) =>
-      GoogleFonts.josefinSans(
-        fontSize: fontSize,
-        fontWeight: fontWeight,
-        color: color,
-        letterSpacing: letterSpacing,
-      );
+  }) => GoogleFonts.josefinSans(
+    fontSize: fontSize,
+    fontWeight: fontWeight,
+    color: color,
+    letterSpacing: letterSpacing,
+  );
 }
 
 class AppTheme {
@@ -522,9 +520,7 @@ class AppTheme {
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: isDark ? AppColors.accent : AppColors.primary,
-          side: BorderSide(
-            color: isDark ? c.goldOutline : AppColors.primary,
-          ),
+          side: BorderSide(color: isDark ? c.goldOutline : AppColors.primary),
           padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(10),
@@ -535,6 +531,15 @@ class AppTheme {
             letterSpacing: 2.0,
           ),
         ),
+      ),
+      // Without this the caret falls back to ColorScheme.primary, which in
+      // light mode is the near-black brand colour — invisible on the dark
+      // chrome the login screens paint regardless of theme mode. Gold reads on
+      // both backgrounds, so both modes use it.
+      textSelectionTheme: TextSelectionThemeData(
+        cursorColor: AppColors.accent,
+        selectionHandleColor: AppColors.accent,
+        selectionColor: AppColors.accent.withValues(alpha: 0.32),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
@@ -558,12 +563,11 @@ class AppTheme {
           borderRadius: BorderRadius.circular(10),
           borderSide: BorderSide(color: c.danger),
         ),
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-        hintStyle: GoogleFonts.josefinSans(
-          color: c.textMuted,
-          fontSize: 14,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 18,
+          vertical: 16,
         ),
+        hintStyle: GoogleFonts.josefinSans(color: c.textMuted, fontSize: 14),
         labelStyle: GoogleFonts.josefinSans(
           color: c.textSecondary,
           fontSize: 14,
@@ -581,10 +585,7 @@ class AppTheme {
       ),
       chipTheme: ChipThemeData(
         backgroundColor: c.background,
-        labelStyle: GoogleFonts.josefinSans(
-          fontSize: 12,
-          color: c.textPrimary,
-        ),
+        labelStyle: GoogleFonts.josefinSans(fontSize: 12, color: c.textPrimary),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
           side: BorderSide(color: c.border),

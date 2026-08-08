@@ -15,12 +15,23 @@ class ShellScreen extends ConsumerStatefulWidget {
 }
 
 class _ShellScreenState extends ConsumerState<ShellScreen> {
+  late final NotificationNotifier _notificationNotifier;
+
   @override
   void initState() {
     super.initState();
+    _notificationNotifier = ref.read(notificationProvider.notifier);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(notificationProvider.notifier).startPolling();
+      if (mounted) {
+        _notificationNotifier.startPolling();
+      }
     });
+  }
+
+  @override
+  void dispose() {
+    _notificationNotifier.stopPolling();
+    super.dispose();
   }
 
   @override
@@ -156,45 +167,62 @@ class _FrostedBottomNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final labels = context.isAr ? _labelsAr : _labelsEn;
-    return SafeArea(
-      top: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-            child: Container(
-              height: 68,
-              decoration: BoxDecoration(
-                color: AppColors.navyDark.withValues(alpha: 0.9),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: AppColors.accent.withValues(alpha: 0.18),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.22),
-                    blurRadius: 24,
-                    offset: const Offset(0, 8),
+    // Scrim behind the floating pill: content scrolling beneath it fades into
+    // the page background instead of hard-clipping in the gap below the pill.
+    final scrimColor = Theme.of(context).scaffoldBackgroundColor;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            scrimColor.withValues(alpha: 0),
+            scrimColor.withValues(alpha: 0.85),
+            scrimColor,
+          ],
+          stops: const [0, 0.45, 1],
+        ),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 6, 14, 8),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+              child: Container(
+                height: 68,
+                decoration: BoxDecoration(
+                  color: AppColors.navyDark.withValues(alpha: 0.9),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: AppColors.accent.withValues(alpha: 0.18),
                   ),
-                ],
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: List.generate(_icons.length, (index) {
-                  final item = _icons[index];
-                  final isSelected = index == selectedIndex;
-                  return Flexible(
-                    child: _NavItemWidget(
-                      icon: item.icon,
-                      activeIcon: item.activeIcon,
-                      label: labels[index],
-                      isSelected: isSelected,
-                      onTap: () => onTap(index),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.22),
+                      blurRadius: 24,
+                      offset: const Offset(0, 8),
                     ),
-                  );
-                }),
+                  ],
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: List.generate(_icons.length, (index) {
+                    final item = _icons[index];
+                    final isSelected = index == selectedIndex;
+                    return Flexible(
+                      child: _NavItemWidget(
+                        icon: item.icon,
+                        activeIcon: item.activeIcon,
+                        label: labels[index],
+                        isSelected: isSelected,
+                        onTap: () => onTap(index),
+                      ),
+                    );
+                  }),
+                ),
               ),
             ),
           ),

@@ -68,14 +68,14 @@ Color gatePassStatusColor(String? status) {
 ///
 /// `PENDING_APPROVAL` becomes "Awaiting approval": the raw enum reads as though
 /// the *renter* owes an action, when in fact they are waiting on the manager.
-String gatePassStatusLabel(String? status) {
+String gatePassStatusLabel(String? status, {bool ar = false}) {
   return switch (status) {
-    'ACTIVE' => 'Active',
-    'PENDING_APPROVAL' => 'Awaiting approval',
-    'USED' => 'Used',
-    'EXPIRED' => 'Expired',
-    'CANCELLED' => 'Cancelled',
-    null => 'Unknown',
+    'ACTIVE' => ar ? 'نشطة' : 'Active',
+    'PENDING_APPROVAL' => ar ? 'بانتظار الموافقة' : 'Awaiting approval',
+    'USED' => ar ? 'مستخدمة' : 'Used',
+    'EXPIRED' => ar ? 'منتهية' : 'Expired',
+    'CANCELLED' => ar ? 'ملغاة' : 'Cancelled',
+    null => ar ? 'غير معروف' : 'Unknown',
     _ => status,
   };
 }
@@ -94,16 +94,29 @@ bool canCancel(String? status) =>
 /// Collapses to a date plus bare times when the window opens and closes on the
 /// same local day (the common single-visit case), and carries both dates
 /// otherwise so a multi-day recurring pass cannot be misread as ending tonight.
-String formatWindow(DateTime? from, DateTime? to) {
-  if (from == null && to == null) return 'No time limit';
-  if (from == null) return 'Until ${_dayTimeFormat.format(to!)}';
-  if (to == null) return 'From ${_dayTimeFormat.format(from)}';
+String formatWindow(DateTime? from, DateTime? to, {bool ar = false}) {
+  if (from == null && to == null) {
+    return ar ? 'بلا حد زمني' : 'No time limit';
+  }
+  if (from == null) {
+    return ar
+        ? 'حتى ${_dayTimeFormat.format(to!)}'
+        : 'Until ${_dayTimeFormat.format(to!)}';
+  }
+  if (to == null) {
+    return ar
+        ? 'من ${_dayTimeFormat.format(from)}'
+        : 'From ${_dayTimeFormat.format(from)}';
+  }
 
   final sameDay =
       from.year == to.year && from.month == to.month && from.day == to.day;
   if (sameDay) {
-    return '${_dayFormat.format(from)}, '
-        '${_timeFormat.format(from)} – ${_timeFormat.format(to)}';
+    return ar
+        ? '${_dayFormat.format(from)}، '
+              '${_timeFormat.format(from)} – ${_timeFormat.format(to)}'
+        : '${_dayFormat.format(from)}, '
+              '${_timeFormat.format(from)} – ${_timeFormat.format(to)}';
   }
   return '${_dayTimeFormat.format(from)} – ${_dayTimeFormat.format(to)}';
 }
@@ -124,28 +137,44 @@ String buildShareText({
   required Map<String, dynamic> pass,
   String? propertyName,
   String? unitIdentifier,
+  bool ar = false,
 }) {
   final lines = <String>[];
   final guest = passString(pass, 'guestName');
-  lines.add(guest == null
-      ? 'You have a gate pass.'
-      : 'Hi $guest, here is your gate pass.');
+  lines.add(
+    guest == null
+        ? (ar ? 'لديك تصريح دخول.' : 'You have a gate pass.')
+        : (ar
+              ? 'مرحباً $guest، إليك تصريح الدخول الخاص بك.'
+              : 'Hi $guest, here is your gate pass.'),
+  );
 
-  final place = [propertyName, unitIdentifier == null ? null : 'Unit $unitIdentifier']
-      .whereType<String>()
-      .join(' · ');
-  if (place.isNotEmpty) lines.add('Where: $place');
+  final place = [
+    propertyName,
+    unitIdentifier == null
+        ? null
+        : (ar ? 'وحدة $unitIdentifier' : 'Unit $unitIdentifier'),
+  ].whereType<String>().join(' · ');
+  if (place.isNotEmpty) lines.add(ar ? 'المكان: $place' : 'Where: $place');
 
-  lines.add('When: ${formatWindow(
-    passInstant(pass, 'validFrom'),
-    passInstant(pass, 'validTo'),
-  )}');
+  lines.add(
+    ar
+        ? 'الوقت: ${formatWindow(passInstant(pass, 'validFrom'), passInstant(pass, 'validTo'), ar: true)}'
+        : 'When: ${formatWindow(passInstant(pass, 'validFrom'), passInstant(pass, 'validTo'))}',
+  );
 
   final code = passString(pass, 'numericCode');
-  if (code != null) lines.add('Entry code: $code');
+  if (code != null) {
+    lines.add(ar ? 'رمز الدخول: $code' : 'Entry code: $code');
+  }
 
-  lines.add('Show the QR code in your pass at the gate, or give the guard the '
-      'entry code above.');
+  lines.add(
+    ar
+        ? 'أظهر رمز QR الموجود في التصريح عند البوابة، أو أعطِ الحارس رمز '
+              'الدخول أعلاه.'
+        : 'Show the QR code in your pass at the gate, or give the guard the '
+              'entry code above.',
+  );
 
   return lines.join('\n');
 }

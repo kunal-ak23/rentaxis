@@ -251,7 +251,9 @@ class _ListingEditScreenState extends ConsumerState<ListingEditScreen>
     _existingMedia = (l['media'] as List? ?? []).cast<Map<String, dynamic>>();
     final amenities = (l['amenities'] as List? ?? [])
         .cast<Map<String, dynamic>>();
-    _amenities.addAll(amenities.map((a) => a['amenity'] as String));
+    _amenities.addAll(
+      amenities.map((a) => a['amenity'] as String?).whereType<String>(),
+    );
   }
 
   @override
@@ -414,15 +416,15 @@ class _ListingEditScreenState extends ConsumerState<ListingEditScreen>
       if (_parkingSpaces != null) 'parkingSpaces': _parkingSpaces,
       if (_furnishing != null) 'furnishing': _furnishing,
       if (_viewType != null) 'viewType': _viewType,
-      if (annualRent != null) 'annualRent': annualRent,
-      if (deposit != null) 'securityDeposit': deposit,
+      'annualRent': ?annualRent,
+      'securityDeposit': ?deposit,
       if (_minLeaseMonths != null) 'minLeaseMonths': _minLeaseMonths,
       if (_cheques != null) 'chequesAccepted': _cheques,
       'dewaIncluded': _dewaIncluded,
       'chillerIncluded': _chillerIncluded,
       if (_availableFrom != null) 'availableFrom': _availableFrom,
-      if (_lat != null) 'lat': _lat,
-      if (_lng != null) 'lng': _lng,
+      'lat': ?_lat,
+      'lng': ?_lng,
       if (_seoTitleCtrl.text.isNotEmpty) 'seoTitle': _seoTitleCtrl.text.trim(),
       if (_seoDescCtrl.text.isNotEmpty)
         'seoDescription': _seoDescCtrl.text.trim(),
@@ -436,19 +438,26 @@ class _ListingEditScreenState extends ConsumerState<ListingEditScreen>
 
   Future<void> _flushPendingUploads() async {
     if (_listingId == null || _pendingUploads.isEmpty) return;
+    setState(() => _uploadingMedia = true);
     final service = ref.read(listingApiServiceProvider);
-    for (final file in List.of(_pendingUploads)) {
-      final bytes = await file.readAsBytes();
-      final name = file.path.split('/').last;
-      await service.uploadMedia(
-        _listingId!,
-        bytes,
-        name,
-        isCover: _existingMedia.isEmpty && _pendingUploads.first == file,
-      );
-      _pendingUploads.remove(file);
+    try {
+      for (final file in List.of(_pendingUploads)) {
+        final bytes = await file.readAsBytes();
+        final name = file.path.split('/').last;
+        await service.uploadMedia(
+          _listingId!,
+          bytes,
+          name,
+          isCover: _existingMedia.isEmpty && _pendingUploads.first == file,
+        );
+        _pendingUploads.remove(file);
+      }
+      ref.invalidate(_listingDetailProvider(widget.listingId));
+    } finally {
+      if (mounted) {
+        setState(() => _uploadingMedia = false);
+      }
     }
-    ref.invalidate(_listingDetailProvider(widget.listingId));
   }
 }
 
@@ -1097,6 +1106,10 @@ class _MediaTabState extends State<_MediaTab> {
           // Existing server media
           if (s._existingMedia.isNotEmpty)
             GridView.builder(
+              // Nested in a scroll view: without this the sliver auto-pads
+              // with MediaQuery.padding, which under extendBody carries the
+              // floating nav height and opens a gap below the content.
+              padding: EdgeInsets.zero,
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -1118,7 +1131,7 @@ class _MediaTabState extends State<_MediaTab> {
                       child: Image.network(
                         url,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) =>
+                        errorBuilder: (_, _, _) =>
                             Container(color: m.surfaceAlt),
                       ),
                     ),
@@ -1180,6 +1193,10 @@ class _MediaTabState extends State<_MediaTab> {
             _SectionLabel(l.pendingUpload(s._pendingUploads.length)),
             const SizedBox(height: 8),
             GridView.builder(
+              // Nested in a scroll view: without this the sliver auto-pads
+              // with MediaQuery.padding, which under extendBody carries the
+              // floating nav height and opens a gap below the content.
+              padding: EdgeInsets.zero,
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -1529,7 +1546,7 @@ class _SwitchRow extends StatelessWidget {
           Switch.adaptive(
             value: value,
             onChanged: onChanged,
-            activeColor: AppColors.accent,
+            activeThumbColor: AppColors.accent,
             activeTrackColor: AppColors.accent.withValues(alpha: 0.35),
           ),
         ],

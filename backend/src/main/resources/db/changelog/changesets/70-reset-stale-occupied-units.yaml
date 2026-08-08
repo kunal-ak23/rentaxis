@@ -1,0 +1,25 @@
+databaseChangeLog:
+  - changeSet:
+      id: 70-reset-stale-occupied-units
+      author: rentaxis
+      comment: >-
+        Follow-up to 68-backfill-unit-lease-metrics. That changeset cleared
+        actual_rent/current_tenant_name for units without an ACTIVE lease but
+        deliberately left status untouched so MAINTENANCE units were preserved.
+        Side effect: units stale-marked OCCUPIED with no active lease kept that
+        status, skewing occupancy metrics and blocking new leases (LeaseService
+        requires VACANT). Reset only those rows; MAINTENANCE and VACANT are
+        untouched, matching lease termination/expiration behavior.
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              UPDATE units u
+              SET status = 'VACANT'
+              WHERE u.status = 'OCCUPIED'
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM leases l
+                  WHERE l.unit_id = u.id
+                    AND l.status = 'ACTIVE'
+                );

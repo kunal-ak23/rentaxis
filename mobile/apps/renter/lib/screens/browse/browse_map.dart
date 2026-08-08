@@ -51,10 +51,11 @@ class _BrowseMapState extends ConsumerState<BrowseMap> {
     for (final listing in widget.listings) {
       final lat = listing['lat'] as num?;
       final lng = listing['lng'] as num?;
-      if (lat == null || lng == null) continue;
+      final id = listing['id']?.toString();
+      if (lat == null || lng == null || id == null) continue;
       markers.add(
         Marker(
-          markerId: MarkerId(listing['id'] as String),
+          markerId: MarkerId(id),
           position: LatLng(lat.toDouble(), lng.toDouble()),
           onTap: () {
             setState(() => _selectedListing = listing);
@@ -142,6 +143,8 @@ class _PeekCard extends StatelessWidget {
                       width: 90,
                       height: 90,
                       fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) =>
+                          Container(width: 90, height: 90, color: m.background),
                     )
                   : Container(width: 90, height: 90, color: m.background),
             ),

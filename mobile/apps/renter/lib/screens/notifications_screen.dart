@@ -134,6 +134,10 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
     final l = _L(context.isAr);
     final accentColor = m.isDark ? AppColors.accent : AppColors.primary;
     if (notifications.isEmpty) {
+      // A failed fetch must not masquerade as "all caught up".
+      if (ref.read(notificationProvider).hasError) {
+        return ErrorState(message: l.loadFailed, onRetry: _refresh);
+      }
       return EmptyState(
         icon: Icons.notifications_none,
         title: l.noNotifications,
@@ -156,7 +160,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
         child: ListView.separated(
           padding: const EdgeInsets.symmetric(vertical: 8),
           itemCount: notifications.length + (_isLoadingMore ? 1 : 0),
-          separatorBuilder: (_, __) => const Divider(height: 1, indent: 72),
+          separatorBuilder: (_, _) => const Divider(height: 1, indent: 72),
           itemBuilder: (context, index) {
             if (index >= notifications.length) {
               return Center(
@@ -171,66 +175,69 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
             final isRead = notification['isRead'] == true;
             final type = notification['type'] ?? '';
 
-            return ListTile(
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 4,
-              ),
-              leading: _notificationIcon(type, isRead),
-              title: Text(
-                notification['title'] ?? l.notification,
-                style: TextStyle(
-                  fontWeight: isRead ? FontWeight.w400 : FontWeight.w600,
-                  fontSize: 14,
-                  color: m.textPrimary,
+            return AnimatedListItem(
+              index: index,
+              child: ListTile(
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 4,
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              subtitle: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (notification['message'] != null) ...[
-                    const SizedBox(height: 2),
+                leading: _notificationIcon(type, isRead),
+                title: Text(
+                  notification['title'] ?? l.notification,
+                  style: TextStyle(
+                    fontWeight: isRead ? FontWeight.w400 : FontWeight.w600,
+                    fontSize: 14,
+                    color: m.textPrimary,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (notification['message'] != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        notification['message'],
+                        style: Theme.of(context).textTheme.bodySmall,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                    const SizedBox(height: 4),
                     Text(
-                      notification['message'],
-                      style: Theme.of(context).textTheme.bodySmall,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                      Formatters.timeAgo(
+                        notification['createdAt'],
+                        ar: context.isAr,
+                      ),
+                      style: Theme.of(context).textTheme.labelSmall,
                     ),
                   ],
-                  const SizedBox(height: 4),
-                  Text(
-                    Formatters.timeAgo(
-                      notification['createdAt'],
-                      ar: context.isAr,
-                    ),
-                    style: Theme.of(context).textTheme.labelSmall,
-                  ),
-                ],
+                ),
+                trailing: !isRead
+                    ? Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: accentColor,
+                          shape: BoxShape.circle,
+                        ),
+                      )
+                    : null,
+                tileColor: isRead ? null : accentColor.withValues(alpha: 0.05),
+                onTap: () {
+                  if (!isRead && notification['id'] != null) {
+                    ref
+                        .read(notificationProvider.notifier)
+                        .markAsRead(notification['id']);
+                  }
+                  // Deep-link: PENALTY_INCURRED → penalties screen.
+                  if (type.toUpperCase() == 'PENALTY_INCURRED') {
+                    context.push('/penalties');
+                  }
+                },
               ),
-              trailing: !isRead
-                  ? Container(
-                      width: 8,
-                      height: 8,
-                      decoration: BoxDecoration(
-                        color: accentColor,
-                        shape: BoxShape.circle,
-                      ),
-                    )
-                  : null,
-              tileColor: isRead ? null : accentColor.withValues(alpha: 0.05),
-              onTap: () {
-                if (!isRead && notification['id'] != null) {
-                  ref
-                      .read(notificationProvider.notifier)
-                      .markAsRead(notification['id']);
-                }
-                // Deep-link: PENALTY_INCURRED → penalties screen.
-                if (type.toUpperCase() == 'PENALTY_INCURRED') {
-                  context.push('/penalties');
-                }
-              },
             );
           },
         ),
@@ -290,4 +297,6 @@ class _L {
   String get allCaughtUp =>
       ar ? 'أنت على اطلاع بكل شيء!' : 'You\'re all caught up!';
   String get notification => ar ? 'إشعار' : 'Notification';
+  String get loadFailed =>
+      ar ? 'تعذر تحميل الإشعارات' : 'Failed to load notifications';
 }

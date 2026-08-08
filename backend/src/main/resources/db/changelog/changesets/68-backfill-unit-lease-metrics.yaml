@@ -1,3 +1,8 @@
+# NOTE: The second UPDATE intentionally does not touch units.status so that
+# MAINTENANCE units are preserved — but that also left units stale-marked
+# OCCUPIED (with no ACTIVE lease) unchanged. Those rows are corrected by
+# 70-reset-stale-occupied-units.yaml. YAML '#' comments are not part of the
+# Liquibase checksum, so this annotation is safe on a deployed changeset.
 databaseChangeLog:
   - changeSet:
       id: 68-backfill-unit-lease-metrics

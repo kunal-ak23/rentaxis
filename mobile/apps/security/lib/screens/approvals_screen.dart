@@ -75,7 +75,10 @@ class ApprovalsView extends ConsumerWidget {
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 96),
             itemCount: passes.length,
-            itemBuilder: (context, index) => _ApprovalCard(pass: passes[index]),
+            itemBuilder: (context, index) => AnimatedListItem(
+              index: index,
+              child: _ApprovalCard(pass: passes[index]),
+            ),
           );
         },
       ),
@@ -233,26 +236,30 @@ class _ApprovalCardState extends ConsumerState<_ApprovalCard> {
                     ),
                     const SizedBox(width: 10),
                     Expanded(
-                      child: _deciding
-                          ? const SizedBox(
-                              height: 46,
-                              child: Center(
-                                child: SizedBox(
-                                  height: 18,
-                                  width: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: AppColors.accent,
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 200),
+                        child: _deciding
+                            ? const SizedBox(
+                                key: ValueKey('deciding'),
+                                height: 46,
+                                child: Center(
+                                  child: SizedBox(
+                                    height: 18,
+                                    width: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: AppColors.accent,
+                                    ),
                                   ),
                                 ),
+                              )
+                            : GoldButton(
+                                key: Key('approve-$id'),
+                                label: l.approve,
+                                onPressed: () => _decide(true),
+                                height: 46,
                               ),
-                            )
-                          : GoldButton(
-                              key: Key('approve-$id'),
-                              label: l.approve,
-                              onPressed: () => _decide(true),
-                              height: 46,
-                            ),
+                      ),
                     ),
                   ],
                 ),

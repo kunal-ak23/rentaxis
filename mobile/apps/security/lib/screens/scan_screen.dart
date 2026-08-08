@@ -705,8 +705,8 @@ class _L {
       ar ? 'الكاميرا غير متاحة' : 'Camera unavailable';
   String get cameraDeniedDetail => ar
       ? 'يحتاج تطبيق حراسة مفتاح إلى الكاميرا لقراءة التصاريح.\n\nافتح الإعدادات › التطبيقات › حراسة مفتاح › الأذونات وفعّل الكاميرا، ثم اضغط على إعادة المحاولة.'
-      : 'Miftah Guard needs the camera to read passes.\n\n'
-            'Open Settings › Apps › Miftah Guard › Permissions and allow '
+      : 'Miftah Security needs the camera to read passes.\n\n'
+            'Open Settings › Apps › Miftah Security › Permissions and allow '
             'Camera, then tap Try again.';
   String get cameraUnsupported => ar
       ? 'لا يمكن لهذا الجهاز مسح رموز QR. استخدم إدخال الرمز أدناه.'

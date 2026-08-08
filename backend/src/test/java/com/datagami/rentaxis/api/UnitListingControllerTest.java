@@ -1,15 +1,19 @@
 package com.datagami.rentaxis.api;
 
 import com.datagami.rentaxis.api.dto.UnitListingCreateRequest;
+import com.datagami.rentaxis.api.dto.UnitListingSummaryDTO;
 import com.datagami.rentaxis.api.dto.UnitListingUpdateRequest;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.service.TenantFeatureService;
 import com.datagami.rentaxis.core.service.UnitListingService;
 import com.datagami.rentaxis.domain.entity.enums.TenantFeature;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
+import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.UnitListing;
 import com.datagami.rentaxis.domain.entity.enums.ListingStatus;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
+import com.datagami.rentaxis.domain.repository.UnitRepository;
+import com.datagami.rentaxis.domain.repository.UserPropertyAssignmentRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -28,6 +32,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -51,6 +56,12 @@ class UnitListingControllerTest {
     @Mock
     LandlordOrgRepository landlordOrgRepository;
 
+    @Mock
+    UnitRepository unitRepository;
+
+    @Mock
+    UserPropertyAssignmentRepository assignmentRepository;
+
     @InjectMocks
     UnitListingController controller;
 
@@ -61,6 +72,7 @@ class UnitListingControllerTest {
         TenantContextHolder.setTenantId(tenantId);
         lenient().when(tenantFeatureService.isEnabled(any(), eq(TenantFeature.LISTINGS))).thenReturn(true);
         lenient().when(landlordOrgRepository.findById(any(UUID.class))).thenReturn(Optional.empty());
+        lenient().when(service.getSummaryData(any())).thenReturn(Map.of());
         // Auth context for endpoints that check authorities (e.g. checkPropertyManagerAccess)
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(
@@ -96,6 +108,27 @@ class UnitListingControllerTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
+    }
+
+    @Test
+    void list_populatesPropertyCoverAndActiveInterestCount() {
+        UUID id = UUID.randomUUID();
+        UnitListing listing = sampleListing(id);
+
+        when(service.list(eq(tenantId), any(), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(listing)));
+        when(service.getSummaryData(List.of(listing))).thenReturn(Map.of(
+                id,
+                new UnitListingService.ListingSummaryData(
+                        "Marina Heights", "https://cdn/cover.jpg", 3L)));
+
+        ResponseEntity<Page<UnitListingSummaryDTO>> response = controller.list(
+                null, null, null, org.springframework.data.domain.PageRequest.of(0, 20));
+        UnitListingSummaryDTO summary = response.getBody().getContent().getFirst();
+
+        assertThat(summary.propertyName()).isEqualTo("Marina Heights");
+        assertThat(summary.coverPhotoUrl()).isEqualTo("https://cdn/cover.jpg");
+        assertThat(summary.interestsCount()).isEqualTo(3L);
     }
 
     @Test

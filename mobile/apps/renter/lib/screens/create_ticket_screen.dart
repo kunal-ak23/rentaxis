@@ -315,7 +315,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                     if (leases.isEmpty) return const SizedBox.shrink();
 
                     return DropdownButtonFormField<String>(
-                      value: _selectedLeaseId,
+                      initialValue: _selectedLeaseId,
                       decoration: InputDecoration(
                         labelText: l.propertyUnit,
                         prefixIcon: const Icon(Icons.apartment, size: 20),
@@ -352,7 +352,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                     );
                   },
                   loading: () => const LinearProgressIndicator(),
-                  error: (_, __) => const SizedBox.shrink(),
+                  error: (_, _) => const SizedBox.shrink(),
                 ),
                 const SizedBox(height: 16),
 
@@ -382,6 +382,10 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                 ),
                 const SizedBox(height: 8),
                 GridView.builder(
+                  // Nested in a scroll view: without this the sliver auto-pads
+                  // with MediaQuery.padding, which under extendBody carries the
+                  // floating nav height and opens a gap below the content.
+                  padding: EdgeInsets.zero,
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
                   gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(

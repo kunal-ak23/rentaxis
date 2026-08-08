@@ -157,6 +157,10 @@ class _PropertyDetailScreenState extends ConsumerState<PropertyDetailScreen> {
                       )
                     else
                       GridView.count(
+                        // Nested in a scroll view: without this the sliver auto-pads
+                        // with MediaQuery.padding, which under extendBody carries the
+                        // floating nav height and opens a gap below the content.
+                        padding: EdgeInsets.zero,
                         crossAxisCount: 4,
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
@@ -403,7 +407,7 @@ class _PropertyDetailScreenState extends ConsumerState<PropertyDetailScreen> {
                   ),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
-                    value: unitType,
+                    initialValue: unitType,
                     decoration: InputDecoration(
                       labelText: l.type,
                       prefixIcon: const Icon(Icons.category_outlined),
