@@ -564,11 +564,16 @@ export default function MvpHero() {
                         <div>
                             <h4 className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-4">Legal</h4>
                             <ul className="space-y-2.5">
-                                {["Privacy Policy", "Terms of Service", "Cookie Policy"].map((item) => (
-                                    <li key={item}>
-                                        <a href="#" className="text-xs text-gray-500 hover:text-primary font-medium transition-colors cursor-pointer">{item}</a>
-                                    </li>
-                                ))}
+                                <li>
+                                    <Link href="/privacy" className="text-xs text-gray-500 hover:text-primary font-medium transition-colors cursor-pointer">
+                                        Privacy Policy
+                                    </Link>
+                                </li>
+                                <li>
+                                    <Link href="/terms" className="text-xs text-gray-500 hover:text-primary font-medium transition-colors cursor-pointer">
+                                        Terms of Service
+                                    </Link>
+                                </li>
                             </ul>
                         </div>
                     </div>
