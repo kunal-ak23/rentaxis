@@ -185,15 +185,27 @@ public class UnitListingController {
     // ---- Mapping ----
 
     private UnitListingSummaryDTO toSummary(UnitListing l) {
+        String propertyName = unitRepository.findById(l.getUnitId())
+                .map(Unit::getProperty)
+                .map(property -> property.getNameEn())
+                .orElse(null);
+        List<UnitListingMediaDTO> media = service.listMedia(l.getId());
+        String coverPhotoUrl = media.stream()
+                .filter(item -> Boolean.TRUE.equals(item.isCover()))
+                .findFirst()
+                .or(() -> media.stream().findFirst())
+                .map(UnitListingMediaDTO::url)
+                .orElse(null);
+
         return new UnitListingSummaryDTO(
                 l.getId(),
                 l.getTitleEn(),
-                null,
+                propertyName,
                 l.getBedrooms(),
                 l.getAnnualRent(),
                 l.getStatus(),
-                null,
-                0L,
+                coverPhotoUrl,
+                service.countActiveInterests(l.getId()),
                 l.getUpdatedAt(),
                 l.getSlug()
         );

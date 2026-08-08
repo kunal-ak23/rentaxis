@@ -1,15 +1,22 @@
 package com.datagami.rentaxis.api;
 
 import com.datagami.rentaxis.api.dto.UnitListingCreateRequest;
+import com.datagami.rentaxis.api.dto.UnitListingMediaDTO;
+import com.datagami.rentaxis.api.dto.UnitListingSummaryDTO;
 import com.datagami.rentaxis.api.dto.UnitListingUpdateRequest;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.service.TenantFeatureService;
 import com.datagami.rentaxis.core.service.UnitListingService;
 import com.datagami.rentaxis.domain.entity.enums.TenantFeature;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
+import com.datagami.rentaxis.domain.entity.Property;
+import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.UnitListing;
+import com.datagami.rentaxis.domain.entity.enums.ListingMediaType;
 import com.datagami.rentaxis.domain.entity.enums.ListingStatus;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
+import com.datagami.rentaxis.domain.repository.UnitRepository;
+import com.datagami.rentaxis.domain.repository.UserPropertyAssignmentRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -50,6 +57,12 @@ class UnitListingControllerTest {
 
     @Mock
     LandlordOrgRepository landlordOrgRepository;
+
+    @Mock
+    UnitRepository unitRepository;
+
+    @Mock
+    UserPropertyAssignmentRepository assignmentRepository;
 
     @InjectMocks
     UnitListingController controller;
@@ -96,6 +109,35 @@ class UnitListingControllerTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
+    }
+
+    @Test
+    void list_populatesPropertyCoverAndActiveInterestCount() {
+        UUID id = UUID.randomUUID();
+        UnitListing listing = sampleListing(id);
+        Unit unit = new Unit();
+        unit.setId(listing.getUnitId());
+        Property property = new Property();
+        property.setNameEn("Marina Heights");
+        unit.setProperty(property);
+        UnitListingMediaDTO first = new UnitListingMediaDTO(
+                UUID.randomUUID(), ListingMediaType.PHOTO, "https://cdn/first.jpg", null, 0, false);
+        UnitListingMediaDTO cover = new UnitListingMediaDTO(
+                UUID.randomUUID(), ListingMediaType.PHOTO, "https://cdn/cover.jpg", null, 1, true);
+
+        when(service.list(eq(tenantId), any(), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(listing)));
+        when(unitRepository.findById(listing.getUnitId())).thenReturn(Optional.of(unit));
+        when(service.listMedia(id)).thenReturn(List.of(first, cover));
+        when(service.countActiveInterests(id)).thenReturn(3L);
+
+        ResponseEntity<Page<UnitListingSummaryDTO>> response = controller.list(
+                null, null, null, org.springframework.data.domain.PageRequest.of(0, 20));
+        UnitListingSummaryDTO summary = response.getBody().getContent().getFirst();
+
+        assertThat(summary.propertyName()).isEqualTo("Marina Heights");
+        assertThat(summary.coverPhotoUrl()).isEqualTo("https://cdn/cover.jpg");
+        assertThat(summary.interestsCount()).isEqualTo(3L);
     }
 
     @Test

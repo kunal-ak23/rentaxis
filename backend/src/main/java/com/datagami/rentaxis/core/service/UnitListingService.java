@@ -235,6 +235,11 @@ public class UnitListingService {
     }
 
     @Transactional(readOnly = true)
+    public long countActiveInterests(UUID listingId) {
+        return interestRepository.countByListingIdAndStatus(listingId, InterestStatus.ACTIVE);
+    }
+
+    @Transactional(readOnly = true)
     public List<UnitListingAmenityEntry> listAmenities(UUID listingId) {
         return amenityRepository.findByListingId(listingId);
     }

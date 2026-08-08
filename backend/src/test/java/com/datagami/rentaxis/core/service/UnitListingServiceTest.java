@@ -7,6 +7,7 @@ import com.datagami.rentaxis.core.event.ListingPublishedEvent;
 import com.datagami.rentaxis.core.event.ListingUnlistedEvent;
 import com.datagami.rentaxis.domain.entity.UnitListing;
 import com.datagami.rentaxis.domain.entity.UnitListingMedia;
+import com.datagami.rentaxis.domain.entity.enums.InterestStatus;
 import com.datagami.rentaxis.domain.entity.enums.ListingStatus;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.UnitListingAmenityRepository;
@@ -181,5 +182,14 @@ class UnitListingServiceTest {
         verify(blobStorageService).upload(tenantId, listingId, file);
         verify(mediaRepository).save(any(UnitListingMedia.class));
         verify(listingRepository, never()).delete(any(UnitListing.class));
+    }
+
+    @Test
+    void countActiveInterests_countsOnlyActiveRows() {
+        UUID listingId = UUID.randomUUID();
+        when(interestRepository.countByListingIdAndStatus(listingId, InterestStatus.ACTIVE))
+                .thenReturn(4L);
+
+        assertThat(service.countActiveInterests(listingId)).isEqualTo(4L);
     }
 }

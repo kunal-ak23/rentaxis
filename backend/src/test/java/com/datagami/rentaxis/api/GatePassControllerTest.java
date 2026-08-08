@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.api;
 
+import com.datagami.rentaxis.domain.entity.GatePass;
 import com.datagami.rentaxis.domain.entity.GatePassScan;
 import com.datagami.rentaxis.domain.entity.GuardPropertyAssignment;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
@@ -9,10 +10,15 @@ import com.datagami.rentaxis.domain.entity.Renter;
 import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.enums.Emirate;
+import com.datagami.rentaxis.domain.entity.enums.GatePassOrigin;
+import com.datagami.rentaxis.domain.entity.enums.GatePassStatus;
+import com.datagami.rentaxis.domain.entity.enums.GatePassType;
+import com.datagami.rentaxis.domain.entity.enums.GateVisitorType;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.ScanResult;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
 import com.datagami.rentaxis.domain.entity.enums.UserStatus;
+import com.datagami.rentaxis.domain.repository.GatePassRepository;
 import com.datagami.rentaxis.domain.repository.GatePassScanRepository;
 import com.datagami.rentaxis.domain.repository.GuardPropertyAssignmentRepository;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
@@ -85,6 +91,7 @@ class GatePassControllerTest {
     @Autowired UnitRepository unitRepo;
     @Autowired LeaseRepository leaseRepo;
     @Autowired GuardPropertyAssignmentRepository assignmentRepo;
+    @Autowired GatePassRepository passRepo;
     @Autowired GatePassScanRepository scanRepo;
     @Autowired ObjectMapper objectMapper;
     @Autowired EntityManagerFactory entityManagerFactory;
@@ -889,6 +896,77 @@ class GatePassControllerTest {
 
         assertThat(res.get("status").asText()).isEqualTo("ACTIVE");
         assertThat(res.has("qrToken")).isFalse();
+    }
+
+    /**
+     * A guard-raised walk-in is also PENDING_APPROVAL, but the resident is its
+     * approver — it belongs to {@code /resident-approvals}, not here. Both arms of
+     * this endpoint filter it out, and both are asserted: the manager's tenant-wide
+     * branch and the guard's property-scoped one are separate code paths, so a filter
+     * dropped from either would otherwise go unnoticed.
+     */
+    @ParameterizedTest
+    @EnumSource(value = UserRole.class, names = {"TENANT_ADMIN", "PROPERTY_MANAGER"})
+    void approvalsExcludeWalkInsAwaitingTheResident(UserRole managerRole) {
+        Fixture f = makeFixture();
+        User guard = makeGuard(f.org(), f.property());
+        createPass(f, "Guest Recurring", "RECURRING");
+        makeWalkInPass(f, guard, "Walk In Visitor");
+
+        JsonNode guardView = json(call(HttpMethod.GET, "/api/v1/gatepass/approvals", guard, null));
+        assertThat(guardView).hasSize(1);
+        assertThat(guardView.get(0).get("guestName").asText()).isEqualTo("Guest Recurring");
+
+        User manager = makeUser(f.org(), managerRole);
+        JsonNode managerView = json(call(HttpMethod.GET, "/api/v1/gatepass/approvals", manager, null));
+        assertThat(managerView).hasSize(1);
+        assertThat(managerView.get(0).get("guestName").asText()).isEqualTo("Guest Recurring");
+    }
+
+    /**
+     * The read filter above has to be matched by a write refusal, or a walk-in could
+     * still be decided by id from the guard/manager screen — putting the visitor past
+     * the barrier without the resident who lives there ever being asked.
+     */
+    @ParameterizedTest
+    @EnumSource(value = UserRole.class, names = {"SECURITY_GUARD", "TENANT_ADMIN", "PROPERTY_MANAGER"})
+    void walkInApprovalIsRefusedToEveryoneButTheResident(UserRole role) {
+        Fixture f = makeFixture();
+        User guard = makeGuard(f.org(), f.property());
+        UUID id = makeWalkInPass(f, guard, "Walk In Visitor").getId();
+        User caller = role == UserRole.SECURITY_GUARD ? guard : makeUser(f.org(), role);
+
+        ResponseEntity<String> res = call(HttpMethod.POST, "/api/v1/gatepass/" + id + "/approval", caller,
+                Map.of("approved", true));
+
+        // 400, not 404: the pass is visible to this caller through the walk-in status
+        // path, so the honest answer is "wrong approver", not "no such pass".
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(res.getBody()).contains("must be decided by the resident");
+        assertThat(passRepo.findById(id).orElseThrow().getStatus())
+                .isEqualTo(GatePassStatus.PENDING_APPROVAL);
+    }
+
+    /** A walk-in exactly as {@code GateWalkInService} leaves it, written straight to the table. */
+    private GatePass makeWalkInPass(Fixture f, User guard, String guestName) {
+        GatePass pass = new GatePass();
+        pass.setTenantId(f.tenantId());
+        pass.setPropertyId(f.property().getId());
+        pass.setUnitId(f.unit().getId());
+        pass.setCreatedByUserId(guard.getId());
+        pass.setOrigin(GatePassOrigin.GUARD_WALK_IN);
+        // No visitor profile: fk_gate_pass_visitor_profile would need one to exist, and
+        // the origin alone is what both branches under test key on.
+        pass.setGuestName(guestName);
+        pass.setGuestPhone("+971501234567");
+        pass.setVisitorType(GateVisitorType.DELIVERY);
+        pass.setPassType(GatePassType.SINGLE_USE);
+        pass.setValidFrom(Instant.now());
+        pass.setValidTo(Instant.now().plus(15, ChronoUnit.MINUTES));
+        pass.setStatus(GatePassStatus.PENDING_APPROVAL);
+        pass.setQrToken(UUID.randomUUID().toString().replace("-", "") + "fedcba9876543210");
+        pass.setNumericCode(String.format("%08d", IP_SEQ.incrementAndGet() % 100_000_000));
+        return passRepo.save(pass);
     }
 
     @Test

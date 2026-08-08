@@ -18,6 +18,8 @@ public interface UnitListingInterestRepository extends JpaRepository<UnitListing
 
     Page<UnitListingInterest> findByListingIdAndStatus(UUID listingId, InterestStatus status, Pageable pageable);
 
+    long countByListingIdAndStatus(UUID listingId, InterestStatus status);
+
     Optional<UnitListingInterest> findByListingIdAndRenterUserId(UUID listingId, UUID renterUserId);
 
     List<UnitListingInterest> findByRenterUserIdAndStatus(UUID renterUserId, InterestStatus status);
