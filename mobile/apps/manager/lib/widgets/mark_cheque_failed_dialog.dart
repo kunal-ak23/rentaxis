@@ -144,7 +144,7 @@ class _MarkChequeFailedDialogState extends State<_MarkChequeFailedDialog> {
 
             // Reason dropdown
             DropdownButtonFormField<String>(
-              value: _selectedReason,
+              initialValue: _selectedReason,
               isExpanded: true,
               decoration: InputDecoration(
                 labelText: l.failureReason,

@@ -28,6 +28,8 @@ class ManagerApp extends ConsumerWidget {
         GlobalCupertinoLocalizations.delegate,
       ],
       routerConfig: router,
+      builder: (context, child) =>
+          OfflineStatusBanner(child: child ?? const SizedBox.shrink()),
       debugShowCheckedModeBanner: false,
     );
   }

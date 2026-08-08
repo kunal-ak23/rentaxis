@@ -197,7 +197,7 @@ class _ListingDetailViewState extends ConsumerState<_ListingDetailView> {
     final status = l['status'] as String? ?? '';
     final isUpcoming = status == 'UPCOMING';
     // Derive initial wishlist state from the shared provider (loaded at startup)
-    final _wishlisted = ref.watch(wishlistIdsProvider).contains(_listingId);
+    final wishlisted = ref.watch(wishlistIdsProvider).contains(_listingId);
 
     return Scaffold(
       backgroundColor: m.background,
@@ -271,7 +271,7 @@ class _ListingDetailViewState extends ConsumerState<_ListingDetailView> {
             child: FloatingActionButton(
               onPressed: _wishlistLoading
                   ? null
-                  : () => _toggleWishlist(_wishlisted),
+                  : () => _toggleWishlist(wishlisted),
               backgroundColor: isUpcoming
                   ? AppColors.accent
                   : AppColors.primary,
@@ -288,7 +288,7 @@ class _ListingDetailViewState extends ConsumerState<_ListingDetailView> {
                   : Icon(
                       isUpcoming
                           ? Icons.notifications_outlined
-                          : (_wishlisted
+                          : (wishlisted
                                 ? Icons.favorite
                                 : Icons.favorite_border),
                       color: Colors.white,
@@ -374,7 +374,7 @@ class _HeroCarouselState extends State<_HeroCarousel> {
                   url,
                   fit: BoxFit.cover,
                   width: double.infinity,
-                  errorBuilder: (_, __, ___) => Container(
+                  errorBuilder: (_, _, _) => Container(
                     color: m.background,
                     child: Icon(
                       Icons.broken_image_outlined,
@@ -843,8 +843,9 @@ class _MediaLinks extends StatelessWidget {
     final videos = media.where((m) => m['mediaType'] == 'VIDEO_URL').toList();
     final tours = media.where((m) => m['mediaType'] == 'TOUR_360_URL').toList();
 
-    if (floorPlans.isEmpty && videos.isEmpty && tours.isEmpty)
+    if (floorPlans.isEmpty && videos.isEmpty && tours.isEmpty) {
       return const SizedBox.shrink();
+    }
 
     final l = _L(context.isAr);
     return Column(

@@ -263,12 +263,17 @@ class _FieldRow extends StatelessWidget {
               ),
             )
           else ...[
-            Text(
-              done && value != null && value!.isNotEmpty ? value! : '…',
-              style: GoogleFonts.jetBrainsMono(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-                color: done ? m.textPrimary : m.textMuted,
+            Flexible(
+              child: Text(
+                done && value != null && value!.isNotEmpty ? value! : '…',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.end,
+                style: GoogleFonts.jetBrainsMono(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: done ? m.textPrimary : m.textMuted,
+                ),
               ),
             ),
             const SizedBox(width: 8),

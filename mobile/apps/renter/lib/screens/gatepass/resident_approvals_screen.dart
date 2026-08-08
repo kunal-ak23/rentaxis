@@ -4,39 +4,86 @@ import 'package:rentaxis_core/rentaxis_core.dart';
 
 import '../../providers/gate_pass_provider.dart';
 
+/// Screen strings (EN/AR). Lightweight per-screen pattern — see arabic-brief.
+class _L {
+  _L(this.ar);
+  final bool ar;
+
+  String get title => ar ? 'الزوار بانتظار الموافقة' : 'Visitors waiting';
+  String get loadFailed =>
+      ar ? 'تعذر تحميل طلبات الزوار.' : 'Could not load visitor requests.';
+  String get noVisitors => ar
+      ? 'لا يوجد زوار بانتظار الموافقة.'
+      : 'No visitors are waiting for approval.';
+  String get visitor => ar ? 'زائر' : 'Visitor';
+  String get unit => ar ? 'وحدة' : 'Unit';
+  String get reject => ar ? 'رفض' : 'Reject';
+  String get approve => ar ? 'موافقة' : 'Approve';
+  String get saving => ar ? 'جارٍ الحفظ…' : 'Saving…';
+  String get approved => ar ? 'تمت الموافقة على الزائر.' : 'Visitor approved.';
+  String get rejected => ar ? 'تم رفض الزائر.' : 'Visitor rejected.';
+  String get updateFailed =>
+      ar ? 'تعذر تحديث هذا الطلب.' : 'Could not update this request.';
+
+  String visitorType(String value) {
+    switch (value.toUpperCase()) {
+      case 'GUEST':
+        return ar ? 'ضيف' : 'Guest';
+      case 'DELIVERY':
+        return ar ? 'توصيل' : 'Delivery';
+      case 'MAID':
+        return ar ? 'خادمة' : 'Maid';
+      case 'MILK_VENDOR':
+        return ar ? 'بائع الحليب' : 'Milk Vendor';
+      case 'LAUNDRY_VENDOR':
+        return ar ? 'بائع الغسيل' : 'Laundry Vendor';
+      case 'SERVICE_VENDOR':
+        return ar ? 'مزود خدمة' : 'Service Vendor';
+      case 'OTHER':
+      case '':
+        return ar ? 'أخرى' : 'Other';
+      default:
+        return value.replaceAll('_', ' ');
+    }
+  }
+}
+
 class ResidentApprovalsScreen extends ConsumerWidget {
   const ResidentApprovalsScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final m = context.miftah;
+    final l = _L(context.isAr);
     final requests = ref.watch(residentGateApprovalsProvider);
     return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(title: const Text('Visitors waiting')),
+      backgroundColor: m.background,
+      appBar: AppBar(title: Text(l.title)),
       body: RefreshIndicator(
+        color: m.isDark ? AppColors.accent : AppColors.primary,
         onRefresh: () => ref.refresh(residentGateApprovalsProvider.future),
         child: requests.when(
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (error, stack) => ListView(
             physics: const AlwaysScrollableScrollPhysics(),
-            children: const [
-              SizedBox(height: 180),
-              Center(child: Text('Could not load visitor requests.')),
+            children: [
+              const SizedBox(height: 180),
+              Center(child: Text(l.loadFailed)),
             ],
           ),
           data: (rows) {
             if (rows.isEmpty) {
               return ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
-                children: const [
-                  SizedBox(height: 180),
+                children: [
+                  const SizedBox(height: 180),
                   Icon(
                     Icons.verified_user_outlined,
                     size: 52,
-                    color: AppColors.textMuted,
+                    color: m.textMuted,
                   ),
-                  SizedBox(height: 12),
-                  Center(child: Text('No visitors are waiting for approval.')),
+                  const SizedBox(height: 12),
+                  Center(child: Text(l.noVisitors)),
                 ],
               );
             }
@@ -66,6 +113,7 @@ class _ApprovalCardState extends ConsumerState<_ApprovalCard> {
   bool _busy = false;
 
   Future<void> _decide(bool approved) async {
+    final l = _L(context.isAr);
     final id = widget.request['id']?.toString();
     if (id == null || _busy) return;
     setState(() => _busy = true);
@@ -74,28 +122,28 @@ class _ApprovalCardState extends ConsumerState<_ApprovalCard> {
       ref.invalidate(residentGateApprovalsProvider);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(approved ? 'Visitor approved.' : 'Visitor rejected.'),
-          ),
+          SnackBar(content: Text(approved ? l.approved : l.rejected)),
         );
       }
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not update this request.')),
-        );
-        setState(() => _busy = false);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(l.updateFailed)));
       }
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
+    final l = _L(context.isAr);
     final request = widget.request;
     final id = request['id']?.toString();
-    final name = request['guestName']?.toString() ?? 'Visitor';
-    final type =
-        request['visitorType']?.toString().replaceAll('_', ' ') ?? 'Visitor';
+    final name = request['guestName']?.toString() ?? l.visitor;
+    final type = l.visitorType(request['visitorType']?.toString() ?? '');
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
@@ -119,8 +167,8 @@ class _ApprovalCardState extends ConsumerState<_ApprovalCard> {
                         ),
                       ),
                       Text(
-                        '$type · Unit ${request['unitNumber'] ?? ''}',
-                        style: const TextStyle(color: AppColors.textSecondary),
+                        '$type · ${l.unit} ${request['unitNumber'] ?? ''}',
+                        style: TextStyle(color: m.textSecondary),
                       ),
                       if (request['purpose'] != null)
                         Text(request['purpose'].toString()),
@@ -135,14 +183,14 @@ class _ApprovalCardState extends ConsumerState<_ApprovalCard> {
                 Expanded(
                   child: OutlinedButton(
                     onPressed: _busy ? null : () => _decide(false),
-                    child: const Text('Reject'),
+                    child: Text(l.reject),
                   ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: FilledButton(
                     onPressed: _busy ? null : () => _decide(true),
-                    child: Text(_busy ? 'Saving…' : 'Approve'),
+                    child: Text(_busy ? l.saving : l.approve),
                   ),
                 ),
               ],

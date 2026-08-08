@@ -203,51 +203,66 @@ class _Verdict extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final m = context.miftah;
-    return Container(
-      width: double.infinity,
-      color: allowed ? m.success : m.danger,
-      padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
-      child: Column(
-        children: [
-          Icon(
-            allowed ? Icons.check_circle : Icons.cancel,
-            color: Colors.white,
-            size: 64,
-          ),
+    final content = Column(
+      children: [
+        Icon(
+          allowed ? Icons.check_circle : Icons.cancel,
+          color: Colors.white,
+          size: 64,
+        ),
+        const SizedBox(height: 10),
+        Text(
+          allowed ? l.allowed : l.doNotAdmit,
+          textAlign: TextAlign.center,
+          style: l.ar
+              ? GoogleFonts.notoNaskhArabic(
+                  fontSize: 30,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                )
+              : GoogleFonts.cinzel(
+                  fontSize: 30,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 1.8,
+                  color: Colors.white,
+                ),
+        ),
+        if (!allowed) ...[
           const SizedBox(height: 10),
           Text(
-            allowed ? l.allowed : l.doNotAdmit,
+            describeRejection(reason, ar: l.ar),
             textAlign: TextAlign.center,
-            style: l.ar
-                ? GoogleFonts.notoNaskhArabic(
-                    fontSize: 30,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                  )
-                : GoogleFonts.cinzel(
-                    fontSize: 30,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 1.8,
-                    color: Colors.white,
-                  ),
+            style:
+                (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans)(
+                  fontSize: 15,
+                  height: 1.45,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.white,
+                ),
           ),
-          if (!allowed) ...[
-            const SizedBox(height: 10),
-            Text(
-              describeRejection(reason, ar: l.ar),
-              textAlign: TextAlign.center,
-              style:
-                  (l.ar
-                  ? GoogleFonts.notoNaskhArabic
-                  : GoogleFonts.josefinSans)(
-                    fontSize: 15,
-                    height: 1.45,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.white,
-                  ),
-            ),
-          ],
         ],
+      ],
+    );
+
+    // Scale-and-fade the verdict in on first render — deliberate, not instant,
+    // but fast: a guard needs the answer immediately, so this stays well under
+    // the blink of an eye.
+    return TweenAnimationBuilder<double>(
+      key: ValueKey(allowed),
+      tween: Tween(begin: 0.0, end: 1.0),
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOutBack,
+      builder: (context, t, child) {
+        return Opacity(
+          opacity: t.clamp(0.0, 1.0),
+          child: Transform.scale(scale: 0.9 + (0.1 * t), child: child),
+        );
+      },
+      child: Container(
+        width: double.infinity,
+        color: allowed ? m.success : m.danger,
+        padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
+        child: content,
       ),
     );
   }

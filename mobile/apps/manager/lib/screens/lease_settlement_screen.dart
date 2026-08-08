@@ -71,6 +71,7 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
   bool _loading = true;
   String? _error;
   Map<String, dynamic>? _settlement;
+  double _previewDepositAmount = 0;
   List<Map<String, dynamic>> _deductions = [];
   List<Map<String, dynamic>> _additions = [];
   String _notes = '';
@@ -134,7 +135,8 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
   );
 
   double get _depositAmount =>
-      (_settlement?['depositAmount'] as num?)?.toDouble() ?? 0.0;
+      (_settlement?['depositAmount'] as num?)?.toDouble() ??
+      _previewDepositAmount;
 
   double get _refundAmount =>
       _depositAmount - _totalDeductions + _totalAdditions;
@@ -192,6 +194,7 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
         if (mounted) {
           setState(() {
             _settlement = settlement;
+            _previewDepositAmount = 0;
             _deductions = filteredDeductions;
             _additions = rawAdditions;
             _notes = settlement['notes'] ?? '';
@@ -225,6 +228,8 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
         }
         if (mounted) {
           setState(() {
+            _previewDepositAmount =
+                (preview['depositAmount'] as num?)?.toDouble() ?? 0;
             _deductions = previewDeductions;
             _loading = false;
           });
@@ -1047,6 +1052,7 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
               const SizedBox(height: 4),
               Text(
                 Formatters.currency(deposit),
+                key: const Key('settlement-deposit-amount'),
                 style: GoogleFonts.cinzel(
                   color: AppColors.gold400,
                   fontWeight: FontWeight.w700,
@@ -1310,7 +1316,7 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
                         ),
                       )
                     : DropdownButtonFormField<String>(
-                        value: deduction['category'] as String?,
+                        initialValue: deduction['category'] as String?,
                         decoration: InputDecoration(
                           labelText: l.category,
                           contentPadding: const EdgeInsets.symmetric(
@@ -1576,7 +1582,7 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
       return Image.network(
         url,
         fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => Center(
+        errorBuilder: (_, _, _) => Center(
           child: Icon(
             Icons.broken_image_outlined,
             size: 28,
@@ -1774,7 +1780,8 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
             children: [
               Expanded(
                 child: DropdownButtonFormField<String>(
-                  value: addition['additionCategory'] as String? ?? 'OTHER',
+                  initialValue:
+                      addition['additionCategory'] as String? ?? 'OTHER',
                   isExpanded: true,
                   decoration: InputDecoration(
                     labelText: l.category,

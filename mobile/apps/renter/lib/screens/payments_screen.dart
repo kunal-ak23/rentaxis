@@ -543,11 +543,14 @@ class _ChequesTimeline extends StatelessWidget {
     return Column(
       children: [
         for (var i = 0; i < list.length; i++)
-          _TimelineRow(
-            payment: list[i],
-            totalCount: rentTotal,
-            isActive: identical(list[i], activePick),
-            isLast: i == list.length - 1,
+          AnimatedListItem(
+            index: i,
+            child: _TimelineRow(
+              payment: list[i],
+              totalCount: rentTotal,
+              isActive: identical(list[i], activePick),
+              isLast: i == list.length - 1,
+            ),
           ),
       ],
     );
@@ -796,15 +799,19 @@ class _ChequeTimelineCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.baseline,
             textBaseline: TextBaseline.alphabetic,
             children: [
-              Text(
-                'AED ${NumberFormat('#,##0').format(amount)}',
-                style: GoogleFonts.cinzel(
-                  fontSize: isActive ? 24 : 20,
-                  fontWeight: FontWeight.w500,
-                  color: amountColor,
+              Flexible(
+                child: Text(
+                  'AED ${NumberFormat('#,##0').format(amount)}',
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.cinzel(
+                    fontSize: isActive ? 24 : 20,
+                    fontWeight: FontWeight.w500,
+                    color: amountColor,
+                  ),
                 ),
               ),
-              if (dueLabel.isNotEmpty)
+              if (dueLabel.isNotEmpty) ...[
+                const SizedBox(width: 8),
                 Text(
                   dueLabel,
                   style:
@@ -815,6 +822,7 @@ class _ChequeTimelineCard extends StatelessWidget {
                         color: secondaryTextColor,
                       ),
                 ),
+              ],
             ],
           ),
           if (subtitleParts.isNotEmpty) ...[

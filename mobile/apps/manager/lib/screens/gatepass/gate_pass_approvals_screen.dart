@@ -274,22 +274,26 @@ class _ApprovalCardState extends ConsumerState<_ApprovalCard> {
               Expanded(
                 child: SizedBox(
                   key: Key('reject-$id'),
-                  child: GoldButton.outlined(
-                    label: l.reject,
-                    onPressed: _deciding ? null : () => _decide(false),
-                    height: 44,
-                    icon: _deciding
-                        ? SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: m.isDark
-                                  ? AppColors.accent
-                                  : m.textPrimary,
-                            ),
-                          )
-                        : null,
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 200),
+                    child: GoldButton.outlined(
+                      key: ValueKey(_deciding),
+                      label: l.reject,
+                      onPressed: _deciding ? null : () => _decide(false),
+                      height: 44,
+                      icon: _deciding
+                          ? SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: m.isDark
+                                    ? AppColors.accent
+                                    : m.textPrimary,
+                              ),
+                            )
+                          : null,
+                    ),
                   ),
                 ),
               ),
@@ -297,20 +301,24 @@ class _ApprovalCardState extends ConsumerState<_ApprovalCard> {
               Expanded(
                 child: SizedBox(
                   key: Key('approve-$id'),
-                  child: GoldButton(
-                    label: l.approve,
-                    onPressed: _deciding ? null : () => _decide(true),
-                    height: 44,
-                    icon: _deciding
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: AppColors.primary,
-                            ),
-                          )
-                        : null,
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 200),
+                    child: GoldButton(
+                      key: ValueKey(_deciding),
+                      label: l.approve,
+                      onPressed: _deciding ? null : () => _decide(true),
+                      height: 44,
+                      icon: _deciding
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: AppColors.primary,
+                              ),
+                            )
+                          : null,
+                    ),
                   ),
                 ),
               ),

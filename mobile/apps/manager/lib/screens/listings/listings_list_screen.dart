@@ -67,7 +67,7 @@ class ListingsListScreen extends ConsumerWidget {
                   AppInsets.bottomNav(context),
                 ),
                 itemCount: 5,
-                itemBuilder: (_, __) => Padding(
+                itemBuilder: (_, _) => Padding(
                   padding: const EdgeInsets.only(bottom: 14),
                   child: ShimmerLoading(height: 100, width: double.infinity),
                 ),
@@ -272,8 +272,7 @@ class _ListingRow extends StatelessWidget {
                                 width: 90,
                                 height: 90,
                                 fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) =>
-                                    _Placeholder(m: m),
+                                errorBuilder: (_, _, _) => _Placeholder(m: m),
                               )
                             : _Placeholder(m: m),
                       ),

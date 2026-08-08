@@ -17,18 +17,21 @@ class ApiClient {
   );
 
   ApiClient({String? baseUrl}) {
-    dio = Dio(BaseOptions(
-      baseUrl: baseUrl ?? _defaultBaseUrl,
-      connectTimeout: const Duration(seconds: 15),
-      receiveTimeout: const Duration(seconds: 15),
-      headers: {'Content-Type': 'application/json'},
-    ));
+    dio = Dio(
+      BaseOptions(
+        baseUrl: baseUrl ?? _defaultBaseUrl,
+        connectTimeout: const Duration(seconds: 15),
+        receiveTimeout: const Duration(seconds: 15),
+        headers: {'Content-Type': 'application/json'},
+      ),
+    );
 
     dio.interceptors.add(AuthInterceptor(_storage));
     dio.interceptors.add(TenantInterceptor());
     if (kDebugMode) {
-      dio.interceptors
-          .add(LogInterceptor(requestBody: true, responseBody: true));
+      dio.interceptors.add(
+        LogInterceptor(requestBody: true, responseBody: true),
+      );
     }
   }
 }

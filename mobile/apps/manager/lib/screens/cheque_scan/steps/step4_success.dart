@@ -166,12 +166,16 @@ class Step4Success extends StatelessWidget {
                             ),
                           ),
                           if (amount != null)
-                            Text(
-                              'AED ${_formatAmount(amount)}',
-                              style: GoogleFonts.cinzel(
-                                fontSize: 20,
-                                fontWeight: FontWeight.w600,
-                                color: m.textPrimary,
+                            Flexible(
+                              child: Text(
+                                'AED ${_formatAmount(amount)}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.cinzel(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w600,
+                                  color: m.textPrimary,
+                                ),
                               ),
                             ),
                         ],

@@ -315,7 +315,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                     if (leases.isEmpty) return const SizedBox.shrink();
 
                     return DropdownButtonFormField<String>(
-                      value: _selectedLeaseId,
+                      initialValue: _selectedLeaseId,
                       decoration: InputDecoration(
                         labelText: l.propertyUnit,
                         prefixIcon: const Icon(Icons.apartment, size: 20),
@@ -352,7 +352,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                     );
                   },
                   loading: () => const LinearProgressIndicator(),
-                  error: (_, __) => const SizedBox.shrink(),
+                  error: (_, _) => const SizedBox.shrink(),
                 ),
                 const SizedBox(height: 16),
 

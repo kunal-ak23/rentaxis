@@ -15,12 +15,23 @@ class ShellScreen extends ConsumerStatefulWidget {
 }
 
 class _ShellScreenState extends ConsumerState<ShellScreen> {
+  late final NotificationNotifier _notificationNotifier;
+
   @override
   void initState() {
     super.initState();
+    _notificationNotifier = ref.read(notificationProvider.notifier);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(notificationProvider.notifier).startPolling();
+      if (mounted) {
+        _notificationNotifier.startPolling();
+      }
     });
+  }
+
+  @override
+  void dispose() {
+    _notificationNotifier.stopPolling();
+    super.dispose();
   }
 
   @override

@@ -14,8 +14,11 @@ void main() {
 
   testWidgets('seed guard session', (tester) async {
     expect(_userId, isNotEmpty, reason: 'pass --dart-define=SEED_USER_ID=...');
-    expect(_tenantId, isNotEmpty,
-        reason: 'pass --dart-define=SEED_TENANT_ID=...');
+    expect(
+      _tenantId,
+      isNotEmpty,
+      reason: 'pass --dart-define=SEED_TENANT_ID=...',
+    );
     const storage = FlutterSecureStorage();
     await storage.write(key: 'userId', value: _userId);
     await storage.write(key: 'userRole', value: 'SECURITY_GUARD');

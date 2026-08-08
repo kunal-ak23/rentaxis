@@ -230,7 +230,7 @@ class _BrowseFiltersSheetState extends State<BrowseFiltersSheet> {
                 Switch.adaptive(
                   value: _availableNow,
                   onChanged: (v) => setState(() => _availableNow = v),
-                  activeColor: AppColors.accent,
+                  activeThumbColor: AppColors.accent,
                 ),
               ],
             ),

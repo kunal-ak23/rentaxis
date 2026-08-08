@@ -23,7 +23,6 @@ import 'screens/vendors_screen.dart';
 import 'screens/vendor_detail_screen.dart';
 import 'screens/bank_accounts_screen.dart';
 import 'screens/finance_reports_screen.dart';
-import 'screens/report_detail_screen.dart';
 import 'screens/lease_penalties_screen.dart';
 import 'screens/lease_settlement_screen.dart';
 import 'screens/settings_hub_screen.dart';
@@ -90,42 +89,56 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       ShellRoute(
         builder: (context, state, child) => ShellScreen(child: child),
+        // Tab roots cross-fade; pushed create/detail screens slide up. Both
+        // helpers live in rentaxis_core/widgets/page_transitions.dart.
         routes: [
           GoRoute(
             path: '/',
-            builder: (context, state) => const DashboardScreen(),
+            pageBuilder: (context, state) =>
+                fadeTransition(const DashboardScreen(), state),
           ),
           GoRoute(
             path: '/properties',
-            builder: (context, state) => const PropertiesScreen(),
+            pageBuilder: (context, state) =>
+                fadeTransition(const PropertiesScreen(), state),
             routes: [
               GoRoute(
                 path: ':id',
-                builder: (context, state) => PropertyDetailScreen(
-                  propertyId: state.pathParameters['id']!,
+                pageBuilder: (context, state) => slideUpTransition(
+                  PropertyDetailScreen(propertyId: state.pathParameters['id']!),
+                  state,
                 ),
               ),
             ],
           ),
           GoRoute(
             path: '/leases',
-            builder: (context, state) => const LeasesScreen(),
+            pageBuilder: (context, state) =>
+                fadeTransition(const LeasesScreen(), state),
             routes: [
               GoRoute(
                 path: ':id',
-                builder: (context, state) =>
-                    LeaseDetailScreen(leaseId: state.pathParameters['id']!),
+                pageBuilder: (context, state) => slideUpTransition(
+                  LeaseDetailScreen(leaseId: state.pathParameters['id']!),
+                  state,
+                ),
                 routes: [
                   GoRoute(
                     path: 'penalties',
-                    builder: (context, state) => LeasePenaltiesScreen(
-                      leaseId: state.pathParameters['id']!,
+                    pageBuilder: (context, state) => slideUpTransition(
+                      LeasePenaltiesScreen(
+                        leaseId: state.pathParameters['id']!,
+                      ),
+                      state,
                     ),
                   ),
                   GoRoute(
                     path: 'settlement',
-                    builder: (context, state) => LeaseSettlementScreen(
-                      leaseId: state.pathParameters['id']!,
+                    pageBuilder: (context, state) => slideUpTransition(
+                      LeaseSettlementScreen(
+                        leaseId: state.pathParameters['id']!,
+                      ),
+                      state,
                     ),
                   ),
                 ],
@@ -134,66 +147,83 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: '/payments',
-            builder: (context, state) => const PaymentsScreen(),
+            pageBuilder: (context, state) =>
+                fadeTransition(const PaymentsScreen(), state),
           ),
           GoRoute(
             path: '/tickets',
-            builder: (context, state) => const TicketsScreen(),
+            pageBuilder: (context, state) =>
+                fadeTransition(const TicketsScreen(), state),
             routes: [
               GoRoute(
                 path: 'create',
-                builder: (context, state) => const CreateTicketScreen(),
+                pageBuilder: (context, state) =>
+                    slideUpTransition(const CreateTicketScreen(), state),
               ),
               GoRoute(
                 path: ':id',
-                builder: (context, state) =>
-                    TicketDetailScreen(ticketId: state.pathParameters['id']!),
+                pageBuilder: (context, state) => slideUpTransition(
+                  TicketDetailScreen(ticketId: state.pathParameters['id']!),
+                  state,
+                ),
               ),
             ],
           ),
           GoRoute(
             path: '/notifications',
-            builder: (context, state) => const NotificationsScreen(),
+            pageBuilder: (context, state) =>
+                fadeTransition(const NotificationsScreen(), state),
           ),
           GoRoute(
             path: '/meetings',
-            builder: (context, state) => const MeetingsScreen(),
+            pageBuilder: (context, state) =>
+                fadeTransition(const MeetingsScreen(), state),
             routes: [
               GoRoute(
                 path: 'create',
-                builder: (context, state) => const CreateMeetingScreen(),
+                pageBuilder: (context, state) =>
+                    slideUpTransition(const CreateMeetingScreen(), state),
               ),
               GoRoute(
                 path: ':id',
-                builder: (context, state) =>
-                    MeetingDetailScreen(meetingId: state.pathParameters['id']!),
+                pageBuilder: (context, state) => slideUpTransition(
+                  MeetingDetailScreen(meetingId: state.pathParameters['id']!),
+                  state,
+                ),
               ),
             ],
           ),
           GoRoute(
             path: '/renters',
-            builder: (context, state) => const RentersScreen(),
+            pageBuilder: (context, state) =>
+                fadeTransition(const RentersScreen(), state),
           ),
           GoRoute(
             path: '/finance',
-            builder: (context, state) => const FinanceScreen(),
+            pageBuilder: (context, state) =>
+                fadeTransition(const FinanceScreen(), state),
           ),
           GoRoute(
             path: '/more',
-            builder: (context, state) => const MoreScreen(),
+            pageBuilder: (context, state) =>
+                fadeTransition(const MoreScreen(), state),
           ),
           GoRoute(
             path: '/profile',
-            builder: (context, state) => const ProfileScreen(),
+            pageBuilder: (context, state) =>
+                fadeTransition(const ProfileScreen(), state),
           ),
           GoRoute(
             path: '/staff',
-            builder: (context, state) => const StaffScreen(),
+            pageBuilder: (context, state) =>
+                fadeTransition(const StaffScreen(), state),
             routes: [
               GoRoute(
                 path: ':id',
-                builder: (context, state) =>
-                    StaffDetailScreen(staffId: state.pathParameters['id']!),
+                pageBuilder: (context, state) => slideUpTransition(
+                  StaffDetailScreen(staffId: state.pathParameters['id']!),
+                  state,
+                ),
               ),
             ],
           ),
@@ -203,19 +233,23 @@ final routerProvider = Provider<GoRouter>((ref) {
           // rebuilds on `authProvider`.
           GoRoute(
             path: '/gate-passes/approvals',
-            builder: (context, state) => const GatePassApprovalsScreen(),
+            pageBuilder: (context, state) =>
+                fadeTransition(const GatePassApprovalsScreen(), state),
           ),
           GoRoute(
             path: '/gate-passes/guards',
-            builder: (context, state) => const GuardManagementScreen(),
+            pageBuilder: (context, state) =>
+                fadeTransition(const GuardManagementScreen(), state),
           ),
           GoRoute(
             path: '/gate-passes/policy',
-            builder: (context, state) => const GateAccessPolicyScreen(),
+            pageBuilder: (context, state) =>
+                fadeTransition(const GateAccessPolicyScreen(), state),
           ),
           GoRoute(
             path: '/gate-passes/vendors',
-            builder: (context, state) => const RegisterGateVendorScreen(),
+            pageBuilder: (context, state) =>
+                fadeTransition(const RegisterGateVendorScreen(), state),
           ),
           // Facility screens are parameterless and self-fetching for the same
           // reason as the gate-pass screens above: this router rebuilds on
@@ -232,36 +266,47 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: '/vendors',
-            builder: (context, state) => const VendorsScreen(),
+            pageBuilder: (context, state) =>
+                fadeTransition(const VendorsScreen(), state),
             routes: [
               GoRoute(
                 path: ':id',
-                builder: (context, state) =>
-                    VendorDetailScreen(vendorId: state.pathParameters['id']!),
+                pageBuilder: (context, state) => slideUpTransition(
+                  VendorDetailScreen(vendorId: state.pathParameters['id']!),
+                  state,
+                ),
               ),
             ],
           ),
           GoRoute(
             path: '/bank-accounts',
-            builder: (context, state) => const BankAccountsScreen(),
+            pageBuilder: (context, state) =>
+                fadeTransition(const BankAccountsScreen(), state),
           ),
           GoRoute(
             path: '/finance-reports',
-            builder: (context, state) => const FinanceReportsScreen(),
+            pageBuilder: (context, state) =>
+                fadeTransition(const FinanceReportsScreen(), state),
           ),
           GoRoute(
             path: '/listings',
-            builder: (context, state) => const ListingsListScreen(),
+            pageBuilder: (context, state) =>
+                fadeTransition(const ListingsListScreen(), state),
             routes: [
               GoRoute(
                 path: ':id',
-                builder: (context, state) =>
-                    ListingEditScreen(listingId: state.pathParameters['id']!),
+                pageBuilder: (context, state) => slideUpTransition(
+                  ListingEditScreen(listingId: state.pathParameters['id']!),
+                  state,
+                ),
                 routes: [
                   GoRoute(
                     path: 'interests',
-                    builder: (context, state) => ListingInterestsScreen(
-                      listingId: state.pathParameters['id']!,
+                    pageBuilder: (context, state) => slideUpTransition(
+                      ListingInterestsScreen(
+                        listingId: state.pathParameters['id']!,
+                      ),
+                      state,
                     ),
                   ),
                 ],
@@ -270,19 +315,23 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: '/settings',
-            builder: (context, state) => const SettingsHubScreen(),
+            pageBuilder: (context, state) =>
+                fadeTransition(const SettingsHubScreen(), state),
             routes: [
               GoRoute(
                 path: 'rent',
-                builder: (context, state) => const RentSettingsScreen(),
+                pageBuilder: (context, state) =>
+                    slideUpTransition(const RentSettingsScreen(), state),
               ),
               GoRoute(
                 path: 'gateway',
-                builder: (context, state) => const GatewayConfigScreen(),
+                pageBuilder: (context, state) =>
+                    slideUpTransition(const GatewayConfigScreen(), state),
               ),
               GoRoute(
                 path: 'mappings',
-                builder: (context, state) => const AccountMappingsScreen(),
+                pageBuilder: (context, state) =>
+                    slideUpTransition(const AccountMappingsScreen(), state),
               ),
             ],
           ),

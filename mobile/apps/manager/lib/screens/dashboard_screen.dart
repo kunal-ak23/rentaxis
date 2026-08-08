@@ -115,8 +115,10 @@ class _Header extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final m = context.miftah;
+    // Arabic uses "،" not "·": the middot is visually identical to the
+    // Arabic-Indic zero (٠), so "الأحد · ٢ أغسطس" reads as "20 August".
     final dateLine = l.ar
-        ? DateFormat('EEE · d MMMM', 'ar').format(DateTime.now())
+        ? DateFormat('EEE، d MMMM', 'ar').format(DateTime.now())
         : DateFormat('EEE · dd MMM').format(DateTime.now());
     return Row(
       children: [

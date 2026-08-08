@@ -347,7 +347,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                       _dropdownContainer(
                         m: m,
                         child: DropdownButtonFormField<String>(
-                          value: _selectedPropertyId,
+                          initialValue: _selectedPropertyId,
                           decoration: InputDecoration(
                             labelText: l.property,
                             prefixIcon: const Icon(
@@ -378,7 +378,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                       _dropdownContainer(
                         m: m,
                         child: DropdownButtonFormField<String>(
-                          value: _selectedUnitId,
+                          initialValue: _selectedUnitId,
                           decoration: InputDecoration(
                             labelText: l.unitOptional,
                             prefixIcon: const Icon(
@@ -407,7 +407,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                       _dropdownContainer(
                         m: m,
                         child: DropdownButtonFormField<String>(
-                          value: _selectedRenterId,
+                          initialValue: _selectedRenterId,
                           decoration: InputDecoration(
                             labelText: l.onBehalfOf,
                             prefixIcon: const Icon(

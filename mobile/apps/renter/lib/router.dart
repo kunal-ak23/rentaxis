@@ -69,72 +69,95 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       ShellRoute(
         builder: (context, state, child) => ShellScreen(child: child),
+        // Tab roots cross-fade; pushed create/detail screens slide up. Both
+        // helpers live in rentaxis_core/widgets/page_transitions.dart.
         routes: [
-          GoRoute(path: '/', builder: (context, state) => const HomeScreen()),
+          GoRoute(
+            path: '/',
+            pageBuilder: (context, state) =>
+                fadeTransition(const HomeScreen(), state),
+          ),
           GoRoute(
             path: '/payments',
-            builder: (context, state) => const PaymentsScreen(),
+            pageBuilder: (context, state) =>
+                fadeTransition(const PaymentsScreen(), state),
           ),
           GoRoute(
             path: '/tickets',
-            builder: (context, state) => const TicketsScreen(),
+            pageBuilder: (context, state) =>
+                fadeTransition(const TicketsScreen(), state),
             routes: [
               GoRoute(
                 path: 'approvals',
-                builder: (context, state) => const ResidentApprovalsScreen(),
+                pageBuilder: (context, state) =>
+                    slideUpTransition(const ResidentApprovalsScreen(), state),
               ),
               GoRoute(
                 path: 'create',
-                builder: (context, state) => const CreateTicketScreen(),
+                pageBuilder: (context, state) =>
+                    slideUpTransition(const CreateTicketScreen(), state),
               ),
               GoRoute(
                 path: ':id',
-                builder: (context, state) =>
-                    TicketDetailScreen(ticketId: state.pathParameters['id']!),
+                pageBuilder: (context, state) => slideUpTransition(
+                  TicketDetailScreen(ticketId: state.pathParameters['id']!),
+                  state,
+                ),
               ),
             ],
           ),
           GoRoute(
             path: '/profile',
-            builder: (context, state) => const ProfileScreen(),
+            pageBuilder: (context, state) =>
+                fadeTransition(const ProfileScreen(), state),
           ),
           GoRoute(
             path: '/notifications',
-            builder: (context, state) => const NotificationsScreen(),
+            pageBuilder: (context, state) =>
+                fadeTransition(const NotificationsScreen(), state),
           ),
           GoRoute(
             path: '/browse',
-            builder: (context, state) => const BrowseScreen(),
+            pageBuilder: (context, state) =>
+                fadeTransition(const BrowseScreen(), state),
             routes: [
               GoRoute(
                 path: ':slug',
-                builder: (context, state) =>
-                    ListingDetailScreen(slug: state.pathParameters['slug']!),
+                pageBuilder: (context, state) => slideUpTransition(
+                  ListingDetailScreen(slug: state.pathParameters['slug']!),
+                  state,
+                ),
               ),
             ],
           ),
           GoRoute(
             path: '/wishlist',
-            builder: (context, state) => const WishlistScreen(),
+            pageBuilder: (context, state) =>
+                fadeTransition(const WishlistScreen(), state),
           ),
           GoRoute(
             path: '/meetings',
-            builder: (context, state) => const MeetingsScreen(),
+            pageBuilder: (context, state) =>
+                fadeTransition(const MeetingsScreen(), state),
             routes: [
               GoRoute(
                 path: 'create',
-                builder: (context, state) => const CreateMeetingScreen(),
+                pageBuilder: (context, state) =>
+                    slideUpTransition(const CreateMeetingScreen(), state),
               ),
               GoRoute(
                 path: ':id',
-                builder: (context, state) =>
-                    MeetingDetailScreen(meetingId: state.pathParameters['id']!),
+                pageBuilder: (context, state) => slideUpTransition(
+                  MeetingDetailScreen(meetingId: state.pathParameters['id']!),
+                  state,
+                ),
               ),
             ],
           ),
           GoRoute(
             path: '/penalties',
-            builder: (context, state) => const PenaltiesScreen(),
+            pageBuilder: (context, state) =>
+                fadeTransition(const PenaltiesScreen(), state),
           ),
           // The pass id travels in the path and the detail screen re-fetches it.
           // Nothing is passed through `extra` here on purpose: this router
@@ -142,16 +165,20 @@ final routerProvider = Provider<GoRouter>((ref) {
           // would discard an `extra` payload and leave the screen with nothing.
           GoRoute(
             path: '/gatepass',
-            builder: (context, state) => const GatePassListScreen(),
+            pageBuilder: (context, state) =>
+                fadeTransition(const GatePassListScreen(), state),
             routes: [
               GoRoute(
                 path: 'create',
-                builder: (context, state) => const GatePassCreateScreen(),
+                pageBuilder: (context, state) =>
+                    slideUpTransition(const GatePassCreateScreen(), state),
               ),
               GoRoute(
                 path: ':id',
-                builder: (context, state) =>
-                    GatePassDetailScreen(passId: state.pathParameters['id']!),
+                pageBuilder: (context, state) => slideUpTransition(
+                  GatePassDetailScreen(passId: state.pathParameters['id']!),
+                  state,
+                ),
               ),
             ],
           ),

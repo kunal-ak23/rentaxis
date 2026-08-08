@@ -27,9 +27,15 @@ void main() {
   testWidgets('guard checks a pass by numeric code', (tester) async {
     expect(_code.length, 8, reason: 'pass --dart-define=SCAN_CODE=<8 digits>');
     app.main();
-    await _settle(tester, const Duration(seconds: 6));
 
     // The board is the signed-in landing screen; Scan is its second tab.
+    // Poll rather than a fixed settle: a cold start on a slow emulator can
+    // take well over 6s to restore the session and render the board.
+    final end = DateTime.now().add(const Duration(seconds: 30));
+    while (DateTime.now().isBefore(end) &&
+        find.text('SCAN').evaluate().isEmpty) {
+      await tester.pump(const Duration(milliseconds: 200));
+    }
     expect(find.text('SCAN'), findsWidgets, reason: 'guard is not signed in');
     await tester.tap(find.text('SCAN').first);
     await _settle(tester, const Duration(seconds: 3));
@@ -44,9 +50,14 @@ void main() {
 
     // A verdict rendered at all is the assertion: ALLOWED for a fresh pass,
     // ALREADY USED when the suite is re-run against the same code.
-    final allowed = find.textContaining(RegExp('ALLOWED', caseSensitive: false));
+    final allowed = find.textContaining(
+      RegExp('ALLOWED', caseSensitive: false),
+    );
     final used = find.textContaining(RegExp('used', caseSensitive: false));
-    expect(allowed.evaluate().isNotEmpty || used.evaluate().isNotEmpty, isTrue,
-        reason: 'no scan verdict rendered');
+    expect(
+      allowed.evaluate().isNotEmpty || used.evaluate().isNotEmpty,
+      isTrue,
+      reason: 'no scan verdict rendered',
+    );
   });
 }
