@@ -37,4 +37,5 @@ web/e2e-prod/test-results/
 # Keep the template even though web/.gitignore matches .env*
 !web/e2e-prod/.env.local.example
 scripts/seed_demo_tenant.out.json
+scripts/seed_demo_tenant.out.*.bak.json
 scripts/__pycache__/

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="500" viewBox="0 0 1024 500">
+  <defs>
+    <linearGradient id="shade" x1="0" x2="1">
+      <stop offset="0" stop-color="#090909" stop-opacity="0.96"/>
+      <stop offset="0.58" stop-color="#090909" stop-opacity="0.72"/>
+      <stop offset="1" stop-color="#090909" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <image href="feature-background.png" width="1024" height="500" preserveAspectRatio="xMidYMid slice"/>
+  <rect width="720" height="500" fill="url(#shade)"/>
+  <image href="../../../../mobile/apps/security/assets/logo_horizontal.png" x="64" y="78" width="330" height="77"/>
+  <text x="66" y="218" fill="#F4C542" font-family="Helvetica Neue, Arial, sans-serif" font-size="31" font-weight="600" letter-spacing="5">SECURITY</text>
+  <text x="66" y="274" fill="#FFFFFF" font-family="Helvetica Neue, Arial, sans-serif" font-size="29" font-weight="400">Smarter access at the gate</text>
+  <text x="66" y="326" fill="#DED9D0" font-family="Helvetica Neue, Arial, sans-serif" font-size="19" letter-spacing="1">SCAN  ·  APPROVE  ·  ADMIT</text>
+</svg>
