@@ -10,7 +10,7 @@ export default function TermsPage() {
     <main className="min-h-screen bg-[#0d0d0d] px-6 py-16 text-[#f7f2e8]">
       <article className="mx-auto max-w-3xl">
         <p className="mb-5 text-sm font-semibold uppercase tracking-[0.35em] text-[#e5b83d]">Miftah</p>
-        <h1 className="font-serif text-4xl font-semibold md:text-5xl">Terms of Use</h1>
+        <h1 className="font-serif text-4xl font-semibold md:text-5xl" style={{ color: "#f7f2e8" }}>Terms of Use</h1>
         <p className="mt-5 text-sm text-[#bcb5a8]">Effective 7 August 2026</p>
         <div className="mt-10 space-y-8 text-base leading-7 text-[#d7d0c4]">
           <p>Miftah is a property-service suite supplied by DTSPL to authorised residents, managers and security staff. Your access may also be governed by an agreement with the property or organisation that issued your account.</p>

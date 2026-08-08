@@ -54,7 +54,7 @@ export default function PrivacyPage() {
     <main className="min-h-screen bg-[#0d0d0d] px-6 py-16 text-[#f7f2e8]">
       <article className="mx-auto max-w-3xl">
         <p className="mb-5 text-sm font-semibold uppercase tracking-[0.35em] text-[#e5b83d]">Miftah</p>
-        <h1 className="font-serif text-4xl font-semibold md:text-5xl">Privacy Policy</h1>
+        <h1 className="font-serif text-4xl font-semibold md:text-5xl" style={{ color: "#f7f2e8" }}>Privacy Policy</h1>
         <p className="mt-5 text-sm text-[#bcb5a8]">Effective 7 August 2026</p>
         <p className="mt-8 text-lg leading-8 text-[#ddd6ca]">
           This policy explains how DTSPL handles information through the Miftah Renter, Miftah Manager and Miftah Security mobile applications and the related RentAxis services.
@@ -63,7 +63,7 @@ export default function PrivacyPage() {
         <div className="mt-12 space-y-10">
           {sections.map((section) => (
             <section key={section.title}>
-              <h2 className="text-2xl font-semibold text-[#f1c84c]">{section.title}</h2>
+              <h2 className="text-2xl font-semibold" style={{ color: "#f1c84c" }}>{section.title}</h2>
               <div className="mt-4 space-y-4 text-base leading-7 text-[#d7d0c4]">
                 {section.body.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
               </div>
@@ -72,7 +72,7 @@ export default function PrivacyPage() {
         </div>
 
         <section className="mt-12 border-t border-[#4a3b17] pt-8">
-          <h2 className="text-2xl font-semibold text-[#f1c84c]">Contact</h2>
+          <h2 className="text-2xl font-semibold" style={{ color: "#f1c84c" }}>Contact</h2>
           <p className="mt-4 leading-7 text-[#d7d0c4]">
             Privacy questions and requests can be sent to{" "}
             <a className="text-[#f1c84c] underline" href="mailto:reports@theplahouse.com">reports@theplahouse.com</a>.
