@@ -170,6 +170,7 @@ export default function LeaseDetailPage() {
     const [tickets, setTickets] = useState<Ticket[]>([]);
     const [waiveModalPenalty, setWaiveModalPenalty] = useState<ChequePenalty | null>(null);
     const [waiveReason, setWaiveReason] = useState("");
+    const [waiveError, setWaiveError] = useState<string | null>(null);
     const [waiving, setWaiving] = useState(false);
 
     const [activeTab, setActiveTab] = useState<string>("Overview");
@@ -281,9 +282,11 @@ export default function LeaseDetailPage() {
     const handleWaivePenalty = async () => {
         if (!waiveModalPenalty || !waiveReason.trim()) return;
         setWaiving(true);
+        setWaiveError(null);
         try {
+            // Backend maps POST /v1/penalties/{id}/waive (PenaltyController) — PUT returns 405.
             const res = await fetch(`/api/proxy/v1/penalties/${waiveModalPenalty.id}/waive`, {
-                method: "PUT",
+                method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ reason: waiveReason.trim() }),
             });
@@ -291,8 +294,13 @@ export default function LeaseDetailPage() {
                 setWaiveModalPenalty(null);
                 setWaiveReason("");
                 fetchPenalties();
+            } else {
+                const err = await res.json().catch(() => ({}));
+                setWaiveError(err.message || "Failed to waive penalty. Please try again.");
             }
-        } catch {} finally { setWaiving(false); }
+        } catch {
+            setWaiveError("Network error while waiving penalty. Check your connection and try again.");
+        } finally { setWaiving(false); }
     };
 
     const fetchSettlement = useCallback(async () => {
@@ -908,7 +916,7 @@ export default function LeaseDetailPage() {
                                                             <span className="text-xs font-medium text-error tabular-nums">{formatCurrency(penalty.penaltyAmount)}</span>
                                                             {isAdmin && (
                                                                 <button
-                                                                    onClick={() => { setWaiveModalPenalty(penalty); setWaiveReason(""); }}
+                                                                    onClick={() => { setWaiveModalPenalty(penalty); setWaiveReason(""); setWaiveError(null); }}
                                                                     className="text-[9px] font-semibold text-warning hover:text-warning/80 cursor-pointer underline"
                                                                 >
                                                                     Waive
@@ -1255,6 +1263,9 @@ export default function LeaseDetailPage() {
                                     className="w-full border border-border rounded-lg bg-surface px-3 py-2 text-xs text-foreground placeholder:text-muted/50 focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none resize-none"
                                 />
                             </div>
+                            {waiveError && (
+                                <p className="text-xs text-error">{waiveError}</p>
+                            )}
                             <div className="flex items-center gap-2 justify-end">
                                 <button
                                     onClick={() => setWaiveModalPenalty(null)}

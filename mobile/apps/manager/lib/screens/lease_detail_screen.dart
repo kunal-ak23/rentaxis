@@ -111,17 +111,35 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
       final paymentService = ref.read(_paymentServiceProvider);
       final results = await Future.wait([
         leaseService.getLeaseById(widget.leaseId),
-        paymentService.getPayments(),
+        // Lease-scoped endpoint: the tenant-wide paged list only holds one
+        // page, so filtering it client-side silently dropped installments
+        // of this lease that fell outside the fetched page.
+        paymentService.getPaymentsForLease(widget.leaseId),
         leaseService.getLeaseDocuments(widget.leaseId),
         leaseService.getAttachments(widget.leaseId),
       ]);
       if (!mounted) return;
-      final allPayments = results[1] as List<dynamic>;
+      // The lease endpoint has no defined ordering — sort like the web
+      // schedule editor: rent installments first (by installment number),
+      // deposits/charges last, so the timeline reads chronologically.
+      final payments = List<dynamic>.from(results[1] as List<dynamic>);
+      int kind(dynamic p) =>
+          p is Map &&
+              (p['isBookingDeposit'] == true ||
+                  p['isSecurityDeposit'] == true ||
+                  p['isCharge'] == true)
+          ? 1
+          : 0;
+      int installment(dynamic p) =>
+          (p is Map ? (p['installmentNumber'] as num?)?.toInt() : null) ?? 0;
+      payments.sort((a, b) {
+        final byKind = kind(a).compareTo(kind(b));
+        if (byKind != 0) return byKind;
+        return installment(a).compareTo(installment(b));
+      });
       setState(() {
         _lease = results[0] as Map<String, dynamic>;
-        _payments = allPayments
-            .where((p) => p['leaseId'] == widget.leaseId)
-            .toList();
+        _payments = payments;
         _documents = results[2] as List<dynamic>;
         _attachments = results[3] as List<dynamic>;
         _isLoading = false;

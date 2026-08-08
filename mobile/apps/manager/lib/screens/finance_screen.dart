@@ -470,15 +470,14 @@ class _ReportsTab extends ConsumerWidget {
           ErrorState(message: l.failedToLoadReport, onRetry: onRefresh),
       data: (report) {
         final totalIncome = (report['totalIncome'] ?? 0).toDouble();
-        final totalExpense = (report['totalExpense'] ?? 0).toDouble();
-        final netIncome = (report['netIncome'] ?? totalIncome - totalExpense)
+        final totalExpense = (report['totalExpenses'] ?? 0).toDouble();
+        final netIncome = (report['netProfit'] ?? totalIncome - totalExpense)
             .toDouble();
-        final incomeAccounts = List<Map<String, dynamic>>.from(
-          report['incomeAccounts'] ?? [],
-        );
-        final expenseAccounts = List<Map<String, dynamic>>.from(
-          report['expenseAccounts'] ?? [],
-        );
+        final incomeAccounts = _breakdownItems(report['incomeBreakdown']);
+        final expenseAccounts = [
+          ..._breakdownItems(report['directExpenseBreakdown']),
+          ..._breakdownItems(report['indirectExpenseBreakdown']),
+        ];
 
         return RefreshIndicator(
           onRefresh: () async => onRefresh(),
@@ -612,6 +611,15 @@ class _ReportsTab extends ConsumerWidget {
             ),
     );
   }
+}
+
+/// Flattens a ReportDTO breakdown map (`{'code - name': amount}`) into
+/// name/amount rows for [_ReportLineItem].
+List<Map<String, dynamic>> _breakdownItems(dynamic breakdown) {
+  if (breakdown is! Map) return const [];
+  return breakdown.entries
+      .map((e) => <String, dynamic>{'name': e.key.toString(), 'amount': e.value})
+      .toList();
 }
 
 class _ReportSummaryCard extends StatelessWidget {

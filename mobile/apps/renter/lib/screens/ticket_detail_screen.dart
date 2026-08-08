@@ -407,7 +407,10 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
                               // OTP Section (RESOLVED status)
                               if (isResolved) ...[
                                 _OtpSection(
-                                  otp: ticket['closingOtp'] ?? ticket['otp'],
+                                  otp:
+                                      ticket['closureOtp'] ??
+                                      ticket['closingOtp'] ??
+                                      ticket['otp'],
                                   l: l,
                                 ),
                                 const SizedBox(height: 20),

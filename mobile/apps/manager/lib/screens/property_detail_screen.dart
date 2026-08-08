@@ -118,6 +118,10 @@ class _PropertyDetailScreenState extends ConsumerState<PropertyDetailScreen> {
     final totalUnits = _units.length;
     final occupied = _units.where((u) => u['status'] == 'OCCUPIED').length;
     final occupancy = totalUnits > 0 ? occupied / totalUnits : 0.0;
+    // POST /v1/units is SUPER_ADMIN/TENANT_ADMIN only — hide the create-unit
+    // FAB for other roles instead of offering a guaranteed 403.
+    final role = ref.watch(authProvider).role;
+    final canCreate = role == 'SUPER_ADMIN' || role == 'TENANT_ADMIN';
 
     return Scaffold(
       backgroundColor: m.background,
@@ -336,11 +340,13 @@ class _PropertyDetailScreenState extends ConsumerState<PropertyDetailScreen> {
           ),
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: AppColors.primary,
-        onPressed: () => _showCreateUnitSheet(context, l),
-        child: const Icon(Icons.add, color: Colors.white),
-      ),
+      floatingActionButton: canCreate
+          ? FloatingActionButton(
+              backgroundColor: AppColors.primary,
+              onPressed: () => _showCreateUnitSheet(context, l),
+              child: const Icon(Icons.add, color: Colors.white),
+            )
+          : null,
     );
   }
 
@@ -349,17 +355,18 @@ class _PropertyDetailScreenState extends ConsumerState<PropertyDetailScreen> {
     final sizeCtrl = TextEditingController();
     final rentCtrl = TextEditingController();
     final formKey = GlobalKey<FormState>();
-    String unitType = 'APARTMENT';
+    String unitType = 'STUDIO';
 
+    // UnitType enum values the backend accepts — anything else fails
+    // Jackson enum deserialization with a 400.
     final unitTypes = [
-      'APARTMENT',
-      'VILLA',
       'STUDIO',
-      'OFFICE',
-      'SHOP',
-      'WAREHOUSE',
-      'TOWNHOUSE',
+      'BHK1',
+      'BHK2',
+      'BHK3',
       'PENTHOUSE',
+      'RETAIL',
+      'OFFICE',
     ];
 
     showModalBottomSheet(
@@ -416,7 +423,7 @@ class _PropertyDetailScreenState extends ConsumerState<PropertyDetailScreen> {
                         .map((t) => DropdownMenuItem(value: t, child: Text(t)))
                         .toList(),
                     onChanged: (v) =>
-                        setSheetState(() => unitType = v ?? 'APARTMENT'),
+                        setSheetState(() => unitType = v ?? 'STUDIO'),
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
@@ -443,14 +450,20 @@ class _PropertyDetailScreenState extends ConsumerState<PropertyDetailScreen> {
                       if (!formKey.currentState!.validate()) return;
                       final service = ref.read(_unitServiceProvider);
                       try {
+                        // POST /v1/units binds the Unit entity directly:
+                        // the property ref is a nested {id}, and the fields
+                        // are sizeSqft/expectedRent — 'propertyId', 'size'
+                        // and 'annualRent' were silently dropped.
                         await service.createUnit({
                           'unitNumber': unitNumberCtrl.text.trim(),
-                          'propertyId': widget.propertyId,
+                          'property': {'id': widget.propertyId},
                           'type': unitType,
                           if (sizeCtrl.text.isNotEmpty)
-                            'size': double.tryParse(sizeCtrl.text.trim()),
+                            'sizeSqft': double.tryParse(sizeCtrl.text.trim()),
                           if (rentCtrl.text.isNotEmpty)
-                            'annualRent': double.tryParse(rentCtrl.text.trim()),
+                            'expectedRent': double.tryParse(
+                              rentCtrl.text.trim(),
+                            ),
                         });
                         if (ctx.mounted) Navigator.pop(ctx);
                         _loadData();
@@ -929,12 +942,15 @@ class _RentRollCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    double monthlyOf(bool Function(dynamic) test) => units
-        .where(test)
-        .fold<double>(
-          0,
-          (s, u) => s + (((u['annualRent'] ?? 0) as num).toDouble() / 12),
-        );
+    // Units carry `expectedRent` (asking) and `actualRent` (leased); there is
+    // no `annualRent` key, which left this card permanently at AED 0. Prefer
+    // the leased figure when present, else the asking rent.
+    double monthlyOf(bool Function(dynamic) test) =>
+        units.where(test).fold<double>(0, (s, u) {
+          final actual = ((u['actualRent'] ?? 0) as num).toDouble();
+          final expected = ((u['expectedRent'] ?? 0) as num).toDouble();
+          return s + (actual > 0 ? actual : expected) / 12;
+        });
 
     final total = monthlyOf((_) => true);
     final fromOccupied = monthlyOf((u) => u['status'] == 'OCCUPIED');

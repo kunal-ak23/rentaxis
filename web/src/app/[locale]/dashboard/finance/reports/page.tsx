@@ -65,18 +65,13 @@ type AgingBucket = {
     label: string;
     count: number;
     amount: number;
-    items: AgingItem[];
+    details: AgingItem[];
 };
 
 type AgingData = {
     totalOutstanding: number;
-    buckets: {
-        current: AgingBucket;
-        days1to30: AgingBucket;
-        days31to60: AgingBucket;
-        days61to90: AgingBucket;
-        days90plus: AgingBucket;
-    };
+    // Backend returns an ordered array of buckets, labelled "Current", "1-30 Days", ...
+    buckets: AgingBucket[];
 };
 
 type VatLine = {
@@ -212,13 +207,17 @@ export default function ReportsPage() {
         { key: "tickets", label: "Tickets" },
     ];
 
+    // apiLabel must match the bucket labels built in PaymentScheduleService.getAgingReport
     const bucketConfigs = [
-        { key: "current", label: t("current"), bg: "bg-emerald-50", border: "border-emerald-200", text: "text-emerald-700" },
-        { key: "days1to30", label: t("days1to30"), bg: "bg-amber-50", border: "border-amber-200", text: "text-amber-700" },
-        { key: "days31to60", label: t("days31to60"), bg: "bg-orange-50", border: "border-orange-200", text: "text-orange-700" },
-        { key: "days61to90", label: t("days61to90"), bg: "bg-red-50", border: "border-red-200", text: "text-red-700" },
-        { key: "days90plus", label: t("days90plus"), bg: "bg-rose-100", border: "border-rose-300", text: "text-rose-700" },
+        { key: "current", apiLabel: "Current", label: t("current"), bg: "bg-emerald-50", border: "border-emerald-200", text: "text-emerald-700" },
+        { key: "days1to30", apiLabel: "1-30 Days", label: t("days1to30"), bg: "bg-amber-50", border: "border-amber-200", text: "text-amber-700" },
+        { key: "days31to60", apiLabel: "31-60 Days", label: t("days31to60"), bg: "bg-orange-50", border: "border-orange-200", text: "text-orange-700" },
+        { key: "days61to90", apiLabel: "61-90 Days", label: t("days61to90"), bg: "bg-red-50", border: "border-red-200", text: "text-red-700" },
+        { key: "days90plus", apiLabel: "90+ Days", label: t("days90plus"), bg: "bg-rose-100", border: "border-rose-300", text: "text-rose-700" },
     ];
+
+    const findBucket = (cfg: (typeof bucketConfigs)[number], idx: number): AgingBucket | undefined =>
+        agingData?.buckets?.find(b => b.label === cfg.apiLabel) ?? agingData?.buckets?.[idx];
 
     const showPropertyFilter = activeTab === "pnl" || activeTab === "balanceSheet" || activeTab === "aging" || activeTab === "tickets";
     const showDateFilters = activeTab !== "aging";
@@ -557,8 +556,8 @@ export default function ReportsPage() {
 
                     {/* Bucket Summary Cards */}
                     <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                        {bucketConfigs.map(cfg => {
-                            const bucket = agingData.buckets?.[cfg.key as keyof typeof agingData.buckets];
+                        {bucketConfigs.map((cfg, idx) => {
+                            const bucket = findBucket(cfg, idx);
                             if (!bucket) return null;
                             return (
                                 <div key={cfg.key} className={`${cfg.bg} border ${cfg.border} rounded-xl p-5 shadow-sm`}>
@@ -571,9 +570,9 @@ export default function ReportsPage() {
                     </div>
 
                     {/* Expandable Detail Tables per Bucket */}
-                    {bucketConfigs.map(cfg => {
-                        const bucket = agingData.buckets?.[cfg.key as keyof typeof agingData.buckets];
-                        if (!bucket?.items || bucket.items.length === 0) return null;
+                    {bucketConfigs.map((cfg, idx) => {
+                        const bucket = findBucket(cfg, idx);
+                        if (!bucket?.details || bucket.details.length === 0) return null;
                         const isExpanded = expandedBuckets[cfg.key];
                         return (
                             <div key={cfg.key} className="bg-surface border border-border rounded-xl overflow-hidden shadow-sm">
@@ -598,7 +597,7 @@ export default function ReportsPage() {
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-border">
-                                                {bucket.items.map((item, i) => (
+                                                {bucket.details.map((item, i) => (
                                                     <tr key={i} className="hover:bg-input/30">
                                                         <td className="px-5 py-3 text-xs font-medium">{item.renterName}</td>
                                                         <td className="px-5 py-3 text-xs text-muted">{item.propertyName}</td>

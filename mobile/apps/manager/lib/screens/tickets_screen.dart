@@ -649,7 +649,8 @@ class _TicketCard extends StatelessWidget {
     final category = (ticket['category'] ?? '').toString();
     final propertyName = ticket['propertyName'] ?? '';
     final unitNumber = ticket['unitNumber'] ?? '';
-    final assignedToName = ticket['assignedToName']?.toString();
+    final assignedToName = (ticket['assigneeName'] ?? ticket['assignedToName'])
+        ?.toString();
     final isDimmed = status == 'CLOSED';
     final isResolved = status == 'RESOLVED';
 

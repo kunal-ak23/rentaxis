@@ -225,7 +225,8 @@ class _FinanceReportsScreenState extends ConsumerState<FinanceReportsScreen> {
       builder: (ctx) => _PickerDialog(
         title: l.selectVendor,
         items: vendors,
-        nameKey: 'name',
+        nameKey: 'nameEn',
+        arNameKey: 'nameAr',
         l: l,
       ),
     );
@@ -568,6 +569,7 @@ class _PickerDialog extends StatelessWidget {
   final String title;
   final List<dynamic> items;
   final String nameKey;
+  final String? arNameKey;
   final String? subtitleKey;
   final _L l;
 
@@ -576,6 +578,7 @@ class _PickerDialog extends StatelessWidget {
     required this.items,
     required this.nameKey,
     required this.l,
+    this.arNameKey,
     this.subtitleKey,
   });
 
@@ -614,7 +617,13 @@ class _PickerDialog extends StatelessWidget {
                 itemCount: items.length,
                 itemBuilder: (ctx, index) {
                   final item = items[index] as Map<String, dynamic>;
-                  final name = (item[nameKey] ?? '-').toString();
+                  // Prefer the Arabic name in AR locale, fall back to nameKey.
+                  final arName = l.ar && arNameKey != null
+                      ? (item[arNameKey] ?? '').toString()
+                      : '';
+                  final name = arName.isNotEmpty
+                      ? arName
+                      : (item[nameKey] ?? '-').toString();
                   final subtitle = subtitleKey != null
                       ? (item[subtitleKey] ?? '').toString()
                       : null;

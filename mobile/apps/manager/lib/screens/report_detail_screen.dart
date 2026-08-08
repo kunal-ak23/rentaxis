@@ -59,15 +59,14 @@ class ReportDetailScreen extends ConsumerWidget {
     final m = context.miftah;
     final data = reportData as Map<String, dynamic>;
     final totalIncome = (data['totalIncome'] ?? 0).toDouble();
-    final totalExpense = (data['totalExpense'] ?? 0).toDouble();
-    final netIncome = (data['netIncome'] ?? totalIncome - totalExpense)
+    final totalExpense = (data['totalExpenses'] ?? 0).toDouble();
+    final netIncome = (data['netProfit'] ?? totalIncome - totalExpense)
         .toDouble();
-    final incomeAccounts = List<Map<String, dynamic>>.from(
-      data['incomeAccounts'] ?? [],
-    );
-    final expenseAccounts = List<Map<String, dynamic>>.from(
-      data['expenseAccounts'] ?? [],
-    );
+    final incomeAccounts = _breakdownItems(data['incomeBreakdown']);
+    final expenseAccounts = [
+      ..._breakdownItems(data['directExpenseBreakdown']),
+      ..._breakdownItems(data['indirectExpenseBreakdown']),
+    ];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -576,6 +575,15 @@ class ReportDetailScreen extends ConsumerWidget {
             ),
     );
   }
+}
+
+/// Flattens a ReportDTO breakdown map (`{'code - name': amount}`) into
+/// name/amount rows for [_LineItem].
+List<Map<String, dynamic>> _breakdownItems(dynamic breakdown) {
+  if (breakdown is! Map) return const [];
+  return breakdown.entries
+      .map((e) => <String, dynamic>{'name': e.key.toString(), 'amount': e.value})
+      .toList();
 }
 
 class _ChromeHeader extends StatelessWidget {

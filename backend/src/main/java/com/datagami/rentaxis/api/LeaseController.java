@@ -198,13 +198,13 @@ public class LeaseController {
     }
 
     @GetMapping("/{id}/documents")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'RENTER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER', 'RENTER')")
     public ResponseEntity<List<LeaseDocumentDTO>> getDocuments(@PathVariable UUID id) {
         return ResponseEntity.ok(contractGenerationService.getDocuments(id));
     }
 
     @GetMapping("/documents/{docId}/download")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'RENTER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER', 'RENTER')")
     public ResponseEntity<byte[]> downloadDocument(@PathVariable UUID docId) {
         byte[] content = contractGenerationService.getDocumentContent(docId);
         return ResponseEntity.ok()

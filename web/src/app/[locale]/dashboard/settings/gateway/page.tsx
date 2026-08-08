@@ -85,7 +85,6 @@ export default function GatewayConfigPage() {
                 const config: GatewayConfig = await res.json();
                 setExistingConfig(config);
                 setSelectedGatewayId(config.gatewayId);
-                setApiKey(config.apiKeyMasked || "");
                 setIsTestMode(config.isTestMode);
             }
         } catch (err) {
@@ -115,6 +114,16 @@ export default function GatewayConfigPage() {
             setError("Please select a payment gateway.");
             return;
         }
+        const newApiKey = apiKey.trim();
+        const newApiSecret = apiSecret.trim();
+        // Credentials are mandatory when configuring a gateway for the first time
+        // (or switching gateways); otherwise blank fields mean "keep existing".
+        const hasStoredCredentials =
+            !!existingConfig && existingConfig.gatewayId === selectedGatewayId;
+        if (!hasStoredCredentials && (!newApiKey || !newApiSecret)) {
+            setError("API key and API secret are required to configure this gateway.");
+            return;
+        }
         setSaving(true);
         setError("");
         setSaveSuccess(false);
@@ -124,14 +133,19 @@ export default function GatewayConfigPage() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     gatewayId: selectedGatewayId,
-                    apiKey,
-                    apiSecret,
-                    webhookSecret,
+                    // Only send credentials the user actually typed — omitted
+                    // fields keep the stored values on the backend.
+                    ...(newApiKey ? { apiKey: newApiKey } : {}),
+                    ...(newApiSecret ? { apiSecret: newApiSecret } : {}),
+                    ...(webhookSecret ? { webhookSecret } : {}),
                     isTestMode,
                 }),
             });
             if (res.ok) {
                 setSaveSuccess(true);
+                setApiKey("");
+                setApiSecret("");
+                setWebhookSecret("");
                 fetchExistingConfig();
                 setTimeout(() => setSaveSuccess(false), 4000);
             } else {
@@ -265,6 +279,9 @@ export default function GatewayConfigPage() {
                                 placeholder="pk_test_..."
                                 className="w-full border border-border rounded-lg bg-surface p-3 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all duration-200"
                             />
+                            {existingConfig && existingConfig.gatewayId === selectedGatewayId && !apiKey && (
+                                <p className="text-[10px] text-muted mt-1">API key is already configured ({existingConfig.apiKeyMasked}). Leave blank to keep existing.</p>
+                            )}
                         </div>
 
                         {/* API Secret */}
@@ -289,6 +306,9 @@ export default function GatewayConfigPage() {
                                     {showApiSecret ? <EyeOff size={16} /> : <Eye size={16} />}
                                 </button>
                             </div>
+                            {existingConfig && existingConfig.gatewayId === selectedGatewayId && !apiSecret && (
+                                <p className="text-[10px] text-muted mt-1">API secret is already configured. Leave blank to keep existing.</p>
+                            )}
                         </div>
 
                         {/* Webhook Secret */}

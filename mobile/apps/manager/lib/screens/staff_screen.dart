@@ -19,6 +19,16 @@ final _staffProvider = FutureProvider.autoDispose<List<dynamic>>((ref) async {
   return service.getStaff();
 });
 
+/// Locale-aware name from a row carrying nameEn/nameAr (staff or property).
+String _localName(dynamic row, bool ar) {
+  if (row is! Map) return '';
+  final nameAr = (row['nameAr'] ?? '').toString();
+  final nameEn = (row['nameEn'] ?? '').toString();
+  if (ar && nameAr.isNotEmpty) return nameAr;
+  if (nameEn.isNotEmpty) return nameEn;
+  return nameAr;
+}
+
 final _propertiesForFilterProvider = FutureProvider.autoDispose<List<dynamic>>((
   ref,
 ) async {
@@ -46,12 +56,13 @@ class _StaffScreenState extends ConsumerState<StaffScreen> {
 
   Future<void> _deleteStaff(Map<String, dynamic> staff) async {
     final l = _L(context.isAr);
+    final name = _localName(staff, l.ar);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(l.deleteStaff),
-        content: Text(l.deleteStaffConfirm(staff['name'])),
+        content: Text(l.deleteStaffConfirm(name.isEmpty ? null : name)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -146,19 +157,28 @@ class _StaffScreenState extends ConsumerState<StaffScreen> {
               error: (e, _) =>
                   ErrorState(message: l.loadFailed, onRetry: _refresh),
               data: (staff) {
+                // The Staff DTO exposes nameEn/nameAr/designation and a single
+                // nested property — search and filter on those real fields.
                 final filtered = staff.where((s) {
-                  final name = (s['name'] ?? '').toString().toLowerCase();
-                  final email = (s['email'] ?? '').toString().toLowerCase();
+                  final haystack = [
+                    s['nameEn'],
+                    s['nameAr'],
+                    s['designation'],
+                    s['property']?['nameEn'],
+                    s['property']?['nameAr'],
+                  ];
                   final matchesSearch =
-                      name.contains(_searchQuery) ||
-                      email.contains(_searchQuery);
+                      _searchQuery.isEmpty ||
+                      haystack.any(
+                        (v) => (v ?? '')
+                            .toString()
+                            .toLowerCase()
+                            .contains(_searchQuery),
+                      );
 
-                  if (_selectedPropertyId != null) {
-                    final propertyIds =
-                        (s['propertyIds'] as List<dynamic>?) ?? [];
-                    if (!propertyIds.contains(_selectedPropertyId)) {
-                      return false;
-                    }
+                  if (_selectedPropertyId != null &&
+                      s['property']?['id'] != _selectedPropertyId) {
+                    return false;
                   }
 
                   return matchesSearch;
@@ -218,11 +238,14 @@ class _StaffScreenState extends ConsumerState<StaffScreen> {
 
   void _showCreateStaffSheet(BuildContext context) {
     final l = _L(context.isAr);
-    final nameCtrl = TextEditingController();
-    final emailCtrl = TextEditingController();
+    final nameEnCtrl = TextEditingController();
+    final nameArCtrl = TextEditingController();
+    final designationCtrl = TextEditingController();
     final phoneCtrl = TextEditingController();
     final formKey = GlobalKey<FormState>();
-    String role = 'PROPERTY_MANAGER';
+    final properties =
+        ref.read(_propertiesForFilterProvider).asData?.value ?? const [];
+    String? propertyId;
 
     showModalBottomSheet(
       context: context,
@@ -270,9 +293,10 @@ class _StaffScreenState extends ConsumerState<StaffScreen> {
                   ),
                   const SizedBox(height: 20),
                   TextFormField(
-                    controller: nameCtrl,
+                    key: const Key('staff-name-en'),
+                    controller: nameEnCtrl,
                     decoration: InputDecoration(
-                      labelText: l.fullName,
+                      labelText: l.nameEn,
                       prefixIcon: const Icon(Icons.person_outline),
                     ),
                     validator: (v) =>
@@ -280,22 +304,25 @@ class _StaffScreenState extends ConsumerState<StaffScreen> {
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
-                    controller: emailCtrl,
-                    keyboardType: TextInputType.emailAddress,
+                    key: const Key('staff-name-ar'),
+                    controller: nameArCtrl,
                     decoration: InputDecoration(
-                      labelText: l.email,
-                      prefixIcon: const Icon(Icons.email_outlined),
+                      labelText: l.nameAr,
+                      prefixIcon: const Icon(Icons.person_outline),
                     ),
-                    validator: (v) {
-                      if (v == null || v.trim().isEmpty) return l.emailRequired;
-                      if (!RegExp(r'^[^@]+@[^@]+\.[^@]+$').hasMatch(v.trim())) {
-                        return l.emailInvalid;
-                      }
-                      return null;
-                    },
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
+                    key: const Key('staff-designation'),
+                    controller: designationCtrl,
+                    decoration: InputDecoration(
+                      labelText: l.designation,
+                      prefixIcon: const Icon(Icons.badge_outlined),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    key: const Key('staff-phone'),
                     controller: phoneCtrl,
                     keyboardType: TextInputType.phone,
                     decoration: InputDecoration(
@@ -304,38 +331,47 @@ class _StaffScreenState extends ConsumerState<StaffScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  DropdownButtonFormField<String>(
-                    initialValue: role,
+                  DropdownButtonFormField<String?>(
+                    key: const Key('staff-property'),
+                    initialValue: propertyId,
                     decoration: InputDecoration(
-                      labelText: l.role,
-                      prefixIcon: const Icon(Icons.badge_outlined),
+                      labelText: l.property,
+                      prefixIcon: const Icon(Icons.apartment_outlined),
                     ),
                     items: [
-                      DropdownMenuItem(
-                        value: 'PROPERTY_MANAGER',
-                        child: Text(l.propertyManager),
+                      DropdownMenuItem<String?>(
+                        value: null,
+                        child: Text(l.noProperty),
                       ),
-                      DropdownMenuItem(
-                        value: 'TENANT_USER',
-                        child: Text(l.tenantUser),
+                      ...properties.map(
+                        (p) => DropdownMenuItem<String?>(
+                          value: p['id'] as String?,
+                          child: Text((p['name'] ?? l.property).toString()),
+                        ),
                       ),
                     ],
-                    onChanged: (v) =>
-                        setSheetState(() => role = v ?? 'PROPERTY_MANAGER'),
+                    onChanged: (v) => setSheetState(() => propertyId = v),
                   ),
                   const SizedBox(height: 24),
                   GoldButton(
+                    key: const Key('staff-save'),
                     label: l.createStaff,
                     onPressed: () async {
                       if (!formKey.currentState!.validate()) return;
                       final service = ref.read(_staffServiceProvider);
                       try {
+                        // POST /v1/staff binds the Staff entity directly:
+                        // nameEn is required; property goes as {id}.
                         await service.createStaff({
-                          'name': nameCtrl.text.trim(),
-                          'email': emailCtrl.text.trim(),
-                          if (phoneCtrl.text.isNotEmpty)
+                          'nameEn': nameEnCtrl.text.trim(),
+                          if (nameArCtrl.text.trim().isNotEmpty)
+                            'nameAr': nameArCtrl.text.trim(),
+                          if (designationCtrl.text.trim().isNotEmpty)
+                            'designation': designationCtrl.text.trim(),
+                          if (phoneCtrl.text.trim().isNotEmpty)
                             'phone': phoneCtrl.text.trim(),
-                          'role': role,
+                          if (propertyId != null)
+                            'property': {'id': propertyId},
                         });
                         if (ctx.mounted) Navigator.pop(ctx);
                         _refresh();
@@ -512,25 +548,15 @@ class _StaffCard extends StatelessWidget {
     required this.onLongPress,
   });
 
-  Color _roleColor(MiftahColors m, String role) {
-    switch (role) {
-      case 'PROPERTY_MANAGER':
-        return m.isDark ? AppColors.accent : AppColors.primary;
-      case 'TENANT_USER':
-        return AppColors.info;
-      default:
-        return m.textSecondary;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final m = context.miftah;
-    final name = staff['name'] ?? l.unknown;
-    final email = staff['email'] ?? '';
-    final phone = staff['phone'] ?? staff['phoneNumber'] ?? '';
-    final role = staff['role'] ?? '';
-    final propertyIds = (staff['propertyIds'] as List<dynamic>?) ?? [];
+    final localName = _localName(staff, l.ar);
+    final name = localName.isEmpty ? l.unknown : localName;
+    final designation = (staff['designation'] ?? '').toString();
+    final phone = (staff['phone'] ?? '').toString();
+    final active = staff['active'] != false;
+    final propertyName = _localName(staff['property'], l.ar);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -557,9 +583,7 @@ class _StaffCard extends StatelessWidget {
                 ),
                 alignment: Alignment.center,
                 child: Text(
-                  name.toString().isNotEmpty
-                      ? name.toString()[0].toUpperCase()
-                      : '?',
+                  name.isNotEmpty ? name[0].toUpperCase() : '?',
                   style: GoogleFonts.cinzel(
                     fontSize: 13,
                     color: AppColors.accentDark,
@@ -575,7 +599,7 @@ class _StaffCard extends StatelessWidget {
                       children: [
                         Flexible(
                           child: Text(
-                            name.toString(),
+                            name,
                             style:
                                 (l.ar
                                 ? GoogleFonts.notoNaskhArabic
@@ -587,20 +611,20 @@ class _StaffCard extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        if (role.toString().isNotEmpty) ...[
-                          const SizedBox(width: 8),
-                          _RolePill(
-                            color: _roleColor(m, role),
-                            label: l.roleLabel(role),
-                            ar: l.ar,
-                          ),
-                        ],
+                        const SizedBox(width: 8),
+                        _StatusPill(
+                          color: active
+                              ? AppColors.success
+                              : m.textSecondary,
+                          label: active ? l.active : l.inactive,
+                          ar: l.ar,
+                        ),
                       ],
                     ),
                     const SizedBox(height: 4),
-                    if (email.toString().isNotEmpty)
+                    if (designation.isNotEmpty)
                       Text(
-                        email.toString(),
+                        designation,
                         style:
                             (l.ar
                             ? GoogleFonts.notoNaskhArabic
@@ -609,10 +633,10 @@ class _StaffCard extends StatelessWidget {
                               color: m.textSecondary,
                             ),
                       ),
-                    if (phone.toString().isNotEmpty) ...[
+                    if (phone.isNotEmpty) ...[
                       const SizedBox(height: 2),
                       Text(
-                        phone.toString(),
+                        phone,
                         style:
                             (l.ar
                             ? GoogleFonts.notoNaskhArabic
@@ -622,10 +646,10 @@ class _StaffCard extends StatelessWidget {
                             ),
                       ),
                     ],
-                    if (propertyIds.isNotEmpty) ...[
+                    if (propertyName.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Text(
-                        l.propertyCount(propertyIds.length),
+                        propertyName,
                         style:
                             (l.ar
                             ? GoogleFonts.notoNaskhArabic
@@ -648,11 +672,15 @@ class _StaffCard extends StatelessWidget {
   }
 }
 
-class _RolePill extends StatelessWidget {
+class _StatusPill extends StatelessWidget {
   final Color color;
   final String label;
   final bool ar;
-  const _RolePill({required this.color, required this.label, required this.ar});
+  const _StatusPill({
+    required this.color,
+    required this.label,
+    required this.ar,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -693,17 +721,14 @@ class _L {
       ar ? 'أضف أول موظف لديك' : 'Add your first staff member';
   String get unknown => ar ? 'غير معروف' : 'Unknown';
   String get newStaffMember => ar ? 'موظف جديد' : 'New Staff Member';
-  String get fullName => ar ? 'الاسم الكامل' : 'Full Name';
+  String get nameEn => ar ? 'الاسم (إنجليزي)' : 'Name (English)';
+  String get nameAr => ar ? 'الاسم (عربي)' : 'Name (Arabic)';
   String get nameRequired => ar ? 'الاسم مطلوب' : 'Name is required';
-  String get email => ar ? 'البريد الإلكتروني' : 'Email';
-  String get emailRequired =>
-      ar ? 'البريد الإلكتروني مطلوب' : 'Email is required';
-  String get emailInvalid =>
-      ar ? 'أدخل بريدًا إلكترونيًا صالحًا' : 'Enter a valid email';
+  String get designation => ar ? 'المسمى الوظيفي' : 'Designation';
   String get phoneNumber => ar ? 'رقم الهاتف' : 'Phone Number';
-  String get role => ar ? 'الدور الوظيفي' : 'Role';
-  String get propertyManager => ar ? 'مدير العقار' : 'Property Manager';
-  String get tenantUser => ar ? 'مستخدم الحساب' : 'Tenant User';
+  String get noProperty => ar ? 'بدون عقار' : 'No property';
+  String get active => ar ? 'نشط' : 'Active';
+  String get inactive => ar ? 'غير نشط' : 'Inactive';
   String get createStaff => ar ? 'إنشاء موظف' : 'Create Staff';
   String get createStaffFailed =>
       ar ? 'فشل إنشاء الموظف' : 'Failed to create staff member';
@@ -716,18 +741,4 @@ class _L {
   String get staffDeleted => ar ? 'تم حذف الموظف' : 'Staff member deleted';
   String get staffDeleteFailed =>
       ar ? 'فشل حذف الموظف' : 'Failed to delete staff member';
-  String propertyCount(int n) => ar
-      ? '$n ${n == 1 ? 'عقار' : 'عقارات'}'
-      : '$n ${n == 1 ? 'property' : 'properties'}';
-
-  String roleLabel(String role) {
-    switch (role) {
-      case 'PROPERTY_MANAGER':
-        return propertyManager;
-      case 'TENANT_USER':
-        return tenantUser;
-      default:
-        return role;
-    }
-  }
 }

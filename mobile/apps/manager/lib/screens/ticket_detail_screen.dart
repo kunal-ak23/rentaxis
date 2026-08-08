@@ -517,11 +517,11 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
                     const SizedBox(height: 16),
                   ],
 
-                  if (ticket['assignedToName'] != null) ...[
+                  if (ticket['assigneeName'] != null) ...[
                     AnimatedListItem(
                       index: 2,
                       child: _AssigneeCard(
-                        name: ticket['assignedToName'].toString(),
+                        name: ticket['assigneeName'].toString(),
                         category: category,
                         l: l,
                       ),
