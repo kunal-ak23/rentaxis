@@ -23,8 +23,9 @@ public class NotificationController {
     public ResponseEntity<List<NotificationDTO>> getNotifications(
             @RequestHeader("X-User-Id") UUID userId,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
-        return ResponseEntity.ok(notificationService.getNotifications(userId, page, size));
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(defaultValue = "false") boolean unreadOnly) {
+        return ResponseEntity.ok(notificationService.getNotifications(userId, page, size, unreadOnly));
     }
 
     @GetMapping("/unread-count")

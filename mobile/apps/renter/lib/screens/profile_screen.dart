@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -7,6 +8,22 @@ final _authServiceForProfileProvider = Provider<AuthService>((ref) {
   final client = ref.watch(apiClientProvider);
   return AuthService(client.dio);
 });
+
+/// True when [error] is the backend's 400 for a wrong current password —
+/// PUT /auth/me/password answers `{"error": "Current password is incorrect"}`
+/// (AuthController). Lets the snackbar name the actual problem bilingually
+/// instead of the blanket "failed" message.
+///
+/// Top-level (not a State method) so tests can pin the mapping directly.
+/// Mirrors the manager app's profile_screen copy.
+bool isWrongCurrentPasswordError(Object error) {
+  if (error is! DioException || error.response?.statusCode != 400) {
+    return false;
+  }
+  final data = error.response?.data;
+  final message = data is Map ? data['error']?.toString() : null;
+  return message != null && message.toLowerCase().contains('current password');
+}
 
 // ---------------------------------------------------------------------------
 // Fonts helper — Arabic uses Noto Naskh instead of Cinzel/Josefin Sans, and
@@ -184,7 +201,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         setState(() => _isChangingPassword = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(l.passwordChangeFailed),
+            content: Text(
+              isWrongCurrentPasswordError(e)
+                  ? l.currentPasswordIncorrect
+                  : errorMessage(e, l.passwordChangeFailed),
+            ),
             backgroundColor: AppColors.danger,
           ),
         );
@@ -845,6 +866,8 @@ class _L {
   String get passwordChangeFailed => ar
       ? 'فشل تغيير كلمة المرور. تحقق من كلمة المرور الحالية.'
       : 'Failed to change password. Check your current password.';
+  String get currentPasswordIncorrect =>
+      ar ? 'كلمة المرور الحالية غير صحيحة' : 'Current password is incorrect';
 
   String roleLabel(String role) {
     switch (role.toUpperCase()) {

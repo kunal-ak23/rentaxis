@@ -3,41 +3,74 @@ import { useSession } from "next-auth/react";
 
 type FeatureMap = Record<string, boolean>;
 
+// Module-level cache so client-side navigations render feature-gated nav
+// instantly. It is keyed to the signed-in user and revalidated after a short
+// TTL (and on window focus) so a superadmin flipping a toggle becomes visible
+// without a hard reload, and a session change never serves the previous
+// user's flags.
+const CACHE_TTL_MS = 60_000;
+
 let featuresCache: FeatureMap | null = null;
 let slugCache: string | null = null;
+let cacheUserId: string | null = null;
+let cacheFetchedAt = 0;
 
 export function useTenantFeatures() {
-    const { status } = useSession();
-    const [features, setFeatures] = useState<FeatureMap>(featuresCache ?? {});
-    const [tenantSlug, setTenantSlug] = useState<string>(slugCache ?? "");
+    const { data: session, status } = useSession();
+    const userId = session?.user?.id ?? null;
+    const [features, setFeatures] = useState<FeatureMap>(
+        () => (cacheUserId === userId && featuresCache) || {}
+    );
+    const [tenantSlug, setTenantSlug] = useState<string>(
+        () => (cacheUserId === userId && slugCache !== null ? slugCache : "")
+    );
 
     useEffect(() => {
         if (status !== "authenticated") return;
 
-        if (featuresCache) {
-            setFeatures(featuresCache);
-        } else {
+        if (cacheUserId !== userId) {
+            featuresCache = null;
+            slugCache = null;
+            cacheFetchedAt = 0;
+            cacheUserId = userId;
+        }
+
+        if (featuresCache) setFeatures(featuresCache);
+        if (slugCache !== null) setTenantSlug(slugCache);
+
+        const revalidate = () => {
+            // Mark up front so concurrently mounting hook instances don't all fetch.
+            cacheFetchedAt = Date.now();
             fetch("/api/proxy/v1/tenant/features")
-                .then(r => r.ok ? r.json() : {})
+                .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
                 .then((data: FeatureMap) => {
                     featuresCache = data;
                     setFeatures(data);
                 })
                 .catch(() => {});
-        }
-
-        if (slugCache !== null) {
-            setTenantSlug(slugCache);
-        } else {
             fetch("/api/proxy/v1/tenant/info")
-                .then(r => r.ok ? r.json() : { slug: "" })
-                .then((data: { slug: string }) => {
-                    slugCache = data.slug ?? "";
-                    setTenantSlug(slugCache);
+                .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+                .then((data: { slug?: string }) => {
+                    const slug = data.slug ?? "";
+                    slugCache = slug;
+                    setTenantSlug(slug);
                 })
                 .catch(() => {});
-        }
-    }, [status]);
+        };
+
+        const isStale = () =>
+            featuresCache === null ||
+            slugCache === null ||
+            Date.now() - cacheFetchedAt > CACHE_TTL_MS;
+
+        if (isStale()) revalidate();
+
+        const onFocus = () => {
+            if (isStale()) revalidate();
+        };
+        window.addEventListener("focus", onFocus);
+        return () => window.removeEventListener("focus", onFocus);
+    }, [status, userId]);
 
     return {
         isEnabled: (feature: string) => features[feature] ?? false,

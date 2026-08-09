@@ -111,6 +111,32 @@ class MarketplaceControllerTest {
     }
 
     @Test
+    void listListings_summaryCarriesCoordinatesBathroomsAndCreatedAt() {
+        when(marketplaceService.resolveTenantSlug("acme")).thenReturn(tenantId);
+        UnitListing listing = publishedListing();
+        listing.setBathrooms(2);
+        listing.setLat(new java.math.BigDecimal("25.2048"));
+        listing.setLng(new java.math.BigDecimal("55.2708"));
+        java.time.LocalDateTime created = java.time.LocalDateTime.of(2026, 1, 15, 10, 30);
+        listing.setCreatedAt(created);
+        Page<UnitListing> page = new PageImpl<>(List.of(listing));
+        when(marketplaceService.search(eq(tenantId), any(), any(Pageable.class))).thenReturn(page);
+
+        ResponseEntity<Page<com.datagami.rentaxis.api.dto.UnitListingSummaryDTO>> resp =
+                controller.listListings(
+                        "acme", null, null, null, null, null, null, null, null, null,
+                        PageRequest.of(0, 10));
+
+        // The renter map and web distance chips read these off the summary —
+        // they must survive the entity -> summary mapping.
+        var summary = resp.getBody().getContent().getFirst();
+        assertThat(summary.bathrooms()).isEqualTo(2);
+        assertThat(summary.lat()).isEqualByComparingTo("25.2048");
+        assertThat(summary.lng()).isEqualByComparingTo("55.2708");
+        assertThat(summary.createdAt()).isEqualTo(created);
+    }
+
+    @Test
     void getBySlug_200() {
         UnitListing listing = publishedListing();
         when(marketplaceService.resolveByTenantSlugAndUnitSlug("acme", "nice-flat")).thenReturn(listing);

@@ -13,10 +13,19 @@ class AuthService {
   final Dio _dio;
   AuthService(this._dio);
 
-  Future<AuthResponse> login(String email, String password) async {
+  /// Password login. [tenantId] disambiguates when the same email + password
+  /// exists in multiple tenants: the backend answers such a login with 409 and
+  /// a `{tenants: [{tenantId, tenantName}]}` body, expecting the client to
+  /// re-submit with the chosen [tenantId].
+  Future<AuthResponse> login(
+    String email,
+    String password, {
+    String? tenantId,
+  }) async {
     final response = await _dio.post('/auth/login', data: {
       'email': email,
       'password': password,
+      if (tenantId != null) 'tenantId': tenantId,
     });
     return AuthResponse.fromJson(response.data);
   }
@@ -37,6 +46,10 @@ class AuthService {
     return response.data;
   }
 
+  /// Updates the caller's profile. `null` means "leave unchanged" — the key is
+  /// omitted and the backend skips the field. To CLEAR the stored phone number
+  /// pass an empty string: PUT /auth/me normalizes blank to null server-side
+  /// (PhoneNumbers.compact), which is how the web client clears it too.
   Future<void> updateProfile({String? name, String? phoneNumber}) async {
     await _dio.put('/auth/me', data: {
       if (name != null) 'name': name,

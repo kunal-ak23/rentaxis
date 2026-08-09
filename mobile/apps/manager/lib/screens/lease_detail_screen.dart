@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -172,14 +173,21 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(l.failedToActivate)));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(_actionError(e, l.failedToActivate))),
+        );
       }
     } finally {
       if (mounted) setState(() => _isActioning = false);
     }
   }
+
+  /// Admin-only lease actions answer 403 for other roles — name the
+  /// permission problem instead of a generic failure.
+  String _actionError(Object e, String fallback) =>
+      e is DioException && e.response?.statusCode == 403
+      ? _l.notAuthorized
+      : fallback;
 
   Future<bool> _confirmAction(String title, String message) async {
     final l = _l;
@@ -312,9 +320,9 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
       await OpenFilex.open(file.path);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(l.failedToPreview)));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(_actionError(e, l.failedToPreview))),
+        );
         setState(() => _isGeneratingContract = false);
       }
       return;
@@ -364,9 +372,9 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(l.failedToSaveContract)));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(_actionError(e, l.failedToSaveContract))),
+        );
       }
     } finally {
       if (mounted) setState(() => _isGeneratingContract = false);
@@ -465,7 +473,11 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
                       } catch (e) {
                         if (mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text(l.failedToExtend)),
+                            SnackBar(
+                              content: Text(
+                                _actionError(e, l.failedToExtend),
+                              ),
+                            ),
                           );
                         }
                       } finally {
@@ -538,6 +550,11 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
 
     final lease = _lease!;
     final status = (lease['status'] ?? 'DRAFT').toString();
+    // Activate, extend and generate-contract(+preview) are
+    // SUPER_ADMIN/TENANT_ADMIN only on the backend (LeaseController) — hide
+    // those actions for other roles instead of offering a guaranteed 403.
+    final role = ref.watch(authProvider).role;
+    final canManageLease = role == 'SUPER_ADMIN' || role == 'TENANT_ADMIN';
 
     return Scaffold(
       backgroundColor: m.background,
@@ -549,7 +566,9 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
           child: CustomScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
-              SliverToBoxAdapter(child: _buildChromeHeader(lease, status, l)),
+              SliverToBoxAdapter(
+                child: _buildChromeHeader(lease, status, l, canManageLease),
+              ),
               SliverPadding(
                 padding: EdgeInsets.fromLTRB(
                   16,
@@ -561,7 +580,9 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
                   delegate: SliverChildListDelegate([
                     _buildLeaseInfoCard(lease, l),
                     const SizedBox(height: 18),
-                    if (status == 'DRAFT' || status == 'PENDING_SIGNATURE') ...[
+                    if (canManageLease &&
+                        (status == 'DRAFT' ||
+                            status == 'PENDING_SIGNATURE')) ...[
                       GoldButton.outlined(
                         label: lease['contractNumber'] != null
                             ? l.regenerateContract
@@ -610,7 +631,12 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
     );
   }
 
-  Widget _buildChromeHeader(Map<String, dynamic> lease, String status, _L l) {
+  Widget _buildChromeHeader(
+    Map<String, dynamic> lease,
+    String status,
+    _L l,
+    bool canManageLease,
+  ) {
     final unit =
         '${lease['propertyName'] ?? '-'} · ${lease['unitIdentifier'] ?? lease['unitNumber'] ?? '-'}';
     final contractNumber = lease['contractNumber'];
@@ -689,7 +715,8 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
                     if (v == 'extend') _showExtendDialog();
                   },
                   itemBuilder: (_) => [
-                    if (status == 'ACTIVE')
+                    // POST /extend is SUPER_ADMIN/TENANT_ADMIN only.
+                    if (status == 'ACTIVE' && canManageLease)
                       PopupMenuItem(
                         value: 'extend',
                         child: Row(
@@ -1614,6 +1641,9 @@ class _L {
       ar ? 'تم تفعيل العقد بنجاح' : 'Lease activated successfully';
   String get failedToActivate =>
       ar ? 'فشل تفعيل العقد' : 'Failed to activate lease';
+  String get notAuthorized => ar
+      ? 'ليس لديك صلاحية لهذا الإجراء'
+      : 'You do not have permission for this action';
 
   String get camera => ar ? 'الكاميرا' : 'Camera';
   String get gallery => ar ? 'معرض الصور' : 'Gallery';

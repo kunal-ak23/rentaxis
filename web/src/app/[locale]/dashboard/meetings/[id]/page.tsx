@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { useSession } from "next-auth/react";
 import { useTranslations } from "next-intl";
 import { hasPermission, hasRole, type UserRole } from "@/lib/rbac";
+import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
 import {
     ArrowLeft, Loader2, Calendar, Clock, User, Building2, Home,
     FileText, CheckCircle, X, AlertTriangle, Hash,
@@ -79,6 +80,7 @@ export default function MeetingDetailPage() {
     const [meeting, setMeeting] = useState<Meeting | null>(null);
     const [loading, setLoading] = useState(true);
     const [actionLoading, setActionLoading] = useState<string | null>(null);
+    const [actionError, setActionError] = useState<string | null>(null);
 
     // ── Fetch ────────────────────────────────────────────────────────────
 
@@ -97,13 +99,19 @@ export default function MeetingDetailPage() {
 
     const performAction = async (action: string) => {
         setActionLoading(action);
+        setActionError(null);
         try {
             const res = await fetch(`/api/proxy/v1/meetings/${meetingId}/${action}`, {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
             });
-            if (res.ok) await fetchMeeting();
-        } catch { /* ignore */ } finally {
+            // Surface backend failures (e.g. "Cannot approve meeting in
+            // status: ...") instead of silently doing nothing.
+            await throwIfNotOk(res);
+            await fetchMeeting();
+        } catch (err) {
+            setActionError(err instanceof ApiError ? err.message : "Something went wrong. Please try again.");
+        } finally {
             setActionLoading(null);
         }
     };
@@ -250,6 +258,13 @@ export default function MeetingDetailPage() {
                             {t("cancel")}
                         </button>
                     )}
+                </div>
+            )}
+
+            {/* Action error */}
+            {actionError && (
+                <div className="bg-error/10 border border-error/20 text-error text-xs font-medium rounded-lg px-3 py-2" role="alert">
+                    {actionError}
                 </div>
             )}
 

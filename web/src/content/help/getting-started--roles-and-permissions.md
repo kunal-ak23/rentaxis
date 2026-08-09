@@ -18,7 +18,7 @@ RentAxis uses role-based access control to ensure each user sees only what they 
 | **Tenant Admin** | Full access within their organization. Manages properties, leases, finance, and staff. |
 | **Property Manager** | Manages assigned properties, views leases, handles maintenance tickets. |
 | **Tenant User** | Limited access. Can view their assigned unit details. |
-| **Renter** | Self-service portal. Views leases, makes payments, submits tickets. |
+| **Renter** | Self-service portal. Views leases, tracks payments, submits tickets. |
 
 ### What Each Role Can Do
 
@@ -36,6 +36,6 @@ RentAxis uses role-based access control to ensure each user sees only what they 
 
 **Renter** has access to:
 - View their active leases
-- Make online payments
+- Track rent payments and download receipts
 - Submit and track maintenance tickets
 - Download lease contracts

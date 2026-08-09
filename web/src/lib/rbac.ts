@@ -46,9 +46,9 @@ const ROLE_RANK: Record<UserRole, number> = {
     SUPER_ADMIN: 0,
     TENANT_ADMIN: 1,
     PROPERTY_MANAGER: 2,
-    SECURITY_GUARD: 3,
-    TENANT_USER: 4,
-    RENTER: 5,
+    TENANT_USER: 3,
+    RENTER: 4,
+    SECURITY_GUARD: 5,
 };
 
 /**

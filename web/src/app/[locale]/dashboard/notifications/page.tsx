@@ -79,8 +79,19 @@ export default function NotificationsPage() {
             if (res.ok) {
                 const data = await res.json();
                 if (Array.isArray(data)) {
+                    // The API returns a plain page-sized list with no total
+                    // count. Infer the total from the current offset, and
+                    // assume at least one more item whenever this page came
+                    // back full so the next-page control stays reachable.
+                    if (data.length === 0 && page > 0) {
+                        // Walked past the last page (e.g. it was exactly
+                        // full) — step back to the previous one.
+                        setCurrentPage((p) => Math.max(1, p - 1));
+                        return;
+                    }
                     setNotifications(data);
-                    setTotalItems(data.length);
+                    const loadedSoFar = page * itemsPerPage + data.length;
+                    setTotalItems(data.length === itemsPerPage ? loadedSoFar + 1 : loadedSoFar);
                 } else {
                     setNotifications(data.content ?? []);
                     setTotalItems(data.totalElements ?? data.content?.length ?? 0);

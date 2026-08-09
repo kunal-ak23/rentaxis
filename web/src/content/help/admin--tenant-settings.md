@@ -20,9 +20,11 @@ Map your chart of accounts to RentAxis's automatic transaction types:
 ### Payment Gateway
 
 Configure online payment collection:
-1. Go to **Settings > Gateway Config**
+1. Go to **Settings > Payment Gateway Configuration**
 2. Enter your Razorpay API credentials
-3. Enable or disable online payments for renters
+3. Enable or disable the gateway configuration
+
+> **Note:** Online payment initiation is not yet available in the renter portal — renters currently track their payment schedule and download receipts there.
 
 ### Rent Settings
 

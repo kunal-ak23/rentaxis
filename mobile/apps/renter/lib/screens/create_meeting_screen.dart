@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -12,6 +13,27 @@ final _leaseServiceProvider = Provider<LeaseService>((ref) {
   final client = ref.watch(apiClientProvider);
   return LeaseService(client.dio);
 });
+
+/// Extracts the 409 slot-conflict body's suggested `nextAvailableSlot`
+/// (GlobalExceptionHandler sends `{error, nextAvailableSlot}`) and formats
+/// it in device-local time, e.g. "12/8, 3:30 PM". Returns null when the body
+/// carries no parsable instant — the backend sends the literal string
+/// "unavailable" when it has no free slot to suggest.
+///
+/// Top-level (not a State method) so tests can pin the mapping directly.
+/// Mirrors the manager app's create_meeting_screen copy.
+String? formatNextAvailableSlot(Object? responseData, {required bool ar}) {
+  if (responseData is! Map) return null;
+  final raw = responseData['nextAvailableSlot']?.toString();
+  if (raw == null) return null;
+  final dt = DateTime.tryParse(raw)?.toLocal();
+  if (dt == null) return null;
+  final hour = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
+  final minute = dt.minute.toString().padLeft(2, '0');
+  final ampm = ar ? (dt.hour < 12 ? 'ص' : 'م') : (dt.hour < 12 ? 'AM' : 'PM');
+  final sep = ar ? '،' : ',';
+  return '${dt.day}/${dt.month}$sep $hour:$minute $ampm';
+}
 
 class CreateMeetingScreen extends ConsumerStatefulWidget {
   const CreateMeetingScreen({super.key});
@@ -207,6 +229,26 @@ class _CreateMeetingScreenState extends ConsumerState<CreateMeetingScreen> {
           context,
         ).showSnackBar(SnackBar(content: Text(l.submitted)));
         context.pop();
+      }
+    } on DioException catch (e) {
+      if (mounted) {
+        final String message;
+        if (e.response?.statusCode == 409) {
+          // Slot race: another user booked the same slot first. The backend's
+          // 409 carries a suggested nextAvailableSlot — surface it, and
+          // refresh availability so the stale slot leaves the grid.
+          final next = formatNextAvailableSlot(e.response?.data, ar: l.ar);
+          message = next != null ? l.slotTakenNext(next) : l.slotTaken;
+          setState(() => _selectedSlot = null);
+          if (_selectedDate != null) _fetchSlots(_selectedDate!);
+        } else {
+          // e.g. 400 "Cannot book a slot in the past" — the server's message
+          // wins, the generic string is only the fallback.
+          message = errorMessage(e, l.submitFailed);
+        }
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(message)));
       }
     } catch (e) {
       if (mounted) {
@@ -617,6 +659,12 @@ class _L {
       ar ? 'تم إرسال طلب الاجتماع!' : 'Meeting request submitted!';
   String get submitFailed =>
       ar ? 'تعذر إرسال طلب الاجتماع' : 'Failed to submit meeting request';
+  String get slotTaken => ar
+      ? 'تم حجز هذا الموعد للتو. يرجى اختيار وقت آخر.'
+      : 'This slot was just taken. Please pick another time.';
+  String slotTakenNext(String next) => ar
+      ? 'تم حجز هذا الموعد للتو. أقرب موعد متاح: $next'
+      : 'This slot was just taken. Next available: $next';
 
   String unitLine(String unit, String property) =>
       ar ? 'وحدة $unit · $property' : 'Unit $unit · $property';

@@ -35,6 +35,7 @@ class _L {
 
   String get newTicket => ar ? 'طلب جديد' : 'New Ticket';
   String get property => ar ? 'العقار' : 'Property';
+  String get propertyRequired => ar ? 'العقار مطلوب' : 'Property is required';
   String get unitOptional => ar ? 'الوحدة (اختياري)' : 'Unit (optional)';
   String unitLabel(String n) => ar ? 'وحدة $n' : 'Unit $n';
   String get onBehalfOf =>
@@ -384,6 +385,10 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                                 ),
                               )
                               .toList(),
+                          // Backend rejects tickets without a property
+                          // (propertyId is required on POST /v1/tickets).
+                          validator: (v) =>
+                              v == null ? l.propertyRequired : null,
                           onChanged: (v) {
                             setState(() => _selectedPropertyId = v);
                             if (v != null) _loadUnits(v);

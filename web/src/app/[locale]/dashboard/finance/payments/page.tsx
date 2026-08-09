@@ -50,7 +50,9 @@ type PaymentSummary = {
     totalAmount: number;
     pendingAmount: number;
     collectedAmount: number;
+    depositedAmount: number;
     clearedAmount: number;
+    bouncedAmount: number;
     overdueAmount: number;
 };
 
@@ -115,6 +117,11 @@ export default function PaymentsPage() {
     const [showChequeModal, setShowChequeModal] = useState(false);
     const [collectingPaymentId, setCollectingPaymentId] = useState<string | null>(null);
     const [submittingCheque, setSubmittingCheque] = useState(false);
+    // Backend business-rule rejections (400 with a message body) for the
+    // collect/replace modal and the inline deposit/clear row actions —
+    // without these the failures are silent (modal stays open, row unchanged).
+    const [chequeError, setChequeError] = useState<string | null>(null);
+    const [actionError, setActionError] = useState<string | null>(null);
     const [chequeForm, setChequeForm] = useState({
         chequeNumber: "",
         bankName: "",
@@ -233,9 +240,22 @@ export default function PaymentsPage() {
         fetchSummary();
     };
 
+    // The backend replies to state-machine violations (e.g. depositing a
+    // non-COLLECTED cheque) with 400 + {message} — same contract
+    // MarkChequeFailedDialog already parses.
+    const readApiError = async (res: Response): Promise<string | null> => {
+        try {
+            const body = await res.json();
+            return body?.message || body?.error || null;
+        } catch {
+            return null;
+        }
+    };
+
     const handleCollect = (paymentId: string) => {
         setCollectingPaymentId(paymentId);
         setChequeForm({ chequeNumber: "", bankName: "", payerName: "", chequeDate: "", chequeImageUrl: "", chequeImageBlobPath: "", chequeImageUploadedAt: "" });
+        setChequeError(null);
         setShowChequeModal(true);
     };
 
@@ -243,6 +263,7 @@ export default function PaymentsPage() {
         ev.preventDefault();
         if (!collectingPaymentId) return;
         setSubmittingCheque(true);
+        setChequeError(null);
         try {
             const res = await fetch(`/api/proxy/v1/payments/${collectingPaymentId}/collect`, {
                 method: "PUT",
@@ -253,24 +274,33 @@ export default function PaymentsPage() {
                 setShowChequeModal(false);
                 setCollectingPaymentId(null);
                 refreshData();
+            } else {
+                setChequeError((await readApiError(res)) || t("actionFailed"));
             }
         } catch (err) {
             console.error(err);
+            setChequeError(t("actionFailed"));
         } finally {
             setSubmittingCheque(false);
         }
     };
 
     const handleDeposit = async (paymentId: string) => {
+        setActionError(null);
         try {
             const res = await fetch(`/api/proxy/v1/payments/${paymentId}/deposit`, {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({}),
             });
-            if (res.ok) refreshData();
+            if (res.ok) {
+                refreshData();
+            } else {
+                setActionError((await readApiError(res)) || t("actionFailed"));
+            }
         } catch (err) {
             console.error(err);
+            setActionError(t("actionFailed"));
         }
     };
 
@@ -282,15 +312,21 @@ export default function PaymentsPage() {
             isDestructive: false,
             onConfirm: async () => {
                 setConfirmDialog((prev) => ({ ...prev, open: false }));
+                setActionError(null);
                 try {
                     const res = await fetch(`/api/proxy/v1/payments/${paymentId}/clear`, {
                         method: "PUT",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({}),
                     });
-                    if (res.ok) refreshData();
+                    if (res.ok) {
+                        refreshData();
+                    } else {
+                        setActionError((await readApiError(res)) || t("actionFailed"));
+                    }
                 } catch (err) {
                     console.error(err);
+                    setActionError(t("actionFailed"));
                 }
             },
         });
@@ -303,6 +339,7 @@ export default function PaymentsPage() {
     const handleReplace = async (paymentId: string) => {
         setCollectingPaymentId(paymentId);
         setChequeForm({ chequeNumber: "", bankName: "", payerName: "", chequeDate: "", chequeImageUrl: "", chequeImageBlobPath: "", chequeImageUploadedAt: "" });
+        setChequeError(null);
         setShowChequeModal(true);
     };
 
@@ -310,6 +347,7 @@ export default function PaymentsPage() {
         ev.preventDefault();
         if (!collectingPaymentId) return;
         setSubmittingCheque(true);
+        setChequeError(null);
         try {
             const res = await fetch(`/api/proxy/v1/payments/${collectingPaymentId}/replace`, {
                 method: "POST",
@@ -320,9 +358,12 @@ export default function PaymentsPage() {
                 setShowChequeModal(false);
                 setCollectingPaymentId(null);
                 refreshData();
+            } else {
+                setChequeError((await readApiError(res)) || t("actionFailed"));
             }
         } catch (err) {
             console.error(err);
+            setChequeError(t("actionFailed"));
         } finally {
             setSubmittingCheque(false);
         }
@@ -463,6 +504,20 @@ export default function PaymentsPage() {
                     </span>
                 )}
             </div>
+
+            {/* Row-action failures (deposit/clear business-rule rejections) */}
+            {actionError && (
+                <div className="bg-error/10 border border-error/20 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+                    <p className="text-xs text-error font-medium">{actionError}</p>
+                    <button
+                        onClick={() => setActionError(null)}
+                        aria-label="Dismiss error"
+                        className="p-1 text-error hover:opacity-70 cursor-pointer transition-opacity"
+                    >
+                        <X size={14} />
+                    </button>
+                </div>
+            )}
 
             {/* Table Skeleton */}
             {loading && (
@@ -784,6 +839,9 @@ export default function PaymentsPage() {
                                     }
                                 />
                             </div>
+                            {chequeError && (
+                                <p className="text-xs text-error font-medium">{chequeError}</p>
+                            )}
                             <div className="flex justify-end gap-3 mt-6">
                                 <button
                                     type="button"

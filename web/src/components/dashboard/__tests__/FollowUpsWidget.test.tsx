@@ -50,6 +50,28 @@ describe("FollowUpsWidget", () => {
     });
   });
 
+  describe("error state", () => {
+    it("shows load error instead of empty message on non-OK response", async () => {
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 403,
+        json: async () => ({ error: "Forbidden" }),
+      });
+      render(<FollowUpsWidget />);
+      await waitFor(() => screen.getByText("loadError"));
+      expect(screen.getByText("loadError")).toBeTruthy();
+      expect(screen.queryByText("empty")).toBeNull();
+    });
+
+    it("shows load error instead of empty message when fetch rejects", async () => {
+      global.fetch = vi.fn().mockRejectedValue(new Error("network down"));
+      render(<FollowUpsWidget />);
+      await waitFor(() => screen.getByText("loadError"));
+      expect(screen.getByText("loadError")).toBeTruthy();
+      expect(screen.queryByText("empty")).toBeNull();
+    });
+  });
+
   describe("populated state", () => {
     beforeEach(() => {
       const items = Array.from({ length: 7 }, (_, i) => makeFollowUp(i + 1));

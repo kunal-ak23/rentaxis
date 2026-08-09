@@ -19,10 +19,14 @@ final _propertyServiceProvider = Provider<PropertyService>((ref) {
   return PropertyService(client.dio);
 });
 
-final _paymentSummaryProvider =
-    FutureProvider.autoDispose<Map<String, dynamic>>((ref) async {
+/// Keyed by the selected property id (null = all properties) so the stat
+/// tiles and status strip re-query GET /v1/payments/summary?propertyId=...
+/// whenever the property filter changes, matching the web finance page —
+/// otherwise tenant-wide totals sit above a property-scoped list.
+final _paymentSummaryProvider = FutureProvider.autoDispose
+    .family<Map<String, dynamic>, String?>((ref, propertyId) async {
       final service = ref.watch(_paymentServiceProvider);
-      return service.getSummary();
+      return service.getSummary(propertyId: propertyId);
     });
 
 final _propertiesForFilterProvider = FutureProvider.autoDispose<List<dynamic>>((
@@ -169,7 +173,7 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
   Widget build(BuildContext context) {
     final m = context.miftah;
     final l = _L(context.isAr);
-    final summaryAsync = ref.watch(_paymentSummaryProvider);
+    final summaryAsync = ref.watch(_paymentSummaryProvider(_selectedPropertyId));
     final propertiesAsync = ref.watch(_propertiesForFilterProvider);
 
     return Scaffold(

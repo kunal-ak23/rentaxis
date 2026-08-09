@@ -27,12 +27,17 @@ public class LandlordOrgController {
     }
 
     @PostMapping
-    public ResponseEntity<LandlordOrg> createTenant(@RequestBody Map<String, String> payload) {
-        String name = payload.get("name");
+    public ResponseEntity<LandlordOrg> createTenant(@RequestBody Map<String, Object> payload) {
+        String name = stringValue(payload.get("name"));
         if (name == null || name.isBlank()) {
             return ResponseEntity.badRequest().build();
         }
         LandlordOrg org = service.provisionTenant(name);
+        // The provisioning form also collects address/TRN/phone/logo/OTP toggle —
+        // persist them too instead of silently dropping everything but the name.
+        if (applyOptionalFields(org, payload)) {
+            org = service.save(org);
+        }
         return ResponseEntity.ok(org);
     }
 
@@ -44,34 +49,68 @@ public class LandlordOrgController {
     @PutMapping("/{id}")
     public ResponseEntity<LandlordOrg> updateTenant(
             @PathVariable UUID id,
-            @RequestBody Map<String, String> payload) {
+            @RequestBody Map<String, Object> payload) {
         java.util.Optional<LandlordOrg> orgOpt = service.findById(id);
         if (orgOpt.isEmpty()) {
             return ResponseEntity.notFound().build();
         }
         LandlordOrg org = orgOpt.get();
-        if (payload.containsKey("name") && !payload.get("name").isBlank()) {
-            org.setName(payload.get("name"));
+        String name = stringValue(payload.get("name"));
+        if (name != null && !name.isBlank()) {
+            org.setName(name);
         }
+        applyOptionalFields(org, payload);
+        return ResponseEntity.ok(service.save(org));
+    }
+
+    /**
+     * Applies the optional tenant fields shared by create and update. Only keys
+     * present in the payload are written (partial-update semantics). Returns
+     * true when at least one field was applied.
+     */
+    private boolean applyOptionalFields(LandlordOrg org, Map<String, Object> payload) {
+        boolean changed = false;
         if (payload.containsKey("address")) {
-            org.setAddress(payload.get("address"));
+            org.setAddress(stringValue(payload.get("address")));
+            changed = true;
         }
         if (payload.containsKey("trn")) {
-            org.setTrn(payload.get("trn"));
+            org.setTrn(stringValue(payload.get("trn")));
+            changed = true;
         }
         if (payload.containsKey("status")) {
-            org.setStatus(payload.get("status"));
+            String status = stringValue(payload.get("status"));
+            // status is a NOT NULL column — never null/blank it out.
+            if (status != null && !status.isBlank()) {
+                org.setStatus(status);
+                changed = true;
+            }
         }
         if (payload.containsKey("logoUrl")) {
-            org.setLogoUrl(payload.get("logoUrl"));
+            org.setLogoUrl(stringValue(payload.get("logoUrl")));
+            changed = true;
         }
         if (payload.containsKey("phone")) {
-            org.setPhone(payload.get("phone"));
+            org.setPhone(stringValue(payload.get("phone")));
+            changed = true;
         }
         if (payload.containsKey("ticketOtpRequired")) {
-            org.setTicketOtpRequired(Boolean.parseBoolean(payload.get("ticketOtpRequired")));
+            org.setTicketOtpRequired(booleanValue(payload.get("ticketOtpRequired")));
+            changed = true;
         }
-        return ResponseEntity.ok(service.save(org));
+        return changed;
+    }
+
+    private static String stringValue(Object value) {
+        return value == null ? null : String.valueOf(value);
+    }
+
+    private static boolean booleanValue(Object value) {
+        if (value instanceof Boolean b) {
+            return b;
+        }
+        // Back-compat: older clients sent the toggle as the string "true"/"false".
+        return Boolean.parseBoolean(stringValue(value));
     }
 
     /**

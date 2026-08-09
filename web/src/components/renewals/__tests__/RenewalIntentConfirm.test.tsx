@@ -8,6 +8,7 @@ vi.mock("next-intl", () => ({
     if (vars) return `${key}:${JSON.stringify(vars)}`;
     return key;
   },
+  useLocale: () => "en",
 }));
 
 afterEach(() => {
@@ -65,11 +66,33 @@ describe("RenewalIntentConfirm", () => {
     // "done" state shows captured message
     expect(screen.getByText("captured")).toBeTruthy();
 
-    // Advance fake timers by 1200ms to trigger navigation setTimeout
+    // Advance fake timers by 1200ms to trigger navigation setTimeout.
+    // The backend path is locale-less; the component must prefix the active
+    // locale because all web routes live under /[locale].
     act(() => {
       vi.advanceTimersByTime(1200);
     });
-    expect(capturedHref).toBe("/dashboard/renter-portal/renewals");
+    expect(capturedHref).toBe("/en/dashboard/renter-portal/renewals");
+  });
+
+  it("renders already-resolved message and hides button on 409 response", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: async () => ({ error: "ALREADY_RESOLVED" }),
+    });
+    global.fetch = fetchMock;
+
+    render(<RenewalIntentConfirm token="tok-resolved" intent="RENEW" />);
+
+    const confirmBtn = screen.getByRole("button", { name: "confirm" });
+    fireEvent.click(confirmBtn);
+
+    await waitFor(() => screen.getByText("alreadyResolved"));
+
+    // No generic error, and the confirm button is gone — nothing left to confirm.
+    expect(screen.queryByText("genericError")).toBeNull();
+    expect(screen.queryByRole("button", { name: "confirm" })).toBeNull();
   });
 
   it("renders expired message and hides button on 410 response", async () => {

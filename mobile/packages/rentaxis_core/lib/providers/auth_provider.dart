@@ -63,6 +63,14 @@ class AuthState {
   final List<Map<String, dynamic>> tenants;
   final String? error;
 
+  /// Non-empty only after a password login came back 409 (the email+password
+  /// pair matches in several tenants). Each entry is the backend's
+  /// `TenantCandidate` map — keys `tenantId` and `tenantName` — and the login
+  /// screen should let the user pick one, then call
+  /// [AuthNotifier.login] again with `tenantId` set to the chosen id.
+  /// Transient like [error]: cleared by any state change that doesn't re-set it.
+  final List<Map<String, dynamic>> tenantChoices;
+
   const AuthState({
     this.isAuthenticated = false,
     this.isLoading = true,
@@ -73,6 +81,7 @@ class AuthState {
     this.tenantId,
     this.tenants = const [],
     this.error,
+    this.tenantChoices = const [],
   });
 
   AuthState copyWith({
@@ -85,6 +94,7 @@ class AuthState {
     String? tenantId,
     List<Map<String, dynamic>>? tenants,
     String? error,
+    List<Map<String, dynamic>>? tenantChoices,
   }) {
     return AuthState(
       isAuthenticated: isAuthenticated ?? this.isAuthenticated,
@@ -96,6 +106,7 @@ class AuthState {
       tenantId: tenantId ?? this.tenantId,
       tenants: tenants ?? this.tenants,
       error: error,
+      tenantChoices: tenantChoices ?? const [],
     );
   }
 }
@@ -118,7 +129,19 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
         final savedTenantId = await _storage.read(key: 'tenantId');
 
-        TenantContext.currentTenantId = savedTenantId;
+        // GET /auth/me/tenants returns TenantInfo{id, name, slug} — the key
+        // is `id`, not `tenantId`. When nothing was persisted (e.g. the login
+        // response carried no tenantId), fall back to the first membership and
+        // persist it so subsequent restores agree with this session.
+        String? tenantId = savedTenantId;
+        if (tenantId == null && tenants.isNotEmpty) {
+          tenantId = tenants[0]['id'] as String?;
+          if (tenantId != null) {
+            await _storage.write(key: 'tenantId', value: tenantId);
+          }
+        }
+
+        TenantContext.currentTenantId = tenantId;
 
         state = AuthState(
           isAuthenticated: true,
@@ -127,8 +150,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
           email: profile['email'],
           name: profile['name'],
           role: profile['role'],
-          tenantId: savedTenantId ??
-              (tenants.isNotEmpty ? tenants[0]['tenantId'] : null),
+          tenantId: tenantId,
           tenants: List<Map<String, dynamic>>.from(tenants),
         );
       } catch (e) {
@@ -140,11 +162,32 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
-  Future<bool> login(String email, String password) async {
+  /// Password login. When the same email + password exists in several tenants
+  /// the backend answers 409 with the candidate list instead of a session; the
+  /// candidates land in [AuthState.tenantChoices] so the screen can show a
+  /// picker and call this again with the chosen [tenantId].
+  Future<bool> login(String email, String password, {String? tenantId}) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      await _establishSession(await _authService.login(email, password));
+      await _establishSession(
+        await _authService.login(email, password, tenantId: tenantId),
+      );
       return true;
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 409) {
+        state = state.copyWith(
+          isLoading: false,
+          error:
+              'This account belongs to multiple organizations. Select one to continue.',
+          tenantChoices: _parseTenantChoices(e.response?.data),
+        );
+        return false;
+      }
+      state = state.copyWith(
+        isLoading: false,
+        error: 'Invalid email or password',
+      );
+      return false;
     } catch (e) {
       state = state.copyWith(
         isLoading: false,
@@ -152,6 +195,17 @@ class AuthNotifier extends StateNotifier<AuthState> {
       );
       return false;
     }
+  }
+
+  /// Extracts the `tenants` list from the 409 LoginAmbiguousResponse body.
+  static List<Map<String, dynamic>> _parseTenantChoices(dynamic data) {
+    if (data is! Map) return const [];
+    final raw = data['tenants'];
+    if (raw is! List) return const [];
+    return raw
+        .whereType<Map>()
+        .map((t) => Map<String, dynamic>.from(t))
+        .toList();
   }
 
   /// Exchanges a Firebase Phone Authentication ID token for the guard's

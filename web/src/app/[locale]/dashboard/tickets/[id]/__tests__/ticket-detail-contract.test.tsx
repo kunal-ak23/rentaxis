@@ -1,0 +1,134 @@
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// Covers three audited contract bugs on the ticket detail page:
+// 1. GET /api/admin/users is SUPER_ADMIN/TENANT_ADMIN only (UserController) —
+//    the page must not fire it for PROPERTY_MANAGER (guaranteed 403).
+// 2. The ETA row must read the DTO's estimatedResolutionHours field
+//    (MaintenanceTicketDTO), not a non-existent estimatedHours.
+// 3. Failed status actions (400 with a {message} body) must surface the
+//    backend message instead of silently doing nothing.
+
+const sessionUser = vi.hoisted(() => ({ role: "TENANT_ADMIN" }));
+
+vi.mock("next/navigation", () => ({
+    useParams: () => ({ id: "11111111-1111-1111-1111-111111111111" }),
+}));
+vi.mock("next-auth/react", () => ({
+    useSession: () => ({ data: { user: { role: sessionUser.role, id: "99999999-9999-9999-9999-999999999999" } } }),
+}));
+vi.mock("@/i18n/routing", () => ({
+    Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a>,
+}));
+vi.mock("@/components/ui/ImageLightbox", () => ({ ImageLightbox: () => null }));
+
+import TicketDetailPage from "../page";
+
+const TICKET_ID = "11111111-1111-1111-1111-111111111111";
+
+const baseTicket = {
+    id: TICKET_ID,
+    title: "Leaking tap",
+    description: "Kitchen tap leaks",
+    status: "IN_PROGRESS",
+    priority: "MEDIUM",
+    category: "PLUMBING",
+    propertyId: "p1",
+    propertyName: "Tower A",
+    unitId: "u1",
+    unitNumber: "101",
+    reporterName: "Renter",
+    reportedBy: "r1",
+    assignedTo: null,
+    assigneeName: null,
+    createdAt: "2026-08-01T00:00:00Z",
+    updatedAt: "2026-08-01T00:00:00Z",
+    estimatedResolutionHours: null as number | null,
+    closureOtp: null,
+    satisfactionRating: null,
+    satisfactionComment: null,
+    attachments: [],
+};
+
+let ticket: typeof baseTicket;
+let statusActionResponse: { ok: boolean; status: number; body: unknown };
+
+const jsonRes = (body: unknown, ok = true, status = 200) =>
+    ({
+        ok,
+        status,
+        json: async () => body,
+        text: async () => JSON.stringify(body),
+    }) as unknown as Response;
+
+beforeEach(() => {
+    ticket = { ...baseTicket };
+    statusActionResponse = { ok: true, status: 200, body: {} };
+    global.fetch = vi.fn(async (url: unknown) => {
+        const u = String(url);
+        if (u.includes("/admin/users")) {
+            return jsonRes([{ id: "s1", name: "PM One", email: "pm@x.com", role: "PROPERTY_MANAGER" }]);
+        }
+        if (u.includes("/replies") || u.includes("/attachments") || u.includes("/history")) {
+            return jsonRes([]);
+        }
+        if (u.endsWith(`/v1/tickets/${TICKET_ID}/status`)) {
+            return jsonRes(statusActionResponse.body, statusActionResponse.ok, statusActionResponse.status);
+        }
+        if (u.endsWith(`/v1/tickets/${TICKET_ID}`)) {
+            return jsonRes(ticket);
+        }
+        return jsonRes({}, false, 404);
+    }) as unknown as typeof fetch;
+});
+
+afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+});
+
+describe("TicketDetailPage API contract", () => {
+    it("does not request /api/admin/users for PROPERTY_MANAGER (endpoint would 403)", async () => {
+        sessionUser.role = "PROPERTY_MANAGER";
+        render(<TicketDetailPage />);
+
+        expect(await screen.findByText("Leaking tap")).toBeTruthy();
+        const calls = (global.fetch as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]));
+        expect(calls.some((u) => u.includes("/admin/users"))).toBe(false);
+    });
+
+    it("loads the staff list for TENANT_ADMIN and offers Assign To...", async () => {
+        sessionUser.role = "TENANT_ADMIN";
+        ticket.status = "OPEN";
+        render(<TicketDetailPage />);
+
+        expect(await screen.findByText("Assign To...")).toBeTruthy();
+        const calls = (global.fetch as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]));
+        expect(calls.some((u) => u.includes("/admin/users"))).toBe(true);
+    });
+
+    it("renders the ETA row from the DTO's estimatedResolutionHours", async () => {
+        sessionUser.role = "TENANT_ADMIN";
+        ticket.estimatedResolutionHours = 5;
+        render(<TicketDetailPage />);
+
+        expect(await screen.findByText("5 hours")).toBeTruthy();
+    });
+
+    it("surfaces the backend message when a status action fails", async () => {
+        sessionUser.role = "TENANT_ADMIN";
+        ticket.status = "CLOSED";
+        statusActionResponse = {
+            ok: false,
+            status: 400,
+            body: { error: true, message: "Invalid status transition: CLOSED -> REOPENED", status: 400 },
+        };
+        render(<TicketDetailPage />);
+
+        fireEvent.click(await screen.findByText("Reopen Ticket"));
+
+        expect(
+            await screen.findByText("Invalid status transition: CLOSED -> REOPENED")
+        ).toBeTruthy();
+    });
+});

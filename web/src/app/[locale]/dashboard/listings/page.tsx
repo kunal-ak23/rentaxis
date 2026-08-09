@@ -447,9 +447,9 @@ function ListingsContent() {
                       <span className="text-xs text-muted">0</span>
                     )}
                   </td>
-                  {/* Updated */}
+                  {/* Created — matches the column's createdAt sort key */}
                   <td className="px-4 py-3 text-xs text-muted text-right hidden lg:table-cell tabular-nums">
-                    {new Date(listing.updatedAt).toLocaleDateString()}
+                    {new Date(listing.createdAt).toLocaleDateString()}
                   </td>
                   {/* Actions */}
                   <td className="px-4 py-3">

@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.domain.entity;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -43,4 +44,21 @@ public class BankAccount extends BaseTenantEntity {
 
     @Column(name = "is_active")
     private boolean isActive = true;
+
+    /**
+     * Explicit accessors so Jackson names the JSON property {@code isDefault}
+     * instead of the {@code default} it would derive from the Lombok-generated
+     * {@code isDefault()}/{@code setDefault()} pair. Both the web dashboard and
+     * the manager app read and send {@code isDefault}; without this annotation
+     * the flag never round-trips (and a PUT silently cleared it).
+     */
+    @JsonProperty("isDefault")
+    public boolean isDefault() {
+        return isDefault;
+    }
+
+    @JsonProperty("isDefault")
+    public void setDefault(boolean isDefault) {
+        this.isDefault = isDefault;
+    }
 }

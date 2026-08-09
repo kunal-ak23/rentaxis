@@ -572,6 +572,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
 
                   _ActionsPanel(
                     status: status,
+                    assigned: ticket['assignedTo'] != null,
                     l: l,
                     otpCtrl: _otpCtrl,
                     onAssignToMe: _assignToMe,
@@ -1020,7 +1021,12 @@ class _AttachmentThumb extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final name = (att['name'] ?? att['fileName'] ?? 'File').toString();
+    // The attachment payload has no name field — derive the label from the
+    // fileUrl's last segment, matching the web ticket page.
+    final urlName = (att['fileUrl'] ?? '').toString().split('/').last;
+    final name = urlName.isNotEmpty
+        ? urlName
+        : (context.isAr ? 'ملف' : 'File');
     return Container(
       width: 76,
       decoration: BoxDecoration(
@@ -1058,6 +1064,7 @@ class _AttachmentThumb extends StatelessWidget {
 /// dark-safe surface + gold CTA language used across the app.
 class _ActionsPanel extends StatelessWidget {
   final String status;
+  final bool assigned;
   final _L l;
   final TextEditingController otpCtrl;
   final VoidCallback onAssignToMe;
@@ -1069,6 +1076,7 @@ class _ActionsPanel extends StatelessWidget {
 
   const _ActionsPanel({
     required this.status,
+    required this.assigned,
     required this.l,
     required this.otpCtrl,
     required this.onAssignToMe,
@@ -1110,7 +1118,10 @@ class _ActionsPanel extends StatelessWidget {
           ),
           const SizedBox(height: 14),
 
-          if (status == 'OPEN' || status == 'ASSIGNED') ...[
+          // REOPENED allows the same moves as OPEN/ASSIGNED on the backend
+          // (assign / start / close), so it shares this branch.
+          if (status == 'OPEN' || status == 'ASSIGNED' ||
+              status == 'REOPENED') ...[
             Row(
               children: [
                 Expanded(
@@ -1134,8 +1145,16 @@ class _ActionsPanel extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 10),
-            GoldButton(label: l.startWork, height: 46, onPressed: onStartWork),
+            // Backend rejects IN_PROGRESS while the ticket is unassigned, so
+            // only offer Start Work once someone is assigned.
+            if (assigned) ...[
+              const SizedBox(height: 10),
+              GoldButton(
+                label: l.startWork,
+                height: 46,
+                onPressed: onStartWork,
+              ),
+            ],
           ],
 
           if (status == 'IN_PROGRESS') ...[
@@ -1306,6 +1325,8 @@ class _HistoryRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final performedBy = item['performedByName'];
+    final time = Formatters.timeAgo(item['createdAt'], ar: l.ar);
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Row(
@@ -1326,14 +1347,14 @@ class _HistoryRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  item['description'] ?? item['action'] ?? '',
+                  item['notes'] ?? item['action'] ?? '',
                   style: GoogleFonts.josefinSans(
                     fontSize: 13,
                     color: m.textPrimary,
                   ),
                 ),
                 Text(
-                  Formatters.timeAgo(item['createdAt'], ar: l.ar),
+                  performedBy != null ? '$performedBy · $time' : time,
                   style: GoogleFonts.josefinSans(
                     fontSize: 11,
                     color: m.textMuted,

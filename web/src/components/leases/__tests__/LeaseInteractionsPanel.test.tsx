@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import LeaseInteractionsPanel from "../LeaseInteractionsPanel";
 
@@ -88,5 +88,43 @@ describe("LeaseInteractionsPanel", () => {
     await waitFor(() => screen.getByText("Renter accepted the lease offer"));
 
     expect(screen.getByRole("button", { name: /logInteraction/ })).toBeTruthy();
+  });
+
+  it("shows an error state (not the empty state) on a non-ok response", async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 403,
+      json: async () => ({ error: "Forbidden" }),
+    });
+
+    render(<LeaseInteractionsPanel leaseId="L1" />);
+
+    await waitFor(() => screen.getByRole("alert"));
+
+    expect(screen.getByText("errors.loadFailed")).toBeTruthy();
+    expect(screen.queryByText("noInteractions")).toBeNull();
+    expect(screen.getByRole("button", { name: /retry/ })).toBeTruthy();
+  });
+
+  it("shows an error state on network failure and recovers via retry", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("network down"))
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ content: interactions }),
+      });
+    global.fetch = fetchMock;
+
+    render(<LeaseInteractionsPanel leaseId="L1" />);
+
+    await waitFor(() => screen.getByRole("alert"));
+    expect(screen.getByText("errors.loadFailed")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /retry/ }));
+
+    await waitFor(() => screen.getByText("Renter accepted the lease offer"));
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

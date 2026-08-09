@@ -25,7 +25,8 @@ type Gateway = {
     description: string;
     isActive: boolean;
     sdkJsUrl: string;
-    supportedCurrencies: string[];
+    // Backend PaymentGatewayDTO sends a plain delimited String, not an array.
+    supportedCurrencies: string;
 };
 
 type GatewayConfig = {
@@ -81,14 +82,21 @@ export default function GatewayConfigPage() {
     const fetchExistingConfig = async () => {
         try {
             const res = await fetch("/api/proxy/v1/gateway-config");
+            if (res.status === 204) {
+                // No existing config yet — that's fine
+                return;
+            }
             if (res.ok) {
                 const config: GatewayConfig = await res.json();
                 setExistingConfig(config);
                 setSelectedGatewayId(config.gatewayId);
                 setIsTestMode(config.isTestMode);
+            } else {
+                setError("Failed to load gateway configuration.");
             }
         } catch (err) {
-            // No existing config — that's fine
+            console.error("Failed to fetch gateway config", err);
+            setError("Failed to load gateway configuration.");
         }
     };
 

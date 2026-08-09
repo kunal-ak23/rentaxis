@@ -1,8 +1,21 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
 import '../../providers/gate_pass_provider.dart';
+
+/// One walk-in photo per pass id, fetched once and cached while any listener
+/// remains. A `FutureBuilder` whose future is created in `build` would re-issue
+/// GET /v1/gatepass/walk-in/{id}/photo — the full image bytes — every time the
+/// enclosing card rebuilds (each decision flips `_busy` twice), flickering the
+/// avatar back to the placeholder mid-decision. `autoDispose` drops the bytes
+/// once the screen is left, matching the other gate providers.
+final _walkInPhotoProvider = FutureProvider.autoDispose
+    .family<Uint8List, String>((ref, passId) {
+      return ref.watch(gatePassServiceProvider).walkInPhoto(passId);
+    });
 
 /// Screen strings (EN/AR). Lightweight per-screen pattern — see arabic-brief.
 class _L {
@@ -208,16 +221,18 @@ class _VisitorPhoto extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (passId == null) {
+    final id = passId;
+    if (id == null) {
       return const CircleAvatar(radius: 30, child: Icon(Icons.person));
     }
-    return FutureBuilder(
-      future: ref.read(gatePassServiceProvider).walkInPhoto(passId!),
-      builder: (context, snapshot) => CircleAvatar(
-        radius: 30,
-        backgroundImage: snapshot.hasData ? MemoryImage(snapshot.data!) : null,
-        child: snapshot.hasData ? null : const Icon(Icons.person),
-      ),
+    final photo = ref.watch(_walkInPhotoProvider(id)).valueOrNull;
+    // Empty bytes (the service's null-body fallback) are "no photo", not an
+    // image — MemoryImage would throw trying to decode them.
+    final hasPhoto = photo != null && photo.isNotEmpty;
+    return CircleAvatar(
+      radius: 30,
+      backgroundImage: hasPhoto ? MemoryImage(photo) : null,
+      child: hasPhoto ? null : const Icon(Icons.person),
     );
   }
 }

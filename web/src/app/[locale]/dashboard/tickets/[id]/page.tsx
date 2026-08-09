@@ -6,6 +6,7 @@ import { Link } from "@/i18n/routing";
 import { cn } from "@/lib/utils";
 import { useSession } from "next-auth/react";
 import { hasPermission, hasRole, type UserRole } from "@/lib/rbac";
+import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
 import {
     ArrowLeft, Loader2, Send, Upload, Download, Star, Clock, User,
     Wrench, Building2, Home, Tag, AlertTriangle, CheckCircle, X, FileText, Trash2,
@@ -26,12 +27,12 @@ type Ticket = {
     unitId: string;
     unitNumber: string;
     reporterName: string;
-    reporterId: string;
-    assignedToId: string | null;
+    reportedBy: string;
+    assignedTo: string | null;
     assigneeName: string | null;
     createdAt: string;
     updatedAt: string;
-    estimatedHours: number | null;
+    estimatedResolutionHours: number | null;
     closureOtp: string | null;
     satisfactionRating: number | null;
     satisfactionComment: string | null;
@@ -102,6 +103,8 @@ export default function TicketDetailPage() {
 
     // Actions
     const [actionLoading, setActionLoading] = useState<string | null>(null);
+    const [actionError, setActionError] = useState<string | null>(null);
+    const [staffError, setStaffError] = useState<string | null>(null);
     const [otpInput, setOtpInput] = useState("");
     const [etaInput, setEtaInput] = useState("");
     const [showAssignDropdown, setShowAssignDropdown] = useState(false);
@@ -147,14 +150,25 @@ export default function TicketDetailPage() {
     }, [ticketId]);
 
     const fetchStaff = useCallback(async () => {
-        if (userRole === "RENTER") return;
+        // GET /api/admin/users is restricted to SUPER_ADMIN/TENANT_ADMIN
+        // (UserController), so a PROPERTY_MANAGER would always get a 403 —
+        // don't fire a guaranteed-failing request. PMs keep "Assign to Me"
+        // (PUT /v1/tickets/{id}/assign allows PROPERTY_MANAGER); the
+        // "Assign To..." staff list stays admin-only until a PM-accessible
+        // assignee endpoint exists.
+        if (!hasRole(userRole, ["SUPER_ADMIN", "TENANT_ADMIN"])) return;
         try {
             const res = await fetch("/api/proxy/admin/users");
             if (res.ok) {
                 const data = await res.json();
                 setStaffUsers(Array.isArray(data) ? data : []);
+                setStaffError(null);
+            } else {
+                setStaffError(`Couldn't load the staff list (status ${res.status}) — "Assign To..." is unavailable.`);
             }
-        } catch { /* ignore */ }
+        } catch {
+            setStaffError('Couldn\'t load the staff list — "Assign To..." is unavailable.');
+        }
     }, [userRole]);
 
     useEffect(() => {
@@ -185,14 +199,21 @@ export default function TicketDetailPage() {
 
     const performAction = async (action: string, body?: Record<string, unknown>) => {
         setActionLoading(action);
+        setActionError(null);
         try {
             const res = await fetch(`/api/proxy/v1/tickets/${ticketId}/${action}`, {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
                 body: body ? JSON.stringify(body) : undefined,
             });
-            if (res.ok) { fetchTicket(); fetchHistory(); }
-        } catch { /* ignore */ } finally {
+            // Surface backend failures (invalid OTP, illegal status
+            // transition, ...) instead of silently doing nothing.
+            await throwIfNotOk(res);
+            fetchTicket();
+            fetchHistory();
+        } catch (err) {
+            setActionError(err instanceof ApiError ? err.message : "Something went wrong. Please try again.");
+        } finally {
             setActionLoading(null);
         }
     };
@@ -506,7 +527,7 @@ export default function TicketDetailPage() {
                             <DetailRow icon={<User size={12} />} label="Reporter" value={ticket.reporterName || "—"} />
                             <DetailRow icon={<Wrench size={12} />} label="Assigned To" value={ticket.assigneeName || "Unassigned"} />
                             <DetailRow icon={<Clock size={12} />} label="Created" value={new Date(ticket.createdAt).toLocaleDateString()} />
-                            {ticket.estimatedHours && <DetailRow icon={<Clock size={12} />} label="ETA" value={`${ticket.estimatedHours} hours`} />}
+                            {ticket.estimatedResolutionHours && <DetailRow icon={<Clock size={12} />} label="ETA" value={`${ticket.estimatedResolutionHours} hours`} />}
                         </div>
                     </div>
 
@@ -514,6 +535,14 @@ export default function TicketDetailPage() {
                     {canManage && (
                         <div className="bg-surface rounded-xl border border-border p-5 space-y-3">
                             <h3 className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">Actions</h3>
+                            {actionError && (
+                                <div className="bg-error/10 border border-error/20 text-error text-xs font-medium rounded-lg px-3 py-2" role="alert">
+                                    {actionError}
+                                </div>
+                            )}
+                            {staffError && (
+                                <p className="text-[10px] text-warning font-medium">{staffError}</p>
+                            )}
                             {canManage && (ticket.status === "OPEN" || ticket.status === "REOPENED" || ticket.status === "ASSIGNED" || ticket.status === "IN_PROGRESS") && (
                                 <button onClick={handleAssignToMe} disabled={actionLoading === "assign"} className="w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-xs font-semibold hover:bg-primary/90 transition-all cursor-pointer disabled:opacity-50">
                                     {actionLoading === "assign" && <Loader2 size={12} className="animate-spin" />} Assign to Me

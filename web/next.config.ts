@@ -29,10 +29,10 @@ const nextConfig: NextConfig = {
         source: '/api/v1/assets/serve/:path*',
         destination: `${backendUrl}/api/v1/assets/serve/:path*`,
       },
-      {
-        source: '/api/marketplace/:path*',
-        destination: `${backendUrl}/api/marketplace/:path*`,
-      },
+      // NOTE: no direct /api/marketplace rewrite. Marketplace endpoints are
+      // renter-authenticated and must go through /api/proxy/marketplace/** so
+      // the middleware attaches X-User-* headers; a direct rewrite would skip
+      // the middleware matcher and guarantee 401/403s.
       {
         source: '/public/l/:path*',
         destination: `${backendUrl}/public/l/:path*`,

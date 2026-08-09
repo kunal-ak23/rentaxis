@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -60,6 +61,12 @@ class _L {
       ar ? 'تم إنشاء طلب الاجتماع' : 'Meeting request created';
   String get meetingCreateFailed =>
       ar ? 'فشل إنشاء الاجتماع' : 'Failed to create meeting';
+  String get slotTaken => ar
+      ? 'تم حجز هذا الموعد للتو. يرجى اختيار وقت آخر.'
+      : 'This slot was just taken. Please pick another time.';
+  String slotTakenNext(String next) => ar
+      ? 'تم حجز هذا الموعد للتو. أقرب موعد متاح: $next'
+      : 'This slot was just taken. Next available: $next';
 
   String unitLine(String renterName, String unit) =>
       ar ? '$renterName · وحدة $unit' : '$renterName · Unit $unit';
@@ -78,6 +85,26 @@ class _L {
         return p;
     }
   }
+}
+
+/// Extracts the 409 slot-conflict body's suggested `nextAvailableSlot`
+/// (GlobalExceptionHandler sends `{error, nextAvailableSlot}`) and formats
+/// it in device-local time, e.g. "12/8, 3:30 PM". Returns null when the body
+/// carries no parsable instant — the backend sends the literal string
+/// "unavailable" when it has no free slot to suggest.
+///
+/// Top-level (not a State method) so tests can pin the mapping directly.
+String? formatNextAvailableSlot(Object? responseData, {required bool ar}) {
+  if (responseData is! Map) return null;
+  final raw = responseData['nextAvailableSlot']?.toString();
+  if (raw == null) return null;
+  final dt = DateTime.tryParse(raw)?.toLocal();
+  if (dt == null) return null;
+  final hour = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
+  final minute = dt.minute.toString().padLeft(2, '0');
+  final ampm = ar ? (dt.hour < 12 ? 'ص' : 'م') : (dt.hour < 12 ? 'AM' : 'PM');
+  final sep = ar ? '،' : ',';
+  return '${dt.day}/${dt.month}$sep $hour:$minute $ampm';
 }
 
 class CreateMeetingScreen extends ConsumerStatefulWidget {
@@ -282,6 +309,29 @@ class _CreateMeetingScreenState extends ConsumerState<CreateMeetingScreen> {
           ),
         );
         context.pop();
+      }
+    } on DioException catch (e) {
+      if (mounted) {
+        final String message;
+        if (e.response?.statusCode == 409) {
+          // Slot race: another user booked the same slot first. The backend's
+          // 409 carries a suggested nextAvailableSlot — surface it, and
+          // refresh availability so the stale slot leaves the grid.
+          final next = formatNextAvailableSlot(e.response?.data, ar: l.ar);
+          message = next != null ? l.slotTakenNext(next) : l.slotTaken;
+          setState(() => _selectedSlot = null);
+          if (_selectedDate != null) _fetchSlots(_selectedDate!);
+        } else {
+          // e.g. 400 "Cannot book a slot in the past" — the server's message
+          // wins, the generic string is only the fallback.
+          message = errorMessage(e, l.meetingCreateFailed);
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: AppColors.danger,
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {

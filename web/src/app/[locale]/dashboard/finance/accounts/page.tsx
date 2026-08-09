@@ -89,6 +89,10 @@ export default function AccountsPage() {
     // Forms
     const [formData, setFormData] = useState(EMPTY_FORM);
     const [editId, setEditId] = useState<string | null>(null);
+    // Backend {message} surfaced inside the open modal (add/edit/import)…
+    const [formError, setFormError] = useState<string | null>(null);
+    // …and at page level for modal-less actions (delete, seed).
+    const [pageError, setPageError] = useState<string | null>(null);
 
     // Tree expand state
     const [expandedCodes, setExpandedCodes] = useState<Set<string>>(new Set());
@@ -188,14 +192,19 @@ export default function AccountsPage() {
     // ── CRUD ──
     const handleSeedDefaults = async () => {
         setSeeding(true);
+        setPageError(null);
         try {
             const res = await fetch("/api/proxy/v1/finance/accounts/seed", { method: "POST" });
             if (res.ok) {
                 await fetchAccounts();
                 expandAll();
+            } else {
+                const errData = await res.json().catch(() => null);
+                setPageError(errData?.message || "Failed to seed default accounts");
             }
         } catch (err) {
             console.error(err);
+            setPageError("Failed to seed default accounts");
         } finally {
             setSeeding(false);
         }
@@ -204,6 +213,7 @@ export default function AccountsPage() {
     const handleCreate = async (ev: React.FormEvent) => {
         ev.preventDefault();
         setSubmitting(true);
+        setFormError(null);
         try {
             const body: Record<string, unknown> = {
                 code: formData.code,
@@ -226,9 +236,13 @@ export default function AccountsPage() {
                 setShowAddModal(false);
                 setFormData(EMPTY_FORM);
                 fetchAccounts();
+            } else {
+                const errData = await res.json().catch(() => null);
+                setFormError(errData?.message || "Failed to create account");
             }
         } catch (err) {
             console.error(err);
+            setFormError("Failed to create account");
         } finally {
             setSubmitting(false);
         }
@@ -238,18 +252,23 @@ export default function AccountsPage() {
         ev.preventDefault();
         if (!editId) return;
         setSubmitting(true);
+        setFormError(null);
         try {
+            // Only the fields AccountService.updateAccount actually applies.
+            // code/accountType/parentCode/group are immutable after creation
+            // (the backend ignores them) and are disabled in the edit form.
+            // active/displayOrder are passed through unchanged — omitting them
+            // would reset the stored values to the deserialized defaults.
+            const current = accounts.find(a => a.id === editId);
             const body: Record<string, unknown> = {
-                code: formData.code,
                 nameEn: formData.nameEn,
                 nameAr: formData.nameAr,
                 name: formData.nameEn,
-                accountType: formData.accountType,
                 description: formData.description || null,
-                parentCode: formData.parentCode || null,
-                group: formData.group,
+                accountSubType: formData.accountSubType || null,
+                active: current?.active ?? true,
+                displayOrder: current?.displayOrder ?? 0,
             };
-            if (formData.accountSubType) body.accountSubType = formData.accountSubType;
 
             const res = await fetch(`/api/proxy/v1/finance/accounts/${editId}`, {
                 method: "PUT",
@@ -261,23 +280,34 @@ export default function AccountsPage() {
                 setEditId(null);
                 setFormData(EMPTY_FORM);
                 fetchAccounts();
+            } else {
+                const errData = await res.json().catch(() => null);
+                setFormError(errData?.message || "Failed to update account");
             }
         } catch (err) {
             console.error(err);
+            setFormError("Failed to update account");
         } finally {
             setSubmitting(false);
         }
     };
 
     const handleDelete = async (id: string) => {
+        setPageError(null);
         try {
             const res = await fetch(`/api/proxy/v1/finance/accounts/${id}`, { method: "DELETE" });
             if (res.ok) {
                 setShowDeleteConfirm(null);
                 fetchAccounts();
+            } else {
+                const errData = await res.json().catch(() => null);
+                setShowDeleteConfirm(null);
+                setPageError(errData?.message || "Failed to delete account");
             }
         } catch (err) {
             console.error(err);
+            setShowDeleteConfirm(null);
+            setPageError("Failed to delete account");
         }
     };
 
@@ -293,12 +323,14 @@ export default function AccountsPage() {
             group: account.group,
         });
         setEditId(account.id);
+        setFormError(null);
         setShowEditModal(true);
     };
 
     const handleImport = async () => {
         if (!importFile) return;
         setImporting(true);
+        setFormError(null);
         try {
             const fd = new FormData();
             fd.append("file", importFile);
@@ -310,9 +342,13 @@ export default function AccountsPage() {
                 setShowImportModal(false);
                 setImportFile(null);
                 fetchAccounts();
+            } else {
+                const errData = await res.json().catch(() => null);
+                setFormError(errData?.message || "Failed to import accounts");
             }
         } catch (err) {
             console.error(err);
+            setFormError("Failed to import accounts");
         } finally {
             setImporting(false);
         }
@@ -326,14 +362,18 @@ export default function AccountsPage() {
     };
 
     // ── Account form (shared between add/edit) ──
-    const renderAccountForm = (onSubmit: (ev: React.FormEvent) => void, title: string) => (
+    // In edit mode code/accountType/parentCode/group are disabled: the backend's
+    // updateAccount deliberately ignores them, so offering editable inputs would
+    // silently drop the changes.
+    const renderAccountForm = (onSubmit: (ev: React.FormEvent) => void, title: string, isEdit = false) => (
         <form onSubmit={onSubmit} className="grid grid-cols-2 gap-5">
             <div className="col-span-1">
                 <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("code")}</label>
                 <input
                     required
+                    disabled={isEdit}
                     placeholder="e.g. A-01"
-                    className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
+                    className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
                     value={formData.code}
                     onChange={ev => setFormData({ ...formData, code: ev.target.value })}
                 />
@@ -341,7 +381,8 @@ export default function AccountsPage() {
             <div className="col-span-1">
                 <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("accountType")}</label>
                 <select
-                    className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
+                    disabled={isEdit}
+                    className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
                     value={formData.accountType}
                     onChange={ev => setFormData({ ...formData, accountType: ev.target.value as AccountType, accountSubType: "" })}
                 >
@@ -384,7 +425,8 @@ export default function AccountsPage() {
             <div className="col-span-1">
                 <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">{t("parent")}</label>
                 <select
-                    className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200"
+                    disabled={isEdit}
+                    className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
                     value={formData.parentCode}
                     onChange={ev => setFormData({ ...formData, parentCode: ev.target.value })}
                 >
@@ -406,9 +448,10 @@ export default function AccountsPage() {
                 />
             </div>
             <div className="col-span-2">
-                <label className="flex items-center gap-2 cursor-pointer">
+                <label className={cn("flex items-center gap-2", isEdit ? "opacity-60 cursor-not-allowed" : "cursor-pointer")}>
                     <input
                         type="checkbox"
+                        disabled={isEdit}
                         className="rounded border-border"
                         checked={formData.group}
                         onChange={ev => setFormData({ ...formData, group: ev.target.checked })}
@@ -416,6 +459,14 @@ export default function AccountsPage() {
                     <span className="text-xs font-bold text-muted">{t("isGroup")}</span>
                 </label>
             </div>
+            {formError && (
+                <div
+                    role="alert"
+                    className="col-span-2 bg-error/10 border border-error/20 text-error text-xs font-medium rounded-lg p-3"
+                >
+                    {formError}
+                </div>
+            )}
             <div className="col-span-2 flex justify-end gap-3 mt-2">
                 <button
                     type="button"
@@ -547,14 +598,14 @@ export default function AccountsPage() {
                         </button>
                     )}
                     <button
-                        onClick={() => setShowImportModal(true)}
+                        onClick={() => { setFormError(null); setShowImportModal(true); }}
                         className="flex items-center gap-2 bg-surface text-foreground border border-border px-5 py-2.5 rounded-full text-xs font-bold hover:bg-input transition-all duration-200 shadow-sm active:scale-95 cursor-pointer focus:ring-2 focus:ring-primary/20 focus:outline-none"
                     >
                         <Upload size={14} />
                         {t("importAccounts")}
                     </button>
                     <button
-                        onClick={() => { setFormData(EMPTY_FORM); setShowAddModal(true); }}
+                        onClick={() => { setFormData(EMPTY_FORM); setFormError(null); setShowAddModal(true); }}
                         className="flex items-center gap-2 bg-primary text-primary-foreground px-5 py-2.5 rounded-full text-xs font-bold hover:opacity-90 transition-all duration-200 shadow-lg shadow-primary/10 active:scale-95 cursor-pointer focus:ring-2 focus:ring-primary/20 focus:outline-none"
                     >
                         <Plus size={14} />
@@ -562,6 +613,16 @@ export default function AccountsPage() {
                     </button>
                 </div>
             </div>
+
+            {/* ── Page-level errors (e.g. failed delete/seed) ── */}
+            {pageError && (
+                <div
+                    role="alert"
+                    className="mb-6 bg-error/10 border border-error/20 text-error text-xs font-medium rounded-lg p-3"
+                >
+                    {pageError}
+                </div>
+            )}
 
             {/* ── View Toggle + Filters Bar ── */}
             <div className="mb-6 bg-surface border border-border rounded-xl p-4 shadow-sm flex flex-col md:flex-row md:items-center gap-4">
@@ -652,7 +713,7 @@ export default function AccountsPage() {
                         </button>
                         <h2 className="text-lg font-bold mb-1">{t("editAccount")}</h2>
                         <p className="text-xs text-muted mb-8 font-medium">Update the account details.</p>
-                        {renderAccountForm(handleUpdate, t("editAccount"))}
+                        {renderAccountForm(handleUpdate, t("editAccount"), true)}
                     </div>
                 </div>
             )}
@@ -707,6 +768,15 @@ export default function AccountsPage() {
                                 </div>
                             )}
                         </div>
+
+                        {formError && (
+                            <div
+                                role="alert"
+                                className="mt-6 bg-error/10 border border-error/20 text-error text-xs font-medium rounded-lg p-3"
+                            >
+                                {formError}
+                            </div>
+                        )}
 
                         <div className="flex justify-end gap-3 mt-6">
                             <button

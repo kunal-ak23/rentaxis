@@ -328,10 +328,15 @@ export default function ListingEditPage({ params }: { params: Promise<{ id: stri
     const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
     if (targetIdx < 0 || targetIdx >= newMedia.length) return;
     [newMedia[idx], newMedia[targetIdx]] = [newMedia[targetIdx], newMedia[idx]];
+    const previous = media;
     setMedia(newMedia);
     try {
       await reorderMedia(listing.id, newMedia.map(m => m.id), token);
-    } catch {}
+    } catch {
+      // Persisting the new order failed — revert the optimistic swap.
+      setMedia(previous);
+      showToast('error', t('saveError'));
+    }
   }
 
   function copySlug() {

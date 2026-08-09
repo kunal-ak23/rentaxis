@@ -36,6 +36,9 @@ public class PropertyController {
         property.setEmirate(dto.getEmirate());
         property.setAddress(dto.getAddress());
         property.setMakaniNumber(dto.getMakaniNumber());
+        if (dto.getFixedExpenses() != null) {
+            property.setFixedExpenses(dto.getFixedExpenses());
+        }
         return ResponseEntity.ok(service.createProperty(property));
     }
 

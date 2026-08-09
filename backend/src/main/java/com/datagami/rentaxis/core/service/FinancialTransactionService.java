@@ -25,6 +25,9 @@ import com.datagami.rentaxis.domain.repository.PropertyRepository;
 import com.datagami.rentaxis.domain.repository.StaffRepository;
 import com.datagami.rentaxis.domain.repository.UnitRepository;
 import com.datagami.rentaxis.domain.repository.VendorRepository;
+import jakarta.persistence.criteria.Predicate;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -236,30 +239,45 @@ public class FinancialTransactionService {
         return repository.save(txn);
     }
 
+    /**
+     * List transactions with every supplied filter applied together.
+     *
+     * <p>The previous implementation dispatched to a single derived query in
+     * priority order, silently dropping filters for realistic combinations
+     * (accountType was ignored whenever propertyId/unitId was set, and a
+     * single-sided date range was ignored entirely) while the frontends
+     * presented the result as fully filtered. Split children are still
+     * excluded from list views unless drilling into a unit, matching the old
+     * per-query behavior. Tenant scoping comes from the Hibernate tenant
+     * filter enabled by TenantAspect.
+     */
     @Transactional(readOnly = true)
     public List<FinancialTransaction> getTransactions(UUID propertyId, UUID unitId,
             AccountType accountType,
             LocalDate startDate, LocalDate endDate) {
-        // Apply filters in priority order
-        if (unitId != null && startDate != null && endDate != null) {
-            return repository.findByUnitIdAndDateBetween(unitId, startDate, endDate);
-        }
-        if (propertyId != null && startDate != null && endDate != null) {
-            return repository.findByParentTransactionIsNullAndPropertyIdAndDateBetweenOrderByDateDesc(propertyId, startDate, endDate);
-        }
-        if (unitId != null) {
-            return repository.findByUnitId(unitId);
-        }
-        if (propertyId != null) {
-            return repository.findByParentTransactionIsNullAndPropertyIdOrderByDateDesc(propertyId);
-        }
-        if (accountType != null) {
-            return repository.findByParentTransactionIsNullAndAccountTypeOrderByDateDesc(accountType);
-        }
-        if (startDate != null && endDate != null) {
-            return repository.findByParentTransactionIsNullAndDateBetweenOrderByDateDesc(startDate, endDate);
-        }
-        return repository.findByParentTransactionIsNullOrderByDateDesc();
+        Specification<FinancialTransaction> spec = (root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            if (unitId != null) {
+                predicates.add(cb.equal(root.get("unit").get("id"), unitId));
+            } else {
+                // Exclude split children unless drilling into a unit ledger
+                predicates.add(cb.isNull(root.get("parentTransaction")));
+            }
+            if (propertyId != null) {
+                predicates.add(cb.equal(root.get("property").get("id"), propertyId));
+            }
+            if (accountType != null) {
+                predicates.add(cb.equal(root.get("accountType"), accountType));
+            }
+            if (startDate != null) {
+                predicates.add(cb.greaterThanOrEqualTo(root.get("date"), startDate));
+            }
+            if (endDate != null) {
+                predicates.add(cb.lessThanOrEqualTo(root.get("date"), endDate));
+            }
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+        return repository.findAll(spec, Sort.by(Sort.Direction.DESC, "date"));
     }
 
     @Transactional(readOnly = true)

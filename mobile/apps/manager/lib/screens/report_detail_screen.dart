@@ -181,9 +181,8 @@ class ReportDetailScreen extends ConsumerWidget {
   Widget _buildTrialBalanceReport(BuildContext context, _L l) {
     final m = context.miftah;
     final data = reportData as Map<String, dynamic>;
-    final accounts = List<Map<String, dynamic>>.from(
-      data['accounts'] ?? data['rows'] ?? [],
-    );
+    // Backend TrialBalanceDTO serializes the per-account rows as `lines`.
+    final accounts = List<Map<String, dynamic>>.from(data['lines'] ?? []);
     final totalDebit = (data['totalDebit'] ?? 0).toDouble();
     final totalCredit = (data['totalCredit'] ?? 0).toDouble();
 
@@ -322,13 +321,16 @@ class ReportDetailScreen extends ConsumerWidget {
   Widget _buildVatReturnReport(BuildContext context, _L l) {
     final m = context.miftah;
     final data = reportData as Map<String, dynamic>;
-    final outputVat = (data['outputVat'] ?? data['vatOutput'] ?? 0).toDouble();
-    final inputVat = (data['inputVat'] ?? data['vatInput'] ?? 0).toDouble();
-    final netVat =
-        (data['netVat'] ?? data['netVatPayable'] ?? outputVat - inputVat)
-            .toDouble();
-    final details = List<Map<String, dynamic>>.from(
-      data['details'] ?? data['rows'] ?? [],
+    // Backend VatReturnDTO field names: totalOutputVat / totalInputVat /
+    // netVatPayable, with line items split into salesLines + purchaseLines.
+    final outputVat = (data['totalOutputVat'] ?? 0).toDouble();
+    final inputVat = (data['totalInputVat'] ?? 0).toDouble();
+    final netVat = (data['netVatPayable'] ?? outputVat - inputVat).toDouble();
+    final salesLines = List<Map<String, dynamic>>.from(
+      data['salesLines'] ?? [],
+    );
+    final purchaseLines = List<Map<String, dynamic>>.from(
+      data['purchaseLines'] ?? [],
     );
 
     return Column(
@@ -383,11 +385,21 @@ class ReportDetailScreen extends ConsumerWidget {
             ],
           ),
         ),
-        if (details.isNotEmpty) ...[
+        if (salesLines.isNotEmpty) ...[
           const SizedBox(height: 24),
-          _sectionLabel(l.details, l.ar, m),
+          _sectionLabel(l.salesVatLines, l.ar, m),
           const SizedBox(height: 8),
-          ...details.map((item) => _TransactionRow(item: item, ar: l.ar)),
+          ...salesLines.map(
+            (item) => _VatLineRow(item: item, color: m.danger, l: l),
+          ),
+        ],
+        if (purchaseLines.isNotEmpty) ...[
+          const SizedBox(height: 24),
+          _sectionLabel(l.purchaseVatLines, l.ar, m),
+          const SizedBox(height: 8),
+          ...purchaseLines.map(
+            (item) => _VatLineRow(item: item, color: m.success, l: l),
+          ),
         ],
       ],
     );
@@ -416,7 +428,6 @@ class ReportDetailScreen extends ConsumerWidget {
         final m = context.miftah;
         final debit = (tx['debit'] ?? tx['debitAmount'] ?? 0).toDouble();
         final credit = (tx['credit'] ?? tx['creditAmount'] ?? 0).toDouble();
-        final balance = (tx['balance'] ?? tx['runningBalance'] ?? 0).toDouble();
         final description = (tx['description'] ?? tx['narration'] ?? '-')
             .toString();
         final date = tx['date'] ?? tx['transactionDate'] ?? tx['createdAt'];
@@ -481,32 +492,6 @@ class ReportDetailScreen extends ConsumerWidget {
                       color: m.success,
                       ar: l.ar,
                     ),
-                  const Spacer(),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text(
-                        l.balance,
-                        style: l.ar
-                            ? GoogleFonts.notoNaskhArabic(
-                                fontSize: 10.5,
-                                color: m.textMuted,
-                              )
-                            : GoogleFonts.josefinSans(
-                                fontSize: 10,
-                                color: m.textMuted,
-                              ),
-                      ),
-                      Text(
-                        Formatters.currency(balance),
-                        style: GoogleFonts.cinzel(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 13,
-                          color: m.textPrimary,
-                        ),
-                      ),
-                    ],
-                  ),
                 ],
               ),
             ],
@@ -875,6 +860,75 @@ class _VatSummaryCard extends StatelessWidget {
   }
 }
 
+/// One VatReturnDTO.VatLine: description, taxableAmount, vatAmount.
+class _VatLineRow extends StatelessWidget {
+  final Map<String, dynamic> item;
+  final Color color;
+  final _L l;
+
+  const _VatLineRow({required this.item, required this.color, required this.l});
+
+  @override
+  Widget build(BuildContext context) {
+    final m = context.miftah;
+    final description = (item['description'] ?? '-').toString();
+    final taxableAmount = (item['taxableAmount'] ?? 0).toDouble();
+    final vatAmount = (item['vatAmount'] ?? 0).toDouble();
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: m.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: m.border),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  description,
+                  style: l.ar
+                      ? GoogleFonts.notoNaskhArabic(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w500,
+                          color: m.textPrimary,
+                        )
+                      : GoogleFonts.josefinSans(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          color: m.textPrimary,
+                        ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  '${l.taxable}: ${Formatters.currency(taxableAmount)}',
+                  style: GoogleFonts.josefinSans(
+                    fontSize: 11,
+                    color: m.textMuted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Text(
+            Formatters.currency(vatAmount),
+            style: GoogleFonts.cinzel(
+              fontWeight: FontWeight.w600,
+              fontSize: 13,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _LedgerAmountChip extends StatelessWidget {
   final String label;
   final double amount;
@@ -934,7 +988,11 @@ class _L {
   String get outputVat => ar ? 'ضريبة مخرجات' : 'Output VAT';
   String get inputVat => ar ? 'ضريبة مدخلات' : 'Input VAT';
   String get netVatPayable => ar ? 'صافي الضريبة المستحقة' : 'Net VAT Payable';
+  String get salesVatLines =>
+      ar ? 'المبيعات (ضريبة المخرجات)' : 'Sales (Output VAT)';
+  String get purchaseVatLines =>
+      ar ? 'المشتريات (ضريبة المدخلات)' : 'Purchases (Input VAT)';
+  String get taxable => ar ? 'الخاضع للضريبة' : 'Taxable';
   String get noTransactions => ar ? 'لا توجد معاملات' : 'No transactions found';
   String get noData => ar ? 'لا توجد بيانات' : 'No data available';
-  String get balance => ar ? 'الرصيد' : 'Balance';
 }

@@ -3,8 +3,8 @@ import { useTranslations } from "next-intl";
 
 type Props = {
   leaseId: string;
-  unitNumber: string;
-  propertyNameEn: string;
+  unitNumber: string | null;
+  propertyNameEn: string | null;
   endDate: string;
   daysRemaining: number;
   opportunityId: string | null;
@@ -24,9 +24,10 @@ export default function RenewalCard(p: Props) {
     );
   }
   const noIntent = p.intent == null;
+  const title = [p.propertyNameEn, p.unitNumber].filter(Boolean).join(" · ") || t("unitFallback");
   return (
     <div className="rounded border border-border p-4">
-      <p className="text-sm font-medium">{p.propertyNameEn} · {p.unitNumber}</p>
+      <p className="text-sm font-medium">{title}</p>
       <p className="text-xs text-muted">{t("endDateLine", { date: p.endDate, days: p.daysRemaining })}</p>
       {noIntent
         ? <div className="mt-3 flex gap-2 flex-wrap">

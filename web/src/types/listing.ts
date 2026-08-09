@@ -14,8 +14,11 @@ export type ListingAmenity =
 
 export interface UnitListingSummaryDTO {
   id: string; title: string; propertyName: string | null; bedrooms: number | null
+  bathrooms: number | null
   annualRent: number | null; status: ListingStatus; coverPhotoUrl: string | null
-  interestsCount: number; updatedAt: string; slug: string
+  interestsCount: number
+  lat: number | null; lng: number | null
+  createdAt: string; updatedAt: string; slug: string
 }
 
 export interface UnitListingDTO {

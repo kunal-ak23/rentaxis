@@ -1,15 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
-class SettingsHubScreen extends StatelessWidget {
+class SettingsHubScreen extends ConsumerWidget {
   const SettingsHubScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final m = context.miftah;
     final l = _L(context.isAr);
+    // GET /v1/rent-settings/{id} and /v1/gateway-config are
+    // SUPER_ADMIN/TENANT_ADMIN only — hide those tiles for other roles
+    // instead of offering a guaranteed 403.
+    final role = ref.watch(authProvider).role;
+    final isAdmin = role == 'SUPER_ADMIN' || role == 'TENANT_ADMIN';
 
     return Scaffold(
       backgroundColor: m.background,
@@ -22,24 +28,27 @@ class SettingsHubScreen extends StatelessWidget {
               children: [
                 _MenuCard(
                   items: [
-                    _MenuRow(
-                      icon: Icons.payments_outlined,
-                      label: l.rentSettings,
-                      subtitle: l.rentSettingsDesc,
-                      onTap: () => context.push('/settings/rent'),
-                    ),
-                    _MenuRow(
-                      icon: Icons.credit_card_outlined,
-                      label: l.gateway,
-                      subtitle: l.gatewayDesc,
-                      onTap: () => context.push('/settings/gateway'),
-                    ),
-                    _MenuRow(
-                      icon: Icons.account_tree_outlined,
-                      label: l.mappings,
-                      subtitle: l.mappingsDesc,
-                      onTap: () => context.push('/settings/mappings'),
-                    ),
+                    if (isAdmin)
+                      _MenuRow(
+                        icon: Icons.payments_outlined,
+                        label: l.rentSettings,
+                        subtitle: l.rentSettingsDesc,
+                        onTap: () => context.push('/settings/rent'),
+                      ),
+                    if (isAdmin)
+                      _MenuRow(
+                        icon: Icons.credit_card_outlined,
+                        label: l.gateway,
+                        subtitle: l.gatewayDesc,
+                        onTap: () => context.push('/settings/gateway'),
+                      ),
+                    if (isAdmin)
+                      _MenuRow(
+                        icon: Icons.account_tree_outlined,
+                        label: l.mappings,
+                        subtitle: l.mappingsDesc,
+                        onTap: () => context.push('/settings/mappings'),
+                      ),
                   ],
                 ),
               ],

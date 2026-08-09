@@ -68,6 +68,11 @@ public class MaintenanceTicketService {
 
     @Transactional
     public MaintenanceTicketDTO createTicket(CreateTicketDTO dto, UUID reportedBy) {
+        // findById(null) would throw an opaque InvalidDataAccessApiUsageException
+        // (surfaced as a 500); reject the missing field explicitly instead.
+        if (dto.getPropertyId() == null) {
+            throw new BusinessRuleViolationException("propertyId is required");
+        }
         Property property = propertyRepository.findById(dto.getPropertyId())
                 .orElseThrow(() -> new NotFoundException("Property not found"));
 
@@ -151,15 +156,15 @@ public class MaintenanceTicketService {
         }
 
         return tickets.stream()
-                .map(this::mapToDTO)
+                .map(t -> mapToDTO(t, userId))
                 .collect(Collectors.toList());
     }
 
     @Transactional(readOnly = true)
-    public MaintenanceTicketDTO getTicket(UUID ticketId) {
+    public MaintenanceTicketDTO getTicket(UUID ticketId, UUID requesterId) {
         MaintenanceTicket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new NotFoundException("Ticket not found"));
-        return mapToDTO(ticket);
+        return mapToDTO(ticket, requesterId);
     }
 
     @Transactional
@@ -374,8 +379,10 @@ public class MaintenanceTicketService {
     // ---- Attachments ----
 
     @Transactional(readOnly = true)
-    public java.util.List<TicketAttachment> getAttachments(UUID ticketId) {
-        return attachmentRepository.findByTicketId(ticketId);
+    public java.util.List<TicketAttachmentDTO> getAttachments(UUID ticketId) {
+        return attachmentRepository.findByTicketId(ticketId).stream()
+                .map(this::mapAttachmentToDTO)
+                .collect(Collectors.toList());
     }
 
     @Transactional
@@ -414,7 +421,7 @@ public class MaintenanceTicketService {
     }
 
     @Transactional
-    public TicketAttachment uploadAttachment(UUID ticketId, MultipartFile file) throws IOException {
+    public TicketAttachmentDTO uploadAttachment(UUID ticketId, MultipartFile file) throws IOException {
         MaintenanceTicket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new NotFoundException("Ticket not found"));
 
@@ -436,7 +443,23 @@ public class MaintenanceTicketService {
         attachment.setFileSize(file.getSize());
         attachment.setUploadedAt(Instant.now());
 
-        return attachmentRepository.save(attachment);
+        return mapAttachmentToDTO(attachmentRepository.save(attachment));
+    }
+
+    /**
+     * Attachments were previously serialized as raw JPA entities, dragging the
+     * whole lazy ticket graph into the payload; the DTO pins the contract to
+     * the fields clients actually read.
+     */
+    private TicketAttachmentDTO mapAttachmentToDTO(TicketAttachment attachment) {
+        TicketAttachmentDTO dto = new TicketAttachmentDTO();
+        dto.setId(attachment.getId());
+        dto.setTicketId(attachment.getTicket() != null ? attachment.getTicket().getId() : null);
+        dto.setFileUrl(attachment.getFileUrl());
+        dto.setFileType(attachment.getFileType());
+        dto.setFileSize(attachment.getFileSize());
+        dto.setUploadedAt(attachment.getUploadedAt());
+        return dto;
     }
 
     // ---- Reports ----
@@ -538,6 +561,16 @@ public class MaintenanceTicketService {
     // ---- Mapping helpers ----
 
     private MaintenanceTicketDTO mapToDTO(MaintenanceTicket ticket) {
+        return mapToDTO(ticket, null);
+    }
+
+    /**
+     * Maps a ticket to its DTO. The closure OTP is a secret shared with the
+     * reporter only (the renter hands it over to confirm closure); exposing it
+     * to managers would let them close tickets without renter confirmation, so
+     * it is redacted unless the requester is the reporter.
+     */
+    private MaintenanceTicketDTO mapToDTO(MaintenanceTicket ticket, UUID requesterId) {
         MaintenanceTicketDTO dto = new MaintenanceTicketDTO();
         dto.setId(ticket.getId());
         dto.setTenantId(ticket.getTenantId());
@@ -554,7 +587,8 @@ public class MaintenanceTicketService {
         dto.setEstimatedResolutionHours(ticket.getEstimatedResolutionHours());
         dto.setResolvedAt(ticket.getResolvedAt());
         dto.setClosedAt(ticket.getClosedAt());
-        dto.setClosureOtp(ticket.getClosureOtp());
+        boolean isReporter = requesterId != null && requesterId.equals(ticket.getReportedBy());
+        dto.setClosureOtp(isReporter ? ticket.getClosureOtp() : null);
         dto.setSatisfactionRating(ticket.getSatisfactionRating());
         dto.setSatisfactionComment(ticket.getSatisfactionComment());
         dto.setOnBehalfOf(ticket.getOnBehalfOf());

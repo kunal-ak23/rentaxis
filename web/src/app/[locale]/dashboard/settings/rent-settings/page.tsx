@@ -137,27 +137,25 @@ export default function RentSettingsPage() {
         setError("");
         try {
             const res = await fetch(`/api/proxy/v1/rent-settings/${propertyId}`);
-            if (res.ok) {
-                const data = await res.json();
-                setSettings({
-                    ...DEFAULT_SETTINGS,
-                    ...data,
-                });
-            } else if (res.status === 404) {
+            if (res.status === 204) {
                 // No settings yet — use defaults
                 setSettings({
                     ...DEFAULT_SETTINGS,
                     propertyId,
                 });
+            } else if (res.ok) {
+                const data = await res.json();
+                setSettings({
+                    ...DEFAULT_SETTINGS,
+                    ...data,
+                });
             } else {
+                setSettings(null);
                 setError("Failed to load rent settings.");
             }
         } catch {
-            // Treat network errors as "no settings"
-            setSettings({
-                ...DEFAULT_SETTINGS,
-                propertyId,
-            });
+            setSettings(null);
+            setError("Failed to load rent settings.");
         } finally {
             setLoading(false);
         }

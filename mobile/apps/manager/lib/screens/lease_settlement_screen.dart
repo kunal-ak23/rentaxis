@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -149,7 +150,10 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
       (_settlement?['status'] as String?)?.toUpperCase() == 'DRAFT';
 
   void _loadData() async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       final service = ref.read(_settlementServiceProvider);
       try {
@@ -202,7 +206,12 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
             _loading = false;
           });
         }
-      } catch (_) {
+      } on DioException catch (e) {
+        // Only a 404 means "no settlement yet". Anything else (500, 403,
+        // network) must surface as an error — silently swapping in the blank
+        // preview editor over an existing draft loses notes and deduction
+        // ids, so a later Save Draft would duplicate the draft's rows.
+        if (e.response?.statusCode != 404) rethrow;
         // No settlement yet — load preview
         final preview = await service.getSettlementPreview(widget.leaseId);
         final previewDeductions = <Map<String, dynamic>>[];
@@ -238,7 +247,7 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _error = e.toString();
+          _error = _l.failedToLoadSettlement;
           _loading = false;
         });
       }
@@ -2088,6 +2097,8 @@ class _L {
   String get title => ar ? 'التسوية' : 'Settlement';
   String get save => ar ? 'حفظ' : 'Save';
   String get retry => ar ? 'إعادة المحاولة' : 'Retry';
+  String get failedToLoadSettlement =>
+      ar ? 'تعذر تحميل التسوية' : 'Failed to load settlement';
   String get cancel => ar ? 'إلغاء' : 'Cancel';
   String get delete => ar ? 'حذف' : 'Delete';
   String get add => ar ? 'إضافة' : 'Add';

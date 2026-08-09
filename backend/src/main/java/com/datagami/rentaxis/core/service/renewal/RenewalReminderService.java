@@ -129,11 +129,15 @@ public class RenewalReminderService {
             } else {
                 UUID renterUserId = o.getLease().getRenter().getUserId();
                 if (renterUserId != null) {
+                    // Copy must not instruct a tap action: the renter mobile app has no
+                    // renewal screen, so we point users at the renter web portal instead
+                    // (same destination as the email reminder links).
                     notificationService.notifyInAppInNewTx(
                             o.getTenantId(), renterUserId,
                             "LEASE_RENEWAL_REMINDER",
                             "Your lease ends in " + slot + " days",
-                            "Lease ends " + o.getLease().getEndDate() + ". Tap to choose your renewal option.",
+                            "Lease ends " + o.getLease().getEndDate()
+                                    + ". Choose your renewal option in the renter web portal.",
                             "LEASE", o.getLease().getId());
                 }
             }

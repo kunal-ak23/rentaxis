@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import CardFlip from "@/components/ui/card-flip";
 import { Link } from "@/i18n/routing";
 import { formatCurrency, formatCurrencyCompact } from "@/lib/format";
+import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
 
 type Unit = {
     id: string;
@@ -26,6 +27,7 @@ export default function UnitsPage({ params }: { params: Promise<{ id: string }> 
     const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(false);
     const [submitting, setSubmitting] = useState(false);
+    const [formError, setFormError] = useState<string | null>(null);
     const [formData, setFormData] = useState({
         unitNumber: "",
         type: "BHK1",
@@ -58,28 +60,29 @@ export default function UnitsPage({ params }: { params: Promise<{ id: string }> 
     const handleSubmit = async (ev: React.FormEvent) => {
         ev.preventDefault();
         setSubmitting(true);
+        setFormError(null);
         try {
             const res = await fetch("/api/proxy/v1/units", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(formData)
             });
-            if (res.ok) {
-                setShowForm(false);
-                fetchUnits();
-                setFormData({
-                    unitNumber: "",
-                    type: "BHK1",
-                    sizeSqft: 0,
-                    expectedRent: 0,
-                    actualRent: 0,
-                    status: "VACANT",
-                    currentTenantName: "",
-                    property: { id: propertyId }
-                });
-            }
+            await throwIfNotOk(res);
+            setShowForm(false);
+            fetchUnits();
+            setFormData({
+                unitNumber: "",
+                type: "BHK1",
+                sizeSqft: 0,
+                expectedRent: 0,
+                actualRent: 0,
+                status: "VACANT",
+                currentTenantName: "",
+                property: { id: propertyId }
+            });
         } catch (err) {
             console.error(err);
+            setFormError(err instanceof ApiError ? err.message : "Failed to create property. Please try again.");
         } finally {
             setSubmitting(false);
         }
@@ -97,7 +100,7 @@ export default function UnitsPage({ params }: { params: Promise<{ id: string }> 
                     <p className="text-xs text-muted font-medium tracking-tight">Manage individual properties within this project.</p>
                 </div>
                 <button
-                    onClick={() => setShowForm(true)}
+                    onClick={() => { setFormError(null); setShowForm(true); }}
                     className="flex items-center gap-2 bg-primary text-primary-foreground px-5 py-2.5 rounded-full text-xs font-bold hover:opacity-90 transition-all duration-200 active:scale-95 self-start cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                 >
                     <Plus size={14} />
@@ -137,6 +140,11 @@ export default function UnitsPage({ params }: { params: Promise<{ id: string }> 
                                     <input type="number" placeholder="Sq. Ft." className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.sizeSqft || ""} onChange={ev => setFormData({ ...formData, sizeSqft: Number(ev.target.value) })} />
                                 </div>
                             </div>
+                            {formError && (
+                                <div className="bg-error/10 border border-error/30 rounded-lg px-4 py-3 text-xs text-error">
+                                    {formError}
+                                </div>
+                            )}
                             <div className="flex justify-end gap-3 mt-4">
                                 <button type="button" onClick={() => setShowForm(false)} className="px-6 py-3 rounded-xl text-xs font-bold text-muted cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200">{t("cancel")}</button>
                                 <button type="submit" disabled={submitting} className="px-8 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-bold cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed">{submitting ? "Creating..." : t("create")}</button>

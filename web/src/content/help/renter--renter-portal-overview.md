@@ -14,7 +14,7 @@ The Renter Portal is your self-service hub for everything related to your tenanc
 ### What You Can Do
 
 - **View Your Leases** — See your active lease details, including rent amount, dates, and contract terms
-- **Make Payments** — Pay your rent online securely
+- **Track Payments** — Follow your payment schedule and the status of each payment
 - **Submit Tickets** — Report maintenance issues or make requests
 - **Download Documents** — Access your lease contract and payment receipts
 
@@ -22,7 +22,7 @@ The Renter Portal is your self-service hub for everything related to your tenanc
 
 Your portal sidebar shows:
 - **My Leases** — Your lease details and history
-- **My Payments** — Payment schedule and online payment
+- **My Payments** — Payment schedule and history
 - **My Tickets** — Maintenance requests and their status
 
 ### Getting Help

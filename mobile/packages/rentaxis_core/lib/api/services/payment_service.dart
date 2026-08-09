@@ -10,22 +10,11 @@ class PaymentService {
     return response.data;
   }
 
-  Future<Map<String, dynamic>> createOrder(String paymentScheduleId) async {
-    final response = await _dio.post(
-      '/v1/online-payments/create-order',
-      data: {'paymentScheduleId': paymentScheduleId},
-    );
-    return response.data;
-  }
-
-  Future<Map<String, dynamic>> verifyPayment(Map<String, dynamic> data) async {
-    final response = await _dio.post('/v1/online-payments/verify', data: data);
-    return response.data;
-  }
-
-  Future<void> cancelPayment(String paymentScheduleId) async {
-    await _dio.post('/v1/online-payments/cancel/$paymentScheduleId');
-  }
+  // Online-payment initiation (POST /v1/online-payments/create-order, /verify,
+  // /cancel/{id}) is deliberately not wired up in any app: the renter surfaces
+  // are informational and rent collection is handled offline. The backend
+  // (OnlinePaymentController) still supports the flow should a gateway SDK
+  // integration ship later — re-add wrappers here at that point.
 
   // PM endpoints
 

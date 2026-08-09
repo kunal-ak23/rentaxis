@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -36,11 +37,6 @@ class _GatewayConfigScreenState extends ConsumerState<GatewayConfigScreen> {
     ref.invalidate(_availableGatewaysProvider);
   }
 
-  String _maskKey(String key) {
-    if (key.length <= 4) return '****';
-    return '${'*' * (key.length - 4)}${key.substring(key.length - 4)}';
-  }
-
   @override
   Widget build(BuildContext context) {
     final configAsync = ref.watch(_gatewayConfigProvider);
@@ -58,8 +54,17 @@ class _GatewayConfigScreenState extends ConsumerState<GatewayConfigScreen> {
               loading: () => Center(
                 child: CircularProgressIndicator(color: AppColors.accent),
               ),
-              error: (e, _) =>
-                  ErrorState(message: l.failedToLoadConfig, onRetry: _refresh),
+              error: (e, _) {
+                // GET /v1/gateway-config is SUPER_ADMIN/TENANT_ADMIN only —
+                // a 403 is a permission boundary, not a transient failure, so
+                // don't offer a Retry that can never succeed.
+                final forbidden =
+                    e is DioException && e.response?.statusCode == 403;
+                return ErrorState(
+                  message: forbidden ? l.noPermission : l.failedToLoadConfig,
+                  onRetry: forbidden ? null : _refresh,
+                );
+              },
               data: (config) {
                 return RefreshIndicator(
                   onRefresh: _refresh,
@@ -73,7 +78,7 @@ class _GatewayConfigScreenState extends ConsumerState<GatewayConfigScreen> {
                         if (config != null) ...[
                           _StatusCard(config: config, l: l),
                           const SizedBox(height: 12),
-                          _ConfigCard(config: config, l: l, maskKey: _maskKey),
+                          _ConfigCard(config: config, l: l),
                         ] else
                           EmptyState(
                             icon: Icons.credit_card_off_outlined,
@@ -199,9 +204,9 @@ class _StatusCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final m = context.miftah;
-    final isActive =
-        config['active'] == true ||
-        config['status']?.toString().toUpperCase() == 'ACTIVE';
+    // TenantGatewayConfigDTO serializes 'isActive' (there is no
+    // 'active'/'status' key in the response).
+    final isActive = config['isActive'] == true;
     final color = isActive ? m.success : m.danger;
     final bg = isActive ? m.successBg : m.dangerBg;
 
@@ -253,22 +258,17 @@ class _StatusCard extends StatelessWidget {
 class _ConfigCard extends StatelessWidget {
   final Map<String, dynamic> config;
   final _L l;
-  final String Function(String) maskKey;
 
-  const _ConfigCard({
-    required this.config,
-    required this.l,
-    required this.maskKey,
-  });
+  const _ConfigCard({required this.config, required this.l});
 
   @override
   Widget build(BuildContext context) {
     final m = context.miftah;
-    final gatewayName = (config['gatewayName'] ?? config['name'] ?? '-')
-        .toString();
-    final providerType = (config['providerType'] ?? config['provider'] ?? '-')
-        .toString();
-    final keyId = (config['keyId'] ?? config['key_id'] ?? '').toString();
+    // Keys per TenantGatewayConfigDTO: gatewayName, gatewayCode and
+    // apiKeyMasked (already masked server-side — render as-is).
+    final gatewayName = (config['gatewayName'] ?? '-').toString();
+    final gatewayCode = (config['gatewayCode'] ?? '-').toString();
+    final apiKeyMasked = (config['apiKeyMasked'] ?? '').toString();
 
     return Container(
       decoration: BoxDecoration(
@@ -305,14 +305,14 @@ class _ConfigCard extends StatelessWidget {
           _ConfigRow(
             icon: Icons.integration_instructions_outlined,
             label: l.providerType,
-            value: providerType.replaceAll('_', ' '),
+            value: gatewayCode.replaceAll('_', ' '),
             ar: l.ar,
           ),
-          if (keyId.isNotEmpty)
+          if (apiKeyMasked.isNotEmpty)
             _ConfigRow(
               icon: Icons.key_outlined,
               label: l.keyId,
-              value: maskKey(keyId),
+              value: apiKeyMasked,
               ar: l.ar,
             ),
         ],
@@ -432,6 +432,9 @@ class _L {
   String get failedToLoadConfig => ar
       ? 'تعذر تحميل إعداد بوابة الدفع'
       : 'Failed to load gateway configuration';
+  String get noPermission => ar
+      ? 'ليس لديك صلاحية لعرض إعدادات بوابة الدفع'
+      : 'You do not have permission to view gateway settings';
   String get noGateway =>
       ar ? 'لم يتم إعداد بوابة دفع' : 'No payment gateway configured';
   String get availableGateways =>

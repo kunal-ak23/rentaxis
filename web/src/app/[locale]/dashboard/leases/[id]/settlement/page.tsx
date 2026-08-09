@@ -217,6 +217,7 @@ export default function SettlementPage() {
     const locale = params.locale as string;
 
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState<string | null>(null);
     const [settlement, setSettlement] = useState<Settlement | null>(null);
     const [depositAmount, setDepositAmount] = useState(0);
     const [autoDeductions, setAutoDeductions] = useState<DeductionItem[]>([]);
@@ -252,6 +253,7 @@ export default function SettlementPage() {
     }, []);
 
     const loadSettlement = useCallback(async () => {
+        setLoadError(null);
         try {
             const res = await fetch(`/api/proxy/v1/leases/${leaseId}/settlement`);
             if (res.ok) {
@@ -275,36 +277,52 @@ export default function SettlementPage() {
                 setAdditions(additionItems);
                 return;
             }
-        } catch (e) { console.error("Failed to load settlement:", e); }
+            if (res.status !== 404) {
+                // Only a 404 means "no settlement yet". A 500/403 while a
+                // draft exists must not silently swap in the blank preview
+                // editor — saving that would duplicate the draft's rows.
+                setLoadError("Failed to load settlement. Please try again.");
+                return;
+            }
+        } catch (e) {
+            console.error("Failed to load settlement:", e);
+            setLoadError("Failed to load settlement. Please try again.");
+            return;
+        }
 
-        // No existing settlement — load preview for suggestions
+        // 404 — no existing settlement, load preview for suggestions
         try {
             const res = await fetch(`/api/proxy/v1/leases/${leaseId}/settlement/preview`);
-            if (res.ok) {
-                const preview: SettlementPreview = await res.json();
-                setDepositAmount(preview.depositAmount);
-                const auto: DeductionItem[] = [];
-                if (preview.unpaidRentTotal > 0) {
-                    auto.push({
-                        category: "UNPAID_RENT",
-                        description: "Outstanding rent",
-                        amount: preview.unpaidRentTotal,
-                        autoCalculated: true,
-                        attachments: [],
-                    });
-                }
-                if (preview.penaltyTotal > 0) {
-                    auto.push({
-                        category: "PENALTIES",
-                        description: "Late payment penalties",
-                        amount: preview.penaltyTotal,
-                        autoCalculated: true,
-                        attachments: [],
-                    });
-                }
-                setAutoDeductions(auto);
+            if (!res.ok) {
+                setLoadError("Failed to load settlement. Please try again.");
+                return;
             }
-        } catch (e) { console.error("Failed to load settlement preview:", e); }
+            const preview: SettlementPreview = await res.json();
+            setDepositAmount(preview.depositAmount);
+            const auto: DeductionItem[] = [];
+            if (preview.unpaidRentTotal > 0) {
+                auto.push({
+                    category: "UNPAID_RENT",
+                    description: "Outstanding rent",
+                    amount: preview.unpaidRentTotal,
+                    autoCalculated: true,
+                    attachments: [],
+                });
+            }
+            if (preview.penaltyTotal > 0) {
+                auto.push({
+                    category: "PENALTIES",
+                    description: "Late payment penalties",
+                    amount: preview.penaltyTotal,
+                    autoCalculated: true,
+                    attachments: [],
+                });
+            }
+            setAutoDeductions(auto);
+        } catch (e) {
+            console.error("Failed to load settlement preview:", e);
+            setLoadError("Failed to load settlement. Please try again.");
+        }
     }, [leaseId]);
 
     useEffect(() => {
@@ -438,6 +456,23 @@ export default function SettlementPage() {
         return (
             <div className="flex items-center justify-center py-24">
                 <Loader2 className="w-6 h-6 animate-spin text-primary opacity-60" />
+            </div>
+        );
+    }
+
+    if (loadError) {
+        return (
+            <div className="max-w-2xl mx-auto flex flex-col items-center gap-4 py-24">
+                <p className="text-sm text-error">{loadError}</p>
+                <button
+                    onClick={() => {
+                        setLoading(true);
+                        loadSettlement().finally(() => setLoading(false));
+                    }}
+                    className="px-4 py-2 rounded-lg bg-primary text-white text-sm font-semibold hover:opacity-90 transition-opacity cursor-pointer"
+                >
+                    Retry
+                </button>
             </div>
         );
     }

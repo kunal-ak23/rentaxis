@@ -189,10 +189,14 @@ public class MarketplaceController {
                 l.getTitleEn(),
                 propertyName,
                 l.getBedrooms(),
+                l.getBathrooms(),
                 l.getAnnualRent(),
                 l.getStatus(),
                 coverUrl,
                 0L,
+                l.getLat(),
+                l.getLng(),
+                l.getCreatedAt(),
                 l.getUpdatedAt(),
                 l.getSlug()
         );

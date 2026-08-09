@@ -11,10 +11,14 @@ public record UnitListingSummaryDTO(
         String title,
         String propertyName,
         Integer bedrooms,
+        Integer bathrooms,
         BigDecimal annualRent,
         ListingStatus status,
         String coverPhotoUrl,
         long interestsCount,
+        BigDecimal lat,
+        BigDecimal lng,
+        LocalDateTime createdAt,
         LocalDateTime updatedAt,
         String slug
 ) {

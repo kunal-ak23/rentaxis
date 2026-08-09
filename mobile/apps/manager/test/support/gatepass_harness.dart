@@ -59,6 +59,7 @@ class FakeGatePassService extends GatePassApiService {
     this.decideError,
     this.setGuardPropertiesResult,
     this.setGuardPropertiesError,
+    this.registerVisitorError,
   }) : super(Dio());
 
   List<dynamic> approvalRows;
@@ -74,10 +75,14 @@ class FakeGatePassService extends GatePassApiService {
   /// sent.
   List<dynamic>? setGuardPropertiesResult;
   Object? setGuardPropertiesError;
+  Object? registerVisitorError;
 
   int approvalsCalls = 0;
   final List<({String id, bool approved})> decisions = [];
   final List<({String userId, List<String> propertyIds})> assignments = [];
+
+  /// Every body sent to `POST /v1/gatepass/visitors/registration`.
+  final List<Map<String, dynamic>> registrations = [];
 
   @override
   Future<List<dynamic>> approvals() async {
@@ -106,6 +111,23 @@ class FakeGatePassService extends GatePassApiService {
     final error = setGuardPropertiesError;
     if (error != null) throw error;
     return setGuardPropertiesResult ?? propertyIds.toSet().toList();
+  }
+
+  @override
+  Future<Map<String, dynamic>> registerGateVisitor(
+    Map<String, dynamic> registration,
+  ) async {
+    registrations.add(Map<String, dynamic>.from(registration));
+    final error = registerVisitorError;
+    if (error != null) throw error;
+    // VisitorLookupResponse shape; the register screen ignores the body.
+    return {
+      'id': 'visitor-1',
+      'name': registration['name'],
+      'phone': registration['phone'],
+      'visitorType': registration['visitorType'],
+      'registeredForSelectedUnit': registration['active'] == true,
+    };
   }
 }
 

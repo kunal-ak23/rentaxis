@@ -37,8 +37,24 @@ class _L {
   String get registerVendor => ar ? 'تسجيل المورّد' : 'Register vendor';
   String get vendorRegistered =>
       ar ? 'تم تسجيل المورّد لهذه الوحدة.' : 'Vendor registered for this unit.';
+  String get vendorAccessRevoked => ar
+      ? 'تم إلغاء دخول المورّد لهذه الوحدة.'
+      : 'Vendor access revoked for this unit.';
   String get couldNotRegister =>
       ar ? 'تعذّر تسجيل هذا المورّد.' : 'Could not register this vendor.';
+  String get validFrom => ar ? 'صالح من' : 'Valid from';
+  String get validFromHint => ar ? 'صالح من (اختياري)' : 'Valid from (optional)';
+  String get validTo => ar ? 'صالح حتى' : 'Valid until';
+  String get validToHint =>
+      ar ? 'صالح حتى (اختياري)' : 'Valid until (optional)';
+  String get validToBeforeValidFrom => ar
+      ? 'يجب ألا يسبق تاريخ "صالح حتى" تاريخ "صالح من".'
+      : '"Valid until" cannot be before "Valid from".';
+  String get accessActive => ar ? 'الدخول مفعّل' : 'Access active';
+  String get accessActiveHint => ar
+      ? 'أوقف التفعيل ثم احفظ لإلغاء تسجيل مورّد سبق تسجيله لهذه الوحدة (بنفس رقم الجوال).'
+      : 'Turn off and save to revoke a previously registered vendor for this '
+            'unit (same mobile number).';
 }
 
 class RegisterGateVendorScreen extends ConsumerStatefulWidget {
@@ -57,6 +73,9 @@ class _RegisterGateVendorScreenState
   String? _propertyId;
   String? _unitId;
   String _type = 'MAID';
+  DateTime? _validFrom;
+  DateTime? _validTo;
+  bool _active = true;
   List<Map<String, dynamic>> _units = const [];
   bool _loadingUnits = false;
   bool _saving = false;
@@ -94,6 +113,14 @@ class _RegisterGateVendorScreenState
   Future<void> _save() async {
     if (!_key.currentState!.validate() || _saving) return;
     final l = _L(context.isAr);
+    final validFrom = _validFrom;
+    final validTo = _validTo;
+    if (validFrom != null && validTo != null && validTo.isBefore(validFrom)) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(l.validToBeforeValidFrom)));
+      return;
+    }
     setState(() => _saving = true);
     try {
       await ref.read(gatePassServiceProvider).registerGateVisitor({
@@ -102,16 +129,29 @@ class _RegisterGateVendorScreenState
         'name': _name.text.trim(),
         'phone': _phone.text.trim(),
         'visitorType': _type,
-        'validFrom': null,
-        'validTo': null,
-        'active': true,
+        // Date pickers yield local midnight; the window runs from the start
+        // of the first day to the end of the last, encoded as UTC instants.
+        'validFrom': validFrom == null ? null : instant(validFrom),
+        'validTo': validTo == null
+            ? null
+            : instant(
+                DateTime(validTo.year, validTo.month, validTo.day, 23, 59, 59),
+              ),
+        'active': _active,
       });
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(l.vendorRegistered)));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_active ? l.vendorRegistered : l.vendorAccessRevoked),
+        ),
+      );
       _name.clear();
       _phone.clear();
+      setState(() {
+        _validFrom = null;
+        _validTo = null;
+        _active = true;
+      });
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -126,6 +166,60 @@ class _RegisterGateVendorScreenState
   TextStyle _fieldStyle(bool ar, MiftahColors m) => ar
       ? GoogleFonts.notoNaskhArabic(fontSize: 14, color: m.textPrimary)
       : GoogleFonts.josefinSans(fontSize: 14, color: m.textPrimary);
+
+  /// Optional, clearable date row — same pattern as the listing edit screen's
+  /// "available from" field.
+  Widget _dateField({
+    required MiftahColors m,
+    required _L l,
+    required String label,
+    required String hint,
+    required DateTime? value,
+    required ValueChanged<DateTime> onPicked,
+    required VoidCallback onCleared,
+  }) {
+    return GestureDetector(
+      onTap: () async {
+        final now = DateTime.now();
+        final date = await showDatePicker(
+          context: context,
+          initialDate: value ?? now,
+          firstDate: now.subtract(const Duration(days: 365)),
+          lastDate: now.add(const Duration(days: 730)),
+        );
+        if (date != null) onPicked(date);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        decoration: BoxDecoration(
+          color: m.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: m.border),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.calendar_today_outlined, size: 18, color: m.textMuted),
+            const SizedBox(width: 10),
+            Text(
+              value == null
+                  ? hint
+                  : '$label: ${value.toIso8601String().split('T').first}',
+              style: _fieldStyle(l.ar, m).copyWith(
+                color: value != null ? m.textPrimary : m.textMuted,
+              ),
+            ),
+            if (value != null) ...[
+              const Spacer(),
+              GestureDetector(
+                onTap: onCleared,
+                child: Icon(Icons.close, size: 16, color: m.textMuted),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -189,9 +283,13 @@ class _RegisterGateVendorScreenState
               ),
               const SizedBox(height: 14),
               DropdownButtonFormField<String>(
-                key: ValueKey(
-                  'vendor-unit-$_propertyId-$_unitId-${_units.length}',
-                ),
+                // Keyed on the property (not the selected unit): a new key
+                // resets the FormField, which must happen when the property
+                // changes but not when a unit is picked — keying on `_unitId`
+                // wiped the selection right after it was made, so validation
+                // could never pass and the form could never submit.
+                key: ValueKey('vendor-unit-$_propertyId-${_units.length}'),
+                initialValue: _unitId,
                 decoration: InputDecoration(
                   labelText: _loadingUnits ? l.loadingUnits : l.unit,
                 ),
@@ -252,7 +350,49 @@ class _RegisterGateVendorScreenState
                 ],
                 onChanged: (value) => setState(() => _type = value!),
               ),
-              const SizedBox(height: 22),
+              const SizedBox(height: 14),
+              _dateField(
+                m: m,
+                l: l,
+                label: l.validFrom,
+                hint: l.validFromHint,
+                value: _validFrom,
+                onPicked: (date) => setState(() => _validFrom = date),
+                onCleared: () => setState(() => _validFrom = null),
+              ),
+              const SizedBox(height: 14),
+              _dateField(
+                m: m,
+                l: l,
+                label: l.validTo,
+                hint: l.validToHint,
+                value: _validTo,
+                onPicked: (date) => setState(() => _validTo = date),
+                onCleared: () => setState(() => _validTo = null),
+              ),
+              const SizedBox(height: 6),
+              SwitchListTile(
+                value: _active,
+                activeThumbColor: AppColors.accent,
+                contentPadding: EdgeInsets.zero,
+                title: Text(l.accessActive, style: _fieldStyle(l.ar, m)),
+                subtitle: Text(
+                  l.accessActiveHint,
+                  style: l.ar
+                      ? GoogleFonts.notoNaskhArabic(
+                          fontSize: 12,
+                          color: m.textSecondary,
+                          height: 1.4,
+                        )
+                      : GoogleFonts.josefinSans(
+                          fontSize: 12,
+                          color: m.textSecondary,
+                          height: 1.4,
+                        ),
+                ),
+                onChanged: (value) => setState(() => _active = value),
+              ),
+              const SizedBox(height: 14),
               GoldButton(
                 label: _saving ? l.saving : l.registerVendor,
                 onPressed: _saving ? null : _save,
