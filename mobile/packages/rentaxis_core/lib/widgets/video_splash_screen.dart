@@ -3,14 +3,21 @@ import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
 import '../utils/l10n.dart';
 
-/// Miftah splash (design 1a): gold lockup over #111 chrome, hairline divider,
-/// "PROPERTY, PERFECTED" tagline, and an animated gold progress bar with a
-/// "SECURING YOUR SESSION" caption. (Class name is historical — the original
-/// splash played a video.)
+/// Miftah splash: an app-specific property creative under the gold lockup,
+/// hairline divider, "PROPERTY, PERFECTED" tagline, and an animated gold
+/// progress bar with a "SECURING YOUR SESSION" caption. (Class name is
+/// historical — the original splash played a video.)
 class VideoSplashScreen extends StatefulWidget {
   final VoidCallback onComplete;
+  final String backgroundAsset;
+  final AlignmentGeometry backgroundAlignment;
 
-  const VideoSplashScreen({super.key, required this.onComplete});
+  const VideoSplashScreen({
+    super.key,
+    required this.onComplete,
+    this.backgroundAsset = 'assets/splash_background.png',
+    this.backgroundAlignment = Alignment.center,
+  });
 
   @override
   State<VideoSplashScreen> createState() => _VideoSplashScreenState();
@@ -80,7 +87,29 @@ class _VideoSplashScreenState extends State<VideoSplashScreen>
     return Scaffold(
       backgroundColor: AppColors.navyDark,
       body: Stack(
+        fit: StackFit.expand,
         children: [
+          Image.asset(
+            widget.backgroundAsset,
+            alignment: widget.backgroundAlignment,
+            fit: BoxFit.cover,
+            filterQuality: FilterQuality.medium,
+            excludeFromSemantics: true,
+          ),
+          const DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Color(0x70111816),
+                  Color(0x86111513),
+                  Color(0xE80B0F12),
+                ],
+                stops: [0, 0.54, 1],
+              ),
+            ),
+          ),
           Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,

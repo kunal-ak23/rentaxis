@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart' show Alignment;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
@@ -71,6 +72,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/splash',
         builder: (context, state) => VideoSplashScreen(
+          backgroundAlignment: const Alignment(0.1, 0),
           onComplete: () {
             if (authState.isAuthenticated) {
               GoRouter.of(context).go('/');

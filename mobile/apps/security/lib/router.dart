@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart' show Alignment;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
@@ -41,7 +42,7 @@ final routerProvider = Provider<GoRouter>((ref) {
   ref.onDispose(refresh.dispose);
 
   return GoRouter(
-    initialLocation: '/',
+    initialLocation: '/splash',
     refreshListenable: refresh,
     redirect: (context, state) {
       final authState = ref.read(authProvider);
@@ -49,13 +50,28 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isLoading = authState.isLoading;
       final isLoginRoute = state.matchedLocation == '/login';
       final isOtpRoute = state.matchedLocation == '/otp';
+      final isSplashRoute = state.matchedLocation == '/splash';
 
+      if (isSplashRoute) return null;
       if (isLoading) return null; // Wait for stored session check to resolve
       if (!isLoggedIn && !isLoginRoute && !isOtpRoute) return '/login';
       if (isLoggedIn && (isLoginRoute || isOtpRoute)) return '/';
       return null;
     },
     routes: [
+      GoRoute(
+        path: '/splash',
+        builder: (context, state) => VideoSplashScreen(
+          backgroundAlignment: const Alignment(0.3, 0),
+          onComplete: () {
+            if (ref.read(authProvider).isAuthenticated) {
+              GoRouter.of(context).go('/');
+            } else {
+              GoRouter.of(context).go('/login');
+            }
+          },
+        ),
+      ),
       GoRoute(
         path: '/login',
         builder: (context, state) => const PhoneLoginScreen(),
