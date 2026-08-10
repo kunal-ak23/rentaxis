@@ -21,6 +21,13 @@ void main() {
         GoRoute(
           path: '/gatepass',
           builder: (context, state) => const GatePassListScreen(),
+          routes: [
+            GoRoute(
+              path: 'create',
+              builder: (context, state) =>
+                  const Scaffold(body: Text('CREATE ROUTE')),
+            ),
+          ],
         ),
       ],
     );
@@ -132,6 +139,35 @@ void main() {
       );
 
       expect(find.byType(ErrorState), findsOneWidget);
+    });
+
+    testWidgets('keeps the create affordance in the app bar once passes exist', (
+      tester,
+    ) async {
+      // Regression: the create action used to be a FloatingActionButton, which
+      // the shell's floating bottom-nav pill (extendBody: true) paints over —
+      // so once the empty-state "Create a pass" button was gone, a renter with
+      // at least one pass had no visible way to add another. The action must
+      // live in the app bar, where the nav cannot obscure it, and must be there
+      // whether or not the list already has passes.
+      await pumpList(
+        tester,
+        gatePass: FakeGatePassService(
+          mineRows: [passFixture(guestName: 'Ahmed Khan')],
+        ),
+      );
+
+      final addInAppBar = find.descendant(
+        of: find.byType(AppBar),
+        matching: find.byIcon(Icons.add),
+      );
+      expect(addInAppBar, findsOneWidget);
+      // And it is never a hidden-behind-the-nav FAB.
+      expect(find.byType(FloatingActionButton), findsNothing);
+
+      await tester.tap(addInAppBar);
+      await tester.pumpAndSettle();
+      expect(find.text('CREATE ROUTE'), findsOneWidget);
     });
   });
 

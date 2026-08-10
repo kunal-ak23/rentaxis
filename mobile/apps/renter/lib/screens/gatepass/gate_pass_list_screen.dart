@@ -56,13 +56,18 @@ class GatePassListScreen extends ConsumerWidget {
             onPressed: () => context.push('/gatepass/approvals'),
             icon: const Icon(Icons.approval_outlined),
           ),
+          // "New pass" lives here, not in a FloatingActionButton: the shell wraps
+          // every screen in a Scaffold with `extendBody: true` and a *floating*
+          // bottom-nav pill, which paints over a child screen's FAB. A renter who
+          // already had one pass (so the empty-state "Create a pass" button was
+          // gone) was left with no visible way to add another. The app bar is
+          // above the nav and can't be obscured — the same pattern Meetings uses.
+          IconButton(
+            tooltip: l.newPass,
+            onPressed: () => context.push('/gatepass/create'),
+            icon: const Icon(Icons.add),
+          ),
         ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => context.push('/gatepass/create'),
-        backgroundColor: AppColors.primary,
-        icon: const Icon(Icons.add, color: Colors.white),
-        label: Text(l.newPass, style: const TextStyle(color: Colors.white)),
       ),
       body: RefreshIndicator(
         color: m.isDark ? AppColors.accent : AppColors.primary,
