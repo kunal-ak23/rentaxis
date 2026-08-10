@@ -19,18 +19,15 @@ final _propertyServiceProvider = Provider<PropertyService>((ref) {
   return PropertyService(client.dio);
 });
 
-final _paymentSummaryProvider =
-    FutureProvider.autoDispose<Map<String, dynamic>>((ref) async {
+/// Keyed by the selected property id (null = all properties) so the stat
+/// tiles and status strip re-query GET /v1/payments/summary?propertyId=...
+/// whenever the property filter changes, matching the web finance page —
+/// otherwise tenant-wide totals sit above a property-scoped list.
+final _paymentSummaryProvider = FutureProvider.autoDispose
+    .family<Map<String, dynamic>, String?>((ref, propertyId) async {
       final service = ref.watch(_paymentServiceProvider);
-      return service.getSummary();
+      return service.getSummary(propertyId: propertyId);
     });
-
-final _paymentsProvider = FutureProvider.autoDispose<List<dynamic>>((
-  ref,
-) async {
-  final service = ref.watch(_paymentServiceProvider);
-  return service.getPayments();
-});
 
 final _propertiesForFilterProvider = FutureProvider.autoDispose<List<dynamic>>((
   ref,
@@ -56,7 +53,19 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
   late TabController _tabController;
 
   static const _pageSize = 20;
-  int _currentPage = 0;
+
+  // Server-side pagination state for the active tab/property query: rows
+  // accumulated page by page, plus the backend Page metadata. The tenant-wide
+  // list can far exceed one page, so filtering a single big fetch client-side
+  // (the old approach) silently truncated everything past the first request.
+  List<dynamic> _rows = [];
+  int _page = 0;
+  int _totalPages = 1;
+  int _totalElements = 0;
+  bool _loading = true;
+  bool _loadingMore = false;
+  bool _loadFailed = false;
+  int _fetchEpoch = 0;
 
   @override
   void initState() {
@@ -64,9 +73,10 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
     _tabController = TabController(length: 4, vsync: this);
     _tabController.addListener(() {
       if (!_tabController.indexIsChanging) {
-        setState(() => _currentPage = 0);
+        _reload();
       }
     });
+    _reload();
   }
 
   @override
@@ -75,17 +85,95 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
     super.dispose();
   }
 
+  /// Server-side query for the active tab. Upcoming needs ascending due
+  /// dates so its client-side month refinement lines up with page order;
+  /// the other tabs keep the backend default (dueDate DESC). "Overdue" uses
+  /// the backend's computed view (PENDING/COLLECTED/OVERDUE past due), same
+  /// population the dashboard counts.
+  ({String? status, bool overdue, List<String>? sort}) get _tabQuery =>
+      switch (_tabController.index) {
+        0 => (
+          status: 'PENDING',
+          overdue: false,
+          sort: const ['dueDate,asc', 'id,asc'],
+        ),
+        1 => (status: null, overdue: true, sort: null),
+        2 => (status: 'CLEARED', overdue: false, sort: null),
+        _ => (status: null, overdue: false, sort: null),
+      };
+
+  Future<void> _reload() async {
+    final epoch = ++_fetchEpoch;
+    setState(() {
+      _loading = true;
+      _loadFailed = false;
+      _rows = [];
+      _page = 0;
+      _totalPages = 1;
+      _totalElements = 0;
+    });
+    await _fetchPage(0, epoch);
+  }
+
+  Future<void> _fetchPage(int page, int epoch) async {
+    final q = _tabQuery;
+    try {
+      final result = await ref
+          .read(_paymentServiceProvider)
+          .getPaymentsPage(
+            propertyId: _selectedPropertyId,
+            status: q.status,
+            overdue: q.overdue,
+            sort: q.sort,
+            page: page,
+            size: _pageSize,
+          );
+      if (!mounted || epoch != _fetchEpoch) return;
+      setState(() {
+        _rows = [..._rows, ...(result['content'] as List? ?? const [])];
+        _page = page;
+        _totalPages = (result['totalPages'] as num?)?.toInt() ?? 1;
+        _totalElements =
+            (result['totalElements'] as num?)?.toInt() ?? _rows.length;
+        _loading = false;
+        _loadingMore = false;
+      });
+      // Early asc-sorted pages of the Upcoming tab can hold only past-due
+      // rows, all refined out client-side — keep fetching until something
+      // is visible (or the sort walks past the current month), so the tab
+      // doesn't sit empty behind a Show More button while dues exist on
+      // later pages. Bounded: pages strictly increase toward _totalPages.
+      if (_tabController.index == 0 && _visibleRows.isEmpty && _hasMore) {
+        setState(() => _loadingMore = true);
+        await _fetchPage(page + 1, epoch);
+      }
+    } catch (_) {
+      if (!mounted || epoch != _fetchEpoch) return;
+      setState(() {
+        _loading = false;
+        _loadingMore = false;
+        // Failing to extend the list shouldn't blank rows already on screen.
+        _loadFailed = _rows.isEmpty;
+      });
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_loading || _loadingMore) return;
+    setState(() => _loadingMore = true);
+    await _fetchPage(_page + 1, _fetchEpoch);
+  }
+
   Future<void> _refresh() async {
     ref.invalidate(_paymentSummaryProvider);
-    ref.invalidate(_paymentsProvider);
+    await _reload();
   }
 
   @override
   Widget build(BuildContext context) {
     final m = context.miftah;
     final l = _L(context.isAr);
-    final summaryAsync = ref.watch(_paymentSummaryProvider);
-    final paymentsAsync = ref.watch(_paymentsProvider);
+    final summaryAsync = ref.watch(_paymentSummaryProvider(_selectedPropertyId));
     final propertiesAsync = ref.watch(_propertiesForFilterProvider);
 
     return Scaffold(
@@ -116,7 +204,10 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
                       l: l,
                       properties: properties,
                       selectedId: _selectedPropertyId,
-                      onChanged: (v) => setState(() => _selectedPropertyId = v),
+                      onChanged: (v) {
+                        setState(() => _selectedPropertyId = v);
+                        _reload();
+                      },
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -131,68 +222,66 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
                 ],
               ),
             ),
-            AnimatedBuilder(
-              animation: _tabController,
-              builder: (context, _) => paymentsAsync.when(
-                loading: () => const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
-                  child: ListShimmer(itemCount: 4),
+            if (_loading)
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: ListShimmer(itemCount: 4),
+              )
+            else if (_loadFailed)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
+                child: ErrorState(
+                  message: l.failedToLoadPayments,
+                  onRetry: _refresh,
                 ),
-                error: (e, _) => Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
-                  child: ErrorState(
-                    message: l.failedToLoadPayments,
-                    onRetry: _refresh,
-                  ),
-                ),
-                data: (payments) => _buildList(payments, l),
-              ),
-            ),
+              )
+            else
+              _buildList(l),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildList(List<dynamic> payments, _L l) {
-    var filtered = payments.where((p) {
-      if (_selectedPropertyId != null &&
-          p['propertyId'] != _selectedPropertyId) {
+  /// With the Upcoming tab's ascending due-date sort, once the last loaded
+  /// row is past the current month every remaining server page is too, so
+  /// there is nothing left worth fetching for that tab.
+  bool _lastRowBeyondCurrentMonth() {
+    if (_rows.isEmpty) return false;
+    final due = DateTime.tryParse(_rows.last['dueDate']?.toString() ?? '');
+    if (due == null) return false;
+    final now = DateTime.now();
+    return DateTime(due.year, due.month).isAfter(DateTime(now.year, now.month));
+  }
+
+  /// Rows the active tab actually displays. Property, status and overdue
+  /// filtering happen server-side (see _tabQuery); the only refinement the
+  /// backend cannot express is the Upcoming tab's month scoping: with rows
+  /// sorted dueDate ASC, keep pending dues of the current month that aren't
+  /// already past due. Excluded rows are contiguous — overdue at the head,
+  /// later months at the tail — so this never punches holes in loaded pages.
+  List<dynamic> get _visibleRows {
+    if (_tabController.index != 0) return _rows;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    return _rows.where((p) {
+      final due = DateTime.tryParse(p['dueDate']?.toString() ?? '');
+      if (due == null || due.year != now.year || due.month != now.month) {
         return false;
       }
-      final status = p['status'] ?? '';
-      // Overdue exists in two forms: a stored OVERDUE status (set by the
-      // penalty batch job) and a computed view (PENDING / COLLECTED rows
-      // past their due date, before the batch runs). Honour both, like the
-      // dashboard does.
-      final due = DateTime.tryParse(p['dueDate']?.toString() ?? '');
-      final now = DateTime.now();
-      final isOverdue =
-          status == 'OVERDUE' ||
-          ((status == 'PENDING' || status == 'COLLECTED') &&
-              due != null &&
-              due.isBefore(DateTime(now.year, now.month, now.day)));
-      switch (_tabController.index) {
-        case 0: // Upcoming — pending dues in the current month only
-          if (status != 'PENDING' && status != 'ONLINE_PENDING') return false;
-          if (isOverdue) return false;
-          if (due == null || due.year != now.year || due.month != now.month) {
-            return false;
-          }
-          break;
-        case 1: // Overdue
-          if (!isOverdue) return false;
-          break;
-        case 2: // Paid
-          if (status != 'CLEARED') return false;
-          break;
-        case 3: // All
-          break;
-      }
-      return true;
+      return !due.isBefore(today);
     }).toList();
+  }
 
-    if (filtered.isEmpty) {
+  bool get _hasMore =>
+      _page + 1 < _totalPages &&
+      !(_tabController.index == 0 && _lastRowBeyondCurrentMonth());
+
+  Widget _buildList(_L l) {
+    final visible = _visibleRows;
+    final hasMore = _hasMore;
+
+    if (visible.isEmpty && !hasMore) {
       return Padding(
         padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
         child: EmptyState(
@@ -205,33 +294,41 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
       );
     }
 
-    final visibleCount = ((_currentPage + 1) * _pageSize).clamp(
-      0,
-      filtered.length,
-    );
-    final hasMore = visibleCount < filtered.length;
-
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 130),
       child: Column(
         children: [
-          for (var index = 0; index < visibleCount; index++)
+          for (var index = 0; index < visible.length; index++)
             AnimatedListItem(
               index: index,
               child: _PaymentCard(
-                payment: filtered[index],
+                payment: visible[index],
                 l: l,
-                onTap: () => _showPaymentActions(filtered[index]),
+                onTap: () => _showPaymentActions(visible[index]),
               ),
             ),
           if (hasMore)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 12),
-              child: GoldButton.outlined(
-                label: l.showMore(filtered.length - visibleCount),
-                expanded: false,
-                onPressed: () => setState(() => _currentPage++),
-              ),
+              child: _loadingMore
+                  ? const SizedBox(
+                      width: 28,
+                      height: 28,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 3,
+                        color: AppColors.accentDark,
+                      ),
+                    )
+                  : GoldButton.outlined(
+                      // The Upcoming tab shows a refined subset of the
+                      // server rows, so a server-derived remaining count
+                      // would overstate it — use the plain label there.
+                      label: _tabController.index == 0
+                          ? l.showMorePlain
+                          : l.showMore(_totalElements - _rows.length),
+                      expanded: false,
+                      onPressed: _loadMore,
+                    ),
             ),
         ],
       ),
@@ -1253,6 +1350,7 @@ class _L {
   String showMore(int remaining) => ar
       ? 'عرض المزيد ($remaining متبقية)'
       : 'Show More ($remaining remaining)';
+  String get showMorePlain => ar ? 'عرض المزيد' : 'Show More';
 
   String get actionFailed => ar ? 'فشلت العملية' : 'Action failed';
   String get paymentDeposited => ar ? 'تم إيداع الدفعة' : 'Payment deposited';

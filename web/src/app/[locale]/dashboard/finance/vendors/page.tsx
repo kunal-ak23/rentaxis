@@ -2,10 +2,11 @@
 
 import { useState, useEffect } from "react";
 import { useTranslations, useLocale } from "next-intl";
-import { Users, Plus, Pencil, Trash2, X, Loader2, Package, Search, Wallet } from "lucide-react";
+import { Users, Plus, Pencil, Trash2, X, Loader2, Package, Search, Wallet, AlertCircle } from "lucide-react";
 import { Pagination } from "@/components/ui/Pagination";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import VendorPaymentDialog from "@/components/vendors/VendorPaymentDialog";
+import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
 
 type Account = {
     id: string;
@@ -71,6 +72,8 @@ export default function VendorsPage() {
     } | null>(null);
     const [paymentVendor, setPaymentVendor] = useState<Vendor | null>(null);
     const [paymentBanner, setPaymentBanner] = useState<string | null>(null);
+    const [formError, setFormError] = useState<string | null>(null);
+    const [errorBanner, setErrorBanner] = useState<string | null>(null);
 
     useEffect(() => {
         fetchVendors();
@@ -107,6 +110,7 @@ export default function VendorsPage() {
     const openAddModal = () => {
         setEditingVendor(null);
         setFormData(emptyForm);
+        setFormError(null);
         setShowModal(true);
     };
 
@@ -128,12 +132,14 @@ export default function VendorsPage() {
             notes: vendor.notes || "",
             active: vendor.active,
         });
+        setFormError(null);
         setShowModal(true);
     };
 
     const handleSubmit = async (ev: React.FormEvent) => {
         ev.preventDefault();
         setSubmitting(true);
+        setFormError(null);
         try {
             const body: Record<string, unknown> = {
                 nameEn: formData.nameEn,
@@ -165,17 +171,22 @@ export default function VendorsPage() {
                 body: JSON.stringify(body),
             });
 
-            if (res.ok) {
-                setShowModal(false);
-                setEditingVendor(null);
-                setFormData(emptyForm);
-                fetchVendors();
-            }
+            await throwIfNotOk(res);
+            setShowModal(false);
+            setEditingVendor(null);
+            setFormData(emptyForm);
+            fetchVendors();
         } catch (err) {
             console.error(err);
+            setFormError(err instanceof ApiError ? err.message : t("saveFailed"));
         } finally {
             setSubmitting(false);
         }
+    };
+
+    const showErrorBanner = (message: string) => {
+        setErrorBanner(message);
+        setTimeout(() => setErrorBanner(null), 5000);
     };
 
     const handleDelete = (vendor: Vendor) => {
@@ -190,9 +201,11 @@ export default function VendorsPage() {
                     const res = await fetch(`/api/proxy/v1/vendors/${vendor.id}`, {
                         method: "DELETE",
                     });
-                    if (res.ok) fetchVendors();
+                    await throwIfNotOk(res);
+                    fetchVendors();
                 } catch (err) {
                     console.error(err);
+                    showErrorBanner(err instanceof ApiError ? err.message : t("deleteFailed"));
                 }
             },
         });
@@ -597,6 +610,12 @@ export default function VendorsPage() {
                                     }
                                 />
                             </div>
+                            {formError && (
+                                <div className="col-span-2 flex items-center gap-2 bg-error/10 border border-error/30 text-error rounded-lg px-4 py-3 text-xs font-medium">
+                                    <AlertCircle size={14} className="shrink-0" />
+                                    <span>{formError}</span>
+                                </div>
+                            )}
                             <div className="col-span-2 flex justify-end gap-3 mt-2">
                                 <button
                                     type="button"
@@ -647,6 +666,11 @@ export default function VendorsPage() {
             {paymentBanner && (
                 <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[110] bg-success/10 border border-success/30 text-success px-4 py-2 rounded-lg text-xs font-semibold shadow-lg">
                     {paymentBanner}
+                </div>
+            )}
+            {errorBanner && (
+                <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[110] bg-error/10 border border-error/30 text-error px-4 py-2 rounded-lg text-xs font-semibold shadow-lg">
+                    {errorBanner}
                 </div>
             )}
         </div>

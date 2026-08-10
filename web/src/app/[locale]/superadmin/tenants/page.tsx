@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useTranslations } from "next-intl";
-import { Plus, X, Building2, Hash, Settings2, ShieldCheck, Loader2, Search, Pencil, Copy, Check, Zap, Phone } from "lucide-react";
+import { Plus, X, Building2, Hash, Settings2, ShieldCheck, Loader2, Search, Pencil, Copy, Check, Zap, Phone, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Pagination } from "@/components/ui/Pagination";
 import { FileUpload } from "@/components/ui/FileUpload";
@@ -24,6 +24,8 @@ export default function SuperAdminTenantsPage() {
     const [showForm, setShowForm] = useState(false);
     const [editingTenant, setEditingTenant] = useState<Tenant | null>(null);
     const [formData, setFormData] = useState({ name: "", address: "", trn: "", status: "ACTIVE", logoUrl: "", ticketOtpRequired: true, phone: "" });
+    const [formError, setFormError] = useState("");
+    const [loadError, setLoadError] = useState("");
     const [searchQuery, setSearchQuery] = useState("");
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(25);
@@ -45,9 +47,17 @@ export default function SuperAdminTenantsPage() {
                 const data = await res.json();
                 data.sort((a: Tenant, b: Tenant) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
                 setTenants(data);
+                setLoadError("");
+            } else {
+                setLoadError(
+                    res.status === 401 || res.status === 403
+                        ? "You don't have permission to view organizations, or your session expired."
+                        : "Failed to load organizations. Please try again."
+                );
             }
         } catch (e) {
             console.error(e);
+            setLoadError("Network error. Please check your connection and try again.");
         } finally {
             setLoading(false);
         }
@@ -57,6 +67,7 @@ export default function SuperAdminTenantsPage() {
         e.preventDefault();
         if (!formData.name) return;
         setSubmitting(true);
+        setFormError("");
         try {
             const url = editingTenant
                 ? `/api/proxy/admin/tenants/${editingTenant.id}`
@@ -69,9 +80,21 @@ export default function SuperAdminTenantsPage() {
             if (res.ok) {
                 resetForm();
                 fetchTenants();
+            } else {
+                const data = await res.json().catch(() => ({}));
+                const fallback =
+                    res.status === 401 || res.status === 403
+                        ? "You don't have permission to do this, or your session expired. Please sign in again."
+                        : res.status === 404
+                            ? "This organization no longer exists. Close the dialog and refresh the list."
+                            : res.status === 400
+                                ? "Invalid organization details. Organization name is required."
+                                : "Failed to save the organization. Please try again.";
+                setFormError(data.message || data.error || fallback);
             }
         } catch (e) {
             console.error(e);
+            setFormError("Network error. Please check your connection and try again.");
         } finally {
             setSubmitting(false);
         }
@@ -87,6 +110,7 @@ export default function SuperAdminTenantsPage() {
         setShowForm(false);
         setEditingTenant(null);
         setFormData({ name: "", address: "", trn: "", status: "ACTIVE", logoUrl: "", ticketOtpRequired: true, phone: "" });
+        setFormError("");
     };
 
     const closeFeaturesDrawer = useCallback(() => setFeaturesDrawerTenant(null), []);
@@ -184,6 +208,13 @@ export default function SuperAdminTenantsPage() {
                         <p className="text-xs text-muted mb-6 font-medium">
                             {editingTenant ? "Update organization details." : "Register a new client entity onto the platform."}
                         </p>
+
+                        {formError && (
+                            <div className="mb-4 flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-xs font-semibold">
+                                <XCircle size={14} className="flex-shrink-0" />
+                                {formError}
+                            </div>
+                        )}
 
                         <form onSubmit={handleSubmit} className="space-y-4">
                             {/* Logo Upload */}
@@ -371,12 +402,23 @@ export default function SuperAdminTenantsPage() {
                 </table>
                 {filteredTenants.length === 0 && (
                     <div className="p-24 text-center flex flex-col items-center">
-                        <div className="w-16 h-16 bg-input rounded-xl flex items-center justify-center text-muted mb-6 border border-dashed border-border">
-                            <ShieldCheck size={32} />
+                        <div className={cn(
+                            "w-16 h-16 bg-input rounded-xl flex items-center justify-center mb-6 border border-dashed border-border",
+                            loadError ? "text-red-500" : "text-muted"
+                        )}>
+                            {loadError ? <XCircle size={32} /> : <ShieldCheck size={32} />}
                         </div>
                         <p className="text-[10px] font-semibold text-muted uppercase tracking-wider">
-                            No organizations provisioned yet.
+                            {loadError || "No organizations provisioned yet."}
                         </p>
+                        {loadError && (
+                            <button
+                                onClick={fetchTenants}
+                                className="mt-4 text-xs font-semibold text-primary hover:underline cursor-pointer"
+                            >
+                                Retry
+                            </button>
+                        )}
                     </div>
                 )}
                 {filteredTenants.length > 0 && (

@@ -22,7 +22,6 @@ type Lease = {
     propertyId?: string;
     propertyName: string;
     unitIdentifier: string;
-    propertyManagerId?: string;
     status: string;
     endDate?: string;
 };
@@ -165,7 +164,6 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                     propertyId: l.propertyId,
                     propertyName: l.propertyName ?? "—",
                     unitIdentifier: l.unitIdentifier ?? l.unitNumber ?? "—",
-                    propertyManagerId: l.propertyManagerId,
                     status: l.status,
                     endDate: l.endDate,
                 })));
@@ -182,12 +180,13 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
                 // GET /api/v1/properties returns each property wrapped in a
                 // portfolio-summary row (PropertyStatsDTO), not a flat property —
                 // unwrap .property so id/nameEn aren't undefined (blank dropdown).
+                // The row carries assignedManagers (List<User>), not a managerId field.
                 setProperties(arr.map((p: any) => {
                     const prop = p.property ?? p;
                     return {
                         id: prop.id,
                         nameEn: prop.nameEn ?? prop.name ?? "—",
-                        managerId: p.managerId ?? p.propertyManagerId,
+                        managerId: p.assignedManagers?.[0]?.id,
                     };
                 }));
             }
@@ -196,7 +195,9 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
 
     const fetchUnits = useCallback(async (propertyId: string) => {
         try {
-            const res = await fetch(`/api/proxy/v1/units?propertyId=${propertyId}`);
+            // GET /v1/units ignores query params (returns every tenant unit) —
+            // the property-scoped endpoint is /v1/units/property/{propertyId}.
+            const res = await fetch(`/api/proxy/v1/units/property/${propertyId}`);
             if (res.ok) {
                 const data = await res.json();
                 const arr = Array.isArray(data) ? data : data.content ?? [];
@@ -211,9 +212,10 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
             const res = await fetch(`/api/proxy/v1/properties/${propertyId}/managers`);
             if (res.ok) {
                 const arr: any[] = await res.json();
+                // The endpoint returns User entities whose display field is `name`.
                 setPmUsers(arr.map((u: any) => ({
                     id: u.id,
-                    fullName: u.fullName ?? `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim(),
+                    fullName: u.name ?? u.fullName ?? `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim(),
                     email: u.email ?? "",
                 })));
             }
@@ -252,32 +254,26 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess, session
         setSelectedPmId("");
     }, [selectedPropertyId, fetchUnits]);
 
-    // Derive hostUserId for slot fetching
+    // Derive hostUserId for slot fetching.
+    // LeaseDTO carries no manager id, so office-visit hosts always come from
+    // the PM picker (staff) or the default-host endpoint (renters).
     const deriveHostUserId = useCallback((): string => {
-        if (meetingType === "OFFICE_VISIT") {
-            const lease = leases.find((l) => l.id === selectedLeaseId);
-            return lease?.propertyManagerId || selectedPmId || defaultHostId;
-        }
         if (meetingType === "PROPERTY_VISIT") {
             const prop = properties.find((p) => p.id === selectedPropertyId);
             return prop?.managerId || selectedPmId || defaultHostId;
         }
         return selectedPmId || defaultHostId;
-    }, [meetingType, leases, selectedLeaseId, properties, selectedPropertyId, selectedPmId, defaultHostId]);
+    }, [meetingType, properties, selectedPropertyId, selectedPmId, defaultHostId]);
 
     // Determine if we need to show PM picker (can't derive host)
     const needsPmPicker = useCallback((): boolean => {
         if (isRenter) return false;
-        if (meetingType === "OFFICE_VISIT") {
-            const lease = leases.find((l) => l.id === selectedLeaseId);
-            return !lease?.propertyManagerId;
-        }
         if (meetingType === "PROPERTY_VISIT") {
             const prop = properties.find((p) => p.id === selectedPropertyId);
             return !prop?.managerId;
         }
         return true;
-    }, [isRenter, meetingType, leases, selectedLeaseId, properties, selectedPropertyId]);
+    }, [isRenter, meetingType, properties, selectedPropertyId]);
 
     useEffect(() => {
         if (step !== 3 || !needsPmPicker()) return;

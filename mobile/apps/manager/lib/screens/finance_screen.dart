@@ -325,8 +325,9 @@ class _TransactionsTab extends ConsumerWidget {
             itemCount: transactions.length,
             itemBuilder: (context, index) {
               final tx = transactions[index];
-              final debit = (tx['debitAmount'] ?? 0).toDouble();
-              final credit = (tx['creditAmount'] ?? 0).toDouble();
+              final accountName = tx['account']?['name'];
+              final debit = (tx['debit'] ?? 0).toDouble();
+              final credit = (tx['credit'] ?? 0).toDouble();
               final isDebit = debit > 0;
               final tone = isDebit ? m.danger : m.success;
 
@@ -360,7 +361,7 @@ class _TransactionsTab extends ConsumerWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            tx['accountName'] ?? tx['description'] ?? '-',
+                            accountName ?? tx['description'] ?? '-',
                             style: l.ar
                                 ? GoogleFonts.notoNaskhArabic(
                                     fontSize: 13.5,
@@ -377,17 +378,14 @@ class _TransactionsTab extends ConsumerWidget {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            Formatters.date(
-                              tx['transactionDate'] ?? tx['createdAt'],
-                              ar: l.ar,
-                            ),
+                            Formatters.date(tx['date'], ar: l.ar),
                             style: GoogleFonts.josefinSans(
                               fontSize: 11,
                               color: m.textMuted,
                             ),
                           ),
                           if (tx['description'] != null &&
-                              tx['accountName'] != null)
+                              accountName != null)
                             Text(
                               tx['description'],
                               style: l.ar
@@ -470,15 +468,14 @@ class _ReportsTab extends ConsumerWidget {
           ErrorState(message: l.failedToLoadReport, onRetry: onRefresh),
       data: (report) {
         final totalIncome = (report['totalIncome'] ?? 0).toDouble();
-        final totalExpense = (report['totalExpense'] ?? 0).toDouble();
-        final netIncome = (report['netIncome'] ?? totalIncome - totalExpense)
+        final totalExpense = (report['totalExpenses'] ?? 0).toDouble();
+        final netIncome = (report['netProfit'] ?? totalIncome - totalExpense)
             .toDouble();
-        final incomeAccounts = List<Map<String, dynamic>>.from(
-          report['incomeAccounts'] ?? [],
-        );
-        final expenseAccounts = List<Map<String, dynamic>>.from(
-          report['expenseAccounts'] ?? [],
-        );
+        final incomeAccounts = _breakdownItems(report['incomeBreakdown']);
+        final expenseAccounts = [
+          ..._breakdownItems(report['directExpenseBreakdown']),
+          ..._breakdownItems(report['indirectExpenseBreakdown']),
+        ];
 
         return RefreshIndicator(
           onRefresh: () async => onRefresh(),
@@ -612,6 +609,15 @@ class _ReportsTab extends ConsumerWidget {
             ),
     );
   }
+}
+
+/// Flattens a ReportDTO breakdown map (`{'code - name': amount}`) into
+/// name/amount rows for [_ReportLineItem].
+List<Map<String, dynamic>> _breakdownItems(dynamic breakdown) {
+  if (breakdown is! Map) return const [];
+  return breakdown.entries
+      .map((e) => <String, dynamic>{'name': e.key.toString(), 'amount': e.value})
+      .toList();
 }
 
 class _ReportSummaryCard extends StatelessWidget {

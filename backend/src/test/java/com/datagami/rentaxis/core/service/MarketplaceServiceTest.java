@@ -14,6 +14,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 
 import java.util.List;
@@ -83,6 +84,42 @@ class MarketplaceServiceTest {
 
         // Result must be empty — wrong tenant returns nothing
         assertThat(result.getContent()).isEmpty();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void search_dropsNonWhitelistedSortProperty() {
+        UUID tenantId = UUID.randomUUID();
+        when(listingRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
+
+        // Stale web URLs used to send sort=distance,asc — no such entity property.
+        MarketplaceSearchRequest req = new MarketplaceSearchRequest(null, null, null, null, null, null, null, null, null);
+        service.search(tenantId, req, PageRequest.of(0, 10, Sort.by(Sort.Direction.ASC, "distance")));
+
+        ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
+        verify(listingRepository).findAll(any(Specification.class), pageableCaptor.capture());
+        Sort applied = pageableCaptor.getValue().getSort();
+        assertThat(applied.getOrderFor("distance")).isNull();
+        assertThat(applied.getOrderFor("createdAt")).isNotNull();
+        assertThat(applied.getOrderFor("createdAt").getDirection()).isEqualTo(Sort.Direction.ASC);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void search_keepsWhitelistedSortProperty() {
+        UUID tenantId = UUID.randomUUID();
+        when(listingRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
+
+        MarketplaceSearchRequest req = new MarketplaceSearchRequest(null, null, null, null, null, null, null, null, null);
+        service.search(tenantId, req, PageRequest.of(0, 10, Sort.by(Sort.Direction.DESC, "annualRent")));
+
+        ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
+        verify(listingRepository).findAll(any(Specification.class), pageableCaptor.capture());
+        Sort applied = pageableCaptor.getValue().getSort();
+        assertThat(applied.getOrderFor("annualRent")).isNotNull();
+        assertThat(applied.getOrderFor("annualRent").getDirection()).isEqualTo(Sort.Direction.DESC);
     }
 
     @Test

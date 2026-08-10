@@ -101,7 +101,7 @@ class UnitListingControllerTest {
     void list_returns200WithPage() {
         UUID id = UUID.randomUUID();
         Page<UnitListing> page = new PageImpl<>(List.of(sampleListing(id)));
-        when(service.list(eq(tenantId), any(), any(Pageable.class))).thenReturn(page);
+        when(service.list(eq(tenantId), any(), any(), any(), any(Pageable.class))).thenReturn(page);
 
         ResponseEntity<?> response = controller.list(null, null, null,
                 org.springframework.data.domain.PageRequest.of(0, 20));
@@ -111,11 +111,27 @@ class UnitListingControllerTest {
     }
 
     @Test
+    void list_forwardsPropertyIdAndQToService() {
+        UUID propertyId = UUID.randomUUID();
+        Pageable pageable = org.springframework.data.domain.PageRequest.of(0, 20);
+        when(service.list(eq(tenantId), any(), any(), any(), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
+
+        controller.list(ListingStatus.PUBLISHED, propertyId, "marina", pageable);
+
+        // The dashboard search box and property filter depend on these reaching
+        // the service — they used to be accepted but silently dropped.
+        verify(service).list(tenantId, ListingStatus.PUBLISHED, propertyId, "marina", pageable);
+    }
+
+    @Test
     void list_populatesPropertyCoverAndActiveInterestCount() {
         UUID id = UUID.randomUUID();
         UnitListing listing = sampleListing(id);
+        java.time.LocalDateTime created = java.time.LocalDateTime.of(2026, 2, 1, 9, 0);
+        listing.setCreatedAt(created);
 
-        when(service.list(eq(tenantId), any(), any(Pageable.class)))
+        when(service.list(eq(tenantId), any(), any(), any(), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(listing)));
         when(service.getSummaryData(List.of(listing))).thenReturn(Map.of(
                 id,
@@ -129,6 +145,9 @@ class UnitListingControllerTest {
         assertThat(summary.propertyName()).isEqualTo("Marina Heights");
         assertThat(summary.coverPhotoUrl()).isEqualTo("https://cdn/cover.jpg");
         assertThat(summary.interestsCount()).isEqualTo(3L);
+        // The dashboard's sortable "Created" column renders this field — it must
+        // be the createdAt timestamp, not updatedAt.
+        assertThat(summary.createdAt()).isEqualTo(created);
     }
 
     @Test
@@ -234,6 +253,33 @@ class UnitListingControllerTest {
                 org.springframework.data.domain.PageRequest.of(0, 20));
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+    }
+
+    @Test
+    void reorderMedia_acceptsMediaIdsWrapperObject_rejectsBareArray() throws Exception {
+        UUID listingId = UUID.randomUUID();
+        UUID first = UUID.randomUUID();
+        UUID second = UUID.randomUUID();
+        org.springframework.test.web.servlet.MockMvc mvc =
+                org.springframework.test.web.servlet.setup.MockMvcBuilders
+                        .standaloneSetup(controller).build();
+
+        // Contract: the body is an object wrapping the array — {"mediaIds": [...]}.
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .put("/api/listings/" + listingId + "/media/reorder")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"mediaIds\":[\"" + first + "\",\"" + second + "\"]}"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                        .status().isNoContent());
+        verify(service).reorderMedia(tenantId, listingId, List.of(first, second));
+
+        // A bare JSON array (the shape the web client used to send) must not bind.
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .put("/api/listings/" + listingId + "/media/reorder")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("[\"" + first + "\",\"" + second + "\"]"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                        .status().isBadRequest());
     }
 
     @Test

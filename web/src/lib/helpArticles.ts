@@ -24,7 +24,7 @@ Depending on your role, you'll have access to different features:
 - **Tenant Admins** — Full control over properties, leases, finance, staff, and settings
 - **Property Managers** — Manage properties, units, handle maintenance tickets, and view leases
 - **Tenant Users** — View your assigned unit details
-- **Renters** — Access your lease, make payments, and submit maintenance tickets
+- **Renters** — Access your lease, track rent payments, and submit maintenance tickets
 
 ### Quick Start
 
@@ -57,7 +57,7 @@ RentAxis uses role-based access control to ensure each user sees only what they 
 | **Tenant Admin** | Full access within their organization. Manages properties, leases, finance, and staff. |
 | **Property Manager** | Manages assigned properties, views leases, handles maintenance tickets. |
 | **Tenant User** | Limited access. Can view their assigned unit details. |
-| **Renter** | Self-service portal. Views leases, makes payments, submits tickets. |
+| **Renter** | Self-service portal. Views leases, tracks payments, submits tickets. |
 
 ### What Each Role Can Do
 
@@ -75,7 +75,7 @@ RentAxis uses role-based access control to ensure each user sees only what they 
 
 **Renter** has access to:
 - View their active leases
-- Make online payments
+- Track rent payments and download receipts
 - Submit and track maintenance tickets
 - Download lease contracts
 `);
@@ -484,7 +484,7 @@ The Renter Portal is your self-service hub for everything related to your tenanc
 ### What You Can Do
 
 - **View Your Leases** — See your active lease details, including rent amount, dates, and contract terms
-- **Make Payments** — Pay your rent online securely
+- **Track Payments** — Follow your payment schedule and the status of each payment
 - **Submit Tickets** — Report maintenance issues or make requests
 - **Download Documents** — Access your lease contract and payment receipts
 
@@ -492,7 +492,7 @@ The Renter Portal is your self-service hub for everything related to your tenanc
 
 Your portal sidebar shows:
 - **My Leases** — Your lease details and history
-- **My Payments** — Payment schedule and online payment
+- **My Payments** — Payment schedule and history
 - **My Tickets** — Maintenance requests and their status
 
 ### Getting Help
@@ -540,16 +540,16 @@ Use the ticketing system to report maintenance issues, ask questions, or make re
 `);
 
 registerArticle('renter--making-payments', `---
-title: Making Payments
-description: How to make online rent payments
+title: Understanding Your Payments
+description: How to track your rent payment schedule and download receipts
 category: renter
 roles: [RENTER]
 order: 3
 ---
 
-## Making Payments
+## Understanding Your Payments
 
-Pay your rent online through the secure payment portal.
+Track your rent payment schedule and history from the portal. Rent collection is handled directly by your landlord's team (typically via cheques), and each payment's status is reflected here.
 
 ### Viewing Your Payment Schedule
 
@@ -557,25 +557,25 @@ Pay your rent online through the secure payment portal.
 2. See all upcoming and past payment entries
 3. Each entry shows: due date, amount, status
 
-### Making an Online Payment
+### Payment Statuses
 
-1. Find the payment entry you want to pay
-2. Click **Pay Now**
-3. You'll be redirected to the secure payment gateway
-4. Complete the payment using your preferred method
-5. Once confirmed, the payment status updates automatically
+| Status | Meaning |
+|--------|---------|
+| **Pending** | Payment is scheduled but not yet collected |
+| **Overdue** | The due date has passed without collection |
+| **Collected** | Your landlord's team has received the payment |
+| **Deposited** | The cheque has been deposited at the bank |
+| **Cleared** | The payment has cleared |
+| **Bounced** | The cheque was returned — contact your landlord's team |
 
-### Payment Confirmation
+### Receipts
 
-- Successful payments are marked as **Collected** immediately
-- You'll receive a notification confirming the payment
-- Payment receipts are available for download
+Once a payment is **Cleared**, a **Receipt** button appears on the entry so you can download the payment receipt as a PDF.
 
 ### Important Notes
 
-- Payments are processed through Razorpay's secure gateway
-- Your payment information is not stored by RentAxis
-- Contact your landlord if you have questions about payment amounts
+- Online card payments are not currently available through the portal
+- Contact your landlord if you have questions about payment amounts or cheque handling
 `);
 
 // ─── Administration ─────────────────────────────────────────────────────────
@@ -635,9 +635,11 @@ Map your chart of accounts to RentAxis's automatic transaction types:
 ### Payment Gateway
 
 Configure online payment collection:
-1. Go to **Settings > Gateway Config**
+1. Go to **Settings > Payment Gateway Configuration**
 2. Enter your Razorpay API credentials
-3. Enable or disable online payments for renters
+3. Enable or disable the gateway configuration
+
+> **Note:** Online payment initiation is not yet available in the renter portal — renters currently track their payment schedule and download receipts there.
 
 ### Rent Settings
 

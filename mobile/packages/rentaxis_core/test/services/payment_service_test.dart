@@ -6,44 +6,98 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:rentaxis_core/api/services/payment_service.dart';
 
 void main() {
-  group('PaymentService.getPayments', () {
-    test('unwraps Spring Page responses ({content: [...]})', () async {
+  group('PaymentService.getPaymentsPage', () {
+    test('returns the full Spring Page map (content + totals)', () async {
       final dio = Dio(BaseOptions(baseUrl: 'https://api.example'));
-      dio.httpClientAdapter = _StubAdapter(responseBody: {
-        'content': [
-          {'id': 'a', 'status': 'PENDING'},
-          {'id': 'b', 'status': 'CLEARED'},
-        ],
-        'totalElements': 2,
-        'pageable': {'pageNumber': 0},
-      });
+      dio.httpClientAdapter = _StubAdapter(
+        responseBody: {
+          'content': [
+            {'id': 'a', 'status': 'PENDING'},
+            {'id': 'b', 'status': 'CLEARED'},
+          ],
+          'totalElements': 42,
+          'totalPages': 3,
+          'pageable': {'pageNumber': 0},
+        },
+      );
 
-      final list = await PaymentService(dio).getPayments();
+      final page = await PaymentService(dio).getPaymentsPage();
 
-      expect(list, hasLength(2));
-      expect(list.first['id'], 'a');
+      expect(page['content'], hasLength(2));
+      expect((page['content'] as List).first['id'], 'a');
+      expect(page['totalElements'], 42);
+      expect(page['totalPages'], 3);
     });
 
-    test('passes through bare-list responses (legacy backends)', () async {
-      final dio = Dio(BaseOptions(baseUrl: 'https://api.example'));
-      dio.httpClientAdapter = _StubAdapter(responseBody: [
-        {'id': 'a', 'status': 'PENDING'},
-      ]);
+    test(
+      'normalizes bare-list responses (legacy backends) to one page',
+      () async {
+        final dio = Dio(BaseOptions(baseUrl: 'https://api.example'));
+        dio.httpClientAdapter = _StubAdapter(
+          responseBody: [
+            {'id': 'a', 'status': 'PENDING'},
+          ],
+        );
 
-      final list = await PaymentService(dio).getPayments();
+        final page = await PaymentService(dio).getPaymentsPage();
 
-      expect(list, hasLength(1));
-    });
+        expect(page['content'], hasLength(1));
+        expect(page['totalElements'], 1);
+        expect(page['totalPages'], 1);
+      },
+    );
 
-    test('requests a large page so all schedules load', () async {
+    test('passes server-side filters and real pagination params', () async {
       final dio = Dio(BaseOptions(baseUrl: 'https://api.example'));
       final adapter = _StubAdapter(responseBody: {'content': <dynamic>[]});
       dio.httpClientAdapter = adapter;
 
-      await PaymentService(dio).getPayments();
+      await PaymentService(dio).getPaymentsPage(
+        propertyId: 'prop-1',
+        status: 'PENDING',
+        sort: ['dueDate,asc', 'id,asc'],
+        page: 2,
+        size: 20,
+      );
 
-      expect(adapter.lastRequest?.queryParameters['size'], 500);
-      expect(adapter.lastRequest?.queryParameters['page'], 0);
+      final params = adapter.lastRequest?.queryParameters;
+      expect(params?['propertyId'], 'prop-1');
+      expect(params?['status'], 'PENDING');
+      expect(params?['sort'], ['dueDate,asc', 'id,asc']);
+      expect(params?['page'], 2);
+      expect(params?['size'], 20);
+      // overdue defaults to false and must then be omitted entirely — the
+      // backend ignores `status` whenever overdue is present and true.
+      expect(params, isNot(contains('overdue')));
+    });
+
+    test('sends overdue=true for the computed overdue view', () async {
+      final dio = Dio(BaseOptions(baseUrl: 'https://api.example'));
+      final adapter = _StubAdapter(responseBody: {'content': <dynamic>[]});
+      dio.httpClientAdapter = adapter;
+
+      await PaymentService(dio).getPaymentsPage(overdue: true);
+
+      expect(adapter.lastRequest?.queryParameters['overdue'], true);
+    });
+  });
+
+  group('PaymentService.getPaymentsForLease', () {
+    test('fetches the unpaginated lease-scoped endpoint', () async {
+      final dio = Dio(BaseOptions(baseUrl: 'https://api.example'));
+      final adapter = _StubAdapter(
+        responseBody: [
+          {'id': 'a', 'leaseId': 'lease-1', 'installmentNumber': 1},
+          {'id': 'b', 'leaseId': 'lease-1', 'installmentNumber': 2},
+        ],
+      );
+      dio.httpClientAdapter = adapter;
+
+      final list = await PaymentService(dio).getPaymentsForLease('lease-1');
+
+      expect(adapter.lastRequest?.path, '/v1/payments/lease/lease-1');
+      expect(list, hasLength(2));
+      expect(list.first['id'], 'a');
     });
   });
 }
@@ -65,7 +119,7 @@ class _StubAdapter implements HttpClientAdapter {
       utf8.encode(jsonEncode(responseBody)),
       200,
       headers: {
-        'content-type': ['application/json']
+        'content-type': ['application/json'],
       },
     );
   }

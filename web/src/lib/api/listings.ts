@@ -37,7 +37,8 @@ export const fetchPublicListing = cache(async (
 export interface MarketplaceListingsParams {
   page?: number
   size?: number
-  bedrooms?: number
+  /** Minimum bedroom count — the backend filters `bedrooms >= minBedrooms`. */
+  minBedrooms?: number
   minRent?: number
   maxRent?: number
   furnishing?: string
@@ -53,7 +54,7 @@ export async function fetchMarketplaceListings(
   const q = new URLSearchParams()
   if (params.page !== undefined) q.set('page', String(params.page))
   if (params.size !== undefined) q.set('size', String(params.size))
-  if (params.bedrooms !== undefined) q.set('bedrooms', String(params.bedrooms))
+  if (params.minBedrooms !== undefined) q.set('minBedrooms', String(params.minBedrooms))
   if (params.minRent !== undefined) q.set('minRent', String(params.minRent))
   if (params.maxRent !== undefined) q.set('maxRent', String(params.maxRent))
   if (params.furnishing) q.set('furnishing', params.furnishing)
@@ -124,7 +125,8 @@ export async function fetchListings(
   if (params.page !== undefined) q.set('page', String(params.page))
   if (params.size !== undefined) q.set('size', String(params.size))
   if (params.status) q.set('status', params.status)
-  if (params.search) q.set('search', params.search)
+  // The backend's title-search query param is named `q`.
+  if (params.search) q.set('q', params.search)
   if (params.sort) q.set('sort', params.sort)
 
   const headers: HeadersInit = {}
@@ -241,7 +243,9 @@ export async function reorderMedia(
   const res = await fetch(`${BASE}/${listingId}/media/reorder`, {
     method: 'PUT',
     headers,
-    body: JSON.stringify(mediaIds),
+    // Backend deserializes into ReorderRequest(List<UUID> mediaIds) — the body
+    // must be an object wrapping the array, not the bare array.
+    body: JSON.stringify({ mediaIds }),
   })
   if (!res.ok) throw new Error(`Failed to reorder media: ${res.status}`)
 }

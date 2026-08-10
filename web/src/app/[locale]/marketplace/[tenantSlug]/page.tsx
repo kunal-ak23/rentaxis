@@ -20,6 +20,12 @@ import {
 } from "@/lib/api/listings";
 import type { UnitListingSummaryDTO, ListingStatus, Furnishing } from "@/types/listing";
 
+// Sort values the backend can actually apply (UnitListing entity properties).
+// Anything else (e.g. a stale "distance,asc" from an old URL) would make the
+// backend's Pageable sort blow up, so unknown values fall back to the default.
+const VALID_SORTS = new Set(['createdAt,asc', 'annualRent,asc', 'annualRent,desc']);
+const DEFAULT_SORT = 'createdAt,asc';
+
 // ─── Haversine distance ──────────────────────────────────────────────────────
 function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371;
@@ -31,12 +37,10 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// ─── Extended summary with optional lat/lng ──────────────────────────────────
+// ─── Summary enriched with a client-computed distance ────────────────────────
+// lat/lng/bathrooms come straight from UnitListingSummaryDTO.
 interface ListingWithDistance extends UnitListingSummaryDTO {
-  lat?: number | null;
-  lng?: number | null;
   distanceKm?: number;
-  bathrooms?: number | null;
 }
 
 // ─── Status chip ─────────────────────────────────────────────────────────────
@@ -201,7 +205,9 @@ function FilterPanel({
   };
 
   function toggleFurnishing(val: string) {
-    setLocalFurnishing(prev => prev.includes(val) ? prev.filter(f => f !== val) : [...prev, val]);
+    // Single-select: the backend `furnishing` query param is one enum value, so
+    // picking a second option replaces the first (clicking again deselects).
+    setLocalFurnishing(prev => prev.includes(val) ? [] : [val]);
   }
 
   const content = (
@@ -334,7 +340,7 @@ export default function MarketplacePage({ params }: { params: Promise<{ tenantSl
 function MarketplaceContent({ tenantSlug }: { tenantSlug: string }) {
   const t = useTranslations('Marketplace');
   const locale = useLocale();
-  const { data: session } = useSession();
+  const { data: session, status: sessionStatus } = useSession();
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
@@ -359,9 +365,21 @@ function MarketplaceContent({ tenantSlug }: { tenantSlug: string }) {
   const bedroomsParam = searchParams.get('bedrooms') || '';
   const minRentParam = searchParams.get('minRent') || '';
   const maxRentParam = searchParams.get('maxRent') || '';
-  const furnishingParam = searchParams.get('furnishing') || '';
+  // Furnishing is a single backend enum value; clamp stale comma-joined URLs
+  // (from the old multi-select) to their first value so the request stays valid.
+  const furnishingParam = (searchParams.get('furnishing') || '').split(',')[0] || '';
   const availableNowParam = searchParams.get('availableNow') === 'true';
-  const sortParam = searchParams.get('sort') || 'createdAt,asc';
+  const rawSortParam = searchParams.get('sort') || DEFAULT_SORT;
+  const sortParam = VALID_SORTS.has(rawSortParam) ? rawSortParam : DEFAULT_SORT;
+
+  // Marketplace endpoints are renter-only behind the auth proxy: an anonymous
+  // visitor would only ever see a generic load error, so send them to login
+  // with a returnTo instead (mirrors the wishlist page).
+  useEffect(() => {
+    if (sessionStatus === 'unauthenticated') {
+      router.push(`/${locale}/auth/login?returnTo=${encodeURIComponent(pathname)}`);
+    }
+  }, [sessionStatus, router, locale, pathname]);
 
   // Attempt geolocation once on mount (silent)
   useEffect(() => {
@@ -384,7 +402,7 @@ function MarketplaceContent({ tenantSlug }: { tenantSlug: string }) {
       const data = await fetchMarketplaceListings(tenantSlug, {
         page: currentPage - 1,
         size: itemsPerPage,
-        bedrooms: bedroomsParam ? Number(bedroomsParam) : undefined,
+        minBedrooms: bedroomsParam ? Number(bedroomsParam) : undefined,
         minRent: minRentParam ? Number(minRentParam) : undefined,
         maxRent: maxRentParam ? Number(maxRentParam) : undefined,
         furnishing: furnishingParam || undefined,
@@ -418,7 +436,11 @@ function MarketplaceContent({ tenantSlug }: { tenantSlug: string }) {
     }
   }, [currentPage, bedroomsParam, minRentParam, maxRentParam, furnishingParam, availableNowParam, sortParam, tenantSlug, session, userPos, t, renterPropertyNames]);
 
-  useEffect(() => { loadListings(); }, [loadListings]);
+  useEffect(() => {
+    if (sessionStatus === 'authenticated') {
+      loadListings();
+    }
+  }, [loadListings, sessionStatus]);
 
   // Load existing wishlist state once on session load so hearts reflect reality
   useEffect(() => {
@@ -455,7 +477,7 @@ function MarketplaceContent({ tenantSlug }: { tenantSlug: string }) {
       bedrooms: filters.bedrooms,
       minRent: filters.minRent,
       maxRent: filters.maxRent,
-      furnishing: filters.furnishing.join(','),
+      furnishing: filters.furnishing[0] ?? '',
       availableNow: filters.availableNow ? 'true' : '',
     });
     setFilterOpen(false);
@@ -477,14 +499,25 @@ function MarketplaceContent({ tenantSlug }: { tenantSlug: string }) {
     }
   }
 
+  // NOTE: no "nearest first" option — the backend has no server-side distance
+  // ordering, so sending sort=distance would 500. Distance still shows as a
+  // client-computed chip on each card when geolocation is available.
   const sortOptions = [
     { value: 'createdAt,asc', label: t('sortNewest') },
     { value: 'annualRent,asc', label: t('sortRentAsc') },
     { value: 'annualRent,desc', label: t('sortRentDesc') },
-    ...(userPos ? [{ value: 'distance,asc', label: t('sortNearest') }] : []),
   ];
 
   const showDistance = !!userPos;
+
+  // Session still resolving, or anonymous visitor being redirected to login.
+  if (sessionStatus === 'loading' || sessionStatus === 'unauthenticated') {
+    return (
+      <div className="min-h-screen bg-neutral-50 flex items-center justify-center">
+        <Loader2 size={32} className="animate-spin text-neutral-400" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-neutral-50">
@@ -564,7 +597,7 @@ function MarketplaceContent({ tenantSlug }: { tenantSlug: string }) {
           bedrooms={bedroomsParam}
           minRent={minRentParam}
           maxRent={maxRentParam}
-          furnishing={furnishingParam ? furnishingParam.split(',') : []}
+          furnishing={furnishingParam ? [furnishingParam] : []}
           availableNow={availableNowParam}
           onApply={handleApplyFilters}
           t={t}

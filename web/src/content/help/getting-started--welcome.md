@@ -18,7 +18,7 @@ Depending on your role, you'll have access to different features:
 - **Tenant Admins** — Full control over properties, leases, finance, staff, and settings
 - **Property Managers** — Manage properties, units, handle maintenance tickets, and view leases
 - **Tenant Users** — View your assigned unit details
-- **Renters** — Access your lease, make payments, and submit maintenance tickets
+- **Renters** — Access your lease, track rent payments, and submit maintenance tickets
 
 ### Quick Start
 

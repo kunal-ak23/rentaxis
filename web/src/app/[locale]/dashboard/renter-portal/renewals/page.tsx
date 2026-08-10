@@ -5,8 +5,8 @@ import RenewalCard from "@/components/renewals/RenewalCard";
 
 type LeaseRenewalView = {
   leaseId: string;
-  unitNumber: string;
-  propertyNameEn: string;
+  unitNumber: string | null;
+  propertyNameEn: string | null;
   endDate: string;
   daysRemaining: number;
   opportunityId: string | null;
@@ -18,24 +18,54 @@ type LeaseRenewalView = {
 export default function RenterRenewalsPage() {
   const t = useTranslations("renewals");
   const [data, setData] = useState<{ leases: LeaseRenewalView[] } | null>(null);
+  const [loadError, setLoadError] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const load = async () => {
-    const res = await fetch("/api/proxy/v1/me/renewals");
-    if (!res.ok) { setData({ leases: [] }); return; }
-    setData(await res.json());
+    try {
+      const res = await fetch("/api/proxy/v1/me/renewals");
+      if (!res.ok) { setLoadError(true); return; }
+      setData(await res.json());
+      setLoadError(false);
+    } catch {
+      setLoadError(true);
+    }
   };
   useEffect(() => { void load(); }, []);
 
   const setIntent = async (opportunityId: string, intent: string) => {
-    await fetch(`/api/proxy/v1/me/renewals/${opportunityId}/intent`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ intent }),
-    });
+    setActionError(null);
+    try {
+      const res = await fetch(`/api/proxy/v1/me/renewals/${opportunityId}/intent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ intent }),
+      });
+      if (!res.ok) {
+        // 400 here means the manager already closed this renewal; anything
+        // else (stale id, transient failure) gets the generic message.
+        setActionError(res.status === 400 ? t("intentAlreadyResolved") : t("genericError"));
+      }
+    } catch {
+      setActionError(t("genericError"));
+    }
     await load();
   };
 
-  if (!data) return <p className="p-6 text-sm text-muted">{t("loading")}</p>;
+  if (!data) {
+    if (loadError) {
+      return (
+        <div className="p-6 space-y-3">
+          <h1 className="text-lg font-semibold">{t("pageTitle")}</h1>
+          <p className="text-sm text-error">{t("loadFailed")}</p>
+          <button onClick={() => void load()} className="rounded border border-border px-3 py-1 text-xs">
+            {t("retry")}
+          </button>
+        </div>
+      );
+    }
+    return <p className="p-6 text-sm text-muted">{t("loading")}</p>;
+  }
 
   const buckets = [
     { key: "within30", filter: (d: number) => d <= 30 },
@@ -47,6 +77,15 @@ export default function RenterRenewalsPage() {
   return (
     <div className="p-6 space-y-6">
       <h1 className="text-lg font-semibold">{t("pageTitle")}</h1>
+      {actionError && <p className="text-xs text-error">{actionError}</p>}
+      {loadError && (
+        <div className="flex items-center gap-3">
+          <p className="text-xs text-error">{t("loadFailed")}</p>
+          <button onClick={() => void load()} className="rounded border border-border px-3 py-1 text-xs">
+            {t("retry")}
+          </button>
+        </div>
+      )}
       {buckets.map(b => {
         const leases = data.leases.filter(l => b.filter(l.daysRemaining));
         return (

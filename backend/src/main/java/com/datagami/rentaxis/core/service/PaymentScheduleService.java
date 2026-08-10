@@ -394,7 +394,9 @@ public class PaymentScheduleService {
         summary.setTotalAmount(BigDecimal.ZERO);
         summary.setPendingAmount(BigDecimal.ZERO);
         summary.setCollectedAmount(BigDecimal.ZERO);
+        summary.setDepositedAmount(BigDecimal.ZERO);
         summary.setClearedAmount(BigDecimal.ZERO);
+        summary.setBouncedAmount(BigDecimal.ZERO);
         summary.setOverdueAmount(BigDecimal.ZERO);
 
         int pendingCount = 0, collectedCount = 0, depositedCount = 0, clearedCount = 0, bouncedCount = 0, overdueCount = 0;
@@ -402,7 +404,9 @@ public class PaymentScheduleService {
         BigDecimal totalAmount = BigDecimal.ZERO;
         BigDecimal pendingAmount = BigDecimal.ZERO;
         BigDecimal collectedAmount = BigDecimal.ZERO;
+        BigDecimal depositedAmount = BigDecimal.ZERO;
         BigDecimal clearedAmount = BigDecimal.ZERO;
+        BigDecimal bouncedAmount = BigDecimal.ZERO;
         BigDecimal overdueAmount = BigDecimal.ZERO;
 
         LocalDate today = LocalDate.now();
@@ -426,12 +430,18 @@ public class PaymentScheduleService {
                     collectedCount++;
                     collectedAmount = collectedAmount.add(ps.getAmount());
                 }
-                case DEPOSITED -> depositedCount++;
+                case DEPOSITED -> {
+                    depositedCount++;
+                    depositedAmount = depositedAmount.add(ps.getAmount());
+                }
                 case CLEARED -> {
                     clearedCount++;
                     clearedAmount = clearedAmount.add(ps.getAmount());
                 }
-                case BOUNCED -> bouncedCount++;
+                case BOUNCED -> {
+                    bouncedCount++;
+                    bouncedAmount = bouncedAmount.add(ps.getAmount());
+                }
                 default -> { }
             }
 
@@ -457,7 +467,9 @@ public class PaymentScheduleService {
         summary.setTotalAmount(totalAmount);
         summary.setPendingAmount(pendingAmount);
         summary.setCollectedAmount(collectedAmount);
+        summary.setDepositedAmount(depositedAmount);
         summary.setClearedAmount(clearedAmount);
+        summary.setBouncedAmount(bouncedAmount);
         summary.setOverdueAmount(overdueAmount);
 
         return summary;

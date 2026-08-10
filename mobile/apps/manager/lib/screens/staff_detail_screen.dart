@@ -14,7 +14,17 @@ final _propertyServiceProvider = Provider<PropertyService>((ref) {
   return PropertyService(client.dio);
 });
 
-/// Staff detail: dark chrome hero card (gold-ringed monogram, role pill),
+/// Locale-aware name from a row carrying nameEn/nameAr (staff or property).
+String _localName(dynamic row, bool ar) {
+  if (row is! Map) return '';
+  final nameAr = (row['nameAr'] ?? '').toString();
+  final nameEn = (row['nameEn'] ?? '').toString();
+  if (ar && nameAr.isNotEmpty) return nameAr;
+  if (nameEn.isNotEmpty) return nameEn;
+  return nameAr;
+}
+
+/// Staff detail: dark chrome hero card (gold-ringed monogram, status pill),
 /// property assignment list, restyled to match the admin design language.
 class StaffDetailScreen extends ConsumerStatefulWidget {
   final String staffId;
@@ -67,12 +77,13 @@ class _StaffDetailScreenState extends ConsumerState<StaffDetailScreen> {
 
   Future<void> _deleteStaff() async {
     final l = _L(context.isAr);
+    final name = _localName(_staff, l.ar);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(l.deleteStaff),
-        content: Text(l.deleteStaffConfirm(_staff?['name'])),
+        content: Text(l.deleteStaffConfirm(name.isEmpty ? null : name)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -112,13 +123,14 @@ class _StaffDetailScreenState extends ConsumerState<StaffDetailScreen> {
     if (_staff == null) return;
     final l = _L(context.isAr);
     final staff = _staff!;
-    final nameCtrl = TextEditingController(text: staff['name'] ?? '');
-    final emailCtrl = TextEditingController(text: staff['email'] ?? '');
-    final phoneCtrl = TextEditingController(
-      text: staff['phone'] ?? staff['phoneNumber'] ?? '',
+    final nameEnCtrl = TextEditingController(text: staff['nameEn'] ?? '');
+    final nameArCtrl = TextEditingController(text: staff['nameAr'] ?? '');
+    final designationCtrl = TextEditingController(
+      text: staff['designation'] ?? '',
     );
+    final phoneCtrl = TextEditingController(text: staff['phone'] ?? '');
     final formKey = GlobalKey<FormState>();
-    String role = staff['role'] ?? 'PROPERTY_MANAGER';
+    String? propertyId = staff['property']?['id'] as String?;
 
     showModalBottomSheet(
       context: context,
@@ -166,9 +178,10 @@ class _StaffDetailScreenState extends ConsumerState<StaffDetailScreen> {
                   ),
                   const SizedBox(height: 20),
                   TextFormField(
-                    controller: nameCtrl,
+                    key: const Key('staff-name-en'),
+                    controller: nameEnCtrl,
                     decoration: InputDecoration(
-                      labelText: l.fullName,
+                      labelText: l.nameEn,
                       prefixIcon: const Icon(Icons.person_outline),
                     ),
                     validator: (v) =>
@@ -176,22 +189,25 @@ class _StaffDetailScreenState extends ConsumerState<StaffDetailScreen> {
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
-                    controller: emailCtrl,
-                    keyboardType: TextInputType.emailAddress,
+                    key: const Key('staff-name-ar'),
+                    controller: nameArCtrl,
                     decoration: InputDecoration(
-                      labelText: l.email,
-                      prefixIcon: const Icon(Icons.email_outlined),
+                      labelText: l.nameAr,
+                      prefixIcon: const Icon(Icons.person_outline),
                     ),
-                    validator: (v) {
-                      if (v == null || v.trim().isEmpty) return l.emailRequired;
-                      if (!RegExp(r'^[^@]+@[^@]+\.[^@]+$').hasMatch(v.trim())) {
-                        return l.emailInvalid;
-                      }
-                      return null;
-                    },
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
+                    key: const Key('staff-designation'),
+                    controller: designationCtrl,
+                    decoration: InputDecoration(
+                      labelText: l.designation,
+                      prefixIcon: const Icon(Icons.badge_outlined),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    key: const Key('staff-phone'),
                     controller: phoneCtrl,
                     keyboardType: TextInputType.phone,
                     decoration: InputDecoration(
@@ -200,38 +216,61 @@ class _StaffDetailScreenState extends ConsumerState<StaffDetailScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  DropdownButtonFormField<String>(
-                    initialValue: role,
+                  DropdownButtonFormField<String?>(
+                    key: const Key('staff-property'),
+                    initialValue: propertyId,
                     decoration: InputDecoration(
-                      labelText: l.role,
-                      prefixIcon: const Icon(Icons.badge_outlined),
+                      labelText: l.property,
+                      prefixIcon: const Icon(Icons.apartment_outlined),
                     ),
                     items: [
-                      DropdownMenuItem(
-                        value: 'PROPERTY_MANAGER',
-                        child: Text(l.propertyManager),
+                      DropdownMenuItem<String?>(
+                        value: null,
+                        child: Text(l.noProperty),
                       ),
-                      DropdownMenuItem(
-                        value: 'TENANT_USER',
-                        child: Text(l.tenantUser),
+                      ..._properties.map(
+                        (p) => DropdownMenuItem<String?>(
+                          value: p['id'] as String?,
+                          child: Text((p['name'] ?? l.property).toString()),
+                        ),
                       ),
                     ],
-                    onChanged: (v) =>
-                        setSheetState(() => role = v ?? 'PROPERTY_MANAGER'),
+                    onChanged: (v) => setSheetState(() => propertyId = v),
                   ),
                   const SizedBox(height: 24),
                   GoldButton(
+                    key: const Key('staff-save'),
                     label: l.saveChanges,
                     onPressed: () async {
                       if (!formKey.currentState!.validate()) return;
                       final service = ref.read(_staffServiceProvider);
+                      final nameAr = nameArCtrl.text.trim();
+                      final designation = designationCtrl.text.trim();
+                      final phone = phoneCtrl.text.trim();
                       try {
+                        // PUT /v1/staff/{id} copies every Staff field from the
+                        // body, so echo the ones this sheet doesn't edit —
+                        // omitting them would null them out server-side.
                         await service.updateStaff(widget.staffId, {
-                          'name': nameCtrl.text.trim(),
-                          'email': emailCtrl.text.trim(),
-                          if (phoneCtrl.text.isNotEmpty)
-                            'phone': phoneCtrl.text.trim(),
-                          'role': role,
+                          'nameEn': nameEnCtrl.text.trim(),
+                          'nameAr': nameAr.isEmpty ? null : nameAr,
+                          'designation': designation.isEmpty
+                              ? null
+                              : designation,
+                          'phone': phone.isEmpty ? null : phone,
+                          'employeeId': staff['employeeId'],
+                          'department': staff['department'],
+                          'monthlySalary': staff['monthlySalary'],
+                          'joinDate': staff['joinDate'],
+                          'emiratesId': staff['emiratesId'],
+                          'passportNumber': staff['passportNumber'],
+                          'active': staff['active'] ?? true,
+                          if (propertyId != null)
+                            'property': {'id': propertyId},
+                          if (staff['salaryAccount']?['id'] != null)
+                            'salaryAccount': {
+                              'id': staff['salaryAccount']['id'],
+                            },
                         });
                         if (ctx.mounted) Navigator.pop(ctx);
                         _loadData();
@@ -258,17 +297,6 @@ class _StaffDetailScreenState extends ConsumerState<StaffDetailScreen> {
     );
   }
 
-  Color _roleColor(MiftahColors m, String role) {
-    switch (role) {
-      case 'PROPERTY_MANAGER':
-        return m.isDark ? AppColors.accent : AppColors.primary;
-      case 'TENANT_USER':
-        return AppColors.info;
-      default:
-        return m.textSecondary;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final m = context.miftah;
@@ -293,15 +321,16 @@ class _StaffDetailScreenState extends ConsumerState<StaffDetailScreen> {
     }
 
     final staff = _staff!;
-    final name = (staff['name'] ?? l.unknown).toString();
-    final email = (staff['email'] ?? '').toString();
-    final phone = (staff['phone'] ?? staff['phoneNumber'] ?? '').toString();
-    final role = (staff['role'] ?? '').toString();
-    final propertyIds = (staff['propertyIds'] as List<dynamic>?) ?? [];
+    final localName = _localName(staff, l.ar);
+    final name = localName.isEmpty ? l.unknown : localName;
+    final designation = (staff['designation'] ?? '').toString();
+    final phone = (staff['phone'] ?? '').toString();
+    final active = staff['active'] != false;
 
-    final assignedProperties = _properties
-        .where((p) => propertyIds.contains(p['id']))
-        .toList();
+    // The Staff DTO carries a single nested property assignment.
+    final assignedProperties = [
+      if (staff['property'] is Map) staff['property'],
+    ];
 
     return Scaffold(
       backgroundColor: m.background,
@@ -397,39 +426,42 @@ class _StaffDetailScreenState extends ConsumerState<StaffDetailScreen> {
                                 color: AppColors.gold400,
                               ),
                       ),
-                      if (role.isNotEmpty) ...[
-                        const SizedBox(height: 10),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 5,
-                          ),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(999),
-                            color: _roleColor(m, role).withValues(alpha: 0.12),
-                            border: Border.all(
-                              color: _roleColor(m, role).withValues(alpha: 0.3),
-                            ),
-                          ),
-                          child: Text(
-                            l.roleLabel(role),
-                            style:
-                                (l.ar
-                                ? GoogleFonts.notoNaskhArabic
-                                : GoogleFonts.josefinSans)(
-                                  fontSize: 10.5,
-                                  letterSpacing: l.ar ? 0 : 1.2,
-                                  color: AppColors.gold400,
-                                ),
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(999),
+                          color: (active ? AppColors.success : Colors.white38)
+                              .withValues(alpha: 0.12),
+                          border: Border.all(
+                            color: (active ? AppColors.success : Colors.white38)
+                                .withValues(alpha: 0.3),
                           ),
                         ),
-                      ],
+                        child: Text(
+                          active ? l.active : l.inactive,
+                          style:
+                              (l.ar
+                              ? GoogleFonts.notoNaskhArabic
+                              : GoogleFonts.josefinSans)(
+                                fontSize: 10.5,
+                                letterSpacing: l.ar ? 0 : 1.2,
+                                color: AppColors.gold400,
+                              ),
+                        ),
+                      ),
                       Divider(
                         color: Colors.white.withValues(alpha: 0.15),
                         height: 28,
                       ),
-                      if (email.isNotEmpty)
-                        _HeaderInfo(icon: Icons.email_outlined, text: email),
+                      if (designation.isNotEmpty)
+                        _HeaderInfo(
+                          icon: Icons.badge_outlined,
+                          text: designation,
+                        ),
                       if (phone.isNotEmpty) ...[
                         const SizedBox(height: 6),
                         _HeaderInfo(icon: Icons.phone_outlined, text: phone),
@@ -511,8 +543,11 @@ class _StaffDetailScreenState extends ConsumerState<StaffDetailScreen> {
                   )
                 else
                   ...assignedProperties.map((property) {
-                    final propertyName = property['name'] ?? l.property;
-                    final address = property['address'] ?? '';
+                    final localPropertyName = _localName(property, l.ar);
+                    final propertyName = localPropertyName.isEmpty
+                        ? l.property
+                        : localPropertyName;
+                    final address = (property['address'] ?? '').toString();
                     return Container(
                       margin: const EdgeInsets.only(bottom: 8),
                       padding: const EdgeInsets.all(14),
@@ -619,17 +654,14 @@ class _L {
   String get notFound => ar ? 'غير موجود' : 'Not found';
   String get unknown => ar ? 'غير معروف' : 'Unknown';
   String get editStaff => ar ? 'تعديل الموظف' : 'Edit Staff';
-  String get fullName => ar ? 'الاسم الكامل' : 'Full Name';
+  String get nameEn => ar ? 'الاسم (إنجليزي)' : 'Name (English)';
+  String get nameAr => ar ? 'الاسم (عربي)' : 'Name (Arabic)';
   String get nameRequired => ar ? 'الاسم مطلوب' : 'Name is required';
-  String get email => ar ? 'البريد الإلكتروني' : 'Email';
-  String get emailRequired =>
-      ar ? 'البريد الإلكتروني مطلوب' : 'Email is required';
-  String get emailInvalid =>
-      ar ? 'أدخل بريدًا إلكترونيًا صالحًا' : 'Enter a valid email';
+  String get designation => ar ? 'المسمى الوظيفي' : 'Designation';
   String get phoneNumber => ar ? 'رقم الهاتف' : 'Phone Number';
-  String get role => ar ? 'الدور الوظيفي' : 'Role';
-  String get propertyManager => ar ? 'مدير العقار' : 'Property Manager';
-  String get tenantUser => ar ? 'مستخدم الحساب' : 'Tenant User';
+  String get noProperty => ar ? 'بدون عقار' : 'No property';
+  String get active => ar ? 'نشط' : 'Active';
+  String get inactive => ar ? 'غير نشط' : 'Inactive';
   String get saveChanges => ar ? 'حفظ التغييرات' : 'Save Changes';
   String get staffUpdated =>
       ar ? 'تم تحديث بيانات الموظف' : 'Staff member updated';
@@ -654,15 +686,4 @@ class _L {
       ar ? 'لا توجد عقارات معينة' : 'No property assignments';
   String get assignHint =>
       ar ? 'عيّن عقارات لهذا الموظف' : 'Assign properties to this staff member';
-
-  String roleLabel(String role) {
-    switch (role) {
-      case 'PROPERTY_MANAGER':
-        return propertyManager;
-      case 'TENANT_USER':
-        return tenantUser;
-      default:
-        return role;
-    }
-  }
 }

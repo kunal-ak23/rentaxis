@@ -71,16 +71,26 @@ class _ChequeScanFlowScreenState extends ConsumerState<ChequeScanFlowScreen> {
   Future<void> _fetchMatchedPayment(String paymentId) async {
     try {
       final svc = ref.read(_paymentServiceProvider);
-      // Best-effort: backend has no single-payment endpoint, but we
-      // can fetch the user's full list and pick by id. Keeps the match
-      // card useful even though it's a manual link, not auto-match.
-      final list = await svc.getPayments();
-      final found = list.firstWhere(
-        (p) => p is Map<String, dynamic> && p['id'] == paymentId,
-        orElse: () => null,
-      );
-      if (found != null && mounted) {
-        setState(() => _matchedPayment = Map<String, dynamic>.from(found));
+      // Best-effort: backend has no single-payment endpoint, so walk the
+      // paged list until the row shows up (it is almost always on an early
+      // page — the wizard opens from a row the user just tapped). Capped so
+      // a huge portfolio can't turn this into an unbounded crawl; a miss is
+      // non-fatal because the user can still pick the payment manually.
+      const maxPages = 5;
+      for (var page = 0; page < maxPages; page++) {
+        final result = await svc.getPaymentsPage(page: page, size: 100);
+        if (!mounted) return;
+        final rows = result['content'] as List? ?? const [];
+        final found = rows.firstWhere(
+          (p) => p is Map<String, dynamic> && p['id'] == paymentId,
+          orElse: () => null,
+        );
+        if (found != null) {
+          setState(() => _matchedPayment = Map<String, dynamic>.from(found));
+          return;
+        }
+        final totalPages = (result['totalPages'] as num?)?.toInt() ?? 1;
+        if (page + 1 >= totalPages) return;
       }
     } catch (_) {
       // Non-fatal — user can still pick manually.
@@ -282,12 +292,44 @@ class _PaymentPickerSheet extends StatefulWidget {
 }
 
 class _PaymentPickerSheetState extends State<_PaymentPickerSheet> {
-  late Future<List<dynamic>> _future;
+  late Future<({List<Map<String, dynamic>> rows, int hidden})> _future;
 
   @override
   void initState() {
     super.initState();
-    _future = widget.service.getPayments();
+    _future = _load();
+  }
+
+  /// Collectable rows — PENDING and OVERDUE, matching the payments screen
+  /// action sheet — fetched server-side (one large soonest-due-first page
+  /// per status) instead of filtering a truncated tenant-wide list
+  /// client-side. `hidden` counts collectable rows the server still holds
+  /// beyond what was fetched, so truncation is visible instead of silent.
+  Future<({List<Map<String, dynamic>> rows, int hidden})> _load() async {
+    const size = 100;
+    const sort = ['dueDate,asc', 'id,asc'];
+    final pages = await Future.wait([
+      widget.service.getPaymentsPage(status: 'PENDING', sort: sort, size: size),
+      widget.service.getPaymentsPage(status: 'OVERDUE', sort: sort, size: size),
+    ]);
+    final rows = <Map<String, dynamic>>[];
+    var hidden = 0;
+    for (final page in pages) {
+      final content = (page['content'] as List? ?? const [])
+          .whereType<Map>()
+          .toList();
+      rows.addAll(content.map((r) => Map<String, dynamic>.from(r)));
+      final total = (page['totalElements'] as num?)?.toInt() ?? content.length;
+      if (total > content.length) hidden += total - content.length;
+    }
+    // The two status queries are each sorted; merge them back into one
+    // soonest-due-first list.
+    rows.sort(
+      (a, b) => (a['dueDate']?.toString() ?? '').compareTo(
+        b['dueDate']?.toString() ?? '',
+      ),
+    );
+    return (rows: rows, hidden: hidden);
   }
 
   @override
@@ -336,7 +378,7 @@ class _PaymentPickerSheetState extends State<_PaymentPickerSheet> {
           const SizedBox(height: 14),
           SizedBox(
             height: 360,
-            child: FutureBuilder<List<dynamic>>(
+            child: FutureBuilder<({List<Map<String, dynamic>> rows, int hidden})>(
               future: _future,
               builder: (context, snap) {
                 if (snap.connectionState != ConnectionState.done) {
@@ -350,15 +392,9 @@ class _PaymentPickerSheetState extends State<_PaymentPickerSheet> {
                     ),
                   );
                 }
-                // Collectable statuses — matches the payments screen action
-                // sheet, which offers "Collect" for PENDING and OVERDUE.
-                final pending = (snap.data ?? const [])
-                    .whereType<Map<String, dynamic>>()
-                    .where(
-                      (p) =>
-                          p['status'] == 'PENDING' || p['status'] == 'OVERDUE',
-                    )
-                    .toList();
+                final pending =
+                    snap.data?.rows ?? const <Map<String, dynamic>>[];
+                final hidden = snap.data?.hidden ?? 0;
                 if (pending.isEmpty) {
                   return Center(
                     child: Text(
@@ -368,9 +404,19 @@ class _PaymentPickerSheetState extends State<_PaymentPickerSheet> {
                   );
                 }
                 return ListView.separated(
-                  itemCount: pending.length,
+                  itemCount: pending.length + (hidden > 0 ? 1 : 0),
                   separatorBuilder: (_, _) => const SizedBox(height: 8),
                   itemBuilder: (context, i) {
+                    if (i >= pending.length) {
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        child: Text(
+                          l.moreNotShown(hidden),
+                          textAlign: TextAlign.center,
+                          style: bodyFont(fontSize: 11, color: m.textMuted),
+                        ),
+                      );
+                    }
                     final p = pending[i];
                     return InkWell(
                       onTap: () => Navigator.pop(context, p),
@@ -464,6 +510,9 @@ class _PickerL {
       : 'The scanned cheque will be linked to the selected installment.';
   String get noPending =>
       ar ? 'لا توجد دفعات معلّقة للتحصيل.' : 'No pending payments to collect.';
+  String moreNotShown(int count) => ar
+      ? '$count دفعة أخرى غير معروضة — الأقرب استحقاقًا تظهر أولًا.'
+      : '$count more not shown — soonest due are listed first.';
   String failedToLoad(String error) =>
       ar ? 'تعذّر تحميل المدفوعات: $error' : 'Failed to load payments: $error';
   String rowMeta(String renter, dynamic installment, String due) => ar

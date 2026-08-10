@@ -101,6 +101,7 @@ export default function TicketsPage() {
     // Create modal
     const [showForm, setShowForm] = useState(false);
     const [submitting, setSubmitting] = useState(false);
+    const [createError, setCreateError] = useState<string | null>(null);
     const [form, setForm] = useState({
         title: "",
         description: "",
@@ -191,8 +192,11 @@ export default function TicketsPage() {
     // ── Create ticket ───────────────────────────────────────────────────
 
     const handleCreate = async () => {
-        if (!form.title.trim()) return;
+        // The backend requires a property (POST /v1/tickets rejects a missing
+        // propertyId), so don't submit without one.
+        if (!form.title.trim() || !form.propertyId) return;
         setSubmitting(true);
+        setCreateError(null);
         try {
             const res = await fetch("/api/proxy/v1/tickets", {
                 method: "POST",
@@ -200,7 +204,7 @@ export default function TicketsPage() {
                 body: JSON.stringify({
                     title: form.title,
                     description: form.description,
-                    propertyId: form.propertyId || undefined,
+                    propertyId: form.propertyId,
                     unitId: form.unitId || undefined,
                     category: form.category,
                     priority: form.priority,
@@ -223,8 +227,13 @@ export default function TicketsPage() {
                 setForm({ title: "", description: "", propertyId: "", unitId: "", category: "OTHER", priority: "MEDIUM", onBehalfOf: "" });
                 setAttachmentFiles([]);
                 fetchTickets();
+            } else {
+                const errData = await res.json().catch(() => null);
+                setCreateError(errData?.message || errData?.error || "Failed to create ticket");
             }
-        } catch { /* ignore */ } finally {
+        } catch {
+            setCreateError("Failed to create ticket");
+        } finally {
             setSubmitting(false);
         }
     };
@@ -266,6 +275,7 @@ export default function TicketsPage() {
                             if (isRenter && renterLeases.length === 1) {
                                 setForm(f => ({ ...f, propertyId: renterLeases[0].propertyId, unitId: renterLeases[0].unitId }));
                             }
+                            setCreateError(null);
                             setShowForm(true);
                         }}
                         className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-xs font-semibold hover:bg-primary/90 transition-all cursor-pointer"
@@ -478,13 +488,13 @@ export default function TicketsPage() {
                                 /* Admin/PM — full property + unit dropdowns */
                                 <div className="grid grid-cols-2 gap-3">
                                     <div>
-                                        <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">Property</label>
+                                        <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">Property *</label>
                                         <select
                                             value={form.propertyId}
                                             onChange={(e) => setForm({ ...form, propertyId: e.target.value, unitId: "" })}
                                             className="w-full border border-border rounded-lg bg-surface px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:outline-none cursor-pointer"
                                         >
-                                            <option value="">General (no specific property)</option>
+                                            <option value="">Select property</option>
                                             {properties.map((p) => (
                                                 <option key={p.property.id} value={p.property.id}>{p.property.nameEn}</option>
                                             ))}
@@ -588,6 +598,9 @@ export default function TicketsPage() {
 
                         {/* Modal footer */}
                         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border">
+                            {createError && (
+                                <p className="flex-1 text-xs text-error">{createError}</p>
+                            )}
                             <button
                                 onClick={() => setShowForm(false)}
                                 className="px-4 py-2 rounded-lg text-xs font-semibold text-muted hover:text-foreground hover:bg-input transition-colors cursor-pointer"
@@ -596,10 +609,10 @@ export default function TicketsPage() {
                             </button>
                             <button
                                 onClick={handleCreate}
-                                disabled={submitting || !form.title.trim()}
+                                disabled={submitting || !form.title.trim() || !form.propertyId}
                                 className={cn(
                                     "flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer",
-                                    submitting || !form.title.trim()
+                                    submitting || !form.title.trim() || !form.propertyId
                                         ? "bg-input text-muted cursor-not-allowed"
                                         : "bg-primary text-primary-foreground hover:bg-primary/90",
                                 )}

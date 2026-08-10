@@ -47,8 +47,17 @@ public class TenantGatewayConfigService {
         }
 
         config.setGateway(gateway);
-        config.setApiKeyEncrypted(encryptionService.encrypt(dto.getApiKey()));
-        config.setApiSecretEncrypted(encryptionService.encrypt(dto.getApiSecret()));
+        // Blank/absent (or masked, e.g. "rzp_test****") credentials mean "keep existing" —
+        // GET responses only ever expose the masked key, so clients may round-trip it.
+        if (isNewCredentialValue(dto.getApiKey())) {
+            config.setApiKeyEncrypted(encryptionService.encrypt(dto.getApiKey()));
+        }
+        if (isNewCredentialValue(dto.getApiSecret())) {
+            config.setApiSecretEncrypted(encryptionService.encrypt(dto.getApiSecret()));
+        }
+        if (config.getApiKeyEncrypted() == null || config.getApiSecretEncrypted() == null) {
+            throw new IllegalArgumentException("API key and API secret are required for a new gateway configuration");
+        }
         if (dto.getWebhookSecret() != null && !dto.getWebhookSecret().isEmpty()) {
             config.setWebhookSecretEncrypted(encryptionService.encrypt(dto.getWebhookSecret()));
         }
@@ -58,6 +67,12 @@ public class TenantGatewayConfigService {
 
         TenantGatewayConfig saved = tenantGatewayConfigRepository.save(config);
         return mapToDTO(saved);
+    }
+
+    private boolean isNewCredentialValue(String value) {
+        // Real gateway credentials never contain '*'; a trailing "****" is the masked
+        // form produced by mapToDTO being echoed back by a client.
+        return value != null && !value.isEmpty() && !value.endsWith("****");
     }
 
     @Transactional(readOnly = true)

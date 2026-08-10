@@ -120,6 +120,7 @@
     "stamp": "Stamp / Seal"
   },
   "Payments": {
+    "actionFailed": "Action failed. Please try again.",
     "title": "Payment Schedule",
     "description": "Track post-dated cheques and payment collections across your properties.",
     "totalDue": "Total Due",
@@ -450,7 +451,9 @@
     "descriptionLabel": "Description",
     "descriptionPlaceholder": "e.g. Plumbing repair invoice INV-2026-014",
     "descriptionRequired": "Please add a short description",
-    "defaultDescription": "Payment to {name}"
+    "defaultDescription": "Payment to {name}",
+    "saveFailed": "Failed to save vendor.",
+    "deleteFailed": "Failed to delete vendor."
   },
   "BankAccounts": {
     "title": "Bank Accounts",
@@ -990,6 +993,7 @@
     "logInteraction": "Log interaction",
     "noInteractions": "No interactions yet",
     "loading": "Loading...",
+    "retry": "Retry",
     "type": {
       "CALL": "Call",
       "SMS": "SMS",
@@ -1032,12 +1036,14 @@
     },
     "errors": {
       "summaryRequired": "Summary is required.",
-      "saveFailed": "Failed to log interaction."
+      "saveFailed": "Failed to log interaction.",
+      "loadFailed": "Failed to load interactions."
     }
   },
   "followUpsWidget": {
     "title": "Follow-ups due",
     "empty": "No follow-ups today",
+    "loadError": "Couldn't load follow-ups",
     "linkLabel": "Open lease"
   },
   "renewals": {
@@ -1061,9 +1067,14 @@
     "confirm": "Confirm",
     "captured": "Got it — we recorded your choice. Redirecting...",
     "tokenExpired": "This link is no longer valid. Please log in to update your renewal preference.",
+    "alreadyResolved": "This renewal has already been handled. Log in to see your renewal status.",
     "genericError": "Something went wrong. Please try again.",
     "bannerMessage": "One of your leases is up for renewal in {days} days.",
     "bannerCta": "Tell us your plan",
+    "loadFailed": "Couldn't load your renewals. Please try again.",
+    "retry": "Retry",
+    "intentAlreadyResolved": "This renewal has already been handled by the property manager.",
+    "unitFallback": "Your unit",
     "intent": {
       "RENEW": "Renew",
       "MOVE_OUT": "Move out",
@@ -1187,6 +1198,7 @@
     "releaseSpotConfirm": "Give up this parking spot? It becomes available to others.",
     "noFacilities": "No facilities are available for your unit yet.",
     "noActiveLease": "You need an active lease to request facilities.",
+    "requestChanged": "This request changed state. Refreshing the list.",
     "refreshError": "That went through, but the page couldn't refresh — please reload."
   },
   "Bookings": {

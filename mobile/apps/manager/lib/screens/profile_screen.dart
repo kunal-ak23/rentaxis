@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -7,6 +8,21 @@ final _authServiceProvider = Provider<AuthService>((ref) {
   final client = ref.watch(apiClientProvider);
   return AuthService(client.dio);
 });
+
+/// True when [error] is the backend's 400 for a wrong current password —
+/// PUT /auth/me/password answers `{"error": "Current password is incorrect"}`
+/// (AuthController). Lets the snackbar name the actual problem bilingually
+/// instead of the blanket "failed" message.
+///
+/// Top-level (not a State method) so tests can pin the mapping directly.
+bool isWrongCurrentPasswordError(Object error) {
+  if (error is! DioException || error.response?.statusCode != 400) {
+    return false;
+  }
+  final data = error.response?.data;
+  final message = data is Map ? data['error']?.toString() : null;
+  return message != null && message.toLowerCase().contains('current password');
+}
 
 // ---------------------------------------------------------------------------
 // Fonts helper — Arabic uses Noto Naskh instead of Cinzel/Josefin Sans, and
@@ -61,6 +77,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   bool _isSaving = false;
   bool _hasChanges = false;
 
+  /// Phone number as GET /auth/me returned it ('' when the profile has none);
+  /// null until that fetch succeeds. While null the phone field is write-only:
+  /// an empty field means "leave unchanged", never "clear" — otherwise a
+  /// name-only save made while offline-prefetch failed would wipe the number.
+  String? _loadedPhone;
+
   bool _showPasswordSection = false;
   final _currentPasswordController = TextEditingController();
   final _newPasswordController = TextEditingController();
@@ -80,13 +102,29 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     _nameController.text = auth.name ?? '';
     _nameController.addListener(_onFieldChanged);
     _phoneController.addListener(_onFieldChanged);
+    _prefillPhone();
+  }
+
+  /// Prefills the phone field from GET /auth/me (auth state carries no phone).
+  /// Without the prefill the field always starts empty, which made clearing a
+  /// stored number impossible — an empty field was indistinguishable from an
+  /// untouched one.
+  Future<void> _prefillPhone() async {
+    try {
+      final profile = await ref.read(_authServiceProvider).getProfile();
+      if (!mounted) return;
+      _loadedPhone = (profile['phoneNumber'] as String?) ?? '';
+      _phoneController.text = _loadedPhone!;
+    } catch (_) {
+      // Keep write-only semantics when the fetch fails (see _loadedPhone).
+    }
   }
 
   void _onFieldChanged() {
     final auth = ref.read(authProvider);
     final changed =
         _nameController.text != (auth.name ?? '') ||
-        _phoneController.text.isNotEmpty;
+        _phoneController.text != (_loadedPhone ?? '');
     if (changed != _hasChanges) {
       setState(() => _hasChanges = changed);
     }
@@ -105,16 +143,21 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   Future<void> _saveProfile() async {
     final l = _L(context.isAr);
     setState(() => _isSaving = true);
+    final phone = _phoneController.text.trim();
     try {
       final service = ref.read(_authServiceProvider);
+      // Empty string clears the stored number (the backend maps blank to
+      // null). Only when the prefetch failed does an empty field fall back to
+      // "leave unchanged" — see _loadedPhone.
       await service.updateProfile(
         name: _nameController.text.trim(),
-        phoneNumber: _phoneController.text.trim().isNotEmpty
-            ? _phoneController.text.trim()
-            : null,
+        phoneNumber: phone.isNotEmpty || _loadedPhone != null ? phone : null,
       );
       if (mounted) {
         setState(() {
+          // The backend now stores `phone` whenever we sent it — make it the
+          // new baseline so a follow-up clear is detected as a change.
+          if (_loadedPhone != null || phone.isNotEmpty) _loadedPhone = phone;
           _hasChanges = false;
           _isSaving = false;
         });
@@ -186,7 +229,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         setState(() => _isChangingPassword = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(l.passwordChangeFailed),
+            content: Text(
+              isWrongCurrentPasswordError(e)
+                  ? l.currentPasswordIncorrect
+                  : errorMessage(e, l.passwordChangeFailed),
+            ),
             backgroundColor: AppColors.danger,
           ),
         );
@@ -643,6 +690,8 @@ class _L {
   String get passwordChangeFailed => ar
       ? 'فشل تغيير كلمة المرور. تحقق من كلمة المرور الحالية.'
       : 'Failed to change password. Check your current password.';
+  String get currentPasswordIncorrect =>
+      ar ? 'كلمة المرور الحالية غير صحيحة' : 'Current password is incorrect';
 
   String roleLabel(String role) {
     if (ar) {

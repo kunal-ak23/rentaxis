@@ -23,6 +23,17 @@ class BankAccountsScreen extends ConsumerStatefulWidget {
   ConsumerState<BankAccountsScreen> createState() => _BankAccountsScreenState();
 }
 
+/// Localized name of the nested `property` object the backend serializes
+/// (nameEn/nameAr) — there is no flat `propertyName` field in the response.
+String _propertyName(Map<String, dynamic> account, bool ar) {
+  final property = account['property'];
+  if (property is! Map) return '';
+  final nameEn = (property['nameEn'] ?? '').toString();
+  final nameAr = (property['nameAr'] ?? '').toString();
+  if (ar) return nameAr.isNotEmpty ? nameAr : nameEn;
+  return nameEn.isNotEmpty ? nameEn : nameAr;
+}
+
 class _BankAccountsScreenState extends ConsumerState<BankAccountsScreen> {
   Future<void> _refresh() async {
     ref.invalidate(_bankAccountsProvider);
@@ -37,9 +48,8 @@ class _BankAccountsScreenState extends ConsumerState<BankAccountsScreen> {
     final bankName = account['bankName'] ?? l.unknown;
     final accountNumber = (account['accountNumber'] ?? '').toString();
     final iban = (account['iban'] ?? '').toString();
-    final swiftCode = (account['swiftCode'] ?? '').toString();
-    final branch = (account['branch'] ?? '').toString();
-    final propertyName = (account['propertyName'] ?? '').toString();
+    final branch = (account['branchName'] ?? '').toString();
+    final propertyName = _propertyName(account, l.ar);
 
     showModalBottomSheet(
       context: context,
@@ -80,8 +90,6 @@ class _BankAccountsScreenState extends ConsumerState<BankAccountsScreen> {
             if (accountNumber.isNotEmpty)
               _DetailRow(label: l.accountNumber, value: accountNumber, l: l),
             if (iban.isNotEmpty) _DetailRow(label: l.iban, value: iban, l: l),
-            if (swiftCode.isNotEmpty)
-              _DetailRow(label: l.swiftCode, value: swiftCode, l: l),
             if (branch.isNotEmpty)
               _DetailRow(label: l.branch, value: branch, l: l),
             if (propertyName.isNotEmpty)
@@ -213,8 +221,11 @@ class _BankAccountCard extends StatelessWidget {
     final bankName = (account['bankName'] ?? l.unknown).toString();
     final accountNumber = (account['accountNumber'] ?? '').toString();
     final iban = (account['iban'] ?? '').toString();
-    final propertyName = (account['propertyName'] ?? '').toString();
-    final isDefault = account['isDefault'] == true;
+    final propertyName = _propertyName(account, l.ar);
+    // `default` fallback tolerates a backend deployed before the
+    // @JsonProperty("isDefault") rename.
+    final isDefault =
+        account['isDefault'] == true || account['default'] == true;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -411,7 +422,6 @@ class _L {
   String get bankName => ar ? 'اسم البنك' : 'Bank Name';
   String get accountNumber => ar ? 'رقم الحساب' : 'Account Number';
   String get iban => ar ? 'رقم الآيبان' : 'IBAN';
-  String get swiftCode => ar ? 'رمز السويفت' : 'SWIFT Code';
   String get branch => ar ? 'الفرع' : 'Branch';
   String get linkedProperty => ar ? 'العقار المرتبط' : 'Linked Property';
   String get defaultLabel => ar ? 'افتراضي' : 'Default';

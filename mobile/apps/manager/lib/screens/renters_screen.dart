@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:intl/intl.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
 final _renterServiceProvider = Provider<RenterService>((ref) {
@@ -14,8 +13,15 @@ final _rentersProvider = FutureProvider.autoDispose<List<dynamic>>((ref) async {
   return service.getRenters();
 });
 
+/// Locale-aware display name from the RenterDTO (nameEn/nameAr).
+String _renterName(dynamic renter, bool ar) {
+  final nameAr = (renter['nameAr'] ?? '').toString().trim();
+  if (ar && nameAr.isNotEmpty) return nameAr;
+  return (renter['nameEn'] ?? '').toString().trim();
+}
+
 /// Renters directory, per design 1h: dark chrome search header, rows grouped
-/// under alphabetical section labels with balance/status badges.
+/// under alphabetical section labels with email/phone contact lines.
 class RentersScreen extends ConsumerStatefulWidget {
   const RentersScreen({super.key});
 
@@ -35,6 +41,8 @@ class _RentersScreenState extends ConsumerState<RentersScreen> {
     final rentersAsync = ref.watch(_rentersProvider);
     final m = context.miftah;
     final l = _L(context.isAr);
+    // POST /v1/renters is restricted to SUPER_ADMIN/TENANT_ADMIN.
+    final canCreate = ref.watch(authProvider).role != 'PROPERTY_MANAGER';
 
     return Scaffold(
       backgroundColor: m.background,
@@ -58,23 +66,16 @@ class _RentersScreenState extends ConsumerState<RentersScreen> {
               data: (renters) {
                 final filtered =
                     renters.where((r) {
-                      final name = (r['name'] ?? '').toString().toLowerCase();
+                      final name = _renterName(r, l.ar).toLowerCase();
                       final email = (r['email'] ?? '').toString().toLowerCase();
-                      final phone = (r['phoneNumber'] ?? r['phone'] ?? '')
-                          .toString()
-                          .toLowerCase();
-                      final unit = (r['unitNumber'] ?? r['unit'] ?? '')
-                          .toString()
-                          .toLowerCase();
+                      final phone = (r['phone'] ?? '').toString().toLowerCase();
                       return name.contains(_searchQuery) ||
                           email.contains(_searchQuery) ||
-                          phone.contains(_searchQuery) ||
-                          unit.contains(_searchQuery);
+                          phone.contains(_searchQuery);
                     }).toList()..sort(
-                      (a, b) =>
-                          (a['name'] ?? '').toString().toLowerCase().compareTo(
-                            (b['name'] ?? '').toString().toLowerCase(),
-                          ),
+                      (a, b) => _renterName(a, l.ar).toLowerCase().compareTo(
+                        _renterName(b, l.ar).toLowerCase(),
+                      ),
                     );
 
                 if (filtered.isEmpty) {
@@ -98,7 +99,7 @@ class _RentersScreenState extends ConsumerState<RentersScreen> {
                       0,
                       AppInsets.bottomNav(context),
                     ),
-                    itemCount: _rowCount(filtered),
+                    itemCount: _rowCount(filtered, l.ar),
                     itemBuilder: (context, index) =>
                         _buildRow(context, filtered, index, l),
                   ),
@@ -108,20 +109,22 @@ class _RentersScreenState extends ConsumerState<RentersScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: AppColors.primary,
-        onPressed: () => _showCreateRenterSheet(context),
-        child: const Icon(Icons.person_add_outlined, color: Colors.white),
-      ),
+      floatingActionButton: canCreate
+          ? FloatingActionButton(
+              backgroundColor: AppColors.primary,
+              onPressed: () => _showCreateRenterSheet(context),
+              child: const Icon(Icons.person_add_outlined, color: Colors.white),
+            )
+          : null,
     );
   }
 
   /// Interleaves section-label rows ahead of each new starting letter.
-  int _rowCount(List<dynamic> renters) {
+  int _rowCount(List<dynamic> renters, bool ar) {
     var count = 0;
     String? lastLetter;
     for (final r in renters) {
-      final letter = _firstLetter(r);
+      final letter = _firstLetter(r, ar);
       if (letter != lastLetter) {
         count++;
         lastLetter = letter;
@@ -131,8 +134,8 @@ class _RentersScreenState extends ConsumerState<RentersScreen> {
     return count;
   }
 
-  String _firstLetter(dynamic renter) {
-    final name = (renter['name'] ?? '').toString().trim();
+  String _firstLetter(dynamic renter, bool ar) {
+    final name = _renterName(renter, ar);
     return name.isNotEmpty ? name[0].toUpperCase() : '#';
   }
 
@@ -145,7 +148,7 @@ class _RentersScreenState extends ConsumerState<RentersScreen> {
     var i = 0;
     String? lastLetter;
     for (final r in renters) {
-      final letter = _firstLetter(r);
+      final letter = _firstLetter(r, l.ar);
       if (letter != lastLetter) {
         if (i == index) return _SectionLabel(letter: letter);
         i++;
@@ -165,7 +168,7 @@ class _RentersScreenState extends ConsumerState<RentersScreen> {
     final emailCtrl = TextEditingController();
     final phoneCtrl = TextEditingController();
     final formKey = GlobalKey<FormState>();
-    String language = 'ENGLISH';
+    String language = 'EN';
 
     showModalBottomSheet(
       context: context,
@@ -256,14 +259,10 @@ class _RentersScreenState extends ConsumerState<RentersScreen> {
                       prefixIcon: const Icon(Icons.language),
                     ),
                     items: [
-                      DropdownMenuItem(
-                        value: 'ENGLISH',
-                        child: Text(l.english),
-                      ),
-                      DropdownMenuItem(value: 'ARABIC', child: Text(l.arabic)),
+                      DropdownMenuItem(value: 'EN', child: Text(l.english)),
+                      DropdownMenuItem(value: 'AR', child: Text(l.arabic)),
                     ],
-                    onChanged: (v) =>
-                        setSheetState(() => language = v ?? 'ENGLISH'),
+                    onChanged: (v) => setSheetState(() => language = v ?? 'EN'),
                   ),
                   const SizedBox(height: 24),
                   GoldButton(
@@ -271,16 +270,24 @@ class _RentersScreenState extends ConsumerState<RentersScreen> {
                     onPressed: () async {
                       if (!formKey.currentState!.validate()) return;
                       final service = ref.read(_renterServiceProvider);
+                      final email = emailCtrl.text.trim();
                       try {
-                        await service.createRenter({
-                          'name': nameCtrl.text.trim(),
-                          'email': emailCtrl.text.trim(),
+                        final created = await service.createRenter({
+                          'nameEn': nameCtrl.text.trim(),
+                          'email': email,
                           if (phoneCtrl.text.isNotEmpty)
-                            'phoneNumber': phoneCtrl.text.trim(),
-                          'preferredLanguage': language,
+                            'phone': phoneCtrl.text.trim(),
+                          'primaryLanguage': language,
                         });
                         if (ctx.mounted) Navigator.pop(ctx);
                         _refresh();
+                        final portalPassword = created['portalPassword']
+                            ?.toString();
+                        if (portalPassword != null &&
+                            portalPassword.isNotEmpty &&
+                            mounted) {
+                          _showPortalCredentialsDialog(email, portalPassword);
+                        }
                       } catch (e) {
                         if (ctx.mounted) {
                           ScaffoldMessenger.of(ctx).showSnackBar(
@@ -295,6 +302,51 @@ class _RentersScreenState extends ConsumerState<RentersScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// Portal credentials are returned once on creation (RenterDTO
+  /// portalPassword) — surface them so the admin can share them, like web.
+  void _showPortalCredentialsDialog(String email, String password) {
+    final l = _L(context.isAr);
+    final body = l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans;
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          l.portalCredentialsTitle,
+          style: l.ar
+              ? GoogleFonts.notoNaskhArabic(
+                  fontSize: 19,
+                  fontWeight: FontWeight.w600,
+                )
+              : GoogleFonts.cinzel(fontSize: 17, fontWeight: FontWeight.w600),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              l.portalCredentialsNote,
+              style: body(fontSize: 13, color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 14),
+            SelectableText('${l.email}: $email', style: body(fontSize: 13.5)),
+            const SizedBox(height: 6),
+            SelectableText(
+              '${l.password}: $password',
+              style: body(fontSize: 13.5, fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(l.done, style: body(fontWeight: FontWeight.w600)),
+          ),
+        ],
       ),
     );
   }
@@ -427,16 +479,13 @@ class _RenterRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final m = context.miftah;
-    final name = (renter['name'] ?? '').toString();
-    final unit = (renter['unitNumber'] ?? renter['unit'] ?? '').toString();
-    final property = (renter['propertyName'] ?? renter['property'] ?? '')
-        .toString();
+    final name = _renterName(renter, l.ar);
+    final email = (renter['email'] ?? '').toString();
+    final phone = (renter['phone'] ?? '').toString();
     final subtitle = [
-      if (property.isNotEmpty) property,
-      if (unit.isNotEmpty) unit,
+      if (email.isNotEmpty) email,
+      if (phone.isNotEmpty) phone,
     ].join(' · ');
-    final status = (renter['status'] ?? '').toString();
-    final balance = renter['balance'];
 
     return Container(
       decoration: BoxDecoration(
@@ -500,68 +549,11 @@ class _RenterRow extends StatelessWidget {
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
-              _trailing(m, status, balance),
             ],
           ),
         ),
       ),
     );
-  }
-
-  Widget _trailing(MiftahColors m, String status, dynamic balance) {
-    if (status.isNotEmpty) {
-      final color = _statusColor(m, status);
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(999),
-          color: color.withValues(alpha: 0.08),
-          border: Border.all(color: color.withValues(alpha: 0.28)),
-        ),
-        child: Text(
-          l.ar ? l.statusLabel(status) : l.statusLabel(status).toUpperCase(),
-          style: (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans)(
-            fontSize: 9.5,
-            letterSpacing: l.ar ? 0 : 1.4,
-            color: color,
-          ),
-        ),
-      );
-    }
-
-    final amount = (balance is num) ? balance : num.tryParse('$balance') ?? 0;
-    final overdue = amount > 0;
-    final color = overdue ? m.danger : m.success;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        Text(
-          NumberFormat.decimalPattern('en').format(amount),
-          style: GoogleFonts.cinzel(fontSize: 14, color: color),
-        ),
-        Text(
-          overdue ? l.overdue : l.balanceLabel,
-          style: (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans)(
-            fontSize: 9.5,
-            color: color,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Color _statusColor(MiftahColors m, String status) {
-    switch (status.toUpperCase()) {
-      case 'EXPIRING':
-        return m.warning;
-      case 'OVERDUE':
-        return m.danger;
-      case 'PENDING':
-        return m.textSecondary;
-      default:
-        return m.textSecondary;
-    }
   }
 
   String _initials(String name) {
@@ -579,8 +571,9 @@ class _L {
 
   String get directory => ar ? 'الدليل' : 'Directory';
   String rentersCount(int n) => ar ? '$n مستأجرًا' : '$n RENTERS';
-  String get searchHint =>
-      ar ? 'ابحث بالاسم أو الوحدة أو الهاتف' : 'Search name, unit, phone';
+  String get searchHint => ar
+      ? 'ابحث بالاسم أو البريد الإلكتروني أو الهاتف'
+      : 'Search name, email, phone';
   String get loadFailed =>
       ar ? 'فشل تحميل المستأجرين' : 'Failed to load renters';
   String get noRentersYet => ar ? 'لا يوجد مستأجرون بعد' : 'No renters yet';
@@ -589,8 +582,6 @@ class _L {
   String get addFirstRenter =>
       ar ? 'أضف أول مستأجر لديك' : 'Add your first renter';
   String get unknown => ar ? 'غير معروف' : 'Unknown';
-  String get overdue => ar ? 'متأخر' : 'overdue';
-  String get balanceLabel => ar ? 'الرصيد' : 'balance';
   String get newRenter => ar ? 'مستأجر جديد' : 'New Renter';
   String get fullName => ar ? 'الاسم الكامل' : 'Full Name';
   String get nameRequired => ar ? 'الاسم مطلوب' : 'Name is required';
@@ -606,17 +597,11 @@ class _L {
   String get createRenter => ar ? 'إنشاء مستأجر' : 'Create Renter';
   String get createFailed =>
       ar ? 'فشل إنشاء المستأجر' : 'Failed to create renter';
-
-  String statusLabel(String status) {
-    switch (status.toUpperCase()) {
-      case 'PENDING':
-        return ar ? 'قيد الانتظار' : 'Pending';
-      case 'EXPIRING':
-        return ar ? 'قارب على الانتهاء' : 'Expiring';
-      case 'OVERDUE':
-        return ar ? 'متأخر' : 'Overdue';
-      default:
-        return status;
-    }
-  }
+  String get portalCredentialsTitle =>
+      ar ? 'تم إنشاء حساب البوابة' : 'Portal Account Created';
+  String get portalCredentialsNote => ar
+      ? 'شارك بيانات الدخول هذه مع المستأجر — تظهر كلمة المرور مرة واحدة فقط.'
+      : 'Share these credentials with the renter — the password is shown only once.';
+  String get password => ar ? 'كلمة المرور' : 'Password';
+  String get done => ar ? 'تم' : 'Done';
 }

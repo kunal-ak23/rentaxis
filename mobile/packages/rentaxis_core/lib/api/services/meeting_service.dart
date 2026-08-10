@@ -9,28 +9,48 @@ class MeetingService {
     return response.data;
   }
 
-  /// For admin/PM: list all tenant meetings
-  Future<List<dynamic>> listMeetings({int page = 0, int size = 50}) async {
-    final response = await _dio
-        .get('/v1/meetings', queryParameters: {'page': page, 'size': size});
-    final data = response.data;
-    if (data is Map && data.containsKey('content')) return data['content'];
-    return data as List<dynamic>;
+  /// One page of the tenant-wide meeting list (GET /v1/meetings, PM/admin).
+  /// Returns the raw Spring Page map ({content, totalElements, totalPages,
+  /// ...}) so callers can drive real server-side pagination — a single big
+  /// fetch silently truncates tenants with more meetings than one page holds
+  /// (sorted slotStart ASC, so the furthest-out meetings vanish first).
+  Future<Map<String, dynamic>> listMeetingsPage({
+    int page = 0,
+    int size = 25,
+  }) async {
+    final response = await _dio.get(
+      '/v1/meetings',
+      queryParameters: {'page': page, 'size': size},
+    );
+    return _asPageMap(response.data);
   }
 
-  /// For any user: list their own meetings by perspective (requester|host)
-  Future<List<dynamic>> listMyMeetings(
-      {String perspective = 'requester',
-      int page = 0,
-      int size = 50}) async {
-    final response = await _dio.get('/v1/meetings/my', queryParameters: {
-      'perspective': perspective,
-      'page': page,
-      'size': size,
-    });
-    final data = response.data;
-    if (data is Map && data.containsKey('content')) return data['content'];
-    return data as List<dynamic>;
+  /// One page of the caller's own meetings by perspective (requester|host)
+  /// (GET /v1/meetings/my). Same raw Spring Page shape as [listMeetingsPage].
+  Future<Map<String, dynamic>> listMyMeetingsPage({
+    String perspective = 'requester',
+    int page = 0,
+    int size = 25,
+  }) async {
+    final response = await _dio.get(
+      '/v1/meetings/my',
+      queryParameters: {'perspective': perspective, 'page': page, 'size': size},
+    );
+    return _asPageMap(response.data);
+  }
+
+  /// Older backends returned a bare list — normalize to a one-page shape.
+  static Map<String, dynamic> _asPageMap(dynamic data) {
+    if (data is Map && data['content'] is List) {
+      return Map<String, dynamic>.from(data);
+    }
+    final list = data as List<dynamic>;
+    return {
+      'content': list,
+      'totalElements': list.length,
+      'totalPages': 1,
+      'number': 0,
+    };
   }
 
   Future<Map<String, dynamic>> getMeeting(String id) async {
@@ -64,11 +84,13 @@ class MeetingService {
   }
 
   Future<List<dynamic>> getAvailableSlots(
-      String hostUserId, String date) async {
-    final response = await _dio.get('/v1/meetings/slots', queryParameters: {
-      'hostUserId': hostUserId,
-      'date': date,
-    });
+    String hostUserId,
+    String date,
+  ) async {
+    final response = await _dio.get(
+      '/v1/meetings/slots',
+      queryParameters: {'hostUserId': hostUserId, 'date': date},
+    );
     return response.data as List<dynamic>;
   }
 }

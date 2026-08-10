@@ -2,7 +2,6 @@ package com.datagami.rentaxis.api;
 
 import com.datagami.rentaxis.api.dto.*;
 import com.datagami.rentaxis.core.service.MaintenanceTicketService;
-import com.datagami.rentaxis.domain.entity.TicketAttachment;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -39,8 +38,10 @@ public class MaintenanceTicketController {
 
     @GetMapping("/{id}")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<MaintenanceTicketDTO> getTicket(@PathVariable UUID id) {
-        return ResponseEntity.ok(ticketService.getTicket(id));
+    public ResponseEntity<MaintenanceTicketDTO> getTicket(
+            @PathVariable UUID id,
+            @RequestHeader(value = "X-User-Id", required = false) UUID userId) {
+        return ResponseEntity.ok(ticketService.getTicket(id, userId));
     }
 
     @PutMapping("/{id}/assign")
@@ -97,13 +98,13 @@ public class MaintenanceTicketController {
 
     @GetMapping("/{id}/attachments")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<java.util.List<TicketAttachment>> getAttachments(@PathVariable UUID id) {
+    public ResponseEntity<java.util.List<TicketAttachmentDTO>> getAttachments(@PathVariable UUID id) {
         return ResponseEntity.ok(ticketService.getAttachments(id));
     }
 
     @PostMapping("/{id}/attachments")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<TicketAttachment> uploadAttachment(
+    public ResponseEntity<TicketAttachmentDTO> uploadAttachment(
             @PathVariable UUID id,
             @RequestParam("file") MultipartFile file) throws IOException {
         return ResponseEntity.ok(ticketService.uploadAttachment(id, file));

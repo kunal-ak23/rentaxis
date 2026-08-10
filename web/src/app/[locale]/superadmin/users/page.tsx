@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Pagination } from "@/components/ui/Pagination";
 import { assignableRoles, getRoleLabel, type UserRole } from "@/lib/rbac";
+import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
 
 const ALL_ROLE_OPTIONS: { value: UserRole; label: string }[] = [
     { value: "SUPER_ADMIN", label: "Super Admin" },
@@ -38,6 +39,10 @@ export default function SuperAdminUsersPage() {
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
     const [deleting, setDeleting] = useState(false);
     const [userToDelete, setUserToDelete] = useState<string | null>(null);
+    const [deleteError, setDeleteError] = useState<string | null>(null);
+
+    // Form error (create/update failures, e.g. duplicate email or 403)
+    const [formError, setFormError] = useState<string | null>(null);
 
     // Form state
     const [email, setEmail] = useState("");
@@ -117,16 +122,22 @@ export default function SuperAdminUsersPage() {
         // Non-super-admins can only provision into their own tenant.
         setEmail(""); setPassword(""); setName(""); setTenantId(isSuperAdmin ? "" : currentTenantId); setRole("TENANT_USER"); setSelectedPropertyIds([]);
         setPhoneNumber("");
+        setFormError(null);
     };
 
     const handleSubmitUser = async (e: React.FormEvent) => {
         e.preventDefault();
         setSubmitting(true);
+        setFormError(null);
         try {
             const bodyData: any = { email, name, role, tenantId, phoneNumber };
             if (password) bodyData.password = password;
 
-            if (role === 'PROPERTY_MANAGER' && selectedPropertyIds.length > 0) {
+            if (role === 'PROPERTY_MANAGER') {
+                // Always send the list (including []) — the backend skips the
+                // property-assignment sync entirely when propertyIds is null,
+                // so omitting an empty selection would silently keep
+                // assignments the admin believes were revoked.
                 bodyData.propertyIds = selectedPropertyIds;
             }
 
@@ -140,13 +151,15 @@ export default function SuperAdminUsersPage() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(bodyData),
             });
-            if (res.ok) {
-                setShowForm(false);
-                resetForm();
-                fetchUsers();
-            }
+            // Surface backend failures (duplicate email, guard-phone conflict,
+            // role-hierarchy 403, ...) instead of leaving the form open silently.
+            await throwIfNotOk(res);
+            setShowForm(false);
+            resetForm();
+            fetchUsers();
         } catch (e) {
             console.error(e);
+            setFormError(e instanceof ApiError ? e.message : "Something went wrong. Please try again.");
         } finally {
             setSubmitting(false);
         }
@@ -155,28 +168,29 @@ export default function SuperAdminUsersPage() {
     const confirmDelete = async () => {
         if (!userToDelete) return;
         setDeleting(true);
+        setDeleteError(null);
         try {
             const res = await fetch(`/api/proxy/admin/users/${userToDelete}`, { method: "DELETE" });
-            if (res.ok) {
-                fetchUsers();
-                setDeleteDialogOpen(false);
-                setUserToDelete(null);
-            }
+            await throwIfNotOk(res);
+            fetchUsers();
         } catch (e) {
             console.error(e);
-            setDeleteDialogOpen(false);
-            setUserToDelete(null);
+            setDeleteError(e instanceof ApiError ? e.message : "Failed to delete the user. Please try again.");
         } finally {
             setDeleting(false);
+            setDeleteDialogOpen(false);
+            setUserToDelete(null);
         }
     };
 
     const handleDeleteClick = (id: string) => {
         setUserToDelete(id);
+        setDeleteError(null);
         setDeleteDialogOpen(true);
     };
 
     const handleEdit = async (user: User) => {
+        setFormError(null);
         setEditingUserId(user.id);
         setName(user.name);
         setEmail(user.email);
@@ -243,6 +257,20 @@ export default function SuperAdminUsersPage() {
                     </button>
                 </div>
             </div>
+
+            {/* Delete error banner */}
+            {deleteError && (
+                <div className="bg-error/10 border border-error/20 text-error text-xs font-medium rounded-lg px-4 py-3 flex items-center justify-between gap-3" role="alert">
+                    <span>{deleteError}</span>
+                    <button
+                        onClick={() => setDeleteError(null)}
+                        aria-label="Dismiss"
+                        className="text-error hover:text-error/70 transition-colors cursor-pointer shrink-0"
+                    >
+                        <X size={14} />
+                    </button>
+                </div>
+            )}
 
             {/* Content Area */}
             {loading ? (
@@ -486,7 +514,12 @@ export default function SuperAdminUsersPage() {
                             </form>
                         </div>
 
-                        <div className="p-6 border-t border-border bg-input/50">
+                        <div className="p-6 border-t border-border bg-input/50 space-y-3">
+                            {formError && (
+                                <div className="bg-error/10 border border-error/20 text-error text-xs font-medium rounded-lg px-3 py-2" role="alert">
+                                    {formError}
+                                </div>
+                            )}
                             <button
                                 type="submit"
                                 form="user-form"

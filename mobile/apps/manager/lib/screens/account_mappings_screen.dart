@@ -208,52 +208,97 @@ class _NatureCard extends StatelessWidget {
                 ? GoogleFonts.notoNaskhArabic(fontSize: 12, color: m.textMuted)
                 : GoogleFonts.josefinSans(fontSize: 11.5, color: m.textMuted),
           ),
-          children: items.map<Widget>((mapping) {
-            final accountName = (mapping['accountName'] ?? '-').toString();
-            final accountCode = (mapping['accountCode'] ?? '').toString();
-
-            return Container(
-              decoration: BoxDecoration(
-                border: Border(top: BorderSide(color: m.divider)),
+          children: items.expand<Widget>((mapping) {
+            return [
+              _AccountLine(
+                role: l.debit,
+                name: (mapping['debitAccountName'] ?? '-').toString(),
+                code: (mapping['debitAccountCode'] ?? '').toString(),
+                l: l,
               ),
-              child: ListTile(
-                dense: true,
-                leading: Icon(
-                  Icons.account_balance_outlined,
-                  size: 18,
-                  color: m.textSecondary,
-                ),
-                title: Text(
-                  accountName,
-                  style: l.ar
-                      ? GoogleFonts.notoNaskhArabic(
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w500,
-                          color: m.textPrimary,
-                        )
-                      : GoogleFonts.josefinSans(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                          color: m.textPrimary,
-                        ),
-                ),
-                subtitle: accountCode.isNotEmpty
-                    ? Text(
-                        l.codeLine(accountCode),
-                        style: l.ar
-                            ? GoogleFonts.notoNaskhArabic(
-                                fontSize: 12,
-                                color: m.textMuted,
-                              )
-                            : GoogleFonts.josefinSans(
-                                fontSize: 11.5,
-                                color: m.textMuted,
-                              ),
-                      )
-                    : null,
+              _AccountLine(
+                role: l.credit,
+                name: (mapping['creditAccountName'] ?? '-').toString(),
+                code: (mapping['creditAccountCode'] ?? '').toString(),
+                l: l,
               ),
-            );
+            ];
           }).toList(),
+        ),
+      ),
+    );
+  }
+}
+
+class _AccountLine extends StatelessWidget {
+  final String role;
+  final String name;
+  final String code;
+  final _L l;
+
+  const _AccountLine({
+    required this.role,
+    required this.name,
+    required this.code,
+    required this.l,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final m = context.miftah;
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: m.divider)),
+      ),
+      child: ListTile(
+        dense: true,
+        leading: Icon(
+          Icons.account_balance_outlined,
+          size: 18,
+          color: m.textSecondary,
+        ),
+        title: Text(
+          name,
+          style: l.ar
+              ? GoogleFonts.notoNaskhArabic(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w500,
+                  color: m.textPrimary,
+                )
+              : GoogleFonts.josefinSans(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: m.textPrimary,
+                ),
+        ),
+        subtitle: code.isNotEmpty
+            ? Text(
+                l.codeLine(code),
+                style: l.ar
+                    ? GoogleFonts.notoNaskhArabic(
+                        fontSize: 12,
+                        color: m.textMuted,
+                      )
+                    : GoogleFonts.josefinSans(
+                        fontSize: 11.5,
+                        color: m.textMuted,
+                      ),
+              )
+            : null,
+        trailing: Text(
+          role,
+          style: l.ar
+              ? GoogleFonts.notoNaskhArabic(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.accentDark,
+                )
+              : GoogleFonts.josefinSans(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.6,
+                  color: AppColors.accentDark,
+                ),
         ),
       ),
     );
@@ -277,6 +322,9 @@ class _L {
   }
 
   String codeLine(String code) => ar ? 'الرمز: $code' : 'Code: $code';
+
+  String get debit => ar ? 'مدين' : 'Debit';
+  String get credit => ar ? 'دائن' : 'Credit';
 
   String natureLabel(String nature) {
     if (!ar) {

@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -34,11 +35,13 @@ class _RentSettingsScreenState extends ConsumerState<RentSettingsScreen> {
   bool _loadingSettings = false;
   Map<String, dynamic>? _settings;
   String? _error;
+  bool _forbidden = false;
 
   Future<void> _loadSettings(String propertyId) async {
     setState(() {
       _loadingSettings = true;
       _error = null;
+      _forbidden = false;
     });
     try {
       final service = ref.read(_settingsServiceProvider);
@@ -48,8 +51,14 @@ class _RentSettingsScreenState extends ConsumerState<RentSettingsScreen> {
         _loadingSettings = false;
       });
     } catch (e) {
+      // GET /v1/rent-settings/{id} is SUPER_ADMIN/TENANT_ADMIN only — a 403
+      // is a permission boundary, not a transient failure.
+      final forbidden = e is DioException && e.response?.statusCode == 403;
       setState(() {
-        _error = _L(context.isAr).failedToLoadSettings;
+        _forbidden = forbidden;
+        _error = forbidden
+            ? _L(context.isAr).noPermission
+            : _L(context.isAr).failedToLoadSettings;
         _loadingSettings = false;
       });
     }
@@ -134,7 +143,10 @@ class _RentSettingsScreenState extends ConsumerState<RentSettingsScreen> {
                       else if (_error != null)
                         ErrorState(
                           message: _error!,
-                          onRetry: () => _loadSettings(_selectedPropertyId!),
+                          // Retrying a 403 can never succeed.
+                          onRetry: _forbidden
+                              ? null
+                              : () => _loadSettings(_selectedPropertyId!),
                         )
                       else if (_settings == null)
                         EmptyState(
@@ -314,15 +326,18 @@ class _SettingsCard extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Divider(color: m.divider, height: 24),
+          // Keys per RentCollectionSettingsDTO: dueDayOfMonth,
+          // gracePeriodDays, penaltyType, penaltyAmount,
+          // onlinePaymentEnabled.
+          _SettingRow(
+            icon: Icons.event_outlined,
+            label: l.dueDay,
+            value: l.dayOfMonth(settings['dueDayOfMonth']),
+          ),
           _SettingRow(
             icon: Icons.timer_outlined,
             label: l.gracePeriod,
             value: l.days(settings['gracePeriodDays']),
-          ),
-          _SettingRow(
-            icon: Icons.percent,
-            label: l.penaltyRate,
-            value: l.percent(settings['penaltyRate']),
           ),
           if (settings['penaltyType'] != null)
             _SettingRow(
@@ -330,18 +345,21 @@ class _SettingsCard extends StatelessWidget {
               label: l.penaltyType,
               value: l.penaltyTypeLabel((settings['penaltyType'] as String)),
             ),
-          if (settings['autoApplyPenalty'] != null)
+          if (settings['penaltyType'] != null &&
+              settings['penaltyType'] != 'NONE')
             _SettingRow(
-              icon: Icons.autorenew,
-              label: l.autoApplyPenalty,
-              value: settings['autoApplyPenalty'] == true ? l.yes : l.no,
+              icon: Icons.percent,
+              label: l.penaltyAmount,
+              value: l.penaltyAmountValue(
+                settings['penaltyAmount'],
+                settings['penaltyType'] as String,
+              ),
             ),
-          if (settings['reminderDaysBefore'] != null)
-            _SettingRow(
-              icon: Icons.notifications_outlined,
-              label: l.reminderBeforeDue,
-              value: l.days(settings['reminderDaysBefore']),
-            ),
+          _SettingRow(
+            icon: Icons.credit_card_outlined,
+            label: l.onlinePayment,
+            value: settings['onlinePaymentEnabled'] == true ? l.yes : l.no,
+          ),
         ],
       ),
     );
@@ -421,25 +439,40 @@ class _L {
       ? 'لا توجد إعدادات إيجار مضبوطة لهذا العقار'
       : 'No rent settings configured for this property';
   String get propertySettings => ar ? 'إعدادات العقار' : 'Property Settings';
+  String get dueDay => ar ? 'يوم الاستحقاق الشهري' : 'Due Day of Month';
   String get gracePeriod => ar ? 'فترة السماح' : 'Grace Period';
-  String get penaltyRate =>
-      ar ? 'معدل غرامة التأخير' : 'Late Payment Penalty Rate';
   String get penaltyType => ar ? 'نوع الغرامة' : 'Penalty Type';
-  String get autoApplyPenalty =>
-      ar ? 'تطبيق الغرامة تلقائياً' : 'Auto-Apply Penalty';
-  String get reminderBeforeDue =>
-      ar ? 'تذكير قبل الاستحقاق' : 'Reminder Before Due';
+  String get penaltyAmount =>
+      ar ? 'مبلغ غرامة التأخير' : 'Late Payment Penalty';
+  String get onlinePayment => ar ? 'الدفع عبر الإنترنت' : 'Online Payment';
+  String get noPermission => ar
+      ? 'ليس لديك صلاحية لعرض إعدادات تحصيل الإيجار'
+      : 'You do not have permission to view rent collection settings';
   String get yes => ar ? 'نعم' : 'Yes';
   String get no => ar ? 'لا' : 'No';
 
   String days(dynamic n) => ar ? '${n ?? '-'} يوم' : '${n ?? '-'} days';
-  String percent(dynamic n) => '${n ?? '-'}%';
+  String dayOfMonth(dynamic n) => ar ? 'اليوم ${n ?? '-'}' : 'Day ${n ?? '-'}';
+
+  /// penaltyAmount is AED/day for FIXED_PER_DAY and %/day for PERCENTAGE
+  /// (mirrors the web rent-settings labels).
+  String penaltyAmountValue(dynamic n, String type) {
+    if (type == 'FIXED_PER_DAY') {
+      return ar ? '${n ?? '-'} درهم/يوم' : '${n ?? '-'} AED/day';
+    }
+    if (type == 'PERCENTAGE') {
+      return ar ? '${n ?? '-'}%/يوم' : '${n ?? '-'}%/day';
+    }
+    return '${n ?? '-'}';
+  }
 
   String penaltyTypeLabel(String type) {
+    // Keys mirror the backend PenaltyType enum: NONE, FIXED_PER_DAY,
+    // PERCENTAGE.
     const arMap = {
       'NONE': 'لا شيء',
       'FIXED_PER_DAY': 'مبلغ ثابت يومياً',
-      'PERCENTAGE_OF_RENT': 'نسبة من الإيجار',
+      'PERCENTAGE': 'نسبة من الإيجار',
     };
     if (ar) return arMap[type] ?? type.replaceAll('_', ' ');
     return type.replaceAll('_', ' ');

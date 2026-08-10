@@ -171,7 +171,18 @@ export default function RenterFacilitiesPage() {
             // 409 (spot already held elsewhere) gets the localized copy; 400
             // (e.g. requesting a non-bookable amenity) and any other ApiError
             // status surface the backend's own already-parsed message.
-            if (err instanceof ApiError && err.status === 409) setDialogError(tB("spotConflict"));
+            if (err instanceof ApiError && err.status === 409) {
+                setDialogError(tB("spotConflict"));
+                // The spot became APPROVED for someone else after this page's
+                // data was fetched, so the card behind the dialog still says
+                // "Available" with an enabled Request button inviting another
+                // guaranteed 409 — resync both lists so held/pendingCount
+                // match the server (mirrors the mobile renter sheet's
+                // invalidate-on-close in facilities_screen.dart).
+                try {
+                    await Promise.all([loadFacilities(), loadBookings()]);
+                } catch { /* best-effort resync; the conflict message still shows */ }
+            }
             else if (err instanceof ApiError) setDialogError(err.message);
             else setDialogError(t("requestError"));
             setSubmitting(false);
@@ -199,7 +210,23 @@ export default function RenterFacilitiesPage() {
         } catch (err) {
             setPendingAction(null);
             setActionLoading(false);
-            setError(err instanceof ApiError ? err.message : t("requestError"));
+            // A 400/409 means the server state already moved (an admin
+            // decided the request while this page sat open) — the row's
+            // status, its Cancel/Release button, and the held/pendingCount
+            // facts on the cards above are all stale, and retrying can only
+            // re-fail. Resync both lists and say so in the active locale
+            // instead of surfacing the raw backend English string — mirrors
+            // the mobile renter app's 400 branch in my_requests_screen.dart.
+            if (err instanceof ApiError && (err.status === 400 || err.status === 409)) {
+                setError(t("requestChanged"));
+                try {
+                    await Promise.all([loadFacilities(), loadBookings()]);
+                } catch {
+                    setError(t("refreshError"));
+                }
+            } else {
+                setError(err instanceof ApiError ? err.message : t("requestError"));
+            }
             return;
         }
         setPendingAction(null);

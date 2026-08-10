@@ -35,6 +35,7 @@ class _L {
 
   String get newTicket => ar ? 'طلب جديد' : 'New Ticket';
   String get property => ar ? 'العقار' : 'Property';
+  String get propertyRequired => ar ? 'العقار مطلوب' : 'Property is required';
   String get unitOptional => ar ? 'الوحدة (اختياري)' : 'Unit (optional)';
   String unitLabel(String n) => ar ? 'وحدة $n' : 'Unit $n';
   String get onBehalfOf =>
@@ -59,22 +60,22 @@ class _L {
 
   String category_(String value) {
     switch (value) {
-      case 'MAINTENANCE':
-        return ar ? 'صيانة' : 'Maintenance';
       case 'PLUMBING':
         return ar ? 'سباكة' : 'Plumbing';
       case 'ELECTRICAL':
         return ar ? 'كهرباء' : 'Electrical';
       case 'HVAC':
         return ar ? 'تكييف' : 'HVAC';
+      case 'APPLIANCE':
+        return ar ? 'أجهزة' : 'Appliance';
+      case 'STRUCTURAL':
+        return ar ? 'إنشائي' : 'Structural';
       case 'PEST_CONTROL':
         return ar ? 'مكافحة حشرات' : 'Pest Control';
       case 'CLEANING':
         return ar ? 'تنظيف' : 'Cleaning';
       case 'SECURITY':
         return ar ? 'أمن' : 'Security';
-      case 'GENERAL':
-        return ar ? 'عام' : 'General';
       case 'OTHER':
         return ar ? 'أخرى' : 'Other';
       default:
@@ -116,33 +117,34 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
   String? _selectedPropertyId;
   String? _selectedUnitId;
   String? _selectedRenterId;
-  String _selectedCategory = 'MAINTENANCE';
+  String _selectedCategory = 'PLUMBING';
   String _selectedPriority = 'MEDIUM';
   final List<String> _attachmentPaths = [];
   bool _isLoading = false;
   bool _isSubmitting = false;
 
+  // Backend TicketCategory enum values, mirroring the renter app's list.
   final _categories = [
-    'MAINTENANCE',
     'PLUMBING',
     'ELECTRICAL',
     'HVAC',
+    'APPLIANCE',
+    'STRUCTURAL',
     'PEST_CONTROL',
     'CLEANING',
     'SECURITY',
-    'GENERAL',
     'OTHER',
   ];
 
   final _categoryIcons = {
-    'MAINTENANCE': Icons.build_outlined,
     'PLUMBING': Icons.plumbing_outlined,
     'ELECTRICAL': Icons.electrical_services_outlined,
     'HVAC': Icons.ac_unit_outlined,
+    'APPLIANCE': Icons.kitchen_outlined,
+    'STRUCTURAL': Icons.foundation,
     'PEST_CONTROL': Icons.pest_control_outlined,
     'CLEANING': Icons.cleaning_services_outlined,
     'SECURITY': Icons.security_outlined,
-    'GENERAL': Icons.chat_outlined,
     'OTHER': Icons.more_horiz,
   };
 
@@ -263,6 +265,12 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
     }
   }
 
+  /// Locale-aware renter display name; CreateTicketDTO's onBehalfOf is a
+  /// free-text name (web sends the typed name), not a renter id.
+  String _renterDisplayName(dynamic r, _L l) =>
+      ((l.ar ? (r['nameAr'] ?? r['nameEn']) : r['nameEn']) ?? r['email'] ?? '')
+          .toString();
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     final l = _L(context.isAr);
@@ -271,6 +279,16 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
     try {
       final ticketService = ref.read(_ticketServiceProvider);
 
+      final selectedRenter = _selectedRenterId == null
+          ? null
+          : _renters.firstWhere(
+              (r) => r['id'] == _selectedRenterId,
+              orElse: () => null,
+            );
+      final onBehalfOf = selectedRenter == null
+          ? ''
+          : _renterDisplayName(selectedRenter, l);
+
       final ticket = await ticketService.createTicket({
         'title': _titleCtrl.text.trim(),
         'description': _descCtrl.text.trim(),
@@ -278,7 +296,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
         'priority': _selectedPriority,
         if (_selectedPropertyId != null) 'propertyId': _selectedPropertyId,
         if (_selectedUnitId != null) 'unitId': _selectedUnitId,
-        if (_selectedRenterId != null) 'renterId': _selectedRenterId,
+        if (onBehalfOf.isNotEmpty) 'onBehalfOf': onBehalfOf,
       });
 
       final ticketId = ticket['id'];
@@ -367,6 +385,10 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                                 ),
                               )
                               .toList(),
+                          // Backend rejects tickets without a property
+                          // (propertyId is required on POST /v1/tickets).
+                          validator: (v) =>
+                              v == null ? l.propertyRequired : null,
                           onChanged: (v) {
                             setState(() => _selectedPropertyId = v);
                             if (v != null) _loadUnits(v);
@@ -421,7 +443,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                                 (r) => DropdownMenuItem<String>(
                                   value: r['id'],
                                   child: Text(
-                                    r['name'] ?? r['email'] ?? '',
+                                    _renterDisplayName(r, l),
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                 ),

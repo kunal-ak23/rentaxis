@@ -35,7 +35,10 @@ class LeaseService {
   }
 
   Future<void> terminateLease(String id, {String? notes}) async {
-    await _dio.post('/v1/leases/$id/terminate', queryParameters: {
+    // The backend reads a TerminateWithSettlementDTO request body
+    // (fields: notes, deductions) and declares no @RequestParam, so notes
+    // must travel as JSON — a query parameter would be silently dropped.
+    await _dio.post('/v1/leases/$id/terminate', data: {
       if (notes != null) 'notes': notes,
     });
   }

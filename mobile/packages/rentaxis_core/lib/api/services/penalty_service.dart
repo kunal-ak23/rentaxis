@@ -25,20 +25,21 @@ class PenaltyService {
     return content.map((e) => Map<String, dynamic>.from(e as Map)).toList();
   }
 
-  Future<List<dynamic>> getPenalties(String leaseId) async {
-    final response = await _dio.get('/v1/leases/$leaseId/penalties');
-    return response.data;
-  }
+  /// All penalties for one lease. There is no /v1/leases/{id}/penalties
+  /// route on the backend — the real surface is GET /v1/penalties?leaseId=
+  /// (PenaltyController), so this delegates to [listPenalties].
+  Future<List<dynamic>> getPenalties(String leaseId) =>
+      listPenalties(leaseId: leaseId, size: 200);
 
-  Future<Map<String, dynamic>> waivePenalty(String penaltyId, {String? reason}) async {
-    final response = await _dio.put('/v1/penalties/$penaltyId/waive', data: {
-      if (reason != null) 'reason': reason,
+  /// Waives a penalty. Backend maps POST /v1/penalties/{id}/waive and
+  /// requires a non-blank reason (@NotBlank on WaivePenaltyRequestDTO).
+  Future<Map<String, dynamic>> waivePenalty(
+    String penaltyId, {
+    required String reason,
+  }) async {
+    final response = await _dio.post('/v1/penalties/$penaltyId/waive', data: {
+      'reason': reason,
     });
-    return response.data;
-  }
-
-  Future<List<dynamic>> recalculatePenalties(String leaseId) async {
-    final response = await _dio.post('/v1/leases/$leaseId/penalties/recalculate');
     return response.data;
   }
 }

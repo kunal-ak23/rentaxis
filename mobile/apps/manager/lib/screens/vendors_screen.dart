@@ -57,10 +57,12 @@ class _VendorsScreenState extends ConsumerState<VendorsScreen> {
                   ErrorState(message: l.loadFailed, onRetry: _refresh),
               data: (vendors) {
                 final filtered = vendors.where((v) {
-                  final name = (v['name'] ?? '').toString().toLowerCase();
+                  final nameEn = (v['nameEn'] ?? '').toString().toLowerCase();
+                  final nameAr = (v['nameAr'] ?? '').toString().toLowerCase();
                   final email = (v['email'] ?? '').toString().toLowerCase();
                   final phone = (v['phone'] ?? '').toString().toLowerCase();
-                  return name.contains(_searchQuery) ||
+                  return nameEn.contains(_searchQuery) ||
+                      nameAr.contains(_searchQuery) ||
                       email.contains(_searchQuery) ||
                       phone.contains(_searchQuery);
                 }).toList();
@@ -215,7 +217,7 @@ class _VendorsScreenState extends ConsumerState<VendorsScreen> {
                       final service = ref.read(_vendorServiceProvider);
                       try {
                         await service.createVendor({
-                          'name': nameCtrl.text.trim(),
+                          'nameEn': nameCtrl.text.trim(),
                           if (emailCtrl.text.isNotEmpty)
                             'email': emailCtrl.text.trim(),
                           if (phoneCtrl.text.isNotEmpty)
@@ -358,7 +360,10 @@ class _VendorCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final m = context.miftah;
-    final name = (vendor['name'] ?? l.unknown).toString();
+    final nameAr = (vendor['nameAr'] ?? '').toString();
+    final name = l.ar && nameAr.isNotEmpty
+        ? nameAr
+        : (vendor['nameEn'] ?? l.unknown).toString();
     final email = (vendor['email'] ?? '').toString();
     final phone = (vendor['phone'] ?? '').toString();
     final trn = (vendor['trn'] ?? '').toString();

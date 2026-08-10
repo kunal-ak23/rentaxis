@@ -1007,8 +1007,11 @@ class _ParkingSheetState extends ConsumerState<_ParkingSheet> {
         });
         // Pop the created count (not just `true`) so the parent screen can
         // toast how many spots landed — the manager typed a range/blob, not
-        // a count, and bulk requests can silently produce fewer rows than
-        // expected if entries collide with existing spots.
+        // a count, and parseSpotNumbers dedupes entries client-side, so the
+        // created count can differ from what was typed. Collisions with
+        // existing spots never shrink the count: the backend validates every
+        // number before creating any and fails the whole batch with a 400
+        // naming the duplicate spot (surfaced via the catch below).
         if (mounted) Navigator.pop(context, created.length);
       } else {
         await service.createParkingSpot({

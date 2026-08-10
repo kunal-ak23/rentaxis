@@ -26,6 +26,15 @@ public class OrgSettingsController {
         return ResponseEntity.ok(Map.of("penaltyPaymentInstructions", instructions == null ? "" : instructions));
     }
 
+    /**
+     * Update org-level settings. Body: {@code {"penaltyPaymentInstructions": string}};
+     * a blank value clears the instructions.
+     *
+     * <p>API-only for now — no web or mobile admin screen writes this yet, so the
+     * value is set via curl/ops tooling. The read surface is the renter portal's
+     * penalties page ("How to pay" block). If an admin settings UI grows a field
+     * for this, remove this note.
+     */
     @PutMapping
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
     public ResponseEntity<Map<String, Object>> update(

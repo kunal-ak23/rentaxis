@@ -52,6 +52,10 @@ class _PropertiesScreenState extends ConsumerState<PropertiesScreen> {
     final unitsAsync = ref.watch(_allUnitsProvider);
     final m = context.miftah;
     final l = _L(context.isAr);
+    // POST /v1/properties is SUPER_ADMIN/TENANT_ADMIN only — hide the add
+    // action for other roles instead of offering a guaranteed 403.
+    final role = ref.watch(authProvider).role;
+    final canCreate = role == 'SUPER_ADMIN' || role == 'TENANT_ADMIN';
 
     return Scaffold(
       backgroundColor: m.background,
@@ -64,7 +68,9 @@ class _PropertiesScreenState extends ConsumerState<PropertiesScreen> {
             searchQuery: _searchQuery,
             onSearchChanged: (v) =>
                 setState(() => _searchQuery = v.toLowerCase()),
-            onAddTap: () => _showCreatePropertySheet(context, l),
+            onAddTap: canCreate
+                ? () => _showCreatePropertySheet(context, l)
+                : null,
           ),
           Expanded(
             child: propertiesAsync.when(
@@ -179,6 +185,10 @@ class _PropertiesScreenState extends ConsumerState<PropertiesScreen> {
     final addressCtrl = TextEditingController();
     final formKey = GlobalKey<FormState>();
     String selectedEmirate = 'DUBAI';
+    String selectedType = 'RESIDENTIAL';
+
+    // PropertyType enum values the backend accepts.
+    final propertyTypes = ['RESIDENTIAL', 'COMMERCIAL', 'MIXED'];
 
     final emirates = [
       'DUBAI',
@@ -263,6 +273,19 @@ class _PropertiesScreenState extends ConsumerState<PropertiesScreen> {
                   onChanged: (v) =>
                       setSheetState(() => selectedEmirate = v ?? 'DUBAI'),
                 ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  initialValue: selectedType,
+                  decoration: InputDecoration(
+                    labelText: l.propertyType,
+                    prefixIcon: const Icon(Icons.category_outlined),
+                  ),
+                  items: propertyTypes
+                      .map((t) => DropdownMenuItem(value: t, child: Text(t)))
+                      .toList(),
+                  onChanged: (v) =>
+                      setSheetState(() => selectedType = v ?? 'RESIDENTIAL'),
+                ),
                 const SizedBox(height: 24),
                 GoldButton(
                   label: l.ar
@@ -272,8 +295,11 @@ class _PropertiesScreenState extends ConsumerState<PropertiesScreen> {
                     if (!formKey.currentState!.validate()) return;
                     final service = ref.read(_propertyServiceProvider);
                     try {
+                      // CreatePropertyDTO requires nameEn and type; 'name'
+                      // is not a DTO field and used to 400 every submit.
                       await service.createProperty({
-                        'name': nameCtrl.text.trim(),
+                        'nameEn': nameCtrl.text.trim(),
+                        'type': selectedType,
                         'address': addressCtrl.text.trim(),
                         'emirate': selectedEmirate,
                       });
@@ -305,7 +331,7 @@ class _ChromeHeader extends StatefulWidget {
   final int unitCount;
   final String searchQuery;
   final ValueChanged<String> onSearchChanged;
-  final VoidCallback onAddTap;
+  final VoidCallback? onAddTap;
 
   const _ChromeHeader({
     required this.l,
@@ -385,22 +411,23 @@ class _ChromeHeaderState extends State<_ChromeHeader> {
                   ],
                 ),
               ),
-              InkWell(
-                onTap: widget.onAddTap,
-                child: Text(
-                  l.ar ? l.addAction : l.addAction.toUpperCase(),
-                  style: l.ar
-                      ? GoogleFonts.notoNaskhArabic(
-                          fontSize: 13,
-                          color: AppColors.accent,
-                        )
-                      : GoogleFonts.josefinSans(
-                          fontSize: 11,
-                          letterSpacing: 1.4,
-                          color: AppColors.accent,
-                        ),
+              if (widget.onAddTap != null)
+                InkWell(
+                  onTap: widget.onAddTap,
+                  child: Text(
+                    l.ar ? l.addAction : l.addAction.toUpperCase(),
+                    style: l.ar
+                        ? GoogleFonts.notoNaskhArabic(
+                            fontSize: 13,
+                            color: AppColors.accent,
+                          )
+                        : GoogleFonts.josefinSans(
+                            fontSize: 11,
+                            letterSpacing: 1.4,
+                            color: AppColors.accent,
+                          ),
+                  ),
                 ),
-              ),
             ],
           ),
           const SizedBox(height: 12),
@@ -732,6 +759,7 @@ class _L {
   String get address => ar ? 'العنوان' : 'Address';
   String get addressRequired => ar ? 'العنوان مطلوب' : 'Address is required';
   String get emirate => ar ? 'الإمارة' : 'Emirate';
+  String get propertyType => ar ? 'نوع العقار' : 'Property Type';
   String get createProperty => ar ? 'إنشاء العقار' : 'Create Property';
   String get createPropertyFailed =>
       ar ? 'تعذّر إنشاء العقار' : 'Failed to create property';

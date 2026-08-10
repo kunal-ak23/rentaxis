@@ -118,6 +118,10 @@ class _PropertyDetailScreenState extends ConsumerState<PropertyDetailScreen> {
     final totalUnits = _units.length;
     final occupied = _units.where((u) => u['status'] == 'OCCUPIED').length;
     final occupancy = totalUnits > 0 ? occupied / totalUnits : 0.0;
+    // POST /v1/units is SUPER_ADMIN/TENANT_ADMIN only — hide the create-unit
+    // FAB for other roles instead of offering a guaranteed 403.
+    final role = ref.watch(authProvider).role;
+    final canCreate = role == 'SUPER_ADMIN' || role == 'TENANT_ADMIN';
 
     return Scaffold(
       backgroundColor: m.background,
@@ -336,11 +340,13 @@ class _PropertyDetailScreenState extends ConsumerState<PropertyDetailScreen> {
           ),
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: AppColors.primary,
-        onPressed: () => _showCreateUnitSheet(context, l),
-        child: const Icon(Icons.add, color: Colors.white),
-      ),
+      floatingActionButton: canCreate
+          ? FloatingActionButton(
+              backgroundColor: AppColors.primary,
+              onPressed: () => _showCreateUnitSheet(context, l),
+              child: const Icon(Icons.add, color: Colors.white),
+            )
+          : null,
     );
   }
 
@@ -349,17 +355,18 @@ class _PropertyDetailScreenState extends ConsumerState<PropertyDetailScreen> {
     final sizeCtrl = TextEditingController();
     final rentCtrl = TextEditingController();
     final formKey = GlobalKey<FormState>();
-    String unitType = 'APARTMENT';
+    String unitType = 'STUDIO';
 
+    // UnitType enum values the backend accepts — anything else fails
+    // Jackson enum deserialization with a 400.
     final unitTypes = [
-      'APARTMENT',
-      'VILLA',
       'STUDIO',
-      'OFFICE',
-      'SHOP',
-      'WAREHOUSE',
-      'TOWNHOUSE',
+      'BHK1',
+      'BHK2',
+      'BHK3',
       'PENTHOUSE',
+      'RETAIL',
+      'OFFICE',
     ];
 
     showModalBottomSheet(
@@ -416,7 +423,7 @@ class _PropertyDetailScreenState extends ConsumerState<PropertyDetailScreen> {
                         .map((t) => DropdownMenuItem(value: t, child: Text(t)))
                         .toList(),
                     onChanged: (v) =>
-                        setSheetState(() => unitType = v ?? 'APARTMENT'),
+                        setSheetState(() => unitType = v ?? 'STUDIO'),
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
@@ -443,14 +450,20 @@ class _PropertyDetailScreenState extends ConsumerState<PropertyDetailScreen> {
                       if (!formKey.currentState!.validate()) return;
                       final service = ref.read(_unitServiceProvider);
                       try {
+                        // POST /v1/units binds the Unit entity directly:
+                        // the property ref is a nested {id}, and the fields
+                        // are sizeSqft/expectedRent — 'propertyId', 'size'
+                        // and 'annualRent' were silently dropped.
                         await service.createUnit({
                           'unitNumber': unitNumberCtrl.text.trim(),
-                          'propertyId': widget.propertyId,
+                          'property': {'id': widget.propertyId},
                           'type': unitType,
                           if (sizeCtrl.text.isNotEmpty)
-                            'size': double.tryParse(sizeCtrl.text.trim()),
+                            'sizeSqft': double.tryParse(sizeCtrl.text.trim()),
                           if (rentCtrl.text.isNotEmpty)
-                            'annualRent': double.tryParse(rentCtrl.text.trim()),
+                            'expectedRent': double.tryParse(
+                              rentCtrl.text.trim(),
+                            ),
                         });
                         if (ctx.mounted) Navigator.pop(ctx);
                         _loadData();
@@ -474,10 +487,27 @@ class _PropertyDetailScreenState extends ConsumerState<PropertyDetailScreen> {
 
   void _showAddContactSheet(BuildContext context, _L l) {
     final nameCtrl = TextEditingController();
-    final roleCtrl = TextEditingController();
+    final customLabelCtrl = TextEditingController();
     final phoneCtrl = TextEditingController();
     final emailCtrl = TextEditingController();
     final formKey = GlobalKey<FormState>();
+    String category = 'PLUMBER';
+
+    // ContactCategory enum values the backend accepts. PropertyContactDTO
+    // marks category @NotNull and name/phone @NotBlank — the previous form
+    // sent a nonexistent 'role' field and no category, so every submit was
+    // a guaranteed 400.
+    final categories = [
+      'PLUMBER',
+      'ELECTRICIAN',
+      'HANDYMAN',
+      'SECURITY',
+      'HOSPITAL_CLINIC',
+      'PHARMACY',
+      'BUILDING_MAINTENANCE',
+      'CIVIL_DEFENSE',
+      'OTHER',
+    ];
 
     showModalBottomSheet(
       context: context,
@@ -485,100 +515,127 @@ class _PropertyDetailScreenState extends ConsumerState<PropertyDetailScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.fromLTRB(
-          24,
-          24,
-          24,
-          MediaQuery.of(ctx).viewInsets.bottom + 24,
-        ),
-        child: Form(
-          key: formKey,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: AppColors.border,
-                      borderRadius: BorderRadius.circular(2),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => Padding(
+          padding: EdgeInsets.fromLTRB(
+            24,
+            24,
+            24,
+            MediaQuery.of(ctx).viewInsets.bottom + 24,
+          ),
+          child: Form(
+            key: formKey,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: AppColors.border,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  l.newContact,
-                  style: Theme.of(ctx).textTheme.headlineSmall,
-                ),
-                const SizedBox(height: 20),
-                TextFormField(
-                  controller: nameCtrl,
-                  decoration: InputDecoration(
-                    labelText: l.name,
-                    prefixIcon: const Icon(Icons.person_outline),
+                  const SizedBox(height: 20),
+                  Text(
+                    l.newContact,
+                    style: Theme.of(ctx).textTheme.headlineSmall,
                   ),
-                  validator: (v) =>
-                      v == null || v.trim().isEmpty ? l.required : null,
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: roleCtrl,
-                  decoration: InputDecoration(
-                    labelText: l.role,
-                    prefixIcon: const Icon(Icons.work_outline),
+                  const SizedBox(height: 20),
+                  TextFormField(
+                    controller: nameCtrl,
+                    decoration: InputDecoration(
+                      labelText: l.name,
+                      prefixIcon: const Icon(Icons.person_outline),
+                    ),
+                    validator: (v) =>
+                        v == null || v.trim().isEmpty ? l.required : null,
                   ),
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: phoneCtrl,
-                  keyboardType: TextInputType.phone,
-                  decoration: InputDecoration(
-                    labelText: l.phone,
-                    prefixIcon: const Icon(Icons.phone_outlined),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    initialValue: category,
+                    decoration: InputDecoration(
+                      labelText: l.category,
+                      prefixIcon: const Icon(Icons.work_outline),
+                    ),
+                    items: categories
+                        .map(
+                          (c) => DropdownMenuItem(
+                            value: c,
+                            child: Text(l.contactCategoryLabel(c)),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (v) =>
+                        setSheetState(() => category = v ?? 'PLUMBER'),
                   ),
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: emailCtrl,
-                  keyboardType: TextInputType.emailAddress,
-                  decoration: InputDecoration(
-                    labelText: l.email,
-                    prefixIcon: const Icon(Icons.email_outlined),
+                  if (category == 'OTHER') ...[
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: customLabelCtrl,
+                      decoration: InputDecoration(
+                        labelText: l.customLabel,
+                        prefixIcon: const Icon(Icons.label_outline),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: phoneCtrl,
+                    keyboardType: TextInputType.phone,
+                    decoration: InputDecoration(
+                      labelText: l.phone,
+                      prefixIcon: const Icon(Icons.phone_outlined),
+                    ),
+                    // phone is @NotBlank server-side — block the submit here
+                    // instead of round-tripping into a 400.
+                    validator: (v) =>
+                        v == null || v.trim().isEmpty ? l.required : null,
                   ),
-                ),
-                const SizedBox(height: 24),
-                GoldButton(
-                  label: l.ar ? l.addContact : l.addContact.toUpperCase(),
-                  onPressed: () async {
-                    if (!formKey.currentState!.validate()) return;
-                    try {
-                      await ref
-                          .read(_contactServiceProvider)
-                          .createContact(widget.propertyId, {
-                            'name': nameCtrl.text.trim(),
-                            if (roleCtrl.text.isNotEmpty)
-                              'role': roleCtrl.text.trim(),
-                            if (phoneCtrl.text.isNotEmpty)
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: emailCtrl,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: InputDecoration(
+                      labelText: l.email,
+                      prefixIcon: const Icon(Icons.email_outlined),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  GoldButton(
+                    label: l.ar ? l.addContact : l.addContact.toUpperCase(),
+                    onPressed: () async {
+                      if (!formKey.currentState!.validate()) return;
+                      try {
+                        await ref
+                            .read(_contactServiceProvider)
+                            .createContact(widget.propertyId, {
+                              'category': category,
+                              if (category == 'OTHER' &&
+                                  customLabelCtrl.text.trim().isNotEmpty)
+                                'customLabel': customLabelCtrl.text.trim(),
+                              'name': nameCtrl.text.trim(),
                               'phone': phoneCtrl.text.trim(),
-                            if (emailCtrl.text.isNotEmpty)
-                              'email': emailCtrl.text.trim(),
-                          });
-                      if (ctx.mounted) Navigator.pop(ctx);
-                      _loadData();
-                    } catch (e) {
-                      if (ctx.mounted) {
-                        ScaffoldMessenger.of(ctx).showSnackBar(
-                          SnackBar(content: Text(l.addContactFailed)),
-                        );
+                              if (emailCtrl.text.isNotEmpty)
+                                'email': emailCtrl.text.trim(),
+                            });
+                        if (ctx.mounted) Navigator.pop(ctx);
+                        _loadData();
+                      } catch (e) {
+                        if (ctx.mounted) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            SnackBar(content: Text(l.addContactFailed)),
+                          );
+                        }
                       }
-                    }
-                  },
-                ),
-              ],
+                    },
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -929,12 +986,15 @@ class _RentRollCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    double monthlyOf(bool Function(dynamic) test) => units
-        .where(test)
-        .fold<double>(
-          0,
-          (s, u) => s + (((u['annualRent'] ?? 0) as num).toDouble() / 12),
-        );
+    // Units carry `expectedRent` (asking) and `actualRent` (leased); there is
+    // no `annualRent` key, which left this card permanently at AED 0. Prefer
+    // the leased figure when present, else the asking rent.
+    double monthlyOf(bool Function(dynamic) test) =>
+        units.where(test).fold<double>(0, (s, u) {
+          final actual = ((u['actualRent'] ?? 0) as num).toDouble();
+          final expected = ((u['expectedRent'] ?? 0) as num).toDouble();
+          return s + (actual > 0 ? actual : expected) / 12;
+        });
 
     final total = monthlyOf((_) => true);
     final fromOccupied = monthlyOf((u) => u['status'] == 'OCCUPIED');
@@ -1050,9 +1110,16 @@ class _ContactRow extends StatelessWidget {
                           color: m.textPrimary,
                         ),
                 ),
-                if (contact['role'] != null)
+                // PropertyContact serializes category/customLabel — there is
+                // no 'role' field in the response.
+                if (contact['category'] != null)
                   Text(
-                    contact['role'],
+                    contact['category'] == 'OTHER' &&
+                            (contact['customLabel'] ?? '')
+                                .toString()
+                                .isNotEmpty
+                        ? contact['customLabel']
+                        : l.contactCategoryLabel(contact['category']),
                     style: l.ar
                         ? GoogleFonts.notoNaskhArabic(
                             fontSize: 12,
@@ -1156,10 +1223,25 @@ class _L {
   // Add-contact sheet
   String get newContact => ar ? 'جهة اتصال جديدة' : 'New Contact';
   String get name => ar ? 'الاسم' : 'Name';
-  String get role => ar ? 'الدور' : 'Role';
+  String get category => ar ? 'الفئة' : 'Category';
+  String get customLabel => ar ? 'تسمية مخصصة' : 'Custom Label';
   String get phone => ar ? 'الهاتف' : 'Phone';
   String get email => ar ? 'البريد الإلكتروني' : 'Email';
   String get addContact => ar ? 'إضافة جهة الاتصال' : 'Add Contact';
   String get addContactFailed =>
       ar ? 'تعذّر إضافة جهة الاتصال' : 'Failed to add contact';
+
+  /// Label for a backend ContactCategory enum value.
+  String contactCategoryLabel(String value) => switch (value) {
+    'PLUMBER' => ar ? 'سبّاك' : 'Plumber',
+    'ELECTRICIAN' => ar ? 'كهربائي' : 'Electrician',
+    'HANDYMAN' => ar ? 'عامل صيانة' : 'Handyman',
+    'SECURITY' => ar ? 'الأمن' : 'Security',
+    'HOSPITAL_CLINIC' => ar ? 'مستشفى / عيادة' : 'Hospital / Clinic',
+    'PHARMACY' => ar ? 'صيدلية' : 'Pharmacy',
+    'BUILDING_MAINTENANCE' => ar ? 'صيانة المبنى' : 'Building Maintenance',
+    'CIVIL_DEFENSE' => ar ? 'الدفاع المدني' : 'Civil Defense',
+    'OTHER' => ar ? 'أخرى' : 'Other',
+    _ => value,
+  };
 }

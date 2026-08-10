@@ -16,26 +16,13 @@ import type { UnitListingSummaryDTO, ListingStatus } from "@/types/listing";
 
 const ITEMS_PER_PAGE = 20;
 
-// ─── Extended with bathrooms (API may return it) ──────────────────────────────
-interface WishlistItem extends UnitListingSummaryDTO {
-  bathrooms?: number | null;
-  availableFrom?: string | null;
-  interestStatus?: 'ACTIVE' | 'NOTIFIED' | 'WITHDRAWN';
-}
-
 // ─── Status chip ─────────────────────────────────────────────────────────────
-function StatusBadge({ status, interestStatus, t }: {
+// The wishlist endpoint returns plain UnitListingSummaryDTOs — it carries no
+// per-renter interest status, so the badge is derived from listing status only.
+function StatusBadge({ status, t }: {
   status: ListingStatus;
-  interestStatus?: string;
   t: ReturnType<typeof useTranslations>;
 }) {
-  if (interestStatus === 'NOTIFIED') {
-    return (
-      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-purple-100 text-purple-700 border border-purple-200">
-        {t('statusNotified')}
-      </span>
-    );
-  }
   if (status === 'UPCOMING') {
     return (
       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-700 border border-blue-200">
@@ -60,7 +47,7 @@ function WishlistCard({
   removing,
   t,
 }: {
-  item: WishlistItem;
+  item: UnitListingSummaryDTO;
   onRemove: (id: string) => void;
   removing: boolean;
   t: ReturnType<typeof useTranslations>;
@@ -141,7 +128,7 @@ function WishlistCard({
           <div className="flex-1 min-w-0">
             <div className="flex items-start justify-between gap-2 mb-1">
               <h3 className="text-sm font-semibold text-neutral-900 line-clamp-1">{item.title}</h3>
-              <StatusBadge status={item.status} interestStatus={item.interestStatus} t={t} />
+              <StatusBadge status={item.status} t={t} />
             </div>
             {item.propertyName && (
               <p className="text-xs text-neutral-400 mb-2 truncate">{item.propertyName}</p>
@@ -188,7 +175,7 @@ export default function WishlistPage() {
   const { data: session, status: sessionStatus } = useSession();
   const router = useRouter();
 
-  const [items, setItems] = useState<WishlistItem[]>([]);
+  const [items, setItems] = useState<UnitListingSummaryDTO[]>([]);
   const [totalElements, setTotalElements] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -209,7 +196,7 @@ export default function WishlistPage() {
     setError(null);
     try {
       const data = await fetchWishlist(token);
-      setItems(data as WishlistItem[]);
+      setItems(data);
       setTotalElements(data.length);
     } catch {
       setError(t('errorLoad'));

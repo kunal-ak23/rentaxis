@@ -1,5 +1,7 @@
 package com.datagami.rentaxis.core.service;
 
+import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
+import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.domain.entity.Account;
 import com.datagami.rentaxis.domain.entity.enums.AccountSubType;
 import com.datagami.rentaxis.domain.entity.enums.AccountType;
@@ -34,13 +36,13 @@ public class AccountService {
     @Transactional(readOnly = true)
     public Account getAccountByCode(String code) {
         return repository.findByCode(code)
-                .orElseThrow(() -> new RuntimeException("Account not found with code: " + code));
+                .orElseThrow(() -> new NotFoundException("Account not found with code: " + code));
     }
 
     @Transactional(readOnly = true)
     public Account getAccountById(UUID id) {
         return repository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Account not found"));
+                .orElseThrow(() -> new NotFoundException("Account not found"));
     }
 
     @Transactional
@@ -186,9 +188,9 @@ public class AccountService {
     @Transactional
     public Account updateAccount(UUID id, Account updates) {
         Account existing = repository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Account not found"));
+                .orElseThrow(() -> new NotFoundException("Account not found"));
         if (existing.isSystem()) {
-            throw new RuntimeException("System accounts cannot be modified");
+            throw new BusinessRuleViolationException("System accounts cannot be modified");
         }
         existing.setName(updates.getName());
         existing.setNameEn(updates.getNameEn());
@@ -203,12 +205,12 @@ public class AccountService {
     @Transactional
     public void deleteAccount(UUID id) {
         Account account = repository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Account not found"));
+                .orElseThrow(() -> new NotFoundException("Account not found"));
         if (account.isSystem()) {
-            throw new RuntimeException("System accounts cannot be deleted");
+            throw new BusinessRuleViolationException("System accounts cannot be deleted");
         }
         if (repository.existsByParentCode(account.getCode())) {
-            throw new RuntimeException("Cannot delete account with child accounts");
+            throw new BusinessRuleViolationException("Cannot delete account with child accounts");
         }
         repository.delete(account);
     }

@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { useSession } from "next-auth/react";
 import { hasPermission, canConfigureRentSettings, type UserRole } from "@/lib/rbac";
 import { formatCurrency, formatCurrencyCompact } from "@/lib/format";
+import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
 
 type PropertyContact = {
     id: string;
@@ -85,6 +86,7 @@ export default function PropertyDetailPage() {
     const [editingContact, setEditingContact] = useState<PropertyContact | null>(null);
     const [contactFormData, setContactFormData] = useState(EMPTY_CONTACT_FORM);
     const [contactSubmitting, setContactSubmitting] = useState(false);
+    const [contactFormError, setContactFormError] = useState<string | null>(null);
 
     useEffect(() => {
         fetchProperty();
@@ -126,6 +128,7 @@ export default function PropertyDetailPage() {
     const openAddContact = () => {
         setEditingContact(null);
         setContactFormData(EMPTY_CONTACT_FORM);
+        setContactFormError(null);
         setShowContactForm(true);
     };
 
@@ -140,12 +143,14 @@ export default function PropertyDetailPage() {
             address: contact.address || '',
             notes: contact.notes || '',
         });
+        setContactFormError(null);
         setShowContactForm(true);
     };
 
     const handleContactSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setContactSubmitting(true);
+        setContactFormError(null);
         try {
             const payload = {
                 ...contactFormData,
@@ -160,12 +165,13 @@ export default function PropertyDetailPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
             });
-            if (res.ok) {
-                setShowContactForm(false);
-                setEditingContact(null);
-                setContactFormData(EMPTY_CONTACT_FORM);
-                fetchContacts();
-            }
+            await throwIfNotOk(res);
+            setShowContactForm(false);
+            setEditingContact(null);
+            setContactFormData(EMPTY_CONTACT_FORM);
+            fetchContacts();
+        } catch (err) {
+            setContactFormError(err instanceof ApiError ? err.message : 'Failed to save contact. Please try again.');
         } finally {
             setContactSubmitting(false);
         }
@@ -453,6 +459,11 @@ export default function PropertyDetailPage() {
                                         onChange={e => setContactFormData({ ...contactFormData, notes: e.target.value })}
                                     />
                                 </div>
+                                {contactFormError && (
+                                    <div className="bg-error/10 border border-error/30 rounded-lg px-4 py-3 text-xs text-error">
+                                        {contactFormError}
+                                    </div>
+                                )}
                                 <div className="flex justify-end gap-2 pt-2">
                                     <button
                                         type="button"
@@ -503,22 +514,25 @@ export default function PropertyDetailPage() {
 function BuildingsTab({ buildings, propertyId, canCreate, onUpdate }: any) {
     const [showForm, setShowForm] = useState(false);
     const [submitting, setSubmitting] = useState(false);
+    const [formError, setFormError] = useState<string | null>(null);
     const [formData, setFormData] = useState({ nameEn: "", nameAr: "", floors: 1 });
 
     const handleSubmit = async (e: any) => {
         e.preventDefault();
         setSubmitting(true);
+        setFormError(null);
         try {
             const res = await fetch("/api/proxy/v1/buildings", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ ...formData, property: { id: propertyId } })
             });
-            if (res.ok) {
-                setShowForm(false);
-                setFormData({ nameEn: "", nameAr: "", floors: 1 });
-                onUpdate();
-            }
+            await throwIfNotOk(res);
+            setShowForm(false);
+            setFormData({ nameEn: "", nameAr: "", floors: 1 });
+            onUpdate();
+        } catch (err) {
+            setFormError(err instanceof ApiError ? err.message : "Failed to save building. Please try again.");
         } finally {
             setSubmitting(false);
         }
@@ -552,6 +566,11 @@ function BuildingsTab({ buildings, propertyId, canCreate, onUpdate }: any) {
                         <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1">Floors</label>
                         <input type="number" required className="w-full bg-input border border-border rounded-lg p-2 text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200" value={formData.floors} onChange={e => setFormData({ ...formData, floors: Number(e.target.value) })} />
                     </div>
+                    {formError && (
+                        <div className="col-span-3 bg-error/10 border border-error/30 rounded-lg px-4 py-3 text-xs text-error">
+                            {formError}
+                        </div>
+                    )}
                     <div className="col-span-3 flex justify-end gap-2 mt-2">
                         <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 text-xs font-bold text-muted cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg transition-all duration-200">Cancel</button>
                         <button type="submit" disabled={submitting} className="px-4 py-2 bg-primary text-white rounded-lg text-xs font-bold cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed">{submitting ? "Saving..." : "Save"}</button>
@@ -586,6 +605,8 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
     const [showForm, setShowForm] = useState(false);
     const [showBulkUpload, setShowBulkUpload] = useState(false);
     const [submitting, setSubmitting] = useState(false);
+    const [bulkError, setBulkError] = useState<string | null>(null);
+    const [addUnitError, setAddUnitError] = useState<string | null>(null);
     const [file, setFile] = useState<File | null>(null);
     const [uploadBuildingId, setUploadBuildingId] = useState<string>("");
     const [unitForm, setUnitForm] = useState({
@@ -597,6 +618,7 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
     const handleAddUnit = async (e: any) => {
         e.preventDefault();
         setSubmitting(true);
+        setAddUnitError(null);
         try {
             const body: any = {
                 unitNumber: unitForm.unitNumber,
@@ -614,11 +636,12 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(body),
             });
-            if (res.ok) {
-                setShowForm(false);
-                setUnitForm({ unitNumber: "", type: "STUDIO", sizeSqft: "", expectedRent: "", buildingId: "" });
-                onUpdate();
-            }
+            await throwIfNotOk(res);
+            setShowForm(false);
+            setUnitForm({ unitNumber: "", type: "STUDIO", sizeSqft: "", expectedRent: "", buildingId: "" });
+            onUpdate();
+        } catch (err) {
+            setAddUnitError(err instanceof ApiError ? err.message : "Failed to save unit. Please try again.");
         } finally {
             setSubmitting(false);
         }
@@ -628,6 +651,7 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
         e.preventDefault();
         if (!file) return;
         setSubmitting(true);
+        setBulkError(null);
         try {
             const formData = new FormData();
             formData.append("file", file);
@@ -643,7 +667,18 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
                 setShowBulkUpload(false);
                 setFile(null);
                 onUpdate();
+            } else {
+                // Backend returns { message, errors: ["Row N: ..."] } for invalid CSVs.
+                const data = await res.json().catch(() => null);
+                const rows = Array.isArray(data?.errors) ? data.errors : [];
+                setBulkError(
+                    rows.length > 0
+                        ? rows.join("\n")
+                        : data?.message ?? `Upload failed (status ${res.status})`,
+                );
             }
+        } catch {
+            setBulkError("Upload failed. Please try again.");
         } finally {
             setSubmitting(false);
         }
@@ -656,13 +691,13 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
                 {canCreate && (
                     <div className="flex items-center gap-2">
                         <button
-                            onClick={() => { setShowForm(true); setShowBulkUpload(false); }}
+                            onClick={() => { setShowForm(true); setShowBulkUpload(false); setAddUnitError(null); }}
                             className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-full text-xs font-bold hover:opacity-90 transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                         >
                             <Plus size={14} /> Add Unit
                         </button>
                         <button
-                            onClick={() => { setShowBulkUpload(!showBulkUpload); setShowForm(false); }}
+                            onClick={() => { setShowBulkUpload(!showBulkUpload); setShowForm(false); setBulkError(null); }}
                             className="flex items-center gap-2 bg-background text-foreground px-4 py-2 rounded-full text-xs font-bold hover:bg-input transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none"
                         >
                             <Upload size={14} /> Bulk Upload CSV
@@ -698,6 +733,11 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
                             {buildings.map((b: any) => <option key={b.id} value={b.id}>{b.nameEn}</option>)}
                         </select>
                     </div>
+                    {addUnitError && (
+                        <div className="col-span-2 md:col-span-5 bg-error/10 border border-error/30 rounded-lg px-4 py-3 text-xs text-error">
+                            {addUnitError}
+                        </div>
+                    )}
                     <div className="col-span-2 md:col-span-5 flex justify-end gap-2 mt-2">
                         <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 text-xs font-bold text-muted cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg transition-all duration-200">Cancel</button>
                         <button type="submit" disabled={submitting} className="px-4 py-2 bg-primary text-white rounded-lg text-xs font-bold cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed">{submitting ? "Saving..." : "Save Unit"}</button>
@@ -721,6 +761,12 @@ function UnitsTab({ units, buildings, propertyId, canCreate, onUpdate }: any) {
                     </div>
                     <button type="submit" disabled={submitting} className="px-6 py-2 bg-primary text-white rounded-lg text-xs font-bold mb-[2px] cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed">{submitting ? "Uploading..." : "Upload"}</button>
                 </form>
+            )}
+
+            {showBulkUpload && bulkError && (
+                <div className="bg-error/10 border border-error/30 rounded-lg px-4 py-3 mb-6 text-xs text-error whitespace-pre-line">
+                    {bulkError}
+                </div>
             )}
 
             <div className="bg-surface border border-border rounded-xl overflow-hidden">

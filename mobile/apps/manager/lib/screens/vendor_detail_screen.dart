@@ -76,7 +76,10 @@ class _VendorDetailScreenState extends ConsumerState<VendorDetailScreen> {
     }
 
     final vendor = _vendor!;
-    final name = (vendor['name'] ?? l.unknown).toString();
+    final nameAr = (vendor['nameAr'] ?? '').toString();
+    final name = l.ar && nameAr.isNotEmpty
+        ? nameAr
+        : (vendor['nameEn'] ?? l.unknown).toString();
     final email = (vendor['email'] ?? '').toString();
     final phone = (vendor['phone'] ?? '').toString();
     final address = (vendor['address'] ?? '').toString();

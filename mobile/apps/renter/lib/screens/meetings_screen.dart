@@ -16,9 +16,20 @@ class MeetingsScreen extends ConsumerStatefulWidget {
 }
 
 class _MeetingsScreenState extends ConsumerState<MeetingsScreen> {
+  static const _pageSize = 25;
+
   List<dynamic> _meetings = [];
   bool _isLoading = true;
+  bool _loadingMore = false;
   String? _error;
+
+  // Server-side pagination state: meetings accumulate page by page (sorted
+  // slotStart ASC by the backend) so renters with more meetings than one
+  // page holds aren't silently truncated. The epoch guards against a stale
+  // in-flight fetch (e.g. mid-scroll refresh) landing on fresh state.
+  int _page = 0;
+  int _totalPages = 1;
+  int _fetchEpoch = 0;
 
   @override
   void initState() {
@@ -27,25 +38,50 @@ class _MeetingsScreenState extends ConsumerState<MeetingsScreen> {
   }
 
   Future<void> _load() async {
+    final epoch = ++_fetchEpoch;
     setState(() {
       _isLoading = true;
       _error = null;
+      _meetings = [];
+      _page = 0;
+      _totalPages = 1;
     });
+    await _fetchPage(0, epoch);
+  }
+
+  Future<void> _fetchPage(int page, int epoch) async {
     try {
       final svc = ref.read(_meetingServiceProvider);
-      final data = await svc.listMyMeetings(perspective: 'requester');
-      if (!mounted) return;
+      final result = await svc.listMyMeetingsPage(
+        perspective: 'requester',
+        page: page,
+        size: _pageSize,
+      );
+      if (!mounted || epoch != _fetchEpoch) return;
       setState(() {
-        _meetings = data;
+        _meetings = [..._meetings, ...(result['content'] as List? ?? const [])];
+        _page = page;
+        _totalPages = (result['totalPages'] as num?)?.toInt() ?? 1;
         _isLoading = false;
+        _loadingMore = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || epoch != _fetchEpoch) return;
       setState(() {
-        _error = _L(context.isAr).failedToLoad;
         _isLoading = false;
+        _loadingMore = false;
+        // Failing to extend the list shouldn't blank rows already on screen.
+        _error = _meetings.isEmpty ? _L(context.isAr).failedToLoad : null;
       });
     }
+  }
+
+  bool get _hasMore => _page + 1 < _totalPages;
+
+  Future<void> _loadMore() async {
+    if (_isLoading || _loadingMore || !_hasMore) return;
+    setState(() => _loadingMore = true);
+    await _fetchPage(_page + 1, _fetchEpoch);
   }
 
   Color _statusColor(String status) {
@@ -94,124 +130,141 @@ class _MeetingsScreenState extends ConsumerState<MeetingsScreen> {
               onAction: () =>
                   context.push('/meetings/create').then((_) => _load()),
             )
-          : RefreshIndicator(
-              onRefresh: _load,
-              color: accentColor,
-              child: ListView.separated(
-                padding: EdgeInsets.fromLTRB(
-                  16,
-                  12,
-                  16,
-                  AppInsets.bottomNav(context),
-                ),
-                itemCount: _meetings.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 10),
-                itemBuilder: (_, i) {
-                  final meeting = _meetings[i] as Map<String, dynamic>;
-                  final status = meeting['status'] ?? 'REQUESTED';
-                  final purpose = meeting['purpose'] ?? '';
-                  return AnimatedListItem(
-                    index: i,
-                    child: InkWell(
-                      onTap: () => context.push('/meetings/${meeting['id']}'),
-                      borderRadius: BorderRadius.circular(16),
-                      child: Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: m.surface,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: m.border),
-                          boxShadow: m.isDark ? null : AppShadows.soft,
+          : NotificationListener<ScrollNotification>(
+              onNotification: (scrollInfo) {
+                if (scrollInfo.metrics.pixels >=
+                    scrollInfo.metrics.maxScrollExtent - 200) {
+                  _loadMore();
+                }
+                return false;
+              },
+              child: RefreshIndicator(
+                onRefresh: _load,
+                color: accentColor,
+                child: ListView.separated(
+                  padding: EdgeInsets.fromLTRB(
+                    16,
+                    12,
+                    16,
+                    AppInsets.bottomNav(context),
+                  ),
+                  itemCount: _meetings.length + (_loadingMore ? 1 : 0),
+                  separatorBuilder: (_, _) => const SizedBox(height: 10),
+                  itemBuilder: (_, i) {
+                    if (i >= _meetings.length) {
+                      return Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: CircularProgressIndicator(color: accentColor),
                         ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Container(
-                              width: 44,
-                              height: 44,
-                              decoration: BoxDecoration(
-                                color: accentColor.withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(12),
+                      );
+                    }
+                    final meeting = _meetings[i] as Map<String, dynamic>;
+                    final status = meeting['status'] ?? 'REQUESTED';
+                    final purpose = meeting['purpose'] ?? '';
+                    return AnimatedListItem(
+                      index: i,
+                      child: InkWell(
+                        onTap: () => context.push('/meetings/${meeting['id']}'),
+                        borderRadius: BorderRadius.circular(16),
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: m.surface,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: m.border),
+                            boxShadow: m.isDark ? null : AppShadows.soft,
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Container(
+                                width: 44,
+                                height: 44,
+                                decoration: BoxDecoration(
+                                  color: accentColor.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Icon(
+                                  Icons.event_outlined,
+                                  color: accentColor,
+                                  size: 22,
+                                ),
                               ),
-                              child: Icon(
-                                Icons.event_outlined,
-                                color: accentColor,
-                                size: 22,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          meeting['title'] ??
-                                              l.purposeLabel(purpose),
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w700,
-                                            fontSize: 14,
-                                          ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 7,
-                                          vertical: 2,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: _statusColor(
-                                            status,
-                                          ).withValues(alpha: 0.12),
-                                          borderRadius: BorderRadius.circular(
-                                            6,
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            meeting['title'] ??
+                                                l.purposeLabel(purpose),
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 14,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
                                           ),
                                         ),
-                                        child: Text(
-                                          l.statusLabel(status),
-                                          style: TextStyle(
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.w700,
-                                            color: _statusColor(status),
+                                        const SizedBox(width: 8),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 7,
+                                            vertical: 2,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: _statusColor(
+                                              status,
+                                            ).withValues(alpha: 0.12),
+                                            borderRadius: BorderRadius.circular(
+                                              6,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            l.statusLabel(status),
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w700,
+                                              color: _statusColor(status),
+                                            ),
                                           ),
                                         ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    l.formatSlot(
-                                      meeting['slotStart']?.toString(),
+                                      ],
                                     ),
-                                    style: TextStyle(
-                                      color: m.textMuted,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                  if (meeting['hostName'] != null) ...[
-                                    const SizedBox(height: 2),
+                                    const SizedBox(height: 4),
                                     Text(
-                                      l.withHost(meeting['hostName']),
+                                      l.formatSlot(
+                                        meeting['slotStart']?.toString(),
+                                      ),
                                       style: TextStyle(
                                         color: m.textMuted,
                                         fontSize: 12,
                                       ),
                                     ),
+                                    if (meeting['hostName'] != null) ...[
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        l.withHost(meeting['hostName']),
+                                        style: TextStyle(
+                                          color: m.textMuted,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ],
                                   ],
-                                ],
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                  );
-                },
+                    );
+                  },
+                ),
               ),
             ),
     );

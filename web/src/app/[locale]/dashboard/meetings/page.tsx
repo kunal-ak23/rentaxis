@@ -65,6 +65,7 @@ export default function MeetingsPage() {
 
     // Data
     const [meetings, setMeetings] = useState<Meeting[]>([]);
+    const [totalItems, setTotalItems] = useState(0);
     const [loading, setLoading] = useState(true);
 
     // View toggle
@@ -99,8 +100,10 @@ export default function MeetingsPage() {
                 // Handle both paginated and plain array responses
                 if (Array.isArray(data)) {
                     setMeetings(data);
+                    setTotalItems(data.length);
                 } else if (data.content) {
                     setMeetings(data.content);
+                    setTotalItems(data.totalElements ?? data.content.length);
                 }
             }
         } catch { /* ignore */ }
@@ -120,12 +123,6 @@ export default function MeetingsPage() {
         if (purposeFilter !== "ALL" && m.purpose !== purposeFilter) return false;
         return true;
     });
-
-    const totalItems = filtered.length;
-    const paginated = filtered.slice(
-        (currentPage - 1) * itemsPerPage,
-        currentPage * itemsPerPage,
-    );
 
     // ── FullCalendar events ─────────────────────────────────────────────
 
@@ -277,7 +274,7 @@ export default function MeetingsPage() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {paginated.map((meeting) => (
+                                {filtered.map((meeting) => (
                                     <tr key={meeting.id} className="border-b border-border hover:bg-input/30 transition-colors">
                                         <td className="px-4 py-2.5 text-xs tabular-nums">
                                             <div className="font-medium text-foreground">
@@ -326,7 +323,7 @@ export default function MeetingsPage() {
                                 ))}
                             </tbody>
                         </table>
-                        {paginated.length === 0 && (
+                        {filtered.length === 0 && (
                             <div className="text-center py-12 text-muted">
                                 <CalendarDays size={28} className="mx-auto mb-3 opacity-40" />
                                 <p className="text-xs">{t("noMeetings")}</p>

@@ -14,6 +14,13 @@ class MoreScreen extends ConsumerWidget {
     final authState = ref.watch(authProvider);
     final m = context.miftah;
     final l = _L(context.isAr);
+    // Staff, vendor and finance endpoints are TENANT_ADMIN/SUPER_ADMIN-only
+    // (class-level @PreAuthorize on StaffController, VendorController,
+    // AccountController & co). Hide those entries for PROPERTY_MANAGER users
+    // instead of dead-ending them on a 403 — mirrors the web sidebar's
+    // canAccessFinance gating in rbac.ts.
+    final isAdmin =
+        authState.role == 'TENANT_ADMIN' || authState.role == 'SUPER_ADMIN';
 
     return Scaffold(
       backgroundColor: m.background,
@@ -39,11 +46,12 @@ class MoreScreen extends ConsumerWidget {
                 _sectionLabel(l.people, l.ar, m),
                 _MenuCard(
                   items: [
-                    _MenuRow(
-                      icon: Icons.badge_outlined,
-                      label: l.staff,
-                      onTap: () => context.push('/staff'),
-                    ),
+                    if (isAdmin)
+                      _MenuRow(
+                        icon: Icons.badge_outlined,
+                        label: l.staff,
+                        onTap: () => context.push('/staff'),
+                      ),
                     _MenuRow(
                       icon: Icons.people_outline,
                       label: l.renters,
@@ -91,31 +99,33 @@ class MoreScreen extends ConsumerWidget {
                     ),
                   ],
                 ),
-                _sectionLabel(l.finance, l.ar, m),
-                _MenuCard(
-                  items: [
-                    _MenuRow(
-                      icon: Icons.account_balance_outlined,
-                      label: l.accountsTransactions,
-                      onTap: () => context.push('/finance'),
-                    ),
-                    _MenuRow(
-                      icon: Icons.account_balance_wallet_outlined,
-                      label: l.bankAccounts,
-                      onTap: () => context.push('/bank-accounts'),
-                    ),
-                    _MenuRow(
-                      icon: Icons.store_outlined,
-                      label: l.vendors,
-                      onTap: () => context.push('/vendors'),
-                    ),
-                    _MenuRow(
-                      icon: Icons.assessment_outlined,
-                      label: l.reports,
-                      onTap: () => context.push('/finance-reports'),
-                    ),
-                  ],
-                ),
+                if (isAdmin) ...[
+                  _sectionLabel(l.finance, l.ar, m),
+                  _MenuCard(
+                    items: [
+                      _MenuRow(
+                        icon: Icons.account_balance_outlined,
+                        label: l.accountsTransactions,
+                        onTap: () => context.push('/finance'),
+                      ),
+                      _MenuRow(
+                        icon: Icons.account_balance_wallet_outlined,
+                        label: l.bankAccounts,
+                        onTap: () => context.push('/bank-accounts'),
+                      ),
+                      _MenuRow(
+                        icon: Icons.store_outlined,
+                        label: l.vendors,
+                        onTap: () => context.push('/vendors'),
+                      ),
+                      _MenuRow(
+                        icon: Icons.assessment_outlined,
+                        label: l.reports,
+                        onTap: () => context.push('/finance-reports'),
+                      ),
+                    ],
+                  ),
+                ],
                 _sectionLabel(l.operations, l.ar, m),
                 _MenuCard(
                   items: [

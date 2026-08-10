@@ -10,6 +10,7 @@ import { useSession } from "next-auth/react";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { formatCurrency, formatCurrencyCompact } from "@/lib/format";
 import { Pagination } from "@/components/ui/Pagination";
+import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
 
 type Property = {
     id: string;
@@ -65,6 +66,8 @@ export default function PropertiesPage() {
     const [error, setError] = useState<string | null>(null);
     const [showProjectForm, setShowProjectForm] = useState(false);
     const [showPropertyForm, setShowPropertyForm] = useState(false);
+    const [projectFormError, setProjectFormError] = useState<string | null>(null);
+    const [propertyFormError, setPropertyFormError] = useState<string | null>(null);
     const { data: session } = useSession();
     const userRole = session?.user?.role as UserRole | undefined;
     const canCreate = hasPermission(userRole, 'canCreateProperties');
@@ -118,6 +121,7 @@ export default function PropertiesPage() {
     const [portfolioJobId, setPortfolioJobId] = useState<string | null>(null);
     const [portfolioResult, setPortfolioResult] = useState<any>(null);
     const [portfolioUploading, setPortfolioUploading] = useState(false);
+    const [portfolioTemplateError, setPortfolioTemplateError] = useState<string | null>(null);
     const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
     useEffect(() => {
@@ -153,32 +157,34 @@ export default function PropertiesPage() {
 
     const handleProjectSubmit = async (ev: React.FormEvent) => {
         ev.preventDefault();
+        setProjectFormError(null);
         try {
             const res = await fetch("/api/proxy/v1/properties", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(projectFormData)
             });
-            if (res.ok) {
-                setShowProjectForm(false);
-                fetchStats();
-                setProjectFormData({
-                    nameEn: "",
-                    nameAr: "",
-                    emirate: "DUBAI",
-                    address: "",
-                    makaniNumber: "",
-                    type: "RESIDENTIAL",
-                    fixedExpenses: 0
-                });
-            }
+            await throwIfNotOk(res);
+            setShowProjectForm(false);
+            fetchStats();
+            setProjectFormData({
+                nameEn: "",
+                nameAr: "",
+                emirate: "DUBAI",
+                address: "",
+                makaniNumber: "",
+                type: "RESIDENTIAL",
+                fixedExpenses: 0
+            });
         } catch (err) {
             console.error(err);
+            setProjectFormError(err instanceof ApiError ? err.message : "Failed to create project. Please try again.");
         }
     };
 
     const handlePropertySubmit = async (ev: React.FormEvent) => {
         ev.preventDefault();
+        setPropertyFormError(null);
         try {
             const res = await fetch("/api/proxy/v1/units", {
                 method: "POST",
@@ -194,22 +200,22 @@ export default function PropertiesPage() {
                     currentTenantName: propertyFormData.currentTenantName
                 })
             });
-            if (res.ok) {
-                setShowPropertyForm(false);
-                fetchStats();
-                setPropertyFormData({
-                    propertyId: "",
-                    unitNumber: "",
-                    type: "BHK1",
-                    sizeSqft: 0,
-                    expectedRent: 0,
-                    actualRent: 0,
-                    status: "VACANT",
-                    currentTenantName: ""
-                });
-            }
+            await throwIfNotOk(res);
+            setShowPropertyForm(false);
+            fetchStats();
+            setPropertyFormData({
+                propertyId: "",
+                unitNumber: "",
+                type: "BHK1",
+                sizeSqft: 0,
+                expectedRent: 0,
+                actualRent: 0,
+                status: "VACANT",
+                currentTenantName: ""
+            });
         } catch (err) {
             console.error(err);
+            setPropertyFormError(err instanceof ApiError ? err.message : "Failed to create property. Please try again.");
         }
     };
 
@@ -255,10 +261,30 @@ export default function PropertiesPage() {
     }, []);
 
     const pollPortfolioStatus = (jobId: string) => {
+        const maxPolls = 150; // ~5 minutes at 2s per poll
+        let polls = 0;
+        const stopWithError = (message: string) => {
+            if (pollingRef.current) clearInterval(pollingRef.current);
+            pollingRef.current = null;
+            setPortfolioResult({ status: "FAILED", errors: [{ sheet: "General", row: 0, field: "", message }] });
+            setPortfolioStep("result");
+        };
         const interval = setInterval(async () => {
+            polls += 1;
             try {
                 const res = await fetch(`/api/proxy/v1/import/portfolio/${jobId}/status`);
-                if (!res.ok) return;
+                if (res.status === 401 || res.status === 403) {
+                    stopWithError("Your session has expired. Please sign in again and retry the import.");
+                    return;
+                }
+                if (res.status === 404) {
+                    stopWithError("Import job not found. Please upload the file again.");
+                    return;
+                }
+                if (!res.ok) {
+                    if (polls >= maxPolls) stopWithError("Could not retrieve import status. Please try again later.");
+                    return;
+                }
                 const data = await res.json();
                 if (data.status === "COMPLETED" || data.status === "VALIDATION_FAILED" || data.status === "FAILED") {
                     clearInterval(interval);
@@ -266,30 +292,48 @@ export default function PropertiesPage() {
                     setPortfolioResult(data);
                     setPortfolioStep("result");
                     if (data.status === "COMPLETED") fetchStats();
+                } else if (polls >= maxPolls) {
+                    stopWithError("Import timed out. The job may still be running - please check again later.");
                 }
-            } catch { /* keep polling */ }
+            } catch {
+                if (polls >= maxPolls) stopWithError("Network error while checking import status. Please try again.");
+            }
         }, 2000);
         pollingRef.current = interval;
     };
 
     const downloadPortfolioTemplate = async () => {
-        const res = await fetch("/api/proxy/v1/import/portfolio/template");
-        const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "portfolio-import-template.xlsx";
-        a.click();
-        URL.revokeObjectURL(url);
+        setPortfolioTemplateError(null);
+        try {
+            const res = await fetch("/api/proxy/v1/import/portfolio/template");
+            if (!res.ok) {
+                setPortfolioTemplateError("Failed to download template. Please try again.");
+                return;
+            }
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "portfolio-import-template.xlsx";
+            a.click();
+            URL.revokeObjectURL(url);
+        } catch {
+            setPortfolioTemplateError("Failed to download template. Please try again.");
+        }
     };
 
     const resetPortfolioImport = () => {
+        if (pollingRef.current) {
+            clearInterval(pollingRef.current);
+            pollingRef.current = null;
+        }
         setShowPortfolioImport(false);
         setPortfolioFile(null);
         setPortfolioStep("upload");
         setPortfolioJobId(null);
         setPortfolioResult(null);
         setPortfolioUploading(false);
+        setPortfolioTemplateError(null);
     };
 
     const downloadTemplate = async () => {
@@ -321,15 +365,12 @@ export default function PropertiesPage() {
                 method: "POST",
                 body: formData,
             });
-            const data = await res.json();
-            if (res.ok) {
-                setImportResult(data);
-                fetchStats();
-            } else {
-                setImportResult(data);
-            }
+            const data = await res.json().catch(() => ({ error: true, message: `Import failed (status ${res.status})` }));
+            setImportResult(data);
+            if (res.ok) fetchStats();
         } catch (err) {
             console.error(err);
+            setImportResult({ error: true, message: "Import failed due to a network error. Please try again." });
         } finally {
             setImportLoading(false);
         }
@@ -455,7 +496,7 @@ export default function PropertiesPage() {
                     {canCreate && (
                         <>
                             <button
-                                onClick={() => setShowProjectForm(true)}
+                                onClick={() => { setProjectFormError(null); setShowProjectForm(true); }}
                                 className="cursor-pointer flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-xs font-semibold hover:opacity-90 transition-all duration-200 active:scale-95 focus:ring-2 focus:ring-primary/30 focus:outline-none"
                             >
                                 <Plus size={14} />
@@ -474,6 +515,7 @@ export default function PropertiesPage() {
                                         return;
                                     }
                                     setPropertyFormData(prev => ({ ...prev, propertyId: stats[0].property.id }));
+                                    setPropertyFormError(null);
                                     setShowPropertyForm(true);
                                 }}
                                 data-tour="add-property-btn"
@@ -535,7 +577,7 @@ export default function PropertiesPage() {
                                     Type
                                 </label>
                                 <select className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={projectFormData.type} onChange={ev => setProjectFormData({ ...projectFormData, type: ev.target.value })}>
-                                    {["RESIDENTIAL", "COMMERCIAL", "MIXED", "INDUSTRIAL"].map(opt => (
+                                    {["RESIDENTIAL", "COMMERCIAL", "MIXED"].map(opt => (
                                         <option key={opt} value={opt}>{opt.charAt(0) + opt.slice(1).toLowerCase()}</option>
                                     ))}
                                 </select>
@@ -560,6 +602,12 @@ export default function PropertiesPage() {
                                 </label>
                                 <input type="number" placeholder="0" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={projectFormData.fixedExpenses || ""} onChange={ev => setProjectFormData({ ...projectFormData, fixedExpenses: Number(ev.target.value) })} />
                             </div>
+                            {projectFormError && (
+                                <div className="col-span-2 flex items-center gap-2 bg-error/10 border border-error/30 text-error rounded-xl px-4 py-3 text-xs font-medium">
+                                    <AlertCircle size={14} className="shrink-0" />
+                                    <span>{projectFormError}</span>
+                                </div>
+                            )}
                             <div className="col-span-2 flex justify-end gap-3 mt-4">
                                 <button type="button" onClick={() => setShowProjectForm(false)} className="cursor-pointer px-6 py-3 text-xs font-bold text-muted transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg">{t("cancel")}</button>
                                 <button type="submit" className="cursor-pointer px-8 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-bold transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none">{t("create")}</button>
@@ -601,7 +649,7 @@ export default function PropertiesPage() {
                                     Type
                                 </label>
                                 <select className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={propertyFormData.type} onChange={ev => setPropertyFormData({ ...propertyFormData, type: ev.target.value })}>
-                                    {["STUDIO", "BHK1", "BHK2", "BHK3", "BHK4", "PENTHOUSE", "SHOP", "OFFICE", "WAREHOUSE"].map(opt => (
+                                    {["STUDIO", "BHK1", "BHK2", "BHK3", "PENTHOUSE", "RETAIL", "OFFICE"].map(opt => (
                                         <option key={opt} value={opt}>{opt.replace("BHK", "BHK ")}</option>
                                     ))}
                                 </select>
@@ -634,6 +682,12 @@ export default function PropertiesPage() {
                                 </label>
                                 <input type="number" placeholder="0" className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={propertyFormData.actualRent || ""} onChange={ev => setPropertyFormData({ ...propertyFormData, actualRent: Number(ev.target.value) })} />
                             </div>
+                            {propertyFormError && (
+                                <div className="col-span-2 flex items-center gap-2 bg-error/10 border border-error/30 text-error rounded-xl px-4 py-3 text-xs font-medium">
+                                    <AlertCircle size={14} className="shrink-0" />
+                                    <span>{propertyFormError}</span>
+                                </div>
+                            )}
                             <div className="col-span-2 flex justify-end gap-3 mt-4">
                                 <button type="button" onClick={() => setShowPropertyForm(false)} className="cursor-pointer px-6 py-3 text-xs font-bold text-muted transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg">{t("cancel")}</button>
                                 <button type="submit" className="cursor-pointer px-8 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-bold transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none">{t("create")}</button>
@@ -671,6 +725,13 @@ export default function PropertiesPage() {
                                         Download Template
                                     </button>
                                 </div>
+
+                                {portfolioTemplateError && (
+                                    <div className="mb-4 flex items-center gap-2 bg-error/10 border border-error/30 text-error rounded-xl px-4 py-3 text-xs font-medium">
+                                        <AlertCircle size={14} className="shrink-0" />
+                                        <span>{portfolioTemplateError}</span>
+                                    </div>
+                                )}
 
                                 <div
                                     className={cn(
@@ -885,36 +946,50 @@ export default function PropertiesPage() {
                         </p>
 
                         {/* Import Result */}
-                        {importResult && (
-                            <div className={cn(
-                                "mb-6 rounded-xl px-5 py-4 border text-sm",
-                                importResult.errors || importResult.error || importResult.message?.toLowerCase().includes("error")
-                                    ? "bg-error/10 border-error/30 text-error"
-                                    : "bg-success/10 border-success/30 text-success"
-                            )}>
-                                {importResult.errors ? (
-                                    <div>
-                                        <p className="font-semibold mb-2">Import failed:</p>
-                                        <ul className="list-disc list-inside space-y-1 text-xs">
-                                            {(Array.isArray(importResult.errors) ? importResult.errors : [importResult.errors]).map((err: string, i: number) => (
-                                                <li key={i}>{err}</li>
-                                            ))}
-                                        </ul>
-                                    </div>
-                                ) : importResult.error ? (
-                                    <p className="font-semibold">{importResult.error}</p>
-                                ) : (
-                                    <div>
-                                        <p className="font-semibold mb-1">Import successful!</p>
-                                        <p className="text-xs">
-                                            {importResult.buildingsCreated !== undefined && `Buildings created: ${importResult.buildingsCreated}. `}
-                                            {importResult.unitsCreated !== undefined && `Units created: ${importResult.unitsCreated}.`}
-                                            {importResult.message && importResult.message}
+                        {importResult && (() => {
+                            // Success bodies (BulkPropertyImportResultDTO) always carry `errors: []`,
+                            // so gate on length, not truthiness. Global-handler failures carry
+                            // `{error: true, message}` — render the message, never the boolean flag.
+                            const errorList: string[] = Array.isArray(importResult.errors)
+                                ? importResult.errors
+                                : importResult.errors != null ? [String(importResult.errors)] : [];
+                            const failed = errorList.length > 0 || Boolean(importResult.error);
+                            return (
+                                <div className={cn(
+                                    "mb-6 rounded-xl px-5 py-4 border text-sm",
+                                    failed
+                                        ? "bg-error/10 border-error/30 text-error"
+                                        : "bg-success/10 border-success/30 text-success"
+                                )}>
+                                    {errorList.length > 0 ? (
+                                        <div>
+                                            <p className="font-semibold mb-2">Import failed:</p>
+                                            <ul className="list-disc list-inside space-y-1 text-xs">
+                                                {errorList.map((err: string, i: number) => (
+                                                    <li key={i}>{err}</li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    ) : failed ? (
+                                        <p className="font-semibold">
+                                            {typeof importResult.message === "string" && importResult.message
+                                                ? importResult.message
+                                                : typeof importResult.error === "string"
+                                                    ? importResult.error
+                                                    : "Import failed. Please check the file and try again."}
                                         </p>
-                                    </div>
-                                )}
-                            </div>
-                        )}
+                                    ) : (
+                                        <div>
+                                            <p className="font-semibold mb-1">Import successful!</p>
+                                            <p className="text-xs">
+                                                {importResult.buildingsCreated !== undefined && `Buildings created: ${importResult.buildingsCreated}. `}
+                                                {importResult.unitsCreated !== undefined && `Units created: ${importResult.unitsCreated}.`}
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })()}
 
                         <form onSubmit={handleImportSubmit} className="grid grid-cols-2 gap-5">
                             <div className="col-span-1">
@@ -936,7 +1011,7 @@ export default function PropertiesPage() {
                             <div className="col-span-1">
                                 <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">Type</label>
                                 <select className="w-full bg-input border border-border p-3 rounded-xl text-xs focus:ring-2 focus:ring-primary/30 focus:outline-none" value={importFormData.type} onChange={ev => setImportFormData({ ...importFormData, type: ev.target.value })}>
-                                    {["RESIDENTIAL", "COMMERCIAL", "MIXED", "INDUSTRIAL"].map(opt => (
+                                    {["RESIDENTIAL", "COMMERCIAL", "MIXED"].map(opt => (
                                         <option key={opt} value={opt}>{opt.charAt(0) + opt.slice(1).toLowerCase()}</option>
                                     ))}
                                 </select>

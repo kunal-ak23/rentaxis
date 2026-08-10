@@ -84,7 +84,16 @@ export function BookingDetailDrawer({ bookingId, onClose, onChanged }: BookingDe
       // e.g. deciding a request that's no longer PENDING) get the localized
       // copy so the message reads in the active locale; any other ApiError
       // status falls back to the backend's own (already-parsed) message.
-      if (err instanceof ApiError && err.status === 409) setError(t("spotConflict"));
+      if (err instanceof ApiError && err.status === 409) {
+        setError(t("spotConflict"));
+        // The 409 means a competing request just won the spot — re-fetch the
+        // detail so otherRequests shows that competitor with an APPROVED
+        // badge instead of the stale PENDING one fetched when this drawer
+        // opened (mirrors the mobile manager sheet's invalidate-on-409 in
+        // booking_approvals_screen.dart). fetchBooking directly rather than
+        // load(), whose setError(null) would wipe the conflict message.
+        try { setDetail(await fetchBooking(bookingId)); } catch { /* keep the stale detail; the conflict message still shows */ }
+      }
       else if (err instanceof ApiError && err.status === 400) setError(t("actionError"));
       else if (err instanceof ApiError) setError(err.message);
       else setError(t("actionError"));

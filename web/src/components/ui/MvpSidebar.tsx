@@ -75,18 +75,15 @@ export default function MvpSidebar() {
                 ...(isEnabled('LISTINGS') ? [{ name: "Listings", href: "/dashboard/listings", icon: Building2, tourId: 'sidebar-listings' }] : []),
                 { name: "Tickets", href: "/dashboard/tickets", icon: Wrench, tourId: 'sidebar-tickets' },
                 ...(isEnabled('MEETINGS') ? [{ name: "Meetings", href: "/dashboard/meetings", icon: CalendarDays, tourId: 'sidebar-meetings' }] : []),
-                // Still not wrapped in isEnabled('GATEPASS'), and the reason has changed:
-                // the TenantFeature now exists, but nothing can turn it on. It defaults
-                // to false and TenantFeatureController is read-only — setEnabled() has no
-                // caller, for ANY of the five flags — so isEnabled('GATEPASS') is false
-                // for every tenant until someone writes a tenant_feature row by hand.
-                // Wrapping this now would hide the page from everyone, permanently.
-                // Role stays the real boundary; the report's @PreAuthorize is what
-                // actually gates the data.
-                //
-                // So this is NOT "add the wrapper when the flag lands" — it landed. It is
-                // "add the wrapper when a toggle exists to flip it", which is a platform
-                // decision covering all five flags, not a gate-pass one.
+                // Still not wrapped in isEnabled('GATEPASS'), and the reason has changed
+                // again: a toggle now exists — the superadmin tenants page has a features
+                // drawer wired to PUT /api/admin/tenants/{id}/features/{feature}, so the
+                // old "setEnabled() has no caller" premise no longer holds. What does
+                // still hold: GATEPASS defaults to false and no existing tenant has been
+                // opted in, so wrapping this today would hide the page for every tenant
+                // until a superadmin flips each one — a rollout decision covering all
+                // five flags, not a gate-pass one. Until that rollout happens, role stays
+                // the boundary; the report's @PreAuthorize is what actually gates the data.
                 ...(hasPermission(userRole, 'canViewGatePassReport')
                     ? [{ name: tGatePass("navLabel"), href: "/dashboard/gatepass", icon: ScanLine, tourId: 'sidebar-gatepass' }]
                     : []),

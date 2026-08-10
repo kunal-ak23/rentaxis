@@ -1,14 +1,14 @@
 ---
-title: Making Payments
-description: How to make online rent payments
+title: Understanding Your Payments
+description: How to track your rent payment schedule and download receipts
 category: renter
 roles: [RENTER]
 order: 3
 ---
 
-## Making Payments
+## Understanding Your Payments
 
-Pay your rent online through the secure payment portal.
+Track your rent payment schedule and history from the portal. Rent collection is handled directly by your landlord's team (typically via cheques), and each payment's status is reflected here.
 
 ### Viewing Your Payment Schedule
 
@@ -16,22 +16,22 @@ Pay your rent online through the secure payment portal.
 2. See all upcoming and past payment entries
 3. Each entry shows: due date, amount, status
 
-### Making an Online Payment
+### Payment Statuses
 
-1. Find the payment entry you want to pay
-2. Click **Pay Now**
-3. You'll be redirected to the secure payment gateway
-4. Complete the payment using your preferred method
-5. Once confirmed, the payment status updates automatically
+| Status | Meaning |
+|--------|---------|
+| **Pending** | Payment is scheduled but not yet collected |
+| **Overdue** | The due date has passed without collection |
+| **Collected** | Your landlord's team has received the payment |
+| **Deposited** | The cheque has been deposited at the bank |
+| **Cleared** | The payment has cleared |
+| **Bounced** | The cheque was returned — contact your landlord's team |
 
-### Payment Confirmation
+### Receipts
 
-- Successful payments are marked as **Collected** immediately
-- You'll receive a notification confirming the payment
-- Payment receipts are available for download
+Once a payment is **Cleared**, a **Receipt** button appears on the entry so you can download the payment receipt as a PDF.
 
 ### Important Notes
 
-- Payments are processed through Razorpay's secure gateway
-- Your payment information is not stored by RentAxis
-- Contact your landlord if you have questions about payment amounts
+- Online card payments are not currently available through the portal
+- Contact your landlord if you have questions about payment amounts or cheque handling

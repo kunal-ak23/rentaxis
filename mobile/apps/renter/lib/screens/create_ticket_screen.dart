@@ -52,6 +52,8 @@ class _L {
       ar ? 'إذن الكاميرا مطلوب' : 'Camera permission required';
   String get selectCategory =>
       ar ? 'الرجاء اختيار فئة' : 'Please select a category';
+  String get selectPropertyUnit =>
+      ar ? 'الرجاء اختيار العقار / الوحدة' : 'Please select your property/unit';
   String get ticketCreated =>
       ar ? 'تم إنشاء الطلب بنجاح' : 'Ticket created successfully';
   String get ticketCreateFailed =>
@@ -222,6 +224,14 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
       ).showSnackBar(SnackBar(content: Text(l.selectCategory)));
       return;
     }
+    // Backend requires a property on POST /v1/tickets — a null propertyId
+    // is rejected, so surface the problem here instead of a generic failure.
+    if (_selectedPropertyId == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(l.selectPropertyUnit)));
+      return;
+    }
 
     setState(() => _isSubmitting = true);
 
@@ -231,7 +241,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
         'description': _descriptionController.text.trim(),
         'category': _selectedCategory,
         'priority': _selectedPriority,
-        if (_selectedPropertyId != null) 'propertyId': _selectedPropertyId,
+        'propertyId': _selectedPropertyId,
         if (_selectedUnitId != null) 'unitId': _selectedUnitId,
       };
 

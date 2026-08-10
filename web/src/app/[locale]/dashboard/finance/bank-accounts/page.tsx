@@ -34,7 +34,6 @@ type BankAccount = {
     coaAccount: Account | null;
     isDefault: boolean;
     active: boolean;
-    notes: string;
 };
 
 const emptyForm = {
@@ -46,7 +45,6 @@ const emptyForm = {
     propertyId: "",
     coaAccountId: "",
     isDefault: false,
-    notes: "",
 };
 
 export default function BankAccountsPage() {
@@ -60,6 +58,8 @@ export default function BankAccountsPage() {
     const [editingAccount, setEditingAccount] = useState<BankAccount | null>(null);
     const [submitting, setSubmitting] = useState(false);
     const [formData, setFormData] = useState(emptyForm);
+    const [formError, setFormError] = useState<string | null>(null);
+    const [pageError, setPageError] = useState<string | null>(null);
     const [confirmDialog, setConfirmDialog] = useState<{
         title: string;
         description: string;
@@ -113,6 +113,7 @@ export default function BankAccountsPage() {
     const openAddModal = () => {
         setEditingAccount(null);
         setFormData(emptyForm);
+        setFormError(null);
         setShowModal(true);
     };
 
@@ -127,14 +128,15 @@ export default function BankAccountsPage() {
             propertyId: ba.property?.id || "",
             coaAccountId: ba.coaAccount?.id || "",
             isDefault: ba.isDefault,
-            notes: ba.notes || "",
         });
+        setFormError(null);
         setShowModal(true);
     };
 
     const handleSubmit = async (ev: React.FormEvent) => {
         ev.preventDefault();
         setSubmitting(true);
+        setFormError(null);
         try {
             const body: Record<string, unknown> = {
                 bankName: formData.bankName,
@@ -143,7 +145,6 @@ export default function BankAccountsPage() {
                 branchName: formData.branchName,
                 currency: formData.currency,
                 isDefault: formData.isDefault,
-                notes: formData.notes,
             };
             if (formData.propertyId) {
                 body.property = { id: formData.propertyId };
@@ -168,9 +169,13 @@ export default function BankAccountsPage() {
                 setEditingAccount(null);
                 setFormData(emptyForm);
                 fetchBankAccounts();
+            } else {
+                const errData = await res.json().catch(() => null);
+                setFormError(errData?.message || "Failed to save bank account");
             }
         } catch (err) {
             console.error(err);
+            setFormError("Failed to save bank account");
         } finally {
             setSubmitting(false);
         }
@@ -184,13 +189,20 @@ export default function BankAccountsPage() {
             isDestructive: true,
             onConfirm: async () => {
                 setConfirmDialog(null);
+                setPageError(null);
                 try {
                     const res = await fetch(`/api/proxy/v1/bank-accounts/${ba.id}`, {
                         method: "DELETE",
                     });
-                    if (res.ok) fetchBankAccounts();
+                    if (res.ok) {
+                        fetchBankAccounts();
+                    } else {
+                        const errData = await res.json().catch(() => null);
+                        setPageError(errData?.message || "Failed to delete bank account");
+                    }
                 } catch (err) {
                     console.error(err);
+                    setPageError("Failed to delete bank account");
                 }
             },
         });
@@ -222,6 +234,16 @@ export default function BankAccountsPage() {
                     {t("addAccount")}
                 </button>
             </div>
+
+            {/* Page-level errors (e.g. failed delete) */}
+            {pageError && (
+                <div
+                    role="alert"
+                    className="mb-6 bg-error/10 border border-error/20 text-error text-xs font-medium rounded-lg p-3"
+                >
+                    {pageError}
+                </div>
+            )}
 
             {/* Loading Skeleton */}
             {loading && (
@@ -494,18 +516,14 @@ export default function BankAccountsPage() {
                                     </span>
                                 </label>
                             </div>
-                            <div className="col-span-2">
-                                <label className="block text-xs font-semibold text-muted uppercase tracking-[0.15em] mb-1.5 ml-1">
-                                    Notes
-                                </label>
-                                <textarea
-                                    className="w-full border border-border rounded-lg bg-surface p-3 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none h-20 resize-none"
-                                    value={formData.notes}
-                                    onChange={(ev) =>
-                                        setFormData({ ...formData, notes: ev.target.value })
-                                    }
-                                />
-                            </div>
+                            {formError && (
+                                <div
+                                    role="alert"
+                                    className="col-span-2 bg-error/10 border border-error/20 text-error text-xs font-medium rounded-lg p-3"
+                                >
+                                    {formError}
+                                </div>
+                            )}
                             <div className="col-span-2 flex justify-end gap-3 mt-2">
                                 <button
                                     type="button"

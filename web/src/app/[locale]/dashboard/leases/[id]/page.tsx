@@ -155,6 +155,10 @@ export default function LeaseDetailPage() {
     // backend; matching the gate here so PROPERTY_MANAGER doesn't see a button
     // that 403s when clicked.
     const canGenerateContract = hasRole(userRole, ["SUPER_ADMIN", "TENANT_ADMIN"]);
+    // POST /v1/penalties/{id}/waive is SUPER_ADMIN/TENANT_ADMIN only
+    // (PenaltyController); hide the Waive button from PROPERTY_MANAGER so it
+    // doesn't 403 on submit.
+    const canWaivePenalty = hasRole(userRole, ["SUPER_ADMIN", "TENANT_ADMIN"]);
     const t = useTranslations("MasterData");
     const tP = useTranslations("LeasePenalties");
     const tBulk = useTranslations("bulkChequeUpload");
@@ -170,6 +174,7 @@ export default function LeaseDetailPage() {
     const [tickets, setTickets] = useState<Ticket[]>([]);
     const [waiveModalPenalty, setWaiveModalPenalty] = useState<ChequePenalty | null>(null);
     const [waiveReason, setWaiveReason] = useState("");
+    const [waiveError, setWaiveError] = useState<string | null>(null);
     const [waiving, setWaiving] = useState(false);
 
     const [activeTab, setActiveTab] = useState<string>("Overview");
@@ -281,9 +286,11 @@ export default function LeaseDetailPage() {
     const handleWaivePenalty = async () => {
         if (!waiveModalPenalty || !waiveReason.trim()) return;
         setWaiving(true);
+        setWaiveError(null);
         try {
+            // Backend maps POST /v1/penalties/{id}/waive (PenaltyController) — PUT returns 405.
             const res = await fetch(`/api/proxy/v1/penalties/${waiveModalPenalty.id}/waive`, {
-                method: "PUT",
+                method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ reason: waiveReason.trim() }),
             });
@@ -291,8 +298,13 @@ export default function LeaseDetailPage() {
                 setWaiveModalPenalty(null);
                 setWaiveReason("");
                 fetchPenalties();
+            } else {
+                const err = await res.json().catch(() => ({}));
+                setWaiveError(err.message || "Failed to waive penalty. Please try again.");
             }
-        } catch {} finally { setWaiving(false); }
+        } catch {
+            setWaiveError("Network error while waiving penalty. Check your connection and try again.");
+        } finally { setWaiving(false); }
     };
 
     const fetchSettlement = useCallback(async () => {
@@ -516,16 +528,11 @@ export default function LeaseDetailPage() {
         if (res.ok) {
             const docs = await res.json();
             if (docs.length > 0) {
-                // Pick the most recently created CONTRACT document so a
-                // download after regeneration always returns the latest PDF
-                // (defensive: backend deletes old contract docs on regen, but
-                // ordering of getDocuments isn't guaranteed otherwise).
-                const sorted = [...docs].sort((a, b) => {
-                    const at = new Date(a.createdAt || 0).getTime();
-                    const bt = new Date(b.createdAt || 0).getTime();
-                    return bt - at; // newest first
-                });
-                const latest = sorted.find((d) => (d.type || "CONTRACT") === "CONTRACT") || sorted[0];
+                // Pick the CONTRACT document. LeaseDocumentDTO carries no
+                // createdAt to sort by; regeneration deletes prior contract
+                // docs (ContractGenerationService), so the type filter alone
+                // identifies the latest PDF.
+                const latest = docs.find((d: { type?: string }) => (d.type || "CONTRACT") === "CONTRACT") || docs[0];
                 const pdfRes = await fetch(`/api/proxy/v1/leases/documents/${latest.id}/download`);
                 if (pdfRes.ok) {
                     const blob = await pdfRes.blob();
@@ -545,9 +552,18 @@ export default function LeaseDetailPage() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({}),
             });
-            if (res.ok) fetchPayments();
+            if (res.ok) {
+                fetchPayments();
+            } else {
+                // State-machine rejections come back as 400 + {message} —
+                // surface them like handleDeleteDraft instead of failing silently.
+                let detail: string | null = null;
+                try { const body = await res.json(); detail = body?.message || body?.error || null; } catch {}
+                alert(detail || "Failed to deposit the cheque. Please try again.");
+            }
         } catch (err) {
             console.error(err);
+            alert("Network error while depositing the cheque. Check your connection and try again.");
         }
     };
 
@@ -561,9 +577,16 @@ export default function LeaseDetailPage() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({}),
             });
-            if (res.ok) fetchPayments();
+            if (res.ok) {
+                fetchPayments();
+            } else {
+                let detail: string | null = null;
+                try { const body = await res.json(); detail = body?.message || body?.error || null; } catch {}
+                alert(detail || "Failed to clear the cheque. Please try again.");
+            }
         } catch (err) {
             console.error(err);
+            alert("Network error while clearing the cheque. Check your connection and try again.");
         }
     };
 
@@ -794,8 +817,13 @@ export default function LeaseDetailPage() {
                 <div className={cn(activeTab === "Overview" && "lg:col-span-2")}>
                     {/* Penalty Summary */}
                     {(() => {
-                        const activePenalties = penalties.filter(p => !p.waived);
-                        const totalOutstanding = activePenalties.reduce((sum, p) => sum + p.penaltyAmount, 0);
+                        // Only OPEN penalties (clearedAt == null, not waived) still owe
+                        // money, and `outstanding` is the DTO's live figure — currentTotal
+                        // (incl. per-day accrual) minus recorded payments. Summing the base
+                        // penaltyAmount over non-waived rows counted cleared/partially-paid
+                        // penalties and ignored accrual.
+                        const activePenalties = penalties.filter(p => p.status === "OPEN");
+                        const totalOutstanding = activePenalties.reduce((sum, p) => sum + p.outstanding, 0);
                         if (activePenalties.length === 0) return null;
                         return (
                             <div className="bg-warning/10 border border-warning/20 rounded-xl px-5 py-3 mb-4 flex items-center gap-2">
@@ -906,9 +934,9 @@ export default function LeaseDetailPage() {
                                                     return (
                                                         <span className="inline-flex items-center gap-1.5">
                                                             <span className="text-xs font-medium text-error tabular-nums">{formatCurrency(penalty.penaltyAmount)}</span>
-                                                            {isAdmin && (
+                                                            {canWaivePenalty && (
                                                                 <button
-                                                                    onClick={() => { setWaiveModalPenalty(penalty); setWaiveReason(""); }}
+                                                                    onClick={() => { setWaiveModalPenalty(penalty); setWaiveReason(""); setWaiveError(null); }}
                                                                     className="text-[9px] font-semibold text-warning hover:text-warning/80 cursor-pointer underline"
                                                                 >
                                                                     Waive
@@ -1255,6 +1283,9 @@ export default function LeaseDetailPage() {
                                     className="w-full border border-border rounded-lg bg-surface px-3 py-2 text-xs text-foreground placeholder:text-muted/50 focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none resize-none"
                                 />
                             </div>
+                            {waiveError && (
+                                <p className="text-xs text-error">{waiveError}</p>
+                            )}
                             <div className="flex items-center gap-2 justify-end">
                                 <button
                                     onClick={() => setWaiveModalPenalty(null)}

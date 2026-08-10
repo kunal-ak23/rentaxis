@@ -88,57 +88,6 @@ class _LeasePenaltiesScreenState extends ConsumerState<LeasePenaltiesScreen> {
     }
   }
 
-  Future<void> _recalculatePenalties() async {
-    final l = _l;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text(l.recalculateTitle, style: _display(l.ar, size: 17)),
-        content: Text(
-          l.recalculateBody,
-          style: _body(l.ar, color: AppColors.textSecondary),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(l.cancel, style: _body(l.ar, weight: FontWeight.w600)),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
-            child: Text(
-              l.recalculate,
-              style: _body(l.ar, weight: FontWeight.w600, color: Colors.white),
-            ),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-
-    setState(() => _isActioning = true);
-    try {
-      await ref
-          .read(_penaltyServiceProvider)
-          .recalculatePenalties(widget.leaseId);
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(l.recalculated)));
-        _loadPenalties();
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(l.failedToRecalculate)));
-      }
-    } finally {
-      if (mounted) setState(() => _isActioning = false);
-    }
-  }
-
   Future<void> _waivePenalty(String penaltyId) async {
     final l = _l;
     final reasonCtrl = TextEditingController();
@@ -173,12 +122,25 @@ class _LeasePenaltiesScreenState extends ConsumerState<LeasePenaltiesScreen> {
             onPressed: () => Navigator.pop(ctx, false),
             child: Text(l.cancel, style: _body(l.ar, weight: FontWeight.w600)),
           ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.danger),
-            child: Text(
-              l.waive,
-              style: _body(l.ar, weight: FontWeight.w600, color: Colors.white),
+          // Backend requires a non-blank reason (@NotBlank), so the confirm
+          // button stays disabled until one is entered.
+          ValueListenableBuilder<TextEditingValue>(
+            valueListenable: reasonCtrl,
+            builder: (ctx2, value, _) => ElevatedButton(
+              onPressed: value.text.trim().isEmpty
+                  ? null
+                  : () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.danger,
+              ),
+              child: Text(
+                l.waive,
+                style: _body(
+                  l.ar,
+                  weight: FontWeight.w600,
+                  color: Colors.white,
+                ),
+              ),
             ),
           ),
         ],
@@ -190,10 +152,7 @@ class _LeasePenaltiesScreenState extends ConsumerState<LeasePenaltiesScreen> {
     try {
       await ref
           .read(_penaltyServiceProvider)
-          .waivePenalty(
-            penaltyId,
-            reason: reasonCtrl.text.isNotEmpty ? reasonCtrl.text : null,
-          );
+          .waivePenalty(penaltyId, reason: reasonCtrl.text.trim());
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -230,8 +189,8 @@ class _LeasePenaltiesScreenState extends ConsumerState<LeasePenaltiesScreen> {
               Icons.refresh,
               color: AppColors.accent.withValues(alpha: 0.85),
             ),
-            onPressed: _recalculatePenalties,
-            tooltip: l.recalculate,
+            onPressed: _loadPenalties,
+            tooltip: l.refresh,
           ),
         ],
       ),
@@ -294,9 +253,11 @@ class _PenaltyCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final status = (penalty['status'] ?? 'ACTIVE').toString().toUpperCase();
-    final isActive = status == 'ACTIVE';
-    final accent = isActive ? m.danger : m.textMuted;
+    // PenaltyDTO.status is derived server-side: OPEN | CLEARED | WAIVED.
+    final status = (penalty['status'] ?? 'OPEN').toString().toUpperCase();
+    final isOpen = status == 'OPEN';
+    final accent = isOpen ? m.danger : m.textMuted;
+    final daysOverdue = (penalty['daysOverdue'] as num?) ?? 0;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -304,7 +265,7 @@ class _PenaltyCard extends StatelessWidget {
         color: m.surface,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: isActive ? m.danger.withValues(alpha: 0.25) : m.border,
+          color: isOpen ? m.danger.withValues(alpha: 0.25) : m.border,
         ),
       ),
       clipBehavior: Clip.antiAlias,
@@ -323,9 +284,8 @@ class _PenaltyCard extends StatelessWidget {
                       children: [
                         Expanded(
                           child: Text(
-                            l.penaltyTypeLabel(
-                              (penalty['penaltyType'] ?? penalty['type'])
-                                  ?.toString(),
+                            l.reasonLabel(
+                              penalty['failureReason']?.toString(),
                             ),
                             style: _body(
                               l.ar,
@@ -337,7 +297,11 @@ class _PenaltyCard extends StatelessWidget {
                         ),
                         Text(
                           Formatters.currency(
-                            (penalty['amount'] ?? 0).toDouble(),
+                            ((penalty['currentTotal'] ??
+                                        penalty['penaltyAmount'] ??
+                                        0)
+                                    as num)
+                                .toDouble(),
                           ),
                           style: GoogleFonts.cinzel(
                             fontSize: 15,
@@ -353,18 +317,10 @@ class _PenaltyCard extends StatelessWidget {
                       color: accent,
                       ar: l.ar,
                     ),
-                    if (penalty['paymentNumber'] != null ||
-                        penalty['dueDate'] != null) ...[
+                    if (daysOverdue > 0) ...[
                       const SizedBox(height: 8),
                       Text(
-                        [
-                          if (penalty['paymentNumber'] != null)
-                            l.paymentNumber(penalty['paymentNumber']),
-                          if (penalty['dueDate'] != null)
-                            l.dueOn(
-                              Formatters.date(penalty['dueDate'], ar: l.ar),
-                            ),
-                        ].join(' · '),
+                        l.daysOverdue(daysOverdue.toInt()),
                         style: _body(l.ar, size: 12, color: m.textSecondary),
                       ),
                     ],
@@ -373,7 +329,7 @@ class _PenaltyCard extends StatelessWidget {
                       Formatters.date(penalty['createdAt'], ar: l.ar),
                       style: _body(l.ar, size: 11, color: m.textMuted),
                     ),
-                    if (isActive) ...[
+                    if (isOpen) ...[
                       const SizedBox(height: 8),
                       GestureDetector(
                         onTap: onWaive,
@@ -463,59 +419,49 @@ class _L {
       ar ? 'لا توجد غرامات لهذا العقد' : 'No penalties for this lease';
 
   String get cancel => ar ? 'إلغاء' : 'Cancel';
-
-  String get recalculate => ar ? 'إعادة الحساب' : 'Recalculate';
-  String get recalculateTitle =>
-      ar ? 'إعادة حساب الغرامات' : 'Recalculate Penalties';
-  String get recalculateBody => ar
-      ? 'سيعيد هذا حساب جميع الغرامات لهذا العقد بناءً على حالات الدفعات الحالية. هل تريد المتابعة؟'
-      : 'This will recalculate all penalties for this lease based on current payment statuses. Continue?';
-  String get recalculated =>
-      ar ? 'تمت إعادة حساب الغرامات' : 'Penalties recalculated';
-  String get failedToRecalculate =>
-      ar ? 'فشلت إعادة حساب الغرامات' : 'Failed to recalculate penalties';
+  String get refresh => ar ? 'تحديث' : 'Refresh';
 
   String get waive => ar ? 'إعفاء' : 'Waive';
   String get waiveTitle => ar ? 'إعفاء الغرامة' : 'Waive Penalty';
   String get waiveConfirm => ar
       ? 'هل أنت متأكد من إعفاء هذه الغرامة؟'
       : 'Are you sure you want to waive this penalty?';
-  String get waiveReasonHint => ar ? 'السبب (اختياري)' : 'Reason (optional)';
+  String get waiveReasonHint => ar ? 'السبب (مطلوب)' : 'Reason (required)';
   String get penaltyWaived => ar ? 'تم إعفاء الغرامة' : 'Penalty waived';
   String get failedToWaive =>
       ar ? 'فشل إعفاء الغرامة' : 'Failed to waive penalty';
 
-  String paymentNumber(dynamic n) => ar ? 'الدفعة رقم $n' : 'Payment #$n';
-  String dueOn(String date) => ar ? 'الاستحقاق: $date' : 'Due: $date';
+  String daysOverdue(int n) {
+    if (!ar) return '$n days overdue';
+    if (n == 1) return 'متأخر يوماً واحداً';
+    if (n == 2) return 'متأخر يومين';
+    if (n >= 3 && n <= 10) return 'متأخر $n أيام';
+    return 'متأخر $n يوماً';
+  }
 
   String statusLabel(String status) {
     switch (status) {
-      case 'ACTIVE':
-        return ar ? 'مفتوحة' : 'ACTIVE';
       case 'WAIVED':
         return ar ? 'معفوة' : 'WAIVED';
       case 'CLEARED':
         return ar ? 'مسددة' : 'CLEARED';
-      case 'PAID':
-        return ar ? 'مدفوعة' : 'PAID';
+      case 'OPEN':
+        return ar ? 'مفتوحة' : 'OPEN';
       default:
         return status;
     }
   }
 
-  String penaltyTypeLabel(String? type) {
-    switch (type) {
+  String reasonLabel(String? reason) {
+    switch (reason) {
       case 'BOUNCE':
-      case 'BOUNCED_CHEQUE':
         return ar ? 'ارتداد الشيك' : 'Bounced Cheque';
-      case 'LATE_PAYMENT':
-        return ar ? 'تأخر في الدفع' : 'Late Payment';
       case 'SIGNATURE_MISMATCH':
         return ar ? 'عدم تطابق التوقيع' : 'Signature Mismatch';
       case 'ACCOUNT_CLOSED':
         return ar ? 'الحساب مغلق' : 'Account Closed';
       default:
-        return type ?? (ar ? 'غرامة' : 'Penalty');
+        return reason ?? (ar ? 'غرامة' : 'Penalty');
     }
   }
 }

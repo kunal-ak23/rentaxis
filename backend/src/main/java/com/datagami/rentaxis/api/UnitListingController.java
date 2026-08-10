@@ -64,7 +64,7 @@ public class UnitListingController {
             @PageableDefault(sort = "createdAt", direction = Sort.Direction.ASC) Pageable pageable) {
         checkEnabled();
         UUID tenantId = TenantContextHolder.getTenantId();
-        Page<UnitListing> page = service.list(tenantId, status, pageable);
+        Page<UnitListing> page = service.list(tenantId, status, propertyId, q, pageable);
         var summaryData = service.getSummaryData(page.getContent());
         return ResponseEntity.ok(page.map(listing -> toSummary(
                 listing,
@@ -195,10 +195,14 @@ public class UnitListingController {
                 l.getTitleEn(),
                 summaryData.propertyName(),
                 l.getBedrooms(),
+                l.getBathrooms(),
                 l.getAnnualRent(),
                 l.getStatus(),
                 summaryData.coverPhotoUrl(),
                 summaryData.interestsCount(),
+                l.getLat(),
+                l.getLng(),
+                l.getCreatedAt(),
                 l.getUpdatedAt(),
                 l.getSlug()
         );

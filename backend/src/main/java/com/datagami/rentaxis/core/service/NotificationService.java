@@ -220,9 +220,10 @@ public class NotificationService {
     }
 
     @Transactional(readOnly = true)
-    public List<NotificationDTO> getNotifications(UUID userId, int page, int size) {
+    public List<NotificationDTO> getNotifications(UUID userId, int page, int size, boolean unreadOnly) {
         return notificationRepository.findAllByUserIdUnfiltered(userId)
                 .stream()
+                .filter(n -> !unreadOnly || !Boolean.TRUE.equals(n.getIsRead()))
                 .skip((long) page * size)
                 .limit(size)
                 .map(this::mapToDTO)

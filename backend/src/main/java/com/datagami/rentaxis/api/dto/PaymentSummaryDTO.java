@@ -16,6 +16,8 @@ public class PaymentSummaryDTO {
     private BigDecimal totalAmount;
     private BigDecimal pendingAmount;
     private BigDecimal collectedAmount;
+    private BigDecimal depositedAmount;
     private BigDecimal clearedAmount;
+    private BigDecimal bouncedAmount;
     private BigDecimal overdueAmount;
 }

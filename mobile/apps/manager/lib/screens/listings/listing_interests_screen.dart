@@ -6,11 +6,20 @@ import 'package:url_launcher/url_launcher.dart';
 
 // ── Provider ──────────────────────────────────────────────────────────────────
 
+/// One page of interests plus the backend's `totalElements` — the fetch is
+/// capped at 100 rows, so the header count and the truncation note need the
+/// real total, not `content.length`.
 final _interestsProvider = FutureProvider.autoDispose
-    .family<List<Map<String, dynamic>>, String>((ref, listingId) async {
+    .family<({List<Map<String, dynamic>> items, int total}), String>((
+      ref,
+      listingId,
+    ) async {
       final service = ref.watch(listingApiServiceProvider);
       final data = await service.getInterests(listingId, size: 100);
-      return (data['content'] as List? ?? []).cast<Map<String, dynamic>>();
+      final items = (data['content'] as List? ?? [])
+          .cast<Map<String, dynamic>>();
+      final total = (data['totalElements'] as num?)?.toInt() ?? items.length;
+      return (items: items, total: total);
     });
 
 // ── Screen strings (EN/AR). Lightweight per-screen pattern — see arabic-brief. ─
@@ -28,6 +37,8 @@ class _L {
       ? 'سيظهر هنا المستأجرون الذين أبدوا اهتمامهم'
       : 'Renters who express interest will appear here';
   String get renter => ar ? 'مستأجر' : 'Renter';
+  String showingFirst(int n) =>
+      ar ? 'عرض أول $n من المهتمين' : 'Showing first $n interests';
   String get call => ar ? 'اتصال' : 'Call';
   String get email => ar ? 'بريد' : 'Email';
   String get whatsapp => ar ? 'واتساب' : 'WhatsApp';
@@ -57,7 +68,7 @@ class ListingInterestsScreen extends ConsumerWidget {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _ChromeHeader(l: l, count: interestsAsync.valueOrNull?.length),
+          _ChromeHeader(l: l, count: interestsAsync.valueOrNull?.total),
           Expanded(
             child: interestsAsync.when(
               loading: () => ListView.builder(
@@ -72,7 +83,8 @@ class ListingInterestsScreen extends ConsumerWidget {
                 message: l.loadFailed,
                 onRetry: () => ref.invalidate(_interestsProvider(listingId)),
               ),
-              data: (items) {
+              data: (page) {
+                final items = page.items;
                 if (items.isEmpty) {
                   return EmptyState(
                     icon: Icons.people_outline,
@@ -80,6 +92,7 @@ class ListingInterestsScreen extends ConsumerWidget {
                     subtitle: l.noInterestDesc,
                   );
                 }
+                final truncated = items.length < page.total;
                 return RefreshIndicator(
                   color: AppColors.accent,
                   onRefresh: () async =>
@@ -91,14 +104,34 @@ class ListingInterestsScreen extends ConsumerWidget {
                       16,
                       AppInsets.bottomNav(context),
                     ),
-                    itemCount: items.length,
-                    itemBuilder: (_, i) => AnimatedListItem(
-                      index: i,
-                      child: Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: _InterestCard(interest: items[i], l: l),
-                      ),
-                    ),
+                    itemCount: items.length + (truncated ? 1 : 0),
+                    itemBuilder: (_, i) {
+                      if (truncated && i == items.length) {
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Text(
+                            l.showingFirst(items.length),
+                            textAlign: TextAlign.center,
+                            style: l.ar
+                                ? GoogleFonts.notoNaskhArabic(
+                                    fontSize: 12,
+                                    color: m.textMuted,
+                                  )
+                                : GoogleFonts.josefinSans(
+                                    fontSize: 12,
+                                    color: m.textMuted,
+                                  ),
+                          ),
+                        );
+                      }
+                      return AnimatedListItem(
+                        index: i,
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: _InterestCard(interest: items[i], l: l),
+                        ),
+                      );
+                    },
                   ),
                 );
               },

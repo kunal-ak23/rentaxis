@@ -6,6 +6,7 @@ import { Plus, X, User, Mail, Phone, List, LayoutGrid, Search, Copy, Check } fro
 import { useSession } from "next-auth/react";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
+import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
 import { Pagination } from "@/components/ui/Pagination";
 
 type Renter = {
@@ -66,36 +67,40 @@ export default function RentersPage() {
 
     const [credentialsModal, setCredentialsModal] = useState<{ email: string; password: string } | null>(null);
     const [copied, setCopied] = useState(false);
+    const [formError, setFormError] = useState<string | null>(null);
 
     const handleSubmit = async (ev: React.FormEvent) => {
         ev.preventDefault();
+        setFormError(null);
         try {
             const res = await fetch("/api/proxy/v1/renters", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(formData)
             });
-            if (res.ok) {
-                const data = await res.json();
-                setShowForm(false);
-                fetchRenters();
+            // Surface backend failures (e.g. invalid email, duplicate portal
+            // email aborting the transaction) instead of silently doing nothing.
+            await throwIfNotOk(res);
+            const data = await res.json();
+            setShowForm(false);
+            fetchRenters();
 
-                // Show portal credentials if a portal account was created
-                if (data.portalPassword) {
-                    setCredentialsModal({ email: formData.email, password: data.portalPassword });
-                }
-
-                setFormData({
-                    nameEn: "",
-                    nameAr: "",
-                    email: "",
-                    phone: "",
-                    primaryLanguage: "EN",
-                    createPortalAccount: true
-                });
+            // Show portal credentials if a portal account was created
+            if (data.portalPassword) {
+                setCredentialsModal({ email: formData.email, password: data.portalPassword });
             }
+
+            setFormData({
+                nameEn: "",
+                nameAr: "",
+                email: "",
+                phone: "",
+                primaryLanguage: "EN",
+                createPortalAccount: true
+            });
         } catch (err) {
             console.error(err);
+            setFormError(err instanceof ApiError ? err.message : "Something went wrong. Please try again.");
         }
     };
 
@@ -199,7 +204,7 @@ export default function RentersPage() {
                         </div>
                         {canManageRenters && (
                             <button
-                                onClick={() => setShowForm(true)}
+                                onClick={() => { setFormError(null); setShowForm(true); }}
                                 className="cursor-pointer flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-xs font-semibold hover:opacity-90 transition-all duration-200 active:scale-95 focus:ring-2 focus:ring-primary/30 focus:outline-none"
                             >
                                 <Plus size={14} />
@@ -251,6 +256,11 @@ export default function RentersPage() {
                                     <span className="text-xs font-bold text-foreground">{t("createPortalAccount")}</span>
                                 </label>
                             </div>
+                            {formError && (
+                                <div className="col-span-2 bg-error/10 border border-error/20 text-error text-xs font-medium rounded-lg px-3 py-2" role="alert">
+                                    {formError}
+                                </div>
+                            )}
                             <div className="col-span-2 flex justify-end gap-3 mt-4">
                                 <button type="button" onClick={() => setShowForm(false)} className="cursor-pointer px-6 py-3 text-xs font-bold text-muted hover:text-foreground transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none rounded-lg">{t("cancel")}</button>
                                 <button type="submit" className="cursor-pointer px-8 py-3 bg-primary text-primary-foreground rounded-xl text-xs font-bold transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none">{t("create")}</button>
@@ -351,7 +361,7 @@ export default function RentersPage() {
                         {t("noRentersFound")}
                     </p>
                     {canManageRenters && (
-                        <button onClick={() => setShowForm(true)} className="cursor-pointer text-xs font-bold text-foreground border-b-2 border-primary pb-0.5 hover:text-primary transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none">
+                        <button onClick={() => { setFormError(null); setShowForm(true); }} className="cursor-pointer text-xs font-bold text-foreground border-b-2 border-primary pb-0.5 hover:text-primary transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:outline-none">
                             {t("addRenter")}
                         </button>
                     )}

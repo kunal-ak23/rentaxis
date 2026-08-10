@@ -30,6 +30,7 @@ class RenewalReminderServiceTest {
     @Autowired RenewalReminderService service;
     @Autowired RenewalOpportunityRepository oppRepo;
     @Autowired LeaseReminderRepository reminderRepo;
+    @Autowired NotificationRepository notificationRepo;
     @Autowired LeaseRepository leaseRepo;
     @Autowired LandlordOrgRepository orgRepo;
     @Autowired UserRepository userRepo;
@@ -108,6 +109,24 @@ class RenewalReminderServiceTest {
         List<LeaseReminder> reminders = reminderRepo.findByOpportunityId(o.getId());
         long skipped = reminders.stream().filter(r -> r.getStatus() == ReminderStatus.SKIPPED && "intent captured: RENEW".equals(r.getLastError())).count();
         assertThat(skipped).isGreaterThanOrEqualTo(2);
+    }
+
+    @Test
+    void in_app_reminder_copy_directs_to_web_portal_not_a_tap_action() {
+        RenewalOpportunity o = openOppForLeaseDaysOut(85);
+        service.fireRemindersForOpportunity(o.getId(), LocalDate.of(2026, 6, 1));
+
+        UUID renterUserId = o.getLease().getRenter().getUserId();
+        List<Notification> notifications = notificationRepo.findByUserIdOrderByCreatedAtDesc(renterUserId);
+        assertThat(notifications)
+                .filteredOn(n -> "LEASE_RENEWAL_REMINDER".equals(n.getType()))
+                .isNotEmpty()
+                .allSatisfy(n -> {
+                    // The renter mobile app has no renewal screen, so the copy must not
+                    // instruct a tap action; it points at the renter web portal instead.
+                    assertThat(n.getMessage()).doesNotContain("Tap to");
+                    assertThat(n.getMessage()).contains("renter web portal");
+                });
     }
 
     @Test

@@ -4,7 +4,10 @@ import com.datagami.rentaxis.domain.entity.enums.Emirate;
 import com.datagami.rentaxis.domain.entity.enums.PropertyType;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.PositiveOrZero;
 import lombok.Data;
+
+import java.math.BigDecimal;
 
 @Data
 public class CreatePropertyDTO {
@@ -19,4 +22,7 @@ public class CreatePropertyDTO {
     private Emirate emirate;
     private String address;
     private String makaniNumber;
+
+    @PositiveOrZero(message = "Fixed expenses cannot be negative")
+    private BigDecimal fixedExpenses;
 }

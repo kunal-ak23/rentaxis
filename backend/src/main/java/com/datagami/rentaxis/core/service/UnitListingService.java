@@ -8,6 +8,7 @@ import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.event.ListingPublishedEvent;
 import com.datagami.rentaxis.core.event.ListingUnlistedEvent;
 import com.datagami.rentaxis.domain.entity.Lease;
+import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.UnitListing;
 import com.datagami.rentaxis.domain.entity.UnitListingAmenityEntry;
 import com.datagami.rentaxis.domain.entity.UnitListingInterest;
@@ -24,11 +25,13 @@ import com.datagami.rentaxis.domain.repository.UnitListingMediaRepository;
 import com.datagami.rentaxis.domain.repository.UnitListingRepository;
 import com.datagami.rentaxis.domain.repository.UnitRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
+import jakarta.persistence.criteria.Predicate;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -37,6 +40,7 @@ import java.time.LocalDate;
 import java.util.Set;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -93,11 +97,38 @@ public class UnitListingService {
     }
 
     @Transactional(readOnly = true)
-    public Page<UnitListing> list(UUID tenantId, ListingStatus statusFilter, Pageable pageable) {
-        if (statusFilter != null) {
-            return listingRepository.findByTenantIdAndStatus(tenantId, statusFilter, pageable);
-        }
-        return listingRepository.findByTenantId(tenantId, pageable);
+    public Page<UnitListing> list(UUID tenantId, ListingStatus statusFilter,
+                                  UUID propertyId, String q, Pageable pageable) {
+        Specification<UnitListing> spec = (root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+
+            // Always tenant-scoped
+            predicates.add(cb.equal(root.get("tenantId"), tenantId));
+
+            if (statusFilter != null) {
+                predicates.add(cb.equal(root.get("status"), statusFilter));
+            }
+
+            if (propertyId != null) {
+                // UnitListing only stores unitId, so resolve the property via a
+                // subquery on Unit rather than a join.
+                var unitIds = query.subquery(UUID.class);
+                var unitRoot = unitIds.from(Unit.class);
+                unitIds.select(unitRoot.get("id"))
+                        .where(cb.equal(unitRoot.get("property").get("id"), propertyId));
+                predicates.add(root.get("unitId").in(unitIds));
+            }
+
+            if (q != null && !q.isBlank()) {
+                String like = "%" + q.trim().toLowerCase() + "%";
+                predicates.add(cb.or(
+                        cb.like(cb.lower(root.get("titleEn")), like),
+                        cb.like(cb.lower(root.get("titleAr")), like)));
+            }
+
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+        return listingRepository.findAll(spec, pageable);
     }
 
     @Transactional(readOnly = true)

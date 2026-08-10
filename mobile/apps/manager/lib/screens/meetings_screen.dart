@@ -110,10 +110,21 @@ class MeetingsScreen extends ConsumerStatefulWidget {
 }
 
 class _MeetingsScreenState extends ConsumerState<MeetingsScreen> {
+  static const _pageSize = 25;
+
   List<dynamic> _meetings = [];
   bool _isLoading = true;
+  bool _loadingMore = false;
   String? _error;
   int _segment = 0; // 0=All, 1=My (host)
+
+  // Server-side pagination state: meetings accumulate page by page (sorted
+  // slotStart ASC by the backend) so tenants with more meetings than one
+  // page holds aren't silently truncated. The epoch guards against a stale
+  // in-flight fetch (e.g. after a segment switch) landing on fresh state.
+  int _page = 0;
+  int _totalPages = 1;
+  int _fetchEpoch = 0;
 
   @override
   void initState() {
@@ -122,27 +133,52 @@ class _MeetingsScreenState extends ConsumerState<MeetingsScreen> {
   }
 
   Future<void> _load() async {
+    final epoch = ++_fetchEpoch;
     setState(() {
       _isLoading = true;
       _error = null;
+      _meetings = [];
+      _page = 0;
+      _totalPages = 1;
     });
+    await _fetchPage(0, epoch);
+  }
+
+  Future<void> _fetchPage(int page, int epoch) async {
     try {
       final svc = ref.read(_meetingServiceProvider);
-      final data = _segment == 0
-          ? await svc.listMeetings()
-          : await svc.listMyMeetings(perspective: 'host');
-      if (!mounted) return;
+      final result = _segment == 0
+          ? await svc.listMeetingsPage(page: page, size: _pageSize)
+          : await svc.listMyMeetingsPage(
+              perspective: 'host',
+              page: page,
+              size: _pageSize,
+            );
+      if (!mounted || epoch != _fetchEpoch) return;
       setState(() {
-        _meetings = data;
+        _meetings = [..._meetings, ...(result['content'] as List? ?? const [])];
+        _page = page;
+        _totalPages = (result['totalPages'] as num?)?.toInt() ?? 1;
         _isLoading = false;
+        _loadingMore = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || epoch != _fetchEpoch) return;
       setState(() {
-        _error = _L(context.isAr).failedToLoad;
         _isLoading = false;
+        _loadingMore = false;
+        // Failing to extend the list shouldn't blank rows already on screen.
+        _error = _meetings.isEmpty ? _L(context.isAr).failedToLoad : null;
       });
     }
+  }
+
+  bool get _hasMore => _page + 1 < _totalPages;
+
+  Future<void> _loadMore() async {
+    if (_isLoading || _loadingMore || !_hasMore) return;
+    setState(() => _loadingMore = true);
+    await _fetchPage(_page + 1, _fetchEpoch);
   }
 
   @override
@@ -168,21 +204,42 @@ class _MeetingsScreenState extends ConsumerState<MeetingsScreen> {
                     title: l.noMeetingsFound,
                     icon: Icons.event_outlined,
                   )
-                : RefreshIndicator(
-                    onRefresh: _load,
-                    color: AppColors.accent,
-                    child: ListView.separated(
-                      padding: EdgeInsets.fromLTRB(
-                        20,
-                        14,
-                        20,
-                        AppInsets.bottomNav(context),
-                      ),
-                      itemCount: _meetings.length,
-                      separatorBuilder: (_, _) => const SizedBox(height: 10),
-                      itemBuilder: (_, i) => AnimatedListItem(
-                        index: i,
-                        child: _MeetingCard(meeting: _meetings[i], l: l),
+                : NotificationListener<ScrollNotification>(
+                    onNotification: (scrollInfo) {
+                      if (scrollInfo.metrics.pixels >=
+                          scrollInfo.metrics.maxScrollExtent - 200) {
+                        _loadMore();
+                      }
+                      return false;
+                    },
+                    child: RefreshIndicator(
+                      onRefresh: _load,
+                      color: AppColors.accent,
+                      child: ListView.separated(
+                        padding: EdgeInsets.fromLTRB(
+                          20,
+                          14,
+                          20,
+                          AppInsets.bottomNav(context),
+                        ),
+                        itemCount: _meetings.length + (_loadingMore ? 1 : 0),
+                        separatorBuilder: (_, _) => const SizedBox(height: 10),
+                        itemBuilder: (_, i) {
+                          if (i >= _meetings.length) {
+                            return const Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(16),
+                                child: CircularProgressIndicator(
+                                  color: AppColors.accent,
+                                ),
+                              ),
+                            );
+                          }
+                          return AnimatedListItem(
+                            index: i,
+                            child: _MeetingCard(meeting: _meetings[i], l: l),
+                          );
+                        },
                       ),
                     ),
                   ),
