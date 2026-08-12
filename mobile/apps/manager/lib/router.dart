@@ -5,6 +5,7 @@ import 'package:rentaxis_core/rentaxis_core.dart';
 
 import 'screens/login_screen.dart';
 import 'screens/shell_screen.dart';
+import 'screens/queue_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/properties_screen.dart';
 import 'screens/property_detail_screen.dart';
@@ -204,6 +205,12 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/renters',
             pageBuilder: (context, state) =>
                 fadeTransition(const RentersScreen(), state),
+          ),
+          GoRoute(
+            // Queue — the single approvals surface the redesign introduces.
+            path: '/queue',
+            pageBuilder: (context, state) =>
+                fadeTransition(const QueueScreen(), state),
           ),
           GoRoute(
             path: '/finance',
