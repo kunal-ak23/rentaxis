@@ -49,7 +49,7 @@ class ErrorState extends StatelessWidget {
     );
   }
 
-  Widget _body(MiftahColors m, bool ar) {
+  Widget _body(LegacyMiftahColors m, bool ar) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,

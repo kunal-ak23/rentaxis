@@ -452,7 +452,7 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
     );
   }
 
-  Widget _buildFilterRow(MiftahColors m, _L l) {
+  Widget _buildFilterRow(LegacyMiftahColors m, _L l) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
       child: Row(
@@ -506,7 +506,7 @@ class _CountChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
       decoration: BoxDecoration(
-        gradient: emphasize ? MiftahGradients.gold : null,
+        gradient: emphasize ? LegacyMiftahGradients.gold : null,
         color: emphasize ? null : Colors.transparent,
         border: emphasize
             ? null

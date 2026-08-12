@@ -59,7 +59,7 @@ class AppColorsDark {
 
 /// Brightness-aware semantic tokens. Resolve via `context.miftah`.
 @immutable
-class MiftahColors extends ThemeExtension<MiftahColors> {
+class LegacyMiftahColors extends ThemeExtension<LegacyMiftahColors> {
   /// App chrome (headers, hero cards) — near-black in both modes.
   final Color chrome;
 
@@ -92,7 +92,7 @@ class MiftahColors extends ThemeExtension<MiftahColors> {
   final Color goldOutline;
   final bool isDark;
 
-  const MiftahColors({
+  const LegacyMiftahColors({
     required this.chrome,
     required this.chromeBorder,
     required this.background,
@@ -115,7 +115,7 @@ class MiftahColors extends ThemeExtension<MiftahColors> {
     required this.isDark,
   });
 
-  static const light = MiftahColors(
+  static const light = LegacyMiftahColors(
     chrome: AppColors.primary,
     chromeBorder: Color(0x24EEC046),
     background: AppColors.background,
@@ -138,7 +138,7 @@ class MiftahColors extends ThemeExtension<MiftahColors> {
     isDark: false,
   );
 
-  static const dark = MiftahColors(
+  static const dark = LegacyMiftahColors(
     chrome: AppColors.primary,
     chromeBorder: Color(0x24EEC046),
     background: AppColorsDark.background,
@@ -162,7 +162,7 @@ class MiftahColors extends ThemeExtension<MiftahColors> {
   );
 
   @override
-  MiftahColors copyWith({
+  LegacyMiftahColors copyWith({
     Color? chrome,
     Color? chromeBorder,
     Color? background,
@@ -184,7 +184,7 @@ class MiftahColors extends ThemeExtension<MiftahColors> {
     Color? goldOutline,
     bool? isDark,
   }) {
-    return MiftahColors(
+    return LegacyMiftahColors(
       chrome: chrome ?? this.chrome,
       chromeBorder: chromeBorder ?? this.chromeBorder,
       background: background ?? this.background,
@@ -209,9 +209,9 @@ class MiftahColors extends ThemeExtension<MiftahColors> {
   }
 
   @override
-  MiftahColors lerp(ThemeExtension<MiftahColors>? other, double t) {
-    if (other is! MiftahColors) return this;
-    return MiftahColors(
+  LegacyMiftahColors lerp(ThemeExtension<LegacyMiftahColors>? other, double t) {
+    if (other is! LegacyMiftahColors) return this;
+    return LegacyMiftahColors(
       chrome: Color.lerp(chrome, other.chrome, t)!,
       chromeBorder: Color.lerp(chromeBorder, other.chromeBorder, t)!,
       background: Color.lerp(background, other.background, t)!,
@@ -236,12 +236,12 @@ class MiftahColors extends ThemeExtension<MiftahColors> {
   }
 }
 
-extension MiftahColorsX on BuildContext {
-  MiftahColors get miftah =>
-      Theme.of(this).extension<MiftahColors>() ?? MiftahColors.light;
+extension LegacyMiftahColorsX on BuildContext {
+  LegacyMiftahColors get miftah =>
+      Theme.of(this).extension<LegacyMiftahColors>() ?? LegacyMiftahColors.light;
 }
 
-class MiftahGradients {
+class LegacyMiftahGradients {
   /// Primary gold CTA fill: bronze → gold → pale gold.
   static const gold = LinearGradient(
     begin: Alignment.centerLeft,
@@ -316,7 +316,7 @@ class AppShadows {
 
 /// Miftah type helpers: Cinzel for display (Trajan-style, tracks wide,
 /// pairs with the wordmark), Josefin Sans for UI text.
-class MiftahType {
+class LegacyMiftahType {
   static TextStyle display({
     double fontSize = 22,
     FontWeight fontWeight = FontWeight.w500,
@@ -370,7 +370,7 @@ class AppTheme {
         ),
       );
 
-  static TextTheme _bodyTextTheme(MiftahColors c) =>
+  static TextTheme _bodyTextTheme(LegacyMiftahColors c) =>
       GoogleFonts.josefinSansTextTheme(
         TextTheme(
           titleLarge: TextStyle(
@@ -423,7 +423,7 @@ class AppTheme {
         ),
       );
 
-  static TextTheme _mergedTextTheme(MiftahColors c) {
+  static TextTheme _mergedTextTheme(LegacyMiftahColors c) {
     final body = _bodyTextTheme(c);
     final heading = _headingTextTheme(c.textPrimary);
     return body.copyWith(
@@ -433,11 +433,11 @@ class AppTheme {
     );
   }
 
-  static ThemeData get lightTheme => _theme(MiftahColors.light);
+  static ThemeData get lightTheme => _theme(LegacyMiftahColors.light);
 
-  static ThemeData get darkTheme => _theme(MiftahColors.dark);
+  static ThemeData get darkTheme => _theme(LegacyMiftahColors.dark);
 
-  static ThemeData _theme(MiftahColors c) {
+  static ThemeData _theme(LegacyMiftahColors c) {
     final isDark = c.isDark;
     return ThemeData(
       useMaterial3: true,

@@ -202,7 +202,7 @@ class MoreScreen extends ConsumerWidget {
     );
   }
 
-  Widget _sectionLabel(String text, bool ar, MiftahColors m) {
+  Widget _sectionLabel(String text, bool ar, LegacyMiftahColors m) {
     return Padding(
       padding: const EdgeInsetsDirectional.only(start: 4, top: 18, bottom: 9),
       child: Text(
@@ -329,7 +329,7 @@ class _AppearanceCard extends ConsumerWidget {
             margin: const EdgeInsets.symmetric(horizontal: 3),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(999),
-              gradient: selected ? MiftahGradients.gold : null,
+              gradient: selected ? LegacyMiftahGradients.gold : null,
               border: selected ? null : Border.all(color: m.borderStrong),
             ),
             alignment: Alignment.center,

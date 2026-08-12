@@ -54,7 +54,7 @@ class GoldButton extends StatelessWidget {
       height: height,
       padding: const EdgeInsets.symmetric(horizontal: 20),
       decoration: BoxDecoration(
-        gradient: _outlined ? null : MiftahGradients.gold,
+        gradient: _outlined ? null : LegacyMiftahGradients.gold,
         borderRadius: BorderRadius.circular(10),
         border: _outlined
             ? Border.all(color: goldOutlined ? m.goldOutline : m.borderStrong)

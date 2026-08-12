@@ -175,7 +175,7 @@ class _GatePassCreateScreenState extends ConsumerState<GatePassCreateScreen> {
     );
   }
 
-  Widget _form(List<Map<String, dynamic>> leases, MiftahColors m, _L l) {
+  Widget _form(List<Map<String, dynamic>> leases, LegacyMiftahColors m, _L l) {
     // One lease is the overwhelmingly common case; choosing between one option
     // is not a choice, so it is made silently and the picker never appears.
     if (_selectedUnitId == null && leases.length == 1) {
@@ -191,7 +191,7 @@ class _GatePassCreateScreenState extends ConsumerState<GatePassCreateScreen> {
             16,
             16,
             16,
-            AppInsets.bottomNav(context, spacing: 32),
+            32,
           ),
           children: [
             if (leases.length > 1) ...[
@@ -462,7 +462,7 @@ String _describeCreateError(Object error, _L l) {
   return l.createFailed;
 }
 
-Widget _label(String text, MiftahColors m) => Padding(
+Widget _label(String text, LegacyMiftahColors m) => Padding(
   padding: const EdgeInsets.only(bottom: 6),
   child: Text(
     text,
@@ -562,7 +562,7 @@ class _TypeToggle extends StatelessWidget {
   }
 
   Widget _segment(
-    MiftahColors m, {
+    LegacyMiftahColors m, {
     required String label,
     required bool selected,
     required bool value,

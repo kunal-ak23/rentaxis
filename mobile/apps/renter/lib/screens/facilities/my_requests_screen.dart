@@ -60,7 +60,7 @@ class _L {
   };
 }
 
-Color _statusColor(String? status, MiftahColors m) => switch (status) {
+Color _statusColor(String? status, LegacyMiftahColors m) => switch (status) {
   'PENDING' => m.warning,
   'APPROVED' => m.success,
   'REJECTED' => m.danger,
@@ -123,7 +123,7 @@ class MyRequestsScreen extends ConsumerWidget {
                 16,
                 12,
                 16,
-                AppInsets.bottomNav(context),
+                24,
               ),
               // `rows` is createdAt ASC as returned by the server — never
               // re-sorted client-side (the project's created-ascending

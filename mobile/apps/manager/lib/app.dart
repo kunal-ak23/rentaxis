@@ -15,8 +15,8 @@ class ManagerApp extends ConsumerWidget {
 
     return MaterialApp.router(
       title: 'Miftah Manager',
-      theme: AppTheme.lightTheme,
-      darkTheme: AppTheme.darkTheme,
+      theme: MiftahTheme.light,
+      darkTheme: MiftahTheme.dark,
       themeMode: themeMode,
       locale: language == AppLanguage.ar
           ? const Locale('ar')

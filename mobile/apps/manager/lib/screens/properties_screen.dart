@@ -648,7 +648,7 @@ class _PropertyCard extends StatelessWidget {
 class _OccupancyPill extends StatelessWidget {
   final double occupancy;
   final _L l;
-  final MiftahColors m;
+  final LegacyMiftahColors m;
   const _OccupancyPill({
     required this.occupancy,
     required this.l,
@@ -691,7 +691,7 @@ class _StatCell extends StatelessWidget {
   final String label;
   final String value;
   final Color? tone;
-  final MiftahColors m;
+  final LegacyMiftahColors m;
   final _L l;
 
   const _StatCell({

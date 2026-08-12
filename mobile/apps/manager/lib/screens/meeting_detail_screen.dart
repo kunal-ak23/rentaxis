@@ -223,7 +223,7 @@ class _MeetingDetailScreenState extends ConsumerState<MeetingDetailScreen> {
     }
   }
 
-  Color _statusColor(MiftahColors m, String status) {
+  Color _statusColor(LegacyMiftahColors m, String status) {
     switch (status) {
       case 'APPROVED':
         return m.success;
@@ -266,7 +266,7 @@ class _MeetingDetailScreenState extends ConsumerState<MeetingDetailScreen> {
     );
   }
 
-  Widget _buildHeader(MiftahColors m, _L l) {
+  Widget _buildHeader(LegacyMiftahColors m, _L l) {
     final status = (_meeting?['status'] ?? 'REQUESTED').toString();
     return Container(
       decoration: BoxDecoration(
@@ -420,7 +420,7 @@ class _MeetingDetailScreenState extends ConsumerState<MeetingDetailScreen> {
     );
   }
 
-  Widget _buildBody(MiftahColors m, _L l) {
+  Widget _buildBody(LegacyMiftahColors m, _L l) {
     final meetingData = _meeting!;
     final status = (meetingData['status'] ?? 'REQUESTED').toString();
     final purpose = (meetingData['purpose'] ?? '').toString();
@@ -579,7 +579,7 @@ class _MeetingDetailScreenState extends ConsumerState<MeetingDetailScreen> {
   Widget _buildDetails(
     String purpose,
     Map<String, dynamic> details,
-    MiftahColors m,
+    LegacyMiftahColors m,
     _L l,
   ) {
     if (purpose == 'LEASE_RENEWAL') {
@@ -664,7 +664,7 @@ class _StatusPill extends StatelessWidget {
 class _InfoRow extends StatelessWidget {
   final IconData icon;
   final String text;
-  final MiftahColors m;
+  final LegacyMiftahColors m;
   const _InfoRow({required this.icon, required this.text, required this.m});
 
   @override
@@ -690,7 +690,7 @@ class _InfoRow extends StatelessWidget {
 class _SectionCard extends StatelessWidget {
   final String title;
   final Widget child;
-  final MiftahColors m;
+  final LegacyMiftahColors m;
   final _L l;
   const _SectionCard({
     required this.title,
@@ -734,7 +734,7 @@ class _SectionCard extends StatelessWidget {
 class _DetailRow extends StatelessWidget {
   final String label;
   final String value;
-  final MiftahColors m;
+  final LegacyMiftahColors m;
   const _DetailRow({required this.label, required this.value, required this.m});
 
   @override

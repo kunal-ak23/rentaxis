@@ -543,7 +543,7 @@ class ReportDetailScreen extends ConsumerWidget {
     return EmptyState(icon: Icons.article_outlined, title: l.noData);
   }
 
-  Widget _sectionLabel(String text, bool ar, MiftahColors m) {
+  Widget _sectionLabel(String text, bool ar, LegacyMiftahColors m) {
     return Text(
       ar ? text : text.toUpperCase(),
       style: ar

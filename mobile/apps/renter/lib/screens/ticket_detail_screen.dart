@@ -253,7 +253,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
                               20,
                               16,
                               20,
-                              AppInsets.bottomNav(context),
+                              24,
                             ),
                             children: [
                               // Priority + raised time
@@ -823,7 +823,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
             width: 46,
             height: 46,
             decoration: const BoxDecoration(
-              gradient: MiftahGradients.gold,
+              gradient: LegacyMiftahGradients.gold,
               shape: BoxShape.circle,
             ),
             child: IconButton(
@@ -1246,7 +1246,7 @@ class _OtpSection extends StatelessWidget {
 }
 
 /// A single ticket update per design 1g: left hairline rail + card. Own
-/// messages render on [MiftahColors.surfaceAlt] to stand out from replies.
+/// messages render on [LegacyMiftahColors.surfaceAlt] to stand out from replies.
 class _UpdateCard extends StatelessWidget {
   final Map<String, dynamic> reply;
   final bool isCurrentUser;

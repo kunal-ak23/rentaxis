@@ -168,7 +168,7 @@ class _PenaltyTabBody extends ConsumerWidget {
                   16,
                   16,
                   16,
-                  AppInsets.bottomNav(context),
+                  24,
                 ),
                 children: [
                   ...penalties.asMap().entries.map(

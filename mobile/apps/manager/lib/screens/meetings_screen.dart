@@ -368,7 +368,7 @@ class _MeetingCard extends StatelessWidget {
   final _L l;
   const _MeetingCard({required this.meeting, required this.l});
 
-  Color _statusColor(MiftahColors m, String status) {
+  Color _statusColor(LegacyMiftahColors m, String status) {
     switch (status) {
       case 'APPROVED':
         return m.success;

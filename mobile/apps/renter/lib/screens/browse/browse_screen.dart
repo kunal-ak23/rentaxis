@@ -223,7 +223,7 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
 
   Widget _buildShimmer() {
     return ListView.builder(
-      padding: EdgeInsets.fromLTRB(16, 8, 16, AppInsets.bottomNav(context)),
+      padding: EdgeInsets.fromLTRB(16, 8, 16, 24),
       itemCount: 6,
       itemBuilder: (_, i) => Padding(
         padding: const EdgeInsets.only(bottom: 16),
@@ -508,7 +508,7 @@ class _ListingListView extends ConsumerWidget {
     final wishlistedIds = ref.watch(wishlistIdsProvider);
     final count = listings.length + (truncated ? 1 : 0);
     return ListView.builder(
-      padding: EdgeInsets.fromLTRB(16, 8, 16, AppInsets.bottomNav(context)),
+      padding: EdgeInsets.fromLTRB(16, 8, 16, 24),
       itemCount: count,
       itemBuilder: (_, i) {
         if (truncated && i == listings.length) {

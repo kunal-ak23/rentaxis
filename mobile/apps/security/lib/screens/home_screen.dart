@@ -496,7 +496,7 @@ class _AppearanceRow extends ConsumerWidget {
             margin: const EdgeInsets.symmetric(horizontal: 3),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(999),
-              gradient: selected ? MiftahGradients.gold : null,
+              gradient: selected ? LegacyMiftahGradients.gold : null,
               border: selected ? null : Border.all(color: m.borderStrong),
             ),
             alignment: Alignment.center,

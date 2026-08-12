@@ -182,7 +182,7 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
                       20,
                       8,
                       20,
-                      AppInsets.bottomNav(context),
+                      24,
                     ),
                     itemCount: filtered.length,
                     itemBuilder: (context, index) {
@@ -303,7 +303,7 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
     );
   }
 
-  Widget _buildSearchBar(MiftahColors m, _L l) {
+  Widget _buildSearchBar(LegacyMiftahColors m, _L l) {
     return Container(
       decoration: BoxDecoration(
         color: m.surface,
@@ -593,7 +593,7 @@ class _StatusPill extends StatelessWidget {
 
 class _StageDots extends StatelessWidget {
   final int filled;
-  final MiftahColors m;
+  final LegacyMiftahColors m;
 
   const _StageDots({required this.filled, required this.m});
 

@@ -198,7 +198,7 @@ class _LeasePenaltiesScreenState extends ConsumerState<LeasePenaltiesScreen> {
     );
   }
 
-  Widget _buildBody(MiftahColors m, _L l) {
+  Widget _buildBody(LegacyMiftahColors m, _L l) {
     if (_isLoading) {
       return const Center(
         child: CircularProgressIndicator(color: AppColors.accent),
@@ -240,7 +240,7 @@ class _LeasePenaltiesScreenState extends ConsumerState<LeasePenaltiesScreen> {
 
 class _PenaltyCard extends StatelessWidget {
   final Map<String, dynamic> penalty;
-  final MiftahColors m;
+  final LegacyMiftahColors m;
   final _L l;
   final VoidCallback onWaive;
 

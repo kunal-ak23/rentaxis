@@ -190,7 +190,7 @@ class _VideoSplashScreenState extends State<VideoSplashScreen>
                             widthFactor: 0.1 + 0.9 * _progressController.value,
                             child: const DecoratedBox(
                               decoration: BoxDecoration(
-                                gradient: MiftahGradients.goldProgress,
+                                gradient: LegacyMiftahGradients.goldProgress,
                               ),
                             ),
                           ),

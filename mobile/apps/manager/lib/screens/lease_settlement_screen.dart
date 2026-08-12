@@ -759,7 +759,7 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
 
   // ─── FINALIZED VIEW ────────────────────────────────────────────────────────
 
-  Widget _buildFinalizedBody(MiftahColors m, _L l) {
+  Widget _buildFinalizedBody(LegacyMiftahColors m, _L l) {
     return SingleChildScrollView(
       padding: EdgeInsets.fromLTRB(16, 16, 16, AppInsets.bottomNav(context)),
       child: Column(
@@ -852,7 +852,7 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
     );
   }
 
-  Widget _buildFinalizedBadge(MiftahColors m, _L l) {
+  Widget _buildFinalizedBadge(LegacyMiftahColors m, _L l) {
     final finalizedAt = _settlement?['finalizedAt'] as String?;
     return Container(
       width: double.infinity,
@@ -900,7 +900,7 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
 
   // ─── EDITABLE VIEW ─────────────────────────────────────────────────────────
 
-  Widget _buildEditableBody(MiftahColors m, _L l) {
+  Widget _buildEditableBody(LegacyMiftahColors m, _L l) {
     return SingleChildScrollView(
       padding: EdgeInsets.fromLTRB(16, 16, 16, AppInsets.bottomNav(context)),
       child: Column(
@@ -977,7 +977,7 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
     );
   }
 
-  Widget _buildActionButtons(MiftahColors m, _L l) {
+  Widget _buildActionButtons(LegacyMiftahColors m, _L l) {
     return Row(
       children: [
         Expanded(
@@ -1025,7 +1025,7 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
 
   // ─── SHARED SECTIONS ───────────────────────────────────────────────────────
 
-  Widget _buildDepositCard(MiftahColors m, _L l) {
+  Widget _buildDepositCard(LegacyMiftahColors m, _L l) {
     final deposit = _depositAmount;
     return Container(
       width: double.infinity,
@@ -1076,7 +1076,7 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
   }
 
   Widget _buildAutoDeductionsSection(
-    MiftahColors m,
+    LegacyMiftahColors m,
     _L l, {
     required bool readOnly,
   }) {
@@ -1110,7 +1110,7 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
   }
 
   Widget _buildAutoDeductionCard(
-    MiftahColors m,
+    LegacyMiftahColors m,
     _L l,
     Map<String, dynamic> deduction,
     int index,
@@ -1234,7 +1234,7 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
   }
 
   Widget _buildManualDeductionsSection(
-    MiftahColors m,
+    LegacyMiftahColors m,
     _L l, {
     required bool readOnly,
   }) {
@@ -1286,7 +1286,7 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
   }
 
   Widget _buildManualDeductionCard(
-    MiftahColors m,
+    LegacyMiftahColors m,
     _L l,
     Map<String, dynamic> deduction,
     int index,
@@ -1484,7 +1484,7 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
   }
 
   Widget _buildAttachmentGrid(
-    MiftahColors m,
+    LegacyMiftahColors m,
     List<Map<String, dynamic>> attachments,
     int deductionIndex,
     bool readOnly,
@@ -1585,7 +1585,7 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
     );
   }
 
-  Widget _buildImageThumbnail(MiftahColors m, Map<String, dynamic> attachment) {
+  Widget _buildImageThumbnail(LegacyMiftahColors m, Map<String, dynamic> attachment) {
     final url = attachment['fileUrl'] as String?;
     if (url != null && url.isNotEmpty) {
       return Image.network(
@@ -1615,7 +1615,7 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
     return ['mp4', 'mov', 'avi', 'mkv'].contains(ext);
   }
 
-  Widget _buildNotesField(MiftahColors m, _L l, {required bool readOnly}) {
+  Widget _buildNotesField(LegacyMiftahColors m, _L l, {required bool readOnly}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1638,7 +1638,7 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
     );
   }
 
-  Widget _buildSummaryCard(MiftahColors m, _L l) {
+  Widget _buildSummaryCard(LegacyMiftahColors m, _L l) {
     final total = _totalDeductions;
     final deposit = _depositAmount;
     final refund = _refundAmount;
@@ -1759,7 +1759,7 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
   // ─── ADDITION CARD ─────────────────────────────────────────────────────────
 
   Widget _buildAdditionCard(
-    MiftahColors m,
+    LegacyMiftahColors m,
     _L l,
     int index,
     Map<String, dynamic> addition,
@@ -2054,7 +2054,7 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
 class _SectionHeader extends StatelessWidget {
   final IconData icon;
   final String title;
-  final MiftahColors m;
+  final LegacyMiftahColors m;
   final _L l;
   const _SectionHeader({
     required this.icon,

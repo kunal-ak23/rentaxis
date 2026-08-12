@@ -982,7 +982,7 @@ class _PaymentCard extends StatelessWidget {
     required this.onTap,
   });
 
-  ({Color color, IconData icon}) _statusMeta(MiftahColors m, String status) {
+  ({Color color, IconData icon}) _statusMeta(LegacyMiftahColors m, String status) {
     switch (status) {
       case 'PENDING':
       case 'ONLINE_PENDING':

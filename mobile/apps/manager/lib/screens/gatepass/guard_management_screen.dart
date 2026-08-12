@@ -80,7 +80,7 @@ class _L {
   };
 }
 
-Color _guardStatusColor(String status, MiftahColors m) => switch (status) {
+Color _guardStatusColor(String status, LegacyMiftahColors m) => switch (status) {
   'ACTIVE' => m.success,
   'SUSPENDED' || 'DISABLED' => m.danger,
   'PENDING' => m.warning,
@@ -347,7 +347,7 @@ class _UnpostedFlag extends StatelessWidget {
   const _UnpostedFlag({required this.l, required this.m});
 
   final _L l;
-  final MiftahColors m;
+  final LegacyMiftahColors m;
 
   @override
   Widget build(BuildContext context) {

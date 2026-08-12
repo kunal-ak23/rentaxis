@@ -25,6 +25,7 @@ import 'screens/gatepass/gate_pass_detail_screen.dart';
 import 'screens/gatepass/resident_approvals_screen.dart';
 import 'screens/facilities/facilities_screen.dart';
 import 'screens/facilities/my_requests_screen.dart';
+import 'screens/services_hub_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authProvider);
@@ -81,6 +82,13 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/payments',
             pageBuilder: (context, state) =>
                 fadeTransition(const PaymentsScreen(), state),
+          ),
+          // Services hub — the tab root that now fronts Meetings, Tickets,
+          // Facilities, Gate passes, Approvals and Penalties.
+          GoRoute(
+            path: '/services',
+            pageBuilder: (context, state) =>
+                fadeTransition(const ServicesHubScreen(), state),
           ),
           GoRoute(
             path: '/tickets',

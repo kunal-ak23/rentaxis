@@ -280,7 +280,7 @@ class _AccountsTab extends ConsumerWidget {
     );
   }
 
-  Color _accountTypeColor(String type, MiftahColors m) {
+  Color _accountTypeColor(String type, LegacyMiftahColors m) {
     return switch (type) {
       'ASSET' => AppColors.info,
       'LIABILITY' => m.danger,
@@ -592,7 +592,7 @@ class _ReportsTab extends ConsumerWidget {
     );
   }
 
-  Widget _sectionLabel(String text, bool ar, MiftahColors m) {
+  Widget _sectionLabel(String text, bool ar, LegacyMiftahColors m) {
     return Text(
       ar ? text : text.toUpperCase(),
       style: ar

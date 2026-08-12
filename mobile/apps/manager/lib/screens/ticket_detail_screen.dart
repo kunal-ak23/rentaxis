@@ -449,7 +449,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
     );
   }
 
-  Widget _buildBody(MiftahColors m, _L l) {
+  Widget _buildBody(LegacyMiftahColors m, _L l) {
     final ticket = _ticket!;
     final status = (ticket['status'] ?? 'OPEN').toString();
     final priority = (ticket['priority'] ?? 'MEDIUM').toString();
@@ -642,7 +642,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
     );
   }
 
-  Widget _sectionLabel(String text, _L l, MiftahColors m) {
+  Widget _sectionLabel(String text, _L l, LegacyMiftahColors m) {
     return Text(
       text,
       style: l.ar
@@ -731,7 +731,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
     );
   }
 
-  Widget _buildReplyInput(_L l, MiftahColors m) {
+  Widget _buildReplyInput(_L l, LegacyMiftahColors m) {
     return Container(
       padding: EdgeInsets.only(
         left: 16,
@@ -795,7 +795,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
             width: 46,
             height: 46,
             decoration: const BoxDecoration(
-              gradient: MiftahGradients.gold,
+              gradient: LegacyMiftahGradients.gold,
               shape: BoxShape.circle,
             ),
             child: IconButton(
@@ -924,7 +924,7 @@ class _StatusPill extends StatelessWidget {
 class _InfoRow extends StatelessWidget {
   final IconData icon;
   final String text;
-  final MiftahColors m;
+  final LegacyMiftahColors m;
   const _InfoRow({required this.icon, required this.text, required this.m});
 
   @override
@@ -1016,7 +1016,7 @@ class _AssigneeCard extends StatelessWidget {
 
 class _AttachmentThumb extends StatelessWidget {
   final Map<String, dynamic> att;
-  final MiftahColors m;
+  final LegacyMiftahColors m;
   const _AttachmentThumb({required this.att, required this.m});
 
   @override
@@ -1250,7 +1250,7 @@ class _ActionsPanel extends StatelessWidget {
 }
 
 /// A single ticket update per renter design pattern: left hairline rail +
-/// card. Own messages render on [MiftahColors.surfaceAlt] to stand out.
+/// card. Own messages render on [LegacyMiftahColors.surfaceAlt] to stand out.
 class _UpdateCard extends StatelessWidget {
   final Map<String, dynamic> reply;
   final bool isCurrentUser;
@@ -1320,7 +1320,7 @@ class _UpdateCard extends StatelessWidget {
 class _HistoryRow extends StatelessWidget {
   final Map<String, dynamic> item;
   final _L l;
-  final MiftahColors m;
+  final LegacyMiftahColors m;
   const _HistoryRow({required this.item, required this.l, required this.m});
 
   @override

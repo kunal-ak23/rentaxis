@@ -133,7 +133,7 @@ class _Header extends StatelessWidget {
                         fontSize: 11.5,
                         color: m.textMuted,
                       )
-                    : MiftahType.overline(
+                    : LegacyMiftahType.overline(
                         fontSize: 9,
                         letterSpacing: 2.4,
                         color: AppColors.accentDark,
@@ -296,7 +296,7 @@ class _KpiCell extends StatelessWidget {
   final Color? subTone;
   final Color? tone;
   final double? progress;
-  final MiftahColors m;
+  final LegacyMiftahColors m;
   final _L l;
 
   const _KpiCell({
@@ -418,7 +418,7 @@ class _Task {
 class _NeedsAttention extends StatelessWidget {
   final Map<String, dynamic> data;
   final _L l;
-  final MiftahColors m;
+  final LegacyMiftahColors m;
   const _NeedsAttention({required this.data, required this.l, required this.m});
 
   List<_Task> _buildTasks() {
@@ -565,7 +565,7 @@ class _NeedsAttention extends StatelessWidget {
 class _TaskRow extends StatelessWidget {
   final _Task task;
   final _L l;
-  final MiftahColors m;
+  final LegacyMiftahColors m;
   const _TaskRow({required this.task, required this.l, required this.m});
 
   @override
@@ -734,7 +734,7 @@ class _QuickActions extends StatelessWidget {
               borderRadius: BorderRadius.circular(12),
               child: Container(
                 decoration: BoxDecoration(
-                  gradient: a.primary ? MiftahGradients.gold : null,
+                  gradient: a.primary ? LegacyMiftahGradients.gold : null,
                   color: a.primary ? null : m.surface,
                   border: Border.all(
                     color: a.primary ? Colors.transparent : m.borderStrong,
@@ -797,7 +797,7 @@ class _QuickActions extends StatelessWidget {
 class _PortfolioGlance extends StatelessWidget {
   final Map<String, dynamic> data;
   final _L l;
-  final MiftahColors m;
+  final LegacyMiftahColors m;
   const _PortfolioGlance({
     required this.data,
     required this.l,

@@ -368,7 +368,7 @@ class _DetailRow extends StatelessWidget {
 
   final IconData icon;
   final String value;
-  final MiftahColors m;
+  final LegacyMiftahColors m;
 
   @override
   Widget build(BuildContext context) {

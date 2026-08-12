@@ -95,7 +95,7 @@ class StepHeader extends StatelessWidget {
                   height: 3,
                   margin: EdgeInsetsDirectional.only(end: i == 3 ? 0 : 4),
                   decoration: BoxDecoration(
-                    gradient: filled ? MiftahGradients.goldProgress : null,
+                    gradient: filled ? LegacyMiftahGradients.goldProgress : null,
                     color: filled ? null : m.surfaceAlt,
                     borderRadius: BorderRadius.circular(2),
                   ),

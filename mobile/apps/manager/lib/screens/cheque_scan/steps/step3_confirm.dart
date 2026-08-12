@@ -908,7 +908,7 @@ class _DispositionRow extends StatelessWidget {
                 height: 18,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  gradient: selected ? MiftahGradients.gold : null,
+                  gradient: selected ? LegacyMiftahGradients.gold : null,
                   border: Border.all(
                     color: selected ? AppColors.accent : m.borderStrong,
                     width: 2,

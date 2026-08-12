@@ -1,10 +1,19 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
+/// Resident shell.
+///
+/// The redesign collapses the old six tabs (Home · Browse · Saved · Meetings ·
+/// Payments · Tickets) to four plus a raised centre action:
+/// Home · Explore · **Pass** · Wallet · Services. Saved now lives inside
+/// Explore; Meetings, Tickets, Facilities, Gate passes and Approvals live
+/// inside the Services hub.
+///
+/// The bar is solid, so — unlike the old floating pill — content no longer has
+/// to clear it. `extendBody`, the scrim gradient and every
+/// `AppInsets.bottomNav(context)` padding are gone.
 class ShellScreen extends ConsumerStatefulWidget {
   final Widget child;
 
@@ -34,11 +43,14 @@ class _ShellScreenState extends ConsumerState<ShellScreen> {
     super.dispose();
   }
 
+  static const _routes = ['/', '/browse', '/payments', '/services'];
+
   @override
   Widget build(BuildContext context) {
     final location = GoRouterState.of(context).matchedLocation;
     final notifState = ref.watch(notificationProvider);
     final selectedIndex = _calculateIndex(location);
+    final isAr = context.isAr;
 
     // System back from a non-home tab returns to Home instead of exiting
     // the app; back on Home exits as usual (standard Android tab UX).
@@ -48,26 +60,13 @@ class _ShellScreenState extends ConsumerState<ShellScreen> {
         if (!didPop) context.go('/');
       },
       child: Scaffold(
-        extendBody: true, // Content extends behind the floating nav
         appBar: AppBar(
-          backgroundColor: AppColors.navyDark,
-          elevation: 0,
-          scrolledUnderElevation: 0.5,
-          shape: Border(
-            bottom: BorderSide(color: AppColors.accent.withValues(alpha: 0.14)),
+          title: Text(
+            _title(selectedIndex, isAr),
+            style: isAr
+                ? MiftahType.ar(size: 20, weight: FontWeight.w700)
+                : MiftahType.title(),
           ),
-          // Arabic wordmark in عربي, English wordmark in EN — one script each.
-          title: ref.watch(appLanguageProvider) == AppLanguage.ar
-              ? Image.asset(
-                  'assets/logo_mark.png',
-                  height: 52,
-                  fit: BoxFit.contain,
-                )
-              : Image.asset(
-                  'assets/logo_horizontal.png',
-                  height: 28,
-                  fit: BoxFit.contain,
-                ),
           actions: [
             IconButton(
               onPressed: () => context.push('/notifications'),
@@ -79,243 +78,60 @@ class _ShellScreenState extends ConsumerState<ShellScreen> {
                       : '${notifState.unreadCount}',
                   style: const TextStyle(fontSize: 9, color: Colors.white),
                 ),
-                backgroundColor: AppColors.danger,
-                child: const Icon(
-                  Icons.notifications_outlined,
-                  color: AppColors.accent,
-                ),
+                backgroundColor: MiftahColors.dangerBright,
+                child: const Icon(Icons.notifications_none_rounded),
               ),
             ),
             Padding(
               padding: const EdgeInsetsDirectional.only(end: 8),
               child: IconButton(
                 onPressed: () => context.push('/profile'),
-                icon: const Icon(
-                  Icons.person_outline_rounded,
-                  color: AppColors.accent,
-                ),
+                icon: const Icon(Icons.person_outline_rounded),
               ),
             ),
           ],
         ),
         body: widget.child,
-        bottomNavigationBar: _FrostedBottomNav(
-          selectedIndex: selectedIndex,
-          onTap: (index) {
-            switch (index) {
-              case 0:
-                context.go('/');
-              case 1:
-                context.go('/browse');
-              case 2:
-                context.go('/wishlist');
-              case 3:
-                context.go('/meetings');
-              case 4:
-                context.go('/payments');
-              case 5:
-                context.go('/tickets');
-            }
-          },
+        bottomNavigationBar: MiftahNavBar(
+          currentIndex: selectedIndex,
+          onTap: (index) => context.go(_routes[index]),
+          centreIcon: Icons.qr_code_2_rounded,
+          centreLabel: isAr ? 'تصريح' : 'Pass',
+          onCentreTap: () => context.go('/gatepass'),
+          items: [
+            MiftahNavItem(
+              icon: Icons.home_rounded,
+              label: isAr ? 'الرئيسية' : 'Home',
+            ),
+            MiftahNavItem(
+              icon: Icons.search_rounded,
+              label: isAr ? 'استكشاف' : 'Explore',
+            ),
+            MiftahNavItem(
+              icon: Icons.account_balance_wallet_rounded,
+              label: isAr ? 'المحفظة' : 'Wallet',
+            ),
+            MiftahNavItem(
+              icon: Icons.grid_view_rounded,
+              label: isAr ? 'الخدمات' : 'Services',
+            ),
+          ],
         ),
       ),
     );
   }
+
+  String _title(int index, bool isAr) => switch (index) {
+    1 => isAr ? 'استكشاف' : 'Explore',
+    2 => isAr ? 'المحفظة' : 'Wallet',
+    3 => isAr ? 'الخدمات' : 'Services',
+    _ => isAr ? 'الرئيسية' : 'Home',
+  };
 
   int _calculateIndex(String location) {
     if (location.startsWith('/browse')) return 1;
-    if (location.startsWith('/wishlist')) return 2;
-    if (location.startsWith('/meetings')) return 3;
-    if (location.startsWith('/payments')) return 4;
-    if (location.startsWith('/tickets')) return 5;
+    if (location.startsWith('/payments')) return 2;
+    if (location.startsWith('/services')) return 3;
     return 0;
-  }
-}
-
-class _FrostedBottomNav extends StatelessWidget {
-  final int selectedIndex;
-  final ValueChanged<int> onTap;
-
-  const _FrostedBottomNav({required this.selectedIndex, required this.onTap});
-
-  static const _icons = [
-    (icon: Icons.home_outlined, activeIcon: Icons.home_rounded),
-    (icon: Icons.search_outlined, activeIcon: Icons.search_rounded),
-    (icon: Icons.favorite_border, activeIcon: Icons.favorite),
-    (icon: Icons.event_outlined, activeIcon: Icons.event_rounded),
-    (icon: Icons.payment_outlined, activeIcon: Icons.payment_rounded),
-    (icon: Icons.handyman_outlined, activeIcon: Icons.handyman_rounded),
-  ];
-
-  static const _labelsEn = [
-    'Home',
-    'Browse',
-    'Saved',
-    'Meetings',
-    'Payments',
-    'Tickets',
-  ];
-  static const _labelsAr = [
-    'الرئيسية',
-    'تصفح',
-    'المحفوظة',
-    'المواعيد',
-    'المدفوعات',
-    'الطلبات',
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    final labels = context.isAr ? _labelsAr : _labelsEn;
-    // Scrim behind the floating pill: content scrolling beneath it fades into
-    // the page background instead of hard-clipping in the gap below the pill.
-    final scrimColor = Theme.of(context).scaffoldBackgroundColor;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            scrimColor.withValues(alpha: 0),
-            scrimColor.withValues(alpha: 0.85),
-            scrimColor,
-          ],
-          stops: const [0, 0.45, 1],
-        ),
-      ),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 6, 14, 8),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(20),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-              child: Container(
-                height: 68,
-                decoration: BoxDecoration(
-                  color: AppColors.navyDark.withValues(alpha: 0.9),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: AppColors.accent.withValues(alpha: 0.18),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.22),
-                      blurRadius: 24,
-                      offset: const Offset(0, 8),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: List.generate(_icons.length, (index) {
-                    final item = _icons[index];
-                    final isSelected = index == selectedIndex;
-                    return Flexible(
-                      child: _NavItemWidget(
-                        icon: item.icon,
-                        activeIcon: item.activeIcon,
-                        label: labels[index],
-                        isSelected: isSelected,
-                        onTap: () => onTap(index),
-                      ),
-                    );
-                  }),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _NavItemWidget extends StatelessWidget {
-  final IconData icon;
-  final IconData activeIcon;
-  final String label;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  const _NavItemWidget({
-    required this.icon,
-    required this.activeIcon,
-    required this.label,
-    required this.isSelected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeOutCubic,
-        padding: EdgeInsets.symmetric(
-          horizontal: isSelected ? 12 : 8,
-          vertical: 8,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 200),
-              child: Icon(
-                isSelected ? activeIcon : icon,
-                key: ValueKey(isSelected),
-                size: 21,
-                color: isSelected
-                    ? AppColors.accent
-                    : Colors.white.withValues(alpha: 0.5),
-              ),
-            ),
-            const SizedBox(height: 3),
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(
-                label,
-                maxLines: 1,
-                // Arabic labels need Naskh with no tracking (tracking breaks
-                // Arabic glyph joining; Josefin has no Arabic coverage).
-                style: context.isAr
-                    ? GoogleFonts.notoNaskhArabic(
-                        fontSize: 11,
-                        fontWeight: isSelected
-                            ? FontWeight.w600
-                            : FontWeight.w400,
-                        color: isSelected
-                            ? AppColors.accent
-                            : Colors.white.withValues(alpha: 0.5),
-                      )
-                    : GoogleFonts.josefinSans(
-                        fontSize: 10.5,
-                        fontWeight: isSelected
-                            ? FontWeight.w600
-                            : FontWeight.w400,
-                        letterSpacing: 0.4,
-                        color: isSelected
-                            ? AppColors.accent
-                            : Colors.white.withValues(alpha: 0.5),
-                      ),
-              ),
-            ),
-            const SizedBox(height: 3),
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 250),
-              width: 4,
-              height: 4,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: isSelected ? AppColors.accent : Colors.transparent,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }

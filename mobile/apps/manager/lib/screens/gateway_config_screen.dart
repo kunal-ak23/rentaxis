@@ -135,7 +135,7 @@ class _GatewayConfigScreenState extends ConsumerState<GatewayConfigScreen> {
     );
   }
 
-  Widget _sectionLabel(String text, bool ar, MiftahColors m) {
+  Widget _sectionLabel(String text, bool ar, LegacyMiftahColors m) {
     return Text(
       ar ? text : text.toUpperCase(),
       style: ar

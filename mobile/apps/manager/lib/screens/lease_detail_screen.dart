@@ -14,7 +14,7 @@ import '../widgets/mark_cheque_failed_dialog.dart';
 /// Cheque/payment status colors per the Miftah admin design: CLEARED is
 /// green, COLLECTED/DEPOSITED is bronze (in transit to the bank), BOUNCED/
 /// OVERDUE is red, PENDING is neutral.
-Color _chequeStatusColor(MiftahColors m, String status) {
+Color _chequeStatusColor(LegacyMiftahColors m, String status) {
   switch (status) {
     case 'CLEARED':
       return m.success;
@@ -940,7 +940,7 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
 
   // ─── Cheque schedule (timeline rail, per mock 1e/2b) ─────────────────────
 
-  Widget _buildPaymentSchedule(MiftahColors m, _L l) {
+  Widget _buildPaymentSchedule(LegacyMiftahColors m, _L l) {
     final cleared = _payments
         .where((p) => (p is Map ? p['status'] : null) == 'CLEARED')
         .length;
@@ -1037,7 +1037,7 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
     );
   }
 
-  Widget _buildDocuments(MiftahColors m, _L l) {
+  Widget _buildDocuments(LegacyMiftahColors m, _L l) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1079,7 +1079,7 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
     );
   }
 
-  Widget _buildAttachments(MiftahColors m, _L l) {
+  Widget _buildAttachments(LegacyMiftahColors m, _L l) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1161,7 +1161,7 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
     );
   }
 
-  Widget _buildPenaltiesLink(MiftahColors m, _L l) {
+  Widget _buildPenaltiesLink(LegacyMiftahColors m, _L l) {
     return _LinkCard(
       icon: Icons.gavel,
       iconColor: m.danger,
@@ -1173,7 +1173,7 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
     );
   }
 
-  Widget _buildSettlementLink(MiftahColors m, _L l) {
+  Widget _buildSettlementLink(LegacyMiftahColors m, _L l) {
     final status = _lease?['status'] ?? '';
     // Show settlement link for ACTIVE, NOTICE_GIVEN, TERMINATED, CLOSED
     final showSettlementLink = [
@@ -1240,7 +1240,7 @@ class _InfoBlock extends StatelessWidget {
   final String label;
   final String value;
   final String? sub;
-  final MiftahColors m;
+  final LegacyMiftahColors m;
   final _L l;
   final bool alignEnd;
   final bool isAmount;
@@ -1299,7 +1299,7 @@ class _InfoBlock extends StatelessWidget {
 class _SectionLabel extends StatelessWidget {
   final IconData icon;
   final String text;
-  final MiftahColors m;
+  final LegacyMiftahColors m;
   final _L l;
   const _SectionLabel({
     required this.icon,
@@ -1338,7 +1338,7 @@ class _ChequeTimelineRow extends StatelessWidget {
   final int index;
   final Map<String, dynamic> payment;
   final bool isLast;
-  final MiftahColors m;
+  final LegacyMiftahColors m;
   final _L l;
   final VoidCallback? onTap;
 
@@ -1484,7 +1484,7 @@ class _ChequeTimelineRow extends StatelessWidget {
 
 class _DocumentRow extends StatelessWidget {
   final Map<String, dynamic> doc;
-  final MiftahColors m;
+  final LegacyMiftahColors m;
   final _L l;
   final VoidCallback onDownload;
   const _DocumentRow({
@@ -1547,7 +1547,7 @@ class _LinkCard extends StatelessWidget {
   final Color iconColor;
   final String title;
   final String subtitle;
-  final MiftahColors m;
+  final LegacyMiftahColors m;
   final _L l;
   final VoidCallback onTap;
   const _LinkCard({

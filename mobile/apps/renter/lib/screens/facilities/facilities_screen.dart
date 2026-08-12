@@ -72,7 +72,7 @@ class _L {
   };
 }
 
-Color _statusColor(String? status, MiftahColors m) => switch (status) {
+Color _statusColor(String? status, LegacyMiftahColors m) => switch (status) {
   'PENDING' => m.warning,
   'APPROVED' => m.success,
   'REJECTED' => m.danger,
@@ -232,7 +232,7 @@ Widget _cardList(
 }) {
   return ListView(
     physics: const AlwaysScrollableScrollPhysics(),
-    padding: EdgeInsets.fromLTRB(16, 12, 16, AppInsets.bottomNav(context)),
+    padding: EdgeInsets.fromLTRB(16, 12, 16, 24),
     children: [
       if (joinError) _JoinErrorBanner(l: l),
       if (amenities.isNotEmpty) ...[

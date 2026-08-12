@@ -71,7 +71,7 @@ class HomeScreen extends ConsumerWidget {
         backgroundColor: m.surface,
         onRefresh: refresh,
         child: ListView(
-          padding: EdgeInsets.only(bottom: AppInsets.bottomNav(context)),
+          padding: EdgeInsets.only(bottom: 24),
           physics: const AlwaysScrollableScrollPhysics(),
           children: [
             // Header is full-bleed chrome; the rest of the content is inset.
@@ -266,7 +266,7 @@ class _Header extends StatelessWidget {
                               fontWeight: FontWeight.w500,
                               color: Colors.white.withValues(alpha: 0.45),
                             )
-                          : MiftahType.overline(
+                          : LegacyMiftahType.overline(
                               fontSize: 10.5,
                               letterSpacing: 2.4,
                               color: Colors.white.withValues(alpha: 0.45),
@@ -281,7 +281,7 @@ class _Header extends StatelessWidget {
                               fontWeight: FontWeight.w600,
                               color: Colors.white,
                             )
-                          : MiftahType.display(
+                          : LegacyMiftahType.display(
                               fontSize: 16,
                               letterSpacing: 0.6,
                               color: Colors.white,
@@ -485,7 +485,7 @@ class _HeroBalanceCard extends StatelessWidget {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
         color: m.isDark ? null : AppColors.navyDark,
-        gradient: m.isDark ? MiftahGradients.heroDark : null,
+        gradient: m.isDark ? LegacyMiftahGradients.heroDark : null,
         border: Border.all(
           color: AppColors.accent.withValues(alpha: m.isDark ? 0.3 : 0.22),
         ),
@@ -507,7 +507,7 @@ class _HeroBalanceCard extends StatelessWidget {
                           fontWeight: FontWeight.w600,
                           color: Colors.white.withValues(alpha: 0.5),
                         )
-                      : MiftahType.overline(
+                      : LegacyMiftahType.overline(
                           fontSize: 11,
                           letterSpacing: 3.2,
                           color: Colors.white.withValues(alpha: 0.5),
@@ -551,7 +551,7 @@ class _HeroBalanceCard extends StatelessWidget {
                     padding: const EdgeInsetsDirectional.only(end: 9),
                     child: Text(
                       'AED',
-                      style: MiftahType.display(
+                      style: LegacyMiftahType.display(
                         fontSize: 15,
                         letterSpacing: 1.4,
                         color: AppColors.goldMid,
@@ -568,7 +568,7 @@ class _HeroBalanceCard extends StatelessWidget {
                           fontWeight: FontWeight.w600,
                           color: Colors.white,
                         )
-                      : MiftahType.display(
+                      : LegacyMiftahType.display(
                           fontSize: next == null ? 22 : 40,
                           letterSpacing: 0.4,
                           color: Colors.white,
@@ -727,7 +727,7 @@ class _Progress extends StatelessWidget {
             child: Container(
               height: 3,
               decoration: BoxDecoration(
-                gradient: MiftahGradients.goldProgress,
+                gradient: LegacyMiftahGradients.goldProgress,
                 borderRadius: BorderRadius.circular(3),
               ),
             ),
@@ -744,7 +744,7 @@ class _Progress extends StatelessWidget {
             margin: EdgeInsetsDirectional.only(end: i == total - 1 ? 0 : 6),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(3),
-              gradient: filled ? MiftahGradients.goldProgress : null,
+              gradient: filled ? LegacyMiftahGradients.goldProgress : null,
               color: filled ? null : Colors.white.withValues(alpha: 0.12),
             ),
           ),
@@ -1007,7 +1007,7 @@ class _RecentActivityHeader extends StatelessWidget {
                   fontWeight: FontWeight.w600,
                   color: m.textPrimary,
                 )
-              : MiftahType.display(
+              : LegacyMiftahType.display(
                   fontSize: 14,
                   letterSpacing: 2.2,
                   color: m.textPrimary,
@@ -1113,7 +1113,7 @@ class _ActivityRow extends StatelessWidget {
   const _ActivityRow({required this.payment, required this.showDivider});
 
   ({Color color, String title, String word}) _meta(
-    MiftahColors m,
+    LegacyMiftahColors m,
     String status,
     _L l,
   ) {

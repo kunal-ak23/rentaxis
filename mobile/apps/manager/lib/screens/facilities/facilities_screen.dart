@@ -448,7 +448,7 @@ class _TabToggle extends StatelessWidget {
   }
 
   Widget _segment(
-    MiftahColors m, {
+    LegacyMiftahColors m, {
     required String label,
     required bool selected,
     required bool value,

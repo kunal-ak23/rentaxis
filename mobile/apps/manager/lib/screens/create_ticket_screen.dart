@@ -664,7 +664,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
     );
   }
 
-  Widget _sectionLabel(String text, _L l, MiftahColors m) {
+  Widget _sectionLabel(String text, _L l, LegacyMiftahColors m) {
     return Text(
       text,
       style: l.ar
@@ -682,7 +682,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
     );
   }
 
-  Widget _dropdownContainer({required MiftahColors m, required Widget child}) {
+  Widget _dropdownContainer({required LegacyMiftahColors m, required Widget child}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 4),
       decoration: BoxDecoration(

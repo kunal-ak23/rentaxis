@@ -86,7 +86,7 @@ class _WishlistScreenState extends ConsumerState<WishlistScreen> {
             16,
             16,
             16,
-            AppInsets.bottomNav(context),
+            24,
           ),
           itemCount: 4,
           itemBuilder: (_, _) => Padding(
@@ -118,7 +118,7 @@ class _WishlistScreenState extends ConsumerState<WishlistScreen> {
                 16,
                 16,
                 16,
-                AppInsets.bottomNav(context),
+                24,
               ),
               itemCount: visible.length + (truncated ? 1 : 0),
               itemBuilder: (_, i) {

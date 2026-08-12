@@ -129,7 +129,7 @@ class _PassBodyState extends ConsumerState<_PassBody> {
             16,
             16,
             16,
-            AppInsets.bottomNav(context, spacing: 32),
+            32,
           ),
           children: [
             Row(

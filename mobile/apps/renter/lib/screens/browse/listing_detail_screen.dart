@@ -521,7 +521,7 @@ class _QuickFacts extends StatelessWidget {
             Expanded(
               child: Text(
                 title,
-                style: MiftahType.display(fontSize: 22, color: m.textPrimary),
+                style: LegacyMiftahType.display(fontSize: 22, color: m.textPrimary),
               ),
             ),
             const SizedBox(width: 8),
@@ -650,7 +650,7 @@ class _SpecCell extends StatelessWidget {
           children: [
             Text(
               value,
-              style: MiftahType.display(
+              style: LegacyMiftahType.display(
                 fontSize: 17,
                 letterSpacing: 0.4,
                 color: m.textPrimary,

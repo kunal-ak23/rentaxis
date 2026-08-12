@@ -52,6 +52,15 @@ export 'utils/formatters.dart';
 export 'utils/l10n.dart';
 export 'utils/error_message.dart';
 
+// UI — Miftah 2026 design system.
+//
+// These own the plain `Miftah*` names. The pre-redesign palette/type helpers
+// still exist in `theme/app_theme.dart` under `Legacy*` names and are reached
+// through `context.miftah`; they retire as each screen migrates.
+export 'ui/miftah_tokens.dart';
+export 'ui/miftah_theme.dart';
+export 'ui/miftah_widgets.dart';
+
 // Widgets
 export 'widgets/status_badge.dart';
 export 'widgets/loading_overlay.dart';

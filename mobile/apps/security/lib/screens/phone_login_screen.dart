@@ -182,7 +182,7 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
                       height: 52,
                       child: DecoratedBox(
                         decoration: BoxDecoration(
-                          gradient: MiftahGradients.gold,
+                          gradient: LegacyMiftahGradients.gold,
                           borderRadius: BorderRadius.circular(10),
                           boxShadow: [
                             BoxShadow(

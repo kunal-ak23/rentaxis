@@ -348,7 +348,7 @@ class _ProgressCard extends StatelessWidget {
                         widthFactor: ratio,
                         child: Container(
                           decoration: const BoxDecoration(
-                            gradient: MiftahGradients.goldProgress,
+                            gradient: LegacyMiftahGradients.goldProgress,
                           ),
                         ),
                       ),
@@ -755,7 +755,7 @@ class _ChequeTimelineCard extends StatelessWidget {
       decoration: isActive
           ? BoxDecoration(
               color: m.isDark ? null : const Color(0xFF111111),
-              gradient: m.isDark ? MiftahGradients.heroDark : null,
+              gradient: m.isDark ? LegacyMiftahGradients.heroDark : null,
               border: Border.all(
                 color: AppColors.accent.withValues(
                   alpha: m.isDark ? 0.3 : 0.22,
@@ -931,7 +931,7 @@ class _StatusPill extends StatelessWidget {
   final bool onDark;
   const _StatusPill({required this.status, required this.onDark});
 
-  ({Color fg, Color bg, String label}) _meta(MiftahColors m, _L l) {
+  ({Color fg, Color bg, String label}) _meta(LegacyMiftahColors m, _L l) {
     switch (status) {
       case 'CLEARED':
         return (fg: m.success, bg: m.successBg, label: l.statusCleared);

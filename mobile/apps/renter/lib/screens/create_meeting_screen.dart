@@ -274,7 +274,7 @@ class _CreateMeetingScreenState extends ConsumerState<CreateMeetingScreen> {
             16,
             16,
             16,
-            AppInsets.bottomNav(context),
+            24,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,

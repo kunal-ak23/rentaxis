@@ -250,7 +250,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
     return Scaffold(
       body: ListView(
-        padding: EdgeInsets.fromLTRB(0, 0, 0, AppInsets.bottomNav(context)),
+        padding: EdgeInsets.fromLTRB(0, 0, 0, 24),
         children: [
           _buildChromeHeader(auth, l),
           Padding(
@@ -740,7 +740,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 /// (Arabic-first chrome); it becomes the full locale switch once translated
 /// strings ship.
 class _LanguageToggle extends ConsumerWidget {
-  final MiftahColors m;
+  final LegacyMiftahColors m;
 
   /// On the dark chrome header, unselected labels read white instead of muted.
   final bool onDark;

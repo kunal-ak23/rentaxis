@@ -1,0 +1,953 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#08060e;font-family:'Plus Jakarta Sans',Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+a{color:#C79A3C;text-decoration:none}a:hover{color:#E3BE6E}
+*{box-sizing:border-box}
+::-webkit-scrollbar{width:0;height:0}
+</style>
+</helmet>
+
+<div style="background:#08060e;padding:64px 56px 96px;color:#fff">
+
+  <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:32px;max-width:1780px;margin:0 auto 56px">
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <img src="assets/logo_horizontal.png" alt="Miftah" style="height:26px;width:auto;align-self:flex-start">
+      <div style="font-size:46px;font-weight:800;letter-spacing:-.03em;line-height:1.05">Resident app — hi-fi screens</div>
+      <div style="font-size:16px;color:#8C86A0;max-width:700px;text-wrap:pretty">Every renter screen rebuilt: bold sans instead of tracked serif chrome, white cards on a light canvas, one gold gradient reserved for money, and six tabs collapsed to four plus a centre action.</div>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end">
+      <div style="border:1px solid #241C3C;border-radius:999px;padding:9px 16px;font:400 12px/1 'IBM Plex Mono';color:#9B93B4">412 × 916</div>
+      <div style="border:1px solid #241C3C;border-radius:999px;padding:9px 16px;font:400 12px/1 'IBM Plex Mono';color:#9B93B4">Android · light</div>
+      <div style="border:1px solid #4A3A18;background:#241C0F;border-radius:999px;padding:9px 16px;font:400 12px/1 'IBM Plex Mono';color:#E3BE6E">#C79A3C</div>
+    </div>
+  </div>
+
+  <div id="wall" style="display:flex;flex-wrap:wrap;gap:64px 52px;max-width:1780px;margin:0 auto">
+
+    <div style="display:flex;flex-direction:column;gap:18px">
+      <div style="position:relative;width:412px;height:916px;border-radius:46px;background:#12101A;box-shadow:0 0 0 10px #17131f,0 0 0 11px #2c2440,0 40px 90px rgba(0,0,0,.6);overflow:hidden;display:flex;flex-direction:column">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 26px 0;font-size:15px;font-weight:700;color:#fff"><span>9:41</span><span style="display:flex;gap:6px;align-items:center;font-family:'Material Symbols Rounded';font-size:16px"><span>signal_cellular_alt</span><span>wifi</span><span>battery_full</span></span></div>
+        <div style="flex:1;padding:0 28px;display:flex;flex-direction:column;justify-content:center;position:relative">
+          <div style="position:absolute;top:40px;right:-80px;width:300px;height:300px;border-radius:50%;background:radial-gradient(circle,rgba(199,154,60,.32),transparent 68%)"></div>
+          <img src="assets/logo_horizontal.png" alt="Miftah" style="height:30px;width:auto;align-self:flex-start;margin-bottom:32px;position:relative">
+          <div style="font-size:40px;font-weight:800;letter-spacing:-.03em;line-height:1.08;position:relative">Your tenancy,<br><span style="color:#E3BE6E">in one key.</span></div>
+          <div style="font-size:15px;color:#8C86A0;margin-top:12px;position:relative">Rent, repairs, visitors and amenities — all in one place.</div>
+          <div style="display:flex;flex-direction:column;gap:11px;margin-top:34px;position:relative">
+            <div style="background:rgba(255,255,255,.06);border-radius:16px;padding:14px 16px">
+              <div style="font:700 10px/1 'Plus Jakarta Sans';letter-spacing:.14em;color:#6E6786">EMAIL</div>
+              <div style="font-size:15px;font-weight:600;color:#fff;margin-top:7px">layla.haddad@mail.ae</div>
+            </div>
+            <div style="background:rgba(255,255,255,.06);border-radius:16px;padding:14px 16px;display:flex;justify-content:space-between;align-items:flex-end">
+              <div>
+                <div style="font:700 10px/1 'Plus Jakarta Sans';letter-spacing:.14em;color:#6E6786">PASSWORD</div>
+                <div style="font:500 15px/1 'IBM Plex Mono';color:#fff;letter-spacing:.2em;margin-top:8px">••••••••</div>
+              </div>
+              <span style="font-family:'Material Symbols Rounded';font-size:20px;color:#6E6786">visibility_off</span>
+            </div>
+          </div>
+          <div style="margin-top:24px;height:56px;border-radius:16px;background:linear-gradient(120deg,#A87A1E,#C79A3C 55%,#E3BE6E);color:#12101A;display:grid;place-items:center;font-size:17px;font-weight:800;box-shadow:0 12px 28px rgba(199,154,60,.32);position:relative">Sign in</div>
+          <div style="display:flex;justify-content:space-between;margin-top:18px;font-size:13.5px;position:relative"><span style="color:#8C86A0">Forgot password?</span><span style="color:#E3BE6E;font-weight:700">Use a code</span></div>
+        </div>
+        <div style="position:absolute;bottom:9px;left:50%;transform:translateX(-50%);width:134px;height:5px;border-radius:3px;background:rgba(255,255,255,.5)"></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;color:#8C86A0"><span style="font:400 12px/1 'IBM Plex Mono';color:#C79A3C">01</span><span style="font-size:14px;font-weight:600;color:#E8E5F2">Sign in</span><span style="font-size:13px">Email or one-time code</span></div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:18px">
+      <div style="position:relative;width:412px;height:916px;border-radius:46px;background:#F6F5FA;box-shadow:0 0 0 10px #17131f,0 0 0 11px #2c2440,0 40px 90px rgba(0,0,0,.6);overflow:hidden;display:flex;flex-direction:column">
+        <div style="background:#fff;display:flex;align-items:center;justify-content:space-between;padding:16px 26px 0;font-size:15px;font-weight:700;color:#12101A"><span>9:41</span><span style="display:flex;gap:6px;align-items:center;font-family:'Material Symbols Rounded';font-size:16px"><span>signal_cellular_alt</span><span>wifi</span><span>battery_full</span></span></div>
+        <div style="background:#fff;padding:18px 20px 14px;display:flex;align-items:center;justify-content:space-between">
+          <img src="assets/logo_horizontal.png" alt="Miftah" style="height:18px;width:auto;filter:brightness(.6) saturate(1.4)">
+          <div style="display:flex;gap:9px">
+            <div style="position:relative;width:38px;height:38px;border-radius:50%;border:1px solid #E6E3EE;display:grid;place-items:center"><span style="font-family:'Material Symbols Rounded';font-size:19px;color:#12101A">notifications</span><span style="position:absolute;top:7px;right:8px;width:8px;height:8px;border-radius:50%;background:#D64545;border:2px solid #fff"></span></div>
+            <div style="width:38px;height:38px;border-radius:50%;background:#12101A;color:#E3BE6E;display:grid;place-items:center;font-size:13px;font-weight:800">LH</div>
+          </div>
+        </div>
+        <div style="flex:1;overflow:hidden;padding:6px 20px 0;display:flex;flex-direction:column;gap:13px">
+          <div style="border-radius:22px;padding:20px;background:linear-gradient(120deg,#A87A1E 0%,#C79A3C 52%,#E7C883 100%);color:#12101A;position:relative;overflow:hidden">
+            <div style="position:absolute;right:-44px;top:-56px;width:170px;height:170px;border-radius:50%;background:rgba(255,255,255,.14)"></div>
+            <div style="position:relative;display:flex;align-items:flex-start;justify-content:space-between">
+              <div>
+                <div style="font-size:14.5px;font-weight:600;opacity:.8">Hi, Layla!</div>
+                <div style="font-size:12px;font-weight:600;opacity:.62;margin-top:3px">Marsa Residences · Unit 1204</div>
+              </div>
+              <div style="background:#12101A;color:#E7C883;font-size:12.5px;font-weight:800;padding:10px 15px;border-radius:999px">Due in 12 days</div>
+            </div>
+            <div style="position:relative;font-size:38px;font-weight:800;letter-spacing:-.025em;margin-top:14px">AED 42,500</div>
+            <div style="position:relative;font-size:13px;font-weight:600;opacity:.72;margin-top:2px">Cheque 2 of 4 · due 25 Aug 2026</div>
+            <div style="position:relative;height:8px;border-radius:6px;background:rgba(18,16,26,.18);margin-top:16px;overflow:hidden"><div style="width:25%;height:8px;border-radius:6px;background:#12101A"></div></div>
+            <div style="position:relative;display:flex;justify-content:space-between;font-size:11.5px;font-weight:600;opacity:.72;margin-top:8px"><span>1 of 4 cleared</span><span style="font-family:'IBM Plex Mono'">42,500 / 170,000</span></div>
+            <div style="position:relative;display:flex;gap:10px;margin-top:18px">
+              <div style="flex:1;height:46px;border-radius:14px;background:#12101A;color:#fff;display:grid;place-items:center;font-size:14px;font-weight:800">View cheques</div>
+              <div style="flex:1;height:46px;border:1.5px solid rgba(18,16,26,.3);border-radius:14px;display:grid;place-items:center;font-size:14px;font-weight:800;color:#12101A">Set reminder</div>
+            </div>
+          </div>
+          <div style="background:#FDF6E3;border-radius:14px;padding:12px 14px;display:flex;align-items:center;gap:10px">
+            <span style="font-family:'Material Symbols Rounded';font-size:19px;color:#A87A1E">gavel</span>
+            <div style="flex:1;font-size:13.5px;color:#4A4358">2 open penalties · AED 1,200</div>
+            <div style="font-size:12.5px;font-weight:800;color:#A87A1E">View</div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
+            <div style="background:#fff;border:1px solid #EDEAF4;border-radius:16px;padding:13px 6px 11px;display:flex;flex-direction:column;align-items:center;gap:8px"><span style="width:38px;height:38px;border-radius:11px;background:#F4F1FC;color:#A87A1E;display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:20px">receipt_long</span><span style="font-size:11px;font-weight:600;color:#3A3448">Cheques</span></div>
+            <div style="background:#fff;border:1px solid #EDEAF4;border-radius:16px;padding:13px 6px 11px;display:flex;flex-direction:column;align-items:center;gap:8px"><span style="width:38px;height:38px;border-radius:11px;background:#F4F1FC;color:#A87A1E;display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:20px">handyman</span><span style="font-size:11px;font-weight:600;color:#3A3448">Repairs</span></div>
+            <div style="background:#fff;border:1px solid #EDEAF4;border-radius:16px;padding:13px 6px 11px;display:flex;flex-direction:column;align-items:center;gap:8px"><span style="width:38px;height:38px;border-radius:11px;background:#F4F1FC;color:#A87A1E;display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:20px">qr_code_2</span><span style="font-size:11px;font-weight:600;color:#3A3448">Visitors</span></div>
+            <div style="background:#fff;border:1px solid #EDEAF4;border-radius:16px;padding:13px 6px 11px;display:flex;flex-direction:column;align-items:center;gap:8px"><span style="width:38px;height:38px;border-radius:11px;background:#F4F1FC;color:#A87A1E;display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:20px">description</span><span style="font-size:11px;font-weight:600;color:#3A3448">Lease</span></div>
+          </div>
+          <div style="border-radius:18px;overflow:hidden;background:#E8F4FB;display:flex;align-items:stretch;height:110px">
+            <div style="flex:1;padding:16px;display:flex;flex-direction:column;justify-content:center">
+              <div style="font-size:15px;font-weight:600;color:#2C6A8A">Book the</div>
+              <div style="font-size:23px;font-weight:800;color:#134B69;letter-spacing:-.02em">POOL DECK</div>
+              <div style="font-size:11.5px;color:#4A7C95;margin-top:4px">Amenities &amp; parking · 1 request pending</div>
+            </div>
+            <div style="width:130px;background:repeating-linear-gradient(135deg,#D5E9F5,#D5E9F5 6px,#C3DFF0 6px,#C3DFF0 12px);display:grid;place-items:center;font:400 9.5px/1 'IBM Plex Mono';color:#3E6E88">amenity photo</div>
+          </div>
+          <div style="display:flex;align-items:baseline;justify-content:space-between;margin-top:4px">
+            <div style="font-size:18px;font-weight:800;color:#12101A;letter-spacing:-.02em">Recent activity</div>
+            <div style="font-size:12.5px;font-weight:700;color:#A87A1E">See all</div>
+          </div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:18px;padding:2px 16px">
+            <div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid #F2EFF8"><span style="width:36px;height:36px;border-radius:12px;background:#E7F3EC;color:#1E9E5A;display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:18px">check_circle</span><span style="flex:1"><span style="display:block;font-size:14px;font-weight:700;color:#12101A">Cheque 1 cleared</span><span style="display:block;font-size:11.5px;color:#8E88A0;margin-top:2px">25 May · Emirates NBD</span></span><span style="font-size:13.5px;font-weight:800;color:#1E9E5A">AED 42,500</span></div>
+            <div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid #F2EFF8"><span style="width:36px;height:36px;border-radius:12px;background:#F4F1FC;color:#A87A1E;display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:18px">handyman</span><span style="flex:1"><span style="display:block;font-size:14px;font-weight:700;color:#12101A">Kitchen tap fixed</span><span style="display:block;font-size:11.5px;color:#8E88A0;margin-top:2px">Closed · rated 5/5</span></span><span style="font-size:12px;color:#8E88A0">2 Aug</span></div>
+            <div style="display:flex;align-items:center;gap:12px;padding:12px 0"><span style="width:36px;height:36px;border-radius:12px;background:#F4F1FC;color:#A87A1E;display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:18px">qr_code_2</span><span style="flex:1"><span style="display:block;font-size:14px;font-weight:700;color:#12101A">Pass used at gate</span><span style="display:block;font-size:11.5px;color:#8E88A0;margin-top:2px">Nour Al Sayed · 8:12 PM</span></span><span style="font-size:12px;color:#8E88A0">1 Aug</span></div>
+          </div>
+        </div>
+        <div style="position:relative;background:#fff;border-top:1px solid #EDEAF4;padding:12px 18px 26px;display:grid;grid-template-columns:repeat(5,1fr);align-items:end">
+          <div style="display:flex;flex-direction:column;align-items:center;gap:5px"><span style="font-family:'Material Symbols Rounded';font-size:22px;color:#A87A1E">home</span><span style="font-size:10.5px;font-weight:700;color:#A87A1E">Home</span></div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:5px"><span style="font-family:'Material Symbols Rounded';font-size:22px;color:#8E88A0">travel_explore</span><span style="font-size:10.5px;font-weight:600;color:#8E88A0">Explore</span></div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:5px"><span style="width:52px;height:52px;border-radius:50%;background:linear-gradient(140deg,#C79A3C,#A87A1E);margin-top:-30px;display:grid;place-items:center;box-shadow:0 10px 22px rgba(199,154,60,.4);font-family:'Material Symbols Rounded';font-size:24px;color:#12101A">qr_code_scanner</span><span style="font-size:10.5px;font-weight:600;color:#8E88A0">Pass</span></div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:5px"><span style="font-family:'Material Symbols Rounded';font-size:22px;color:#8E88A0">account_balance_wallet</span><span style="font-size:10.5px;font-weight:600;color:#8E88A0">Wallet</span></div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:5px"><span style="font-family:'Material Symbols Rounded';font-size:22px;color:#8E88A0">grid_view</span><span style="font-size:10.5px;font-weight:600;color:#8E88A0">Services</span></div>
+          <div style="position:absolute;bottom:9px;left:50%;transform:translateX(-50%);width:134px;height:5px;border-radius:3px;background:#12101A"></div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;color:#8C86A0"><span style="font:400 12px/1 'IBM Plex Mono';color:#C79A3C">02</span><span style="font-size:14px;font-weight:600;color:#E8E5F2">Home</span><span style="font-size:13px">Next cheque, quick actions, activity</span></div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:18px">
+      <div style="position:relative;width:412px;height:916px;border-radius:46px;background:#F6F5FA;box-shadow:0 0 0 10px #17131f,0 0 0 11px #2c2440,0 40px 90px rgba(0,0,0,.6);overflow:hidden;display:flex;flex-direction:column">
+        <div style="background:#fff;display:flex;align-items:center;justify-content:space-between;padding:16px 26px 0;font-size:15px;font-weight:700;color:#12101A"><span>9:41</span><span style="display:flex;gap:6px;align-items:center;font-family:'Material Symbols Rounded';font-size:16px"><span>signal_cellular_alt</span><span>wifi</span><span>battery_full</span></span></div>
+        <div style="background:#fff;padding:18px 20px 16px;display:flex;align-items:center;justify-content:space-between">
+          <div style="font-size:22px;font-weight:800;color:#12101A;letter-spacing:-.02em">Your cheques</div>
+          <div style="border:1px solid #F0D6D6;background:#FDF0F0;color:#C13B3B;border-radius:999px;padding:8px 13px;font-size:11.5px;font-weight:800">2 penalties</div>
+        </div>
+        <div style="flex:1;overflow:hidden;padding:6px 20px 0;display:flex;flex-direction:column;gap:13px">
+          <div style="border-radius:22px;background:linear-gradient(120deg,#A87A1E,#C79A3C 55%,#E7C883);color:#12101A;padding:20px;position:relative;overflow:hidden">
+            <div style="position:absolute;right:-40px;bottom:-60px;width:170px;height:170px;border-radius:50%;background:rgba(255,255,255,.14)"></div>
+            <div style="position:relative;font-size:13.5px;font-weight:600;opacity:.75">Annual rent · tenancy 2026</div>
+            <div style="position:relative;font-size:36px;font-weight:800;letter-spacing:-.025em;margin-top:4px">AED 170,000</div>
+            <div style="position:relative;height:10px;border-radius:6px;background:rgba(18,16,26,.18);margin-top:16px;overflow:hidden"><div style="width:25%;height:10px;border-radius:6px;background:#12101A"></div></div>
+            <div style="position:relative;display:flex;justify-content:space-between;font-size:12px;font-weight:700;margin-top:9px;opacity:.78"><span>AED 42,500 paid</span><span>25% complete</span></div>
+          </div>
+          <div style="display:flex;gap:8px">
+            <div style="padding:9px 15px;border-radius:11px;background:#F0EAFE;border:1px solid #D9CEFB;color:#A87A1E;font-size:12.5px;font-weight:800;background:#FBF3E2;border-color:#EBD7A8">All</div>
+            <div style="padding:9px 15px;border-radius:11px;background:#fff;border:1px solid #E6E3EE;color:#4A4358;font-size:12.5px;font-weight:600">Cleared</div>
+            <div style="padding:9px 15px;border-radius:11px;background:#fff;border:1px solid #E6E3EE;color:#4A4358;font-size:12.5px;font-weight:600">Upcoming</div>
+          </div>
+          <div style="font:400 12.5px/1 'IBM Plex Mono';color:#8E88A0">4 cheques · 1 cleared</div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:20px;padding:16px 18px">
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <div style="display:flex;align-items:center;gap:11px"><span style="width:34px;height:34px;border-radius:11px;background:#E7F3EC;color:#1E9E5A;display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:18px">check</span><span style="font-size:14.5px;font-weight:700;color:#12101A">Cheque 1 of 4</span></div>
+              <span style="font-size:10.5px;font-weight:800;letter-spacing:.06em;padding:7px 10px;border-radius:999px;background:#E7F3EC;color:#1E9E5A">CLEARED</span>
+            </div>
+            <div style="display:flex;align-items:flex-end;justify-content:space-between;margin-top:13px"><span style="font-size:26px;font-weight:800;letter-spacing:-.02em;color:#12101A">AED 42,500</span><span style="font:400 11.5px/1 'IBM Plex Mono';color:#8E88A0">25 May 2026</span></div>
+          </div>
+          <div style="background:#12101A;border-radius:20px;padding:16px 18px">
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <div style="display:flex;align-items:center;gap:11px"><span style="width:34px;height:34px;border-radius:11px;background:rgba(199,154,60,.18);color:#E3BE6E;display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:18px">schedule</span><span style="font-size:14.5px;font-weight:700;color:#fff">Cheque 2 of 4</span></div>
+              <span style="font-size:10.5px;font-weight:800;letter-spacing:.06em;padding:7px 10px;border-radius:999px;background:rgba(199,154,60,.18);color:#E3BE6E">DUE IN 12 DAYS</span>
+            </div>
+            <div style="display:flex;align-items:flex-end;justify-content:space-between;margin-top:13px"><span style="font-size:26px;font-weight:800;letter-spacing:-.02em;color:#fff">AED 42,500</span><span style="font:400 11.5px/1 'IBM Plex Mono';color:#9B93B4">25 Aug 2026</span></div>
+            <div style="margin-top:14px;padding-top:13px;border-top:1px solid rgba(255,255,255,.1);font-size:12px;color:#9B93B4">Presented to Emirates NBD · clears in 3 working days</div>
+          </div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:20px;padding:16px 18px">
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <div style="display:flex;align-items:center;gap:11px"><span style="width:34px;height:34px;border-radius:11px;background:#F4F1FC;color:#A39CB8;display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:18px">circle</span><span style="font-size:14.5px;font-weight:700;color:#12101A">Cheque 3 of 4</span></div>
+              <span style="font-size:10.5px;font-weight:800;letter-spacing:.06em;padding:7px 10px;border-radius:999px;background:#F4F1FC;color:#8E88A0">UPCOMING</span>
+            </div>
+            <div style="display:flex;align-items:flex-end;justify-content:space-between;margin-top:13px"><span style="font-size:26px;font-weight:800;letter-spacing:-.02em;color:#12101A">AED 42,500</span><span style="font:400 11.5px/1 'IBM Plex Mono';color:#8E88A0">25 Nov 2026</span></div>
+          </div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:20px;padding:16px 18px">
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <div style="display:flex;align-items:center;gap:11px"><span style="width:34px;height:34px;border-radius:11px;background:#F4F1FC;color:#A39CB8;display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:18px">circle</span><span style="font-size:14.5px;font-weight:700;color:#12101A">Cheque 4 of 4</span></div>
+              <span style="font-size:10.5px;font-weight:800;letter-spacing:.06em;padding:7px 10px;border-radius:999px;background:#F4F1FC;color:#8E88A0">UPCOMING</span>
+            </div>
+            <div style="display:flex;align-items:flex-end;justify-content:space-between;margin-top:13px"><span style="font-size:26px;font-weight:800;letter-spacing:-.02em;color:#12101A">AED 42,500</span><span style="font:400 11.5px/1 'IBM Plex Mono';color:#8E88A0">25 Feb 2027</span></div>
+          </div>
+        </div>
+        <div style="position:relative;background:#fff;border-top:1px solid #EDEAF4;padding:12px 18px 26px;display:grid;grid-template-columns:repeat(5,1fr);align-items:end">
+          <div style="display:flex;flex-direction:column;align-items:center;gap:5px"><span style="font-family:'Material Symbols Rounded';font-size:22px;color:#8E88A0">home</span><span style="font-size:10.5px;font-weight:600;color:#8E88A0">Home</span></div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:5px"><span style="font-family:'Material Symbols Rounded';font-size:22px;color:#8E88A0">travel_explore</span><span style="font-size:10.5px;font-weight:600;color:#8E88A0">Explore</span></div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:5px"><span style="width:52px;height:52px;border-radius:50%;background:linear-gradient(140deg,#C79A3C,#A87A1E);margin-top:-30px;display:grid;place-items:center;box-shadow:0 10px 22px rgba(199,154,60,.4);font-family:'Material Symbols Rounded';font-size:24px;color:#12101A">qr_code_scanner</span><span style="font-size:10.5px;font-weight:600;color:#8E88A0">Pass</span></div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:5px"><span style="font-family:'Material Symbols Rounded';font-size:22px;color:#A87A1E">account_balance_wallet</span><span style="font-size:10.5px;font-weight:700;color:#A87A1E">Wallet</span></div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:5px"><span style="font-family:'Material Symbols Rounded';font-size:22px;color:#8E88A0">grid_view</span><span style="font-size:10.5px;font-weight:600;color:#8E88A0">Services</span></div>
+          <div style="position:absolute;bottom:9px;left:50%;transform:translateX(-50%);width:134px;height:5px;border-radius:3px;background:#12101A"></div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;color:#8C86A0"><span style="font:400 12px/1 'IBM Plex Mono';color:#C79A3C">03</span><span style="font-size:14px;font-weight:600;color:#E8E5F2">Wallet · cheques</span><span style="font-size:13px">Schedule with the live one inverted</span></div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:18px">
+      <div style="position:relative;width:412px;height:916px;border-radius:46px;background:#F6F5FA;box-shadow:0 0 0 10px #17131f,0 0 0 11px #2c2440,0 40px 90px rgba(0,0,0,.6);overflow:hidden;display:flex;flex-direction:column">
+        <div style="background:#fff;display:flex;align-items:center;justify-content:space-between;padding:16px 26px 0;font-size:15px;font-weight:700;color:#12101A"><span>9:41</span><span style="display:flex;gap:6px;align-items:center;font-family:'Material Symbols Rounded';font-size:16px"><span>signal_cellular_alt</span><span>wifi</span><span>battery_full</span></span></div>
+        <div style="background:#fff;padding:18px 20px 16px;display:flex;align-items:center;gap:12px">
+          <div style="width:38px;height:38px;border-radius:50%;border:1px solid #E6E3EE;display:grid;place-items:center"><span style="font-family:'Material Symbols Rounded';font-size:19px;color:#12101A">arrow_back</span></div>
+          <div style="font-size:22px;font-weight:800;color:#12101A;letter-spacing:-.02em">Penalties</div>
+        </div>
+        <div style="flex:1;padding:16px 20px 0;display:flex;flex-direction:column;gap:12px">
+          <div style="background:#FDF0F0;border:1px solid #F5DADA;border-radius:20px;padding:18px">
+            <div style="font-size:13px;font-weight:600;color:#A34141">Outstanding penalties</div>
+            <div style="font-size:32px;font-weight:800;letter-spacing:-.02em;color:#C13B3B;margin-top:4px">AED 1,200</div>
+            <div style="font-size:12px;color:#A34141;margin-top:4px">Added to your next cheque unless disputed</div>
+          </div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:20px;padding:17px">
+            <div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:15.5px;font-weight:800;color:#12101A;letter-spacing:-.01em">Late payment fee</span><span style="font-size:10.5px;font-weight:800;padding:7px 10px;border-radius:999px;background:#FDF0F0;color:#C13B3B">OPEN</span></div>
+            <div style="font-size:13px;color:#8E88A0;margin-top:8px;line-height:1.5">Cheque 1 was presented four days after the due date.</div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;padding-top:13px;border-top:1px solid #F2EFF8"><span style="font:400 11.5px/1 'IBM Plex Mono';color:#8E88A0">12 JUN 2026</span><span style="font-size:19px;font-weight:800;color:#12101A">AED 900</span></div>
+            <div style="display:flex;gap:9px;margin-top:14px"><div style="flex:1;height:44px;border-radius:12px;background:#12101A;color:#fff;display:grid;place-items:center;font-size:13.5px;font-weight:800">Pay now</div><div style="flex:1;height:44px;border-radius:12px;border:1px solid #E6E3EE;display:grid;place-items:center;font-size:13.5px;font-weight:700;color:#4A4358">Dispute</div></div>
+          </div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:20px;padding:17px">
+            <div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:15.5px;font-weight:800;color:#12101A;letter-spacing:-.01em">Parking violation</span><span style="font-size:10.5px;font-weight:800;padding:7px 10px;border-radius:999px;background:#FDF0F0;color:#C13B3B">OPEN</span></div>
+            <div style="font-size:13px;color:#8E88A0;margin-top:8px;line-height:1.5">Vehicle parked in bay B-14 without a permit.</div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;padding-top:13px;border-top:1px solid #F2EFF8"><span style="font:400 11.5px/1 'IBM Plex Mono';color:#8E88A0">02 JUL 2026</span><span style="font-size:19px;font-weight:800;color:#12101A">AED 300</span></div>
+          </div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:20px;padding:17px;opacity:.62">
+            <div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:15.5px;font-weight:800;color:#12101A;letter-spacing:-.01em">Noise complaint</span><span style="font-size:10.5px;font-weight:800;padding:7px 10px;border-radius:999px;background:#E7F3EC;color:#1E9E5A">WAIVED</span></div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;padding-top:13px;border-top:1px solid #F2EFF8"><span style="font:400 11.5px/1 'IBM Plex Mono';color:#8E88A0">18 MAR 2026</span><span style="font-size:19px;font-weight:800;color:#12101A">AED 0</span></div>
+          </div>
+        </div>
+        <div style="position:absolute;bottom:9px;left:50%;transform:translateX(-50%);width:134px;height:5px;border-radius:3px;background:#12101A"></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;color:#8C86A0"><span style="font:400 12px/1 'IBM Plex Mono';color:#C79A3C">04</span><span style="font-size:14px;font-weight:600;color:#E8E5F2">Penalties</span><span style="font-size:13px">Pay or dispute, in place</span></div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:18px">
+      <div style="position:relative;width:412px;height:916px;border-radius:46px;background:#F6F5FA;box-shadow:0 0 0 10px #17131f,0 0 0 11px #2c2440,0 40px 90px rgba(0,0,0,.6);overflow:hidden;display:flex;flex-direction:column">
+        <div style="background:#fff;display:flex;align-items:center;justify-content:space-between;padding:16px 26px 0;font-size:15px;font-weight:700;color:#12101A"><span>9:41</span><span style="display:flex;gap:6px;align-items:center;font-family:'Material Symbols Rounded';font-size:16px"><span>signal_cellular_alt</span><span>wifi</span><span>battery_full</span></span></div>
+        <div style="background:#fff;padding:18px 20px 16px;display:flex;flex-direction:column;gap:14px">
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <div style="display:flex;align-items:center;gap:8px"><span style="font-family:'Material Symbols Rounded';font-size:20px;color:#A87A1E">location_on</span><span style="font-size:19px;font-weight:800;color:#12101A;letter-spacing:-.02em">Dubai</span><span style="font-family:'Material Symbols Rounded';font-size:19px;color:#8E88A0">expand_more</span></div>
+            <div style="width:38px;height:38px;border-radius:50%;border:1px solid #E6E3EE;display:grid;place-items:center"><span style="font-family:'Material Symbols Rounded';font-size:19px;color:#C13B3B">favorite</span></div>
+          </div>
+          <div style="display:flex;gap:10px">
+            <div style="flex:1;height:46px;border-radius:14px;background:#F4F2F9;display:flex;align-items:center;gap:10px;padding:0 14px"><span style="font-family:'Material Symbols Rounded';font-size:19px;color:#A39CB8">search</span><span style="font-size:14.5px;color:#A39CB8">Search listings or areas</span></div>
+            <div style="position:relative;width:46px;height:46px;border-radius:14px;background:#12101A;display:grid;place-items:center"><span style="font-family:'Material Symbols Rounded';font-size:20px;color:#E3BE6E">tune</span><span style="position:absolute;top:-5px;right:-5px;min-width:18px;height:18px;border-radius:999px;background:#C79A3C;color:#12101A;font-size:10px;font-weight:800;line-height:18px;text-align:center;border:2px solid #fff">2</span></div>
+          </div>
+          <div style="display:flex;gap:8px;overflow:hidden">
+            <div style="flex:none;padding:8px 14px;border-radius:10px;background:#FBF3E2;border:1px solid #EBD7A8;color:#A87A1E;font-size:12.5px;font-weight:800;white-space:nowrap">2+ bed</div>
+            <div style="flex:none;padding:8px 14px;border-radius:10px;background:#FBF3E2;border:1px solid #EBD7A8;color:#A87A1E;font-size:12.5px;font-weight:800;white-space:nowrap">Available now</div>
+            <div style="flex:none;padding:8px 14px;border-radius:10px;background:#fff;border:1px solid #E6E3EE;color:#4A4358;font-size:12.5px;font-weight:600;white-space:nowrap">Near me</div>
+            <div style="flex:none;padding:8px 14px;border-radius:10px;background:#fff;border:1px solid #E6E3EE;color:#4A4358;font-size:12.5px;font-weight:600;white-space:nowrap">Furnished</div>
+          </div>
+        </div>
+        <div style="flex:1;overflow:hidden;padding:14px 20px 0;display:flex;flex-direction:column;gap:12px">
+          <div style="font:400 12.5px/1 'IBM Plex Mono';color:#8E88A0">24 homes match</div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:20px;overflow:hidden">
+            <div style="height:150px;background:repeating-linear-gradient(135deg,#EFEAFE,#EFEAFE 7px,#E4DBFB 7px,#E4DBFB 14px);position:relative;display:grid;place-items:center;font:400 10px/1 'IBM Plex Mono';color:#8574B8">listing photo
+              <div style="position:absolute;top:12px;left:12px;background:rgba(255,255,255,.94);border-radius:999px;padding:6px 11px;font-size:11.5px;font-weight:800;color:#A87A1E">AVAILABLE NOW</div>
+              <div style="position:absolute;top:10px;right:12px;width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,.94);display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:17px;color:#C13B3B">favorite</div>
+              <div style="position:absolute;bottom:10px;right:12px;background:rgba(18,16,26,.72);color:#fff;border-radius:999px;padding:5px 10px;font-size:11px;font-weight:600">1 km</div>
+            </div>
+            <div style="padding:14px">
+              <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
+                <div><div style="font-size:16.5px;font-weight:800;color:#12101A;letter-spacing:-.01em">Marina Vista · 2BR</div><div style="font-size:11.5px;color:#8E88A0;margin-top:3px">Dubai Marina · Tower B</div></div>
+                <div style="text-align:right"><div style="font-size:17px;font-weight:800;color:#12101A;letter-spacing:-.02em">AED 145k</div><div style="font-size:11px;color:#8E88A0;margin-top:2px">per year</div></div>
+              </div>
+              <div style="display:flex;gap:6px;margin-top:12px"><span style="font-size:11.5px;font-weight:600;color:#4A4358;background:#F4F1FC;border-radius:8px;padding:7px 10px">2 bed</span><span style="font-size:11.5px;font-weight:600;color:#4A4358;background:#F4F1FC;border-radius:8px;padding:7px 10px">1,240 sqft</span><span style="font-size:11.5px;font-weight:600;color:#4A4358;background:#F4F1FC;border-radius:8px;padding:7px 10px">Furnished</span></div>
+            </div>
+          </div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:20px;overflow:hidden">
+            <div style="height:150px;background:repeating-linear-gradient(135deg,#EFEAFE,#EFEAFE 7px,#E4DBFB 7px,#E4DBFB 14px);position:relative;display:grid;place-items:center;font:400 10px/1 'IBM Plex Mono';color:#8574B8">listing photo
+              <div style="position:absolute;top:12px;left:12px;background:rgba(255,255,255,.94);border-radius:999px;padding:6px 11px;font-size:11.5px;font-weight:800;color:#A87A1E">2 VIEWINGS TODAY</div>
+              <div style="position:absolute;top:10px;right:12px;width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,.94);display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:17px;color:#8E88A0">favorite_border</div>
+              <div style="position:absolute;bottom:10px;right:12px;background:rgba(18,16,26,.72);color:#fff;border-radius:999px;padding:5px 10px;font-size:11px;font-weight:600">2.4 km</div>
+            </div>
+            <div style="padding:14px">
+              <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
+                <div><div style="font-size:16.5px;font-weight:800;color:#12101A;letter-spacing:-.01em">Bay Central · 1BR</div><div style="font-size:11.5px;color:#8E88A0;margin-top:3px">Business Bay · Tower A</div></div>
+                <div style="text-align:right"><div style="font-size:17px;font-weight:800;color:#12101A;letter-spacing:-.02em">AED 98k</div><div style="font-size:11px;color:#8E88A0;margin-top:2px">per year</div></div>
+              </div>
+              <div style="display:flex;gap:6px;margin-top:12px"><span style="font-size:11.5px;font-weight:600;color:#4A4358;background:#F4F1FC;border-radius:8px;padding:7px 10px">1 bed</span><span style="font-size:11.5px;font-weight:600;color:#4A4358;background:#F4F1FC;border-radius:8px;padding:7px 10px">820 sqft</span><span style="font-size:11.5px;font-weight:600;color:#4A4358;background:#F4F1FC;border-radius:8px;padding:7px 10px">Semi</span></div>
+            </div>
+          </div>
+        </div>
+        <div style="position:relative;background:#fff;border-top:1px solid #EDEAF4;padding:12px 18px 26px;display:grid;grid-template-columns:repeat(5,1fr);align-items:end">
+          <div style="display:flex;flex-direction:column;align-items:center;gap:5px"><span style="font-family:'Material Symbols Rounded';font-size:22px;color:#8E88A0">home</span><span style="font-size:10.5px;font-weight:600;color:#8E88A0">Home</span></div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:5px"><span style="font-family:'Material Symbols Rounded';font-size:22px;color:#A87A1E">travel_explore</span><span style="font-size:10.5px;font-weight:700;color:#A87A1E">Explore</span></div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:5px"><span style="width:52px;height:52px;border-radius:50%;background:linear-gradient(140deg,#C79A3C,#A87A1E);margin-top:-30px;display:grid;place-items:center;box-shadow:0 10px 22px rgba(199,154,60,.4);font-family:'Material Symbols Rounded';font-size:24px;color:#12101A">qr_code_scanner</span><span style="font-size:10.5px;font-weight:600;color:#8E88A0">Pass</span></div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:5px"><span style="font-family:'Material Symbols Rounded';font-size:22px;color:#8E88A0">account_balance_wallet</span><span style="font-size:10.5px;font-weight:600;color:#8E88A0">Wallet</span></div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:5px"><span style="font-family:'Material Symbols Rounded';font-size:22px;color:#8E88A0">grid_view</span><span style="font-size:10.5px;font-weight:600;color:#8E88A0">Services</span></div>
+          <div style="position:absolute;bottom:9px;left:50%;transform:translateX(-50%);width:134px;height:5px;border-radius:3px;background:#12101A"></div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;color:#8C86A0"><span style="font:400 12px/1 'IBM Plex Mono';color:#C79A3C">05</span><span style="font-size:14px;font-weight:600;color:#E8E5F2">Explore</span><span style="font-size:13px">Marketplace listings, filtered</span></div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:18px">
+      <div style="position:relative;width:412px;height:916px;border-radius:46px;background:#E9EBF2;box-shadow:0 0 0 10px #17131f,0 0 0 11px #2c2440,0 40px 90px rgba(0,0,0,.6);overflow:hidden">
+        <div style="position:absolute;inset:0;background:repeating-linear-gradient(0deg,#E1E4EE,#E1E4EE 1px,transparent 1px,transparent 48px),repeating-linear-gradient(90deg,#E1E4EE,#E1E4EE 1px,transparent 1px,transparent 48px)"></div>
+        <div style="position:absolute;inset:0;display:grid;place-items:center;font:400 10.5px/1 'IBM Plex Mono';color:#A7ABBB">map tiles</div>
+        <div style="position:relative;display:flex;align-items:center;justify-content:space-between;padding:16px 26px 0;font-size:15px;font-weight:700;color:#12101A"><span>9:41</span><span style="display:flex;gap:6px;align-items:center;font-family:'Material Symbols Rounded';font-size:16px"><span>signal_cellular_alt</span><span>wifi</span><span>battery_full</span></span></div>
+        <div style="position:absolute;top:62px;left:20px;right:20px;display:flex;gap:10px">
+          <div style="flex:1;height:48px;border-radius:14px;background:#fff;display:flex;align-items:center;gap:10px;padding:0 14px;box-shadow:0 6px 18px rgba(18,16,26,.12)"><span style="font-family:'Material Symbols Rounded';font-size:19px;color:#A39CB8">search</span><span style="font-size:15px;font-weight:600;color:#12101A">Dubai Marina</span></div>
+          <div style="width:48px;height:48px;border-radius:14px;background:#12101A;display:grid;place-items:center"><span style="font-family:'Material Symbols Rounded';font-size:20px;color:#E3BE6E">list</span></div>
+        </div>
+        <div style="position:absolute;top:26%;left:16%;background:#12101A;color:#E3BE6E;border-radius:999px;padding:9px 14px;font-size:13px;font-weight:800;box-shadow:0 10px 22px rgba(18,16,26,.3)">145k</div>
+        <div style="position:absolute;top:41%;left:54%;background:#fff;color:#12101A;border-radius:999px;padding:9px 14px;font-size:13px;font-weight:800;box-shadow:0 10px 22px rgba(18,16,26,.22)">98k</div>
+        <div style="position:absolute;top:56%;left:26%;background:#fff;color:#12101A;border-radius:999px;padding:9px 14px;font-size:13px;font-weight:800;box-shadow:0 10px 22px rgba(18,16,26,.22)">260k</div>
+        <div style="position:absolute;top:64%;left:66%;background:#fff;color:#12101A;border-radius:999px;padding:9px 14px;font-size:13px;font-weight:800;box-shadow:0 10px 22px rgba(18,16,26,.22)">112k</div>
+        <div style="position:absolute;left:16px;right:16px;bottom:44px;background:#fff;border-radius:20px;padding:14px;display:flex;gap:14px;align-items:center;box-shadow:0 16px 36px rgba(18,16,26,.28)">
+          <div style="width:76px;height:76px;flex:none;border-radius:16px;background:repeating-linear-gradient(135deg,#EFEAFE,#EFEAFE 6px,#E4DBFB 6px,#E4DBFB 12px)"></div>
+          <div style="flex:1">
+            <div style="font-size:16px;font-weight:800;color:#12101A;letter-spacing:-.01em">Marina Vista · 2BR</div>
+            <div style="font-size:11.5px;color:#8E88A0;margin-top:4px">Dubai Marina · available now</div>
+            <div style="font-size:19px;font-weight:800;color:#12101A;margin-top:7px;letter-spacing:-.02em">AED 145,000<span style="font-size:11px;font-weight:600;color:#8E88A0"> /yr</span></div>
+          </div>
+          <div style="width:44px;height:44px;border-radius:50%;background:#12101A;display:grid;place-items:center"><span style="font-family:'Material Symbols Rounded';font-size:20px;color:#E3BE6E">arrow_forward</span></div>
+        </div>
+        <div style="position:absolute;bottom:9px;left:50%;transform:translateX(-50%);width:134px;height:5px;border-radius:3px;background:#12101A"></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;color:#8C86A0"><span style="font:400 12px/1 'IBM Plex Mono';color:#C79A3C">06</span><span style="font-size:14px;font-weight:600;color:#E8E5F2">Map view</span><span style="font-size:13px">Price pins, peek card</span></div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:18px">
+      <div style="position:relative;width:412px;height:916px;border-radius:46px;background:#fff;box-shadow:0 0 0 10px #17131f,0 0 0 11px #2c2440,0 40px 90px rgba(0,0,0,.6);overflow:hidden;display:flex;flex-direction:column">
+        <div style="height:330px;flex:none;background:repeating-linear-gradient(135deg,#E7E1F7,#E7E1F7 8px,#DAD1F1 8px,#DAD1F1 16px);position:relative;display:grid;place-items:center;font:400 11px/1 'IBM Plex Mono';color:#7A6EA8">hero photo
+          <div style="position:absolute;top:16px;left:26px;right:26px;display:flex;align-items:center;justify-content:space-between;font-size:15px;font-weight:700;color:#12101A"><span>9:41</span><span style="display:flex;gap:6px;align-items:center;font-family:'Material Symbols Rounded';font-size:16px"><span>signal_cellular_alt</span><span>wifi</span><span>battery_full</span></span></div>
+          <div style="position:absolute;top:58px;left:20px;width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.92);display:grid;place-items:center"><span style="font-family:'Material Symbols Rounded';font-size:19px;color:#12101A">arrow_back</span></div>
+          <div style="position:absolute;top:58px;right:20px;display:flex;gap:10px"><div style="width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.92);display:grid;place-items:center"><span style="font-family:'Material Symbols Rounded';font-size:19px;color:#12101A">ios_share</span></div><div style="width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.92);display:grid;place-items:center"><span style="font-family:'Material Symbols Rounded';font-size:19px;color:#C13B3B">favorite</span></div></div>
+          <div style="position:absolute;bottom:16px;left:50%;transform:translateX(-50%);display:flex;gap:6px"><span style="width:18px;height:6px;border-radius:3px;background:#fff"></span><span style="width:6px;height:6px;border-radius:3px;background:rgba(255,255,255,.6)"></span><span style="width:6px;height:6px;border-radius:3px;background:rgba(255,255,255,.6)"></span></div>
+        </div>
+        <div style="flex:1;padding:20px;display:flex;flex-direction:column;gap:16px;overflow:hidden">
+          <div>
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+              <div>
+                <div style="font-size:26px;font-weight:800;color:#12101A;letter-spacing:-.025em">Marina Vista</div>
+                <div style="font-size:13px;color:#8E88A0;margin-top:4px">2 bedroom · Tower B · floor 21</div>
+              </div>
+              <div style="background:#FBF3E2;color:#A87A1E;border-radius:999px;padding:8px 12px;font-size:11.5px;font-weight:800;white-space:nowrap">Available now</div>
+            </div>
+            <div style="display:flex;align-items:baseline;gap:8px;margin-top:12px"><span style="font-size:30px;font-weight:800;letter-spacing:-.025em;color:#12101A">AED 145,000</span><span style="font-size:13px;color:#8E88A0">/ year · 4 cheques</span></div>
+          </div>
+          <div style="display:flex;gap:10px">
+            <div style="flex:1;background:#F6F4FC;border-radius:14px;padding:12px"><div style="font-size:11px;color:#8E88A0;font-weight:600">Bedrooms</div><div style="font-size:16px;font-weight:800;color:#12101A;margin-top:2px">2</div></div>
+            <div style="flex:1;background:#F6F4FC;border-radius:14px;padding:12px"><div style="font-size:11px;color:#8E88A0;font-weight:600">Bathrooms</div><div style="font-size:16px;font-weight:800;color:#12101A;margin-top:2px">3</div></div>
+            <div style="flex:1;background:#F6F4FC;border-radius:14px;padding:12px"><div style="font-size:11px;color:#8E88A0;font-weight:600">Area</div><div style="font-size:16px;font-weight:800;color:#12101A;margin-top:2px">1,240</div></div>
+          </div>
+          <div style="border:1.5px solid #C79A3C;border-radius:18px;padding:14px;display:flex;align-items:center;gap:14px;background:#FFFBF2">
+            <div style="width:52px;height:52px;border-radius:14px;background:linear-gradient(140deg,#A87A1E,#E3BE6E);display:grid;place-items:center;color:#12101A;font-family:'Material Symbols Rounded';font-size:24px">event_available</div>
+            <div><div style="font-size:16px;font-weight:800;color:#12101A">Viewings this week</div><div style="font-size:12.5px;color:#8E88A0;margin-top:2px">Pick a slot — the manager confirms in-app</div></div>
+          </div>
+          <div>
+            <div style="font-size:15px;font-weight:800;color:#12101A">About this home</div>
+            <div style="font-size:13.5px;line-height:1.6;color:#4A4358;margin-top:8px;text-wrap:pretty">Corner unit with full marina views, floor-to-ceiling glass and a wraparound balcony. Chiller free, one covered parking bay, and access to the tower's pool deck and gym.</div>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:7px">
+            <span style="font-size:11.5px;font-weight:600;color:#4A4358;background:#F4F1FC;border-radius:8px;padding:8px 11px">Pool deck</span>
+            <span style="font-size:11.5px;font-weight:600;color:#4A4358;background:#F4F1FC;border-radius:8px;padding:8px 11px">Gym</span>
+            <span style="font-size:11.5px;font-weight:600;color:#4A4358;background:#F4F1FC;border-radius:8px;padding:8px 11px">Covered parking</span>
+            <span style="font-size:11.5px;font-weight:600;color:#4A4358;background:#F4F1FC;border-radius:8px;padding:8px 11px">Chiller free</span>
+            <span style="font-size:11.5px;font-weight:600;color:#4A4358;background:#F4F1FC;border-radius:8px;padding:8px 11px">Concierge</span>
+          </div>
+        </div>
+        <div style="padding:14px 20px 30px;border-top:1px solid #EDEAF4;display:flex;gap:10px;background:#fff">
+          <div style="flex:1;height:54px;border-radius:16px;background:#12101A;color:#fff;display:grid;place-items:center;font-size:16px;font-weight:800">Book a viewing</div>
+          <div style="width:54px;height:54px;border-radius:16px;border:1px solid #E6E3EE;display:grid;place-items:center"><span style="font-family:'Material Symbols Rounded';font-size:22px;color:#12101A">chat_bubble</span></div>
+        </div>
+        <div style="position:absolute;bottom:9px;left:50%;transform:translateX(-50%);width:134px;height:5px;border-radius:3px;background:#12101A"></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;color:#8C86A0"><span style="font:400 12px/1 'IBM Plex Mono';color:#C79A3C">07</span><span style="font-size:14px;font-weight:600;color:#E8E5F2">Listing detail</span><span style="font-size:13px">Facts, viewing CTA pinned</span></div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:18px">
+      <div style="position:relative;width:412px;height:916px;border-radius:46px;background:#F6F5FA;box-shadow:0 0 0 10px #17131f,0 0 0 11px #2c2440,0 40px 90px rgba(0,0,0,.6);overflow:hidden;display:flex;flex-direction:column">
+        <div style="background:#fff;display:flex;align-items:center;justify-content:space-between;padding:16px 26px 0;font-size:15px;font-weight:700;color:#12101A"><span>9:41</span><span style="display:flex;gap:6px;align-items:center;font-family:'Material Symbols Rounded';font-size:16px"><span>signal_cellular_alt</span><span>wifi</span><span>battery_full</span></span></div>
+        <div style="background:#fff;padding:18px 20px 16px;display:flex;align-items:center;gap:12px">
+          <div style="width:38px;height:38px;border-radius:50%;border:1px solid #E6E3EE;display:grid;place-items:center"><span style="font-family:'Material Symbols Rounded';font-size:19px;color:#12101A">arrow_back</span></div>
+          <div style="font-size:22px;font-weight:800;color:#12101A;letter-spacing:-.02em">Saved homes</div>
+        </div>
+        <div style="flex:1;padding:16px 20px 0;display:flex;flex-direction:column;gap:11px">
+          <div style="font:400 12.5px/1 'IBM Plex Mono';color:#8E88A0">3 saved · 1 price drop</div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:20px;padding:13px;display:flex;gap:13px;align-items:center">
+            <div style="width:84px;height:84px;flex:none;border-radius:16px;background:repeating-linear-gradient(135deg,#EFEAFE,#EFEAFE 6px,#E4DBFB 6px,#E4DBFB 12px)"></div>
+            <div style="flex:1"><div style="font-size:15.5px;font-weight:800;color:#12101A">Marina Vista · 2BR</div><div style="font-size:11.5px;color:#8E88A0;margin-top:4px">Dubai Marina</div><div style="display:flex;align-items:baseline;gap:8px;margin-top:7px"><span style="font-size:18px;font-weight:800;color:#12101A;letter-spacing:-.02em">AED 145k</span><span style="font-size:11.5px;font-weight:700;color:#1E9E5A">↓ 5k</span></div></div>
+            <span style="font-family:'Material Symbols Rounded';font-size:22px;color:#C13B3B">favorite</span>
+          </div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:20px;padding:13px;display:flex;gap:13px;align-items:center">
+            <div style="width:84px;height:84px;flex:none;border-radius:16px;background:repeating-linear-gradient(135deg,#EFEAFE,#EFEAFE 6px,#E4DBFB 6px,#E4DBFB 12px)"></div>
+            <div style="flex:1"><div style="font-size:15.5px;font-weight:800;color:#12101A">Palm Court · 3BR</div><div style="font-size:11.5px;color:#8E88A0;margin-top:4px">Palm Jumeirah</div><div style="font-size:18px;font-weight:800;color:#12101A;margin-top:7px;letter-spacing:-.02em">AED 260k</div></div>
+            <span style="font-family:'Material Symbols Rounded';font-size:22px;color:#C13B3B">favorite</span>
+          </div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:20px;padding:13px;display:flex;gap:13px;align-items:center;opacity:.6">
+            <div style="width:84px;height:84px;flex:none;border-radius:16px;background:repeating-linear-gradient(135deg,#EFEAFE,#EFEAFE 6px,#E4DBFB 6px,#E4DBFB 12px)"></div>
+            <div style="flex:1"><div style="font-size:15.5px;font-weight:800;color:#12101A">Bay Central · 1BR</div><div style="font-size:11.5px;color:#8E88A0;margin-top:4px">Business Bay</div><div style="display:inline-block;font-size:10.5px;font-weight:800;padding:6px 9px;border-radius:999px;background:#F4F1FC;color:#8E88A0;margin-top:7px">NO LONGER LISTED</div></div>
+            <span style="font-family:'Material Symbols Rounded';font-size:22px;color:#C13B3B">favorite</span>
+          </div>
+        </div>
+        <div style="position:absolute;bottom:9px;left:50%;transform:translateX(-50%);width:134px;height:5px;border-radius:3px;background:#12101A"></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;color:#8C86A0"><span style="font:400 12px/1 'IBM Plex Mono';color:#C79A3C">08</span><span style="font-size:14px;font-weight:600;color:#E8E5F2">Saved</span><span style="font-size:13px">Price drops surfaced</span></div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:18px">
+      <div style="position:relative;width:412px;height:916px;border-radius:46px;background:#F6F5FA;box-shadow:0 0 0 10px #17131f,0 0 0 11px #2c2440,0 40px 90px rgba(0,0,0,.6);overflow:hidden;display:flex;flex-direction:column">
+        <div style="background:#fff;display:flex;align-items:center;justify-content:space-between;padding:16px 26px 0;font-size:15px;font-weight:700;color:#12101A"><span>9:41</span><span style="display:flex;gap:6px;align-items:center;font-family:'Material Symbols Rounded';font-size:16px"><span>signal_cellular_alt</span><span>wifi</span><span>battery_full</span></span></div>
+        <div style="background:#fff;padding:18px 20px 18px">
+          <div style="font-size:26px;font-weight:800;color:#12101A;letter-spacing:-.025em">Services</div>
+          <div style="font-size:13.5px;color:#8E88A0;margin-top:5px">Everything you can ask the building for.</div>
+        </div>
+        <div style="flex:1;padding:16px 20px 0;display:grid;grid-template-columns:1fr 1fr;gap:11px;align-content:start">
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:20px;padding:18px"><span style="width:44px;height:44px;border-radius:14px;background:#F4F1FC;color:#A87A1E;display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:22px">handyman</span><div style="font-size:15.5px;font-weight:800;color:#12101A;margin-top:14px">Maintenance</div><div style="font-size:11.5px;color:#8E88A0;margin-top:4px">2 open requests</div></div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:20px;padding:18px"><span style="width:44px;height:44px;border-radius:14px;background:#EDE9F3;color:#6A5A8E;display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:22px">qr_code_2</span><div style="font-size:15.5px;font-weight:800;color:#12101A;margin-top:14px">Visitors</div><div style="font-size:11.5px;color:#8E88A0;margin-top:4px">1 pass active</div></div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:20px;padding:18px"><span style="width:44px;height:44px;border-radius:14px;background:#E7F3EC;color:#1E7A4A;display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:22px">pool</span><div style="font-size:15.5px;font-weight:800;color:#12101A;margin-top:14px">Facilities</div><div style="font-size:11.5px;color:#8E88A0;margin-top:4px">Pool, gym, parking</div></div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:20px;padding:18px"><span style="width:44px;height:44px;border-radius:14px;background:#FDF0F0;color:#C13B3B;display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:22px">event</span><div style="font-size:15.5px;font-weight:800;color:#12101A;margin-top:14px">Meetings</div><div style="font-size:11.5px;color:#8E88A0;margin-top:4px">1 upcoming</div></div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:20px;padding:18px;position:relative"><span style="width:44px;height:44px;border-radius:14px;background:#FBF3E2;color:#A87A1E;display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:22px">how_to_reg</span><span style="position:absolute;top:16px;right:16px;min-width:20px;height:20px;border-radius:999px;background:#D64545;color:#fff;font-size:11px;font-weight:800;line-height:20px;text-align:center;padding:0 5px">1</span><div style="font-size:15.5px;font-weight:800;color:#12101A;margin-top:14px">Approvals</div><div style="font-size:11.5px;color:#8E88A0;margin-top:4px">Someone at the gate</div></div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:20px;padding:18px"><span style="width:44px;height:44px;border-radius:14px;background:#E7EAEF;color:#4A5B72;display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:22px">description</span><div style="font-size:15.5px;font-weight:800;color:#12101A;margin-top:14px">Documents</div><div style="font-size:11.5px;color:#8E88A0;margin-top:4px">Lease &amp; receipts</div></div>
+        </div>
+        <div style="position:relative;background:#fff;border-top:1px solid #EDEAF4;padding:12px 18px 26px;display:grid;grid-template-columns:repeat(5,1fr);align-items:end">
+          <div style="display:flex;flex-direction:column;align-items:center;gap:5px"><span style="font-family:'Material Symbols Rounded';font-size:22px;color:#8E88A0">home</span><span style="font-size:10.5px;font-weight:600;color:#8E88A0">Home</span></div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:5px"><span style="font-family:'Material Symbols Rounded';font-size:22px;color:#8E88A0">travel_explore</span><span style="font-size:10.5px;font-weight:600;color:#8E88A0">Explore</span></div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:5px"><span style="width:52px;height:52px;border-radius:50%;background:linear-gradient(140deg,#C79A3C,#A87A1E);margin-top:-30px;display:grid;place-items:center;box-shadow:0 10px 22px rgba(199,154,60,.4);font-family:'Material Symbols Rounded';font-size:24px;color:#12101A">qr_code_scanner</span><span style="font-size:10.5px;font-weight:600;color:#8E88A0">Pass</span></div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:5px"><span style="font-family:'Material Symbols Rounded';font-size:22px;color:#8E88A0">account_balance_wallet</span><span style="font-size:10.5px;font-weight:600;color:#8E88A0">Wallet</span></div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:5px"><span style="font-family:'Material Symbols Rounded';font-size:22px;color:#A87A1E">grid_view</span><span style="font-size:10.5px;font-weight:700;color:#A87A1E">Services</span></div>
+          <div style="position:absolute;bottom:9px;left:50%;transform:translateX(-50%);width:134px;height:5px;border-radius:3px;background:#12101A"></div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;color:#8C86A0"><span style="font:400 12px/1 'IBM Plex Mono';color:#C79A3C">09</span><span style="font-size:14px;font-weight:600;color:#E8E5F2">Services hub</span><span style="font-size:13px">Replaces four separate tabs</span></div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:18px">
+      <div style="position:relative;width:412px;height:916px;border-radius:46px;background:#F6F5FA;box-shadow:0 0 0 10px #17131f,0 0 0 11px #2c2440,0 40px 90px rgba(0,0,0,.6);overflow:hidden;display:flex;flex-direction:column">
+        <div style="background:#fff;display:flex;align-items:center;justify-content:space-between;padding:16px 26px 0;font-size:15px;font-weight:700;color:#12101A"><span>9:41</span><span style="display:flex;gap:6px;align-items:center;font-family:'Material Symbols Rounded';font-size:16px"><span>signal_cellular_alt</span><span>wifi</span><span>battery_full</span></span></div>
+        <div style="background:#fff;padding:18px 20px 14px;display:flex;flex-direction:column;gap:14px">
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <div style="display:flex;align-items:center;gap:12px"><div style="width:38px;height:38px;border-radius:50%;border:1px solid #E6E3EE;display:grid;place-items:center"><span style="font-family:'Material Symbols Rounded';font-size:19px;color:#12101A">arrow_back</span></div><div style="font-size:22px;font-weight:800;color:#12101A;letter-spacing:-.02em">Maintenance</div></div>
+            <div style="height:38px;padding:0 16px;border-radius:999px;background:#12101A;color:#E3BE6E;display:grid;place-items:center;font-size:12.5px;font-weight:800">+ New</div>
+          </div>
+          <div style="height:44px;border-radius:14px;background:#F4F2F9;display:flex;align-items:center;gap:10px;padding:0 14px"><span style="font-family:'Material Symbols Rounded';font-size:19px;color:#A39CB8">search</span><span style="font-size:14.5px;color:#A39CB8">Search requests</span></div>
+          <div style="display:flex;gap:8px">
+            <div style="padding:9px 15px;border-radius:11px;background:#FBF3E2;border:1px solid #EBD7A8;color:#A87A1E;font-size:12.5px;font-weight:800">Open 2</div>
+            <div style="padding:9px 15px;border-radius:11px;background:#fff;border:1px solid #E6E3EE;color:#4A4358;font-size:12.5px;font-weight:600">All</div>
+            <div style="padding:9px 15px;border-radius:11px;background:#fff;border:1px solid #E6E3EE;color:#4A4358;font-size:12.5px;font-weight:600">Closed</div>
+          </div>
+        </div>
+        <div style="flex:1;padding:14px 20px 0;display:flex;flex-direction:column;gap:11px">
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:20px;padding:17px">
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <div style="display:flex;align-items:center;gap:10px"><span style="width:34px;height:34px;border-radius:11px;background:#E7EAEF;color:#4A5B72;display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:18px">ac_unit</span><span style="font-size:11px;font-weight:700;letter-spacing:.1em;color:#8E88A0">HVAC</span></div>
+              <span style="font-size:10.5px;font-weight:800;padding:7px 10px;border-radius:999px;background:#FBF3E2;color:#8A6412">IN PROGRESS</span>
+            </div>
+            <div style="font-size:16px;font-weight:800;color:#12101A;margin-top:12px;letter-spacing:-.01em">AC not cooling in master bedroom</div>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:10px"><span style="width:24px;height:24px;border-radius:50%;background:#F4F1FC;color:#A87A1E;display:grid;place-items:center;font-size:9.5px;font-weight:800">RK</span><span style="font-size:12px;color:#8E88A0">Rashid K. · raised 3 days ago</span></div>
+          </div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:20px;padding:17px">
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <div style="display:flex;align-items:center;gap:10px"><span style="width:34px;height:34px;border-radius:11px;background:#E7F3EC;color:#1E7A4A;display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:18px">plumbing</span><span style="font-size:11px;font-weight:700;letter-spacing:.1em;color:#8E88A0">PLUMBING</span></div>
+              <span style="font-size:10.5px;font-weight:800;padding:7px 10px;border-radius:999px;background:#F4F1FC;color:#8E88A0">OPEN</span>
+            </div>
+            <div style="font-size:16px;font-weight:800;color:#12101A;margin-top:12px;letter-spacing:-.01em">Kitchen sink draining slowly</div>
+            <div style="font-size:12px;color:#8E88A0;margin-top:10px">Raised yesterday · awaiting assignment</div>
+          </div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:20px;padding:17px;opacity:.72">
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <div style="display:flex;align-items:center;gap:10px"><span style="width:34px;height:34px;border-radius:11px;background:#FBF3E2;color:#A87A1E;display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:18px">lightbulb</span><span style="font-size:11px;font-weight:700;letter-spacing:.1em;color:#8E88A0">ELECTRICAL</span></div>
+              <span style="font-size:10.5px;font-weight:800;padding:7px 10px;border-radius:999px;background:#E7F3EC;color:#1E9E5A">CLOSED</span>
+            </div>
+            <div style="font-size:16px;font-weight:800;color:#12101A;margin-top:12px;letter-spacing:-.01em">Balcony light flickering</div>
+            <div style="display:flex;align-items:center;gap:5px;margin-top:10px;font-size:12px;color:#8E88A0">Completed · rated 5/5 <span style="font-family:'Material Symbols Rounded';font-size:14px;color:#F5B301">star</span></div>
+          </div>
+        </div>
+        <div style="position:absolute;bottom:9px;left:50%;transform:translateX(-50%);width:134px;height:5px;border-radius:3px;background:#12101A"></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;color:#8C86A0"><span style="font:400 12px/1 'IBM Plex Mono';color:#C79A3C">10</span><span style="font-size:14px;font-weight:600;color:#E8E5F2">Maintenance list</span><span style="font-size:13px">Category, status, who has it</span></div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:18px">
+      <div style="position:relative;width:412px;height:916px;border-radius:46px;background:#F6F5FA;box-shadow:0 0 0 10px #17131f,0 0 0 11px #2c2440,0 40px 90px rgba(0,0,0,.6);overflow:hidden;display:flex;flex-direction:column">
+        <div style="background:#12101A;padding:16px 26px 0;display:flex;align-items:center;justify-content:space-between;font-size:15px;font-weight:700;color:#fff"><span>9:41</span><span style="display:flex;gap:6px;align-items:center;font-family:'Material Symbols Rounded';font-size:16px"><span>signal_cellular_alt</span><span>wifi</span><span>battery_full</span></span></div>
+        <div style="background:#12101A;padding:18px 20px 24px">
+          <div style="width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.1);display:grid;place-items:center"><span style="font-family:'Material Symbols Rounded';font-size:19px;color:#fff">arrow_back</span></div>
+          <div style="display:flex;gap:8px;margin-top:18px"><span style="font-size:10.5px;font-weight:800;padding:7px 11px;border-radius:999px;background:rgba(199,154,60,.2);color:#E3BE6E">IN PROGRESS</span><span style="font-size:10.5px;font-weight:800;padding:7px 11px;border-radius:999px;background:rgba(255,255,255,.1);color:#9B93B4">HVAC · HIGH</span></div>
+          <div style="font-size:27px;font-weight:800;letter-spacing:-.025em;line-height:1.18;color:#fff;margin-top:14px">AC not cooling in master bedroom</div>
+          <div style="font-size:12.5px;color:#8C86A0;margin-top:8px">Raised 3 days ago · Unit 1204</div>
+        </div>
+        <div style="flex:1;padding:16px 20px 0;display:flex;flex-direction:column;gap:14px">
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:20px;padding:16px;display:flex;align-items:center;gap:13px">
+            <span style="width:44px;height:44px;border-radius:50%;background:#F4F1FC;color:#A87A1E;display:grid;place-items:center;font-size:13px;font-weight:800">RK</span>
+            <span style="flex:1"><span style="display:block;font-size:15px;font-weight:800;color:#12101A">Rashid K.</span><span style="display:block;font-size:12px;color:#8E88A0;margin-top:3px">Miftah technician · ETA 40 min</span></span>
+            <span style="width:40px;height:40px;border-radius:50%;background:#12101A;color:#E3BE6E;display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:19px">call</span>
+          </div>
+          <div style="display:flex;gap:10px">
+            <div style="width:88px;height:88px;border-radius:14px;background:repeating-linear-gradient(135deg,#EFEAFE,#EFEAFE 6px,#E4DBFB 6px,#E4DBFB 12px)"></div>
+            <div style="width:88px;height:88px;border-radius:14px;background:repeating-linear-gradient(135deg,#EFEAFE,#EFEAFE 6px,#E4DBFB 6px,#E4DBFB 12px)"></div>
+            <div style="flex:1;height:88px;border-radius:14px;border:1px dashed #D9D3E6;display:grid;place-items:center;font-size:11.5px;font-weight:600;color:#A39CB8">+ add photo</div>
+          </div>
+          <div style="font-size:15px;font-weight:800;color:#12101A">Timeline</div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:20px;padding:6px 16px">
+            <div style="display:flex;gap:13px;padding:13px 0;border-bottom:1px solid #F2EFF8"><span style="width:12px;height:12px;border-radius:50%;background:#C79A3C;margin-top:4px;flex:none"></span><span style="flex:1"><span style="display:block;font-size:14px;font-weight:700;color:#12101A">Technician on the way</span><span style="display:block;font-size:12px;color:#8E88A0;margin-top:3px">Rashid K. · ETA 40 minutes</span></span><span style="font:400 11px/1 'IBM Plex Mono';color:#8E88A0;margin-top:3px">09:12</span></div>
+            <div style="display:flex;gap:13px;padding:13px 0;border-bottom:1px solid #F2EFF8"><span style="width:12px;height:12px;border-radius:50%;background:#12101A;margin-top:4px;flex:none"></span><span style="flex:1"><span style="display:block;font-size:14px;font-weight:700;color:#12101A">Assigned to Rashid K.</span><span style="display:block;font-size:12px;color:#8E88A0;margin-top:3px">HVAC specialist</span></span><span style="font:400 11px/1 'IBM Plex Mono';color:#8E88A0;margin-top:3px">Yest.</span></div>
+            <div style="display:flex;gap:13px;padding:13px 0;border-bottom:1px solid #F2EFF8"><span style="width:12px;height:12px;border-radius:50%;background:#12101A;margin-top:4px;flex:none"></span><span style="flex:1"><span style="display:block;font-size:14px;font-weight:700;color:#12101A">Manager acknowledged</span><span style="display:block;font-size:12px;color:#8E88A0;margin-top:3px">Priority raised to High</span></span><span style="font:400 11px/1 'IBM Plex Mono';color:#8E88A0;margin-top:3px">2d</span></div>
+            <div style="display:flex;gap:13px;padding:13px 0"><span style="width:12px;height:12px;border-radius:50%;background:#D9D3E6;margin-top:4px;flex:none"></span><span style="flex:1"><span style="display:block;font-size:14px;font-weight:700;color:#12101A">Request raised</span><span style="display:block;font-size:12px;color:#8E88A0;margin-top:3px">You · with 2 photos</span></span><span style="font:400 11px/1 'IBM Plex Mono';color:#8E88A0;margin-top:3px">3d</span></div>
+          </div>
+        </div>
+        <div style="padding:14px 20px 30px;background:#F6F5FA;display:flex;gap:10px">
+          <div style="flex:1;height:50px;border-radius:14px;border:1px solid #E6E3EE;background:#fff;display:grid;place-items:center;font-size:14px;font-weight:700;color:#4A4358">Add a comment</div>
+          <div style="width:50px;height:50px;border-radius:14px;background:#12101A;display:grid;place-items:center"><span style="font-family:'Material Symbols Rounded';font-size:21px;color:#E3BE6E">send</span></div>
+        </div>
+        <div style="position:absolute;bottom:9px;left:50%;transform:translateX(-50%);width:134px;height:5px;border-radius:3px;background:#12101A"></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;color:#8C86A0"><span style="font:400 12px/1 'IBM Plex Mono';color:#C79A3C">11</span><span style="font-size:14px;font-weight:600;color:#E8E5F2">Ticket detail</span><span style="font-size:13px">Dark header, live timeline</span></div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:18px">
+      <div style="position:relative;width:412px;height:916px;border-radius:46px;background:#F6F5FA;box-shadow:0 0 0 10px #17131f,0 0 0 11px #2c2440,0 40px 90px rgba(0,0,0,.6);overflow:hidden;display:flex;flex-direction:column">
+        <div style="background:#fff;display:flex;align-items:center;justify-content:space-between;padding:16px 26px 0;font-size:15px;font-weight:700;color:#12101A"><span>9:41</span><span style="display:flex;gap:6px;align-items:center;font-family:'Material Symbols Rounded';font-size:16px"><span>signal_cellular_alt</span><span>wifi</span><span>battery_full</span></span></div>
+        <div style="background:#fff;padding:18px 20px 16px;display:flex;align-items:center;gap:12px">
+          <div style="width:38px;height:38px;border-radius:50%;border:1px solid #E6E3EE;display:grid;place-items:center"><span style="font-family:'Material Symbols Rounded';font-size:19px;color:#12101A">close</span></div>
+          <div style="font-size:22px;font-weight:800;color:#12101A;letter-spacing:-.02em">New request</div>
+        </div>
+        <div style="flex:1;padding:16px 20px 0;display:flex;flex-direction:column;gap:12px;overflow:hidden">
+          <div style="font-size:11px;font-weight:800;letter-spacing:.14em;color:#8E88A0">WHAT NEEDS FIXING?</div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:9px">
+            <div style="background:#fff;border:1px solid #EDEAF4;border-radius:16px;padding:15px 6px;text-align:center"><span style="font-family:'Material Symbols Rounded';font-size:21px;color:#8E88A0">plumbing</span><div style="font-size:11.5px;font-weight:700;color:#4A4358;margin-top:8px">Plumbing</div></div>
+            <div style="background:#fff;border:1px solid #EDEAF4;border-radius:16px;padding:15px 6px;text-align:center"><span style="font-family:'Material Symbols Rounded';font-size:21px;color:#8E88A0">bolt</span><div style="font-size:11.5px;font-weight:700;color:#4A4358;margin-top:8px">Electrical</div></div>
+            <div style="background:#12101A;border:1px solid #12101A;border-radius:16px;padding:15px 6px;text-align:center"><span style="font-family:'Material Symbols Rounded';font-size:21px;color:#E3BE6E">ac_unit</span><div style="font-size:11.5px;font-weight:800;color:#E3BE6E;margin-top:8px">HVAC</div></div>
+            <div style="background:#fff;border:1px solid #EDEAF4;border-radius:16px;padding:15px 6px;text-align:center"><span style="font-family:'Material Symbols Rounded';font-size:21px;color:#8E88A0">kitchen</span><div style="font-size:11.5px;font-weight:700;color:#4A4358;margin-top:8px">Appliance</div></div>
+            <div style="background:#fff;border:1px solid #EDEAF4;border-radius:16px;padding:15px 6px;text-align:center"><span style="font-family:'Material Symbols Rounded';font-size:21px;color:#8E88A0">pest_control</span><div style="font-size:11.5px;font-weight:700;color:#4A4358;margin-top:8px">Pest</div></div>
+            <div style="background:#fff;border:1px solid #EDEAF4;border-radius:16px;padding:15px 6px;text-align:center"><span style="font-family:'Material Symbols Rounded';font-size:21px;color:#8E88A0">more_horiz</span><div style="font-size:11.5px;font-weight:700;color:#4A4358;margin-top:8px">Other</div></div>
+          </div>
+          <div style="font-size:11px;font-weight:800;letter-spacing:.14em;color:#8E88A0;margin-top:6px">PRIORITY</div>
+          <div style="display:flex;gap:8px">
+            <div style="flex:1;text-align:center;border-radius:12px;padding:12px 0;background:#fff;border:1px solid #EDEAF4;font-size:12.5px;font-weight:700;color:#8E88A0">Low</div>
+            <div style="flex:1;text-align:center;border-radius:12px;padding:12px 0;background:#fff;border:1px solid #EDEAF4;font-size:12.5px;font-weight:700;color:#8E88A0">Medium</div>
+            <div style="flex:1;text-align:center;border-radius:12px;padding:12px 0;background:#12101A;font-size:12.5px;font-weight:800;color:#E3BE6E">High</div>
+            <div style="flex:1;text-align:center;border-radius:12px;padding:12px 0;background:#fff;border:1px solid #EDEAF4;font-size:12.5px;font-weight:700;color:#8E88A0">Urgent</div>
+          </div>
+          <div style="font-size:11px;font-weight:800;letter-spacing:.14em;color:#8E88A0;margin-top:6px">DESCRIBE IT</div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:16px;padding:16px;min-height:104px;font-size:14.5px;line-height:1.6;color:#12101A">The AC in the master bedroom runs but blows warm air<span style="display:inline-block;width:2px;height:16px;background:#C79A3C;vertical-align:-3px;margin-left:2px"></span></div>
+          <div style="display:flex;gap:10px">
+            <div style="width:80px;height:80px;border-radius:14px;border:1px dashed #D9D3E6;background:#fff;display:grid;place-items:center"><span style="font-family:'Material Symbols Rounded';font-size:22px;color:#A87A1E">add_a_photo</span></div>
+            <div style="width:80px;height:80px;border-radius:14px;background:repeating-linear-gradient(135deg,#EFEAFE,#EFEAFE 6px,#E4DBFB 6px,#E4DBFB 12px)"></div>
+          </div>
+        </div>
+        <div style="padding:14px 20px 30px;background:#F6F5FA">
+          <div style="height:54px;border-radius:16px;background:#12101A;color:#fff;display:grid;place-items:center;font-size:16px;font-weight:800">Submit request</div>
+          <div style="text-align:center;font-size:12px;color:#8E88A0;margin-top:10px">A Miftah technician is assigned within two hours</div>
+        </div>
+        <div style="position:absolute;bottom:9px;left:50%;transform:translateX(-50%);width:134px;height:5px;border-radius:3px;background:#12101A"></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;color:#8C86A0"><span style="font:400 12px/1 'IBM Plex Mono';color:#C79A3C">12</span><span style="font-size:14px;font-weight:600;color:#E8E5F2">New request</span><span style="font-size:13px">Category grid, no dropdowns</span></div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:18px">
+      <div style="position:relative;width:412px;height:916px;border-radius:46px;background:#F6F5FA;box-shadow:0 0 0 10px #17131f,0 0 0 11px #2c2440,0 40px 90px rgba(0,0,0,.6);overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end">
+        <div style="position:absolute;inset:0;background:rgba(18,16,26,.5)"></div>
+        <div style="position:absolute;top:0;left:0;right:0;display:flex;align-items:center;justify-content:space-between;padding:16px 26px 0;font-size:15px;font-weight:700;color:#fff"><span>9:41</span><span style="display:flex;gap:6px;align-items:center;font-family:'Material Symbols Rounded';font-size:16px"><span>signal_cellular_alt</span><span>wifi</span><span>battery_full</span></span></div>
+        <div style="position:relative;background:#F6F5FA;border-radius:30px 30px 0 0;padding:14px 20px 30px">
+          <div style="width:44px;height:4px;border-radius:999px;background:#D9D3E6;margin:0 auto 16px"></div>
+          <div style="display:flex;justify-content:space-between;align-items:baseline"><div style="font-size:22px;font-weight:800;color:#12101A;letter-spacing:-.02em">Filters</div><div style="font-size:12.5px;font-weight:800;color:#A87A1E">Reset</div></div>
+          <div style="font-size:11px;font-weight:800;letter-spacing:.14em;color:#8E88A0;margin:20px 0 10px">BEDROOMS</div>
+          <div style="display:flex;gap:8px">
+            <div style="flex:1;text-align:center;border-radius:12px;padding:13px 0;background:#fff;border:1px solid #EDEAF4;font-size:13px;font-weight:700;color:#4A4358">Any</div>
+            <div style="flex:1;text-align:center;border-radius:12px;padding:13px 0;background:#fff;border:1px solid #EDEAF4;font-size:13px;font-weight:700;color:#4A4358">1+</div>
+            <div style="flex:1;text-align:center;border-radius:12px;padding:13px 0;background:#12101A;font-size:13px;font-weight:800;color:#E3BE6E">2+</div>
+            <div style="flex:1;text-align:center;border-radius:12px;padding:13px 0;background:#fff;border:1px solid #EDEAF4;font-size:13px;font-weight:700;color:#4A4358">3+</div>
+            <div style="flex:1;text-align:center;border-radius:12px;padding:13px 0;background:#fff;border:1px solid #EDEAF4;font-size:13px;font-weight:700;color:#4A4358">4+</div>
+          </div>
+          <div style="font-size:11px;font-weight:800;letter-spacing:.14em;color:#8E88A0;margin:20px 0 10px">ANNUAL RENT</div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:16px;padding:18px">
+            <div style="display:flex;justify-content:space-between;font:500 13px/1 'IBM Plex Mono';color:#12101A"><span>AED 60k</span><span>AED 220k</span></div>
+            <div style="margin-top:16px;height:6px;border-radius:999px;background:#EDEAF4;position:relative">
+              <div style="position:absolute;left:12%;right:22%;height:6px;border-radius:999px;background:linear-gradient(90deg,#A87A1E,#E3BE6E)"></div>
+              <div style="position:absolute;left:12%;top:-7px;width:20px;height:20px;border-radius:50%;background:#12101A;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.2)"></div>
+              <div style="position:absolute;right:22%;top:-7px;width:20px;height:20px;border-radius:50%;background:#12101A;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.2)"></div>
+            </div>
+          </div>
+          <div style="font-size:11px;font-weight:800;letter-spacing:.14em;color:#8E88A0;margin:20px 0 10px">FURNISHING</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <div style="padding:11px 15px;border-radius:12px;background:#12101A;color:#E3BE6E;font-size:12.5px;font-weight:800">Fully furnished</div>
+            <div style="padding:11px 15px;border-radius:12px;background:#fff;border:1px solid #EDEAF4;color:#4A4358;font-size:12.5px;font-weight:700">Semi</div>
+            <div style="padding:11px 15px;border-radius:12px;background:#fff;border:1px solid #EDEAF4;color:#4A4358;font-size:12.5px;font-weight:700">Unfurnished</div>
+          </div>
+          <div style="font-size:11px;font-weight:800;letter-spacing:.14em;color:#8E88A0;margin:20px 0 10px">AVAILABILITY</div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:16px;padding:15px 16px;display:flex;align-items:center;justify-content:space-between">
+            <span style="font-size:14px;font-weight:700;color:#12101A">Available now only</span>
+            <span style="width:48px;height:28px;border-radius:999px;background:#12101A;position:relative"><span style="position:absolute;right:3px;top:3px;width:22px;height:22px;border-radius:50%;background:#E3BE6E"></span></span>
+          </div>
+          <div style="height:54px;border-radius:16px;background:#12101A;color:#fff;display:grid;place-items:center;font-size:16px;font-weight:800;margin-top:22px">Show 24 homes</div>
+        </div>
+        <div style="position:absolute;bottom:9px;left:50%;transform:translateX(-50%);width:134px;height:5px;border-radius:3px;background:#12101A"></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;color:#8C86A0"><span style="font:400 12px/1 'IBM Plex Mono';color:#C79A3C">13</span><span style="font-size:14px;font-weight:600;color:#E8E5F2">Filters sheet</span><span style="font-size:13px">Live result count on the CTA</span></div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:18px">
+      <div style="position:relative;width:412px;height:916px;border-radius:46px;background:#F6F5FA;box-shadow:0 0 0 10px #17131f,0 0 0 11px #2c2440,0 40px 90px rgba(0,0,0,.6);overflow:hidden;display:flex;flex-direction:column">
+        <div style="background:#fff;display:flex;align-items:center;justify-content:space-between;padding:16px 26px 0;font-size:15px;font-weight:700;color:#12101A"><span>9:41</span><span style="display:flex;gap:6px;align-items:center;font-family:'Material Symbols Rounded';font-size:16px"><span>signal_cellular_alt</span><span>wifi</span><span>battery_full</span></span></div>
+        <div style="background:#fff;padding:18px 20px 16px;display:flex;align-items:center;justify-content:space-between">
+          <div style="display:flex;align-items:center;gap:12px"><div style="width:38px;height:38px;border-radius:50%;border:1px solid #E6E3EE;display:grid;place-items:center"><span style="font-family:'Material Symbols Rounded';font-size:19px;color:#12101A">arrow_back</span></div><div style="font-size:22px;font-weight:800;color:#12101A;letter-spacing:-.02em">Visitors</div></div>
+          <div style="position:relative;width:38px;height:38px;border-radius:50%;border:1px solid #E6E3EE;display:grid;place-items:center"><span style="font-family:'Material Symbols Rounded';font-size:19px;color:#12101A">how_to_reg</span><span style="position:absolute;top:6px;right:6px;width:9px;height:9px;border-radius:50%;background:#D64545;border:2px solid #fff"></span></div>
+        </div>
+        <div style="flex:1;padding:14px 20px 0;display:flex;flex-direction:column;gap:12px">
+          <div style="border-radius:20px;padding:18px;background:#12101A;display:flex;align-items:center;gap:14px">
+            <span style="width:48px;height:48px;flex:none;border-radius:16px;background:rgba(199,154,60,.18);color:#E3BE6E;display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:24px">add</span>
+            <span style="flex:1"><span style="display:block;font-size:16px;font-weight:800;color:#fff">Create a gate pass</span><span style="display:block;font-size:12px;color:#8C86A0;margin-top:3px">Your guest shows a QR at the gate</span></span>
+            <span style="font-family:'Material Symbols Rounded';font-size:20px;color:#E3BE6E">arrow_forward</span>
+          </div>
+          <div style="font:400 12.5px/1 'IBM Plex Mono';color:#8E88A0">3 passes</div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:20px;padding:16px;display:flex;gap:13px;align-items:center">
+            <span style="width:44px;height:44px;flex:none;border-radius:14px;background:#E7F3EC;color:#1E7A4A;display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:21px">qr_code_2</span>
+            <span style="flex:1"><span style="display:flex;align-items:center;justify-content:space-between"><span style="font-size:15.5px;font-weight:800;color:#12101A">Nour Al Sayed</span><span style="font-size:10px;font-weight:800;padding:6px 9px;border-radius:999px;background:#E7F3EC;color:#1E9E5A">ACTIVE</span></span><span style="display:block;font-size:12px;color:#8E88A0;margin-top:6px">Today 6:00 – 11:00 PM · D 44219</span></span>
+          </div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:20px;padding:16px;display:flex;gap:13px;align-items:center">
+            <span style="width:44px;height:44px;flex:none;border-radius:14px;background:#FBF3E2;color:#A87A1E;display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:21px">repeat</span>
+            <span style="flex:1"><span style="display:flex;align-items:center;justify-content:space-between"><span style="font-size:15.5px;font-weight:800;color:#12101A">Maria — housekeeping</span><span style="font-size:10px;font-weight:800;padding:6px 9px;border-radius:999px;background:#FBF3E2;color:#8A6412">RECURRING</span></span><span style="display:block;font-size:12px;color:#8E88A0;margin-top:6px">Every Tue &amp; Sat · 9:00 AM – 1:00 PM</span></span>
+          </div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:20px;padding:16px;display:flex;gap:13px;align-items:center;opacity:.66">
+            <span style="width:44px;height:44px;flex:none;border-radius:14px;background:#F4F1FC;color:#8E88A0;display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:21px">history</span>
+            <span style="flex:1"><span style="display:flex;align-items:center;justify-content:space-between"><span style="font-size:15.5px;font-weight:800;color:#12101A">Talabat delivery</span><span style="font-size:10px;font-weight:800;padding:6px 9px;border-radius:999px;background:#F4F1FC;color:#8E88A0">EXPIRED</span></span><span style="display:block;font-size:12px;color:#8E88A0;margin-top:6px">Used 1 Aug · 8:12 PM</span></span>
+          </div>
+        </div>
+        <div style="position:absolute;bottom:9px;left:50%;transform:translateX(-50%);width:134px;height:5px;border-radius:3px;background:#12101A"></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;color:#8C86A0"><span style="font:400 12px/1 'IBM Plex Mono';color:#C79A3C">14</span><span style="font-size:14px;font-weight:600;color:#E8E5F2">Visitors</span><span style="font-size:13px">No live codes in the list</span></div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:18px">
+      <div style="position:relative;width:412px;height:916px;border-radius:46px;background:#12101A;box-shadow:0 0 0 10px #17131f,0 0 0 11px #2c2440,0 40px 90px rgba(0,0,0,.6);overflow:hidden;display:flex;flex-direction:column">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 26px 0;font-size:15px;font-weight:700;color:#fff"><span>9:41</span><span style="display:flex;gap:6px;align-items:center;font-family:'Material Symbols Rounded';font-size:16px"><span>signal_cellular_alt</span><span>wifi</span><span>battery_full</span></span></div>
+        <div style="padding:18px 20px 0"><div style="width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.1);display:grid;place-items:center"><span style="font-family:'Material Symbols Rounded';font-size:19px;color:#fff">arrow_back</span></div></div>
+        <div style="padding:18px 20px 0;text-align:center">
+          <div style="font-size:11px;font-weight:800;letter-spacing:.18em;color:#E3BE6E">GATE PASS · ACTIVE</div>
+          <div style="font-size:30px;font-weight:800;letter-spacing:-.025em;color:#fff;margin-top:10px">Nour Al Sayed</div>
+          <div style="font-size:13px;color:#8C86A0;margin-top:5px">Today · 6:00 PM – 11:00 PM</div>
+        </div>
+        <div style="padding:22px 34px 0">
+          <div style="background:#fff;border-radius:26px;padding:24px">
+            <div style="width:100%;aspect-ratio:1;border-radius:14px;background:repeating-conic-gradient(#12101A 0 25%,#fff 0 50%);background-size:22px 22px;position:relative">
+              <div style="position:absolute;inset:36%;background:#fff;border-radius:10px;display:grid;place-items:center"><img src="assets/logo_mark.png" alt="" style="width:72%;height:auto"></div>
+            </div>
+            <div style="text-align:center;margin-top:18px;font:500 22px/1 'IBM Plex Mono';color:#12101A;letter-spacing:.24em">472961</div>
+            <div style="text-align:center;margin-top:8px;font-size:12px;font-weight:600;color:#8E88A0">Show at the gate, or read out the code</div>
+          </div>
+        </div>
+        <div style="flex:1;padding:18px 20px 0;display:flex;flex-direction:column;gap:9px">
+          <div style="background:rgba(255,255,255,.06);border-radius:16px;padding:14px 16px;display:flex;align-items:center;gap:12px"><span style="font-family:'Material Symbols Rounded';font-size:19px;color:#E3BE6E">directions_car</span><span style="flex:1;font-size:12px;color:#8C86A0">Vehicle</span><span style="font-size:13.5px;font-weight:700;color:#fff">D 44219</span></div>
+          <div style="background:rgba(255,255,255,.06);border-radius:16px;padding:14px 16px;display:flex;align-items:center;gap:12px"><span style="font-family:'Material Symbols Rounded';font-size:19px;color:#E3BE6E">apartment</span><span style="flex:1;font-size:12px;color:#8C86A0">Destination</span><span style="font-size:13.5px;font-weight:700;color:#fff">Marsa · Unit 1204</span></div>
+          <div style="background:rgba(255,255,255,.06);border-radius:16px;padding:14px 16px;display:flex;align-items:center;gap:12px"><span style="font-family:'Material Symbols Rounded';font-size:19px;color:#E3BE6E">notes</span><span style="flex:1;font-size:12px;color:#8C86A0">Purpose</span><span style="font-size:13.5px;font-weight:700;color:#fff">Family visit</span></div>
+        </div>
+        <div style="padding:14px 20px 30px;display:flex;gap:10px">
+          <div style="flex:1;height:54px;border-radius:16px;background:linear-gradient(120deg,#A87A1E,#C79A3C 55%,#E3BE6E);color:#12101A;display:grid;place-items:center;font-size:16px;font-weight:800">Share with guest</div>
+          <div style="width:54px;height:54px;border-radius:16px;border:1px solid rgba(255,255,255,.15);display:grid;place-items:center"><span style="font-family:'Material Symbols Rounded';font-size:21px;color:#C13B3B">delete</span></div>
+        </div>
+        <div style="position:absolute;bottom:9px;left:50%;transform:translateX(-50%);width:134px;height:5px;border-radius:3px;background:rgba(255,255,255,.5)"></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;color:#8C86A0"><span style="font:400 12px/1 'IBM Plex Mono';color:#C79A3C">15</span><span style="font-size:14px;font-weight:600;color:#E8E5F2">Gate pass</span><span style="font-size:13px">Dark for screen brightness at the gate</span></div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:18px">
+      <div style="position:relative;width:412px;height:916px;border-radius:46px;background:#F6F5FA;box-shadow:0 0 0 10px #17131f,0 0 0 11px #2c2440,0 40px 90px rgba(0,0,0,.6);overflow:hidden;display:flex;flex-direction:column">
+        <div style="background:#fff;display:flex;align-items:center;justify-content:space-between;padding:16px 26px 0;font-size:15px;font-weight:700;color:#12101A"><span>9:41</span><span style="display:flex;gap:6px;align-items:center;font-family:'Material Symbols Rounded';font-size:16px"><span>signal_cellular_alt</span><span>wifi</span><span>battery_full</span></span></div>
+        <div style="background:#fff;padding:18px 20px 16px;display:flex;align-items:center;gap:12px">
+          <div style="width:38px;height:38px;border-radius:50%;border:1px solid #E6E3EE;display:grid;place-items:center"><span style="font-family:'Material Symbols Rounded';font-size:19px;color:#12101A">close</span></div>
+          <div style="font-size:22px;font-weight:800;color:#12101A;letter-spacing:-.02em">New gate pass</div>
+        </div>
+        <div style="flex:1;padding:16px 20px 0;display:flex;flex-direction:column;gap:11px">
+          <div style="display:flex;gap:6px;background:#EDEAF4;border-radius:14px;padding:5px">
+            <div style="flex:1;text-align:center;border-radius:10px;padding:11px 0;background:#fff;font-size:13px;font-weight:800;color:#12101A;box-shadow:0 2px 6px rgba(18,16,26,.08)">One-time</div>
+            <div style="flex:1;text-align:center;border-radius:10px;padding:11px 0;font-size:13px;font-weight:700;color:#8E88A0">Recurring</div>
+          </div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:16px;padding:14px 16px"><div style="font-size:10.5px;font-weight:800;letter-spacing:.12em;color:#8E88A0">GUEST NAME</div><div style="font-size:15px;font-weight:700;color:#12101A;margin-top:7px">Nour Al Sayed</div></div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:16px;padding:14px 16px"><div style="font-size:10.5px;font-weight:800;letter-spacing:.12em;color:#8E88A0">MOBILE</div><div style="font-size:15px;font-weight:700;color:#12101A;margin-top:7px">+971 50 224 8891</div></div>
+          <div style="display:flex;gap:11px">
+            <div style="flex:1;background:#fff;border:1px solid #EDEAF4;border-radius:16px;padding:14px 16px"><div style="font-size:10.5px;font-weight:800;letter-spacing:.12em;color:#8E88A0">FROM</div><div style="font-size:15px;font-weight:700;color:#12101A;margin-top:7px">Today 6:00 PM</div></div>
+            <div style="flex:1;background:#fff;border:1px solid #EDEAF4;border-radius:16px;padding:14px 16px"><div style="font-size:10.5px;font-weight:800;letter-spacing:.12em;color:#8E88A0">UNTIL</div><div style="font-size:15px;font-weight:700;color:#12101A;margin-top:7px">11:00 PM</div></div>
+          </div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:16px;padding:14px 16px"><div style="font-size:10.5px;font-weight:800;letter-spacing:.12em;color:#8E88A0">VEHICLE PLATE (OPTIONAL)</div><div style="font-size:15px;font-weight:700;color:#12101A;margin-top:7px">D 44219</div></div>
+          <div style="font-size:11px;font-weight:800;letter-spacing:.14em;color:#8E88A0;margin-top:6px">PURPOSE</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <div style="padding:11px 15px;border-radius:12px;background:#12101A;color:#E3BE6E;font-size:12.5px;font-weight:800">Family visit</div>
+            <div style="padding:11px 15px;border-radius:12px;background:#fff;border:1px solid #EDEAF4;color:#4A4358;font-size:12.5px;font-weight:700">Delivery</div>
+            <div style="padding:11px 15px;border-radius:12px;background:#fff;border:1px solid #EDEAF4;color:#4A4358;font-size:12.5px;font-weight:700">Service</div>
+            <div style="padding:11px 15px;border-radius:12px;background:#fff;border:1px solid #EDEAF4;color:#4A4358;font-size:12.5px;font-weight:700">Other</div>
+          </div>
+        </div>
+        <div style="padding:14px 20px 30px"><div style="height:54px;border-radius:16px;background:#12101A;color:#fff;display:grid;place-items:center;font-size:16px;font-weight:800">Create pass</div></div>
+        <div style="position:absolute;bottom:9px;left:50%;transform:translateX(-50%);width:134px;height:5px;border-radius:3px;background:#12101A"></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;color:#8C86A0"><span style="font:400 12px/1 'IBM Plex Mono';color:#C79A3C">16</span><span style="font-size:14px;font-weight:600;color:#E8E5F2">New pass</span><span style="font-size:13px">One-time vs recurring up top</span></div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:18px">
+      <div style="position:relative;width:412px;height:916px;border-radius:46px;background:#F6F5FA;box-shadow:0 0 0 10px #17131f,0 0 0 11px #2c2440,0 40px 90px rgba(0,0,0,.6);overflow:hidden;display:flex;flex-direction:column">
+        <div style="background:#fff;display:flex;align-items:center;justify-content:space-between;padding:16px 26px 0;font-size:15px;font-weight:700;color:#12101A"><span>9:41</span><span style="display:flex;gap:6px;align-items:center;font-family:'Material Symbols Rounded';font-size:16px"><span>signal_cellular_alt</span><span>wifi</span><span>battery_full</span></span></div>
+        <div style="background:#fff;padding:18px 20px 16px;display:flex;align-items:center;gap:12px">
+          <div style="width:38px;height:38px;border-radius:50%;border:1px solid #E6E3EE;display:grid;place-items:center"><span style="font-family:'Material Symbols Rounded';font-size:19px;color:#12101A">arrow_back</span></div>
+          <div style="font-size:22px;font-weight:800;color:#12101A;letter-spacing:-.02em">Approvals</div>
+        </div>
+        <div style="flex:1;padding:16px 20px 0;display:flex;flex-direction:column;gap:12px">
+          <div style="font-size:13.5px;color:#8E88A0;line-height:1.55">Someone is at the gate asking for you. The guard is waiting on your answer.</div>
+          <div style="background:#fff;border:1.5px solid #C79A3C;border-radius:20px;padding:18px;box-shadow:0 8px 24px rgba(199,154,60,.16)">
+            <div style="display:flex;align-items:center;gap:13px">
+              <span style="width:48px;height:48px;border-radius:50%;background:#FBF3E2;color:#A87A1E;display:grid;place-items:center;font-size:14px;font-weight:800">JM</span>
+              <span style="flex:1"><span style="display:block;font-size:16.5px;font-weight:800;color:#12101A">Jibin Mathew</span><span style="display:block;font-size:12px;color:#8E88A0;margin-top:4px">Amazon delivery · at Gate 2</span></span>
+              <span style="text-align:right"><span style="display:block;font:500 15px/1 'IBM Plex Mono';color:#C13B3B">1:48</span><span style="display:block;font-size:10px;color:#8E88A0;margin-top:3px">left</span></span>
+            </div>
+            <div style="display:flex;gap:9px;margin-top:16px"><div style="flex:1;height:48px;border-radius:14px;background:#12101A;color:#fff;display:grid;place-items:center;font-size:14px;font-weight:800">Approve</div><div style="flex:1;height:48px;border-radius:14px;border:1px solid #E6E3EE;display:grid;place-items:center;font-size:14px;font-weight:700;color:#4A4358">Deny</div></div>
+          </div>
+          <div style="font-size:11px;font-weight:800;letter-spacing:.14em;color:#8E88A0;margin-top:6px">EARLIER TODAY</div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:20px;padding:16px;display:flex;align-items:center;gap:13px">
+            <span style="width:42px;height:42px;border-radius:50%;background:#E7F3EC;color:#1E7A4A;display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:20px">check</span>
+            <span style="flex:1"><span style="display:block;font-size:15px;font-weight:800;color:#12101A">Nour Al Sayed</span><span style="display:block;font-size:12px;color:#8E88A0;margin-top:4px">Approved · 6:04 PM</span></span>
+          </div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:20px;padding:16px;display:flex;align-items:center;gap:13px">
+            <span style="width:42px;height:42px;border-radius:50%;background:#FDF0F0;color:#C13B3B;display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:20px">close</span>
+            <span style="flex:1"><span style="display:block;font-size:15px;font-weight:800;color:#12101A">Unknown visitor</span><span style="display:block;font-size:12px;color:#8E88A0;margin-top:4px">Denied · 2:31 PM</span></span>
+          </div>
+        </div>
+        <div style="position:absolute;bottom:9px;left:50%;transform:translateX(-50%);width:134px;height:5px;border-radius:3px;background:#12101A"></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;color:#8C86A0"><span style="font:400 12px/1 'IBM Plex Mono';color:#C79A3C">17</span><span style="font-size:14px;font-weight:600;color:#E8E5F2">Visitor approvals</span><span style="font-size:13px">Countdown makes urgency legible</span></div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:18px">
+      <div style="position:relative;width:412px;height:916px;border-radius:46px;background:#F6F5FA;box-shadow:0 0 0 10px #17131f,0 0 0 11px #2c2440,0 40px 90px rgba(0,0,0,.6);overflow:hidden;display:flex;flex-direction:column">
+        <div style="background:#fff;display:flex;align-items:center;justify-content:space-between;padding:16px 26px 0;font-size:15px;font-weight:700;color:#12101A"><span>9:41</span><span style="display:flex;gap:6px;align-items:center;font-family:'Material Symbols Rounded';font-size:16px"><span>signal_cellular_alt</span><span>wifi</span><span>battery_full</span></span></div>
+        <div style="background:#fff;padding:18px 20px 16px;display:flex;align-items:center;justify-content:space-between">
+          <div style="display:flex;align-items:center;gap:12px"><div style="width:38px;height:38px;border-radius:50%;border:1px solid #E6E3EE;display:grid;place-items:center"><span style="font-family:'Material Symbols Rounded';font-size:19px;color:#12101A">arrow_back</span></div><div style="font-size:22px;font-weight:800;color:#12101A;letter-spacing:-.02em">Facilities</div></div>
+          <div style="height:38px;padding:0 14px;border-radius:999px;border:1px solid #E6E3EE;display:grid;place-items:center;font-size:12px;font-weight:800;color:#12101A">My requests</div>
+        </div>
+        <div style="flex:1;padding:16px 20px 0;display:flex;flex-direction:column;gap:11px;overflow:hidden">
+          <div style="font-size:11px;font-weight:800;letter-spacing:.14em;color:#8E88A0">AMENITIES</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:11px">
+            <div style="background:#fff;border:1px solid #EDEAF4;border-radius:18px;overflow:hidden">
+              <div style="height:76px;background:repeating-linear-gradient(135deg,#D5E9F5,#D5E9F5 6px,#C3DFF0 6px,#C3DFF0 12px);position:relative"><span style="position:absolute;bottom:8px;left:10px;width:30px;height:30px;border-radius:10px;background:#12101A;color:#E3BE6E;display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:16px">pool</span></div>
+              <div style="padding:12px 13px 14px"><div style="font-size:14.5px;font-weight:800;color:#12101A">Pool deck</div><div style="font-size:11px;color:#8E88A0;margin-top:4px">Level 4 · 8am–9pm</div><div style="display:inline-block;font-size:10px;font-weight:800;padding:6px 9px;border-radius:999px;background:#FBF3E2;color:#8A6412;margin-top:8px">1 PENDING</div></div>
+            </div>
+            <div style="background:#fff;border:1px solid #EDEAF4;border-radius:18px;overflow:hidden">
+              <div style="height:76px;background:repeating-linear-gradient(135deg,#EFEAFE,#EFEAFE 6px,#E4DBFB 6px,#E4DBFB 12px);position:relative"><span style="position:absolute;bottom:8px;left:10px;width:30px;height:30px;border-radius:10px;background:#12101A;color:#E3BE6E;display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:16px">fitness_center</span></div>
+              <div style="padding:12px 13px 14px"><div style="font-size:14.5px;font-weight:800;color:#12101A">Gym</div><div style="font-size:11px;color:#8E88A0;margin-top:4px">Level 2 · 24 hours</div><div style="display:inline-block;font-size:10px;font-weight:800;padding:6px 9px;border-radius:999px;background:#E7F3EC;color:#1E9E5A;margin-top:8px">OPEN</div></div>
+            </div>
+            <div style="background:#fff;border:1px solid #EDEAF4;border-radius:18px;overflow:hidden">
+              <div style="height:76px;background:repeating-linear-gradient(135deg,#F3EEE4,#F3EEE4 6px,#E7DEC9 6px,#E7DEC9 12px);position:relative"><span style="position:absolute;bottom:8px;left:10px;width:30px;height:30px;border-radius:10px;background:#12101A;color:#E3BE6E;display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:16px">celebration</span></div>
+              <div style="padding:12px 13px 14px"><div style="font-size:14.5px;font-weight:800;color:#12101A">Function hall</div><div style="font-size:11px;color:#8E88A0;margin-top:4px">Ground · by request</div><div style="display:inline-block;font-size:10px;font-weight:800;padding:6px 9px;border-radius:999px;background:#F4F1FC;color:#8E88A0;margin-top:8px">BOOKABLE</div></div>
+            </div>
+            <div style="background:#fff;border:1px solid #EDEAF4;border-radius:18px;overflow:hidden">
+              <div style="height:76px;background:repeating-linear-gradient(135deg,#E7F3EC,#E7F3EC 6px,#D6E9DD 6px,#D6E9DD 12px);position:relative"><span style="position:absolute;bottom:8px;left:10px;width:30px;height:30px;border-radius:10px;background:#12101A;color:#E3BE6E;display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:16px">sports_tennis</span></div>
+              <div style="padding:12px 13px 14px"><div style="font-size:14.5px;font-weight:800;color:#12101A">Padel court</div><div style="font-size:11px;color:#8E88A0;margin-top:4px">Rooftop · 6am–10pm</div><div style="display:inline-block;font-size:10px;font-weight:800;padding:6px 9px;border-radius:999px;background:#F4F1FC;color:#8E88A0;margin-top:8px">BOOKABLE</div></div>
+            </div>
+          </div>
+          <div style="font-size:11px;font-weight:800;letter-spacing:.14em;color:#8E88A0;margin-top:6px">PARKING</div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:18px;padding:14px 16px;display:flex;align-items:center;gap:12px"><span style="width:40px;height:40px;border-radius:12px;background:#F4F1FC;color:#A87A1E;display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:20px">directions_car</span><span style="flex:1"><span style="display:block;font-size:14.5px;font-weight:800;color:#12101A">Bay B-14</span><span style="display:block;font-size:11.5px;color:#8E88A0;margin-top:4px">Level 1 · covered</span></span><span style="font-size:10.5px;font-weight:800;padding:7px 11px;border-radius:999px;background:#E7F3EC;color:#1E9E5A">YOURS</span></div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:18px;padding:14px 16px;display:flex;align-items:center;gap:12px"><span style="width:40px;height:40px;border-radius:12px;background:#F4F1FC;color:#A87A1E;display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:20px">directions_car</span><span style="flex:1"><span style="display:block;font-size:14.5px;font-weight:800;color:#12101A">Bay B-22</span><span style="display:block;font-size:11.5px;color:#8E88A0;margin-top:4px">Level 1 · covered</span></span><span style="font-size:10.5px;font-weight:800;padding:7px 11px;border-radius:999px;background:#12101A;color:#E3BE6E">REQUEST</span></div>
+        </div>
+        <div style="position:absolute;bottom:9px;left:50%;transform:translateX(-50%);width:134px;height:5px;border-radius:3px;background:#12101A"></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;color:#8C86A0"><span style="font:400 12px/1 'IBM Plex Mono';color:#C79A3C">18</span><span style="font-size:14px;font-weight:600;color:#E8E5F2">Facilities</span><span style="font-size:13px">Amenities and parking in one place</span></div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:18px">
+      <div style="position:relative;width:412px;height:916px;border-radius:46px;background:#F6F5FA;box-shadow:0 0 0 10px #17131f,0 0 0 11px #2c2440,0 40px 90px rgba(0,0,0,.6);overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end">
+        <div style="position:absolute;inset:0;background:rgba(18,16,26,.5)"></div>
+        <div style="position:absolute;top:0;left:0;right:0;display:flex;align-items:center;justify-content:space-between;padding:16px 26px 0;font-size:15px;font-weight:700;color:#fff"><span>9:41</span><span style="display:flex;gap:6px;align-items:center;font-family:'Material Symbols Rounded';font-size:16px"><span>signal_cellular_alt</span><span>wifi</span><span>battery_full</span></span></div>
+        <div style="position:relative;background:#F6F5FA;border-radius:30px 30px 0 0;padding:14px 20px 30px">
+          <div style="width:44px;height:4px;border-radius:999px;background:#D9D3E6;margin:0 auto 16px"></div>
+          <div style="font-size:22px;font-weight:800;color:#12101A;letter-spacing:-.02em">Request the pool deck</div>
+          <div style="font-size:12.5px;color:#8E88A0;margin-top:6px">Unit 1204 · Marsa Residences</div>
+          <div style="font-size:11px;font-weight:800;letter-spacing:.14em;color:#8E88A0;margin:20px 0 10px">PREFERRED DATE</div>
+          <div style="display:flex;gap:8px;overflow:hidden">
+            <div style="flex:none;width:58px;text-align:center;border-radius:14px;padding:12px 0;background:#fff;border:1px solid #EDEAF4"><div style="font-size:10.5px;font-weight:700;color:#8E88A0">MON</div><div style="font-size:20px;font-weight:800;color:#12101A;margin-top:5px">18</div></div>
+            <div style="flex:none;width:58px;text-align:center;border-radius:14px;padding:12px 0;background:#12101A"><div style="font-size:10.5px;font-weight:700;color:#E3BE6E">TUE</div><div style="font-size:20px;font-weight:800;color:#fff;margin-top:5px">19</div></div>
+            <div style="flex:none;width:58px;text-align:center;border-radius:14px;padding:12px 0;background:#fff;border:1px solid #EDEAF4"><div style="font-size:10.5px;font-weight:700;color:#8E88A0">WED</div><div style="font-size:20px;font-weight:800;color:#12101A;margin-top:5px">20</div></div>
+            <div style="flex:none;width:58px;text-align:center;border-radius:14px;padding:12px 0;background:#fff;border:1px solid #EDEAF4"><div style="font-size:10.5px;font-weight:700;color:#8E88A0">THU</div><div style="font-size:20px;font-weight:800;color:#12101A;margin-top:5px">21</div></div>
+            <div style="flex:none;width:58px;text-align:center;border-radius:14px;padding:12px 0;background:#fff;border:1px solid #EDEAF4"><div style="font-size:10.5px;font-weight:700;color:#8E88A0">FRI</div><div style="font-size:20px;font-weight:800;color:#12101A;margin-top:5px">22</div></div>
+          </div>
+          <div style="font-size:11px;font-weight:800;letter-spacing:.14em;color:#8E88A0;margin:20px 0 10px">NOTE (OPTIONAL)</div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:16px;padding:16px;font-size:14px;color:#A39CB8">e.g. family gathering on Friday</div>
+          <div style="background:#FDF6E3;border-radius:14px;padding:12px 14px;display:flex;gap:10px;align-items:center;margin-top:14px"><span style="font-family:'Material Symbols Rounded';font-size:18px;color:#A87A1E">info</span><span style="font-size:12.5px;color:#4A4358">Your manager confirms within a day.</span></div>
+          <div style="height:54px;border-radius:16px;background:#12101A;color:#fff;display:grid;place-items:center;font-size:16px;font-weight:800;margin-top:18px">Send request</div>
+        </div>
+        <div style="position:absolute;bottom:9px;left:50%;transform:translateX(-50%);width:134px;height:5px;border-radius:3px;background:#12101A"></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;color:#8C86A0"><span style="font:400 12px/1 'IBM Plex Mono';color:#C79A3C">19</span><span style="font-size:14px;font-weight:600;color:#E8E5F2">Booking request</span><span style="font-size:13px">Sheet, not a separate screen</span></div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:18px">
+      <div style="position:relative;width:412px;height:916px;border-radius:46px;background:#F6F5FA;box-shadow:0 0 0 10px #17131f,0 0 0 11px #2c2440,0 40px 90px rgba(0,0,0,.6);overflow:hidden;display:flex;flex-direction:column">
+        <div style="background:#fff;display:flex;align-items:center;justify-content:space-between;padding:16px 26px 0;font-size:15px;font-weight:700;color:#12101A"><span>9:41</span><span style="display:flex;gap:6px;align-items:center;font-family:'Material Symbols Rounded';font-size:16px"><span>signal_cellular_alt</span><span>wifi</span><span>battery_full</span></span></div>
+        <div style="background:#fff;padding:18px 20px 16px;display:flex;align-items:center;justify-content:space-between">
+          <div style="display:flex;align-items:center;gap:12px"><div style="width:38px;height:38px;border-radius:50%;border:1px solid #E6E3EE;display:grid;place-items:center"><span style="font-family:'Material Symbols Rounded';font-size:19px;color:#12101A">arrow_back</span></div><div style="font-size:22px;font-weight:800;color:#12101A;letter-spacing:-.02em">Meetings</div></div>
+          <div style="height:38px;padding:0 16px;border-radius:999px;background:#12101A;color:#E3BE6E;display:grid;place-items:center;font-size:12.5px;font-weight:800">+ Request</div>
+        </div>
+        <div style="flex:1;padding:16px 20px 0;display:flex;flex-direction:column;gap:11px">
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:20px;padding:15px;display:flex;gap:14px;align-items:center">
+            <div style="width:60px;flex:none;text-align:center;background:#FBF3E2;border-radius:14px;padding:11px 0"><div style="font-size:10.5px;font-weight:800;color:#A87A1E">AUG</div><div style="font-size:23px;font-weight:800;color:#12101A;margin-top:3px">20</div></div>
+            <div style="flex:1"><div style="font-size:15.5px;font-weight:800;color:#12101A;letter-spacing:-.01em">Viewing · Marina Vista 2BR</div><div style="font-size:12px;color:#8E88A0;margin-top:5px">4:30 – 5:00 PM · with Omar</div><div style="display:inline-block;font-size:10px;font-weight:800;padding:6px 9px;border-radius:999px;background:#E7F3EC;color:#1E9E5A;margin-top:8px">APPROVED</div></div>
+            <span style="font-family:'Material Symbols Rounded';font-size:20px;color:#C9C5D4">chevron_right</span>
+          </div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:20px;padding:15px;display:flex;gap:14px;align-items:center">
+            <div style="width:60px;flex:none;text-align:center;background:#F4F1FC;border-radius:14px;padding:11px 0"><div style="font-size:10.5px;font-weight:800;color:#8E88A0">AUG</div><div style="font-size:23px;font-weight:800;color:#12101A;margin-top:3px">27</div></div>
+            <div style="flex:1"><div style="font-size:15.5px;font-weight:800;color:#12101A;letter-spacing:-.01em">Renewal discussion</div><div style="font-size:12px;color:#8E88A0;margin-top:5px">11:00 – 11:30 AM · office</div><div style="display:inline-block;font-size:10px;font-weight:800;padding:6px 9px;border-radius:999px;background:#FBF3E2;color:#8A6412;margin-top:8px">PENDING</div></div>
+            <span style="font-family:'Material Symbols Rounded';font-size:20px;color:#C9C5D4">chevron_right</span>
+          </div>
+          <div style="font-size:11px;font-weight:800;letter-spacing:.14em;color:#8E88A0;margin-top:6px">PAST</div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:20px;padding:15px;display:flex;gap:14px;align-items:center;opacity:.66">
+            <div style="width:60px;flex:none;text-align:center;background:#F4F1FC;border-radius:14px;padding:11px 0"><div style="font-size:10.5px;font-weight:800;color:#8E88A0">JUL</div><div style="font-size:23px;font-weight:800;color:#12101A;margin-top:3px">14</div></div>
+            <div style="flex:1"><div style="font-size:15.5px;font-weight:800;color:#12101A;letter-spacing:-.01em">Handover walkthrough</div><div style="font-size:12px;color:#8E88A0;margin-top:5px">Completed · 45 min</div></div>
+            <span style="font-family:'Material Symbols Rounded';font-size:20px;color:#C9C5D4">chevron_right</span>
+          </div>
+        </div>
+        <div style="position:absolute;bottom:9px;left:50%;transform:translateX(-50%);width:134px;height:5px;border-radius:3px;background:#12101A"></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;color:#8C86A0"><span style="font:400 12px/1 'IBM Plex Mono';color:#C79A3C">20</span><span style="font-size:14px;font-weight:600;color:#E8E5F2">Meetings</span><span style="font-size:13px">Date block carries the scan</span></div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:18px">
+      <div style="position:relative;width:412px;height:916px;border-radius:46px;background:#F6F5FA;box-shadow:0 0 0 10px #17131f,0 0 0 11px #2c2440,0 40px 90px rgba(0,0,0,.6);overflow:hidden;display:flex;flex-direction:column">
+        <div style="background:#12101A;padding:16px 26px 0;display:flex;align-items:center;justify-content:space-between;font-size:15px;font-weight:700;color:#fff"><span>9:41</span><span style="display:flex;gap:6px;align-items:center;font-family:'Material Symbols Rounded';font-size:16px"><span>signal_cellular_alt</span><span>wifi</span><span>battery_full</span></span></div>
+        <div style="background:#12101A;padding:18px 20px 26px">
+          <div style="width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.1);display:grid;place-items:center"><span style="font-family:'Material Symbols Rounded';font-size:19px;color:#fff">arrow_back</span></div>
+          <div style="display:inline-block;font-size:10.5px;font-weight:800;padding:7px 11px;border-radius:999px;background:rgba(30,158,90,.22);color:#6FD79B;margin-top:18px">APPROVED</div>
+          <div style="font-size:27px;font-weight:800;letter-spacing:-.025em;line-height:1.2;color:#fff;margin-top:14px">Viewing · Marina Vista 2BR</div>
+          <div style="display:flex;align-items:center;gap:9px;margin-top:14px"><span style="font-family:'Material Symbols Rounded';font-size:19px;color:#E3BE6E">schedule</span><span style="font-size:13.5px;font-weight:600;color:#fff">Thu 20 Aug · 4:30 – 5:00 PM</span></div>
+        </div>
+        <div style="flex:1;padding:16px 20px 0;display:flex;flex-direction:column;gap:10px">
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:18px;padding:15px 16px;display:flex;align-items:center;gap:13px"><span style="font-family:'Material Symbols Rounded';font-size:20px;color:#A87A1E">person</span><span style="flex:1"><span style="display:block;font-size:11.5px;color:#8E88A0">With</span><span style="display:block;font-size:14.5px;font-weight:700;color:#12101A;margin-top:4px">Omar Haddad · Property manager</span></span></div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:18px;padding:15px 16px;display:flex;align-items:center;gap:13px"><span style="font-family:'Material Symbols Rounded';font-size:20px;color:#A87A1E">place</span><span style="flex:1"><span style="display:block;font-size:11.5px;color:#8E88A0">Where</span><span style="display:block;font-size:14.5px;font-weight:700;color:#12101A;margin-top:4px">Marina Vista, Tower B lobby</span></span></div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:18px;padding:15px 16px;display:flex;align-items:center;gap:13px"><span style="font-family:'Material Symbols Rounded';font-size:20px;color:#A87A1E">notes</span><span style="flex:1"><span style="display:block;font-size:11.5px;color:#8E88A0">Reason</span><span style="display:block;font-size:14.5px;font-weight:700;color:#12101A;margin-top:4px">Viewing the 2BR corner unit</span></span></div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:18px;padding:15px 16px;display:flex;align-items:center;gap:13px"><span style="font-family:'Material Symbols Rounded';font-size:20px;color:#A87A1E">tag</span><span style="flex:1"><span style="display:block;font-size:11.5px;color:#8E88A0">Reference</span><span style="display:block;font:500 14px/1 'IBM Plex Mono';color:#12101A;margin-top:5px">MTG-2026-0841</span></span></div>
+          <div style="height:130px;border-radius:18px;background:#E9EBF2;position:relative;overflow:hidden;margin-top:4px">
+            <div style="position:absolute;inset:0;background:repeating-linear-gradient(0deg,#E1E4EE,#E1E4EE 1px,transparent 1px,transparent 34px),repeating-linear-gradient(90deg,#E1E4EE,#E1E4EE 1px,transparent 1px,transparent 34px)"></div>
+            <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#12101A;color:#E3BE6E;border-radius:999px;padding:8px 13px;font-size:12px;font-weight:800">Tower B</div>
+          </div>
+        </div>
+        <div style="padding:14px 20px 30px;display:flex;gap:10px">
+          <div style="flex:1;height:52px;border-radius:16px;background:#12101A;color:#fff;display:grid;place-items:center;font-size:15px;font-weight:800">Add to calendar</div>
+          <div style="height:52px;padding:0 20px;border-radius:16px;border:1px solid #F0D6D6;background:#FDF0F0;color:#C13B3B;display:grid;place-items:center;font-size:15px;font-weight:800">Cancel</div>
+        </div>
+        <div style="position:absolute;bottom:9px;left:50%;transform:translateX(-50%);width:134px;height:5px;border-radius:3px;background:#12101A"></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;color:#8C86A0"><span style="font:400 12px/1 'IBM Plex Mono';color:#C79A3C">21</span><span style="font-size:14px;font-weight:600;color:#E8E5F2">Meeting detail</span><span style="font-size:13px">Where, with whom, and a map</span></div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:18px">
+      <div style="position:relative;width:412px;height:916px;border-radius:46px;background:#F6F5FA;box-shadow:0 0 0 10px #17131f,0 0 0 11px #2c2440,0 40px 90px rgba(0,0,0,.6);overflow:hidden;display:flex;flex-direction:column">
+        <div style="background:#fff;display:flex;align-items:center;justify-content:space-between;padding:16px 26px 0;font-size:15px;font-weight:700;color:#12101A"><span>9:41</span><span style="display:flex;gap:6px;align-items:center;font-family:'Material Symbols Rounded';font-size:16px"><span>signal_cellular_alt</span><span>wifi</span><span>battery_full</span></span></div>
+        <div style="background:#fff;padding:18px 20px 16px;display:flex;align-items:center;gap:12px">
+          <div style="width:38px;height:38px;border-radius:50%;border:1px solid #E6E3EE;display:grid;place-items:center"><span style="font-family:'Material Symbols Rounded';font-size:19px;color:#12101A">close</span></div>
+          <div style="font-size:22px;font-weight:800;color:#12101A;letter-spacing:-.02em">Request a meeting</div>
+        </div>
+        <div style="flex:1;padding:16px 20px 0;display:flex;flex-direction:column;gap:12px">
+          <div style="font-size:11px;font-weight:800;letter-spacing:.14em;color:#8E88A0">PICK A DAY</div>
+          <div style="display:flex;gap:8px;overflow:hidden">
+            <div style="flex:none;width:60px;text-align:center;border-radius:14px;padding:12px 0;background:#fff;border:1px solid #EDEAF4"><div style="font-size:10.5px;font-weight:700;color:#8E88A0">MON</div><div style="font-size:21px;font-weight:800;color:#12101A;margin-top:5px">18</div></div>
+            <div style="flex:none;width:60px;text-align:center;border-radius:14px;padding:12px 0;background:#fff;border:1px solid #EDEAF4"><div style="font-size:10.5px;font-weight:700;color:#8E88A0">TUE</div><div style="font-size:21px;font-weight:800;color:#12101A;margin-top:5px">19</div></div>
+            <div style="flex:none;width:60px;text-align:center;border-radius:14px;padding:12px 0;background:#12101A"><div style="font-size:10.5px;font-weight:700;color:#E3BE6E">WED</div><div style="font-size:21px;font-weight:800;color:#fff;margin-top:5px">20</div></div>
+            <div style="flex:none;width:60px;text-align:center;border-radius:14px;padding:12px 0;background:#fff;border:1px solid #EDEAF4"><div style="font-size:10.5px;font-weight:700;color:#8E88A0">THU</div><div style="font-size:21px;font-weight:800;color:#12101A;margin-top:5px">21</div></div>
+            <div style="flex:none;width:60px;text-align:center;border-radius:14px;padding:12px 0;background:#fff;border:1px solid #EDEAF4"><div style="font-size:10.5px;font-weight:700;color:#8E88A0">FRI</div><div style="font-size:21px;font-weight:800;color:#12101A;margin-top:5px">22</div></div>
+          </div>
+          <div style="font-size:11px;font-weight:800;letter-spacing:.14em;color:#8E88A0;margin-top:6px">AVAILABLE SLOTS</div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:9px">
+            <div style="text-align:center;border-radius:14px;padding:14px 0;background:#fff;border:1px solid #EDEAF4;font-size:13px;font-weight:700;color:#12101A">10:00</div>
+            <div style="text-align:center;border-radius:14px;padding:14px 0;background:#fff;border:1px solid #EDEAF4;font-size:13px;font-weight:700;color:#12101A">10:30</div>
+            <div style="text-align:center;border-radius:14px;padding:14px 0;background:#F4F1FC;font-size:13px;font-weight:700;color:#C9C5D4;text-decoration:line-through">11:00</div>
+            <div style="text-align:center;border-radius:14px;padding:14px 0;background:#12101A;font-size:13px;font-weight:800;color:#E3BE6E">16:30</div>
+            <div style="text-align:center;border-radius:14px;padding:14px 0;background:#fff;border:1px solid #EDEAF4;font-size:13px;font-weight:700;color:#12101A">17:00</div>
+            <div style="text-align:center;border-radius:14px;padding:14px 0;background:#fff;border:1px solid #EDEAF4;font-size:13px;font-weight:700;color:#12101A">17:30</div>
+          </div>
+          <div style="font-size:11px;font-weight:800;letter-spacing:.14em;color:#8E88A0;margin-top:6px">WITH</div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:16px;padding:14px 16px;display:flex;align-items:center;gap:12px"><span style="width:38px;height:38px;border-radius:50%;background:#FBF3E2;color:#A87A1E;display:grid;place-items:center;font-size:12px;font-weight:800">OH</span><span style="flex:1;font-size:14.5px;font-weight:700;color:#12101A">Omar Haddad</span><span style="font-family:'Material Symbols Rounded';font-size:19px;color:#C9C5D4">expand_more</span></div>
+          <div style="font-size:11px;font-weight:800;letter-spacing:.14em;color:#8E88A0;margin-top:6px">REASON</div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:16px;padding:16px;min-height:82px;font-size:14.5px;line-height:1.55;color:#12101A">Discuss renewal terms for unit 1204</div>
+        </div>
+        <div style="padding:14px 20px 30px"><div style="height:54px;border-radius:16px;background:#12101A;color:#fff;display:grid;place-items:center;font-size:16px;font-weight:800">Send request</div></div>
+        <div style="position:absolute;bottom:9px;left:50%;transform:translateX(-50%);width:134px;height:5px;border-radius:3px;background:#12101A"></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;color:#8C86A0"><span style="font:400 12px/1 'IBM Plex Mono';color:#C79A3C">22</span><span style="font-size:14px;font-weight:600;color:#E8E5F2">Book a meeting</span><span style="font-size:13px">Real slots, taken ones struck out</span></div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:18px">
+      <div style="position:relative;width:412px;height:916px;border-radius:46px;background:#F6F5FA;box-shadow:0 0 0 10px #17131f,0 0 0 11px #2c2440,0 40px 90px rgba(0,0,0,.6);overflow:hidden;display:flex;flex-direction:column">
+        <div style="background:#fff;display:flex;align-items:center;justify-content:space-between;padding:16px 26px 0;font-size:15px;font-weight:700;color:#12101A"><span>9:41</span><span style="display:flex;gap:6px;align-items:center;font-family:'Material Symbols Rounded';font-size:16px"><span>signal_cellular_alt</span><span>wifi</span><span>battery_full</span></span></div>
+        <div style="background:#fff;padding:18px 20px 16px;display:flex;align-items:center;justify-content:space-between">
+          <div style="display:flex;align-items:center;gap:12px"><div style="width:38px;height:38px;border-radius:50%;border:1px solid #E6E3EE;display:grid;place-items:center"><span style="font-family:'Material Symbols Rounded';font-size:19px;color:#12101A">arrow_back</span></div><div style="font-size:22px;font-weight:800;color:#12101A;letter-spacing:-.02em">Inbox</div></div>
+          <div style="font-size:12.5px;font-weight:800;color:#A87A1E">Mark all read</div>
+        </div>
+        <div style="flex:1;padding:16px 20px 0;display:flex;flex-direction:column;gap:10px">
+          <div style="background:#fff;border:1.5px solid #EBD7A8;border-radius:18px;padding:15px;display:flex;gap:12px"><span style="width:38px;height:38px;flex:none;border-radius:12px;background:#FBF3E2;color:#A87A1E;display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:19px">payments</span><span style="flex:1"><span style="display:block;font-size:14.5px;font-weight:800;color:#12101A">Cheque 2 due in 12 days</span><span style="display:block;font-size:12.5px;color:#8E88A0;margin-top:4px;line-height:1.5">AED 42,500 will be presented on 25 Aug.</span><span style="display:block;font:400 11px/1 'IBM Plex Mono';color:#A39CB8;margin-top:8px">2h ago</span></span><span style="width:8px;height:8px;border-radius:50%;background:#C79A3C;margin-top:6px"></span></div>
+          <div style="background:#fff;border:1.5px solid #EBD7A8;border-radius:18px;padding:15px;display:flex;gap:12px"><span style="width:38px;height:38px;flex:none;border-radius:12px;background:#E7EAEF;color:#4A5B72;display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:19px">handyman</span><span style="flex:1"><span style="display:block;font-size:14.5px;font-weight:800;color:#12101A">Technician on the way</span><span style="display:block;font-size:12.5px;color:#8E88A0;margin-top:4px;line-height:1.5">Rashid K. will reach unit 1204 in 40 minutes.</span><span style="display:block;font:400 11px/1 'IBM Plex Mono';color:#A39CB8;margin-top:8px">09:12</span></span><span style="width:8px;height:8px;border-radius:50%;background:#C79A3C;margin-top:6px"></span></div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:18px;padding:15px;display:flex;gap:12px"><span style="width:38px;height:38px;flex:none;border-radius:12px;background:#E7F3EC;color:#1E7A4A;display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:19px">check_circle</span><span style="flex:1"><span style="display:block;font-size:14.5px;font-weight:800;color:#12101A">Booking approved</span><span style="display:block;font-size:12.5px;color:#8E88A0;margin-top:4px;line-height:1.5">Pool deck on Tue 19 Aug is confirmed.</span><span style="display:block;font:400 11px/1 'IBM Plex Mono';color:#A39CB8;margin-top:8px">Yesterday</span></span></div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:18px;padding:15px;display:flex;gap:12px"><span style="width:38px;height:38px;flex:none;border-radius:12px;background:#EDE9F3;color:#6A5A8E;display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:19px">qr_code_2</span><span style="flex:1"><span style="display:block;font-size:14.5px;font-weight:800;color:#12101A">Gate pass used</span><span style="display:block;font-size:12.5px;color:#8E88A0;margin-top:4px;line-height:1.5">Nour Al Sayed entered at 8:12 PM.</span><span style="display:block;font:400 11px/1 'IBM Plex Mono';color:#A39CB8;margin-top:8px">1 Aug</span></span></div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:18px;padding:15px;display:flex;gap:12px"><span style="width:38px;height:38px;flex:none;border-radius:12px;background:#FDF0F0;color:#C13B3B;display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:19px">gavel</span><span style="flex:1"><span style="display:block;font-size:14.5px;font-weight:800;color:#12101A">Penalty added</span><span style="display:block;font-size:12.5px;color:#8E88A0;margin-top:4px;line-height:1.5">AED 300 · parking violation in bay B-14.</span><span style="display:block;font:400 11px/1 'IBM Plex Mono';color:#A39CB8;margin-top:8px">2 Jul</span></span></div>
+        </div>
+        <div style="position:absolute;bottom:9px;left:50%;transform:translateX(-50%);width:134px;height:5px;border-radius:3px;background:#12101A"></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;color:#8C86A0"><span style="font:400 12px/1 'IBM Plex Mono';color:#C79A3C">23</span><span style="font-size:14px;font-weight:600;color:#E8E5F2">Inbox</span><span style="font-size:13px">Unread carries a gold hairline</span></div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:18px">
+      <div style="position:relative;width:412px;height:916px;border-radius:46px;background:#F6F5FA;box-shadow:0 0 0 10px #17131f,0 0 0 11px #2c2440,0 40px 90px rgba(0,0,0,.6);overflow:hidden;display:flex;flex-direction:column">
+        <div style="background:#12101A;padding:16px 26px 0;display:flex;align-items:center;justify-content:space-between;font-size:15px;font-weight:700;color:#fff"><span>9:41</span><span style="display:flex;gap:6px;align-items:center;font-family:'Material Symbols Rounded';font-size:16px"><span>signal_cellular_alt</span><span>wifi</span><span>battery_full</span></span></div>
+        <div style="background:#12101A;padding:18px 20px 26px;text-align:center;position:relative">
+          <div style="position:absolute;left:20px;top:18px;width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.1);display:grid;place-items:center"><span style="font-family:'Material Symbols Rounded';font-size:19px;color:#fff">arrow_back</span></div>
+          <div style="width:80px;height:80px;margin:12px auto 0;border-radius:50%;background:linear-gradient(140deg,#E3BE6E,#A87A1E);color:#12101A;display:grid;place-items:center;font-size:26px;font-weight:800">LH</div>
+          <div style="font-size:24px;font-weight:800;letter-spacing:-.02em;color:#fff;margin-top:14px">Layla Haddad</div>
+          <div style="font-size:12.5px;color:#8C86A0;margin-top:5px">Resident since Jan 2025 · Unit 1204</div>
+        </div>
+        <div style="flex:1;padding:16px 20px 0;display:flex;flex-direction:column;gap:9px">
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:16px;padding:14px 16px;display:flex;align-items:center;gap:13px"><span style="width:36px;height:36px;border-radius:11px;background:#F4F1FC;color:#A87A1E;display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:19px">description</span><span style="flex:1;font-size:14.5px;font-weight:700;color:#12101A">Lease agreement</span><span style="font-size:12px;color:#8E88A0">PDF</span><span style="font-family:'Material Symbols Rounded';font-size:19px;color:#C9C5D4">chevron_right</span></div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:16px;padding:14px 16px;display:flex;align-items:center;gap:13px"><span style="width:36px;height:36px;border-radius:11px;background:#F4F1FC;color:#A87A1E;display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:19px">receipt</span><span style="flex:1;font-size:14.5px;font-weight:700;color:#12101A">Payment receipts</span><span style="font-size:12px;color:#8E88A0">1</span><span style="font-family:'Material Symbols Rounded';font-size:19px;color:#C9C5D4">chevron_right</span></div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:16px;padding:14px 16px;display:flex;align-items:center;gap:13px"><span style="width:36px;height:36px;border-radius:11px;background:#F4F1FC;color:#A87A1E;display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:19px">person</span><span style="flex:1;font-size:14.5px;font-weight:700;color:#12101A">Personal details</span><span style="font-family:'Material Symbols Rounded';font-size:19px;color:#C9C5D4">chevron_right</span></div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:16px;padding:14px 16px;display:flex;align-items:center;gap:13px"><span style="width:36px;height:36px;border-radius:11px;background:#F4F1FC;color:#A87A1E;display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:19px">lock</span><span style="flex:1;font-size:14.5px;font-weight:700;color:#12101A">Change password</span><span style="font-family:'Material Symbols Rounded';font-size:19px;color:#C9C5D4">chevron_right</span></div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:16px;padding:14px 16px;display:flex;align-items:center;justify-content:space-between"><span style="display:flex;align-items:center;gap:13px"><span style="width:36px;height:36px;border-radius:11px;background:#F4F1FC;color:#A87A1E;display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:19px">dark_mode</span><span style="font-size:14.5px;font-weight:700;color:#12101A">Dark mode</span></span><span style="width:48px;height:28px;border-radius:999px;background:#EDEAF4;position:relative"><span style="position:absolute;left:3px;top:3px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2)"></span></span></div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:16px;padding:14px 16px;display:flex;align-items:center;gap:13px"><span style="width:36px;height:36px;border-radius:11px;background:#F4F1FC;color:#A87A1E;display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:19px">translate</span><span style="flex:1;font-size:14.5px;font-weight:700;color:#12101A">Language</span><span style="font-size:12px;font-weight:700;color:#8E88A0">English</span><span style="font-family:'Material Symbols Rounded';font-size:19px;color:#C9C5D4">chevron_right</span></div>
+          <div style="height:50px;border-radius:16px;border:1px solid #F0D6D6;background:#FDF0F0;color:#C13B3B;display:grid;place-items:center;font-size:14.5px;font-weight:800;margin-top:6px">Sign out</div>
+        </div>
+        <div style="position:absolute;bottom:9px;left:50%;transform:translateX(-50%);width:134px;height:5px;border-radius:3px;background:#12101A"></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;color:#8C86A0"><span style="font:400 12px/1 'IBM Plex Mono';color:#C79A3C">24</span><span style="font-size:14px;font-weight:600;color:#E8E5F2">Profile</span><span style="font-size:13px">Documents pulled to the top</span></div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:18px">
+      <div style="position:relative;width:412px;height:916px;border-radius:46px;background:#F6F5FA;box-shadow:0 0 0 10px #17131f,0 0 0 11px #2c2440,0 40px 90px rgba(0,0,0,.6);overflow:hidden;display:flex;flex-direction:column">
+        <div style="background:#fff;display:flex;align-items:center;justify-content:space-between;padding:16px 26px 0;font-size:15px;font-weight:700;color:#12101A"><span>9:41</span><span style="display:flex;gap:6px;align-items:center;font-family:'Material Symbols Rounded';font-size:16px"><span>signal_cellular_alt</span><span>wifi</span><span>battery_full</span></span></div>
+        <div style="background:#fff;padding:18px 20px 16px;display:flex;align-items:center;gap:12px">
+          <div style="width:38px;height:38px;border-radius:50%;border:1px solid #E6E3EE;display:grid;place-items:center"><span style="font-family:'Material Symbols Rounded';font-size:19px;color:#12101A">arrow_back</span></div>
+          <div style="font-size:22px;font-weight:800;color:#12101A;letter-spacing:-.02em">My requests</div>
+        </div>
+        <div style="flex:1;padding:16px 20px 0;display:flex;flex-direction:column;gap:11px">
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:18px;padding:16px"><div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:15px;font-weight:800;color:#12101A">Pool deck</span><span style="font-size:10px;font-weight:800;padding:6px 9px;border-radius:999px;background:#FBF3E2;color:#8A6412">PENDING</span></div><div style="font-size:12.5px;color:#8E88A0;margin-top:7px">Tue 19 Aug · family gathering</div></div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:18px;padding:16px"><div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:15px;font-weight:800;color:#12101A">Bay B-14</span><span style="font-size:10px;font-weight:800;padding:6px 9px;border-radius:999px;background:#E7F3EC;color:#1E9E5A">APPROVED</span></div><div style="font-size:12.5px;color:#8E88A0;margin-top:7px">Held since 1 Feb 2026 · covered</div></div>
+          <div style="background:#fff;border:1px solid #EDEAF4;border-radius:18px;padding:16px;opacity:.66"><div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:15px;font-weight:800;color:#12101A">Function hall</span><span style="font-size:10px;font-weight:800;padding:6px 9px;border-radius:999px;background:#FDF0F0;color:#C13B3B">REJECTED</span></div><div style="font-size:12.5px;color:#8E88A0;margin-top:7px">Sat 12 Jul · already booked</div></div>
+        </div>
+        <div style="padding:0 20px 40px">
+          <div style="border:1px dashed #D9D3E6;border-radius:20px;padding:26px;text-align:center;background:#fff">
+            <span style="width:52px;height:52px;border-radius:16px;background:#F4F1FC;color:#A39CB8;display:grid;place-items:center;font-family:'Material Symbols Rounded';font-size:26px;margin:0 auto">inbox</span>
+            <div style="font-size:15px;font-weight:800;color:#12101A;margin-top:14px">Nothing else pending</div>
+            <div style="font-size:12.5px;color:#8E88A0;margin-top:6px;line-height:1.5">Requests you raise appear here until the manager answers.</div>
+            <div style="height:44px;border-radius:14px;background:#12101A;color:#fff;display:grid;place-items:center;font-size:13.5px;font-weight:800;margin-top:16px">Browse facilities</div>
+          </div>
+        </div>
+        <div style="position:absolute;bottom:9px;left:50%;transform:translateX(-50%);width:134px;height:5px;border-radius:3px;background:#12101A"></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;color:#8C86A0"><span style="font:400 12px/1 'IBM Plex Mono';color:#C79A3C">25</span><span style="font-size:14px;font-weight:600;color:#E8E5F2">My requests + empty state</span><span style="font-size:13px">Empty states get an action</span></div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

@@ -88,7 +88,7 @@ class GatePassListScreen extends ConsumerWidget {
                 16,
                 12,
                 16,
-                AppInsets.bottomNav(context) + 72,
+                96,
               ),
               itemCount: rows.length,
               itemBuilder: (context, index) => AnimatedListItem(

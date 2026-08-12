@@ -265,7 +265,7 @@ class Step4Success extends StatelessWidget {
   /// stay bronze, distinguished by icon, matching the payments-screen
   /// convention (PENDING/COLLECTED/DEPOSITED are bronze; only CLEARED is
   /// green).
-  ({Color fg, Color bg, IconData icon}) _statusColors(MiftahColors m) =>
+  ({Color fg, Color bg, IconData icon}) _statusColors(LegacyMiftahColors m) =>
       disposition == Disposition.depositToday
       ? (
           fg: AppColors.goldMid,

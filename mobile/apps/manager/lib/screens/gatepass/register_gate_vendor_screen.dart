@@ -163,14 +163,14 @@ class _RegisterGateVendorScreenState
     }
   }
 
-  TextStyle _fieldStyle(bool ar, MiftahColors m) => ar
+  TextStyle _fieldStyle(bool ar, LegacyMiftahColors m) => ar
       ? GoogleFonts.notoNaskhArabic(fontSize: 14, color: m.textPrimary)
       : GoogleFonts.josefinSans(fontSize: 14, color: m.textPrimary);
 
   /// Optional, clearable date row — same pattern as the listing edit screen's
   /// "available from" field.
   Widget _dateField({
-    required MiftahColors m,
+    required LegacyMiftahColors m,
     required _L l,
     required String label,
     required String hint,

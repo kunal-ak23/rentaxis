@@ -663,7 +663,7 @@ class _HeroHeader extends StatelessWidget {
           // No property photo available yet — a chrome-toned gradient fills
           // the hero in its place.
           const DecoratedBox(
-            decoration: BoxDecoration(gradient: MiftahGradients.heroDark),
+            decoration: BoxDecoration(gradient: LegacyMiftahGradients.heroDark),
           ),
           DecoratedBox(
             decoration: BoxDecoration(
@@ -745,7 +745,7 @@ class _SpecStrip extends StatelessWidget {
   final double occupancy;
   final int buildingCount;
   final String type;
-  final MiftahColors m;
+  final LegacyMiftahColors m;
   final _L l;
 
   const _SpecStrip({
@@ -859,7 +859,7 @@ class _SectionHeader extends StatelessWidget {
 
 class _UnitLegend extends StatelessWidget {
   final _L l;
-  final MiftahColors m;
+  final LegacyMiftahColors m;
   const _UnitLegend({required this.l, required this.m});
 
   @override
@@ -980,7 +980,7 @@ class _UnitTile extends StatelessWidget {
 
 class _RentRollCard extends StatelessWidget {
   final List<dynamic> units;
-  final MiftahColors m;
+  final LegacyMiftahColors m;
   final _L l;
   const _RentRollCard({required this.units, required this.m, required this.l});
 
@@ -1061,7 +1061,7 @@ class _RentRollCard extends StatelessWidget {
 class _ContactRow extends StatelessWidget {
   final Map<String, dynamic> contact;
   final _L l;
-  final MiftahColors m;
+  final LegacyMiftahColors m;
   final VoidCallback onDelete;
 
   const _ContactRow({

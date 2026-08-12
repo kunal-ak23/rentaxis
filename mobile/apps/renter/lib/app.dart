@@ -15,8 +15,8 @@ class RenterApp extends ConsumerWidget {
 
     return MaterialApp.router(
       title: 'Miftah Resident',
-      theme: AppTheme.lightTheme,
-      darkTheme: AppTheme.darkTheme,
+      theme: MiftahTheme.light,
+      darkTheme: MiftahTheme.dark,
       themeMode: themeMode,
       locale: language == AppLanguage.ar
           ? const Locale('ar')

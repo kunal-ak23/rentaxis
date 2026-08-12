@@ -632,7 +632,7 @@ class _CreateMeetingScreenState extends ConsumerState<CreateMeetingScreen> {
     );
   }
 
-  Widget _sectionHeader(String text, _L l, MiftahColors m) {
+  Widget _sectionHeader(String text, _L l, LegacyMiftahColors m) {
     return Text(
       text,
       style: l.ar

@@ -171,11 +171,11 @@ class _GateAccessPolicyScreenState
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  TextStyle _labelStyle(bool ar, MiftahColors m) => ar
+  TextStyle _labelStyle(bool ar, LegacyMiftahColors m) => ar
       ? GoogleFonts.notoNaskhArabic(fontSize: 14, color: m.textPrimary)
       : GoogleFonts.josefinSans(fontSize: 14, color: m.textPrimary);
 
-  TextStyle _subtitleStyle(bool ar, MiftahColors m) => ar
+  TextStyle _subtitleStyle(bool ar, LegacyMiftahColors m) => ar
       ? GoogleFonts.notoNaskhArabic(fontSize: 12, color: m.textSecondary)
       : GoogleFonts.josefinSans(fontSize: 12, color: m.textSecondary);
 
@@ -378,7 +378,7 @@ class _SectionCard extends StatelessWidget {
     this.padding = const EdgeInsets.all(14),
   });
 
-  final MiftahColors m;
+  final LegacyMiftahColors m;
   final Widget child;
   final EdgeInsetsGeometry padding;
 
@@ -408,7 +408,7 @@ class _PolicySwitchTile extends StatelessWidget {
     required this.onChanged,
   });
 
-  final MiftahColors m;
+  final LegacyMiftahColors m;
   final bool value;
   final String title;
   final TextStyle titleStyle;

@@ -421,7 +421,7 @@ class _StatusPill extends StatelessWidget {
 }
 
 class _Placeholder extends StatelessWidget {
-  final MiftahColors m;
+  final LegacyMiftahColors m;
   const _Placeholder({required this.m});
 
   @override

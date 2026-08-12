@@ -249,7 +249,7 @@ class _ChromeHeader extends StatelessWidget {
                         vertical: 6,
                       ),
                       decoration: BoxDecoration(
-                        gradient: selected ? MiftahGradients.gold : null,
+                        gradient: selected ? LegacyMiftahGradients.gold : null,
                         color: selected ? null : Colors.transparent,
                         border: selected
                             ? null
@@ -366,7 +366,7 @@ class _LeaseCard extends StatelessWidget {
   final VoidCallback onTap;
   const _LeaseCard({required this.lease, required this.l, required this.onTap});
 
-  Color _statusColor(MiftahColors m, String status) {
+  Color _statusColor(LegacyMiftahColors m, String status) {
     switch (status) {
       case 'ACTIVE':
         return m.success;
@@ -555,7 +555,7 @@ class _LeaseCard extends StatelessWidget {
 class _ChequeProgressBar extends StatelessWidget {
   final int total;
   final int cleared;
-  final MiftahColors m;
+  final LegacyMiftahColors m;
   const _ChequeProgressBar({
     required this.total,
     required this.cleared,
@@ -587,7 +587,7 @@ class _ChequeProgressBar extends StatelessWidget {
 class _StatusPill extends StatelessWidget {
   final String label;
   final Color color;
-  final MiftahColors m;
+  final LegacyMiftahColors m;
   final bool ar;
   const _StatusPill({
     required this.label,

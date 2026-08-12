@@ -84,7 +84,7 @@ class _L {
   };
 }
 
-Color _statusColor(String? status, MiftahColors m) => switch (status) {
+Color _statusColor(String? status, LegacyMiftahColors m) => switch (status) {
   'PENDING' => m.warning,
   'APPROVED' => m.success,
   'REJECTED' => m.danger,
@@ -380,7 +380,7 @@ class _FilterChip extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(999),
-          gradient: selected ? MiftahGradients.gold : null,
+          gradient: selected ? LegacyMiftahGradients.gold : null,
           border: selected ? null : Border.all(color: m.borderStrong),
         ),
         child: Text(
@@ -935,7 +935,7 @@ class _DetailRow extends StatelessWidget {
 
   final IconData icon;
   final String value;
-  final MiftahColors m;
+  final LegacyMiftahColors m;
 
   @override
   Widget build(BuildContext context) {

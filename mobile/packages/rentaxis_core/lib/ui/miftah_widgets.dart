@@ -1,0 +1,730 @@
+import 'package:flutter/material.dart';
+import 'miftah_tokens.dart';
+
+/// The widget set behind the redesigned screens. Every mockup element has a
+/// one-to-one widget here, so screens become composition rather than styling.
+///
+/// Usage: `import 'package:rentaxis_core/ui/miftah_widgets.dart';`
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Card — the base container. Border, never shadow.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class MiftahCard extends StatelessWidget {
+  const MiftahCard({
+    super.key,
+    required this.child,
+    this.onTap,
+    this.padding = const EdgeInsets.all(MiftahSpacing.cardPad),
+    this.radius = MiftahRadii.card,
+    this.color,
+    this.borderColor,
+    this.emphasised = false,
+  });
+
+  final Widget child;
+  final VoidCallback? onTap;
+  final EdgeInsets padding;
+  final double radius;
+  final Color? color;
+  final Color? borderColor;
+
+  /// Draws the 1.5px brass border used for the one card that needs the eye.
+  final bool emphasised;
+
+  @override
+  Widget build(BuildContext context) {
+    final border = borderColor ??
+        (emphasised ? MiftahColors.brass : MiftahColors.border);
+    final content = Container(
+      padding: padding,
+      decoration: BoxDecoration(
+        color: color ?? MiftahColors.surface,
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(color: border, width: emphasised ? 1.5 : 1),
+      ),
+      child: child,
+    );
+    if (onTap == null) return content;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(radius),
+        onTap: onTap,
+        child: content,
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Gold hero — the money card. One per screen, maximum.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class MiftahGoldCard extends StatelessWidget {
+  const MiftahGoldCard({
+    super.key,
+    required this.child,
+    this.padding = const EdgeInsets.all(MiftahSpacing.heroPad),
+  });
+
+  final Widget child;
+  final EdgeInsets padding;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(MiftahRadii.hero),
+      child: Container(
+        decoration: const BoxDecoration(gradient: MiftahGradients.gold),
+        child: Stack(
+          children: [
+            // The soft light bloom in the corner of every gradient card.
+            Positioned(
+              right: -44,
+              top: -56,
+              child: Container(
+                width: 170,
+                height: 170,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withValues(alpha: 0.14),
+                ),
+              ),
+            ),
+            Padding(padding: padding, child: child),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Status badge — the small caps pill on every row.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum MiftahTone { neutral, brass, success, danger, warning, info, onDark }
+
+class MiftahBadge extends StatelessWidget {
+  const MiftahBadge(this.label, {super.key, this.tone = MiftahTone.neutral});
+
+  final String label;
+  final MiftahTone tone;
+
+  static ({Color bg, Color fg}) colorsFor(MiftahTone tone) => switch (tone) {
+        MiftahTone.brass => (
+            bg: MiftahColors.brassTint,
+            fg: MiftahColors.brassDeep
+          ),
+        MiftahTone.success => (
+            bg: MiftahColors.successTint,
+            fg: MiftahColors.success
+          ),
+        MiftahTone.danger => (
+            bg: MiftahColors.dangerTint,
+            fg: MiftahColors.danger
+          ),
+        MiftahTone.warning => (
+            bg: MiftahColors.warningTint,
+            fg: MiftahColors.warning
+          ),
+        MiftahTone.info => (bg: MiftahColors.infoTint, fg: MiftahColors.info),
+        MiftahTone.onDark => (
+            bg: Color(0x2DC79A3C),
+            fg: MiftahColors.brassLight
+          ),
+        MiftahTone.neutral => (
+            bg: MiftahColors.surfaceAlt,
+            fg: MiftahColors.textMuted
+          ),
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    final c = colorsFor(tone);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: c.bg,
+        borderRadius: BorderRadius.circular(MiftahRadii.pill),
+      ),
+      child: Text(label.toUpperCase(), style: MiftahType.badge(color: c.fg)),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Buttons.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class MiftahButton extends StatelessWidget {
+  const MiftahButton({
+    super.key,
+    required this.label,
+    this.onPressed,
+    this.icon,
+    this.height = 54,
+    this.expanded = true,
+  });
+
+  /// Ink-filled. The default primary action everywhere except money.
+  const MiftahButton.primary({
+    super.key,
+    required this.label,
+    this.onPressed,
+    this.icon,
+    this.height = 54,
+    this.expanded = true,
+  });
+
+  final String label;
+  final VoidCallback? onPressed;
+  final Widget? icon;
+  final double height;
+  final bool expanded;
+
+  @override
+  Widget build(BuildContext context) {
+    final button = SizedBox(
+      height: height,
+      child: FilledButton(
+        onPressed: onPressed,
+        style: FilledButton.styleFrom(
+          backgroundColor: MiftahColors.ink,
+          foregroundColor: Colors.white,
+          disabledBackgroundColor: MiftahColors.border,
+          disabledForegroundColor: MiftahColors.textFaint,
+          elevation: 0,
+          padding: const EdgeInsets.symmetric(horizontal: 22),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(MiftahRadii.tile),
+          ),
+        ),
+        child: _Label(label: label, icon: icon),
+      ),
+    );
+    return expanded ? SizedBox(width: double.infinity, child: button) : button;
+  }
+}
+
+/// Gold gradient button — money actions only ("Sign in", "Scan a pass",
+/// "Share with guest").
+class MiftahGoldButton extends StatelessWidget {
+  const MiftahGoldButton({
+    super.key,
+    required this.label,
+    this.onPressed,
+    this.icon,
+    this.height = 56,
+  });
+
+  final String label;
+  final VoidCallback? onPressed;
+  final Widget? icon;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      height: height,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: MiftahGradients.gold,
+          borderRadius: BorderRadius.circular(MiftahRadii.tile),
+          boxShadow: onPressed == null ? null : MiftahShadows.gold,
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(MiftahRadii.tile),
+            onTap: onPressed,
+            child: Center(
+              child: DefaultTextStyle(
+                style: MiftahType.button(size: 17, color: MiftahColors.ink),
+                child: _Label(
+                  label: label,
+                  icon: icon,
+                  color: MiftahColors.ink,
+                  size: 17,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Outlined / secondary. Sits beside a primary in a Row.
+class MiftahOutlineButton extends StatelessWidget {
+  const MiftahOutlineButton({
+    super.key,
+    required this.label,
+    this.onPressed,
+    this.height = 54,
+    this.tone = MiftahTone.neutral,
+  });
+
+  final String label;
+  final VoidCallback? onPressed;
+  final double height;
+  final MiftahTone tone;
+
+  @override
+  Widget build(BuildContext context) {
+    final danger = tone == MiftahTone.danger;
+    return SizedBox(
+      width: double.infinity,
+      height: height,
+      child: OutlinedButton(
+        onPressed: onPressed,
+        style: OutlinedButton.styleFrom(
+          backgroundColor:
+              danger ? MiftahColors.dangerTint : MiftahColors.surface,
+          foregroundColor:
+              danger ? MiftahColors.danger : MiftahColors.textSecondary,
+          side: BorderSide(
+            color: danger
+                ? MiftahColors.dangerTintBorder
+                : MiftahColors.borderStrong,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(MiftahRadii.tile),
+          ),
+        ),
+        child: Text(label, style: MiftahType.button(size: 15)),
+      ),
+    );
+  }
+}
+
+class _Label extends StatelessWidget {
+  const _Label({required this.label, this.icon, this.color, this.size = 16});
+
+  final String label;
+  final Widget? icon;
+  final Color? color;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Text(label, style: MiftahType.button(size: size, color: color));
+    if (icon == null) return text;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconTheme(
+          data: IconThemeData(color: color ?? Colors.white, size: 21),
+          child: icon!,
+        ),
+        const SizedBox(width: 9),
+        text,
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Filter chip — squarish, not a pill. Selected = ink, or brass tint on dark.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class MiftahFilterChip extends StatelessWidget {
+  const MiftahFilterChip({
+    super.key,
+    required this.label,
+    required this.selected,
+    this.onTap,
+    this.onDark = false,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback? onTap;
+  final bool onDark;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color bg;
+    final Color fg;
+    final Color? border;
+    if (selected) {
+      bg = onDark ? MiftahColors.brassLight : MiftahColors.brassTint;
+      fg = onDark ? MiftahColors.ink : MiftahColors.brassDeep;
+      border = onDark ? null : MiftahColors.brassTintBorder;
+    } else {
+      bg = onDark ? Colors.white.withValues(alpha: 0.1) : MiftahColors.surface;
+      fg = onDark ? Colors.white : MiftahColors.textSecondary;
+      border = onDark ? null : MiftahColors.borderStrong;
+    }
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 9),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(MiftahRadii.chip),
+          border: border == null ? null : Border.all(color: border),
+        ),
+        child: Text(
+          label,
+          style: MiftahType.cardTitle(color: fg).copyWith(
+            fontSize: 12.5,
+            fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+            letterSpacing: 0,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Icon tile — the rounded-square icon that leads most rows.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class MiftahIconTile extends StatelessWidget {
+  const MiftahIconTile({
+    super.key,
+    required this.icon,
+    this.tone = MiftahTone.brass,
+    this.size = 42,
+  });
+
+  final IconData icon;
+  final MiftahTone tone;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = MiftahBadge.colorsFor(tone);
+    return Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: c.bg,
+        borderRadius: BorderRadius.circular(size * 0.29),
+      ),
+      child: Icon(icon, size: size * 0.5, color: c.fg),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Section label — "AMENITIES", "PRIORITY".
+// ─────────────────────────────────────────────────────────────────────────────
+
+class MiftahSectionLabel extends StatelessWidget {
+  const MiftahSectionLabel(this.text, {super.key, this.top = 6});
+
+  final String text;
+  final double top;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: EdgeInsets.only(top: top, bottom: 10),
+        child: Text(text.toUpperCase(), style: MiftahType.sectionLabel()),
+      );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Progress bar — gold on a tinted track.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class MiftahProgress extends StatelessWidget {
+  const MiftahProgress({
+    super.key,
+    required this.value,
+    this.height = 8,
+    this.onGold = false,
+  });
+
+  final double value; // 0..1
+  final double height;
+
+  /// Inside a gold card the bar inverts: ink fill on a translucent track.
+  final bool onGold;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(height),
+      child: Stack(
+        children: [
+          Container(
+            height: height,
+            color: onGold
+                ? MiftahColors.ink.withValues(alpha: 0.18)
+                : MiftahColors.border,
+          ),
+          FractionallySizedBox(
+            widthFactor: value.clamp(0.0, 1.0),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 700),
+              curve: Curves.easeOutCubic,
+              height: height,
+              decoration: BoxDecoration(
+                color: onGold ? MiftahColors.ink : null,
+                gradient: onGold ? null : MiftahGradients.goldCompact,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Bottom nav — solid, five slots, raised centre action.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class MiftahNavItem {
+  const MiftahNavItem({
+    required this.icon,
+    required this.label,
+    this.badge,
+  });
+
+  final IconData icon;
+  final String label;
+  final int? badge;
+}
+
+/// Replaces the frosted floating pill. Solid white bar, hairline top border,
+/// and one gradient circle lifted out of the bar for the app's signature
+/// action (renter: Pass · manager: Scan · security: Scan).
+class MiftahNavBar extends StatelessWidget {
+  const MiftahNavBar({
+    super.key,
+    required this.items,
+    required this.currentIndex,
+    required this.onTap,
+    required this.centreIcon,
+    required this.centreLabel,
+    required this.onCentreTap,
+  });
+
+  /// Exactly four — two either side of the centre action.
+  final List<MiftahNavItem> items;
+  final int currentIndex;
+  final ValueChanged<int> onTap;
+  final IconData centreIcon;
+  final String centreLabel;
+  final VoidCallback onCentreTap;
+
+  @override
+  Widget build(BuildContext context) {
+    assert(items.length == 4, 'MiftahNavBar expects four flanking items');
+    final slots = <Widget>[
+      _slot(0),
+      _slot(1),
+      _centre(),
+      _slot(2),
+      _slot(3),
+    ];
+    return Container(
+      decoration: const BoxDecoration(
+        color: MiftahColors.surface,
+        border: Border(top: BorderSide(color: MiftahColors.border)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 12, 18, 8),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [for (final s in slots) Expanded(child: s)],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _slot(int index) {
+    final item = items[index];
+    final active = index == currentIndex;
+    final color = active ? MiftahColors.brassDeep : MiftahColors.textMuted;
+    return InkWell(
+      onTap: () => onTap(index),
+      borderRadius: BorderRadius.circular(14),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Badge(
+              isLabelVisible: (item.badge ?? 0) > 0,
+              backgroundColor: MiftahColors.dangerBright,
+              label: Text('${item.badge}'),
+              child: Icon(item.icon, size: 22, color: color),
+            ),
+            const SizedBox(height: 5),
+            Text(
+              item.label,
+              style: MiftahType.meta(color: color).copyWith(
+                fontSize: 10.5,
+                fontWeight: active ? FontWeight.w700 : FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _centre() {
+    return InkWell(
+      onTap: onCentreTap,
+      borderRadius: BorderRadius.circular(30),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Transform.translate(
+            offset: const Offset(0, -30),
+            child: Container(
+              width: 52,
+              height: 52,
+              alignment: Alignment.center,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: MiftahGradients.goldCompact,
+                boxShadow: MiftahShadows.gold,
+              ),
+              child: Icon(centreIcon, size: 24, color: MiftahColors.ink),
+            ),
+          ),
+          Transform.translate(
+            offset: const Offset(0, -26),
+            child: Text(
+              centreLabel,
+              style: MiftahType.meta().copyWith(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Bottom sheet — filters, booking, assignment.
+// ─────────────────────────────────────────────────────────────────────────────
+
+Future<T?> showMiftahSheet<T>({
+  required BuildContext context,
+  required String title,
+  String? subtitle,
+  required Widget child,
+  Widget? action,
+}) {
+  return showModalBottomSheet<T>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    barrierColor: MiftahColors.ink.withValues(alpha: 0.5),
+    builder: (context) => Container(
+      decoration: const BoxDecoration(
+        color: MiftahColors.canvas,
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(MiftahRadii.sheet),
+        ),
+      ),
+      padding: EdgeInsets.fromLTRB(
+        MiftahSpacing.page,
+        14,
+        MiftahSpacing.page,
+        MediaQuery.of(context).viewInsets.bottom + 30,
+      ),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                width: 44,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFD9D3E6),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(title, style: MiftahType.title()),
+            if (subtitle != null) ...[
+              const SizedBox(height: 6),
+              Text(subtitle, style: MiftahType.body(size: 12.5)),
+            ],
+            const SizedBox(height: 18),
+            Flexible(child: SingleChildScrollView(child: child)),
+            if (action != null) ...[const SizedBox(height: 22), action],
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Empty state — always carries an action.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class MiftahEmptyState extends StatelessWidget {
+  const MiftahEmptyState({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.actionLabel,
+    this.onAction,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(26),
+      decoration: BoxDecoration(
+        color: MiftahColors.surface,
+        borderRadius: BorderRadius.circular(MiftahRadii.card),
+        border: Border.all(
+          color: const Color(0xFFD9D3E6),
+          style: BorderStyle.solid,
+        ),
+      ),
+      child: Column(
+        children: [
+          MiftahIconTile(icon: icon, tone: MiftahTone.neutral, size: 52),
+          const SizedBox(height: 14),
+          Text(title, style: MiftahType.cardTitle(), textAlign: TextAlign.center),
+          const SizedBox(height: 6),
+          Text(
+            subtitle,
+            style: MiftahType.body(size: 12.5),
+            textAlign: TextAlign.center,
+          ),
+          if (actionLabel != null) ...[
+            const SizedBox(height: 16),
+            MiftahButton(label: actionLabel!, onPressed: onAction, height: 44),
+          ],
+        ],
+      ),
+    );
+  }
+}
