@@ -222,86 +222,62 @@ class MoreScreen extends ConsumerWidget {
   }
 }
 
+/// Account header — design screen 15. Centred gradient avatar over ink, name,
+/// then role and portfolio size. One of the five ink headers the redesign
+/// keeps.
 class _ChromeHeader extends StatelessWidget {
-  final AuthState authState;
-  final _L l;
   const _ChromeHeader({required this.authState, required this.l});
 
-  String get _initials {
-    final name = (authState.name ?? '').trim();
-    if (name.isEmpty) return 'M';
-    final parts = name.split(RegExp(r'\s+'));
-    if (parts.length == 1) return parts.first[0].toUpperCase();
-    return (parts[0][0] + parts[1][0]).toUpperCase();
-  }
+  final AuthState authState;
+  final _L l;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: BoxDecoration(
-        color: AppColors.primary,
-        border: Border(
-          bottom: BorderSide(color: AppColors.accent.withValues(alpha: 0.14)),
-        ),
-      ),
-      padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
-      child: Row(
+      width: double.infinity,
+      color: MiftahColors.ink,
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 26),
+      child: Column(
         children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: AppColors.accent.withValues(alpha: 0.35),
-              ),
-            ),
-            alignment: Alignment.center,
-            child: Text(
-              _initials,
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-                color: AppColors.accent,
-              ),
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: MiftahCircleButton(
+              icon: Icons.arrow_back_rounded,
+              tooltip: l.back,
+              onDark: true,
+              onTap: () => Navigator.of(context).maybePop(),
             ),
           ),
-          const SizedBox(width: 13),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  authState.name ?? l.managerFallback,
-                  style: l.ar
-                      ? GoogleFonts.notoNaskhArabic(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.gold400,
-                        )
-                      : GoogleFonts.plusJakartaSans(
-                          fontSize: 18,
-                          color: AppColors.gold400,
-                        ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  l.roleLine(authState.role, authState.email),
-                  style: l.ar
-                      ? GoogleFonts.notoNaskhArabic(
-                          fontSize: 12,
-                          color: AppColors.goldMid,
-                        )
-                      : GoogleFonts.plusJakartaSans(
-                          fontSize: 11,
-                          letterSpacing: 1.6,
-                          color: AppColors.goldMid,
-                        ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
+          const SizedBox(height: 12),
+          MiftahAvatarButton(
+            name: authState.name,
+            size: 80,
+            gradient: true,
+            onTap: () => context.push('/profile'),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            authState.name ?? l.managerFallback,
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: l.ar
+                ? MiftahType.ar(
+                    size: 22,
+                    weight: FontWeight.w700,
+                    color: Colors.white,
+                  )
+                : MiftahType.amount(size: 24, color: Colors.white),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            l.roleLine(authState.role, authState.email),
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: l.ar
+                ? MiftahType.ar(size: 12.5, color: const Color(0xFF8C86A0))
+                : MiftahType.body(size: 12.5, color: const Color(0xFF8C86A0)),
           ),
         ],
       ),
@@ -503,7 +479,9 @@ class _SignOutButton extends ConsumerWidget {
                         ? GoogleFonts.notoNaskhArabic(
                             fontWeight: FontWeight.w600,
                           )
-                        : GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
+                        : GoogleFonts.plusJakartaSans(
+                            fontWeight: FontWeight.w600,
+                          ),
                   ),
                 ),
                 TextButton(
@@ -517,7 +495,9 @@ class _SignOutButton extends ConsumerWidget {
                         ? GoogleFonts.notoNaskhArabic(
                             fontWeight: FontWeight.w600,
                           )
-                        : GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
+                        : GoogleFonts.plusJakartaSans(
+                            fontWeight: FontWeight.w600,
+                          ),
                   ),
                 ),
               ],
@@ -695,4 +675,6 @@ class _L {
     }
     return (r ?? email ?? '').toUpperCase();
   }
+
+  String get back => ar ? 'رجوع' : 'Back';
 }

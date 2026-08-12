@@ -21,6 +21,7 @@ class MiftahCircleButton extends StatelessWidget {
     this.badgeCount,
     this.showDot = false,
     this.tooltip,
+    this.onDark = false,
   });
 
   final IconData icon;
@@ -31,9 +32,18 @@ class MiftahCircleButton extends StatelessWidget {
   final bool showDot;
   final String? tooltip;
 
+  /// On an ink header the icon and outline must invert, or they vanish into
+  /// the field.
+  final bool onDark;
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final iconColor = onDark ? Colors.white : scheme.onSurface;
+    final outline = onDark
+        ? Colors.white.withValues(alpha: 0.22)
+        : MiftahColors.borderStrong;
+    final badgeRing = onDark ? MiftahColors.ink : scheme.surface;
     final count = badgeCount ?? 0;
     final button = GestureDetector(
       onTap: onTap,
@@ -46,9 +56,10 @@ class MiftahCircleButton extends StatelessWidget {
             alignment: Alignment.center,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              border: Border.all(color: MiftahColors.borderStrong),
+              border: Border.all(color: outline),
+              color: onDark ? Colors.white.withValues(alpha: 0.1) : null,
             ),
-            child: Icon(icon, size: 19, color: scheme.onSurface),
+            child: Icon(icon, size: 19, color: iconColor),
           ),
           if (count > 0)
             PositionedDirectional(
@@ -62,7 +73,7 @@ class MiftahCircleButton extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: MiftahColors.dangerBright,
                   borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: scheme.surface, width: 2),
+                  border: Border.all(color: badgeRing, width: 2),
                 ),
                 child: Text(
                   count > 99 ? '99+' : '$count',
@@ -83,7 +94,7 @@ class MiftahCircleButton extends StatelessWidget {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: MiftahColors.dangerBright,
-                  border: Border.all(color: scheme.surface, width: 2),
+                  border: Border.all(color: badgeRing, width: 2),
                 ),
               ),
             ),

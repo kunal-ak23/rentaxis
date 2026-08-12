@@ -41,7 +41,11 @@ TextStyle _display(
         fontWeight: weight,
         color: color,
       )
-    : GoogleFonts.plusJakartaSans(fontSize: size, fontWeight: weight, color: color);
+    : GoogleFonts.plusJakartaSans(
+        fontSize: size,
+        fontWeight: weight,
+        color: color,
+      );
 
 TextStyle _body(
   bool ar, {
@@ -280,79 +284,59 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     );
   }
 
-  /// Dark chrome header: gold-ringed monogram, name, tenancy line — always
-  /// near-black regardless of theme mode, matching the app chrome.
+  /// Account header — design screen 24. Ink field, gradient avatar, name and
+  /// contact. Deliberately mode-independent: one of the five ink headers the
+  /// redesign keeps.
   Widget _buildChromeHeader(AuthState auth, _L l) {
     return Container(
-      decoration: BoxDecoration(
-        color: AppColors.navyDark,
-        border: Border(
-          bottom: BorderSide(color: AppColors.accent.withValues(alpha: 0.14)),
-        ),
-      ),
-      padding: const EdgeInsets.fromLTRB(24, 28, 24, 28),
+      width: double.infinity,
+      color: MiftahColors.ink,
+      padding: const EdgeInsets.fromLTRB(24, 8, 24, 28),
       child: Column(
         children: [
-          Container(
-            width: 80,
-            height: 80,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: AppColors.primary,
-              border: Border.all(
-                color: AppColors.accent.withValues(alpha: 0.45),
-              ),
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: MiftahCircleButton(
+              icon: Icons.arrow_back_rounded,
+              tooltip: l.back,
+              onDark: true,
+              onTap: () => Navigator.of(context).maybePop(),
             ),
-            alignment: Alignment.center,
-            child: Text(
-              _getInitials(auth.name ?? 'U'),
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 26,
-                fontWeight: FontWeight.w600,
-                color: AppColors.accent,
-              ),
-            ),
+          ),
+          const SizedBox(height: 12),
+          MiftahAvatarButton(
+            name: auth.name,
+            size: 80,
+            gradient: true,
+            onTap: () {},
           ),
           const SizedBox(height: 14),
           Text(
             auth.name ?? l.resident,
-            style: _display(
-              l.ar,
-              size: 20,
-              weight: FontWeight.w600,
-              color: Colors.white,
-            ),
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: l.ar
+                ? MiftahType.ar(
+                    size: 22,
+                    weight: FontWeight.w700,
+                    color: Colors.white,
+                  )
+                : MiftahType.amount(size: 24, color: Colors.white),
           ),
           if (auth.email != null) ...[
-            const SizedBox(height: 6),
+            const SizedBox(height: 5),
             Text(
               auth.email!,
-              style: _body(
-                l.ar,
-                size: 12,
-                color: Colors.white.withValues(alpha: 0.5),
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: MiftahType.mono(
+                size: 12.5,
+                color: const Color(0xFF8C86A0),
               ),
             ),
           ],
-          if (auth.role != null) ...[
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(
-                  color: AppColors.accent.withValues(alpha: 0.3),
-                ),
-              ),
-              child: Text(
-                l.roleLabel(auth.role!),
-                style: _body(l.ar, size: 10.5, color: AppColors.accent),
-              ),
-            ),
-          ],
-          // Language pill in the header, per design 1h.
-          const SizedBox(height: 14),
-          _LanguageToggle(m: context.miftah, onDark: true),
         ],
       ),
     );
@@ -726,14 +710,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       ),
     );
   }
-
-  String _getInitials(String name) {
-    final parts = name.trim().split(' ');
-    if (parts.length >= 2) {
-      return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
-    }
-    return name.isNotEmpty ? name[0].toUpperCase() : 'U';
-  }
 }
 
 /// EN / عربي pill toggle per design 1h. Today it switches the brand lockup
@@ -742,16 +718,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 class _LanguageToggle extends ConsumerWidget {
   final LegacyMiftahColors m;
 
-  /// On the dark chrome header, unselected labels read white instead of muted.
-  final bool onDark;
-  const _LanguageToggle({required this.m, this.onDark = false});
+  const _LanguageToggle({required this.m});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final language = ref.watch(appLanguageProvider);
-    final unselected = onDark
-        ? Colors.white.withValues(alpha: 0.55)
-        : m.textMuted;
+    final unselected = m.textMuted;
 
     Widget option({
       required bool selected,
@@ -877,4 +849,6 @@ class _L {
         return role.toUpperCase();
     }
   }
+
+  String get back => ar ? 'رجوع' : 'Back';
 }
