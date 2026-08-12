@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
 import '../gatepass/pass_display.dart';
@@ -31,6 +30,11 @@ class ScanResultArgs {
 
 /// The verdict, built to be read at arm's length in daylight.
 ///
+/// Deliberately mode-independent: the whole screen is the verdict, a single
+/// dark field (green for admit, red for refuse) so it doubles as a light
+/// source at night. Type and touch targets are sized for gloved hands and are
+/// not reduced for visual tidiness.
+///
 /// **Every guest field can be null and the screen must still make sense.** When
 /// a guard scans a pass for a property they are not posted to, the backend
 /// answers REJECTED with `guestName`, `guestPhone`, `vehicleNumber`, `purpose`,
@@ -51,6 +55,13 @@ class ResultScreen extends ConsumerStatefulWidget {
   @override
   ConsumerState<ResultScreen> createState() => _ResultScreenState();
 }
+
+/// Field colours — fixed, not theme-derived. See the class doc.
+const _allowField = Color(0xFF0E2B1B);
+const _rejectField = Color(0xFF31120E);
+const _allowMark = Color(0xFF1E9E5A);
+const _rejectMark = Color(0xFFD64545);
+const _rejectText = Color(0xFFF2B3A6);
 
 class _ResultScreenState extends ConsumerState<ResultScreen> {
   bool _loggingExit = false;
@@ -110,7 +121,6 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final m = context.miftah;
     final l = _L(context.isAr);
     final allowed = _allowed;
     final reason = passString(_response, 'reason');
@@ -126,46 +136,86 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
     final to = passInstant(_response, 'validTo');
     final hasWindow = from != null || to != null;
 
+    final rows = <({String label, String value, bool mono})>[
+      if (unit != null) (label: l.unit, value: unit, mono: false),
+      if (phone != null) (label: l.phone, value: phone, mono: true),
+      if (vehicle != null) (label: l.vehicle, value: vehicle, mono: true),
+      if (hasWindow)
+        (label: l.valid, value: formatWindow(from, to, ar: l.ar), mono: false),
+      if (purpose != null) (label: l.purpose, value: purpose, mono: false),
+      if (passType != null)
+        (label: l.passType, value: l.passTypeValue(passType), mono: false),
+    ];
+
     return PopScope(
       // Nothing here is unsaved — the scan is already recorded server-side — so
       // a back gesture is just Done by another name.
       canPop: true,
       child: Scaffold(
-        backgroundColor: m.background,
+        backgroundColor: allowed ? _allowField : _rejectField,
         body: SafeArea(
           child: Column(
             children: [
-              _Verdict(allowed: allowed, reason: reason, l: l),
               Expanded(
                 child: ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+                  padding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
                   children: [
-                    if (name != null)
-                      _BigField(label: l.guest, value: name, l: l)
+                    const SizedBox(height: 12),
+                    _Mark(allowed: allowed),
+                    const SizedBox(height: 26),
+                    Text(
+                      allowed ? l.allowed : l.doNotAdmit,
+                      textAlign: TextAlign.center,
+                      style: l.ar
+                          ? MiftahType.ar(
+                              size: 38,
+                              weight: FontWeight.w700,
+                              color: Colors.white,
+                            )
+                          : MiftahType.display(
+                              color: Colors.white,
+                            ).copyWith(fontSize: 42, letterSpacing: -1.26),
+                    ),
+                    const SizedBox(height: 8),
+                    // The refusal has to say why, in words a guard can repeat
+                    // to the person at the gate.
+                    Text(
+                      allowed
+                          ? l.entryRecorded
+                          : describeRejection(reason, ar: l.ar),
+                      textAlign: TextAlign.center,
+                      style: l.ar
+                          ? MiftahType.ar(
+                              size: allowed ? 15 : 17,
+                              weight: allowed
+                                  ? FontWeight.w400
+                                  : FontWeight.w600,
+                              color: allowed
+                                  ? Colors.white.withValues(alpha: 0.6)
+                                  : _rejectText,
+                            )
+                          : MiftahType.body(
+                              size: allowed ? 15 : 17,
+                              color: allowed
+                                  ? Colors.white.withValues(alpha: 0.6)
+                                  : _rejectText,
+                            ).copyWith(
+                              fontWeight: allowed
+                                  ? FontWeight.w400
+                                  : FontWeight.w600,
+                            ),
+                    ),
+                    const SizedBox(height: 30),
+                    if (name != null || rows.isNotEmpty)
+                      _DetailsPanel(name: name, rows: rows, l: l)
                     else if (!allowed)
                       // The blinded rejection: no guest, by design. Say why the
                       // screen is bare, or it reads as a bug at the worst moment.
                       _NoDetails(l: l),
-                    if (unit != null)
-                      _BigField(label: l.unit, value: unit, l: l),
-                    if (phone != null)
-                      _BigField(label: l.phone, value: phone, l: l),
-                    if (vehicle != null)
-                      _BigField(label: l.vehicle, value: vehicle, l: l),
-                    if (purpose != null)
-                      _BigField(label: l.purpose, value: purpose, l: l),
-                    if (hasWindow)
-                      _BigField(
-                        label: l.valid,
-                        value: formatWindow(from, to, ar: l.ar),
-                        l: l,
-                      ),
-                    if (passType != null)
-                      _BigField(
-                        label: l.passType,
-                        value: l.passTypeValue(passType),
-                        l: l,
-                      ),
+                    if (!allowed) ...[
+                      const SizedBox(height: 12),
+                      _WayOut(l: l),
+                    ],
                   ],
                 ),
               ),
@@ -186,116 +236,162 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
   }
 }
 
-/// The band that has to answer "in or out?" in under a second: full-width, one
-/// word, maximum contrast — legible at arm's length in direct sun, where a badge
-/// or a coloured border would not be.
-class _Verdict extends StatelessWidget {
-  const _Verdict({
-    required this.allowed,
-    required this.reason,
-    required this.l,
-  });
+/// The 112px verdict mark with its soft ring — the thing a guard reads first.
+class _Mark extends StatelessWidget {
+  const _Mark({required this.allowed});
 
   final bool allowed;
-  final String? reason;
-  final _L l;
 
   @override
   Widget build(BuildContext context) {
-    final m = context.miftah;
-    final content = Column(
-      children: [
-        Icon(
-          allowed ? Icons.check_circle : Icons.cancel,
-          color: Colors.white,
-          size: 64,
-        ),
-        const SizedBox(height: 10),
-        Text(
-          allowed ? l.allowed : l.doNotAdmit,
-          textAlign: TextAlign.center,
-          style: l.ar
-              ? GoogleFonts.notoNaskhArabic(
-                  fontSize: 30,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
-                )
-              : GoogleFonts.plusJakartaSans(
-                  fontSize: 30,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 1.8,
-                  color: Colors.white,
-                ),
-        ),
-        if (!allowed) ...[
-          const SizedBox(height: 10),
-          Text(
-            describeRejection(reason, ar: l.ar),
-            textAlign: TextAlign.center,
-            style:
-                (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.plusJakartaSans)(
-                  fontSize: 15,
-                  height: 1.45,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.white,
-                ),
-          ),
-        ],
-      ],
-    );
-
-    // Scale-and-fade the verdict in on first render — deliberate, not instant,
-    // but fast: a guard needs the answer immediately, so this stays well under
-    // the blink of an eye.
-    return TweenAnimationBuilder<double>(
-      key: ValueKey(allowed),
-      tween: Tween(begin: 0.0, end: 1.0),
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOutBack,
-      builder: (context, t, child) {
-        return Opacity(
-          opacity: t.clamp(0.0, 1.0),
-          child: Transform.scale(scale: 0.9 + (0.1 * t), child: child),
-        );
-      },
+    final color = allowed ? _allowMark : _rejectMark;
+    return Center(
       child: Container(
-        width: double.infinity,
-        color: allowed ? m.success : m.danger,
-        padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
-        child: content,
+        width: 112,
+        height: 112,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: color,
+          boxShadow: [
+            BoxShadow(
+              color: color.withValues(alpha: 0.16),
+              spreadRadius: 18,
+              blurRadius: 0,
+            ),
+          ],
+        ),
+        child: Icon(
+          allowed ? Icons.check_rounded : Icons.close_rounded,
+          size: allowed ? 62 : 58,
+          color: Colors.white,
+        ),
       ),
     );
   }
 }
 
-/// Stands in for the guest block on a rejection the guard is not entitled to
-/// read.
-class _NoDetails extends StatelessWidget {
-  const _NoDetails({required this.l});
+/// Guest name plus whatever fields survived the blinding, on a translucent
+/// panel so it reads on either field colour.
+class _DetailsPanel extends StatelessWidget {
+  const _DetailsPanel({
+    required this.name,
+    required this.rows,
+    required this.l,
+  });
+
+  final String? name;
+  final List<({String label, String value, bool mono})> rows;
+  final _L l;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(22),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (name != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                name!,
+                style: l.ar
+                    ? MiftahType.ar(
+                        size: 24,
+                        weight: FontWeight.w700,
+                        color: Colors.white,
+                      )
+                    : MiftahType.amount(size: 26, color: Colors.white),
+              ),
+            ),
+          for (var i = 0; i < rows.length; i++)
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 13),
+              decoration: BoxDecoration(
+                border: i == rows.length - 1
+                    ? null
+                    : Border(
+                        bottom: BorderSide(
+                          color: Colors.white.withValues(alpha: 0.1),
+                        ),
+                      ),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    rows[i].label,
+                    style: l.ar
+                        ? MiftahType.ar(
+                            size: 13,
+                            color: Colors.white.withValues(alpha: 0.55),
+                          )
+                        : MiftahType.body(
+                            size: 13,
+                            color: Colors.white.withValues(alpha: 0.55),
+                          ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Text(
+                      rows[i].value,
+                      textAlign: TextAlign.end,
+                      style: rows[i].mono
+                          ? MiftahType.mono(
+                              size: 15,
+                              color: Colors.white,
+                            ).copyWith(fontWeight: FontWeight.w500)
+                          : (l.ar
+                                ? MiftahType.ar(
+                                    size: 15,
+                                    weight: FontWeight.w700,
+                                    color: Colors.white,
+                                  )
+                                : MiftahType.body(
+                                    size: 15,
+                                    color: Colors.white,
+                                  ).copyWith(fontWeight: FontWeight.w700)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A refusal is not an ending — tell the guard what to do next.
+class _WayOut extends StatelessWidget {
+  const _WayOut({required this.l});
 
   final _L l;
 
   @override
   Widget build(BuildContext context) {
-    final m = context.miftah;
     return Container(
-      padding: const EdgeInsetsDirectional.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
-        color: m.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: m.border),
+        color: Colors.white.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(MiftahRadii.tile),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.lock_outline, size: 20, color: m.textMuted),
-          const SizedBox(width: 10),
+          const Icon(Icons.info_outline_rounded, size: 20, color: _rejectText),
+          const SizedBox(width: 11),
           Expanded(
             child: Text(
-              l.noDetails,
-              style: (l.ar
-                  ? GoogleFonts.notoNaskhArabic
-                  : GoogleFonts
-                        .josefinSans)(fontSize: 14, color: m.textSecondary),
+              l.wayOut,
+              style: l.ar
+                  ? MiftahType.ar(size: 13, color: _rejectText)
+                  : MiftahType.body(size: 13, color: _rejectText),
             ),
           ),
         ],
@@ -304,69 +400,31 @@ class _NoDetails extends StatelessWidget {
   }
 }
 
-/// A label over a large value. Sized for a phone held at arm's length.
-class _BigField extends StatelessWidget {
-  const _BigField({required this.label, required this.value, required this.l});
+class _NoDetails extends StatelessWidget {
+  const _NoDetails({required this.l});
 
-  final String label;
-  final String value;
   final _L l;
 
   @override
   Widget build(BuildContext context) {
-    final m = context.miftah;
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsetsDirectional.symmetric(
-        horizontal: 16,
-        vertical: 12,
-      ),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: m.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: m.border),
+        color: Colors.white.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(22),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            // Arabic uppercase is a no-op and tracking breaks glyph joining, so
-            // the label only tracks/uppercases in English.
-            l.ar ? label : label.toUpperCase(),
-            style: l.ar
-                ? GoogleFonts.notoNaskhArabic(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w600,
-                    color: m.textMuted,
-                  )
-                : GoogleFonts.plusJakartaSans(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1,
-                    color: m.textMuted,
-                  ),
-          ),
-          const SizedBox(height: 3),
-          Text(
-            value,
-            style: l.ar
-                ? GoogleFonts.notoNaskhArabic(
-                    fontSize: 19,
-                    fontWeight: FontWeight.w600,
-                    color: m.textPrimary,
-                  )
-                : GoogleFonts.plusJakartaSans(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w600,
-                    color: m.textPrimary,
-                  ),
-          ),
-        ],
+      child: Text(
+        l.noDetails,
+        style: l.ar
+            ? MiftahType.ar(size: 15, color: Colors.white)
+            : MiftahType.body(size: 15, color: Colors.white),
       ),
     );
   }
 }
 
+/// Bottom bar. 58px targets — sized for gloved hands, per the handoff's
+/// guard-specific rules; do not shrink these for tidiness.
 class _Actions extends StatelessWidget {
   const _Actions({
     required this.allowed,
@@ -388,92 +446,61 @@ class _Actions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final m = context.miftah;
-    final bodyFont = l.ar
-        ? GoogleFonts.notoNaskhArabic
-        : GoogleFonts.plusJakartaSans;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-      decoration: BoxDecoration(
-        color: m.surface,
-        border: Border(top: BorderSide(color: m.border)),
-      ),
+    final field = allowed ? _allowField : _rejectField;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
       child: Column(
-        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (exitError != null) ...[
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsetsDirectional.all(10),
-              decoration: BoxDecoration(
-                color: m.dangerBg,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: m.danger),
-              ),
+          if (exitError != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
               child: Text(
                 exitError!,
-                style: bodyFont(fontSize: 13, color: m.danger),
+                textAlign: TextAlign.center,
+                style: l.ar
+                    ? MiftahType.ar(
+                        size: 14,
+                        weight: FontWeight.w600,
+                        color: _rejectText,
+                      )
+                    : MiftahType.body(size: 14, color: _rejectText),
               ),
             ),
-            const SizedBox(height: 10),
-          ],
-          if (exitLogged) ...[
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsetsDirectional.all(10),
-              decoration: BoxDecoration(
-                color: m.successBg,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: m.success),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.check_circle_outline, size: 18, color: m.success),
-                  const SizedBox(width: 8),
-                  Text(
-                    l.exitLogged,
-                    style: bodyFont(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: m.success,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 10),
-          ],
           Row(
             children: [
-              // Log exit is offered only on an allowed entry, and only until it
-              // succeeds: a second EXIT on the same pass would write a second
-              // scan row for one departure.
-              if (allowed && !exitLogged) ...[
-                Expanded(
-                  child: GoldButton.outlined(
-                    key: const Key('logExitButton'),
-                    label: loggingExit ? l.loggingExit : l.logExit,
-                    onPressed: loggingExit ? null : onLogExit,
-                    height: 54,
-                    icon: loggingExit
-                        ? const SizedBox(
-                            height: 16,
-                            width: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.logout),
-                  ),
-                ),
-                const SizedBox(width: 10),
-              ],
               Expanded(
-                child: GoldButton(
-                  key: const Key('doneButton'),
-                  label: allowed ? l.done : l.scanAgain,
-                  onPressed: onDone,
-                  height: 54,
+                child: _GuardButton(
+                  label: l.done,
+                  filled: true,
+                  fieldColor: field,
+                  onTap: onDone,
+                  l: l,
                 ),
               ),
+              // Exit is only meaningful once an entry was admitted; a refused
+              // visitor never came in.
+              if (allowed) ...[
+                const SizedBox(width: 10),
+                _GuardButton(
+                  label: exitLogged
+                      ? l.exitLogged
+                      : (loggingExit ? l.loggingExit : l.logExit),
+                  filled: false,
+                  fieldColor: field,
+                  onTap: exitLogged || loggingExit ? null : onLogExit,
+                  l: l,
+                ),
+              ] else ...[
+                const SizedBox(width: 10),
+                _GuardButton(
+                  label: l.walkIn,
+                  filled: false,
+                  fieldColor: field,
+                  onTap: () => context.push('/walk-in'),
+                  l: l,
+                ),
+              ],
             ],
           ),
         ],
@@ -482,8 +509,63 @@ class _Actions extends StatelessWidget {
   }
 }
 
-/// Result screen strings (EN/AR). Lightweight per-screen pattern — see
-/// arabic-brief.
+class _GuardButton extends StatelessWidget {
+  const _GuardButton({
+    required this.label,
+    required this.filled,
+    required this.fieldColor,
+    required this.onTap,
+    required this.l,
+  });
+
+  final String label;
+  final bool filled;
+  final Color fieldColor;
+  final VoidCallback? onTap;
+  final _L l;
+
+  @override
+  Widget build(BuildContext context) {
+    final disabled = onTap == null;
+    return Opacity(
+      opacity: disabled ? 0.6 : 1,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          height: 58,
+          alignment: Alignment.center,
+          padding: filled ? null : const EdgeInsets.symmetric(horizontal: 22),
+          decoration: BoxDecoration(
+            color: filled ? Colors.white : null,
+            borderRadius: BorderRadius.circular(MiftahRadii.tile),
+            border: filled
+                ? null
+                : Border.all(
+                    color: Colors.white.withValues(alpha: 0.3),
+                    width: 1.5,
+                  ),
+          ),
+          child: Text(
+            label,
+            style: l.ar
+                ? MiftahType.ar(
+                    size: filled ? 16 : 14,
+                    weight: FontWeight.w700,
+                    color: filled ? fieldColor : Colors.white,
+                  )
+                : MiftahType.button(
+                    size: filled ? 17 : 15,
+                    color: filled ? fieldColor : Colors.white,
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Strings (EN/AR) ────────────────────────────────────────────────────────
+
 class _L {
   _L(this.ar);
   final bool ar;
@@ -520,4 +602,12 @@ class _L {
         return value.replaceAll('_', ' ').toLowerCase();
     }
   }
+
+  // ── Added by the redesign (design screens 05 / 06) ──
+  String get entryRecorded => ar ? 'تم تسجيل الدخول' : 'Entry recorded';
+  String get walkIn => ar ? 'زائر بدون تصريح' : 'Walk-in';
+  String get wayOut => ar
+      ? 'اطلب من الساكن إصدار تصريح جديد، أو سجّل الزائر كزائر بدون تصريح.'
+      : 'Ask the resident to issue a new pass, or sign the visitor in as a '
+            'walk-in.';
 }

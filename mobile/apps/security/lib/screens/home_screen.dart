@@ -61,13 +61,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     return Scaffold(
       backgroundColor: m.background,
-      appBar: _ChromeAppBar(l: l, onSettingsTap: _openSettings),
       body: SafeArea(
-        top: false,
+        bottom: false,
         child: _tab == 0
             ? Column(
                 children: [
-                  _HomeHeader(l: l),
+                  _HomeHeader(l: l, onSettingsTap: _openSettings),
+                  _ExpectedHeading(l: l),
                   Expanded(child: const _VisitorsTab()),
                 ],
               )
@@ -82,142 +82,167 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 }
 
-/// Dark chrome header: language-aware brand lockup + settings entry point.
-class _ChromeAppBar extends StatelessWidget implements PreferredSizeWidget {
-  const _ChromeAppBar({required this.l, required this.onSettingsTap});
+/// Ink header: guard identity and posting, the gold scan hero, and the two
+/// secondary actions. One of the five ink headers the redesign keeps — the
+/// guard's context has to stay legible against a bright gate at night.
+class _HomeHeader extends ConsumerWidget {
+  const _HomeHeader({required this.l, required this.onSettingsTap});
 
   final _L l;
   final VoidCallback onSettingsTap;
 
   @override
-  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
-
-  @override
-  Widget build(BuildContext context) {
-    return AppBar(
-      backgroundColor: AppColors.primary,
-      elevation: 0,
-      scrolledUnderElevation: 0.5,
-      shape: Border(
-        bottom: BorderSide(color: AppColors.accent.withValues(alpha: 0.14)),
-      ),
-      centerTitle: true,
-      // Arabic wordmark in عربي, English wordmark in EN — one script each.
-      title: l.ar
-          ? Image.asset('assets/logo_mark.png', height: 44, fit: BoxFit.contain)
-          : Image.asset(
-              'assets/logo_horizontal.png',
-              height: 26,
-              fit: BoxFit.contain,
-            ),
-      actions: [
-        Padding(
-          padding: const EdgeInsetsDirectional.only(end: 8),
-          child: IconButton(
-            tooltip: l.settings,
-            onPressed: onSettingsTap,
-            icon: const Icon(Icons.tune_rounded, color: AppColors.accent),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// Guard identity + posting, and the big SCAN action with approvals/walk-in
-/// quick tiles beneath it.
-class _HomeHeader extends ConsumerWidget {
-  const _HomeHeader({required this.l});
-
-  final _L l;
-
-  @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final m = context.miftah;
     final authState = ref.watch(authProvider);
     final properties = ref.watch(myPropertiesProvider);
 
     return Container(
-      color: m.background,
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+      width: double.infinity,
+      color: MiftahColors.ink,
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            authState.name ?? l.guardFallback,
-            style: l.ar
-                ? GoogleFonts.notoNaskhArabic(
-                    fontSize: 19,
-                    fontWeight: FontWeight.w600,
-                    color: m.textPrimary,
-                  )
-                : GoogleFonts.plusJakartaSans(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: m.textPrimary,
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      authState.name ?? l.guardFallback,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: l.ar
+                          ? MiftahType.ar(
+                              size: 20,
+                              weight: FontWeight.w700,
+                              color: Colors.white,
+                            )
+                          : MiftahType.title(
+                              color: Colors.white,
+                            ).copyWith(fontSize: 21),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        // Green pip = on shift. The posting line below it is
+                        // the guard's authority to admit anyone at all.
+                        Container(
+                          width: 7,
+                          height: 7,
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Color(0xFF6FD79B),
+                          ),
+                        ),
+                        const SizedBox(width: 7),
+                        Expanded(
+                          child: Text(
+                            properties.when(
+                              data: (rows) =>
+                                  l.onShiftLine(l.propertyLine(rows)),
+                              loading: () => l.loadingPosting,
+                              error: (_, _) => l.postingUnavailable,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: l.ar
+                                ? MiftahType.ar(
+                                    size: 12.5,
+                                    weight: FontWeight.w600,
+                                    color: const Color(0xFF8C86A0),
+                                  )
+                                : MiftahType.meta(
+                                    color: const Color(0xFF8C86A0),
+                                  ).copyWith(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              GestureDetector(
+                onTap: onSettingsTap,
+                child: Container(
+                  width: 38,
+                  height: 38,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white.withValues(alpha: 0.1),
                   ),
-          ),
-          const SizedBox(height: 3),
-          Text(
-            properties.when(
-              data: (rows) => l.propertyLine(rows),
-              loading: () => l.loadingPosting,
-              error: (_, _) => l.postingUnavailable,
-            ),
-            style: l.ar
-                ? GoogleFonts.notoNaskhArabic(
-                    fontSize: 12.5,
-                    color: AppColors.accentDark,
-                  )
-                : GoogleFonts.plusJakartaSans(
-                    fontSize: 11,
-                    letterSpacing: 1.4,
-                    color: AppColors.accentDark,
+                  child: const Icon(
+                    Icons.tune_rounded,
+                    size: 19,
+                    color: MiftahColors.brassLight,
                   ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 18),
-          GoldButton(
-            label: l.scan,
-            height: 60,
-            icon: const Icon(Icons.qr_code_scanner_rounded),
-            onPressed: () => context.push('/scan'),
+          // Scan is the whole hero — it is the only thing a guard does at a
+          // gate, so it gets the gradient and the shadow.
+          GestureDetector(
+            onTap: () => context.push('/scan'),
+            child: Container(
+              height: 74,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                gradient: MiftahGradients.gold,
+                borderRadius: BorderRadius.circular(18),
+                boxShadow: MiftahShadows.gold,
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.qr_code_scanner_rounded,
+                    size: 28,
+                    color: MiftahColors.ink,
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    l.scanAPass,
+                    style: l.ar
+                        ? MiftahType.ar(
+                            size: 20,
+                            weight: FontWeight.w700,
+                            color: MiftahColors.ink,
+                          )
+                        : MiftahType.button(size: 21, color: MiftahColors.ink),
+                  ),
+                ],
+              ),
+            ),
           ),
           const SizedBox(height: 10),
           Row(
             children: [
               Expanded(
                 child: _QuickTile(
-                  icon: Icons.how_to_reg_outlined,
+                  icon: Icons.how_to_reg_rounded,
                   label: l.approvals,
+                  l: l,
                   onTap: () => context.push('/approvals'),
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: _QuickTile(
-                  icon: Icons.person_add_alt_1_outlined,
+                  icon: Icons.person_add_alt_1_rounded,
                   label: l.walkIn,
+                  l: l,
                   onTap: () => context.push('/walk-in'),
                 ),
               ),
             ],
-          ),
-          const SizedBox(height: 14),
-          Padding(
-            padding: const EdgeInsetsDirectional.only(start: 2),
-            child: Text(
-              l.ar ? l.expectedToday : l.expectedToday.toUpperCase(),
-              style: l.ar
-                  ? GoogleFonts.notoNaskhArabic(
-                      fontSize: 13,
-                      color: m.textMuted,
-                    )
-                  : GoogleFonts.plusJakartaSans(
-                      fontSize: 10.5,
-                      letterSpacing: 2.2,
-                      color: m.textMuted,
-                    ),
-            ),
           ),
         ],
       ),
@@ -225,65 +250,89 @@ class _HomeHeader extends ConsumerWidget {
   }
 }
 
+/// Secondary action on the ink header. 52px tall — at the guard-app minimum,
+/// do not shrink.
 class _QuickTile extends StatelessWidget {
   const _QuickTile({
     required this.icon,
     required this.label,
     required this.onTap,
+    required this.l,
   });
 
   final IconData icon;
   final String label;
   final VoidCallback onTap;
+  final _L l;
 
   @override
   Widget build(BuildContext context) {
-    final m = context.miftah;
-    final ar = context.isAr;
-    return Material(
-      color: m.surface,
-      borderRadius: BorderRadius.circular(14),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: m.border),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, size: 18, color: AppColors.accentDark),
-              const SizedBox(width: 8),
-              Flexible(
-                child: Text(
-                  label,
-                  overflow: TextOverflow.ellipsis,
-                  style: ar
-                      ? GoogleFonts.notoNaskhArabic(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: m.textPrimary,
-                        )
-                      : GoogleFonts.plusJakartaSans(
-                          fontSize: 11.5,
-                          letterSpacing: 1.2,
-                          fontWeight: FontWeight.w600,
-                          color: m.textPrimary,
-                        ),
-                ),
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 52,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 19, color: MiftahColors.brassLight),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: l.ar
+                    ? MiftahType.ar(
+                        size: 13.5,
+                        weight: FontWeight.w700,
+                        color: Colors.white,
+                      )
+                    : MiftahType.button(size: 13.5, color: Colors.white),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-/// Dark gold-accented gate nav: Visitors / Scan / Approvals.
+/// "Expected today" + the guest count, on the light canvas below the header.
+class _ExpectedHeading extends ConsumerWidget {
+  const _ExpectedHeading({required this.l});
+
+  final _L l;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final expected = ref.watch(expectedTodayProvider);
+    final count = expected.valueOrNull?.length;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.baseline,
+        textBaseline: TextBaseline.alphabetic,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            l.expectedToday,
+            style: l.ar
+                ? MiftahType.ar(size: 17, weight: FontWeight.w700)
+                : MiftahType.title().copyWith(fontSize: 17),
+          ),
+          if (count != null)
+            Text(l.guestCount(count), style: MiftahType.mono(size: 12.5)),
+        ],
+      ),
+    );
+  }
+}
+
 class _GateNavBar extends StatelessWidget {
   const _GateNavBar({
     required this.selectedIndex,
@@ -959,4 +1008,11 @@ class _L {
         ? '${properties.length} عقارات مسندة'
         : '${properties.length} properties assigned';
   }
+
+  // ── Added by the redesign (design screen 03) ──
+  String get scanAPass => ar ? 'مسح تصريح' : 'Scan a pass';
+  String onShiftLine(String posting) =>
+      ar ? 'في الخدمة · $posting' : 'On shift · $posting';
+  String guestCount(int n) =>
+      ar ? '$n زائر' : '$n ${n == 1 ? 'guest' : 'guests'}';
 }
