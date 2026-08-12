@@ -108,7 +108,7 @@ class ListingsListScreen extends ConsumerWidget {
                                     fontSize: 12,
                                     color: m.textMuted,
                                   )
-                                : GoogleFonts.josefinSans(
+                                : GoogleFonts.plusJakartaSans(
                                     fontSize: 12,
                                     color: m.textMuted,
                                   ),
@@ -149,7 +149,7 @@ class ListingsListScreen extends ConsumerWidget {
                   color: AppColors.accent,
                   fontWeight: FontWeight.w600,
                 )
-              : GoogleFonts.josefinSans(
+              : GoogleFonts.plusJakartaSans(
                   color: AppColors.accent,
                   fontWeight: FontWeight.w600,
                   letterSpacing: 0.6,
@@ -187,7 +187,7 @@ class _ChromeHeader extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                     color: Colors.white,
                   )
-                : GoogleFonts.cinzel(
+                : GoogleFonts.plusJakartaSans(
                     fontSize: 16,
                     letterSpacing: 3.2,
                     color: Colors.white,
@@ -301,7 +301,7 @@ class _ListingRow extends StatelessWidget {
                                             fontWeight: FontWeight.w600,
                                             color: m.textPrimary,
                                           )
-                                        : GoogleFonts.josefinSans(
+                                        : GoogleFonts.plusJakartaSans(
                                             fontSize: 14,
                                             fontWeight: FontWeight.w600,
                                             color: m.textPrimary,
@@ -320,7 +320,7 @@ class _ListingRow extends StatelessWidget {
                             if (rent != null)
                               Text(
                                 Formatters.currencyCompact(rent),
-                                style: GoogleFonts.cinzel(
+                                style: GoogleFonts.plusJakartaSans(
                                   fontSize: 13,
                                   fontWeight: FontWeight.w600,
                                   color: AppColors.accentDark,
@@ -332,7 +332,7 @@ class _ListingRow extends StatelessWidget {
                                 if (createdAt != null)
                                   Text(
                                     Formatters.timeAgo(createdAt, ar: l.ar),
-                                    style: GoogleFonts.josefinSans(
+                                    style: GoogleFonts.plusJakartaSans(
                                       fontSize: 11,
                                       color: m.textMuted,
                                     ),
@@ -351,7 +351,7 @@ class _ListingRow extends StatelessWidget {
                                       const SizedBox(width: 3),
                                       Text(
                                         '$interests',
-                                        style: GoogleFonts.josefinSans(
+                                        style: GoogleFonts.plusJakartaSans(
                                           fontSize: 12,
                                           color: m.textSecondary,
                                         ),
@@ -409,7 +409,7 @@ class _StatusPill extends StatelessWidget {
                 fontWeight: FontWeight.w600,
                 color: color,
               )
-            : GoogleFonts.josefinSans(
+            : GoogleFonts.plusJakartaSans(
                 fontSize: 9.5,
                 fontWeight: FontWeight.w600,
                 letterSpacing: 1.0,

@@ -338,7 +338,7 @@ class _PaymentPickerSheetState extends State<_PaymentPickerSheet> {
     final l = _PickerL(context.isAr);
     final bodyFont = l.ar
         ? GoogleFonts.notoNaskhArabic
-        : GoogleFonts.josefinSans;
+        : GoogleFonts.plusJakartaSans;
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
       child: Column(
@@ -364,7 +364,7 @@ class _PaymentPickerSheetState extends State<_PaymentPickerSheet> {
                     fontWeight: FontWeight.w600,
                     color: m.textPrimary,
                   )
-                : GoogleFonts.cinzel(
+                : GoogleFonts.plusJakartaSans(
                     fontSize: 18,
                     fontWeight: FontWeight.w600,
                     color: m.textPrimary,
@@ -463,7 +463,7 @@ class _PaymentPickerSheetState extends State<_PaymentPickerSheet> {
                             const SizedBox(width: 8),
                             Text(
                               'AED ${_amount(p['amount'])}',
-                              style: GoogleFonts.cinzel(
+                              style: GoogleFonts.plusJakartaSans(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
                                 color: m.textPrimary,

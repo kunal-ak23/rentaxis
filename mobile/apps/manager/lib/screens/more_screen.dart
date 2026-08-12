@@ -186,7 +186,7 @@ class MoreScreen extends ConsumerWidget {
                             fontSize: 11.5,
                             color: m.textMuted,
                           )
-                        : GoogleFonts.josefinSans(
+                        : GoogleFonts.plusJakartaSans(
                             fontSize: 10.5,
                             letterSpacing: 2.0,
                             color: m.textMuted,
@@ -212,7 +212,7 @@ class MoreScreen extends ConsumerWidget {
                 fontSize: 12,
                 color: AppColors.accentDark,
               )
-            : GoogleFonts.josefinSans(
+            : GoogleFonts.plusJakartaSans(
                 fontSize: 10,
                 letterSpacing: 2.6,
                 color: AppColors.accentDark,
@@ -259,7 +259,7 @@ class _ChromeHeader extends StatelessWidget {
             alignment: Alignment.center,
             child: Text(
               _initials,
-              style: GoogleFonts.cinzel(
+              style: GoogleFonts.plusJakartaSans(
                 fontSize: 15,
                 fontWeight: FontWeight.w600,
                 color: AppColors.accent,
@@ -279,7 +279,7 @@ class _ChromeHeader extends StatelessWidget {
                           fontWeight: FontWeight.w600,
                           color: AppColors.gold400,
                         )
-                      : GoogleFonts.cinzel(
+                      : GoogleFonts.plusJakartaSans(
                           fontSize: 18,
                           color: AppColors.gold400,
                         ),
@@ -293,7 +293,7 @@ class _ChromeHeader extends StatelessWidget {
                           fontSize: 12,
                           color: AppColors.goldMid,
                         )
-                      : GoogleFonts.josefinSans(
+                      : GoogleFonts.plusJakartaSans(
                           fontSize: 11,
                           letterSpacing: 1.6,
                           color: AppColors.goldMid,
@@ -341,7 +341,7 @@ class _AppearanceCard extends ConsumerWidget {
                       fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
                       color: selected ? AppColors.primary : m.textSecondary,
                     )
-                  : GoogleFonts.josefinSans(
+                  : GoogleFonts.plusJakartaSans(
                       fontSize: 10,
                       letterSpacing: 1.6,
                       fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
@@ -367,7 +367,7 @@ class _AppearanceCard extends ConsumerWidget {
             l.ar ? l.appearance : l.appearance.toUpperCase(),
             style: l.ar
                 ? GoogleFonts.notoNaskhArabic(fontSize: 12, color: m.textMuted)
-                : GoogleFonts.josefinSans(
+                : GoogleFonts.plusJakartaSans(
                     fontSize: 9.5,
                     letterSpacing: 2.2,
                     color: m.textMuted,
@@ -430,7 +430,7 @@ class _LanguageToggle extends ConsumerWidget {
                 .setLanguage(AppLanguage.en),
             child: Text(
               'EN',
-              style: GoogleFonts.josefinSans(
+              style: GoogleFonts.plusJakartaSans(
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
                 letterSpacing: 1.4,
@@ -483,7 +483,7 @@ class _SignOutButton extends ConsumerWidget {
                 l.signOut,
                 style: l.ar
                     ? GoogleFonts.notoNaskhArabic(fontWeight: FontWeight.w600)
-                    : GoogleFonts.cinzel(
+                    : GoogleFonts.plusJakartaSans(
                         fontWeight: FontWeight.w600,
                         fontSize: 18,
                       ),
@@ -492,7 +492,7 @@ class _SignOutButton extends ConsumerWidget {
                 l.signOutConfirm,
                 style: l.ar
                     ? GoogleFonts.notoNaskhArabic()
-                    : GoogleFonts.josefinSans(),
+                    : GoogleFonts.plusJakartaSans(),
               ),
               actions: [
                 TextButton(
@@ -503,7 +503,7 @@ class _SignOutButton extends ConsumerWidget {
                         ? GoogleFonts.notoNaskhArabic(
                             fontWeight: FontWeight.w600,
                           )
-                        : GoogleFonts.josefinSans(fontWeight: FontWeight.w600),
+                        : GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
                   ),
                 ),
                 TextButton(
@@ -517,7 +517,7 @@ class _SignOutButton extends ConsumerWidget {
                         ? GoogleFonts.notoNaskhArabic(
                             fontWeight: FontWeight.w600,
                           )
-                        : GoogleFonts.josefinSans(fontWeight: FontWeight.w600),
+                        : GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
                   ),
                 ),
               ],
@@ -544,7 +544,7 @@ class _SignOutButton extends ConsumerWidget {
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
                 )
-              : GoogleFonts.josefinSans(
+              : GoogleFonts.plusJakartaSans(
                   fontSize: 11.5,
                   fontWeight: FontWeight.w600,
                   letterSpacing: 2.2,
@@ -613,7 +613,7 @@ class _MenuRow extends StatelessWidget {
                         fontSize: 14.5,
                         color: m.textPrimary,
                       )
-                    : GoogleFonts.josefinSans(
+                    : GoogleFonts.plusJakartaSans(
                         fontSize: 14,
                         color: m.textPrimary,
                       ),

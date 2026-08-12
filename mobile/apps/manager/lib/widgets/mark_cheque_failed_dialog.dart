@@ -106,7 +106,7 @@ class _MarkChequeFailedDialogState extends State<_MarkChequeFailedDialog> {
     final amountStr = Formatters.currency(widget.amount.toDouble());
     final bodyStyle = (l.ar
         ? GoogleFonts.notoNaskhArabic
-        : GoogleFonts.josefinSans);
+        : GoogleFonts.plusJakartaSans);
 
     return AlertDialog(
       backgroundColor: m.surface,
@@ -122,7 +122,7 @@ class _MarkChequeFailedDialogState extends State<_MarkChequeFailedDialog> {
                     fontWeight: FontWeight.w600,
                     color: m.textPrimary,
                   )
-                : GoogleFonts.cinzel(
+                : GoogleFonts.plusJakartaSans(
                     fontWeight: FontWeight.w600,
                     fontSize: 18,
                     color: m.textPrimary,

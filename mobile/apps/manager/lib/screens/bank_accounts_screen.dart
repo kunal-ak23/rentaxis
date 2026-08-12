@@ -83,7 +83,7 @@ class _BankAccountsScreenState extends ConsumerState<BankAccountsScreen> {
                       fontWeight: FontWeight.w600,
                       color: m.textPrimary,
                     )
-                  : GoogleFonts.cinzel(fontSize: 18, color: m.textPrimary),
+                  : GoogleFonts.plusJakartaSans(fontSize: 18, color: m.textPrimary),
             ),
             const SizedBox(height: 20),
             _DetailRow(label: l.bankName, value: bankName, l: l),
@@ -186,7 +186,7 @@ class _ChromeHeader extends StatelessWidget {
                       fontWeight: FontWeight.w600,
                       color: Colors.white,
                     )
-                  : GoogleFonts.cinzel(
+                  : GoogleFonts.plusJakartaSans(
                       fontSize: 16,
                       letterSpacing: 2.4,
                       color: Colors.white,
@@ -270,7 +270,7 @@ class _BankAccountCard extends StatelessWidget {
                                     fontWeight: FontWeight.w600,
                                     color: m.textPrimary,
                                   )
-                                : GoogleFonts.josefinSans(
+                                : GoogleFonts.plusJakartaSans(
                                     fontSize: 14,
                                     fontWeight: FontWeight.w600,
                                     color: m.textPrimary,
@@ -288,7 +288,7 @@ class _BankAccountCard extends StatelessWidget {
                       const SizedBox(height: 4),
                       Text(
                         _maskAccountNumber(accountNumber),
-                        style: GoogleFonts.josefinSans(
+                        style: GoogleFonts.plusJakartaSans(
                           fontSize: 12,
                           color: m.textSecondary,
                         ),
@@ -298,7 +298,7 @@ class _BankAccountCard extends StatelessWidget {
                       const SizedBox(height: 2),
                       Text(
                         l.ibanLine(iban),
-                        style: GoogleFonts.josefinSans(
+                        style: GoogleFonts.plusJakartaSans(
                           fontSize: 11,
                           color: m.textMuted,
                         ),
@@ -314,7 +314,7 @@ class _BankAccountCard extends StatelessWidget {
                                 fontSize: 11.5,
                                 color: m.textMuted,
                               )
-                            : GoogleFonts.josefinSans(
+                            : GoogleFonts.plusJakartaSans(
                                 fontSize: 11,
                                 color: m.textMuted,
                               ),
@@ -355,7 +355,7 @@ class _Pill extends StatelessWidget {
         ar ? label : label.toUpperCase(),
         style: ar
             ? GoogleFonts.notoNaskhArabic(fontSize: 10, color: m.success)
-            : GoogleFonts.josefinSans(
+            : GoogleFonts.plusJakartaSans(
                 fontSize: 9.5,
                 letterSpacing: 1.2,
                 fontWeight: FontWeight.w600,
@@ -385,7 +385,7 @@ class _DetailRow extends StatelessWidget {
             label,
             style: l.ar
                 ? GoogleFonts.notoNaskhArabic(fontSize: 12, color: m.textMuted)
-                : GoogleFonts.josefinSans(
+                : GoogleFonts.plusJakartaSans(
                     fontSize: 10.5,
                     letterSpacing: 1.6,
                     color: m.textMuted,
@@ -400,7 +400,7 @@ class _DetailRow extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                     color: m.textPrimary,
                   )
-                : GoogleFonts.josefinSans(
+                : GoogleFonts.plusJakartaSans(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
                     color: m.textPrimary,

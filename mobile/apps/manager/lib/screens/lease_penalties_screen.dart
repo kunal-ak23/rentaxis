@@ -22,7 +22,7 @@ TextStyle _display(
         fontWeight: weight,
         color: color,
       )
-    : GoogleFonts.cinzel(fontSize: size, fontWeight: weight, color: color);
+    : GoogleFonts.plusJakartaSans(fontSize: size, fontWeight: weight, color: color);
 
 TextStyle _body(
   bool ar, {
@@ -36,7 +36,7 @@ TextStyle _body(
         fontWeight: weight,
         color: color,
       )
-    : GoogleFonts.josefinSans(
+    : GoogleFonts.plusJakartaSans(
         fontSize: size,
         fontWeight: weight,
         color: color,
@@ -303,7 +303,7 @@ class _PenaltyCard extends StatelessWidget {
                                     as num)
                                 .toDouble(),
                           ),
-                          style: GoogleFonts.cinzel(
+                          style: GoogleFonts.plusJakartaSans(
                             fontSize: 15,
                             fontWeight: FontWeight.w600,
                             color: accent,
@@ -393,7 +393,7 @@ class _StatusPill extends StatelessWidget {
                 fontWeight: FontWeight.w600,
                 color: color,
               )
-            : GoogleFonts.josefinSans(
+            : GoogleFonts.plusJakartaSans(
                 fontSize: 9,
                 letterSpacing: 1.2,
                 fontWeight: FontWeight.w600,

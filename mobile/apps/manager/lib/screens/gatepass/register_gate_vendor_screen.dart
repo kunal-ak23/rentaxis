@@ -165,7 +165,7 @@ class _RegisterGateVendorScreenState
 
   TextStyle _fieldStyle(bool ar, LegacyMiftahColors m) => ar
       ? GoogleFonts.notoNaskhArabic(fontSize: 14, color: m.textPrimary)
-      : GoogleFonts.josefinSans(fontSize: 14, color: m.textPrimary);
+      : GoogleFonts.plusJakartaSans(fontSize: 14, color: m.textPrimary);
 
   /// Optional, clearable date row — same pattern as the listing edit screen's
   /// "available from" field.
@@ -258,7 +258,7 @@ class _RegisterGateVendorScreenState
                         color: m.textSecondary,
                         height: 1.5,
                       )
-                    : GoogleFonts.josefinSans(
+                    : GoogleFonts.plusJakartaSans(
                         fontSize: 13,
                         color: m.textSecondary,
                         height: 1.5,
@@ -384,7 +384,7 @@ class _RegisterGateVendorScreenState
                           color: m.textSecondary,
                           height: 1.4,
                         )
-                      : GoogleFonts.josefinSans(
+                      : GoogleFonts.plusJakartaSans(
                           fontSize: 12,
                           color: m.textSecondary,
                           height: 1.4,

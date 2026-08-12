@@ -40,7 +40,7 @@ TextStyle _display(
         fontWeight: weight,
         color: color,
       )
-    : GoogleFonts.cinzel(fontSize: size, fontWeight: weight, color: color);
+    : GoogleFonts.plusJakartaSans(fontSize: size, fontWeight: weight, color: color);
 
 TextStyle _body(
   bool ar, {
@@ -54,7 +54,7 @@ TextStyle _body(
         fontWeight: weight,
         color: color,
       )
-    : GoogleFonts.josefinSans(
+    : GoogleFonts.plusJakartaSans(
         fontSize: size,
         fontWeight: weight,
         color: color,
@@ -330,7 +330,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             alignment: Alignment.center,
             child: Text(
               _getInitials(auth.name ?? 'M'),
-              style: GoogleFonts.cinzel(
+              style: GoogleFonts.plusJakartaSans(
                 fontSize: 26,
                 fontWeight: FontWeight.w600,
                 color: AppColors.accent,

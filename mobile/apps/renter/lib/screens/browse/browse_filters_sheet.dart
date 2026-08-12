@@ -31,7 +31,7 @@ TextStyle _display(bool ar, {double size = 18, Color? color}) => ar
         fontWeight: FontWeight.w700,
         color: color,
       )
-    : GoogleFonts.cinzel(
+    : GoogleFonts.plusJakartaSans(
         fontSize: size,
         fontWeight: FontWeight.w700,
         color: color,
@@ -115,7 +115,7 @@ class _BrowseFiltersSheetState extends State<BrowseFiltersSheet> {
                   },
                   child: Text(
                     l.reset,
-                    style: GoogleFonts.josefinSans(
+                    style: GoogleFonts.plusJakartaSans(
                       color: m.isDark ? AppColors.accent : AppColors.primary,
                       fontWeight: FontWeight.w600,
                     ),
@@ -143,7 +143,7 @@ class _BrowseFiltersSheetState extends State<BrowseFiltersSheet> {
               children: [
                 Text(
                   'AED ${(_rentRange.start / 1000).round()}k',
-                  style: GoogleFonts.josefinSans(
+                  style: GoogleFonts.plusJakartaSans(
                     fontSize: 13,
                     color: m.textSecondary,
                   ),
@@ -152,7 +152,7 @@ class _BrowseFiltersSheetState extends State<BrowseFiltersSheet> {
                   _rentRange.end >= _maxRentLimit
                       ? 'AED 500k+'
                       : 'AED ${(_rentRange.end / 1000).round()}k',
-                  style: GoogleFonts.josefinSans(
+                  style: GoogleFonts.plusJakartaSans(
                     fontSize: 13,
                     color: m.textSecondary,
                   ),
@@ -201,7 +201,7 @@ class _BrowseFiltersSheetState extends State<BrowseFiltersSheet> {
                     ),
                     child: Text(
                       opt.$2,
-                      style: GoogleFonts.josefinSans(
+                      style: GoogleFonts.plusJakartaSans(
                         fontSize: 13,
                         color: isSelected ? AppColors.accent : m.textSecondary,
                         fontWeight: isSelected
@@ -221,7 +221,7 @@ class _BrowseFiltersSheetState extends State<BrowseFiltersSheet> {
                 Expanded(
                   child: Text(
                     l.availableNowOnly,
-                    style: GoogleFonts.josefinSans(
+                    style: GoogleFonts.plusJakartaSans(
                       fontSize: 15,
                       color: m.textPrimary,
                     ),
@@ -277,7 +277,7 @@ class _Label extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       text,
-      style: GoogleFonts.josefinSans(
+      style: GoogleFonts.plusJakartaSans(
         fontSize: 13,
         fontWeight: FontWeight.w600,
         color: context.miftah.textMuted,
@@ -347,7 +347,7 @@ class _BedBtn extends StatelessWidget {
         child: Center(
           child: Text(
             label,
-            style: GoogleFonts.josefinSans(
+            style: GoogleFonts.plusJakartaSans(
               fontSize: 12,
               fontWeight: FontWeight.w600,
               color: isSelected ? AppColors.accent : m.textSecondary,

@@ -206,7 +206,7 @@ class ScanScreenState extends ConsumerState<ScanScreen> {
                   fontWeight: FontWeight.w600,
                   color: Colors.white,
                 )
-              : GoogleFonts.cinzel(
+              : GoogleFonts.plusJakartaSans(
                   fontSize: 17,
                   fontWeight: FontWeight.w500,
                   letterSpacing: 1.6,
@@ -292,7 +292,7 @@ class _CameraError extends StatelessWidget {
     final l = _L(context.isAr);
     final bodyFont = l.ar
         ? GoogleFonts.notoNaskhArabic
-        : GoogleFonts.josefinSans;
+        : GoogleFonts.plusJakartaSans;
     final denied =
         exception.errorCode == MobileScannerErrorCode.permissionDenied;
     final unsupported =
@@ -491,7 +491,7 @@ class _ScanFooter extends StatelessWidget {
   Widget build(BuildContext context) {
     final bodyFont = l.ar
         ? GoogleFonts.notoNaskhArabic
-        : GoogleFonts.josefinSans;
+        : GoogleFonts.plusJakartaSans;
     return Container(
       width: double.infinity,
       color: Colors.black,
@@ -584,7 +584,7 @@ class _NumericCodeSheetState extends State<_NumericCodeSheet> {
     final l = _L(context.isAr);
     final bodyFont = l.ar
         ? GoogleFonts.notoNaskhArabic
-        : GoogleFonts.josefinSans;
+        : GoogleFonts.plusJakartaSans;
     return Padding(
       padding: EdgeInsets.only(
         bottom: MediaQuery.of(context).viewInsets.bottom,

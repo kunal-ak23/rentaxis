@@ -94,7 +94,7 @@ class _ChromeHeader extends StatelessWidget {
                       fontWeight: FontWeight.w600,
                       color: Colors.white,
                     )
-                  : GoogleFonts.cinzel(
+                  : GoogleFonts.plusJakartaSans(
                       fontSize: 16,
                       letterSpacing: 2.4,
                       color: Colors.white,
@@ -178,7 +178,7 @@ class _MenuRow extends StatelessWidget {
                             fontSize: 14.5,
                             color: m.textPrimary,
                           )
-                        : GoogleFonts.josefinSans(
+                        : GoogleFonts.plusJakartaSans(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
                             color: m.textPrimary,
@@ -192,7 +192,7 @@ class _MenuRow extends StatelessWidget {
                             fontSize: 12,
                             color: m.textMuted,
                           )
-                        : GoogleFonts.josefinSans(
+                        : GoogleFonts.plusJakartaSans(
                             fontSize: 11.5,
                             color: m.textMuted,
                           ),

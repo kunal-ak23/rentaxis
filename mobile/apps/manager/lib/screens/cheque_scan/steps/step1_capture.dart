@@ -161,7 +161,7 @@ class _Step1CaptureState extends State<Step1Capture>
     final l = _L(context.isAr);
     final bodyFont = l.ar
         ? GoogleFonts.notoNaskhArabic
-        : GoogleFonts.josefinSans;
+        : GoogleFonts.plusJakartaSans;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -293,7 +293,7 @@ class _CameraFrame extends StatelessWidget {
   Widget build(BuildContext context) {
     final bodyFont = l.ar
         ? GoogleFonts.notoNaskhArabic
-        : GoogleFonts.josefinSans;
+        : GoogleFonts.plusJakartaSans;
     return AspectRatio(
       aspectRatio: 1.55,
       child: ClipRRect(

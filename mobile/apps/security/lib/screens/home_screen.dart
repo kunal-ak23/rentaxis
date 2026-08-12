@@ -151,7 +151,7 @@ class _HomeHeader extends ConsumerWidget {
                     fontWeight: FontWeight.w600,
                     color: m.textPrimary,
                   )
-                : GoogleFonts.cinzel(
+                : GoogleFonts.plusJakartaSans(
                     fontSize: 18,
                     fontWeight: FontWeight.w600,
                     color: m.textPrimary,
@@ -169,7 +169,7 @@ class _HomeHeader extends ConsumerWidget {
                     fontSize: 12.5,
                     color: AppColors.accentDark,
                   )
-                : GoogleFonts.josefinSans(
+                : GoogleFonts.plusJakartaSans(
                     fontSize: 11,
                     letterSpacing: 1.4,
                     color: AppColors.accentDark,
@@ -212,7 +212,7 @@ class _HomeHeader extends ConsumerWidget {
                       fontSize: 13,
                       color: m.textMuted,
                     )
-                  : GoogleFonts.josefinSans(
+                  : GoogleFonts.plusJakartaSans(
                       fontSize: 10.5,
                       letterSpacing: 2.2,
                       color: m.textMuted,
@@ -267,7 +267,7 @@ class _QuickTile extends StatelessWidget {
                           fontWeight: FontWeight.w600,
                           color: m.textPrimary,
                         )
-                      : GoogleFonts.josefinSans(
+                      : GoogleFonts.plusJakartaSans(
                           fontSize: 11.5,
                           letterSpacing: 1.2,
                           fontWeight: FontWeight.w600,
@@ -354,7 +354,7 @@ class _GateNavBar extends StatelessWidget {
                                   ? AppColors.accent
                                   : Colors.white.withValues(alpha: 0.5),
                             )
-                          : GoogleFonts.josefinSans(
+                          : GoogleFonts.plusJakartaSans(
                               fontSize: 10,
                               fontWeight: isSelected
                                   ? FontWeight.w600
@@ -425,7 +425,7 @@ class _SettingsSheet extends ConsumerWidget {
                         fontSize: 13,
                         color: m.textMuted,
                       )
-                    : GoogleFonts.josefinSans(
+                    : GoogleFonts.plusJakartaSans(
                         fontSize: 10,
                         letterSpacing: 2.4,
                         color: m.textMuted,
@@ -459,7 +459,7 @@ class _SettingsSheet extends ConsumerWidget {
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
                           )
-                        : GoogleFonts.josefinSans(
+                        : GoogleFonts.plusJakartaSans(
                             fontSize: 11.5,
                             fontWeight: FontWeight.w600,
                             letterSpacing: 2.0,
@@ -508,7 +508,7 @@ class _AppearanceRow extends ConsumerWidget {
                       fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
                       color: selected ? AppColors.primary : m.textSecondary,
                     )
-                  : GoogleFonts.josefinSans(
+                  : GoogleFonts.plusJakartaSans(
                       fontSize: 10,
                       letterSpacing: 1.6,
                       fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
@@ -573,7 +573,7 @@ class _LanguageRow extends ConsumerWidget {
               .setLanguage(AppLanguage.en),
           child: Text(
             'EN',
-            style: GoogleFonts.josefinSans(
+            style: GoogleFonts.plusJakartaSans(
               fontSize: 11,
               fontWeight: FontWeight.w600,
               letterSpacing: 1.4,
@@ -668,7 +668,7 @@ class _VisitorsTab extends ConsumerWidget {
                                 fontWeight: FontWeight.w600,
                                 color: context.miftah.textMuted,
                               )
-                            : GoogleFonts.josefinSans(
+                            : GoogleFonts.plusJakartaSans(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w700,
                                 letterSpacing: 0.6,
@@ -728,7 +728,7 @@ class _VisitorRow extends StatelessWidget {
                           fontWeight: FontWeight.w600,
                           color: m.textPrimary,
                         )
-                      : GoogleFonts.josefinSans(
+                      : GoogleFonts.plusJakartaSans(
                           fontSize: 17,
                           fontWeight: FontWeight.w700,
                           color: m.textPrimary,
@@ -754,7 +754,7 @@ class _VisitorRow extends StatelessWidget {
                             fontWeight: FontWeight.w600,
                             color: m.textSecondary,
                           )
-                        : GoogleFonts.josefinSans(
+                        : GoogleFonts.plusJakartaSans(
                             fontSize: 13,
                             fontWeight: FontWeight.w700,
                             color: m.textSecondary,
@@ -776,7 +776,7 @@ class _VisitorRow extends StatelessWidget {
                           fontSize: 13.5,
                           color: m.textSecondary,
                         )
-                      : GoogleFonts.josefinSans(
+                      : GoogleFonts.plusJakartaSans(
                           fontSize: 14,
                           color: m.textSecondary,
                         ),
@@ -805,7 +805,7 @@ class _VisitorRow extends StatelessWidget {
                     const SizedBox(width: 5),
                     Text(
                       vehicle,
-                      style: GoogleFonts.josefinSans(
+                      style: GoogleFonts.plusJakartaSans(
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
                         color: AppColors.accentDark,

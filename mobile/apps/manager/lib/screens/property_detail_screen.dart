@@ -208,7 +208,7 @@ class _PropertyDetailScreenState extends ConsumerState<PropertyDetailScreen> {
                                       fontSize: 12,
                                       color: AppColors.accentDark,
                                     )
-                                  : GoogleFonts.josefinSans(
+                                  : GoogleFonts.plusJakartaSans(
                                       fontSize: 10.5,
                                       letterSpacing: 1.2,
                                       color: AppColors.accentDark,
@@ -227,7 +227,7 @@ class _PropertyDetailScreenState extends ConsumerState<PropertyDetailScreen> {
                                 fontSize: 13,
                                 color: m.textSecondary,
                               )
-                            : GoogleFonts.josefinSans(
+                            : GoogleFonts.plusJakartaSans(
                                 fontSize: 12.5,
                                 color: m.textSecondary,
                               ),
@@ -284,7 +284,7 @@ class _PropertyDetailScreenState extends ConsumerState<PropertyDetailScreen> {
                                 fontSize: 13,
                                 color: m.textSecondary,
                               )
-                            : GoogleFonts.josefinSans(
+                            : GoogleFonts.plusJakartaSans(
                                 fontSize: 12.5,
                                 color: m.textSecondary,
                               ),
@@ -321,7 +321,7 @@ class _PropertyDetailScreenState extends ConsumerState<PropertyDetailScreen> {
                                               fontSize: 12.5,
                                               color: m.textPrimary,
                                             )
-                                          : GoogleFonts.josefinSans(
+                                          : GoogleFonts.plusJakartaSans(
                                               fontSize: 12,
                                               color: m.textPrimary,
                                             ),
@@ -704,7 +704,7 @@ class _HeroHeader extends StatelessWidget {
                           fontSize: 12,
                           color: AppColors.accent,
                         )
-                      : GoogleFonts.josefinSans(
+                      : GoogleFonts.plusJakartaSans(
                           fontSize: 9,
                           letterSpacing: 2.4,
                           color: AppColors.accent,
@@ -719,7 +719,7 @@ class _HeroHeader extends StatelessWidget {
                           fontWeight: FontWeight.w600,
                           color: Colors.white,
                         )
-                      : GoogleFonts.cinzel(fontSize: 24, color: Colors.white),
+                      : GoogleFonts.plusJakartaSans(fontSize: 24, color: Colors.white),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -791,7 +791,7 @@ class _SpecStrip extends StatelessWidget {
                     Text(
                       cells[i].value,
                       textAlign: TextAlign.center,
-                      style: GoogleFonts.cinzel(
+                      style: GoogleFonts.plusJakartaSans(
                         fontSize: 16,
                         color: m.textPrimary,
                       ),
@@ -807,7 +807,7 @@ class _SpecStrip extends StatelessWidget {
                               fontSize: 10,
                               color: m.textMuted,
                             )
-                          : GoogleFonts.josefinSans(
+                          : GoogleFonts.plusJakartaSans(
                               fontSize: 8,
                               letterSpacing: 1.4,
                               color: m.textMuted,
@@ -843,7 +843,7 @@ class _SectionHeader extends StatelessWidget {
                   fontSize: 13,
                   color: AppColors.accentDark,
                 )
-              : GoogleFonts.josefinSans(
+              : GoogleFonts.plusJakartaSans(
                   fontSize: 10,
                   letterSpacing: 2.4,
                   color: AppColors.accentDark,
@@ -880,7 +880,7 @@ class _UnitLegend extends StatelessWidget {
           label,
           style: l.ar
               ? GoogleFonts.notoNaskhArabic(fontSize: 10.5, color: m.textMuted)
-              : GoogleFonts.josefinSans(fontSize: 10, color: m.textMuted),
+              : GoogleFonts.plusJakartaSans(fontSize: 10, color: m.textMuted),
         ),
       ],
     );
@@ -940,7 +940,7 @@ class _UnitTile extends StatelessWidget {
                 children: [
                   Text(
                     unit['unitNumber']?.toString() ?? '-',
-                    style: GoogleFonts.cinzel(
+                    style: GoogleFonts.plusJakartaSans(
                       fontSize: 13,
                       color: m.textPrimary,
                     ),
@@ -957,7 +957,7 @@ class _UnitTile extends StatelessWidget {
                                 ? AppColors.warning
                                 : m.textMuted,
                           )
-                        : GoogleFonts.josefinSans(
+                        : GoogleFonts.plusJakartaSans(
                             fontSize: 9.5,
                             color: status == 'MAINTENANCE'
                                 ? AppColors.warning
@@ -1016,14 +1016,14 @@ class _RentRollCard extends StatelessWidget {
                       fontSize: 13,
                       color: m.textSecondary,
                     )
-                  : GoogleFonts.josefinSans(
+                  : GoogleFonts.plusJakartaSans(
                       fontSize: 13,
                       color: m.textSecondary,
                     ),
             ),
             Text(
               Formatters.currencyCompact(amount),
-              style: GoogleFonts.cinzel(
+              style: GoogleFonts.plusJakartaSans(
                 fontSize: 15,
                 color: tone ?? m.textPrimary,
               ),
@@ -1104,7 +1104,7 @@ class _ContactRow extends StatelessWidget {
                           fontWeight: FontWeight.w600,
                           color: m.textPrimary,
                         )
-                      : GoogleFonts.josefinSans(
+                      : GoogleFonts.plusJakartaSans(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
                           color: m.textPrimary,
@@ -1125,7 +1125,7 @@ class _ContactRow extends StatelessWidget {
                             fontSize: 12,
                             color: m.textSecondary,
                           )
-                        : GoogleFonts.josefinSans(
+                        : GoogleFonts.plusJakartaSans(
                             fontSize: 12,
                             color: m.textSecondary,
                           ),
@@ -1133,7 +1133,7 @@ class _ContactRow extends StatelessWidget {
                 if (contact['phone'] != null)
                   Text(
                     contact['phone'],
-                    style: GoogleFonts.josefinSans(
+                    style: GoogleFonts.plusJakartaSans(
                       fontSize: 12,
                       color: m.textMuted,
                     ),
@@ -1141,7 +1141,7 @@ class _ContactRow extends StatelessWidget {
                 if (contact['email'] != null)
                   Text(
                     contact['email'],
-                    style: GoogleFonts.josefinSans(
+                    style: GoogleFonts.plusJakartaSans(
                       fontSize: 12,
                       color: m.textMuted,
                     ),

@@ -206,7 +206,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                             fontWeight: FontWeight.w600,
                             color: AppColors.accent,
                           )
-                        : GoogleFonts.cinzel(
+                        : GoogleFonts.plusJakartaSans(
                             fontSize: 20,
                             fontWeight: FontWeight.w600,
                             color: AppColors.accent,
@@ -219,7 +219,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                     style:
                         (l.ar
                         ? GoogleFonts.notoNaskhArabic
-                        : GoogleFonts.josefinSans)(
+                        : GoogleFonts.plusJakartaSans)(
                           fontSize: 14,
                           color: Colors.white.withValues(alpha: 0.55),
                         ),
@@ -340,7 +340,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                             style:
                                 (l.ar
                                 ? GoogleFonts.notoNaskhArabic
-                                : GoogleFonts.josefinSans)(
+                                : GoogleFonts.plusJakartaSans)(
                                   fontSize: 13.5,
                                   fontWeight: FontWeight.w600,
                                   color: canResend
@@ -358,7 +358,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
                       style:
                           (l.ar
                           ? GoogleFonts.notoNaskhArabic
-                          : GoogleFonts.josefinSans)(
+                          : GoogleFonts.plusJakartaSans)(
                             fontSize: 13,
                             color: Colors.white.withValues(alpha: 0.4),
                           ),
@@ -411,7 +411,7 @@ class _OtpBox extends StatelessWidget {
       alignment: Alignment.center,
       child: Text(
         digit,
-        style: GoogleFonts.cinzel(
+        style: GoogleFonts.plusJakartaSans(
           fontSize: 22,
           fontWeight: FontWeight.w600,
           color: Colors.white,
@@ -449,7 +449,7 @@ class _PhoneHeader extends StatelessWidget {
             // themselves, so keep it verbatim and legible.
             Text(
               phone,
-              style: GoogleFonts.josefinSans(
+              style: GoogleFonts.plusJakartaSans(
                 fontSize: 14.5,
                 fontWeight: FontWeight.w600,
                 color: Colors.white,
@@ -494,7 +494,7 @@ class _Banner extends StatelessWidget {
               message,
               style: (ar
                   ? GoogleFonts.notoNaskhArabic
-                  : GoogleFonts.josefinSans)(color: color, fontSize: 13),
+                  : GoogleFonts.plusJakartaSans)(color: color, fontSize: 13),
             ),
           ),
         ],

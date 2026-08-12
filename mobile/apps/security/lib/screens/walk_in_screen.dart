@@ -203,7 +203,7 @@ class _WalkInScreenState extends ConsumerState<WalkInScreen> {
     final l = _L(context.isAr);
     final bodyFont = l.ar
         ? GoogleFonts.notoNaskhArabic
-        : GoogleFonts.josefinSans;
+        : GoogleFonts.plusJakartaSans;
     final properties = ref.watch(myPropertiesProvider);
     return Scaffold(
       backgroundColor: m.background,
@@ -220,7 +220,7 @@ class _WalkInScreenState extends ConsumerState<WalkInScreen> {
                   fontWeight: FontWeight.w600,
                   color: m.textPrimary,
                 )
-              : GoogleFonts.cinzel(
+              : GoogleFonts.plusJakartaSans(
                   fontSize: 17,
                   fontWeight: FontWeight.w500,
                   letterSpacing: 1.2,

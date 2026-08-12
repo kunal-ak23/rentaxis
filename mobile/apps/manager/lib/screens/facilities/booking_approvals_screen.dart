@@ -349,7 +349,7 @@ class _TruncationFooter extends StatelessWidget {
       child: Center(
         child: Text(
           l.showingCount(shown, total),
-          style: (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans)(
+          style: (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.plusJakartaSans)(
             fontSize: 12,
             color: m.textMuted,
           ),
@@ -391,7 +391,7 @@ class _FilterChip extends StatelessWidget {
                   fontWeight: FontWeight.w600,
                   color: selected ? AppColors.primary : m.textSecondary,
                 )
-              : GoogleFonts.josefinSans(
+              : GoogleFonts.plusJakartaSans(
                   fontSize: 10.5,
                   letterSpacing: 1.4,
                   fontWeight: FontWeight.w600,
@@ -454,7 +454,7 @@ class _BookingCard extends StatelessWidget {
                               fontWeight: FontWeight.w600,
                               color: m.textPrimary,
                             )
-                          : GoogleFonts.josefinSans(
+                          : GoogleFonts.plusJakartaSans(
                               fontSize: 14.5,
                               fontWeight: FontWeight.w600,
                               color: m.textPrimary,
@@ -647,7 +647,7 @@ class _BookingDetailSheetState extends ConsumerState<_BookingDetailSheet> {
                                     fontWeight: FontWeight.w600,
                                     color: m.textPrimary,
                                   )
-                                : GoogleFonts.josefinSans(
+                                : GoogleFonts.plusJakartaSans(
                                     fontSize: 16,
                                     fontWeight: FontWeight.w600,
                                     color: m.textPrimary,
@@ -663,7 +663,7 @@ class _BookingDetailSheetState extends ConsumerState<_BookingDetailSheet> {
                     const SizedBox(height: 2),
                     Text(
                       l.type(request['resourceType']?.toString() ?? ''),
-                      style: GoogleFonts.josefinSans(
+                      style: GoogleFonts.plusJakartaSans(
                         fontSize: 11,
                         letterSpacing: 1.4,
                         color: m.textMuted,
@@ -718,7 +718,7 @@ class _BookingDetailSheetState extends ConsumerState<_BookingDetailSheet> {
                           style:
                               (l.ar
                               ? GoogleFonts.notoNaskhArabic
-                              : GoogleFonts.josefinSans)(
+                              : GoogleFonts.plusJakartaSans)(
                                 fontSize: 13,
                                 color: m.textSecondary,
                                 height: 1.5,
@@ -743,7 +743,7 @@ class _BookingDetailSheetState extends ConsumerState<_BookingDetailSheet> {
                                 style:
                                     (l.ar
                                     ? GoogleFonts.notoNaskhArabic
-                                    : GoogleFonts.josefinSans)(
+                                    : GoogleFonts.plusJakartaSans)(
                                       fontSize: 13,
                                       fontWeight: FontWeight.w600,
                                       color: m.textSecondary,
@@ -754,7 +754,7 @@ class _BookingDetailSheetState extends ConsumerState<_BookingDetailSheet> {
                                 style:
                                     (l.ar
                                     ? GoogleFonts.notoNaskhArabic
-                                    : GoogleFonts.josefinSans)(
+                                    : GoogleFonts.plusJakartaSans)(
                                       fontSize: 13,
                                       color: m.textSecondary,
                                       height: 1.5,
@@ -800,7 +800,7 @@ class _BookingDetailSheetState extends ConsumerState<_BookingDetailSheet> {
                               fontSize: 12,
                               color: AppColors.accentDark,
                             )
-                          : GoogleFonts.josefinSans(
+                          : GoogleFonts.plusJakartaSans(
                               fontSize: 10,
                               letterSpacing: 2.2,
                               color: AppColors.accentDark,
@@ -813,7 +813,7 @@ class _BookingDetailSheetState extends ConsumerState<_BookingDetailSheet> {
                         style:
                             (l.ar
                             ? GoogleFonts.notoNaskhArabic
-                            : GoogleFonts.josefinSans)(
+                            : GoogleFonts.plusJakartaSans)(
                               fontSize: 12.5,
                               color: m.textMuted,
                             ),
@@ -903,7 +903,7 @@ class _OtherRequestRow extends StatelessWidget {
                   style:
                       (l.ar
                       ? GoogleFonts.notoNaskhArabic
-                      : GoogleFonts.josefinSans)(
+                      : GoogleFonts.plusJakartaSans)(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
                         color: m.textPrimary,
@@ -915,7 +915,7 @@ class _OtherRequestRow extends StatelessWidget {
                       '${l.unit} ${row['unitNumber']}',
                     Formatters.timeAgo(row['createdAt']?.toString(), ar: l.ar),
                   ].join(' · '),
-                  style: GoogleFonts.josefinSans(
+                  style: GoogleFonts.plusJakartaSans(
                     fontSize: 11,
                     color: m.textMuted,
                   ),
@@ -954,7 +954,7 @@ class _DetailRow extends StatelessWidget {
                       fontSize: 13,
                       color: m.textSecondary,
                     )
-                  : GoogleFonts.josefinSans(
+                  : GoogleFonts.plusJakartaSans(
                       fontSize: 13,
                       color: m.textSecondary,
                     ),
@@ -999,7 +999,7 @@ class _ContactBtn extends StatelessWidget {
             Text(
               label,
               style:
-                  (ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans)(
+                  (ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.plusJakartaSans)(
                     fontSize: 12,
                     color: m.isDark ? AppColors.accent : AppColors.accentDark,
                     fontWeight: FontWeight.w600,

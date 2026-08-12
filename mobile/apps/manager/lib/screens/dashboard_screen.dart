@@ -148,7 +148,7 @@ class _Header extends StatelessWidget {
                         fontWeight: FontWeight.w600,
                         color: m.textPrimary,
                       )
-                    : GoogleFonts.cinzel(
+                    : GoogleFonts.plusJakartaSans(
                         fontSize: 20,
                         fontWeight: FontWeight.w600,
                         color: m.textPrimary,
@@ -208,7 +208,7 @@ class _IconBtn extends StatelessWidget {
                 child: Center(
                   child: Text(
                     '$badge',
-                    style: GoogleFonts.josefinSans(
+                    style: GoogleFonts.plusJakartaSans(
                       fontSize: 10,
                       fontWeight: FontWeight.w700,
                       color: Colors.white,
@@ -333,7 +333,7 @@ class _KpiCell extends StatelessWidget {
                     fontSize: 11,
                     color: tone ?? m.textMuted,
                   )
-                : GoogleFonts.josefinSans(
+                : GoogleFonts.plusJakartaSans(
                     fontSize: 9,
                     letterSpacing: 2.0,
                     color: tone ?? m.textMuted,
@@ -346,7 +346,7 @@ class _KpiCell extends StatelessWidget {
             children: [
               Text(
                 value,
-                style: GoogleFonts.cinzel(
+                style: GoogleFonts.plusJakartaSans(
                   fontSize: 25,
                   fontWeight: FontWeight.w600,
                   color: valueColor,
@@ -355,7 +355,7 @@ class _KpiCell extends StatelessWidget {
               if (suffix != null)
                 Text(
                   suffix!,
-                  style: GoogleFonts.cinzel(
+                  style: GoogleFonts.plusJakartaSans(
                     fontSize: 14,
                     color: AppColors.accentDark,
                   ),
@@ -382,7 +382,7 @@ class _KpiCell extends StatelessWidget {
                       fontSize: 11,
                       color: subTone ?? m.textSecondary,
                     )
-                  : GoogleFonts.josefinSans(
+                  : GoogleFonts.plusJakartaSans(
                       fontSize: 10.5,
                       color: subTone ?? m.textSecondary,
                     ),
@@ -497,7 +497,7 @@ class _NeedsAttention extends StatelessWidget {
                       fontSize: 13,
                       color: AppColors.accentDark,
                     )
-                  : GoogleFonts.josefinSans(
+                  : GoogleFonts.plusJakartaSans(
                       fontSize: 10,
                       letterSpacing: 2.4,
                       color: AppColors.accentDark,
@@ -512,7 +512,7 @@ class _NeedsAttention extends StatelessWidget {
                         fontSize: 11,
                         color: AppColors.accentDark,
                       )
-                    : GoogleFonts.josefinSans(
+                    : GoogleFonts.plusJakartaSans(
                         fontSize: 11,
                         color: AppColors.accentDark,
                       ),
@@ -541,7 +541,7 @@ class _NeedsAttention extends StatelessWidget {
                             fontSize: 13,
                             color: m.textSecondary,
                           )
-                        : GoogleFonts.josefinSans(
+                        : GoogleFonts.plusJakartaSans(
                             fontSize: 12.5,
                             color: m.textSecondary,
                           ),
@@ -615,7 +615,7 @@ class _TaskRow extends StatelessWidget {
                                     fontSize: 14,
                                     color: m.textPrimary,
                                   )
-                                : GoogleFonts.josefinSans(
+                                : GoogleFonts.plusJakartaSans(
                                     fontSize: 13.5,
                                     color: m.textPrimary,
                                   ),
@@ -628,7 +628,7 @@ class _TaskRow extends StatelessWidget {
                                     fontSize: 11.5,
                                     color: m.textMuted,
                                   )
-                                : GoogleFonts.josefinSans(
+                                : GoogleFonts.plusJakartaSans(
                                     fontSize: 11.5,
                                     color: m.textMuted,
                                   ),
@@ -656,7 +656,7 @@ class _TaskRow extends StatelessWidget {
                                 fontWeight: FontWeight.w600,
                                 color: fg,
                               )
-                            : GoogleFonts.josefinSans(
+                            : GoogleFonts.plusJakartaSans(
                                 fontSize: 9,
                                 letterSpacing: 1.2,
                                 fontWeight: FontWeight.w600,
@@ -771,7 +771,7 @@ class _QuickActions extends StatelessWidget {
                                     ? AppColors.primary
                                     : m.textSecondary,
                               )
-                            : GoogleFonts.josefinSans(
+                            : GoogleFonts.plusJakartaSans(
                                 fontSize: 9.5,
                                 height: 1.25,
                                 letterSpacing: 0.8,
@@ -830,7 +830,7 @@ class _PortfolioGlance extends StatelessWidget {
                   fontSize: 13,
                   color: AppColors.accentDark,
                 )
-              : GoogleFonts.josefinSans(
+              : GoogleFonts.plusJakartaSans(
                   fontSize: 10,
                   letterSpacing: 2.4,
                   color: AppColors.accentDark,
@@ -861,14 +861,14 @@ class _PortfolioGlance extends StatelessWidget {
                                 fontSize: 12,
                                 color: m.textMuted,
                               )
-                            : GoogleFonts.josefinSans(
+                            : GoogleFonts.plusJakartaSans(
                                 fontSize: 11.5,
                                 color: m.textMuted,
                               ),
                       ),
                       Text(
                         Formatters.currencyCompact(totalRevenue),
-                        style: GoogleFonts.cinzel(
+                        style: GoogleFonts.plusJakartaSans(
                           fontSize: 21,
                           fontWeight: FontWeight.w600,
                           color: m.textPrimary,
@@ -886,14 +886,14 @@ class _PortfolioGlance extends StatelessWidget {
                                 fontSize: 12,
                                 color: m.textMuted,
                               )
-                            : GoogleFonts.josefinSans(
+                            : GoogleFonts.plusJakartaSans(
                                 fontSize: 11.5,
                                 color: m.textMuted,
                               ),
                       ),
                       Text(
                         '${occupancy.toStringAsFixed(1)}%',
-                        style: GoogleFonts.cinzel(
+                        style: GoogleFonts.plusJakartaSans(
                           fontSize: 21,
                           fontWeight: FontWeight.w600,
                           color: m.textPrimary,
@@ -924,7 +924,7 @@ class _PortfolioGlance extends StatelessWidget {
                             fontSize: 11,
                             color: m.textMuted,
                           )
-                        : GoogleFonts.josefinSans(
+                        : GoogleFonts.plusJakartaSans(
                             fontSize: 11,
                             color: m.textMuted,
                           ),

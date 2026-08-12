@@ -491,7 +491,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
                         const Spacer(),
                         Text(
                           Formatters.timeAgo(ticket['createdAt'], ar: l.ar),
-                          style: GoogleFonts.josefinSans(
+                          style: GoogleFonts.plusJakartaSans(
                             fontSize: 11.5,
                             color: m.textMuted,
                           ),
@@ -541,7 +541,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
                     ),
                     child: Text(
                       ticket['description'] ?? l.noDescription,
-                      style: GoogleFonts.josefinSans(
+                      style: GoogleFonts.plusJakartaSans(
                         fontSize: 14,
                         color: m.textPrimary,
                         height: 1.5,
@@ -592,7 +592,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
                             fontWeight: FontWeight.w600,
                             color: m.textPrimary,
                           )
-                        : GoogleFonts.cinzel(
+                        : GoogleFonts.plusJakartaSans(
                             fontSize: 13,
                             letterSpacing: 2.4,
                             color: m.textPrimary,
@@ -605,7 +605,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
                       child: Center(
                         child: Text(
                           l.noRepliesYet,
-                          style: GoogleFonts.josefinSans(
+                          style: GoogleFonts.plusJakartaSans(
                             fontSize: 12.5,
                             color: m.textMuted,
                           ),
@@ -647,7 +647,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
       text,
       style: l.ar
           ? GoogleFonts.notoNaskhArabic(fontSize: 12, color: m.textMuted)
-          : GoogleFonts.josefinSans(
+          : GoogleFonts.plusJakartaSans(
               fontSize: 11,
               fontWeight: FontWeight.w500,
               letterSpacing: 2.0,
@@ -691,7 +691,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
                         fontWeight: FontWeight.w600,
                         color: Colors.white,
                       )
-                    : GoogleFonts.cinzel(
+                    : GoogleFonts.plusJakartaSans(
                         fontSize: 14,
                         letterSpacing: 2.4,
                         color: Colors.white,
@@ -712,7 +712,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
                         fontWeight: FontWeight.w600,
                         color: Colors.white,
                       )
-                    : GoogleFonts.cinzel(
+                    : GoogleFonts.plusJakartaSans(
                         fontSize: 21,
                         height: 1.35,
                         letterSpacing: 0.3,
@@ -752,13 +752,13 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
           Expanded(
             child: TextField(
               controller: _replyCtrl,
-              style: GoogleFonts.josefinSans(
+              style: GoogleFonts.plusJakartaSans(
                 fontSize: 14,
                 color: m.textPrimary,
               ),
               decoration: InputDecoration(
                 hintText: l.typeReply,
-                hintStyle: GoogleFonts.josefinSans(
+                hintStyle: GoogleFonts.plusJakartaSans(
                   color: m.textMuted,
                   fontSize: 14,
                 ),
@@ -875,7 +875,7 @@ class _StatusRail extends StatelessWidget {
               .map(
                 (label) => Text(
                   label,
-                  style: GoogleFonts.josefinSans(
+                  style: GoogleFonts.plusJakartaSans(
                     fontSize: 9.5,
                     letterSpacing: ar ? 0 : 0.8,
                     color: Colors.white.withValues(alpha: 0.5),
@@ -910,7 +910,7 @@ class _StatusPill extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: GoogleFonts.josefinSans(
+        style: GoogleFonts.plusJakartaSans(
           fontSize: 10.5,
           fontWeight: FontWeight.w600,
           letterSpacing: ar ? 0 : 1.2,
@@ -936,7 +936,7 @@ class _InfoRow extends StatelessWidget {
         Expanded(
           child: Text(
             text,
-            style: GoogleFonts.josefinSans(
+            style: GoogleFonts.plusJakartaSans(
               fontSize: 13,
               color: m.textSecondary,
             ),
@@ -982,7 +982,7 @@ class _AssigneeCard extends StatelessWidget {
             alignment: Alignment.center,
             child: Text(
               initial,
-              style: GoogleFonts.cinzel(
+              style: GoogleFonts.plusJakartaSans(
                 fontSize: 16,
                 color: m.isDark ? AppColors.accent : AppColors.primary,
               ),
@@ -997,7 +997,7 @@ class _AssigneeCard extends StatelessWidget {
                   category.isNotEmpty
                       ? '$name · ${l.category(category)}'
                       : name,
-                  style: GoogleFonts.josefinSans(
+                  style: GoogleFonts.plusJakartaSans(
                     fontSize: 13.5,
                     fontWeight: FontWeight.w500,
                     color: m.textPrimary,
@@ -1047,7 +1047,7 @@ class _AttachmentThumb extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 4),
             child: Text(
               name,
-              style: GoogleFonts.josefinSans(fontSize: 8, color: m.textMuted),
+              style: GoogleFonts.plusJakartaSans(fontSize: 8, color: m.textMuted),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
@@ -1109,7 +1109,7 @@ class _ActionsPanel extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                     color: m.textPrimary,
                   )
-                : GoogleFonts.josefinSans(
+                : GoogleFonts.plusJakartaSans(
                     fontSize: 10.5,
                     letterSpacing: 2.0,
                     fontWeight: FontWeight.w600,
@@ -1184,7 +1184,7 @@ class _ActionsPanel extends StatelessWidget {
           if (status == 'RESOLVED') ...[
             Text(
               l.otpPrompt,
-              style: GoogleFonts.josefinSans(
+              style: GoogleFonts.plusJakartaSans(
                 fontSize: 13,
                 color: m.textSecondary,
               ),
@@ -1196,13 +1196,13 @@ class _ActionsPanel extends StatelessWidget {
                   child: TextField(
                     controller: otpCtrl,
                     keyboardType: TextInputType.number,
-                    style: GoogleFonts.josefinSans(
+                    style: GoogleFonts.plusJakartaSans(
                       fontSize: 14,
                       color: m.textPrimary,
                     ),
                     decoration: InputDecoration(
                       hintText: l.enterOtp,
-                      hintStyle: GoogleFonts.josefinSans(color: m.textMuted),
+                      hintStyle: GoogleFonts.plusJakartaSans(color: m.textMuted),
                       contentPadding: const EdgeInsets.symmetric(
                         horizontal: 14,
                         vertical: 12,
@@ -1293,7 +1293,7 @@ class _UpdateCard extends StatelessWidget {
                   children: [
                     Text(
                       message,
-                      style: GoogleFonts.josefinSans(
+                      style: GoogleFonts.plusJakartaSans(
                         fontSize: 13,
                         color: m.textPrimary,
                       ),
@@ -1301,7 +1301,7 @@ class _UpdateCard extends StatelessWidget {
                     const SizedBox(height: 6),
                     Text(
                       '$userName · $time',
-                      style: GoogleFonts.josefinSans(
+                      style: GoogleFonts.plusJakartaSans(
                         fontSize: 11,
                         color: m.textMuted,
                       ),
@@ -1348,14 +1348,14 @@ class _HistoryRow extends StatelessWidget {
               children: [
                 Text(
                   item['notes'] ?? item['action'] ?? '',
-                  style: GoogleFonts.josefinSans(
+                  style: GoogleFonts.plusJakartaSans(
                     fontSize: 13,
                     color: m.textPrimary,
                   ),
                 ),
                 Text(
                   performedBy != null ? '$performedBy · $time' : time,
-                  style: GoogleFonts.josefinSans(
+                  style: GoogleFonts.plusJakartaSans(
                     fontSize: 11,
                     color: m.textMuted,
                   ),

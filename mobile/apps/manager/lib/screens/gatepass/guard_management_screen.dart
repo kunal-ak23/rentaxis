@@ -203,13 +203,13 @@ class _GuardCard extends ConsumerWidget {
 
     final nameStyle = l.ar
         ? GoogleFonts.notoNaskhArabic(fontWeight: FontWeight.w600, fontSize: 14)
-        : GoogleFonts.josefinSans(fontWeight: FontWeight.w600, fontSize: 14);
+        : GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600, fontSize: 14);
     final metaStyle = l.ar
         ? GoogleFonts.notoNaskhArabic(fontSize: 12, color: m.textSecondary)
-        : GoogleFonts.josefinSans(fontSize: 12, color: m.textSecondary);
+        : GoogleFonts.plusJakartaSans(fontSize: 12, color: m.textSecondary);
     final mutedStyle = l.ar
         ? GoogleFonts.notoNaskhArabic(fontSize: 12, color: m.textMuted)
-        : GoogleFonts.josefinSans(fontSize: 12, color: m.textMuted);
+        : GoogleFonts.plusJakartaSans(fontSize: 12, color: m.textMuted);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -239,7 +239,7 @@ class _GuardCard extends ConsumerWidget {
                         (name?.isNotEmpty ?? false)
                             ? name![0].toUpperCase()
                             : '?',
-                        style: GoogleFonts.cinzel(
+                        style: GoogleFonts.plusJakartaSans(
                           color: AppColors.accentDark,
                           fontWeight: FontWeight.w600,
                         ),
@@ -303,7 +303,7 @@ class _GuardCard extends ConsumerWidget {
                             fontSize: 12,
                             color: m.danger,
                           )
-                        : GoogleFonts.josefinSans(
+                        : GoogleFonts.plusJakartaSans(
                             fontSize: 12,
                             color: m.danger,
                           ),
@@ -372,7 +372,7 @@ class _UnpostedFlag extends StatelessWidget {
                       fontWeight: FontWeight.w600,
                       color: m.warning,
                     )
-                  : GoogleFonts.josefinSans(
+                  : GoogleFonts.plusJakartaSans(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
                       color: m.warning,
@@ -407,7 +407,7 @@ class _PostedChip extends StatelessWidget {
                 fontWeight: FontWeight.w600,
                 color: AppColors.accentDark,
               )
-            : GoogleFonts.josefinSans(
+            : GoogleFonts.plusJakartaSans(
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
                 color: AppColors.accentDark,
@@ -444,7 +444,7 @@ class _StatusPill extends StatelessWidget {
                 fontWeight: FontWeight.w600,
                 color: color,
               )
-            : GoogleFonts.josefinSans(
+            : GoogleFonts.plusJakartaSans(
                 fontSize: 10,
                 fontWeight: FontWeight.w600,
                 letterSpacing: 1,
@@ -533,14 +533,14 @@ class _AssignPropertiesSheetState
             fontWeight: FontWeight.w600,
             color: m.textPrimary,
           )
-        : GoogleFonts.cinzel(
+        : GoogleFonts.plusJakartaSans(
             fontSize: 18,
             fontWeight: FontWeight.w600,
             color: m.textPrimary,
           );
     final subtitleStyle = l.ar
         ? GoogleFonts.notoNaskhArabic(fontSize: 12, color: m.textSecondary)
-        : GoogleFonts.josefinSans(fontSize: 12, color: m.textSecondary);
+        : GoogleFonts.plusJakartaSans(fontSize: 12, color: m.textSecondary);
 
     return Padding(
       padding: EdgeInsets.fromLTRB(
@@ -622,7 +622,7 @@ class _AssignPropertiesSheetState
                                   fontSize: 14,
                                   color: m.textPrimary,
                                 )
-                              : GoogleFonts.josefinSans(
+                              : GoogleFonts.plusJakartaSans(
                                   fontSize: 14,
                                   color: m.textPrimary,
                                 ),
@@ -649,7 +649,7 @@ class _AssignPropertiesSheetState
               _error!,
               style: l.ar
                   ? GoogleFonts.notoNaskhArabic(fontSize: 12, color: m.danger)
-                  : GoogleFonts.josefinSans(fontSize: 12, color: m.danger),
+                  : GoogleFonts.plusJakartaSans(fontSize: 12, color: m.danger),
             ),
           ],
           const SizedBox(height: 16),
@@ -783,14 +783,14 @@ class _CreateGuardSheetState extends ConsumerState<_CreateGuardSheet> {
             fontWeight: FontWeight.w600,
             color: m.textPrimary,
           )
-        : GoogleFonts.cinzel(
+        : GoogleFonts.plusJakartaSans(
             fontSize: 18,
             fontWeight: FontWeight.w600,
             color: m.textPrimary,
           );
     final fieldStyle = l.ar
         ? GoogleFonts.notoNaskhArabic(fontSize: 14, color: m.textPrimary)
-        : GoogleFonts.josefinSans(fontSize: 14, color: m.textPrimary);
+        : GoogleFonts.plusJakartaSans(fontSize: 14, color: m.textPrimary);
 
     return Padding(
       padding: EdgeInsets.fromLTRB(
@@ -871,7 +871,7 @@ class _CreateGuardSheetState extends ConsumerState<_CreateGuardSheet> {
                             color: m.danger,
                             fontWeight: FontWeight.w600,
                           )
-                        : GoogleFonts.josefinSans(
+                        : GoogleFonts.plusJakartaSans(
                             fontSize: 12,
                             color: m.danger,
                             fontWeight: FontWeight.w600,

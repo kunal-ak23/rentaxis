@@ -63,7 +63,7 @@ class _Step2ReadingState extends State<Step2Reading>
     final l = _L(context.isAr);
     final bodyFont = l.ar
         ? GoogleFonts.notoNaskhArabic
-        : GoogleFonts.josefinSans;
+        : GoogleFonts.plusJakartaSans;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -239,7 +239,7 @@ class _FieldRow extends StatelessWidget {
     final m = context.miftah;
     final bodyFont = l.ar
         ? GoogleFonts.notoNaskhArabic
-        : GoogleFonts.josefinSans;
+        : GoogleFonts.plusJakartaSans;
     return Container(
       padding: const EdgeInsetsDirectional.symmetric(
         horizontal: 12,

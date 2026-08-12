@@ -286,7 +286,7 @@ class _StaffScreenState extends ConsumerState<StaffScreen> {
                             fontSize: 19,
                             fontWeight: FontWeight.w600,
                           )
-                        : GoogleFonts.cinzel(
+                        : GoogleFonts.plusJakartaSans(
                             fontSize: 18,
                             fontWeight: FontWeight.w600,
                           ),
@@ -425,7 +425,7 @@ class _ChromeHeader extends StatelessWidget {
                     fontSize: 12,
                     color: AppColors.goldMid,
                   )
-                : GoogleFonts.josefinSans(
+                : GoogleFonts.plusJakartaSans(
                     fontSize: 10,
                     letterSpacing: 2.6,
                     color: AppColors.goldMid,
@@ -440,21 +440,21 @@ class _ChromeHeader extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                     color: AppColors.gold400,
                   )
-                : GoogleFonts.cinzel(fontSize: 22, color: AppColors.gold400),
+                : GoogleFonts.plusJakartaSans(fontSize: 22, color: AppColors.gold400),
           ),
           const SizedBox(height: 12),
           TextField(
             onChanged: onSearchChanged,
             style: (l.ar
                 ? GoogleFonts.notoNaskhArabic
-                : GoogleFonts.josefinSans)(fontSize: 13, color: Colors.white),
+                : GoogleFonts.plusJakartaSans)(fontSize: 13, color: Colors.white),
             decoration: InputDecoration(
               isDense: true,
               hintText: l.searchHint,
               hintStyle:
                   (l.ar
                   ? GoogleFonts.notoNaskhArabic
-                  : GoogleFonts.josefinSans)(
+                  : GoogleFonts.plusJakartaSans)(
                     fontSize: 12.5,
                     color: Colors.white.withValues(alpha: 0.45),
                   ),
@@ -524,7 +524,7 @@ class _FilterChip extends StatelessWidget {
                   fontSize: 12.5,
                   color: selected ? AppColors.accent : m.textSecondary,
                 )
-              : GoogleFonts.josefinSans(
+              : GoogleFonts.plusJakartaSans(
                   fontSize: 11.5,
                   letterSpacing: 0.6,
                   color: selected ? AppColors.accent : m.textSecondary,
@@ -584,7 +584,7 @@ class _StaffCard extends StatelessWidget {
                 alignment: Alignment.center,
                 child: Text(
                   name.isNotEmpty ? name[0].toUpperCase() : '?',
-                  style: GoogleFonts.cinzel(
+                  style: GoogleFonts.plusJakartaSans(
                     fontSize: 13,
                     color: AppColors.accentDark,
                   ),
@@ -603,7 +603,7 @@ class _StaffCard extends StatelessWidget {
                             style:
                                 (l.ar
                                 ? GoogleFonts.notoNaskhArabic
-                                : GoogleFonts.josefinSans)(
+                                : GoogleFonts.plusJakartaSans)(
                                   fontWeight: FontWeight.w600,
                                   fontSize: 14,
                                   color: m.textPrimary,
@@ -628,7 +628,7 @@ class _StaffCard extends StatelessWidget {
                         style:
                             (l.ar
                             ? GoogleFonts.notoNaskhArabic
-                            : GoogleFonts.josefinSans)(
+                            : GoogleFonts.plusJakartaSans)(
                               fontSize: 12,
                               color: m.textSecondary,
                             ),
@@ -640,7 +640,7 @@ class _StaffCard extends StatelessWidget {
                         style:
                             (l.ar
                             ? GoogleFonts.notoNaskhArabic
-                            : GoogleFonts.josefinSans)(
+                            : GoogleFonts.plusJakartaSans)(
                               fontSize: 12,
                               color: m.textMuted,
                             ),
@@ -653,7 +653,7 @@ class _StaffCard extends StatelessWidget {
                         style:
                             (l.ar
                             ? GoogleFonts.notoNaskhArabic
-                            : GoogleFonts.josefinSans)(
+                            : GoogleFonts.plusJakartaSans)(
                               fontSize: 10.5,
                               fontWeight: FontWeight.w600,
                               color: AppColors.accentDark,
@@ -693,7 +693,7 @@ class _StatusPill extends StatelessWidget {
       ),
       child: Text(
         ar ? label : label.toUpperCase(),
-        style: (ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans)(
+        style: (ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.plusJakartaSans)(
           fontSize: 9,
           letterSpacing: ar ? 0 : 1.0,
           color: color,

@@ -140,7 +140,7 @@ class _VendorDetailScreenState extends ConsumerState<VendorDetailScreen> {
                               fontWeight: FontWeight.w600,
                               color: AppColors.gold400,
                             )
-                          : GoogleFonts.cinzel(
+                          : GoogleFonts.plusJakartaSans(
                               fontSize: 19,
                               color: AppColors.gold400,
                             ),
@@ -156,7 +156,7 @@ class _VendorDetailScreenState extends ConsumerState<VendorDetailScreen> {
                 style:
                     (l.ar
                     ? GoogleFonts.notoNaskhArabic
-                    : GoogleFonts.josefinSans)(
+                    : GoogleFonts.plusJakartaSans)(
                       fontSize: 10,
                       letterSpacing: l.ar ? 0 : 2.2,
                       color: m.textMuted,
@@ -211,7 +211,7 @@ class _VendorDetailScreenState extends ConsumerState<VendorDetailScreen> {
                             style:
                                 (l.ar
                                 ? GoogleFonts.notoNaskhArabic
-                                : GoogleFonts.josefinSans)(
+                                : GoogleFonts.plusJakartaSans)(
                                   color: m.textMuted,
                                   fontSize: 14,
                                 ),
@@ -260,7 +260,7 @@ class _DetailRow extends StatelessWidget {
                   style:
                       (ar
                       ? GoogleFonts.notoNaskhArabic
-                      : GoogleFonts.josefinSans)(
+                      : GoogleFonts.plusJakartaSans)(
                         fontSize: 11,
                         letterSpacing: ar ? 0 : 1.4,
                         color: m.textMuted,
@@ -272,7 +272,7 @@ class _DetailRow extends StatelessWidget {
                   style:
                       (ar
                       ? GoogleFonts.notoNaskhArabic
-                      : GoogleFonts.josefinSans)(
+                      : GoogleFonts.plusJakartaSans)(
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
                         color: m.textPrimary,

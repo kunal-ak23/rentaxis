@@ -37,7 +37,7 @@ TextStyle _display(
         fontWeight: FontWeight.w600,
         color: color,
       )
-    : GoogleFonts.cinzel(
+    : GoogleFonts.plusJakartaSans(
         fontSize: size,
         fontWeight: FontWeight.w600,
         letterSpacing: letterSpacing,
@@ -128,7 +128,7 @@ class _WishlistScreenState extends ConsumerState<WishlistScreen> {
                     child: Text(
                       l.showingFirst100,
                       textAlign: TextAlign.center,
-                      style: GoogleFonts.josefinSans(
+                      style: GoogleFonts.plusJakartaSans(
                         fontSize: 12,
                         color: m.textMuted,
                       ),
@@ -228,7 +228,7 @@ class _WishlistEmptyState extends StatelessWidget {
             Text(
               l.emptySubtitle,
               textAlign: TextAlign.center,
-              style: GoogleFonts.josefinSans(
+              style: GoogleFonts.plusJakartaSans(
                 fontSize: 13.5,
                 height: 1.6,
                 color: m.textSecondary,
@@ -329,7 +329,7 @@ class _WishlistItem extends StatelessWidget {
                             title,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.josefinSans(
+                            style: GoogleFonts.plusJakartaSans(
                               fontSize: 14,
                               fontWeight: FontWeight.w600,
                               color: m.textPrimary,
@@ -344,7 +344,7 @@ class _WishlistItem extends StatelessWidget {
                       Text(
                         propertyName,
                         maxLines: 1,
-                        style: GoogleFonts.josefinSans(
+                        style: GoogleFonts.plusJakartaSans(
                           fontSize: 12,
                           color: m.textMuted,
                         ),
@@ -362,7 +362,7 @@ class _WishlistItem extends StatelessWidget {
                           const SizedBox(width: 3),
                           Text(
                             '$beds',
-                            style: GoogleFonts.josefinSans(
+                            style: GoogleFonts.plusJakartaSans(
                               fontSize: 12,
                               color: m.textSecondary,
                             ),
@@ -372,7 +372,7 @@ class _WishlistItem extends StatelessWidget {
                         if (rent != null)
                           Text(
                             Formatters.currencyCompact(rent),
-                            style: GoogleFonts.josefinSans(
+                            style: GoogleFonts.plusJakartaSans(
                               fontSize: 13,
                               fontWeight: FontWeight.w700,
                               color: m.isDark

@@ -213,7 +213,7 @@ class _ChromeHeader extends StatelessWidget {
                     fontSize: 12,
                     color: AppColors.goldMid,
                   )
-                : GoogleFonts.josefinSans(
+                : GoogleFonts.plusJakartaSans(
                     fontSize: 9.5,
                     letterSpacing: 2.4,
                     color: AppColors.goldMid,
@@ -228,7 +228,7 @@ class _ChromeHeader extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                     color: AppColors.gold400,
                   )
-                : GoogleFonts.cinzel(fontSize: 22, color: AppColors.gold400),
+                : GoogleFonts.plusJakartaSans(fontSize: 22, color: AppColors.gold400),
           ),
           const SizedBox(height: 12),
           SingleChildScrollView(
@@ -268,7 +268,7 @@ class _ChromeHeader extends StatelessWidget {
                                     ? AppColors.primary
                                     : Colors.white.withValues(alpha: 0.6),
                               )
-                            : GoogleFonts.josefinSans(
+                            : GoogleFonts.plusJakartaSans(
                                 fontSize: 9.5,
                                 letterSpacing: 1.4,
                                 fontWeight: FontWeight.w600,
@@ -326,7 +326,7 @@ class _SearchBar extends StatelessWidget {
                         fontSize: 13.5,
                         color: m.textPrimary,
                       )
-                    : GoogleFonts.josefinSans(
+                    : GoogleFonts.plusJakartaSans(
                         fontSize: 13,
                         color: m.textPrimary,
                       ),
@@ -339,7 +339,7 @@ class _SearchBar extends StatelessWidget {
                           fontSize: 13.5,
                           color: m.textMuted,
                         )
-                      : GoogleFonts.josefinSans(
+                      : GoogleFonts.plusJakartaSans(
                           fontSize: 13,
                           color: m.textMuted,
                         ),
@@ -464,7 +464,7 @@ class _LeaseCard extends StatelessWidget {
                                 fontWeight: FontWeight.w600,
                                 color: m.textPrimary,
                               )
-                            : GoogleFonts.josefinSans(
+                            : GoogleFonts.plusJakartaSans(
                                 fontSize: 14.5,
                                 fontWeight: FontWeight.w600,
                                 color: m.textPrimary,
@@ -480,7 +480,7 @@ class _LeaseCard extends StatelessWidget {
                                   fontSize: 12.5,
                                   color: m.textMuted,
                                 )
-                              : GoogleFonts.josefinSans(
+                              : GoogleFonts.plusJakartaSans(
                                   fontSize: 11.5,
                                   color: m.textMuted,
                                 ),
@@ -508,7 +508,7 @@ class _LeaseCard extends StatelessWidget {
                       ? _ChequeProgressBar(total: total, cleared: cleared, m: m)
                       : Text(
                           Formatters.currency(rent),
-                          style: GoogleFonts.cinzel(
+                          style: GoogleFonts.plusJakartaSans(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
                             color: m.textPrimary,
@@ -538,7 +538,7 @@ class _LeaseCard extends StatelessWidget {
                           fontSize: 11,
                           color: m.textMuted,
                         )
-                      : GoogleFonts.josefinSans(
+                      : GoogleFonts.plusJakartaSans(
                           fontSize: 10.5,
                           color: m.textMuted,
                         ),
@@ -613,7 +613,7 @@ class _StatusPill extends StatelessWidget {
                 fontWeight: FontWeight.w600,
                 color: color,
               )
-            : GoogleFonts.josefinSans(
+            : GoogleFonts.plusJakartaSans(
                 fontSize: 9,
                 letterSpacing: 1.2,
                 fontWeight: FontWeight.w600,

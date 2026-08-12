@@ -35,7 +35,7 @@ TextStyle _display(
         fontWeight: weight,
         color: color,
       )
-    : GoogleFonts.cinzel(fontSize: size, fontWeight: weight, color: color);
+    : GoogleFonts.plusJakartaSans(fontSize: size, fontWeight: weight, color: color);
 
 TextStyle _body(
   bool ar, {
@@ -49,7 +49,7 @@ TextStyle _body(
         fontWeight: weight,
         color: color,
       )
-    : GoogleFonts.josefinSans(
+    : GoogleFonts.plusJakartaSans(
         fontSize: size,
         fontWeight: weight,
         color: color,

@@ -166,7 +166,7 @@ class _RequestCardState extends ConsumerState<_RequestCard> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         content: Text(
           release ? l.releaseConfirm : l.cancelConfirm,
-          style: (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans)(
+          style: (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.plusJakartaSans)(
             fontSize: 14,
           ),
         ),
@@ -176,7 +176,7 @@ class _RequestCardState extends ConsumerState<_RequestCard> {
             child: Text(
               l.keep,
               style:
-                  (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans)(
+                  (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.plusJakartaSans)(
                     fontWeight: FontWeight.w600,
                   ),
             ),
@@ -187,7 +187,7 @@ class _RequestCardState extends ConsumerState<_RequestCard> {
             child: Text(
               l.confirm,
               style:
-                  (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans)(
+                  (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.plusJakartaSans)(
                     fontWeight: FontWeight.w600,
                   ),
             ),
@@ -278,7 +278,7 @@ class _RequestCardState extends ConsumerState<_RequestCard> {
                   // facilities_screen.dart's _SpotCard.
                   textDirection: parking ? TextDirection.ltr : null,
                   style: parking
-                      ? GoogleFonts.josefinSans(
+                      ? GoogleFonts.plusJakartaSans(
                           fontSize: 14.5,
                           fontWeight: FontWeight.w600,
                           color: m.textPrimary,
@@ -289,7 +289,7 @@ class _RequestCardState extends ConsumerState<_RequestCard> {
                           fontWeight: FontWeight.w600,
                           color: m.textPrimary,
                         )
-                      : GoogleFonts.josefinSans(
+                      : GoogleFonts.plusJakartaSans(
                           fontSize: 14.5,
                           fontWeight: FontWeight.w600,
                           color: m.textPrimary,
@@ -316,7 +316,7 @@ class _RequestCardState extends ConsumerState<_RequestCard> {
             ].join(' · '),
             style: (l.ar
                 ? GoogleFonts.notoNaskhArabic
-                : GoogleFonts.josefinSans)(
+                : GoogleFonts.plusJakartaSans)(
               fontSize: 12,
               color: m.textSecondary,
             ),
@@ -334,7 +334,7 @@ class _RequestCardState extends ConsumerState<_RequestCard> {
                 note,
                 style: (l.ar
                     ? GoogleFonts.notoNaskhArabic
-                    : GoogleFonts.josefinSans)(
+                    : GoogleFonts.plusJakartaSans)(
                   fontSize: 12.5,
                   color: m.textSecondary,
                   height: 1.4,
@@ -365,7 +365,7 @@ class _RequestCardState extends ConsumerState<_RequestCard> {
                             fontWeight: FontWeight.w600,
                             color: AppColors.accentDark,
                           )
-                        : GoogleFonts.josefinSans(
+                        : GoogleFonts.plusJakartaSans(
                             fontSize: 10,
                             letterSpacing: 1.8,
                             fontWeight: FontWeight.w600,
@@ -377,7 +377,7 @@ class _RequestCardState extends ConsumerState<_RequestCard> {
                     adminNote,
                     style: (l.ar
                         ? GoogleFonts.notoNaskhArabic
-                        : GoogleFonts.josefinSans)(
+                        : GoogleFonts.plusJakartaSans)(
                       fontSize: 12.5,
                       color: m.textSecondary,
                       height: 1.4,

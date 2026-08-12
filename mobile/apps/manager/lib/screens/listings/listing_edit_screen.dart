@@ -517,7 +517,7 @@ class _ChromeHeader extends StatelessWidget {
                           fontWeight: FontWeight.w600,
                           color: Colors.white,
                         )
-                      : GoogleFonts.cinzel(
+                      : GoogleFonts.plusJakartaSans(
                           fontSize: 15,
                           letterSpacing: 2.4,
                           color: Colors.white,
@@ -590,7 +590,7 @@ class _HeaderAction extends StatelessWidget {
                 style:
                     (ar
                     ? GoogleFonts.notoNaskhArabic
-                    : GoogleFonts.josefinSans)(
+                    : GoogleFonts.plusJakartaSans)(
                       fontSize: ar ? 13 : 11.5,
                       fontWeight: FontWeight.w600,
                       letterSpacing: ar ? 0 : 1.4,
@@ -616,13 +616,13 @@ class _MiftahTabBar extends StatelessWidget {
         controller: tabs,
         isScrollable: true,
         labelStyle:
-            (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans)(
+            (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.plusJakartaSans)(
               fontSize: 13,
               fontWeight: FontWeight.w600,
               letterSpacing: l.ar ? 0 : 0.4,
             ),
         unselectedLabelStyle:
-            (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans)(
+            (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.plusJakartaSans)(
               fontSize: 13,
               letterSpacing: l.ar ? 0 : 0.4,
             ),
@@ -849,7 +849,7 @@ class _PricingTabState extends State<_PricingTab> {
                     style:
                         (l.ar
                         ? GoogleFonts.notoNaskhArabic
-                        : GoogleFonts.josefinSans)(
+                        : GoogleFonts.plusJakartaSans)(
                           fontSize: 14,
                           color: s._availableFrom != null
                               ? m.textPrimary
@@ -907,7 +907,7 @@ class _LocationTabState extends State<_LocationTab> {
             l.tapMapHint,
             style: (l.ar
                 ? GoogleFonts.notoNaskhArabic
-                : GoogleFonts.josefinSans)(fontSize: 12, color: m.textMuted),
+                : GoogleFonts.plusJakartaSans)(fontSize: 12, color: m.textMuted),
           ),
           const SizedBox(height: 12),
           ClipRRect(
@@ -950,7 +950,7 @@ class _LocationTabState extends State<_LocationTab> {
               l.latLng(s._lat!.toStringAsFixed(6), s._lng!.toStringAsFixed(6)),
               style: (l.ar
                   ? GoogleFonts.notoNaskhArabic
-                  : GoogleFonts.josefinSans)(fontSize: 12, color: m.textMuted),
+                  : GoogleFonts.plusJakartaSans)(fontSize: 12, color: m.textMuted),
             ),
             GestureDetector(
               onTap: () => setState(() {
@@ -964,7 +964,7 @@ class _LocationTabState extends State<_LocationTab> {
                   style:
                       (l.ar
                       ? GoogleFonts.notoNaskhArabic
-                      : GoogleFonts.josefinSans)(
+                      : GoogleFonts.plusJakartaSans)(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
                         color: m.isDark
@@ -1038,7 +1038,7 @@ class _AmenitiesTabState extends State<_AmenitiesTab> {
                     style:
                         (l.ar
                         ? GoogleFonts.notoNaskhArabic
-                        : GoogleFonts.josefinSans)(
+                        : GoogleFonts.plusJakartaSans)(
                           fontSize: 12,
                           color: isSelected
                               ? AppColors.accent
@@ -1153,7 +1153,7 @@ class _MediaTabState extends State<_MediaTab> {
                             style:
                                 (l.ar
                                 ? GoogleFonts.notoNaskhArabic
-                                : GoogleFonts.josefinSans)(
+                                : GoogleFonts.plusJakartaSans)(
                                   fontSize: 9,
                                   color: AppColors.accent,
                                   fontWeight: FontWeight.w600,
@@ -1268,7 +1268,7 @@ class _MediaTabState extends State<_MediaTab> {
             l.uploadHint,
             style: (l.ar
                 ? GoogleFonts.notoNaskhArabic
-                : GoogleFonts.josefinSans)(fontSize: 11, color: m.textMuted),
+                : GoogleFonts.plusJakartaSans)(fontSize: 11, color: m.textMuted),
           ),
         ],
       ),
@@ -1347,7 +1347,7 @@ class _AddPhotoBtn extends StatelessWidget {
             Text(
               label,
               style:
-                  (ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans)(
+                  (ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.plusJakartaSans)(
                     fontSize: 13,
                     color: AppColors.accentDark,
                     fontWeight: FontWeight.w600,
@@ -1379,7 +1379,7 @@ class _SectionLabel extends StatelessWidget {
                 fontWeight: FontWeight.w600,
                 color: AppColors.accentDark,
               )
-            : GoogleFonts.josefinSans(
+            : GoogleFonts.plusJakartaSans(
                 fontSize: 10.5,
                 fontWeight: FontWeight.w600,
                 color: AppColors.accentDark,
@@ -1416,12 +1416,12 @@ class _Field extends StatelessWidget {
       textDirection: textDirection,
       style: (fieldIsAr
           ? GoogleFonts.notoNaskhArabic
-          : GoogleFonts.josefinSans)(fontSize: 14, color: m.textPrimary),
+          : GoogleFonts.plusJakartaSans)(fontSize: 14, color: m.textPrimary),
       decoration: InputDecoration(
         hintText: hint,
         hintStyle: (fieldIsAr
             ? GoogleFonts.notoNaskhArabic
-            : GoogleFonts.josefinSans)(fontSize: 14, color: m.textMuted),
+            : GoogleFonts.plusJakartaSans)(fontSize: 14, color: m.textMuted),
         filled: true,
         fillColor: m.surface,
         border: OutlineInputBorder(
@@ -1463,7 +1463,7 @@ class _NumField extends StatelessWidget {
       child: TextField(
         controller: TextEditingController(text: value != null ? '$value' : ''),
         keyboardType: TextInputType.number,
-        style: (ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans)(
+        style: (ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.plusJakartaSans)(
           fontSize: 14,
           color: m.textPrimary,
         ),
@@ -1472,7 +1472,7 @@ class _NumField extends StatelessWidget {
           labelText: label,
           labelStyle: (ar
               ? GoogleFonts.notoNaskhArabic
-              : GoogleFonts.josefinSans)(fontSize: 12, color: m.textMuted),
+              : GoogleFonts.plusJakartaSans)(fontSize: 12, color: m.textMuted),
           filled: true,
           fillColor: m.surface,
           border: OutlineInputBorder(
@@ -1537,7 +1537,7 @@ class _SwitchRow extends StatelessWidget {
             child: Text(
               label,
               style:
-                  (ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans)(
+                  (ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.plusJakartaSans)(
                     fontSize: 14,
                     color: m.textPrimary,
                   ),
@@ -1589,7 +1589,7 @@ class _OptionPills extends StatelessWidget {
             child: Text(
               opt.$2,
               style:
-                  (ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans)(
+                  (ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.plusJakartaSans)(
                     fontSize: 13,
                     color: isSelected ? AppColors.accent : m.textSecondary,
                     fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../theme/app_theme.dart';
 import 'miftah_tokens.dart';
 
 /// Drop-in replacement for `AppTheme`. Point `MaterialApp.theme` at
@@ -196,6 +197,14 @@ class MiftahTheme {
           TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
         },
       ),
+
+      // Screens not yet migrated read their colours through `context.miftah`,
+      // which resolves this extension. Without it registered the getter falls
+      // back to its light constant and those screens stay light in dark mode.
+      // Retires once every screen reads from the theme directly.
+      extensions: [
+        isDark ? LegacyMiftahColors.dark : LegacyMiftahColors.light,
+      ],
     );
   }
 }

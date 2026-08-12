@@ -209,7 +209,7 @@ class _RentersScreenState extends ConsumerState<RentersScreen> {
                             fontSize: 19,
                             fontWeight: FontWeight.w600,
                           )
-                        : GoogleFonts.cinzel(
+                        : GoogleFonts.plusJakartaSans(
                             fontSize: 18,
                             fontWeight: FontWeight.w600,
                           ),
@@ -310,7 +310,7 @@ class _RentersScreenState extends ConsumerState<RentersScreen> {
   /// portalPassword) — surface them so the admin can share them, like web.
   void _showPortalCredentialsDialog(String email, String password) {
     final l = _L(context.isAr);
-    final body = l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans;
+    final body = l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.plusJakartaSans;
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -322,7 +322,7 @@ class _RentersScreenState extends ConsumerState<RentersScreen> {
                   fontSize: 19,
                   fontWeight: FontWeight.w600,
                 )
-              : GoogleFonts.cinzel(fontSize: 17, fontWeight: FontWeight.w600),
+              : GoogleFonts.plusJakartaSans(fontSize: 17, fontWeight: FontWeight.w600),
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -384,7 +384,7 @@ class _ChromeHeader extends StatelessWidget {
                     fontSize: 12,
                     color: AppColors.goldMid,
                   )
-                : GoogleFonts.josefinSans(
+                : GoogleFonts.plusJakartaSans(
                     fontSize: 10,
                     letterSpacing: 2.6,
                     color: AppColors.goldMid,
@@ -399,21 +399,21 @@ class _ChromeHeader extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                     color: AppColors.gold400,
                   )
-                : GoogleFonts.cinzel(fontSize: 22, color: AppColors.gold400),
+                : GoogleFonts.plusJakartaSans(fontSize: 22, color: AppColors.gold400),
           ),
           const SizedBox(height: 12),
           TextField(
             onChanged: onSearchChanged,
             style: (l.ar
                 ? GoogleFonts.notoNaskhArabic
-                : GoogleFonts.josefinSans)(fontSize: 13, color: Colors.white),
+                : GoogleFonts.plusJakartaSans)(fontSize: 13, color: Colors.white),
             decoration: InputDecoration(
               isDense: true,
               hintText: l.searchHint,
               hintStyle:
                   (l.ar
                   ? GoogleFonts.notoNaskhArabic
-                  : GoogleFonts.josefinSans)(
+                  : GoogleFonts.plusJakartaSans)(
                     fontSize: 12.5,
                     color: Colors.white.withValues(alpha: 0.45),
                   ),
@@ -461,7 +461,7 @@ class _SectionLabel extends StatelessWidget {
       padding: const EdgeInsetsDirectional.only(start: 18, top: 14, bottom: 6),
       child: Text(
         letter,
-        style: GoogleFonts.josefinSans(
+        style: GoogleFonts.plusJakartaSans(
           fontSize: 9,
           letterSpacing: 2.6,
           color: AppColors.accentDark,
@@ -512,7 +512,7 @@ class _RenterRow extends StatelessWidget {
                 alignment: Alignment.center,
                 child: Text(
                   _initials(name),
-                  style: GoogleFonts.cinzel(
+                  style: GoogleFonts.plusJakartaSans(
                     fontSize: 12,
                     color: AppColors.accentDark,
                   ),
@@ -528,7 +528,7 @@ class _RenterRow extends StatelessWidget {
                       style:
                           (l.ar
                           ? GoogleFonts.notoNaskhArabic
-                          : GoogleFonts.josefinSans)(
+                          : GoogleFonts.plusJakartaSans)(
                             fontSize: 14,
                             color: m.textPrimary,
                           ),
@@ -540,7 +540,7 @@ class _RenterRow extends StatelessWidget {
                         style:
                             (l.ar
                             ? GoogleFonts.notoNaskhArabic
-                            : GoogleFonts.josefinSans)(
+                            : GoogleFonts.plusJakartaSans)(
                               fontSize: 11.5,
                               color: m.textMuted,
                             ),

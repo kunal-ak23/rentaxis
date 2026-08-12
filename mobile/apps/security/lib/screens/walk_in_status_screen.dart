@@ -86,7 +86,7 @@ class _WalkInStatusScreenState extends ConsumerState<WalkInStatusScreen> {
     final l = _L(context.isAr);
     final bodyFont = l.ar
         ? GoogleFonts.notoNaskhArabic
-        : GoogleFonts.josefinSans;
+        : GoogleFonts.plusJakartaSans;
     final status = _pass?['status']?.toString();
     final pending = status == 'PENDING_APPROVAL';
     final active = status == 'ACTIVE';
@@ -118,7 +118,7 @@ class _WalkInStatusScreenState extends ConsumerState<WalkInStatusScreen> {
                   fontWeight: FontWeight.w600,
                   color: m.textPrimary,
                 )
-              : GoogleFonts.cinzel(
+              : GoogleFonts.plusJakartaSans(
                   fontSize: 17,
                   fontWeight: FontWeight.w500,
                   letterSpacing: 1.2,
@@ -201,7 +201,7 @@ class _WalkInStatusScreenState extends ConsumerState<WalkInStatusScreen> {
                             fontWeight: FontWeight.w700,
                             color: m.textPrimary,
                           )
-                        : GoogleFonts.cinzel(
+                        : GoogleFonts.plusJakartaSans(
                             fontSize: 22,
                             fontWeight: FontWeight.w600,
                             color: m.textPrimary,
@@ -273,7 +273,7 @@ class _StatusPill extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: (ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans)(
+        style: (ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.plusJakartaSans)(
           fontSize: 11.5,
           fontWeight: FontWeight.w600,
           letterSpacing: ar ? 0 : 1.4,

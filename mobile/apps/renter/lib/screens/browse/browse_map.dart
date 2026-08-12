@@ -159,7 +159,7 @@ class _PeekCard extends StatelessWidget {
                       title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.josefinSans(
+                      style: GoogleFonts.plusJakartaSans(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
                         color: m.textPrimary,
@@ -169,7 +169,7 @@ class _PeekCard extends StatelessWidget {
                       Text(
                         propertyName,
                         maxLines: 1,
-                        style: GoogleFonts.josefinSans(
+                        style: GoogleFonts.plusJakartaSans(
                           fontSize: 12,
                           color: m.textMuted,
                         ),
@@ -180,7 +180,7 @@ class _PeekCard extends StatelessWidget {
                         if (beds != null)
                           Text(
                             l.bedsAbbrev(beds),
-                            style: GoogleFonts.josefinSans(
+                            style: GoogleFonts.plusJakartaSans(
                               fontSize: 12,
                               color: m.textSecondary,
                             ),
@@ -188,7 +188,7 @@ class _PeekCard extends StatelessWidget {
                         if (rent != null)
                           Text(
                             Formatters.currencyCompact(rent.toDouble()),
-                            style: GoogleFonts.josefinSans(
+                            style: GoogleFonts.plusJakartaSans(
                               fontSize: 13,
                               fontWeight: FontWeight.w700,
                               color: m.isDark

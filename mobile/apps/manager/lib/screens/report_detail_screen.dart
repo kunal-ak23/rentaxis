@@ -114,7 +114,7 @@ class ReportDetailScreen extends ConsumerWidget {
                         fontSize: 13,
                         color: m.textSecondary,
                       )
-                    : GoogleFonts.josefinSans(
+                    : GoogleFonts.plusJakartaSans(
                         fontSize: 12,
                         letterSpacing: 1.2,
                         color: m.textSecondary,
@@ -123,7 +123,7 @@ class ReportDetailScreen extends ConsumerWidget {
               const SizedBox(height: 6),
               Text(
                 Formatters.currency(netIncome),
-                style: GoogleFonts.cinzel(
+                style: GoogleFonts.plusJakartaSans(
                   fontSize: 24,
                   fontWeight: FontWeight.w700,
                   color: netIncome >= 0 ? m.success : m.danger,
@@ -192,7 +192,7 @@ class ReportDetailScreen extends ConsumerWidget {
             fontSize: 13,
             color: m.textPrimary,
           )
-        : GoogleFonts.josefinSans(
+        : GoogleFonts.plusJakartaSans(
             fontWeight: FontWeight.w700,
             fontSize: 12.5,
             letterSpacing: 0.6,
@@ -249,7 +249,7 @@ class ReportDetailScreen extends ConsumerWidget {
                             fontSize: 13.5,
                             color: m.textPrimary,
                           )
-                        : GoogleFonts.josefinSans(
+                        : GoogleFonts.plusJakartaSans(
                             fontSize: 13,
                             color: m.textPrimary,
                           ),
@@ -261,7 +261,7 @@ class ReportDetailScreen extends ConsumerWidget {
                   child: Text(
                     debit > 0 ? Formatters.currency(debit) : '-',
                     textAlign: TextAlign.right,
-                    style: GoogleFonts.cinzel(fontSize: 13, color: m.danger),
+                    style: GoogleFonts.plusJakartaSans(fontSize: 13, color: m.danger),
                   ),
                 ),
                 Expanded(
@@ -269,7 +269,7 @@ class ReportDetailScreen extends ConsumerWidget {
                   child: Text(
                     credit > 0 ? Formatters.currency(credit) : '-',
                     textAlign: TextAlign.right,
-                    style: GoogleFonts.cinzel(fontSize: 13, color: m.success),
+                    style: GoogleFonts.plusJakartaSans(fontSize: 13, color: m.success),
                   ),
                 ),
               ],
@@ -292,7 +292,7 @@ class ReportDetailScreen extends ConsumerWidget {
                 child: Text(
                   Formatters.currency(totalDebit),
                   textAlign: TextAlign.right,
-                  style: GoogleFonts.cinzel(
+                  style: GoogleFonts.plusJakartaSans(
                     fontWeight: FontWeight.w700,
                     fontSize: 13,
                     color: m.danger,
@@ -304,7 +304,7 @@ class ReportDetailScreen extends ConsumerWidget {
                 child: Text(
                   Formatters.currency(totalCredit),
                   textAlign: TextAlign.right,
-                  style: GoogleFonts.cinzel(
+                  style: GoogleFonts.plusJakartaSans(
                     fontWeight: FontWeight.w700,
                     fontSize: 13,
                     color: m.success,
@@ -367,7 +367,7 @@ class ReportDetailScreen extends ConsumerWidget {
                         fontSize: 13,
                         color: m.textSecondary,
                       )
-                    : GoogleFonts.josefinSans(
+                    : GoogleFonts.plusJakartaSans(
                         fontSize: 12,
                         letterSpacing: 1.2,
                         color: m.textSecondary,
@@ -376,7 +376,7 @@ class ReportDetailScreen extends ConsumerWidget {
               const SizedBox(height: 6),
               Text(
                 Formatters.currency(netVat),
-                style: GoogleFonts.cinzel(
+                style: GoogleFonts.plusJakartaSans(
                   fontSize: 24,
                   fontWeight: FontWeight.w700,
                   color: m.textPrimary,
@@ -455,7 +455,7 @@ class ReportDetailScreen extends ConsumerWidget {
                               fontWeight: FontWeight.w600,
                               color: m.textPrimary,
                             )
-                          : GoogleFonts.josefinSans(
+                          : GoogleFonts.plusJakartaSans(
                               fontWeight: FontWeight.w600,
                               fontSize: 13,
                               color: m.textPrimary,
@@ -467,7 +467,7 @@ class ReportDetailScreen extends ConsumerWidget {
                   const SizedBox(width: 8),
                   Text(
                     Formatters.date(date, ar: l.ar),
-                    style: GoogleFonts.josefinSans(
+                    style: GoogleFonts.plusJakartaSans(
                       fontSize: 11,
                       color: m.textMuted,
                     ),
@@ -515,7 +515,7 @@ class ReportDetailScreen extends ConsumerWidget {
               children: [
                 Text(
                   entry.key,
-                  style: GoogleFonts.josefinSans(
+                  style: GoogleFonts.plusJakartaSans(
                     fontSize: 11.5,
                     color: m.textMuted,
                   ),
@@ -528,7 +528,7 @@ class ReportDetailScreen extends ConsumerWidget {
                           fontSize: 14,
                           color: m.textPrimary,
                         )
-                      : GoogleFonts.josefinSans(
+                      : GoogleFonts.plusJakartaSans(
                           fontSize: 14,
                           color: m.textPrimary,
                         ),
@@ -552,7 +552,7 @@ class ReportDetailScreen extends ConsumerWidget {
               fontWeight: FontWeight.w600,
               color: m.textPrimary,
             )
-          : GoogleFonts.josefinSans(
+          : GoogleFonts.plusJakartaSans(
               fontSize: 12,
               letterSpacing: 1.6,
               fontWeight: FontWeight.w600,
@@ -607,7 +607,7 @@ class _ChromeHeader extends StatelessWidget {
                         fontWeight: FontWeight.w600,
                         color: Colors.white,
                       )
-                    : GoogleFonts.cinzel(
+                    : GoogleFonts.plusJakartaSans(
                         fontSize: 15,
                         letterSpacing: 1.6,
                         color: Colors.white,
@@ -662,7 +662,7 @@ class _SummaryCard extends StatelessWidget {
                             fontSize: 13,
                             color: color.withValues(alpha: 0.85),
                           )
-                        : GoogleFonts.josefinSans(
+                        : GoogleFonts.plusJakartaSans(
                             fontSize: 12,
                             letterSpacing: 0.8,
                             color: color.withValues(alpha: 0.85),
@@ -674,7 +674,7 @@ class _SummaryCard extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               amount,
-              style: GoogleFonts.cinzel(
+              style: GoogleFonts.plusJakartaSans(
                 fontSize: 17,
                 fontWeight: FontWeight.w700,
                 color: color,
@@ -721,12 +721,12 @@ class _LineItem extends StatelessWidget {
                       fontSize: 14.5,
                       color: m.textPrimary,
                     )
-                  : GoogleFonts.josefinSans(fontSize: 14, color: m.textPrimary),
+                  : GoogleFonts.plusJakartaSans(fontSize: 14, color: m.textPrimary),
             ),
           ),
           Text(
             Formatters.currency(amount),
-            style: GoogleFonts.cinzel(
+            style: GoogleFonts.plusJakartaSans(
               fontWeight: FontWeight.w600,
               fontSize: 13,
               color: color,
@@ -773,7 +773,7 @@ class _TransactionRow extends StatelessWidget {
                           fontWeight: FontWeight.w500,
                           color: m.textPrimary,
                         )
-                      : GoogleFonts.josefinSans(
+                      : GoogleFonts.plusJakartaSans(
                           fontSize: 13,
                           fontWeight: FontWeight.w500,
                           color: m.textPrimary,
@@ -784,7 +784,7 @@ class _TransactionRow extends StatelessWidget {
                 if (date != null)
                   Text(
                     Formatters.date(date, ar: ar),
-                    style: GoogleFonts.josefinSans(
+                    style: GoogleFonts.plusJakartaSans(
                       fontSize: 11,
                       color: m.textMuted,
                     ),
@@ -794,7 +794,7 @@ class _TransactionRow extends StatelessWidget {
           ),
           Text(
             Formatters.currency(amount),
-            style: GoogleFonts.cinzel(
+            style: GoogleFonts.plusJakartaSans(
               fontWeight: FontWeight.w600,
               fontSize: 13,
               color: amount >= 0 ? m.success : m.danger,
@@ -840,7 +840,7 @@ class _VatSummaryCard extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                     color: color,
                   )
-                : GoogleFonts.josefinSans(
+                : GoogleFonts.plusJakartaSans(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
                     color: color,
@@ -848,7 +848,7 @@ class _VatSummaryCard extends StatelessWidget {
           ),
           Text(
             Formatters.currency(amount),
-            style: GoogleFonts.cinzel(
+            style: GoogleFonts.plusJakartaSans(
               fontSize: 18,
               fontWeight: FontWeight.w700,
               color: color,
@@ -897,7 +897,7 @@ class _VatLineRow extends StatelessWidget {
                           fontWeight: FontWeight.w500,
                           color: m.textPrimary,
                         )
-                      : GoogleFonts.josefinSans(
+                      : GoogleFonts.plusJakartaSans(
                           fontSize: 13,
                           fontWeight: FontWeight.w500,
                           color: m.textPrimary,
@@ -907,7 +907,7 @@ class _VatLineRow extends StatelessWidget {
                 ),
                 Text(
                   '${l.taxable}: ${Formatters.currency(taxableAmount)}',
-                  style: GoogleFonts.josefinSans(
+                  style: GoogleFonts.plusJakartaSans(
                     fontSize: 11,
                     color: m.textMuted,
                   ),
@@ -917,7 +917,7 @@ class _VatLineRow extends StatelessWidget {
           ),
           Text(
             Formatters.currency(vatAmount),
-            style: GoogleFonts.cinzel(
+            style: GoogleFonts.plusJakartaSans(
               fontWeight: FontWeight.w600,
               fontSize: 13,
               color: color,
@@ -958,7 +958,7 @@ class _LedgerAmountChip extends StatelessWidget {
                 fontWeight: FontWeight.w600,
                 color: color,
               )
-            : GoogleFonts.josefinSans(
+            : GoogleFonts.plusJakartaSans(
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
                 color: color,

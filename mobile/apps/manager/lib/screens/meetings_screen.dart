@@ -274,7 +274,7 @@ class _MeetingsScreenState extends ConsumerState<MeetingsScreen> {
                         fontWeight: FontWeight.w600,
                         color: AppColors.gold400,
                       )
-                    : GoogleFonts.cinzel(
+                    : GoogleFonts.plusJakartaSans(
                         fontSize: 23,
                         color: AppColors.gold400,
                       ),
@@ -349,7 +349,7 @@ class _SegmentChip extends StatelessWidget {
         ),
         child: Text(
           label,
-          style: GoogleFonts.josefinSans(
+          style: GoogleFonts.plusJakartaSans(
             fontSize: 11.5,
             fontWeight: FontWeight.w500,
             letterSpacing: ar ? 0 : 1.2,
@@ -421,7 +421,7 @@ class _MeetingCard extends StatelessWidget {
                         Expanded(
                           child: Text(
                             meeting['title'] ?? l.purposeLabel(purpose),
-                            style: GoogleFonts.josefinSans(
+                            style: GoogleFonts.plusJakartaSans(
                               fontSize: 14.5,
                               fontWeight: FontWeight.w500,
                               color: m.textPrimary,
@@ -449,7 +449,7 @@ class _MeetingCard extends StatelessWidget {
                         const SizedBox(width: 5),
                         Text(
                           l.formatSlot(meeting['slotStart']?.toString()),
-                          style: GoogleFonts.josefinSans(
+                          style: GoogleFonts.plusJakartaSans(
                             fontSize: 12,
                             color: m.textMuted,
                           ),
@@ -467,7 +467,7 @@ class _MeetingCard extends StatelessWidget {
                         const SizedBox(width: 5),
                         Text(
                           meeting['requesterName'] ?? '-',
-                          style: GoogleFonts.josefinSans(
+                          style: GoogleFonts.plusJakartaSans(
                             fontSize: 12,
                             color: m.textMuted,
                           ),
@@ -492,7 +492,7 @@ class _MeetingCard extends StatelessWidget {
                           const SizedBox(width: 5),
                           Text(
                             meeting['propertyName'],
-                            style: GoogleFonts.josefinSans(
+                            style: GoogleFonts.plusJakartaSans(
                               fontSize: 12,
                               color: m.textMuted,
                             ),
@@ -532,7 +532,7 @@ class _StatusPill extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: GoogleFonts.josefinSans(
+        style: GoogleFonts.plusJakartaSans(
           fontSize: 9.5,
           fontWeight: FontWeight.w600,
           letterSpacing: ar ? 0 : 0.8,

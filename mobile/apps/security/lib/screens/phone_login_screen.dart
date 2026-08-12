@@ -143,7 +143,7 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
                                     fontSize: 12,
                                     color: AppColors.goldMid,
                                   )
-                                : GoogleFonts.josefinSans(
+                                : GoogleFonts.plusJakartaSans(
                                     fontSize: 9.5,
                                     letterSpacing: 3.4,
                                     color: AppColors.goldMid,
@@ -219,7 +219,7 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
                                           fontWeight: FontWeight.w600,
                                           color: AppColors.primary,
                                         )
-                                      : GoogleFonts.josefinSans(
+                                      : GoogleFonts.plusJakartaSans(
                                           fontSize: 13.5,
                                           fontWeight: FontWeight.w600,
                                           color: AppColors.primary,
@@ -237,7 +237,7 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
                       style:
                           (l.ar
                           ? GoogleFonts.notoNaskhArabic
-                          : GoogleFonts.josefinSans)(
+                          : GoogleFonts.plusJakartaSans)(
                             fontSize: 11,
                             color: Colors.white.withValues(alpha: 0.35),
                           ),
@@ -249,7 +249,7 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
                       style:
                           (l.ar
                           ? GoogleFonts.notoNaskhArabic
-                          : GoogleFonts.josefinSans)(
+                          : GoogleFonts.plusJakartaSans)(
                             fontSize: 11,
                             color: AppColors.gold400.withValues(alpha: 0.6),
                           ),
@@ -294,7 +294,7 @@ class _ErrorBanner extends StatelessWidget {
             child: Text(
               message,
               style:
-                  (ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans)(
+                  (ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.plusJakartaSans)(
                     color: AppColorsDark.danger,
                     fontSize: 13,
                   ),
@@ -363,7 +363,7 @@ class _LanguagePill extends StatelessWidget {
             AppLanguage.en,
             Text(
               'EN',
-              style: GoogleFonts.josefinSans(
+              style: GoogleFonts.plusJakartaSans(
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
                 letterSpacing: 1.4,

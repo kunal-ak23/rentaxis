@@ -87,7 +87,7 @@ class _Step3ConfirmState extends State<Step3Confirm> {
     final m = context.miftah;
     final bodyFont = l.ar
         ? GoogleFonts.notoNaskhArabic
-        : GoogleFonts.josefinSans;
+        : GoogleFonts.plusJakartaSans;
     final result = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
@@ -114,7 +114,7 @@ class _Step3ConfirmState extends State<Step3Confirm> {
                       fontWeight: FontWeight.w600,
                       color: m.textPrimary,
                     )
-                  : GoogleFonts.cinzel(
+                  : GoogleFonts.plusJakartaSans(
                       fontSize: 18,
                       fontWeight: FontWeight.w600,
                       color: m.textPrimary,
@@ -195,7 +195,7 @@ class _Step3ConfirmState extends State<Step3Confirm> {
     final l = _L(context.isAr);
     final bodyFont = l.ar
         ? GoogleFonts.notoNaskhArabic
-        : GoogleFonts.josefinSans;
+        : GoogleFonts.plusJakartaSans;
     final missing = _missingItems(l);
 
     return Column(
@@ -416,7 +416,7 @@ class _MatchCard extends StatelessWidget {
     final hasMatch = matchedPayment != null;
     final bodyFont = l.ar
         ? GoogleFonts.notoNaskhArabic
-        : GoogleFonts.josefinSans;
+        : GoogleFonts.plusJakartaSans;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -489,7 +489,7 @@ class _MatchCard extends StatelessWidget {
                           fontWeight: FontWeight.w600,
                           color: Colors.white,
                         )
-                      : GoogleFonts.cinzel(
+                      : GoogleFonts.plusJakartaSans(
                           fontSize: 18,
                           fontWeight: FontWeight.w500,
                           color: Colors.white,
@@ -598,7 +598,7 @@ class _MatchStat extends StatelessWidget {
   Widget build(BuildContext context) {
     final bodyFont = l.ar
         ? GoogleFonts.notoNaskhArabic
-        : GoogleFonts.josefinSans;
+        : GoogleFonts.plusJakartaSans;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -633,7 +633,7 @@ class _SectionLabel extends StatelessWidget {
     final m = context.miftah;
     return Text(
       text,
-      style: (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans)(
+      style: (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.plusJakartaSans)(
         fontSize: l.ar ? 12.5 : 11,
         fontWeight: FontWeight.w600,
         letterSpacing: l.ar ? 0 : 0.6,
@@ -661,7 +661,7 @@ class _WarningsCard extends StatelessWidget {
     final m = context.miftah;
     final bodyFont = l.ar
         ? GoogleFonts.notoNaskhArabic
-        : GoogleFonts.josefinSans;
+        : GoogleFonts.plusJakartaSans;
     final lines = <String>[
       if (lowConfidence) l.lowConfidenceBanner,
       ...warnings,
@@ -716,7 +716,7 @@ class _StaticRow extends StatelessWidget {
     final m = context.miftah;
     final bodyFont = l.ar
         ? GoogleFonts.notoNaskhArabic
-        : GoogleFonts.josefinSans;
+        : GoogleFonts.plusJakartaSans;
     return Container(
       padding: const EdgeInsetsDirectional.symmetric(
         horizontal: 14,
@@ -767,7 +767,7 @@ class _MismatchChip extends StatelessWidget {
         ),
         child: Text(
           text,
-          style: (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans)(
+          style: (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.plusJakartaSans)(
             fontSize: 11,
             color: m.warning,
           ),
@@ -798,7 +798,7 @@ class _EditRow extends StatelessWidget {
     final m = context.miftah;
     final bodyFont = l.ar
         ? GoogleFonts.notoNaskhArabic
-        : GoogleFonts.josefinSans;
+        : GoogleFonts.plusJakartaSans;
     return InkWell(
       onTap: onTap,
       child: Container(
@@ -861,7 +861,7 @@ class _DispositionRow extends StatelessWidget {
     final m = context.miftah;
     final bodyFont = l.ar
         ? GoogleFonts.notoNaskhArabic
-        : GoogleFonts.josefinSans;
+        : GoogleFonts.plusJakartaSans;
     return Opacity(
       opacity: disabled ? 0.5 : 1.0,
       child: InkWell(

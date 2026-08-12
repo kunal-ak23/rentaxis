@@ -33,7 +33,7 @@ class ApprovalsScreen extends StatelessWidget {
                   fontWeight: FontWeight.w600,
                   color: AppColors.gold400,
                 )
-              : GoogleFonts.cinzel(fontSize: 17, color: AppColors.gold400),
+              : GoogleFonts.plusJakartaSans(fontSize: 17, color: AppColors.gold400),
         ),
       ),
       body: const SafeArea(child: ApprovalsView()),
@@ -198,7 +198,7 @@ class _ApprovalCardState extends ConsumerState<_ApprovalCard> {
                                 fontWeight: FontWeight.w600,
                                 color: m.textPrimary,
                               )
-                            : GoogleFonts.josefinSans(
+                            : GoogleFonts.plusJakartaSans(
                                 fontSize: 18,
                                 fontWeight: FontWeight.w700,
                                 color: m.textPrimary,
@@ -299,7 +299,7 @@ class _StatusPill extends StatelessWidget {
                 fontWeight: FontWeight.w600,
                 color: color,
               )
-            : GoogleFonts.josefinSans(
+            : GoogleFonts.plusJakartaSans(
                 fontSize: 10.5,
                 fontWeight: FontWeight.w600,
                 letterSpacing: 1.2,
@@ -331,7 +331,7 @@ class _DetailRow extends StatelessWidget {
             child: Text(
               value,
               style:
-                  (ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans)(
+                  (ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.plusJakartaSans)(
                     fontSize: 14,
                     color: m.textSecondary,
                   ),

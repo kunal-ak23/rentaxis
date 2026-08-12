@@ -27,7 +27,7 @@ TextStyle _display(
         fontWeight: weight,
         color: color,
       )
-    : GoogleFonts.cinzel(fontSize: size, fontWeight: weight, color: color);
+    : GoogleFonts.plusJakartaSans(fontSize: size, fontWeight: weight, color: color);
 
 TextStyle _body(
   bool ar, {
@@ -41,7 +41,7 @@ TextStyle _body(
         fontWeight: weight,
         color: color,
       )
-    : GoogleFonts.josefinSans(
+    : GoogleFonts.plusJakartaSans(
         fontSize: size,
         fontWeight: weight,
         color: color,
@@ -732,7 +732,7 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
                         fontWeight: FontWeight.w600,
                         color: AppColors.accent,
                       )
-                    : GoogleFonts.josefinSans(
+                    : GoogleFonts.plusJakartaSans(
                         fontWeight: FontWeight.w600,
                         letterSpacing: 1.4,
                         color: AppColors.accent,
@@ -818,7 +818,7 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
                         ),
                         Text(
                           '+ ${Formatters.currency(double.tryParse(addition['amount']?.toString() ?? '0') ?? 0)}',
-                          style: GoogleFonts.cinzel(
+                          style: GoogleFonts.plusJakartaSans(
                             color: m.success,
                             fontWeight: FontWeight.w700,
                             fontSize: 14,
@@ -878,7 +878,7 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
                           fontWeight: FontWeight.w700,
                           fontSize: 13.5,
                         )
-                      : GoogleFonts.josefinSans(
+                      : GoogleFonts.plusJakartaSans(
                           color: m.success,
                           fontWeight: FontWeight.w700,
                           fontSize: 12,
@@ -1009,7 +1009,7 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
                         fontWeight: FontWeight.w600,
                         color: Colors.white,
                       )
-                    : GoogleFonts.josefinSans(
+                    : GoogleFonts.plusJakartaSans(
                         fontSize: 11,
                         letterSpacing: 1.2,
                         fontWeight: FontWeight.w600,
@@ -1053,7 +1053,7 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
                         color: Colors.white70,
                         fontSize: 13,
                       )
-                    : GoogleFonts.josefinSans(
+                    : GoogleFonts.plusJakartaSans(
                         color: Colors.white70,
                         fontSize: 12.5,
                       ),
@@ -1062,7 +1062,7 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
               Text(
                 Formatters.currency(deposit),
                 key: const Key('settlement-deposit-amount'),
-                style: GoogleFonts.cinzel(
+                style: GoogleFonts.plusJakartaSans(
                   color: AppColors.gold400,
                   fontWeight: FontWeight.w700,
                   fontSize: 21,
@@ -1173,7 +1173,7 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
                                     color: AppColors.info,
                                     fontWeight: FontWeight.w600,
                                   )
-                                : GoogleFonts.josefinSans(
+                                : GoogleFonts.plusJakartaSans(
                                     fontSize: 9.5,
                                     letterSpacing: 1,
                                     color: AppColors.info,
@@ -1688,7 +1688,7 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
                         fontWeight: FontWeight.w600,
                         fontSize: 14.5,
                       )
-                    : GoogleFonts.josefinSans(
+                    : GoogleFonts.plusJakartaSans(
                         color: Colors.white,
                         fontWeight: FontWeight.w600,
                         fontSize: 13,
@@ -1696,7 +1696,7 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
               ),
               Text(
                 Formatters.currency(refund.abs()),
-                style: GoogleFonts.cinzel(
+                style: GoogleFonts.plusJakartaSans(
                   color: isRefundPositive
                       ? AppColors.success
                       : AppColors.danger,
@@ -1742,11 +1742,11 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
           label,
           style: l.ar
               ? GoogleFonts.notoNaskhArabic(color: Colors.white70, fontSize: 13)
-              : GoogleFonts.josefinSans(color: Colors.white70, fontSize: 12.5),
+              : GoogleFonts.plusJakartaSans(color: Colors.white70, fontSize: 12.5),
         ),
         Text(
           value,
-          style: GoogleFonts.cinzel(
+          style: GoogleFonts.plusJakartaSans(
             color: valueColor,
             fontWeight: FontWeight.w600,
             fontSize: 14,
@@ -2077,7 +2077,7 @@ class _SectionHeader extends StatelessWidget {
                   color: AppColors.accentDark,
                   fontWeight: FontWeight.w600,
                 )
-              : GoogleFonts.josefinSans(
+              : GoogleFonts.plusJakartaSans(
                   fontSize: 10.5,
                   letterSpacing: 2.2,
                   color: AppColors.accentDark,

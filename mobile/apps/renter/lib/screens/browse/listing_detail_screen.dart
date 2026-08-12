@@ -86,7 +86,7 @@ TextStyle _display(
         fontWeight: FontWeight.w600,
         color: color,
       )
-    : GoogleFonts.cinzel(
+    : GoogleFonts.plusJakartaSans(
         fontSize: fontSize,
         fontWeight: FontWeight.w600,
         letterSpacing: letterSpacing,
@@ -99,7 +99,7 @@ TextStyle _overline(
   double fontSize = 11,
   double letterSpacing = 2.0,
   Color? color,
-}) => GoogleFonts.josefinSans(
+}) => GoogleFonts.plusJakartaSans(
   fontSize: fontSize,
   fontWeight: FontWeight.w500,
   letterSpacing: ar ? 0 : letterSpacing,
@@ -242,7 +242,7 @@ class _ListingDetailViewState extends ConsumerState<_ListingDetailView> {
                       const SizedBox(height: 8),
                       Text(
                         l['descriptionEn'] as String,
-                        style: GoogleFonts.josefinSans(
+                        style: GoogleFonts.plusJakartaSans(
                           fontSize: 14,
                           color: m.textSecondary,
                           height: 1.6,
@@ -421,7 +421,7 @@ class _HeroCarouselState extends State<_HeroCarousel> {
               ),
               child: Text(
                 '${_current + 1}/${widget.photos.length}',
-                style: GoogleFonts.josefinSans(
+                style: GoogleFonts.plusJakartaSans(
                   fontSize: 12,
                   color: Colors.white,
                 ),
@@ -532,7 +532,7 @@ class _QuickFacts extends StatelessWidget {
           const SizedBox(height: 6),
           Text(
             '${Formatters.currencyCompact(rent)}${l.perYear}',
-            style: GoogleFonts.josefinSans(
+            style: GoogleFonts.plusJakartaSans(
               fontSize: 15,
               fontWeight: FontWeight.w600,
               color: m.isDark ? AppColors.accent : AppColors.accentDark,
@@ -688,7 +688,7 @@ class _FactChip extends StatelessWidget {
         const SizedBox(width: 4),
         Text(
           label,
-          style: GoogleFonts.josefinSans(fontSize: 13, color: m.textSecondary),
+          style: GoogleFonts.plusJakartaSans(fontSize: 13, color: m.textSecondary),
         ),
       ],
     );
@@ -750,7 +750,7 @@ class _AmenitiesGrid extends StatelessWidget {
                         fontSize: 12,
                         color: m.textPrimary,
                       )
-                    : GoogleFonts.josefinSans(
+                    : GoogleFonts.plusJakartaSans(
                         fontSize: 11.5,
                         letterSpacing: 0.6,
                         color: m.textPrimary,
@@ -805,7 +805,7 @@ class _MapCard extends StatelessWidget {
           onTap: () => _openMaps(lat.toDouble(), lng.toDouble()),
           child: Text(
             l.getDirections,
-            style: GoogleFonts.josefinSans(
+            style: GoogleFonts.plusJakartaSans(
               fontSize: 13,
               color: context.miftah.isDark
                   ? AppColors.accent
@@ -911,7 +911,7 @@ class _MediaBtn extends StatelessWidget {
             const SizedBox(width: 6),
             Text(
               label,
-              style: GoogleFonts.josefinSans(fontSize: 13, color: fg),
+              style: GoogleFonts.plusJakartaSans(fontSize: 13, color: fg),
             ),
           ],
         ),
@@ -973,7 +973,7 @@ class _BookingBar extends StatelessWidget {
                           TextSpan(text: Formatters.currencyCompact(rent)),
                           TextSpan(
                             text: ' ${l.yrSuffix}',
-                            style: GoogleFonts.josefinSans(
+                            style: GoogleFonts.plusJakartaSans(
                               fontSize: 12,
                               color: Colors.white.withValues(alpha: 0.5),
                             ),

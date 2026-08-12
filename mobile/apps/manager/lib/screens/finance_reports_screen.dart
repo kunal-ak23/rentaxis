@@ -406,7 +406,7 @@ class _ChromeHeader extends StatelessWidget {
                         fontWeight: FontWeight.w600,
                         color: Colors.white,
                       )
-                    : GoogleFonts.cinzel(
+                    : GoogleFonts.plusJakartaSans(
                         fontSize: 15,
                         letterSpacing: 1.6,
                         color: Colors.white,
@@ -471,7 +471,7 @@ class _DateField extends StatelessWidget {
                             fontSize: 11,
                             color: m.textMuted,
                           )
-                        : GoogleFonts.josefinSans(
+                        : GoogleFonts.plusJakartaSans(
                             fontSize: 9.5,
                             letterSpacing: 1.4,
                             color: m.textMuted,
@@ -488,7 +488,7 @@ class _DateField extends StatelessWidget {
                             fontWeight: FontWeight.w600,
                             color: date != null ? m.textPrimary : m.textMuted,
                           )
-                        : GoogleFonts.josefinSans(
+                        : GoogleFonts.plusJakartaSans(
                             fontSize: 13,
                             fontWeight: FontWeight.w500,
                             color: date != null ? m.textPrimary : m.textMuted,
@@ -550,7 +550,7 @@ class _ReportCard extends StatelessWidget {
                       fontWeight: FontWeight.w600,
                       color: m.textPrimary,
                     )
-                  : GoogleFonts.josefinSans(
+                  : GoogleFonts.plusJakartaSans(
                       fontSize: 12.5,
                       fontWeight: FontWeight.w600,
                       color: m.textPrimary,
@@ -595,7 +595,7 @@ class _PickerDialog extends StatelessWidget {
                 fontWeight: FontWeight.w600,
                 color: m.textPrimary,
               )
-            : GoogleFonts.cinzel(fontSize: 17, color: m.textPrimary),
+            : GoogleFonts.plusJakartaSans(fontSize: 17, color: m.textPrimary),
       ),
       content: SizedBox(
         width: double.maxFinite,
@@ -605,7 +605,7 @@ class _PickerDialog extends StatelessWidget {
                 child: Text(
                   l.noItemsFound,
                   textAlign: TextAlign.center,
-                  style: GoogleFonts.josefinSans(color: m.textMuted),
+                  style: GoogleFonts.plusJakartaSans(color: m.textMuted),
                 ),
               )
             : ListView.builder(
@@ -633,7 +633,7 @@ class _PickerDialog extends StatelessWidget {
                       name,
                       style: l.ar
                           ? GoogleFonts.notoNaskhArabic(color: m.textPrimary)
-                          : GoogleFonts.josefinSans(color: m.textPrimary),
+                          : GoogleFonts.plusJakartaSans(color: m.textPrimary),
                     ),
                     subtitle: subtitle != null && subtitle.isNotEmpty
                         ? Text(
@@ -642,7 +642,7 @@ class _PickerDialog extends StatelessWidget {
                                 ? GoogleFonts.notoNaskhArabic(
                                     color: m.textMuted,
                                   )
-                                : GoogleFonts.josefinSans(color: m.textMuted),
+                                : GoogleFonts.plusJakartaSans(color: m.textMuted),
                           )
                         : null,
                     onTap: () => Navigator.pop(ctx, item),
@@ -657,7 +657,7 @@ class _PickerDialog extends StatelessWidget {
             l.cancel,
             style: l.ar
                 ? GoogleFonts.notoNaskhArabic(fontWeight: FontWeight.w600)
-                : GoogleFonts.josefinSans(fontWeight: FontWeight.w600),
+                : GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
           ),
         ),
       ],

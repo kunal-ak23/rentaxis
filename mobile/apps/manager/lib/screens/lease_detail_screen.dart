@@ -43,7 +43,7 @@ TextStyle _display(
         fontWeight: weight,
         color: color,
       )
-    : GoogleFonts.cinzel(fontSize: size, fontWeight: weight, color: color);
+    : GoogleFonts.plusJakartaSans(fontSize: size, fontWeight: weight, color: color);
 
 TextStyle _body(
   bool ar, {
@@ -57,7 +57,7 @@ TextStyle _body(
         fontWeight: weight,
         color: color,
       )
-    : GoogleFonts.josefinSans(
+    : GoogleFonts.plusJakartaSans(
         fontSize: size,
         fontWeight: weight,
         color: color,
@@ -686,7 +686,7 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
                           fontSize: 12,
                           color: AppColors.goldMid,
                         )
-                      : GoogleFonts.josefinSans(
+                      : GoogleFonts.plusJakartaSans(
                           fontSize: 9.5,
                           letterSpacing: 2.2,
                           color: AppColors.goldMid,
@@ -765,7 +765,7 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
                     fontSize: 13,
                     color: Colors.white70,
                   )
-                : GoogleFonts.josefinSans(
+                : GoogleFonts.plusJakartaSans(
                     fontSize: 12.5,
                     color: Colors.white70,
                   ),
@@ -958,7 +958,7 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
                       color: AppColors.accentDark,
                       fontWeight: FontWeight.w600,
                     )
-                  : GoogleFonts.josefinSans(
+                  : GoogleFonts.plusJakartaSans(
                       fontSize: 10.5,
                       letterSpacing: 2.2,
                       color: AppColors.accentDark,
@@ -1095,7 +1095,7 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
                       color: AppColors.accentDark,
                       fontWeight: FontWeight.w600,
                     )
-                  : GoogleFonts.josefinSans(
+                  : GoogleFonts.plusJakartaSans(
                       fontSize: 10.5,
                       letterSpacing: 2.2,
                       color: AppColors.accentDark,
@@ -1225,7 +1225,7 @@ class _HeaderPill extends StatelessWidget {
                 fontWeight: FontWeight.w600,
                 color: color,
               )
-            : GoogleFonts.josefinSans(
+            : GoogleFonts.plusJakartaSans(
                 fontSize: 9,
                 letterSpacing: 1.2,
                 fontWeight: FontWeight.w600,
@@ -1265,7 +1265,7 @@ class _InfoBlock extends StatelessWidget {
           l.ar ? label : label.toUpperCase(),
           style: l.ar
               ? GoogleFonts.notoNaskhArabic(fontSize: 10.5, color: m.textMuted)
-              : GoogleFonts.josefinSans(
+              : GoogleFonts.plusJakartaSans(
                   fontSize: 9,
                   letterSpacing: 1.6,
                   color: m.textMuted,
@@ -1275,7 +1275,7 @@ class _InfoBlock extends StatelessWidget {
         Text(
           value,
           style: isAmount
-              ? GoogleFonts.cinzel(
+              ? GoogleFonts.plusJakartaSans(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
                   color: m.textPrimary,
@@ -1322,7 +1322,7 @@ class _SectionLabel extends StatelessWidget {
                   color: AppColors.accentDark,
                   fontWeight: FontWeight.w600,
                 )
-              : GoogleFonts.josefinSans(
+              : GoogleFonts.plusJakartaSans(
                   fontSize: 10.5,
                   letterSpacing: 2.2,
                   color: AppColors.accentDark,
@@ -1380,7 +1380,7 @@ class _ChequeTimelineRow extends StatelessWidget {
                     ),
                     Text(
                       amount,
-                      style: GoogleFonts.cinzel(fontSize: 14, color: m.danger),
+                      style: GoogleFonts.plusJakartaSans(fontSize: 14, color: m.danger),
                     ),
                   ],
                 ),
@@ -1413,7 +1413,7 @@ class _ChequeTimelineRow extends StatelessWidget {
                   ),
                   Text(
                     amount,
-                    style: GoogleFonts.cinzel(
+                    style: GoogleFonts.plusJakartaSans(
                       fontSize: 14,
                       color: status == 'PENDING' ? m.textMuted : m.textPrimary,
                     ),

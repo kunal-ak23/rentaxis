@@ -215,7 +215,7 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
                             fontWeight: FontWeight.w600,
                             color: m.textMuted,
                           )
-                        : GoogleFonts.josefinSans(
+                        : GoogleFonts.plusJakartaSans(
                             fontSize: 10.5,
                             letterSpacing: 2.2,
                             color: m.textMuted,
@@ -227,7 +227,7 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
                 ListTile(
                   title: Text(
                     label(option),
-                    style: GoogleFonts.josefinSans(
+                    style: GoogleFonts.plusJakartaSans(
                       fontSize: 14,
                       color: option == current
                           ? AppColors.accent
@@ -396,7 +396,7 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
                     fontWeight: FontWeight.w600,
                     color: AppColors.goldMid,
                   )
-                : GoogleFonts.josefinSans(
+                : GoogleFonts.plusJakartaSans(
                     fontSize: 9,
                     letterSpacing: 3.4,
                     color: AppColors.goldMid,
@@ -411,7 +411,7 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
                     fontWeight: FontWeight.w600,
                     color: AppColors.gold400,
                   )
-                : GoogleFonts.cinzel(fontSize: 23, color: AppColors.gold400),
+                : GoogleFonts.plusJakartaSans(fontSize: 23, color: AppColors.gold400),
           ),
           const SizedBox(height: 14),
           Wrap(
@@ -515,7 +515,7 @@ class _CountChip extends StatelessWidget {
       ),
       child: Text(
         ar ? label : label.toUpperCase(),
-        style: GoogleFonts.josefinSans(
+        style: GoogleFonts.plusJakartaSans(
           fontSize: 9.5,
           fontWeight: FontWeight.w600,
           letterSpacing: ar ? 0 : 1.2,
@@ -557,7 +557,7 @@ class _SegmentChip extends StatelessWidget {
         ),
         child: Text(
           label,
-          style: GoogleFonts.josefinSans(
+          style: GoogleFonts.plusJakartaSans(
             fontSize: 11.5,
             fontWeight: FontWeight.w500,
             letterSpacing: ar ? 0 : 1.2,
@@ -603,7 +603,7 @@ class _FilterButton extends StatelessWidget {
             Expanded(
               child: Text(
                 label,
-                style: GoogleFonts.josefinSans(
+                style: GoogleFonts.plusJakartaSans(
                   fontSize: 12.5,
                   letterSpacing: ar ? 0 : 0.6,
                   fontWeight: active ? FontWeight.w600 : FontWeight.w400,
@@ -701,7 +701,7 @@ class _TicketCard extends StatelessWidget {
                           Expanded(
                             child: Text(
                               overline,
-                              style: GoogleFonts.josefinSans(
+                              style: GoogleFonts.plusJakartaSans(
                                 fontSize: 10.5,
                                 fontWeight: FontWeight.w600,
                                 letterSpacing: l.ar ? 0 : 1.4,
@@ -724,7 +724,7 @@ class _TicketCard extends StatelessWidget {
                       const SizedBox(height: 7),
                       Text(
                         title,
-                        style: GoogleFonts.josefinSans(
+                        style: GoogleFonts.plusJakartaSans(
                           fontSize: 14.5,
                           fontWeight: FontWeight.w500,
                           color: m.textPrimary,
@@ -741,7 +741,7 @@ class _TicketCard extends StatelessWidget {
                             if (unitNumber.toString().isNotEmpty)
                               '${l.unit} $unitNumber',
                           ].join(' · '),
-                          style: GoogleFonts.josefinSans(
+                          style: GoogleFonts.plusJakartaSans(
                             fontSize: 11.5,
                             color: m.textMuted,
                           ),
@@ -769,7 +769,7 @@ class _TicketCard extends StatelessWidget {
                                 assignedToName.isNotEmpty
                                     ? assignedToName[0].toUpperCase()
                                     : '?',
-                                style: GoogleFonts.josefinSans(
+                                style: GoogleFonts.plusJakartaSans(
                                   fontSize: 9,
                                   color: AppColors.accent,
                                 ),
@@ -779,7 +779,7 @@ class _TicketCard extends StatelessWidget {
                             Expanded(
                               child: Text(
                                 l.assignedTo(assignedToName),
-                                style: GoogleFonts.josefinSans(
+                                style: GoogleFonts.plusJakartaSans(
                                   fontSize: 11.5,
                                   color: m.textMuted,
                                 ),
@@ -807,7 +807,7 @@ class _TicketCard extends StatelessWidget {
                                           ar: l.ar,
                                         ),
                                       )),
-                          style: GoogleFonts.josefinSans(
+                          style: GoogleFonts.plusJakartaSans(
                             fontSize: 11.5,
                             color: m.textMuted,
                           ),
@@ -847,7 +847,7 @@ class _StatusPill extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: GoogleFonts.josefinSans(
+        style: GoogleFonts.plusJakartaSans(
           fontSize: 9.5,
           fontWeight: FontWeight.w600,
           letterSpacing: ar ? 0 : 0.8,

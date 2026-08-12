@@ -171,7 +171,7 @@ class _StaffDetailScreenState extends ConsumerState<StaffDetailScreen> {
                             fontSize: 19,
                             fontWeight: FontWeight.w600,
                           )
-                        : GoogleFonts.cinzel(
+                        : GoogleFonts.plusJakartaSans(
                             fontSize: 18,
                             fontWeight: FontWeight.w600,
                           ),
@@ -405,7 +405,7 @@ class _StaffDetailScreenState extends ConsumerState<StaffDetailScreen> {
                         alignment: Alignment.center,
                         child: Text(
                           name.isNotEmpty ? name[0].toUpperCase() : '?',
-                          style: GoogleFonts.cinzel(
+                          style: GoogleFonts.plusJakartaSans(
                             fontSize: 24,
                             fontWeight: FontWeight.w600,
                             color: AppColors.accent,
@@ -421,7 +421,7 @@ class _StaffDetailScreenState extends ConsumerState<StaffDetailScreen> {
                                 fontWeight: FontWeight.w600,
                                 color: AppColors.gold400,
                               )
-                            : GoogleFonts.cinzel(
+                            : GoogleFonts.plusJakartaSans(
                                 fontSize: 19,
                                 color: AppColors.gold400,
                               ),
@@ -446,7 +446,7 @@ class _StaffDetailScreenState extends ConsumerState<StaffDetailScreen> {
                           style:
                               (l.ar
                               ? GoogleFonts.notoNaskhArabic
-                              : GoogleFonts.josefinSans)(
+                              : GoogleFonts.plusJakartaSans)(
                                 fontSize: 10.5,
                                 letterSpacing: l.ar ? 0 : 1.2,
                                 color: AppColors.gold400,
@@ -484,7 +484,7 @@ class _StaffDetailScreenState extends ConsumerState<StaffDetailScreen> {
                       style:
                           (l.ar
                           ? GoogleFonts.notoNaskhArabic
-                          : GoogleFonts.josefinSans)(
+                          : GoogleFonts.plusJakartaSans)(
                             fontSize: 10,
                             letterSpacing: l.ar ? 0 : 2.2,
                             color: m.textMuted,
@@ -496,7 +496,7 @@ class _StaffDetailScreenState extends ConsumerState<StaffDetailScreen> {
                       style:
                           (l.ar
                           ? GoogleFonts.notoNaskhArabic
-                          : GoogleFonts.josefinSans)(
+                          : GoogleFonts.plusJakartaSans)(
                             fontSize: 12,
                             color: m.textSecondary,
                           ),
@@ -533,7 +533,7 @@ class _StaffDetailScreenState extends ConsumerState<StaffDetailScreen> {
                           style:
                               (l.ar
                               ? GoogleFonts.notoNaskhArabic
-                              : GoogleFonts.josefinSans)(
+                              : GoogleFonts.plusJakartaSans)(
                                 fontSize: 12,
                                 color: m.textMuted,
                               ),
@@ -587,7 +587,7 @@ class _StaffDetailScreenState extends ConsumerState<StaffDetailScreen> {
                                   style:
                                       (l.ar
                                       ? GoogleFonts.notoNaskhArabic
-                                      : GoogleFonts.josefinSans)(
+                                      : GoogleFonts.plusJakartaSans)(
                                         fontWeight: FontWeight.w600,
                                         fontSize: 14,
                                         color: m.textPrimary,
@@ -600,7 +600,7 @@ class _StaffDetailScreenState extends ConsumerState<StaffDetailScreen> {
                                     style:
                                         (l.ar
                                         ? GoogleFonts.notoNaskhArabic
-                                        : GoogleFonts.josefinSans)(
+                                        : GoogleFonts.plusJakartaSans)(
                                           fontSize: 12,
                                           color: m.textSecondary,
                                         ),

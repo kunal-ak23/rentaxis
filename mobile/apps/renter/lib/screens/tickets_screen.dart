@@ -245,7 +245,7 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
                         fontWeight: FontWeight.w600,
                         color: Colors.white,
                       )
-                    : GoogleFonts.cinzel(
+                    : GoogleFonts.plusJakartaSans(
                         fontSize: 16,
                         letterSpacing: 3.2,
                         color: Colors.white,
@@ -255,7 +255,7 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
                 onTap: () => context.push('/tickets/create'),
                 child: Text(
                   l.newRequest,
-                  style: GoogleFonts.josefinSans(
+                  style: GoogleFonts.plusJakartaSans(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
                     letterSpacing: l.ar ? 0 : 2.2,
@@ -312,10 +312,10 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
       ),
       child: TextField(
         onChanged: (value) => setState(() => _searchQuery = value),
-        style: GoogleFonts.josefinSans(fontSize: 14, color: m.textPrimary),
+        style: GoogleFonts.plusJakartaSans(fontSize: 14, color: m.textPrimary),
         decoration: InputDecoration(
           hintText: l.searchHint,
-          hintStyle: GoogleFonts.josefinSans(color: m.textMuted, fontSize: 14),
+          hintStyle: GoogleFonts.plusJakartaSans(color: m.textMuted, fontSize: 14),
           prefixIcon: Icon(Icons.search, size: 20, color: m.textMuted),
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 18,
@@ -370,7 +370,7 @@ class _FilterChip extends StatelessWidget {
         ),
         child: Text(
           label,
-          style: GoogleFonts.josefinSans(
+          style: GoogleFonts.plusJakartaSans(
             fontSize: 11.5,
             fontWeight: FontWeight.w500,
             letterSpacing: ar ? 0 : 1.6,
@@ -486,7 +486,7 @@ class _TicketCard extends StatelessWidget {
                           Expanded(
                             child: Text(
                               '#${_shortId(ticket['id'])} · ${l.category(category.toString())}',
-                              style: GoogleFonts.josefinSans(
+                              style: GoogleFonts.plusJakartaSans(
                                 fontSize: 11,
                                 letterSpacing: l.ar ? 0 : 1.8,
                                 color: m.textMuted,
@@ -506,7 +506,7 @@ class _TicketCard extends StatelessWidget {
                       const SizedBox(height: 10),
                       Text(
                         title,
-                        style: GoogleFonts.josefinSans(
+                        style: GoogleFonts.plusJakartaSans(
                           fontSize: 15,
                           fontWeight: FontWeight.w500,
                           color: m.textPrimary,
@@ -521,7 +521,7 @@ class _TicketCard extends StatelessWidget {
                             propertyName,
                             if (unitNumber.isNotEmpty) '${l.unit} $unitNumber',
                           ].join(' - '),
-                          style: GoogleFonts.josefinSans(
+                          style: GoogleFonts.plusJakartaSans(
                             fontSize: 11.5,
                             color: m.textMuted,
                           ),
@@ -533,7 +533,7 @@ class _TicketCard extends StatelessWidget {
                           Expanded(
                             child: Text(
                               _metaLine(isClosed),
-                              style: GoogleFonts.josefinSans(
+                              style: GoogleFonts.plusJakartaSans(
                                 fontSize: 11.5,
                                 color: m.textMuted,
                               ),
@@ -580,7 +580,7 @@ class _StatusPill extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: GoogleFonts.josefinSans(
+        style: GoogleFonts.plusJakartaSans(
           fontSize: 10.5,
           fontWeight: FontWeight.w600,
           letterSpacing: ar ? 0 : 1.2,
@@ -669,7 +669,7 @@ class _TicketsEmptyState extends StatelessWidget {
                         fontWeight: FontWeight.w600,
                         color: m.textPrimary,
                       )
-                    : GoogleFonts.cinzel(
+                    : GoogleFonts.plusJakartaSans(
                         fontSize: 14,
                         letterSpacing: 1.6,
                         color: m.textPrimary,
@@ -680,7 +680,7 @@ class _TicketsEmptyState extends StatelessWidget {
                 const SizedBox(height: 10),
                 Text(
                   subtitle!,
-                  style: GoogleFonts.josefinSans(
+                  style: GoogleFonts.plusJakartaSans(
                     fontSize: 12.5,
                     color: m.textMuted,
                     height: 1.5,
@@ -694,7 +694,7 @@ class _TicketsEmptyState extends StatelessWidget {
                   onTap: onAction,
                   child: Text(
                     ar ? actionLabel! : actionLabel!.toUpperCase(),
-                    style: GoogleFonts.josefinSans(
+                    style: GoogleFonts.plusJakartaSans(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
                       letterSpacing: ar ? 0 : 1.8,

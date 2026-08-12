@@ -480,7 +480,7 @@ class _ChromeHeader extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                     color: AppColors.accent.withValues(alpha: 0.7),
                   )
-                : GoogleFonts.josefinSans(
+                : GoogleFonts.plusJakartaSans(
                     fontSize: 11,
                     letterSpacing: 2.0,
                     color: AppColors.accent.withValues(alpha: 0.7),
@@ -495,7 +495,7 @@ class _ChromeHeader extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                     color: Colors.white,
                   )
-                : GoogleFonts.cinzel(
+                : GoogleFonts.plusJakartaSans(
                     fontSize: 24,
                     fontWeight: FontWeight.w500,
                     color: Colors.white,
@@ -556,7 +556,7 @@ class _TopCells extends StatelessWidget {
                               fontWeight: FontWeight.w600,
                               color: m.textPrimary,
                             )
-                          : GoogleFonts.josefinSans(
+                          : GoogleFonts.plusJakartaSans(
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
                               letterSpacing: 1.2,
@@ -590,7 +590,7 @@ class _TopCells extends StatelessWidget {
                           fontSize: 11.5,
                           color: m.textMuted,
                         )
-                      : GoogleFonts.josefinSans(
+                      : GoogleFonts.plusJakartaSans(
                           fontSize: 10,
                           letterSpacing: 1.8,
                           color: m.textMuted,
@@ -599,7 +599,7 @@ class _TopCells extends StatelessWidget {
                 const SizedBox(height: 8),
                 Text(
                   '$inHandCount',
-                  style: GoogleFonts.cinzel(
+                  style: GoogleFonts.plusJakartaSans(
                     fontSize: 20,
                     fontWeight: FontWeight.w600,
                     color: m.textPrimary,
@@ -611,7 +611,7 @@ class _TopCells extends StatelessWidget {
                   style:
                       (l.ar
                       ? GoogleFonts.notoNaskhArabic
-                      : GoogleFonts.josefinSans)(
+                      : GoogleFonts.plusJakartaSans)(
                         fontSize: 11,
                         color: AppColors.accentDark,
                       ),
@@ -716,7 +716,7 @@ class _PropertyFilter extends StatelessWidget {
             border: InputBorder.none,
             contentPadding: EdgeInsets.symmetric(vertical: 10),
           ),
-          style: (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans)(
+          style: (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.plusJakartaSans)(
             fontSize: 13,
             color: m.textPrimary,
           ),
@@ -804,7 +804,7 @@ class _FilterChips extends StatelessWidget {
                                           : AppColors.accent)
                                     : m.textSecondary,
                               )
-                            : GoogleFonts.josefinSans(
+                            : GoogleFonts.plusJakartaSans(
                                 fontSize: 11.5,
                                 letterSpacing: 1.4,
                                 fontWeight: FontWeight.w500,
@@ -923,7 +923,7 @@ class _StatusStrip extends StatelessWidget {
                     const SizedBox(width: 5),
                     Text(
                       '${item.count}',
-                      style: GoogleFonts.josefinSans(
+                      style: GoogleFonts.plusJakartaSans(
                         fontWeight: FontWeight.w700,
                         fontSize: 16,
                         color: item.color,
@@ -936,7 +936,7 @@ class _StatusStrip extends StatelessWidget {
                   style:
                       (l.ar
                       ? GoogleFonts.notoNaskhArabic
-                      : GoogleFonts.josefinSans)(
+                      : GoogleFonts.plusJakartaSans)(
                         fontSize: l.ar ? 11 : 9.5,
                         letterSpacing: l.ar ? 0 : 0.8,
                         color: item.color.withValues(alpha: 0.85),
@@ -945,7 +945,7 @@ class _StatusStrip extends StatelessWidget {
                 ),
                 Text(
                   item.amount,
-                  style: GoogleFonts.josefinSans(
+                  style: GoogleFonts.plusJakartaSans(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
                     color: item.color,
@@ -1068,7 +1068,7 @@ class _PaymentCard extends StatelessWidget {
                                 style:
                                     (l.ar
                                     ? GoogleFonts.notoNaskhArabic
-                                    : GoogleFonts.josefinSans)(
+                                    : GoogleFonts.plusJakartaSans)(
                                       fontWeight: FontWeight.w600,
                                       fontSize: 14,
                                       color: m.textPrimary,
@@ -1086,7 +1086,7 @@ class _PaymentCard extends StatelessWidget {
                                 style:
                                     (l.ar
                                     ? GoogleFonts.notoNaskhArabic
-                                    : GoogleFonts.josefinSans)(
+                                    : GoogleFonts.plusJakartaSans)(
                                       fontSize: 12,
                                       color: m.textSecondary,
                                     ),
@@ -1099,7 +1099,7 @@ class _PaymentCard extends StatelessWidget {
                                 style:
                                     (l.ar
                                     ? GoogleFonts.notoNaskhArabic
-                                    : GoogleFonts.josefinSans)(
+                                    : GoogleFonts.plusJakartaSans)(
                                       fontSize: 11,
                                       color: m.textMuted,
                                     ),
@@ -1112,7 +1112,7 @@ class _PaymentCard extends StatelessWidget {
                           children: [
                             Text(
                               Formatters.currency(amount),
-                              style: GoogleFonts.cinzel(
+                              style: GoogleFonts.plusJakartaSans(
                                 fontWeight: FontWeight.w600,
                                 fontSize: 14,
                                 color: m.textPrimary,
@@ -1138,7 +1138,7 @@ class _PaymentCard extends StatelessWidget {
                                         fontWeight: FontWeight.w600,
                                         color: meta.color,
                                       )
-                                    : GoogleFonts.josefinSans(
+                                    : GoogleFonts.plusJakartaSans(
                                         fontSize: 10,
                                         letterSpacing: 1.0,
                                         fontWeight: FontWeight.w600,
@@ -1223,7 +1223,7 @@ class _PaymentActionSheet extends StatelessWidget {
                         style:
                             (l.ar
                             ? GoogleFonts.notoNaskhArabic
-                            : GoogleFonts.josefinSans)(
+                            : GoogleFonts.plusJakartaSans)(
                               fontWeight: FontWeight.w600,
                               fontSize: 16,
                               color: m.textPrimary,
@@ -1237,7 +1237,7 @@ class _PaymentActionSheet extends StatelessWidget {
                       style:
                           (l.ar
                           ? GoogleFonts.notoNaskhArabic
-                          : GoogleFonts.josefinSans)(
+                          : GoogleFonts.plusJakartaSans)(
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
                             color: m.textSecondary,
@@ -1250,7 +1250,7 @@ class _PaymentActionSheet extends StatelessWidget {
                   children: [
                     Text(
                       Formatters.currency(amount),
-                      style: GoogleFonts.cinzel(
+                      style: GoogleFonts.plusJakartaSans(
                         fontWeight: FontWeight.w600,
                         fontSize: 20,
                         color: m.textPrimary,
@@ -1262,7 +1262,7 @@ class _PaymentActionSheet extends StatelessWidget {
                       style:
                           (l.ar
                           ? GoogleFonts.notoNaskhArabic
-                          : GoogleFonts.josefinSans)(
+                          : GoogleFonts.plusJakartaSans)(
                             fontSize: 12,
                             color: m.textSecondary,
                           ),

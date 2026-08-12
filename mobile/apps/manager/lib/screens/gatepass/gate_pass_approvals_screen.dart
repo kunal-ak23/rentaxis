@@ -240,7 +240,7 @@ class _ApprovalCardState extends ConsumerState<_ApprovalCard> {
                           fontWeight: FontWeight.w600,
                           color: m.textPrimary,
                         )
-                      : GoogleFonts.josefinSans(
+                      : GoogleFonts.plusJakartaSans(
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
                           color: m.textPrimary,
@@ -352,7 +352,7 @@ class _PassTypePill extends StatelessWidget {
                 fontWeight: FontWeight.w600,
                 color: AppColors.accentDark,
               )
-            : GoogleFonts.josefinSans(
+            : GoogleFonts.plusJakartaSans(
                 fontSize: 10.5,
                 fontWeight: FontWeight.w600,
                 letterSpacing: 1.2,
@@ -387,7 +387,7 @@ class _DetailRow extends StatelessWidget {
                       fontSize: 13,
                       color: m.textSecondary,
                     )
-                  : GoogleFonts.josefinSans(
+                  : GoogleFonts.plusJakartaSans(
                       fontSize: 13,
                       color: m.textSecondary,
                     ),

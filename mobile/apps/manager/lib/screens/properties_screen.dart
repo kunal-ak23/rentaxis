@@ -388,7 +388,7 @@ class _ChromeHeaderState extends State<_ChromeHeader> {
                               fontSize: 11.5,
                               color: AppColors.goldMid,
                             )
-                          : GoogleFonts.josefinSans(
+                          : GoogleFonts.plusJakartaSans(
                               fontSize: 9,
                               letterSpacing: 2.4,
                               color: AppColors.goldMid,
@@ -403,7 +403,7 @@ class _ChromeHeaderState extends State<_ChromeHeader> {
                               fontWeight: FontWeight.w600,
                               color: AppColors.gold400,
                             )
-                          : GoogleFonts.cinzel(
+                          : GoogleFonts.plusJakartaSans(
                               fontSize: 21,
                               color: AppColors.gold400,
                             ),
@@ -421,7 +421,7 @@ class _ChromeHeaderState extends State<_ChromeHeader> {
                             fontSize: 13,
                             color: AppColors.accent,
                           )
-                        : GoogleFonts.josefinSans(
+                        : GoogleFonts.plusJakartaSans(
                             fontSize: 11,
                             letterSpacing: 1.4,
                             color: AppColors.accent,
@@ -457,7 +457,7 @@ class _ChromeHeaderState extends State<_ChromeHeader> {
                             fontSize: 13,
                             color: Colors.white,
                           )
-                        : GoogleFonts.josefinSans(
+                        : GoogleFonts.plusJakartaSans(
                             fontSize: 12.5,
                             color: Colors.white,
                           ),
@@ -473,7 +473,7 @@ class _ChromeHeaderState extends State<_ChromeHeader> {
                               fontSize: 13,
                               color: Colors.white.withValues(alpha: 0.45),
                             )
-                          : GoogleFonts.josefinSans(
+                          : GoogleFonts.plusJakartaSans(
                               fontSize: 12.5,
                               color: Colors.white.withValues(alpha: 0.45),
                             ),
@@ -563,7 +563,7 @@ class _PropertyCard extends StatelessWidget {
                                 fontWeight: FontWeight.w600,
                                 color: m.textPrimary,
                               )
-                            : GoogleFonts.cinzel(
+                            : GoogleFonts.plusJakartaSans(
                                 fontSize: 17,
                                 color: m.textPrimary,
                               ),
@@ -583,7 +583,7 @@ class _PropertyCard extends StatelessWidget {
                           fontSize: 12,
                           color: m.textMuted,
                         )
-                      : GoogleFonts.josefinSans(
+                      : GoogleFonts.plusJakartaSans(
                           fontSize: 11.5,
                           color: m.textMuted,
                         ),
@@ -676,7 +676,7 @@ class _OccupancyPill extends StatelessWidget {
                 fontWeight: FontWeight.w600,
                 color: color,
               )
-            : GoogleFonts.josefinSans(
+            : GoogleFonts.plusJakartaSans(
                 fontSize: 9,
                 letterSpacing: 1.0,
                 fontWeight: FontWeight.w600,
@@ -711,7 +711,7 @@ class _StatCell extends StatelessWidget {
           l.ar ? label : label.toUpperCase(),
           style: l.ar
               ? GoogleFonts.notoNaskhArabic(fontSize: 10.5, color: m.textMuted)
-              : GoogleFonts.josefinSans(
+              : GoogleFonts.plusJakartaSans(
                   fontSize: 8.5,
                   letterSpacing: 1.6,
                   color: m.textMuted,
@@ -720,7 +720,7 @@ class _StatCell extends StatelessWidget {
         const SizedBox(height: 2),
         Text(
           value,
-          style: GoogleFonts.cinzel(fontSize: 14, color: tone ?? m.textPrimary),
+          style: GoogleFonts.plusJakartaSans(fontSize: 14, color: tone ?? m.textPrimary),
         ),
       ],
     );

@@ -292,7 +292,7 @@ class _JoinErrorBanner extends StatelessWidget {
               style:
                   (l.ar
                   ? GoogleFonts.notoNaskhArabic
-                  : GoogleFonts.josefinSans)(
+                  : GoogleFonts.plusJakartaSans)(
                     fontSize: 12,
                     color: m.warning,
                     height: 1.4,
@@ -321,7 +321,7 @@ class _SectionLabel extends StatelessWidget {
                 fontSize: 12.5,
                 color: AppColors.accentDark,
               )
-            : GoogleFonts.josefinSans(
+            : GoogleFonts.plusJakartaSans(
                 fontSize: 10.5,
                 letterSpacing: 2.4,
                 color: AppColors.accentDark,
@@ -380,7 +380,7 @@ class _AmenityCard extends ConsumerWidget {
                           fontWeight: FontWeight.w600,
                           color: m.textPrimary,
                         )
-                      : GoogleFonts.josefinSans(
+                      : GoogleFonts.plusJakartaSans(
                           fontSize: 14.5,
                           fontWeight: FontWeight.w600,
                           color: m.textPrimary,
@@ -415,7 +415,7 @@ class _AmenityCard extends ConsumerWidget {
               style:
                   (l.ar
                   ? GoogleFonts.notoNaskhArabic
-                  : GoogleFonts.josefinSans)(
+                  : GoogleFonts.plusJakartaSans)(
                     fontSize: 12.5,
                     color: m.textSecondary,
                     height: 1.4,
@@ -428,7 +428,7 @@ class _AmenityCard extends ConsumerWidget {
               l.pendingHint(pendingCount),
               style: (l.ar
                   ? GoogleFonts.notoNaskhArabic
-                  : GoogleFonts.josefinSans)(fontSize: 12, color: m.warning),
+                  : GoogleFonts.plusJakartaSans)(fontSize: 12, color: m.warning),
             ),
           ],
           if (bookable && !blocking) ...[
@@ -495,7 +495,7 @@ class _SpotCard extends ConsumerWidget {
                   // Spot codes are alphanumeric (e.g. "P-12") and read wrong
                   // mirrored inside an RTL layout.
                   textDirection: TextDirection.ltr,
-                  style: GoogleFonts.josefinSans(
+                  style: GoogleFonts.plusJakartaSans(
                     fontSize: 14.5,
                     fontWeight: FontWeight.w600,
                     color: m.textPrimary,
@@ -527,7 +527,7 @@ class _SpotCard extends ConsumerWidget {
               l.pendingHint(pendingCount),
               style: (l.ar
                   ? GoogleFonts.notoNaskhArabic
-                  : GoogleFonts.josefinSans)(fontSize: 12, color: m.warning),
+                  : GoogleFonts.plusJakartaSans)(fontSize: 12, color: m.warning),
             ),
           ],
           if (!held && myOpen == null) ...[
@@ -745,7 +745,7 @@ class _RequestSheetState extends ConsumerState<_RequestSheet> {
                         style:
                             (l.ar
                             ? GoogleFonts.notoNaskhArabic
-                            : GoogleFonts.josefinSans)(
+                            : GoogleFonts.plusJakartaSans)(
                               fontSize: 13.5,
                               color: m.textSecondary,
                               height: 1.5,
@@ -784,7 +784,7 @@ class _RequestSheetState extends ConsumerState<_RequestSheet> {
                                 fontWeight: FontWeight.w600,
                                 color: m.textPrimary,
                               )
-                            : GoogleFonts.josefinSans(
+                            : GoogleFonts.plusJakartaSans(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600,
                                 color: m.textPrimary,

@@ -160,7 +160,7 @@ class _VendorsScreenState extends ConsumerState<VendorsScreen> {
                             fontSize: 19,
                             fontWeight: FontWeight.w600,
                           )
-                        : GoogleFonts.cinzel(
+                        : GoogleFonts.plusJakartaSans(
                             fontSize: 18,
                             fontWeight: FontWeight.w600,
                           ),
@@ -279,7 +279,7 @@ class _ChromeHeader extends StatelessWidget {
                     fontSize: 12,
                     color: AppColors.goldMid,
                   )
-                : GoogleFonts.josefinSans(
+                : GoogleFonts.plusJakartaSans(
                     fontSize: 10,
                     letterSpacing: 2.6,
                     color: AppColors.goldMid,
@@ -294,21 +294,21 @@ class _ChromeHeader extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                     color: AppColors.gold400,
                   )
-                : GoogleFonts.cinzel(fontSize: 22, color: AppColors.gold400),
+                : GoogleFonts.plusJakartaSans(fontSize: 22, color: AppColors.gold400),
           ),
           const SizedBox(height: 12),
           TextField(
             onChanged: onSearchChanged,
             style: (l.ar
                 ? GoogleFonts.notoNaskhArabic
-                : GoogleFonts.josefinSans)(fontSize: 13, color: Colors.white),
+                : GoogleFonts.plusJakartaSans)(fontSize: 13, color: Colors.white),
             decoration: InputDecoration(
               isDense: true,
               hintText: l.searchHint,
               hintStyle:
                   (l.ar
                   ? GoogleFonts.notoNaskhArabic
-                  : GoogleFonts.josefinSans)(
+                  : GoogleFonts.plusJakartaSans)(
                     fontSize: 12.5,
                     color: Colors.white.withValues(alpha: 0.45),
                   ),
@@ -394,7 +394,7 @@ class _VendorCard extends StatelessWidget {
                 child: name.isNotEmpty
                     ? Text(
                         name[0].toUpperCase(),
-                        style: GoogleFonts.cinzel(
+                        style: GoogleFonts.plusJakartaSans(
                           fontSize: 13,
                           color: AppColors.accentDark,
                         ),
@@ -415,7 +415,7 @@ class _VendorCard extends StatelessWidget {
                       style:
                           (l.ar
                           ? GoogleFonts.notoNaskhArabic
-                          : GoogleFonts.josefinSans)(
+                          : GoogleFonts.plusJakartaSans)(
                             fontWeight: FontWeight.w600,
                             fontSize: 14,
                             color: m.textPrimary,
@@ -429,7 +429,7 @@ class _VendorCard extends StatelessWidget {
                         style:
                             (l.ar
                             ? GoogleFonts.notoNaskhArabic
-                            : GoogleFonts.josefinSans)(
+                            : GoogleFonts.plusJakartaSans)(
                               fontSize: 12,
                               color: m.textSecondary,
                             ),
@@ -441,7 +441,7 @@ class _VendorCard extends StatelessWidget {
                         style:
                             (l.ar
                             ? GoogleFonts.notoNaskhArabic
-                            : GoogleFonts.josefinSans)(
+                            : GoogleFonts.plusJakartaSans)(
                               fontSize: 12,
                               color: m.textMuted,
                             ),
@@ -454,7 +454,7 @@ class _VendorCard extends StatelessWidget {
                         style:
                             (l.ar
                             ? GoogleFonts.notoNaskhArabic
-                            : GoogleFonts.josefinSans)(
+                            : GoogleFonts.plusJakartaSans)(
                               fontSize: 11,
                               color: m.textMuted,
                             ),

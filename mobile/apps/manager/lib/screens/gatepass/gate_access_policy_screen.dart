@@ -173,11 +173,11 @@ class _GateAccessPolicyScreenState
 
   TextStyle _labelStyle(bool ar, LegacyMiftahColors m) => ar
       ? GoogleFonts.notoNaskhArabic(fontSize: 14, color: m.textPrimary)
-      : GoogleFonts.josefinSans(fontSize: 14, color: m.textPrimary);
+      : GoogleFonts.plusJakartaSans(fontSize: 14, color: m.textPrimary);
 
   TextStyle _subtitleStyle(bool ar, LegacyMiftahColors m) => ar
       ? GoogleFonts.notoNaskhArabic(fontSize: 12, color: m.textSecondary)
-      : GoogleFonts.josefinSans(fontSize: 12, color: m.textSecondary);
+      : GoogleFonts.plusJakartaSans(fontSize: 12, color: m.textSecondary);
 
   @override
   Widget build(BuildContext context) {

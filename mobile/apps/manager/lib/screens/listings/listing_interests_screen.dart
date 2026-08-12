@@ -117,7 +117,7 @@ class ListingInterestsScreen extends ConsumerWidget {
                                     fontSize: 12,
                                     color: m.textMuted,
                                   )
-                                : GoogleFonts.josefinSans(
+                                : GoogleFonts.plusJakartaSans(
                                     fontSize: 12,
                                     color: m.textMuted,
                                   ),
@@ -175,7 +175,7 @@ class _ChromeHeader extends StatelessWidget {
                           fontWeight: FontWeight.w600,
                           color: Colors.white,
                         )
-                      : GoogleFonts.cinzel(
+                      : GoogleFonts.plusJakartaSans(
                           fontSize: 16,
                           letterSpacing: 2.4,
                           color: Colors.white,
@@ -187,7 +187,7 @@ class _ChromeHeader extends StatelessWidget {
                 const SizedBox(width: 10),
                 Text(
                   '$count',
-                  style: GoogleFonts.cinzel(
+                  style: GoogleFonts.plusJakartaSans(
                     fontSize: 18,
                     fontWeight: FontWeight.w600,
                     color: AppColors.accent,
@@ -251,7 +251,7 @@ class _InterestCard extends StatelessWidget {
                 alignment: Alignment.center,
                 child: Text(
                   name.isNotEmpty ? name[0].toUpperCase() : '?',
-                  style: GoogleFonts.cinzel(
+                  style: GoogleFonts.plusJakartaSans(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
                     color: AppColors.accentDark,
@@ -271,7 +271,7 @@ class _InterestCard extends StatelessWidget {
                               fontWeight: FontWeight.w600,
                               color: m.textPrimary,
                             )
-                          : GoogleFonts.josefinSans(
+                          : GoogleFonts.plusJakartaSans(
                               fontSize: 14,
                               fontWeight: FontWeight.w600,
                               color: m.textPrimary,
@@ -280,7 +280,7 @@ class _InterestCard extends StatelessWidget {
                     if (createdAt != null)
                       Text(
                         Formatters.timeAgo(createdAt, ar: l.ar),
-                        style: GoogleFonts.josefinSans(
+                        style: GoogleFonts.plusJakartaSans(
                           fontSize: 11,
                           color: m.textMuted,
                         ),
@@ -309,7 +309,7 @@ class _InterestCard extends StatelessWidget {
                 style:
                     (l.ar
                     ? GoogleFonts.notoNaskhArabic
-                    : GoogleFonts.josefinSans)(
+                    : GoogleFonts.plusJakartaSans)(
                       fontSize: 13,
                       color: m.textSecondary,
                       height: 1.5,
@@ -396,7 +396,7 @@ class _StatusPill extends StatelessWidget {
                 fontWeight: FontWeight.w600,
                 color: color,
               )
-            : GoogleFonts.josefinSans(
+            : GoogleFonts.plusJakartaSans(
                 fontSize: 10.5,
                 fontWeight: FontWeight.w600,
                 letterSpacing: 1.2,
@@ -439,7 +439,7 @@ class _ContactBtn extends StatelessWidget {
             Text(
               label,
               style:
-                  (ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans)(
+                  (ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.plusJakartaSans)(
                     fontSize: 12,
                     color: m.isDark ? AppColors.accent : AppColors.accentDark,
                     fontWeight: FontWeight.w600,

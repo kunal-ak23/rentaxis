@@ -501,7 +501,7 @@ class _TruncationFooter extends StatelessWidget {
       child: Center(
         child: Text(
           l.showingCount(shown, total),
-          style: (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans)(
+          style: (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.plusJakartaSans)(
             fontSize: 12,
             color: m.textMuted,
           ),
@@ -573,7 +573,7 @@ class _FacilityCard extends StatelessWidget {
                               fontWeight: FontWeight.w600,
                               color: m.textPrimary,
                             )
-                          : GoogleFonts.josefinSans(
+                          : GoogleFonts.plusJakartaSans(
                               fontSize: 14.5,
                               fontWeight: FontWeight.w600,
                               color: m.textPrimary,
@@ -601,7 +601,7 @@ class _FacilityCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: (l.ar
                         ? GoogleFonts.notoNaskhArabic
-                        : GoogleFonts.josefinSans)(
+                        : GoogleFonts.plusJakartaSans)(
                       fontSize: 12.5,
                       color: m.textSecondary,
                       height: 1.4,
@@ -667,13 +667,13 @@ class _TowerChips extends ConsumerWidget {
       // lookup the same as "no towers" instead of blocking the whole sheet.
       error: (error, _) => Text(
         l.allTowers,
-        style: GoogleFonts.josefinSans(fontSize: 12.5, color: m.textMuted),
+        style: GoogleFonts.plusJakartaSans(fontSize: 12.5, color: m.textMuted),
       ),
       data: (rows) {
         if (rows.isEmpty) {
           return Text(
             l.allTowers,
-            style: GoogleFonts.josefinSans(fontSize: 12.5, color: m.textMuted),
+            style: GoogleFonts.plusJakartaSans(fontSize: 12.5, color: m.textMuted),
           );
         }
         return Column(
@@ -704,7 +704,7 @@ class _TowerChips extends ConsumerWidget {
               l.towersHint,
               style: (l.ar
                   ? GoogleFonts.notoNaskhArabic
-                  : GoogleFonts.josefinSans)(
+                  : GoogleFonts.plusJakartaSans)(
                 fontSize: 11.5,
                 color: m.textMuted,
                 height: 1.4,
@@ -833,7 +833,7 @@ class _AmenitySheetState extends ConsumerState<_AmenitySheet> {
                             fontWeight: FontWeight.w600,
                             color: m.textPrimary,
                           )
-                        : GoogleFonts.cinzel(
+                        : GoogleFonts.plusJakartaSans(
                             fontSize: 16,
                             letterSpacing: 1.6,
                             fontWeight: FontWeight.w600,
@@ -1063,7 +1063,7 @@ class _ParkingSheetState extends ConsumerState<_ParkingSheet> {
                             fontWeight: FontWeight.w600,
                             color: m.textPrimary,
                           )
-                        : GoogleFonts.cinzel(
+                        : GoogleFonts.plusJakartaSans(
                             fontSize: 16,
                             letterSpacing: 1.6,
                             fontWeight: FontWeight.w600,

@@ -125,7 +125,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                     alpha: 0.85,
                                   ),
                                 )
-                              : GoogleFonts.josefinSans(
+                              : GoogleFonts.plusJakartaSans(
                                   fontSize: 13,
                                   fontWeight: FontWeight.w400,
                                   color: AppColors.gold400.withValues(
@@ -147,7 +147,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                     fontWeight: FontWeight.w600,
                                     color: AppColors.accent,
                                   )
-                                : GoogleFonts.cinzel(
+                                : GoogleFonts.plusJakartaSans(
                                     fontSize: 22,
                                     fontWeight: FontWeight.w600,
                                     color: AppColors.accent,
@@ -162,7 +162,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                             style:
                                 (l.ar
                                 ? GoogleFonts.notoNaskhArabic
-                                : GoogleFonts.josefinSans)(
+                                : GoogleFonts.plusJakartaSans)(
                                   fontSize: 14,
                                   color: AppColors.accentLight.withValues(
                                     alpha: 0.75,
@@ -180,7 +180,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                           style:
                               (l.ar
                               ? GoogleFonts.notoNaskhArabic
-                              : GoogleFonts.josefinSans)(
+                              : GoogleFonts.plusJakartaSans)(
                                 color: Colors.white,
                                 fontSize: 15,
                               ),
@@ -212,7 +212,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                           style:
                               (l.ar
                               ? GoogleFonts.notoNaskhArabic
-                              : GoogleFonts.josefinSans)(
+                              : GoogleFonts.plusJakartaSans)(
                                 color: Colors.white,
                                 fontSize: 15,
                               ),
@@ -296,7 +296,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                           style:
                                               (l.ar
                                               ? GoogleFonts.notoNaskhArabic
-                                              : GoogleFonts.josefinSans)(
+                                              : GoogleFonts.plusJakartaSans)(
                                                 color: AppColorsDark.danger,
                                                 fontSize: 13,
                                               ),
@@ -358,7 +358,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                                   fontWeight: FontWeight.w600,
                                                   color: AppColors.primary,
                                                 )
-                                              : GoogleFonts.josefinSans(
+                                              : GoogleFonts.plusJakartaSans(
                                                   fontSize: 13.5,
                                                   fontWeight: FontWeight.w600,
                                                   color: AppColors.primary,
@@ -379,7 +379,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                           style:
                               (l.ar
                               ? GoogleFonts.notoNaskhArabic
-                              : GoogleFonts.josefinSans)(
+                              : GoogleFonts.plusJakartaSans)(
                                 fontSize: 11,
                                 color: AppColors.gold400.withValues(alpha: 0.6),
                               ),
@@ -411,9 +411,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       floatingLabelBehavior: FloatingLabelBehavior.never,
       floatingLabelStyle: (l.ar
           ? GoogleFonts.notoNaskhArabic
-          : GoogleFonts.josefinSans)(color: AppColors.accent, fontSize: 13),
+          : GoogleFonts.plusJakartaSans)(color: AppColors.accent, fontSize: 13),
       labelStyle:
-          (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans)(
+          (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.plusJakartaSans)(
             color: Colors.white.withValues(alpha: 0.45),
             fontSize: 14,
           ),
@@ -450,7 +450,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       ),
       errorStyle: (l.ar
           ? GoogleFonts.notoNaskhArabic
-          : GoogleFonts.josefinSans)(color: AppColorsDark.danger, fontSize: 12),
+          : GoogleFonts.plusJakartaSans)(color: AppColorsDark.danger, fontSize: 12),
     );
   }
 }
@@ -516,7 +516,7 @@ class _SigningInBarState extends State<_SigningInBar>
                   fontWeight: FontWeight.w600,
                   color: AppColors.primary.withValues(alpha: 0.85),
                 )
-              : GoogleFonts.josefinSans(
+              : GoogleFonts.plusJakartaSans(
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
                   letterSpacing: 2.8,
@@ -585,7 +585,7 @@ class _LanguagePill extends StatelessWidget {
             AppLanguage.en,
             Text(
               'EN',
-              style: GoogleFonts.josefinSans(
+              style: GoogleFonts.plusJakartaSans(
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
                 letterSpacing: 1.4,

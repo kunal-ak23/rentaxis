@@ -295,7 +295,7 @@ class _MeetingDetailScreenState extends ConsumerState<MeetingDetailScreen> {
                       fontWeight: FontWeight.w600,
                       color: Colors.white,
                     )
-                  : GoogleFonts.cinzel(
+                  : GoogleFonts.plusJakartaSans(
                       fontSize: 15,
                       letterSpacing: 2.0,
                       color: Colors.white,
@@ -456,7 +456,7 @@ class _MeetingDetailScreenState extends ConsumerState<MeetingDetailScreen> {
                                 fontWeight: FontWeight.w600,
                                 color: m.textPrimary,
                               )
-                            : GoogleFonts.cinzel(
+                            : GoogleFonts.plusJakartaSans(
                                 fontSize: 19,
                                 color: m.textPrimary,
                               ),
@@ -562,7 +562,7 @@ class _MeetingDetailScreenState extends ConsumerState<MeetingDetailScreen> {
                   l: l,
                   child: Text(
                     meetingData['notes'],
-                    style: GoogleFonts.josefinSans(
+                    style: GoogleFonts.plusJakartaSans(
                       fontSize: 14,
                       color: m.textSecondary,
                     ),
@@ -650,7 +650,7 @@ class _StatusPill extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: GoogleFonts.josefinSans(
+        style: GoogleFonts.plusJakartaSans(
           fontSize: 10.5,
           fontWeight: FontWeight.w600,
           letterSpacing: ar ? 0 : 1.2,
@@ -676,7 +676,7 @@ class _InfoRow extends StatelessWidget {
         Expanded(
           child: Text(
             text,
-            style: GoogleFonts.josefinSans(
+            style: GoogleFonts.plusJakartaSans(
               fontSize: 13,
               color: m.textSecondary,
             ),
@@ -716,7 +716,7 @@ class _SectionCard extends StatelessWidget {
             title,
             style: l.ar
                 ? GoogleFonts.notoNaskhArabic(fontSize: 12, color: m.textMuted)
-                : GoogleFonts.josefinSans(
+                : GoogleFonts.plusJakartaSans(
                     fontSize: 10.5,
                     letterSpacing: 2.0,
                     fontWeight: FontWeight.w600,
@@ -748,13 +748,13 @@ class _DetailRow extends StatelessWidget {
             width: 110,
             child: Text(
               label,
-              style: GoogleFonts.josefinSans(fontSize: 13, color: m.textMuted),
+              style: GoogleFonts.plusJakartaSans(fontSize: 13, color: m.textMuted),
             ),
           ),
           Expanded(
             child: Text(
               value,
-              style: GoogleFonts.josefinSans(
+              style: GoogleFonts.plusJakartaSans(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
                 color: m.textPrimary,

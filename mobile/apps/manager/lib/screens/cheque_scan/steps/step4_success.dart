@@ -29,7 +29,7 @@ class Step4Success extends StatelessWidget {
     final l = _L(context.isAr);
     final bodyFont = l.ar
         ? GoogleFonts.notoNaskhArabic
-        : GoogleFonts.josefinSans;
+        : GoogleFonts.plusJakartaSans;
     final ex = result.extracted ?? const {};
     final chequeNumber = ex['chequeNumber']?.toString() ?? '—';
     final amount = matchedPayment?['amount'];
@@ -94,7 +94,7 @@ class Step4Success extends StatelessWidget {
                           fontWeight: FontWeight.w600,
                           color: m.textPrimary,
                         )
-                      : GoogleFonts.cinzel(
+                      : GoogleFonts.plusJakartaSans(
                           fontSize: 22,
                           fontWeight: FontWeight.w500,
                           color: m.textPrimary,
@@ -171,7 +171,7 @@ class Step4Success extends StatelessWidget {
                                 'AED ${_formatAmount(amount)}',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: GoogleFonts.cinzel(
+                                style: GoogleFonts.plusJakartaSans(
                                   fontSize: 20,
                                   fontWeight: FontWeight.w600,
                                   color: m.textPrimary,

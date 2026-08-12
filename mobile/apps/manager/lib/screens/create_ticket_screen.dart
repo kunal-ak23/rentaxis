@@ -215,7 +215,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
               ),
               title: Text(
                 l.camera,
-                style: GoogleFonts.josefinSans(color: m.textPrimary),
+                style: GoogleFonts.plusJakartaSans(color: m.textPrimary),
               ),
               onTap: () => Navigator.pop(ctx, 'camera'),
             ),
@@ -226,7 +226,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
               ),
               title: Text(
                 l.gallery,
-                style: GoogleFonts.josefinSans(color: m.textPrimary),
+                style: GoogleFonts.plusJakartaSans(color: m.textPrimary),
               ),
               onTap: () => Navigator.pop(ctx, 'gallery'),
             ),
@@ -234,7 +234,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
               leading: const Icon(Icons.attach_file, color: AppColors.accent),
               title: Text(
                 l.file,
-                style: GoogleFonts.josefinSans(color: m.textPrimary),
+                style: GoogleFonts.plusJakartaSans(color: m.textPrimary),
               ),
               onTap: () => Navigator.pop(ctx, 'file'),
             ),
@@ -346,7 +346,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
           l.newTicket,
           style: l.ar
               ? GoogleFonts.notoNaskhArabic(fontWeight: FontWeight.w600)
-              : GoogleFonts.cinzel(fontSize: 16, letterSpacing: 1.2),
+              : GoogleFonts.plusJakartaSans(fontSize: 16, letterSpacing: 1.2),
         ),
       ),
       body: _isLoading
@@ -496,7 +496,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                                   const SizedBox(width: 6),
                                   Text(
                                     l.category_(cat),
-                                    style: GoogleFonts.josefinSans(
+                                    style: GoogleFonts.plusJakartaSans(
                                       fontSize: 12,
                                       fontWeight: isSelected
                                           ? FontWeight.w600
@@ -516,7 +516,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
 
                       TextFormField(
                         controller: _titleCtrl,
-                        style: GoogleFonts.josefinSans(color: m.textPrimary),
+                        style: GoogleFonts.plusJakartaSans(color: m.textPrimary),
                         decoration: InputDecoration(
                           labelText: l.title,
                           prefixIcon: const Icon(
@@ -533,7 +533,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                       TextFormField(
                         controller: _descCtrl,
                         maxLines: 4,
-                        style: GoogleFonts.josefinSans(color: m.textPrimary),
+                        style: GoogleFonts.plusJakartaSans(color: m.textPrimary),
                         decoration: InputDecoration(
                           labelText: l.description,
                           alignLabelWithHint: true,
@@ -581,7 +581,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                                 child: Text(
                                   l.priority_(p),
                                   textAlign: TextAlign.center,
-                                  style: GoogleFonts.josefinSans(
+                                  style: GoogleFonts.plusJakartaSans(
                                     fontSize: 12,
                                     letterSpacing: l.ar ? 0 : 0.8,
                                     fontWeight: isSelected
@@ -610,7 +610,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                             ),
                             label: Text(
                               l.add,
-                              style: GoogleFonts.josefinSans(
+                              style: GoogleFonts.plusJakartaSans(
                                 color: AppColors.accentDark,
                               ),
                             ),
@@ -635,7 +635,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                               ),
                               label: Text(
                                 entry.value.split('/').last,
-                                style: GoogleFonts.josefinSans(
+                                style: GoogleFonts.plusJakartaSans(
                                   fontSize: 12,
                                   color: m.textPrimary,
                                 ),
@@ -673,7 +673,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
               fontWeight: FontWeight.w600,
               color: m.textPrimary,
             )
-          : GoogleFonts.josefinSans(
+          : GoogleFonts.plusJakartaSans(
               fontSize: 11,
               letterSpacing: 1.6,
               fontWeight: FontWeight.w600,

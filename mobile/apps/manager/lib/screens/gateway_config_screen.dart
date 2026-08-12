@@ -98,7 +98,7 @@ class _GatewayConfigScreenState extends ConsumerState<GatewayConfigScreen> {
                           ),
                           error: (e, _) => Text(
                             l.failedToLoadGateways,
-                            style: GoogleFonts.josefinSans(
+                            style: GoogleFonts.plusJakartaSans(
                               color: m.textMuted,
                               fontSize: 13,
                             ),
@@ -107,7 +107,7 @@ class _GatewayConfigScreenState extends ConsumerState<GatewayConfigScreen> {
                             if (gateways.isEmpty) {
                               return Text(
                                 l.noGatewaysAvailable,
-                                style: GoogleFonts.josefinSans(
+                                style: GoogleFonts.plusJakartaSans(
                                   color: m.textMuted,
                                   fontSize: 13,
                                 ),
@@ -140,7 +140,7 @@ class _GatewayConfigScreenState extends ConsumerState<GatewayConfigScreen> {
       ar ? text : text.toUpperCase(),
       style: ar
           ? GoogleFonts.notoNaskhArabic(fontSize: 13, color: m.textMuted)
-          : GoogleFonts.josefinSans(
+          : GoogleFonts.plusJakartaSans(
               fontSize: 11,
               letterSpacing: 2.2,
               color: m.textMuted,
@@ -183,7 +183,7 @@ class _ChromeHeader extends StatelessWidget {
                       fontWeight: FontWeight.w600,
                       color: Colors.white,
                     )
-                  : GoogleFonts.cinzel(
+                  : GoogleFonts.plusJakartaSans(
                       fontSize: 16,
                       letterSpacing: 2.4,
                       color: Colors.white,
@@ -241,7 +241,7 @@ class _StatusCard extends StatelessWidget {
                       fontWeight: FontWeight.w600,
                       color: color,
                     )
-                  : GoogleFonts.josefinSans(
+                  : GoogleFonts.plusJakartaSans(
                       fontSize: 10.5,
                       letterSpacing: 1.4,
                       fontWeight: FontWeight.w600,
@@ -288,7 +288,7 @@ class _ConfigCard extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                     color: m.textPrimary,
                   )
-                : GoogleFonts.josefinSans(
+                : GoogleFonts.plusJakartaSans(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
                     color: m.textPrimary,
@@ -351,7 +351,7 @@ class _ConfigRow extends StatelessWidget {
                       fontSize: 13,
                       color: m.textSecondary,
                     )
-                  : GoogleFonts.josefinSans(
+                  : GoogleFonts.plusJakartaSans(
                       fontSize: 13,
                       color: m.textSecondary,
                     ),
@@ -366,7 +366,7 @@ class _ConfigRow extends StatelessWidget {
                       fontWeight: FontWeight.w600,
                       color: m.textPrimary,
                     )
-                  : GoogleFonts.josefinSans(
+                  : GoogleFonts.plusJakartaSans(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                       color: m.textPrimary,
@@ -412,7 +412,7 @@ class _GatewayRow extends StatelessWidget {
           name,
           style: l.ar
               ? GoogleFonts.notoNaskhArabic(fontSize: 14, color: m.textPrimary)
-              : GoogleFonts.josefinSans(
+              : GoogleFonts.plusJakartaSans(
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
                   color: m.textPrimary,

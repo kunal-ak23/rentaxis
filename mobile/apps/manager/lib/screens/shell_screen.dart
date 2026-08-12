@@ -286,7 +286,7 @@ class _NavItemWidget extends StatelessWidget {
                             ? AppColors.accent
                             : Colors.white.withValues(alpha: 0.5),
                       )
-                    : GoogleFonts.josefinSans(
+                    : GoogleFonts.plusJakartaSans(
                         fontSize: 10.5,
                         fontWeight: isSelected
                             ? FontWeight.w600

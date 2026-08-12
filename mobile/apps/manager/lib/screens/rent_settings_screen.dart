@@ -122,7 +122,7 @@ class _RentSettingsScreenState extends ConsumerState<RentSettingsScreen> {
                                           fontSize: 14,
                                           color: m.textMuted,
                                         )
-                                      : GoogleFonts.josefinSans(
+                                      : GoogleFonts.plusJakartaSans(
                                           fontSize: 13,
                                           color: m.textMuted,
                                         ),
@@ -206,7 +206,7 @@ class _ChromeHeader extends StatelessWidget {
                         fontWeight: FontWeight.w600,
                         color: Colors.white,
                       )
-                    : GoogleFonts.cinzel(
+                    : GoogleFonts.plusJakartaSans(
                         fontSize: 15,
                         letterSpacing: 1.6,
                         color: Colors.white,
@@ -255,7 +255,7 @@ class _PropertyDropdown extends StatelessWidget {
             labelText: l.selectProperty,
             labelStyle: l.ar
                 ? GoogleFonts.notoNaskhArabic(fontSize: 13, color: m.textMuted)
-                : GoogleFonts.josefinSans(fontSize: 12, color: m.textMuted),
+                : GoogleFonts.plusJakartaSans(fontSize: 12, color: m.textMuted),
             prefixIcon: Icon(Icons.apartment, color: AppColors.accentDark),
           ),
           items: properties.map<DropdownMenuItem<String>>((p) {
@@ -270,7 +270,7 @@ class _PropertyDropdown extends StatelessWidget {
                         fontSize: 14,
                         color: m.textPrimary,
                       )
-                    : GoogleFonts.josefinSans(
+                    : GoogleFonts.plusJakartaSans(
                         fontSize: 14,
                         color: m.textPrimary,
                       ),
@@ -322,7 +322,7 @@ class _SettingsCard extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                     color: m.textPrimary,
                   )
-                : GoogleFonts.cinzel(fontSize: 16, color: m.textPrimary),
+                : GoogleFonts.plusJakartaSans(fontSize: 16, color: m.textPrimary),
           ),
           const SizedBox(height: 4),
           Divider(color: m.divider, height: 24),
@@ -395,7 +395,7 @@ class _SettingRow extends StatelessWidget {
                       fontSize: 13,
                       color: m.textSecondary,
                     )
-                  : GoogleFonts.josefinSans(
+                  : GoogleFonts.plusJakartaSans(
                       fontSize: 13,
                       color: m.textSecondary,
                     ),
@@ -409,7 +409,7 @@ class _SettingRow extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                     color: m.textPrimary,
                   )
-                : GoogleFonts.josefinSans(
+                : GoogleFonts.plusJakartaSans(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
                     color: m.textPrimary,

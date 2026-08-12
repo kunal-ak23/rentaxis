@@ -179,7 +179,7 @@ class _ChromeHeader extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                     color: AppColors.accent.withValues(alpha: 0.7),
                   )
-                : GoogleFonts.josefinSans(
+                : GoogleFonts.plusJakartaSans(
                     fontSize: 11,
                     letterSpacing: 2.0,
                     color: AppColors.accent.withValues(alpha: 0.7),
@@ -201,7 +201,7 @@ class _ChromeHeader extends StatelessWidget {
                             fontWeight: FontWeight.w600,
                             color: Colors.white.withValues(alpha: 0.45),
                           )
-                        : GoogleFonts.josefinSans(
+                        : GoogleFonts.plusJakartaSans(
                             fontSize: 11,
                             letterSpacing: 2.2,
                             color: Colors.white.withValues(alpha: 0.45),
@@ -212,7 +212,7 @@ class _ChromeHeader extends StatelessWidget {
                     summary == null
                         ? '—'
                         : 'AED ${NumberFormat('#,##0').format(summary.total)}',
-                    style: GoogleFonts.cinzel(
+                    style: GoogleFonts.plusJakartaSans(
                       fontSize: 26,
                       fontWeight: FontWeight.w500,
                       color: Colors.white,
@@ -229,7 +229,7 @@ class _ChromeHeader extends StatelessWidget {
                           fontWeight: FontWeight.w600,
                           color: AppColors.goldMid,
                         )
-                      : GoogleFonts.josefinSans(
+                      : GoogleFonts.plusJakartaSans(
                           fontSize: 11,
                           letterSpacing: 1.4,
                           color: AppColors.goldMid,
@@ -308,7 +308,7 @@ class _ProgressCard extends StatelessWidget {
                     style:
                         (l.ar
                         ? GoogleFonts.notoNaskhArabic
-                        : GoogleFonts.josefinSans)(
+                        : GoogleFonts.plusJakartaSans)(
                           fontSize: 11.5,
                           fontWeight: FontWeight.w600,
                           color: AppColors.accentDark,
@@ -319,7 +319,7 @@ class _ProgressCard extends StatelessWidget {
               const SizedBox(height: 6),
               RichText(
                 text: TextSpan(
-                  style: GoogleFonts.cinzel(
+                  style: GoogleFonts.plusJakartaSans(
                     fontSize: 24,
                     fontWeight: FontWeight.w500,
                     color: m.textPrimary,
@@ -328,7 +328,7 @@ class _ProgressCard extends StatelessWidget {
                     TextSpan(text: 'AED ${NumberFormat('#,##0').format(paid)}'),
                     TextSpan(
                       text: '  / ${NumberFormat('#,##0').format(total)}',
-                      style: GoogleFonts.cinzel(
+                      style: GoogleFonts.plusJakartaSans(
                         fontSize: 13,
                         color: m.textMuted,
                       ),
@@ -408,7 +408,7 @@ class _FilterChips extends StatelessWidget {
                             ? (m.isDark ? AppColors.primary : AppColors.accent)
                             : m.textSecondary,
                       )
-                    : GoogleFonts.josefinSans(
+                    : GoogleFonts.plusJakartaSans(
                         fontSize: 11.5,
                         letterSpacing: 1.6,
                         fontWeight: FontWeight.w500,
@@ -532,7 +532,7 @@ class _ChequesTimeline extends StatelessWidget {
         ),
         child: Text(
           l.noChequesInFilter,
-          style: (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans)(
+          style: (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.plusJakartaSans)(
             fontSize: 12.5,
             color: m.textSecondary,
           ),
@@ -783,7 +783,7 @@ class _ChequeTimelineCard extends StatelessWidget {
                           fontWeight: FontWeight.w600,
                           color: mutedTextColor,
                         )
-                      : GoogleFonts.josefinSans(
+                      : GoogleFonts.plusJakartaSans(
                           fontSize: 11,
                           letterSpacing: 1.6,
                           color: mutedTextColor,
@@ -803,7 +803,7 @@ class _ChequeTimelineCard extends StatelessWidget {
                 child: Text(
                   'AED ${NumberFormat('#,##0').format(amount)}',
                   overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.cinzel(
+                  style: GoogleFonts.plusJakartaSans(
                     fontSize: isActive ? 24 : 20,
                     fontWeight: FontWeight.w500,
                     color: amountColor,
@@ -817,7 +817,7 @@ class _ChequeTimelineCard extends StatelessWidget {
                   style:
                       (l.ar
                       ? GoogleFonts.notoNaskhArabic
-                      : GoogleFonts.josefinSans)(
+                      : GoogleFonts.plusJakartaSans)(
                         fontSize: 12,
                         color: secondaryTextColor,
                       ),
@@ -846,7 +846,7 @@ class _ChequeTimelineCard extends StatelessWidget {
                 style:
                     (l.ar
                     ? GoogleFonts.notoNaskhArabic
-                    : GoogleFonts.josefinSans)(
+                    : GoogleFonts.plusJakartaSans)(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
                       color: m.danger,
@@ -861,7 +861,7 @@ class _ChequeTimelineCard extends StatelessWidget {
                 style:
                     (l.ar
                     ? GoogleFonts.notoNaskhArabic
-                    : GoogleFonts.josefinSans)(
+                    : GoogleFonts.plusJakartaSans)(
                       fontSize: 11,
                       color: mutedTextColor,
                       fontStyle: FontStyle.italic,
@@ -982,7 +982,7 @@ class _StatusPill extends StatelessWidget {
                 fontWeight: FontWeight.w600,
                 color: meta.fg,
               )
-            : GoogleFonts.josefinSans(
+            : GoogleFonts.plusJakartaSans(
                 fontSize: 10.5,
                 fontWeight: FontWeight.w500,
                 color: meta.fg,

@@ -220,7 +220,7 @@ class _Verdict extends StatelessWidget {
                   fontWeight: FontWeight.w700,
                   color: Colors.white,
                 )
-              : GoogleFonts.cinzel(
+              : GoogleFonts.plusJakartaSans(
                   fontSize: 30,
                   fontWeight: FontWeight.w600,
                   letterSpacing: 1.8,
@@ -233,7 +233,7 @@ class _Verdict extends StatelessWidget {
             describeRejection(reason, ar: l.ar),
             textAlign: TextAlign.center,
             style:
-                (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans)(
+                (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.plusJakartaSans)(
                   fontSize: 15,
                   height: 1.45,
                   fontWeight: FontWeight.w500,
@@ -339,7 +339,7 @@ class _BigField extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                     color: m.textMuted,
                   )
-                : GoogleFonts.josefinSans(
+                : GoogleFonts.plusJakartaSans(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 1,
@@ -355,7 +355,7 @@ class _BigField extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                     color: m.textPrimary,
                   )
-                : GoogleFonts.cinzel(
+                : GoogleFonts.plusJakartaSans(
                     fontSize: 20,
                     fontWeight: FontWeight.w600,
                     color: m.textPrimary,
@@ -391,7 +391,7 @@ class _Actions extends StatelessWidget {
     final m = context.miftah;
     final bodyFont = l.ar
         ? GoogleFonts.notoNaskhArabic
-        : GoogleFonts.josefinSans;
+        : GoogleFonts.plusJakartaSans;
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
       decoration: BoxDecoration(

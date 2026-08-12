@@ -268,13 +268,13 @@ class _SearchBar extends StatelessWidget {
               ),
               child: TextField(
                 controller: controller,
-                style: GoogleFonts.josefinSans(
+                style: GoogleFonts.plusJakartaSans(
                   fontSize: 14,
                   color: m.textPrimary,
                 ),
                 decoration: InputDecoration(
                   hintText: l.searchHint,
-                  hintStyle: GoogleFonts.josefinSans(
+                  hintStyle: GoogleFonts.plusJakartaSans(
                     fontSize: 14,
                     color: m.textMuted,
                   ),
@@ -442,7 +442,7 @@ class _FilterChip extends StatelessWidget {
           children: [
             Text(
               data.label,
-              style: GoogleFonts.josefinSans(
+              style: GoogleFonts.plusJakartaSans(
                 fontSize: 12,
                 color: AppColors.accent,
                 fontWeight: FontWeight.w600,
@@ -517,7 +517,7 @@ class _ListingListView extends ConsumerWidget {
             child: Text(
               l.showingFirst(serverCount),
               textAlign: TextAlign.center,
-              style: GoogleFonts.josefinSans(fontSize: 12, color: m.textMuted),
+              style: GoogleFonts.plusJakartaSans(fontSize: 12, color: m.textMuted),
             ),
           );
         }

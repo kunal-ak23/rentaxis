@@ -136,7 +136,7 @@ class _ChromeHeader extends StatelessWidget {
                       fontWeight: FontWeight.w600,
                       color: Colors.white,
                     )
-                  : GoogleFonts.cinzel(
+                  : GoogleFonts.plusJakartaSans(
                       fontSize: 16,
                       letterSpacing: 2.4,
                       color: Colors.white,
@@ -196,7 +196,7 @@ class _NatureCard extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                     color: m.textPrimary,
                   )
-                : GoogleFonts.josefinSans(
+                : GoogleFonts.plusJakartaSans(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
                     color: m.textPrimary,
@@ -206,7 +206,7 @@ class _NatureCard extends StatelessWidget {
             l.mappingCount(items.length),
             style: l.ar
                 ? GoogleFonts.notoNaskhArabic(fontSize: 12, color: m.textMuted)
-                : GoogleFonts.josefinSans(fontSize: 11.5, color: m.textMuted),
+                : GoogleFonts.plusJakartaSans(fontSize: 11.5, color: m.textMuted),
           ),
           children: items.expand<Widget>((mapping) {
             return [
@@ -265,7 +265,7 @@ class _AccountLine extends StatelessWidget {
                   fontWeight: FontWeight.w500,
                   color: m.textPrimary,
                 )
-              : GoogleFonts.josefinSans(
+              : GoogleFonts.plusJakartaSans(
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
                   color: m.textPrimary,
@@ -279,7 +279,7 @@ class _AccountLine extends StatelessWidget {
                         fontSize: 12,
                         color: m.textMuted,
                       )
-                    : GoogleFonts.josefinSans(
+                    : GoogleFonts.plusJakartaSans(
                         fontSize: 11.5,
                         color: m.textMuted,
                       ),
@@ -293,7 +293,7 @@ class _AccountLine extends StatelessWidget {
                   fontWeight: FontWeight.w600,
                   color: AppColors.accentDark,
                 )
-              : GoogleFonts.josefinSans(
+              : GoogleFonts.plusJakartaSans(
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
                   letterSpacing: 0.6,

@@ -2,33 +2,35 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class AppColors {
-  // Miftah brand: black #1B1B1B + gold #EEC046 (from customer logo pack)
-  static const primary = Color(0xFF1B1B1B);
-  static const primaryLight = Color(0xFF3A3A36);
-  static const accent = Color(0xFFEEC046);
-  static const accentDark = Color(0xFF8C6F1F);
-  static const accentLight = Color(0xFFF8E9BE);
-  static const gold400 = Color(0xFFF5DC8E);
-  static const goldMid = Color(0xFFC79E3A);
+  // Retuned to the Miftah 2026 tokens (see ui/miftah_tokens.dart). The field
+  // names are kept so the ~500 existing call sites re-skin without edits;
+  // MiftahColors is the source of truth for the values.
+  static const primary = Color(0xFF12101A); // ink
+  static const primaryLight = Color(0xFF2A2536); // inkSoft
+  static const accent = Color(0xFFC79A3C); // brass
+  static const accentDark = Color(0xFFA87A1E); // brassDeep
+  static const accentLight = Color(0xFFFBF3E2); // brassTint
+  static const gold400 = Color(0xFFE7C883); // brassPale
+  static const goldMid = Color(0xFFC79A3C);
   // Darkest chrome tone (field name kept for compatibility with existing screens)
-  static const navyDark = Color(0xFF111111);
-  static const background = Color(0xFFFAF8F3);
+  static const navyDark = Color(0xFF12101A);
+  static const background = Color(0xFFF6F5FA); // canvas
   static const surface = Color(0xFFFFFFFF);
-  static const surface2 = Color(0xFFF5F1E8);
-  static const border = Color(0xFFE8E2D4);
-  static const borderStrong = Color(0xFFD6CDB6);
-  static const divider = Color(0xFFF0EBDF);
-  static const textPrimary = Color(0xFF1B1B1B);
-  static const textSecondary = Color(0xFF55524A);
-  static const textMuted = Color(0xFF807B6E);
-  static const success = Color(0xFF2F7B4C);
-  static const successLight = Color(0xFFDDEFE3);
-  static const warning = Color(0xFFB5781E);
-  static const warningLight = Color(0xFFF8EBD0);
-  static const danger = Color(0xFFB33A30);
-  static const dangerLight = Color(0xFFF6DAD6);
-  // Teal retired for the Miftah brand; info reads as bronze/gold
-  static const info = Color(0xFF8C6F1F);
+  static const surface2 = Color(0xFFF4F2F9); // surfaceAlt
+  static const border = Color(0xFFEDEAF4);
+  static const borderStrong = Color(0xFFE6E3EE);
+  static const divider = Color(0xFFF2EFF8);
+  static const textPrimary = Color(0xFF12101A);
+  static const textSecondary = Color(0xFF4A4358);
+  static const textMuted = Color(0xFF8E88A0);
+  static const success = Color(0xFF1E9E5A);
+  static const successLight = Color(0xFFE7F3EC);
+  static const warning = Color(0xFF8A6412);
+  static const warningLight = Color(0xFFFBF3E2);
+  static const danger = Color(0xFFC13B3B);
+  static const dangerLight = Color(0xFFFDF0F0);
+  // Neutral category icons (HVAC, bank) read as slate in the new system.
+  static const info = Color(0xFF4A5B72);
 
   // Status colors
   static const statusPending = warning;
@@ -43,17 +45,17 @@ class AppColors {
 /// Dark-mode raw palette: chrome stays #1B1B1B, content drops to #0D0D0D,
 /// semantic colours lift so they pass AA on black.
 class AppColorsDark {
-  static const background = Color(0xFF0D0D0D);
-  static const surface = Color(0xFF1B1B1B);
-  static const surfaceDim = Color(0xFF151515);
-  static const border = Color(0x14FFFFFF); // white 8%
-  static const borderStrong = Color(0x2EFFFFFF); // white 18%
-  static const divider = Color(0x0FFFFFFF); // white 6%
-  static const textPrimary = Color(0xFFF5F1E8);
-  static const textSecondary = Color(0x99FFFFFF); // white 60%
-  static const textMuted = Color(0x73FFFFFF); // white 45%
-  static const success = Color(0xFF5FA97C);
-  static const warning = Color(0xFFD9A24A);
+  static const background = Color(0xFF0E0C14); // darkCanvas
+  static const surface = Color(0xFF1B1826); // darkSurface
+  static const surfaceDim = Color(0xFF151221);
+  static const border = Color(0x1AFFFFFF);
+  static const borderStrong = Color(0x2EFFFFFF);
+  static const divider = Color(0x0FFFFFFF);
+  static const textPrimary = Color(0xFFFFFFFF);
+  static const textSecondary = Color(0xB3FFFFFF);
+  static const textMuted = Color(0xFF8C86A0);
+  static const success = Color(0xFF4FC98A);
+  static const warning = Color(0xFFE3BE6E);
   static const danger = Color(0xFFE4736A);
 }
 
@@ -314,16 +316,19 @@ class AppShadows {
   ];
 }
 
-/// Miftah type helpers: Cinzel for display (Trajan-style, tracks wide,
-/// pairs with the wordmark), Josefin Sans for UI text.
+/// Legacy type helpers, now on Plus Jakarta Sans. Defaults retuned to the
+/// redesign: display is heavy with negative tracking (the old Cinzel setting
+/// tracked wide, which is what made headings feel dated), and overline keeps
+/// tracking because section labels are the one place the new system allows it.
+/// Prefer `MiftahType` in new code.
 class LegacyMiftahType {
   static TextStyle display({
     double fontSize = 22,
-    FontWeight fontWeight = FontWeight.w500,
+    FontWeight fontWeight = FontWeight.w800,
     Color? color,
-    double letterSpacing = 0.8,
+    double letterSpacing = -0.44,
     double? height,
-  }) => GoogleFonts.cinzel(
+  }) => GoogleFonts.plusJakartaSans(
     fontSize: fontSize,
     fontWeight: fontWeight,
     color: color,
@@ -335,9 +340,9 @@ class LegacyMiftahType {
   static TextStyle overline({
     double fontSize = 11,
     Color? color,
-    double letterSpacing = 2.0,
-    FontWeight fontWeight = FontWeight.w500,
-  }) => GoogleFonts.josefinSans(
+    double letterSpacing = 1.54,
+    FontWeight fontWeight = FontWeight.w800,
+  }) => GoogleFonts.plusJakartaSans(
     fontSize: fontSize,
     fontWeight: fontWeight,
     color: color,
@@ -347,7 +352,7 @@ class LegacyMiftahType {
 
 class AppTheme {
   static TextTheme _headingTextTheme(Color color) =>
-      GoogleFonts.cinzelTextTheme(
+      GoogleFonts.plusJakartaSansTextTheme(
         TextTheme(
           headlineLarge: TextStyle(
             fontSize: 26,
@@ -371,7 +376,7 @@ class AppTheme {
       );
 
   static TextTheme _bodyTextTheme(LegacyMiftahColors c) =>
-      GoogleFonts.josefinSansTextTheme(
+      GoogleFonts.plusJakartaSansTextTheme(
         TextTheme(
           titleLarge: TextStyle(
             fontSize: 16,
@@ -469,7 +474,7 @@ class AppTheme {
         elevation: 0,
         scrolledUnderElevation: 0.5,
         centerTitle: false,
-        titleTextStyle: GoogleFonts.cinzel(
+        titleTextStyle: GoogleFonts.plusJakartaSans(
           fontSize: 16,
           fontWeight: FontWeight.w600,
           letterSpacing: 2.4,
@@ -483,11 +488,11 @@ class AppTheme {
         unselectedItemColor: c.textMuted,
         type: BottomNavigationBarType.fixed,
         elevation: 0,
-        selectedLabelStyle: GoogleFonts.josefinSans(
+        selectedLabelStyle: GoogleFonts.plusJakartaSans(
           fontSize: 12,
           fontWeight: FontWeight.w600,
         ),
-        unselectedLabelStyle: GoogleFonts.josefinSans(
+        unselectedLabelStyle: GoogleFonts.plusJakartaSans(
           fontSize: 12,
           fontWeight: FontWeight.w400,
         ),
@@ -510,7 +515,7 @@ class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(10),
           ),
-          textStyle: GoogleFonts.josefinSans(
+          textStyle: GoogleFonts.plusJakartaSans(
             fontSize: 14,
             fontWeight: FontWeight.w600,
             letterSpacing: 2.0,
@@ -525,7 +530,7 @@ class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(10),
           ),
-          textStyle: GoogleFonts.josefinSans(
+          textStyle: GoogleFonts.plusJakartaSans(
             fontSize: 14,
             fontWeight: FontWeight.w600,
             letterSpacing: 2.0,
@@ -567,12 +572,12 @@ class AppTheme {
           horizontal: 18,
           vertical: 16,
         ),
-        hintStyle: GoogleFonts.josefinSans(color: c.textMuted, fontSize: 14),
-        labelStyle: GoogleFonts.josefinSans(
+        hintStyle: GoogleFonts.plusJakartaSans(color: c.textMuted, fontSize: 14),
+        labelStyle: GoogleFonts.plusJakartaSans(
           color: c.textSecondary,
           fontSize: 14,
         ),
-        floatingLabelStyle: GoogleFonts.josefinSans(
+        floatingLabelStyle: GoogleFonts.plusJakartaSans(
           color: isDark ? AppColors.accent : AppColors.primary,
           fontSize: 14,
           fontWeight: FontWeight.w600,
@@ -585,7 +590,7 @@ class AppTheme {
       ),
       chipTheme: ChipThemeData(
         backgroundColor: c.background,
-        labelStyle: GoogleFonts.josefinSans(fontSize: 12, color: c.textPrimary),
+        labelStyle: GoogleFonts.plusJakartaSans(fontSize: 12, color: c.textPrimary),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
           side: BorderSide(color: c.border),

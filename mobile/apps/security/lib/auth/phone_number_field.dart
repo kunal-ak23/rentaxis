@@ -50,7 +50,7 @@ class PhoneNumberField extends StatelessWidget {
     Color? color,
     double? spacing,
     FontWeight? weight,
-  }) => (ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.josefinSans)(
+  }) => (ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.plusJakartaSans)(
     fontSize: size,
     color: color,
     // Arabic must never be letter-spaced: it breaks glyph joining.
@@ -89,13 +89,13 @@ class PhoneNumberField extends StatelessWidget {
       // Latin digits and LTR even in Arabic — a phone number is not prose, and
       // RTL would reorder the groups.
       textDirection: TextDirection.ltr,
-      style: GoogleFonts.josefinSans(fontSize: 14.5, color: onChrome),
+      style: GoogleFonts.plusJakartaSans(fontSize: 14.5, color: onChrome),
       cursorColor: AppColors.accent,
       onFieldSubmitted: onSubmitted,
       decoration: InputDecoration(
         isDense: true,
         hintText: country.exampleNational,
-        hintStyle: GoogleFonts.josefinSans(
+        hintStyle: GoogleFonts.plusJakartaSans(
           fontSize: 14.5,
           color: muted.withValues(alpha: 0.6),
         ),
@@ -245,7 +245,7 @@ class _CountrySelector extends StatelessWidget {
                   const SizedBox(width: 6),
                   Text(
                     c.dialCode,
-                    style: GoogleFonts.josefinSans(
+                    style: GoogleFonts.plusJakartaSans(
                       fontSize: 14.5,
                       color: textColor,
                     ),
@@ -265,7 +265,7 @@ class _CountrySelector extends StatelessWidget {
                     const SizedBox(width: 8),
                     Text(
                       c.dialCode,
-                      style: GoogleFonts.josefinSans(
+                      style: GoogleFonts.plusJakartaSans(
                         fontSize: 14,
                         color: dark ? Colors.white : m.textPrimary,
                       ),
@@ -278,7 +278,7 @@ class _CountrySelector extends StatelessWidget {
                         style:
                             (ar
                             ? GoogleFonts.notoNaskhArabic
-                            : GoogleFonts.josefinSans)(
+                            : GoogleFonts.plusJakartaSans)(
                               fontSize: 13,
                               color: dark
                                   ? Colors.white.withValues(alpha: 0.6)

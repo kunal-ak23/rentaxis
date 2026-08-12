@@ -362,7 +362,7 @@ class _CreateMeetingScreenState extends ConsumerState<CreateMeetingScreen> {
           l.newMeeting,
           style: l.ar
               ? GoogleFonts.notoNaskhArabic(fontWeight: FontWeight.w600)
-              : GoogleFonts.cinzel(fontSize: 16, letterSpacing: 1.2),
+              : GoogleFonts.plusJakartaSans(fontSize: 16, letterSpacing: 1.2),
         ),
       ),
       body: LoadingOverlay(
@@ -403,7 +403,7 @@ class _CreateMeetingScreenState extends ConsumerState<CreateMeetingScreen> {
                 else if (_leases.isEmpty)
                   Text(
                     l.noActiveLeases,
-                    style: GoogleFonts.josefinSans(
+                    style: GoogleFonts.plusJakartaSans(
                       color: m.textMuted,
                       fontSize: 13,
                     ),
@@ -423,7 +423,7 @@ class _CreateMeetingScreenState extends ConsumerState<CreateMeetingScreen> {
                           padding: const EdgeInsets.symmetric(horizontal: 12),
                           child: Text(
                             l.selectALease,
-                            style: GoogleFonts.josefinSans(color: m.textMuted),
+                            style: GoogleFonts.plusJakartaSans(color: m.textMuted),
                           ),
                         ),
                         padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -441,7 +441,7 @@ class _CreateMeetingScreenState extends ConsumerState<CreateMeetingScreen> {
                                     .toString(),
                               ),
                               overflow: TextOverflow.ellipsis,
-                              style: GoogleFonts.josefinSans(
+                              style: GoogleFonts.plusJakartaSans(
                                 color: m.textPrimary,
                               ),
                             ),
@@ -460,7 +460,7 @@ class _CreateMeetingScreenState extends ConsumerState<CreateMeetingScreen> {
                 TextField(
                   controller: _renewalMonthsCtrl,
                   keyboardType: TextInputType.number,
-                  style: GoogleFonts.josefinSans(color: m.textPrimary),
+                  style: GoogleFonts.plusJakartaSans(color: m.textPrimary),
                   decoration: InputDecoration(
                     hintText: '12',
                     border: OutlineInputBorder(
@@ -502,7 +502,7 @@ class _CreateMeetingScreenState extends ConsumerState<CreateMeetingScreen> {
                         _selectedDate == null
                             ? l.pickADate
                             : '${_selectedDate!.year}-${_selectedDate!.month.toString().padLeft(2, '0')}-${_selectedDate!.day.toString().padLeft(2, '0')}',
-                        style: GoogleFonts.josefinSans(
+                        style: GoogleFonts.plusJakartaSans(
                           color: _selectedDate == null
                               ? m.textMuted
                               : m.textPrimary,
@@ -532,7 +532,7 @@ class _CreateMeetingScreenState extends ConsumerState<CreateMeetingScreen> {
                     ),
                     child: Text(
                       l.noSlotsForDate,
-                      style: GoogleFonts.josefinSans(
+                      style: GoogleFonts.plusJakartaSans(
                         color: m.textMuted,
                         fontSize: 13,
                       ),
@@ -561,7 +561,7 @@ class _CreateMeetingScreenState extends ConsumerState<CreateMeetingScreen> {
                           ),
                           child: Text(
                             _slotLabel(slot),
-                            style: GoogleFonts.josefinSans(
+                            style: GoogleFonts.plusJakartaSans(
                               fontWeight: FontWeight.w600,
                               color: isSelected
                                   ? AppColors.primary
@@ -581,10 +581,10 @@ class _CreateMeetingScreenState extends ConsumerState<CreateMeetingScreen> {
               TextField(
                 controller: _notesCtrl,
                 maxLines: 3,
-                style: GoogleFonts.josefinSans(color: m.textPrimary),
+                style: GoogleFonts.plusJakartaSans(color: m.textPrimary),
                 decoration: InputDecoration(
                   hintText: l.notesHint,
-                  hintStyle: GoogleFonts.josefinSans(color: m.textMuted),
+                  hintStyle: GoogleFonts.plusJakartaSans(color: m.textMuted),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -605,12 +605,12 @@ class _CreateMeetingScreenState extends ConsumerState<CreateMeetingScreen> {
                 TextField(
                   controller: _detailNotesCtrl,
                   maxLines: 3,
-                  style: GoogleFonts.josefinSans(color: m.textPrimary),
+                  style: GoogleFonts.plusJakartaSans(color: m.textPrimary),
                   decoration: InputDecoration(
                     hintText: _purpose == 'CHEQUE_REPLACEMENT'
                         ? l.chequeNotesHint
                         : l.renewalNotesHint,
-                    hintStyle: GoogleFonts.josefinSans(color: m.textMuted),
+                    hintStyle: GoogleFonts.plusJakartaSans(color: m.textMuted),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
@@ -641,7 +641,7 @@ class _CreateMeetingScreenState extends ConsumerState<CreateMeetingScreen> {
               fontWeight: FontWeight.w600,
               color: m.textPrimary,
             )
-          : GoogleFonts.josefinSans(
+          : GoogleFonts.plusJakartaSans(
               fontSize: 11,
               letterSpacing: 1.6,
               fontWeight: FontWeight.w600,
@@ -698,7 +698,7 @@ class _PurposeOption extends StatelessWidget {
             Expanded(
               child: Text(
                 label,
-                style: GoogleFonts.josefinSans(
+                style: GoogleFonts.plusJakartaSans(
                   fontSize: 14,
                   letterSpacing: ar ? 0 : 0.2,
                   fontWeight: FontWeight.w600,

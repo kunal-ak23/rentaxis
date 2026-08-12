@@ -67,7 +67,7 @@ class StepHeader extends StatelessWidget {
                         fontWeight: FontWeight.w500,
                         color: m.textMuted,
                       )
-                    : GoogleFonts.josefinSans(
+                    : GoogleFonts.plusJakartaSans(
                         fontSize: 11.5,
                         fontWeight: FontWeight.w500,
                         letterSpacing: 1.0,
@@ -112,7 +112,7 @@ class StepHeader extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                     color: m.textPrimary,
                   )
-                : GoogleFonts.cinzel(
+                : GoogleFonts.plusJakartaSans(
                     fontSize: 21,
                     fontWeight: FontWeight.w500,
                     letterSpacing: 0.4,
