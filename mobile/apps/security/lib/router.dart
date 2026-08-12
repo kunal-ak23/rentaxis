@@ -42,7 +42,12 @@ final routerProvider = Provider<GoRouter>((ref) {
   ref.onDispose(refresh.dispose);
 
   return GoRouter(
-    initialLocation: '/splash',
+    // Dev affordance: --dart-define=START_ROUTE=/payments boots straight to a
+    // screen. Defaults to the normal splash entry, so release is unchanged.
+    initialLocation: const String.fromEnvironment(
+      'START_ROUTE',
+      defaultValue: '/splash',
+    ),
     refreshListenable: refresh,
     redirect: (context, state) {
       final authState = ref.read(authProvider);

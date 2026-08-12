@@ -31,7 +31,12 @@ final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authProvider);
 
   return GoRouter(
-    initialLocation: '/splash',
+    // Dev affordance: --dart-define=START_ROUTE=/payments boots straight to a
+    // screen. Defaults to the normal splash entry, so release is unchanged.
+    initialLocation: const String.fromEnvironment(
+      'START_ROUTE',
+      defaultValue: '/splash',
+    ),
     redirect: (context, state) {
       final isLoggedIn = authState.isAuthenticated;
       final isLoading = authState.isLoading;
