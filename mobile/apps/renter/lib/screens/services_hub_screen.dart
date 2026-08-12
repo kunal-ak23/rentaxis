@@ -29,6 +29,9 @@ class _L {
   static String penaltiesSub(bool ar) => ar ? 'رسوم التأخير' : 'Late fees';
   static String saved(bool ar) => ar ? 'المحفوظة' : 'Saved listings';
   static String savedSub(bool ar) => ar ? 'العقارات المحفوظة' : 'Your shortlist';
+  static String account(bool ar) => ar ? 'حسابي' : 'Account';
+  static String accountSub(bool ar) =>
+      ar ? 'الملف الشخصي والمستندات' : 'Profile and documents';
 }
 
 class ServicesHubScreen extends ConsumerWidget {
@@ -87,6 +90,15 @@ class ServicesHubScreen extends ConsumerWidget {
         label: _L.saved(ar),
         sub: _L.savedSub(ar),
         route: '/wishlist',
+      ),
+      // Profile is reached from the Home avatar in the mockups. Repeating it
+      // here means it is never more than one tap away from any tab.
+      _Service(
+        icon: Icons.person_rounded,
+        tone: MiftahTone.neutral,
+        label: _L.account(ar),
+        sub: _L.accountSub(ar),
+        route: '/profile',
       ),
     ];
 

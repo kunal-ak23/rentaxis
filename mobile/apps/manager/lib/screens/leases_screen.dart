@@ -151,7 +151,7 @@ class _LeasesScreenState extends ConsumerState<LeasesScreen> {
                         16,
                         12,
                         16,
-                        AppInsets.bottomNav(context),
+                        24,
                       ),
                       itemCount: filtered.length,
                       separatorBuilder: (_, _) => const SizedBox(height: 9),
@@ -632,7 +632,7 @@ class _LeasesShimmer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView.separated(
-      padding: EdgeInsets.fromLTRB(16, 12, 16, AppInsets.bottomNav(context)),
+      padding: EdgeInsets.fromLTRB(16, 12, 16, 24),
       itemCount: 6,
       separatorBuilder: (_, _) => const SizedBox(height: 9),
       itemBuilder: (_, _) => const ShimmerLoading(

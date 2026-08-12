@@ -97,7 +97,7 @@ class _RentersScreenState extends ConsumerState<RentersScreen> {
                       0,
                       8,
                       0,
-                      AppInsets.bottomNav(context),
+                      24,
                     ),
                     itemCount: _rowCount(filtered, l.ar),
                     itemBuilder: (context, index) =>

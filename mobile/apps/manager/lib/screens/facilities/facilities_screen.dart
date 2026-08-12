@@ -242,7 +242,7 @@ class _FacilitiesScreenState extends ConsumerState<FacilitiesScreen> {
           return ListView.builder(
             physics: const AlwaysScrollableScrollPhysics(),
             padding:
-                EdgeInsets.fromLTRB(16, 8, 16, AppInsets.bottomNav(context)),
+                EdgeInsets.fromLTRB(16, 8, 16, 24),
             itemCount: items.length + (truncated ? 1 : 0),
             itemBuilder: (context, i) {
               if (i == items.length) {
@@ -299,7 +299,7 @@ class _FacilitiesScreenState extends ConsumerState<FacilitiesScreen> {
           return ListView.builder(
             physics: const AlwaysScrollableScrollPhysics(),
             padding:
-                EdgeInsets.fromLTRB(16, 8, 16, AppInsets.bottomNav(context)),
+                EdgeInsets.fromLTRB(16, 8, 16, 24),
             itemCount: items.length + (truncated ? 1 : 0),
             itemBuilder: (context, i) {
               if (i == items.length) {

@@ -220,7 +220,7 @@ class _MeetingsScreenState extends ConsumerState<MeetingsScreen> {
                           20,
                           14,
                           20,
-                          AppInsets.bottomNav(context),
+                          24,
                         ),
                         itemCount: _meetings.length + (_loadingMore ? 1 : 0),
                         separatorBuilder: (_, _) => const SizedBox(height: 10),

@@ -97,7 +97,7 @@ class _VendorDetailScreenState extends ConsumerState<VendorDetailScreen> {
             16,
             16,
             16,
-            AppInsets.bottomNav(context),
+            24,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,

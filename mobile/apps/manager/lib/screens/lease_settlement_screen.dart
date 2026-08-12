@@ -8,7 +8,6 @@ import 'package:file_picker/file_picker.dart';
 import 'package:rentaxis_core/api/services/settlement_service.dart';
 import 'package:rentaxis_core/providers/auth_provider.dart';
 import 'package:rentaxis_core/theme/app_theme.dart';
-import 'package:rentaxis_core/theme/insets.dart';
 import 'package:rentaxis_core/utils/formatters.dart';
 import 'package:rentaxis_core/utils/l10n.dart';
 import 'package:rentaxis_core/widgets/gold_button.dart';
@@ -761,7 +760,7 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
 
   Widget _buildFinalizedBody(LegacyMiftahColors m, _L l) {
     return SingleChildScrollView(
-      padding: EdgeInsets.fromLTRB(16, 16, 16, AppInsets.bottomNav(context)),
+      padding: EdgeInsets.fromLTRB(16, 16, 16, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -902,7 +901,7 @@ class _LeaseSettlementScreenState extends ConsumerState<LeaseSettlementScreen> {
 
   Widget _buildEditableBody(LegacyMiftahColors m, _L l) {
     return SingleChildScrollView(
-      padding: EdgeInsets.fromLTRB(16, 16, 16, AppInsets.bottomNav(context)),
+      padding: EdgeInsets.fromLTRB(16, 16, 16, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

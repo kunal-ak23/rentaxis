@@ -375,7 +375,7 @@ class _StaffDetailScreenState extends ConsumerState<StaffDetailScreen> {
               16,
               16,
               16,
-              AppInsets.bottomNav(context),
+              24,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,

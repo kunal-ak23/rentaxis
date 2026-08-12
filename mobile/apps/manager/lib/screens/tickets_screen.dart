@@ -326,7 +326,7 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
                       20,
                       12,
                       20,
-                      AppInsets.bottomNav(context, spacing: 100),
+                      100,
                     ),
                     itemCount: filtered.length,
                     itemBuilder: (context, index) {

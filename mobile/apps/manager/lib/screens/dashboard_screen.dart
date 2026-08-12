@@ -51,46 +51,45 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final m = context.miftah;
     final l = _L(context.isAr);
 
-    return RefreshIndicator(
-      onRefresh: _refresh,
-      color: AppColors.accent,
-      child: SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: EdgeInsetsDirectional.fromSTEB(
-          20,
-          12,
-          20,
-          AppInsets.bottomNav(context),
+    return Column(
+      children: [
+        _Header(
+          userName: _firstName(auth.name),
+          unreadNotifications: notifications.unreadCount,
+          l: l,
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _Header(
-              userName: _firstName(auth.name),
-              unreadNotifications: notifications.unreadCount,
-              l: l,
-            ),
-            const SizedBox(height: 18),
-            dashboardAsync.when(
-              loading: () => const _DashboardShimmer(),
-              error: (e, _) =>
-                  ErrorState(message: l.loadError, onRetry: _refresh),
-              data: (data) => Column(
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: _refresh,
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsetsDirectional.fromSTEB(20, 6, 20, 24),
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _KpiGrid(data: data, l: l),
-                  const SizedBox(height: 20),
-                  _NeedsAttention(data: data, l: l, m: m),
-                  const SizedBox(height: 20),
-                  _QuickActions(l: l),
-                  const SizedBox(height: 22),
-                  _PortfolioGlance(data: data, l: l, m: m),
+                  dashboardAsync.when(
+                    loading: () => const _DashboardShimmer(),
+                    error: (e, _) =>
+                        ErrorState(message: l.loadError, onRetry: _refresh),
+                    data: (data) => Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _KpiGrid(data: data, l: l),
+                        const SizedBox(height: 20),
+                        _NeedsAttention(data: data, l: l, m: m),
+                        const SizedBox(height: 20),
+                        _QuickActions(l: l),
+                        const SizedBox(height: 22),
+                        _PortfolioGlance(data: data, l: l, m: m),
+                      ],
+                    ),
+                  ),
                 ],
               ),
             ),
-          ],
+          ),
         ),
-      ),
+      ],
     );
   }
 
@@ -102,128 +101,48 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
 // ─── Greeting strip ─────────────────────────────────────────────────────────
 
-class _Header extends StatelessWidget {
-  final String userName;
-  final int unreadNotifications;
-  final _L l;
+/// Today's header — design screen 02. Mono date eyebrow, heavy greeting, and
+/// the bell + avatar pair. The avatar is the only way into More (Staff,
+/// Vendors, Listings, Settings, Profile), so it must never be dropped.
+class _Header extends ConsumerWidget {
   const _Header({
     required this.userName,
     required this.unreadNotifications,
     required this.l,
   });
 
+  final String userName;
+  final int unreadNotifications;
+  final _L l;
+
   @override
-  Widget build(BuildContext context) {
-    final m = context.miftah;
+  Widget build(BuildContext context, WidgetRef ref) {
     // Arabic uses "،" not "·": the middot is visually identical to the
     // Arabic-Indic zero (٠), so "الأحد · ٢ أغسطس" reads as "20 August".
     final dateLine = l.ar
         ? DateFormat('EEE، d MMMM', 'ar').format(DateTime.now())
-        : DateFormat('EEE · dd MMM').format(DateTime.now());
-    return Row(
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                dateLine,
-                style: l.ar
-                    ? GoogleFonts.notoNaskhArabic(
-                        fontSize: 11.5,
-                        color: m.textMuted,
-                      )
-                    : LegacyMiftahType.overline(
-                        fontSize: 9,
-                        letterSpacing: 2.4,
-                        color: AppColors.accentDark,
-                      ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                l.greeting(userName),
-                style: l.ar
-                    ? GoogleFonts.notoNaskhArabic(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                        color: m.textPrimary,
-                      )
-                    : GoogleFonts.plusJakartaSans(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w600,
-                        color: m.textPrimary,
-                      ),
-              ),
-            ],
-          ),
-        ),
-        _IconBtn(
+        : DateFormat('EEE · dd MMM').format(DateTime.now()).toUpperCase();
+
+    return MiftahScreenHeader(
+      isAr: l.ar,
+      eyebrow: dateLine,
+      title: l.greeting(userName),
+      actions: [
+        MiftahCircleButton(
           icon: Icons.notifications_outlined,
-          badge: unreadNotifications > 0 ? unreadNotifications : null,
+          badgeCount: unreadNotifications,
+          tooltip: l.notifications,
           onTap: () => context.push('/notifications'),
+        ),
+        MiftahAvatarButton(
+          name: userName,
+          tooltip: l.moreTooltip,
+          onTap: () => context.push('/more'),
         ),
       ],
     );
   }
 }
-
-class _IconBtn extends StatelessWidget {
-  final IconData icon;
-  final int? badge;
-  final VoidCallback onTap;
-  const _IconBtn({required this.icon, required this.onTap, this.badge});
-
-  @override
-  Widget build(BuildContext context) {
-    final m = context.miftah;
-    return InkWell(
-      borderRadius: BorderRadius.circular(12),
-      onTap: onTap,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: m.surface,
-              border: Border.all(color: m.border),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, size: 16, color: m.textPrimary),
-          ),
-          if (badge != null)
-            PositionedDirectional(
-              top: -3,
-              end: -3,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
-                decoration: BoxDecoration(
-                  color: m.danger,
-                  shape: BoxShape.rectangle,
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: m.background, width: 2),
-                ),
-                child: Center(
-                  child: Text(
-                    '$badge',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─── KPI grid ───────────────────────────────────────────────────────────────
 
 class _KpiGrid extends StatelessWidget {
   final Map<String, dynamic> data;
@@ -1076,4 +995,7 @@ class _L {
   String get thisMonth => ar ? 'هذا الشهر' : 'This month';
   String collectedSoFar(String pct) =>
       ar ? '$pct% تم تحصيله حتى الآن' : '$pct% collected so far';
+
+  String get notifications => ar ? 'الإشعارات' : 'Notifications';
+  String get moreTooltip => ar ? 'حسابي والمزيد' : 'Account and more';
 }

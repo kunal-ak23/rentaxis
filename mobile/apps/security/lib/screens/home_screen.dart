@@ -71,7 +71,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   Expanded(child: const _VisitorsTab()),
                 ],
               )
-            : const ApprovalsView(),
+            // Shift settings (and sign-out) used to live on the shell app bar,
+            // so they were reachable from both tabs. The redesign moved them
+            // into the Home header — this keeps the Approvals tab's own way in.
+            : Column(
+                children: [
+                  MiftahScreenHeader(
+                    isAr: l.ar,
+                    title: l.approvals,
+                    actions: [
+                      MiftahCircleButton(
+                        icon: Icons.tune_rounded,
+                        tooltip: l.settings,
+                        onTap: _openSettings,
+                      ),
+                    ],
+                  ),
+                  const Expanded(child: ApprovalsView()),
+                ],
+              ),
       ),
       bottomNavigationBar: _GateNavBar(
         selectedIndex: _tab,

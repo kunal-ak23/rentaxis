@@ -279,7 +279,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
     return Scaffold(
       body: ListView(
-        padding: EdgeInsets.fromLTRB(0, 0, 0, AppInsets.bottomNav(context)),
+        padding: EdgeInsets.fromLTRB(0, 0, 0, 24),
         children: [
           _buildChromeHeader(auth, l),
           Padding(

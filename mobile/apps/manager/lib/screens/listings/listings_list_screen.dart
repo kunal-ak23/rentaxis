@@ -64,7 +64,7 @@ class ListingsListScreen extends ConsumerWidget {
                   16,
                   16,
                   16,
-                  AppInsets.bottomNav(context),
+                  24,
                 ),
                 itemCount: 5,
                 itemBuilder: (_, _) => Padding(
@@ -93,7 +93,7 @@ class ListingsListScreen extends ConsumerWidget {
                       16,
                       16,
                       16,
-                      AppInsets.bottomNav(context),
+                      24,
                     ),
                     itemCount: items.length + (truncated ? 1 : 0),
                     itemBuilder: (_, i) {

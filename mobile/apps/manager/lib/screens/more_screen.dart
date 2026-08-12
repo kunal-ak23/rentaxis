@@ -25,7 +25,7 @@ class MoreScreen extends ConsumerWidget {
     return Scaffold(
       backgroundColor: m.background,
       body: ListView(
-        padding: EdgeInsets.only(bottom: AppInsets.bottomNav(context)),
+        padding: EdgeInsets.only(bottom: 24),
         children: [
           _ChromeHeader(authState: authState, l: l),
           Padding(

@@ -574,7 +574,7 @@ class _LeaseDetailScreenState extends ConsumerState<LeaseDetailScreen> {
                   16,
                   16,
                   16,
-                  AppInsets.bottomNav(context),
+                  24,
                 ),
                 sliver: SliverList(
                   delegate: SliverChildListDelegate([

@@ -469,7 +469,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
                   20,
                   16,
                   20,
-                  AppInsets.bottomNav(context),
+                  24,
                 ),
                 children: [
                   AnimatedListItem(

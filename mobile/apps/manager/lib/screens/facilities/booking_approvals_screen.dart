@@ -299,7 +299,7 @@ class _BookingList extends ConsumerWidget {
               16,
               8,
               16,
-              AppInsets.bottomNav(context),
+              24,
             ),
             itemCount: rows.length + (truncated ? 1 : 0),
             itemBuilder: (context, i) {

@@ -60,6 +60,7 @@ export 'utils/error_message.dart';
 export 'ui/miftah_tokens.dart';
 export 'ui/miftah_theme.dart';
 export 'ui/miftah_widgets.dart';
+export 'ui/miftah_header.dart';
 
 // Widgets
 export 'widgets/status_badge.dart';

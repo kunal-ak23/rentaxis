@@ -206,7 +206,7 @@ class _StaffScreenState extends ConsumerState<StaffScreen> {
                       16,
                       8,
                       16,
-                      AppInsets.bottomNav(context),
+                      24,
                     ),
                     itemCount: filtered.length,
                     itemBuilder: (context, index) {

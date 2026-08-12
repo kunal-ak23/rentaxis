@@ -222,7 +222,7 @@ class _LeasePenaltiesScreenState extends ConsumerState<LeasePenaltiesScreen> {
       color: AppColors.accent,
       child: ListView.builder(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: EdgeInsets.fromLTRB(16, 16, 16, AppInsets.bottomNav(context)),
+        padding: EdgeInsets.fromLTRB(16, 16, 16, 24),
         itemCount: _penalties.length,
         itemBuilder: (context, index) {
           final penalty = _penalties[index];
