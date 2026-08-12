@@ -48,7 +48,6 @@ class _ShellScreenState extends ConsumerState<ShellScreen> {
   @override
   Widget build(BuildContext context) {
     final location = GoRouterState.of(context).matchedLocation;
-    final notifState = ref.watch(notificationProvider);
     final selectedIndex = _calculateIndex(location);
     final isAr = context.isAr;
 
@@ -60,42 +59,14 @@ class _ShellScreenState extends ConsumerState<ShellScreen> {
         if (!didPop) context.go('/');
       },
       child: Scaffold(
-        appBar: AppBar(
-          title: Text(
-            _title(selectedIndex, isAr),
-            style: isAr
-                ? MiftahType.ar(size: 20, weight: FontWeight.w700)
-                : MiftahType.title(),
-          ),
-          actions: [
-            IconButton(
-              onPressed: () => context.push('/notifications'),
-              icon: Badge(
-                isLabelVisible: notifState.unreadCount > 0,
-                label: Text(
-                  notifState.unreadCount > 9
-                      ? '9+'
-                      : '${notifState.unreadCount}',
-                  style: const TextStyle(fontSize: 9, color: Colors.white),
-                ),
-                backgroundColor: MiftahColors.dangerBright,
-                child: const Icon(Icons.notifications_none_rounded),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsetsDirectional.only(end: 8),
-              child: IconButton(
-                onPressed: () => context.push('/profile'),
-                icon: const Icon(Icons.person_outline_rounded),
-              ),
-            ),
-          ],
-        ),
-        body: widget.child,
+        // No shell AppBar: in the redesign each screen owns its own header —
+        // Home carries the wordmark plus bell and avatar, Wallet carries
+        // "Your cheques" plus a penalties pill, and so on.
+        body: SafeArea(bottom: false, child: widget.child),
         bottomNavigationBar: MiftahNavBar(
           currentIndex: selectedIndex,
           onTap: (index) => context.go(_routes[index]),
-          centreIcon: Icons.qr_code_2_rounded,
+          centreIcon: Icons.qr_code_scanner_rounded,
           centreLabel: isAr ? 'تصريح' : 'Pass',
           onCentreTap: () => context.go('/gatepass'),
           items: [
@@ -104,7 +75,7 @@ class _ShellScreenState extends ConsumerState<ShellScreen> {
               label: isAr ? 'الرئيسية' : 'Home',
             ),
             MiftahNavItem(
-              icon: Icons.search_rounded,
+              icon: Icons.travel_explore_rounded,
               label: isAr ? 'استكشاف' : 'Explore',
             ),
             MiftahNavItem(
@@ -120,13 +91,6 @@ class _ShellScreenState extends ConsumerState<ShellScreen> {
       ),
     );
   }
-
-  String _title(int index, bool isAr) => switch (index) {
-    1 => isAr ? 'استكشاف' : 'Explore',
-    2 => isAr ? 'المحفظة' : 'Wallet',
-    3 => isAr ? 'الخدمات' : 'Services',
-    _ => isAr ? 'الرئيسية' : 'Home',
-  };
 
   int _calculateIndex(String location) {
     if (location.startsWith('/browse')) return 1;
