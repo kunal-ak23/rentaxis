@@ -32,7 +32,12 @@ void main() {
             .overrideWithValue(leases ?? FakeLeaseService(leases: [
                   leaseFixture(),
                 ])),
-        shareTextProvider.overrideWithValue((text) async => shared.add(text)),
+        // The screen shares text plus a branded image; the image capture is
+        // stubbed out so the assertions stay on what the guest reads.
+        sharePassProvider.overrideWithValue(
+          (text, imagePath) async => shared.add(text),
+        ),
+        passShareImageProvider.overrideWithValue((context, card) async => null),
       ],
       routes: [
         GoRoute(

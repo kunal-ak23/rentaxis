@@ -5,6 +5,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
 import '../../gatepass/pass_display.dart';
+import '../../gatepass/pass_share_card.dart';
 import '../../providers/gate_pass_provider.dart';
 
 /// Screen strings (EN/AR). Lightweight per-screen pattern — see arabic-brief.
@@ -101,6 +102,7 @@ class _PassBody extends ConsumerStatefulWidget {
 
 class _PassBodyState extends ConsumerState<_PassBody> {
   bool _cancelling = false;
+  bool _preparingShare = false;
 
   @override
   Widget build(BuildContext context) {
@@ -120,17 +122,12 @@ class _PassBodyState extends ConsumerState<_PassBody> {
     final guest = passString(pass, 'guestName');
 
     return LoadingOverlay(
-      isLoading: _cancelling,
+      isLoading: _cancelling || _preparingShare,
       child: RefreshIndicator(
         color: m.isDark ? AppColors.accent : AppColors.primary,
         onRefresh: () => ref.refresh(passByIdProvider(widget.passId).future),
         child: ListView(
-          padding: EdgeInsets.fromLTRB(
-            16,
-            16,
-            16,
-            32,
-          ),
+          padding: EdgeInsets.fromLTRB(16, 16, 16, 32),
           children: [
             Row(
               children: [
@@ -210,7 +207,30 @@ class _PassBodyState extends ConsumerState<_PassBody> {
       unitIdentifier: place.unitIdentifier,
       ar: l.ar,
     );
-    await ref.read(shareTextProvider)(text);
+
+    // The guest gets a branded card carrying the QR, the code, the place and
+    // the window — one picture rather than a code buried in a chat. Capture
+    // can fail (no overlay, no QR token); the text still goes either way.
+    String? imagePath;
+    if (passString(widget.pass, 'qrToken') != null) {
+      setState(() => _preparingShare = true);
+      try {
+        imagePath = await ref.read(passShareImageProvider)(
+          context,
+          MiftahPassShareCard(
+            pass: widget.pass,
+            propertyName: place.propertyName,
+            unitIdentifier: place.unitIdentifier,
+            ar: l.ar,
+            strings: PassShareStrings(l.ar),
+          ),
+        );
+      } finally {
+        if (mounted) setState(() => _preparingShare = false);
+      }
+    }
+
+    await ref.read(sharePassProvider)(text, imagePath);
   }
 
   Future<void> _confirmCancel() async {

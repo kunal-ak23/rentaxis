@@ -1,6 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
+import 'package:flutter/widgets.dart';
 import 'package:share_plus/share_plus.dart';
+
+import '../gatepass/pass_share_card.dart';
 
 /// The renter's own gate passes, over core's shared [gatePassServiceProvider].
 ///
@@ -88,6 +91,36 @@ final shareTextProvider = Provider<Future<void> Function(String)>((ref) {
     await SharePlus.instance.share(ShareParams(text: text));
   };
 });
+
+/// Shares the branded pass image alongside the text.
+///
+/// Same indirection as [shareTextProvider]: a test can assert what the guest
+/// receives without a platform channel. [imagePath] null falls back to a
+/// text-only share, so a capture failure degrades instead of blocking the
+/// renter from sending anything at all.
+final sharePassProvider =
+    Provider<Future<void> Function(String text, String? imagePath)>((ref) {
+      return (text, imagePath) async {
+        if (imagePath == null) {
+          await SharePlus.instance.share(ShareParams(text: text));
+          return;
+        }
+        await SharePlus.instance.share(
+          ShareParams(text: text, files: [XFile(imagePath)]),
+        );
+      };
+    });
+
+/// Renders the branded share card to a PNG and hands back its path.
+///
+/// Injected for the same reason as [shareTextProvider]: a widget test asserting
+/// what the guest receives must not be dragged through a real rasterisation,
+/// which cannot complete on the test clock. Tests override this with a stub.
+final passShareImageProvider =
+    Provider<Future<String?> Function(BuildContext, Widget)>((ref) {
+      return (context, card) async =>
+          (await renderPassShareCard(context, card))?.path;
+    });
 
 /// Narrows the `List<dynamic>` Dio hands back.
 ///
