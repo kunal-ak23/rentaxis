@@ -214,18 +214,21 @@ class _TopBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final unread = ref.watch(notificationProvider).unreadCount;
-    final isAr = ref.watch(appLanguageProvider) == AppLanguage.ar;
 
     return Container(
       color: Theme.of(context).colorScheme.surface,
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 14),
       child: Row(
         children: [
-          // Arabic wordmark in عربي, English wordmark in EN — one script each.
+          // The Arabic wordmark fronts the dashboard in both locales — the
+          // brand is Arabic-first. Tinted to onSurface (ink on the light
+          // header, white in dark mode); the source asset is gold, and the
+          // mockup itself darkens it on light surfaces.
           Image.asset(
-            isAr ? 'assets/logo_mark.png' : 'assets/logo_horizontal.png',
-            height: isAr ? 34 : 18,
+            'assets/logo_mark.png',
+            height: 34,
             fit: BoxFit.contain,
+            color: Theme.of(context).colorScheme.onSurface,
           ),
           const Spacer(),
           _CircleButton(
