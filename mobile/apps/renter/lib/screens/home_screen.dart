@@ -226,7 +226,7 @@ class _TopBar extends ConsumerWidget {
           // mockup itself darkens it on light surfaces.
           Image.asset(
             'assets/logo_mark.png',
-            height: 34,
+            height: 44,
             fit: BoxFit.contain,
             color: Theme.of(context).colorScheme.onSurface,
           ),
