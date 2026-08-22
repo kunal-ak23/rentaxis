@@ -1338,6 +1338,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -1349,6 +1350,22 @@ public interface PromoAdRepository extends JpaRepository<PromoAd, UUID> {
     Page<PromoAd> findByTenantIdAndBusinessId(UUID tenantId, UUID businessId, Pageable pageable);
 
     long countByBusinessId(UUID businessId);
+
+    /**
+     * Ad counts for a page of businesses, as {@code [businessId, count]}.
+     *
+     * <p>One query per page. The admin business list would otherwise issue a
+     * COUNT per row, and Spring Data's default max page size is 2000 — so a
+     * single request could fire 2001 queries. Same shape as
+     * {@code BookingRequestRepository.countByAmenityIdIn}.
+     */
+    @Query("""
+            SELECT a.businessId, COUNT(a) FROM PromoAd a
+            WHERE a.tenantId = :tenantId AND a.businessId IN :businessIds
+            GROUP BY a.businessId
+            """)
+    List<Object[]> countByBusinessIdIn(@Param("tenantId") UUID tenantId,
+                                       @Param("businessIds") Collection<UUID> businessIds);
 
     /**
      * Every ad this renter is eligible to see right now.
@@ -1402,6 +1419,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -1410,8 +1428,14 @@ public interface PromoAdPropertyRepository extends JpaRepository<PromoAdProperty
 
     List<PromoAdProperty> findByAdId(UUID adId);
 
-    /** Batch fetch for list responses — one query per page, not one per row. */
-    List<PromoAdProperty> findByAdIdIn(List<UUID> adIds);
+    /**
+     * Batch fetch for list responses — one query per page, not one per row.
+     * Tenant in the signature for the same reason
+     * {@code PromoBusinessRepository.findByTenantIdAndIdIn} carries it: a
+     * privacy boundary should not rest on an ambient thread-local that a
+     * future caller without tenant context could bypass.
+     */
+    List<PromoAdProperty> findByTenantIdAndAdIdIn(UUID tenantId, Collection<UUID> adIds);
 
     /**
      * Bulk delete, so it executes immediately rather than deferring to flush —
@@ -3772,7 +3796,8 @@ public class PromotionStatsService {
      */
     public record Totals(long impressions, long clicks, long viewers, long clickers) {
 
-        static final Totals EMPTY = new Totals(0, 0, 0, 0);
+        /** Public: the admin controller in another package needs the zero value. */
+        public static final Totals EMPTY = new Totals(0, 0, 0, 0);
 
         /**
          * Distinct clickers over distinct viewers. Clamped at 1: a renter whose
@@ -3919,13 +3944,16 @@ import com.datagami.rentaxis.api.dto.PromoAdDTO;
 import com.datagami.rentaxis.api.dto.PromoAdRequest;
 import com.datagami.rentaxis.api.dto.PromoBusinessDTO;
 import com.datagami.rentaxis.api.dto.PromoBusinessRequest;
+import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.core.service.PromotionService;
 import com.datagami.rentaxis.core.service.PromotionStatsService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.PromoAd;
 import com.datagami.rentaxis.domain.entity.PromoBusiness;
 import com.datagami.rentaxis.domain.entity.enums.PromoCategory;
+import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.domain.entity.enums.PromoCtaType;
+import com.datagami.rentaxis.domain.entity.enums.PromoPlacement;
 import com.datagami.rentaxis.domain.repository.PromoAdPropertyRepository;
 import com.datagami.rentaxis.domain.repository.PromoAdRepository;
 import com.datagami.rentaxis.domain.repository.PromoBusinessRepository;
@@ -3949,6 +3977,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -4005,7 +4034,8 @@ class PromotionAdminControllerTest {
     void listBusinesses_splitsAllowedDomainsIntoAList() {
         Page<PromoBusiness> page = new PageImpl<>(List.of(business()));
         when(promotionService.listBusinesses(eq(tenantId), any(Pageable.class))).thenReturn(page);
-        when(adRepository.countByBusinessId(businessId)).thenReturn(2L);
+        when(adRepository.countByBusinessIdIn(eq(tenantId), anyCollection()))
+                .thenReturn(List.<Object[]>of(new Object[]{businessId, 2L}));
 
         ResponseEntity<Page<PromoBusinessDTO>> res =
                 controller.listBusinesses(PageRequest.of(0, 10));
@@ -4013,6 +4043,42 @@ class PromotionAdminControllerTest {
         PromoBusinessDTO dto = res.getBody().getContent().get(0);
         assertThat(dto.allowedDomains()).containsExactly("spice-bazaar.ae", "gym.example.com");
         assertThat(dto.adCount()).isEqualTo(2L);
+    }
+
+    @Test
+    void listBusinesses_countsAdsInOneQueryNotOnePerRow() {
+        // Spring Data's default max page size is 2000, so a COUNT per row means
+        // one request can fire 2001 queries.
+        PromoBusiness b1 = business();
+        PromoBusiness b2 = business();
+        b2.setId(UUID.randomUUID());
+        when(promotionService.listBusinesses(eq(tenantId), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(b1, b2)));
+        when(adRepository.countByBusinessIdIn(eq(tenantId), anyCollection()))
+                .thenReturn(List.<Object[]>of(new Object[]{b1.getId(), 3L}));
+
+        List<PromoBusinessDTO> rows = controller.listBusinesses(PageRequest.of(0, 10))
+                .getBody().getContent();
+
+        assertThat(rows.get(0).adCount()).isEqualTo(3L);
+        assertThat(rows.get(1).adCount()).isZero();
+        verify(adRepository, never()).countByBusinessId(any());
+    }
+
+    @Test
+    void everyEndpointRefusesWhenNoTenantIsInContext() {
+        // ApiSecurityFilter authorises a SUPER_ADMIN without a tenant header, so
+        // this is reachable. A write would otherwise be a NOT NULL violation
+        // surfaced as a 500 with a raw JDBC message.
+        TenantContextHolder.clear();
+
+        assertThatThrownBy(() -> controller.listBusinesses(PageRequest.of(0, 10)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("X-Tenant-Id");
+        assertThatThrownBy(() -> controller.deleteAd(UUID.randomUUID()))
+                .isInstanceOf(BusinessRuleViolationException.class);
+        assertThatThrownBy(() -> controller.stats(UUID.randomUUID()))
+                .isInstanceOf(BusinessRuleViolationException.class);
     }
 
     @Test
@@ -4032,7 +4098,8 @@ class PromotionAdminControllerTest {
         PromoAd a2 = ad();
         Page<PromoAd> page = new PageImpl<>(List.of(a1, a2));
         when(promotionService.listAds(eq(tenantId), eq(null), any(Pageable.class))).thenReturn(page);
-        when(adPropertyRepository.findByAdIdIn(anyList())).thenReturn(List.of());
+        when(adPropertyRepository.findByTenantIdAndAdIdIn(eq(tenantId), anyCollection()))
+                .thenReturn(List.of());
         when(statsService.totals(eq(tenantId), anyList())).thenReturn(Map.of(
                 a1.getId(), new PromotionStatsService.Totals(100, 10, 80, 8)));
         when(businessRepository.findByTenantIdAndIdIn(eq(tenantId), anyCollection()))
@@ -4046,7 +4113,7 @@ class PromotionAdminControllerTest {
         assertThat(rows.get(1).impressions()).isZero();
         assertThat(rows.get(0).businessNameEn()).isEqualTo("Spice Bazaar");
         // Three batched calls for the whole page, never one per row.
-        verify(adPropertyRepository).findByAdIdIn(anyList());
+        verify(adPropertyRepository).findByTenantIdAndAdIdIn(eq(tenantId), anyCollection());
         verify(statsService).totals(eq(tenantId), anyList());
         verify(businessRepository).findByTenantIdAndIdIn(eq(tenantId), anyCollection());
         verify(promotionService, never()).targetedPropertyIds(any());
@@ -4060,7 +4127,7 @@ class PromotionAdminControllerTest {
 
         controller.listAds(null, PageRequest.of(0, 10));
 
-        verify(adPropertyRepository, never()).findByAdIdIn(anyList());
+        verify(adPropertyRepository, never()).findByTenantIdAndAdIdIn(any(), anyCollection());
         verify(statsService, never()).totals(any(), anyList());
         verify(businessRepository, never()).findByTenantIdAndIdIn(any(), anyCollection());
     }
@@ -4085,10 +4152,17 @@ class PromotionAdminControllerTest {
         a.setEndsAt(Instant.parse("2026-12-31T00:00:00Z"));
         a.setCreatedAt(Instant.parse("2025-01-01T00:00:00Z"));
         a.setUpdatedAt(Instant.parse("2025-06-01T00:00:00Z"));
+        a.setBackgroundImageUrl("https://cdn.example.com/a.png");
+        a.setAccentColor("#FBF3E2");
+        a.setCouponCode("MIFTAH25");
+        a.setPriority(7);
+        a.setPlacement(PromoPlacement.OFFERS_ONLY);
+        a.setActive(false);
 
         when(promotionService.listAds(eq(tenantId), eq(null), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(a)));
-        when(adPropertyRepository.findByAdIdIn(anyList())).thenReturn(List.of());
+        when(adPropertyRepository.findByTenantIdAndAdIdIn(eq(tenantId), anyCollection()))
+                .thenReturn(List.of());
         when(statsService.totals(eq(tenantId), anyList())).thenReturn(Map.of(
                 a.getId(), new PromotionStatsService.Totals(1240, 87, 900, 60)));
         when(businessRepository.findByTenantIdAndIdIn(eq(tenantId), anyCollection()))
@@ -4111,6 +4185,20 @@ class PromotionAdminControllerTest {
         assertThat(dto.updatedAt()).isEqualTo(Instant.parse("2025-06-01T00:00:00Z"));
         assertThat(dto.impressions()).isEqualTo(1240);
         assertThat(dto.clicks()).isEqualTo(87);
+        // id/businessId are BOTH UUID and adjacent — the highest-consequence
+        // pair in the record, and the first version of this test never asserted
+        // them, so a swap passed and every row pointed at the wrong business.
+        assertThat(dto.id()).isEqualTo(a.getId());
+        assertThat(dto.businessId()).isEqualTo(businessId);
+        // Also adjacent and both String; previously left null, so a swap was
+        // invisible.
+        assertThat(dto.backgroundImageUrl()).isEqualTo("https://cdn.example.com/a.png");
+        assertThat(dto.accentColor()).isEqualTo("#FBF3E2");
+        assertThat(dto.couponCode()).isEqualTo("MIFTAH25");
+        assertThat(dto.priority()).isEqualTo(7);
+        assertThat(dto.placement()).isEqualTo(PromoPlacement.OFFERS_ONLY);
+        assertThat(dto.active()).isFalse();
+        assertThat(dto.businessNameEn()).isEqualTo("Spice Bazaar");
     }
 
     @Test
@@ -4151,6 +4239,7 @@ import com.datagami.rentaxis.api.dto.PromoAdRequest;
 import com.datagami.rentaxis.api.dto.PromoAdStatsDTO;
 import com.datagami.rentaxis.api.dto.PromoBusinessDTO;
 import com.datagami.rentaxis.api.dto.PromoBusinessRequest;
+import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.core.service.PromotionService;
 import com.datagami.rentaxis.core.service.PromotionStatsService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
@@ -4210,17 +4299,37 @@ public class PromotionAdminController {
 
     // ------------------------------------------------------------- businesses
 
+    /**
+     * ApiSecurityFilter authorises a SUPER_ADMIN without requiring a tenant
+     * header, so the holder can legitimately be null here. Without this guard a
+     * write becomes a NOT NULL violation surfaced as a 500 with a raw JDBC
+     * message, and a read silently returns an empty page — telling a super-admin
+     * the tenant has no businesses rather than that they forgot the header.
+     */
+    private UUID requireTenant() {
+        UUID tenantId = TenantContextHolder.getTenantId();
+        if (tenantId == null) {
+            throw new BusinessRuleViolationException(
+                    "X-Tenant-Id is required to manage promotions");
+        }
+        return tenantId;
+    }
+
     @GetMapping("/businesses")
     public ResponseEntity<Page<PromoBusinessDTO>> listBusinesses(
             @PageableDefault(sort = "createdAt", direction = Sort.Direction.ASC) Pageable pageable) {
-        UUID tenantId = TenantContextHolder.getTenantId();
-        return ResponseEntity.ok(promotionService.listBusinesses(tenantId, pageable)
-                .map(b -> toDTO(b, adRepository.countByBusinessId(b.getId()))));
+        UUID tenantId = requireTenant();
+        Page<PromoBusiness> page = promotionService.listBusinesses(tenantId, pageable);
+        // One grouped query for the page, not a COUNT per row. Spring Data's
+        // default max page size is 2000, so per-row counting would let a single
+        // request fire 2001 queries.
+        Map<UUID, Long> adCounts = batchAdCounts(tenantId, page.getContent());
+        return ResponseEntity.ok(page.map(b -> toDTO(b, adCounts.getOrDefault(b.getId(), 0L))));
     }
 
     @PostMapping("/businesses")
     public ResponseEntity<PromoBusinessDTO> createBusiness(@Valid @RequestBody PromoBusinessRequest req) {
-        UUID tenantId = TenantContextHolder.getTenantId();
+        UUID tenantId = requireTenant();
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(toDTO(promotionService.createBusiness(tenantId, req), 0L));
     }
@@ -4228,14 +4337,14 @@ public class PromotionAdminController {
     @PutMapping("/businesses/{id}")
     public ResponseEntity<PromoBusinessDTO> updateBusiness(@PathVariable UUID id,
                                                            @Valid @RequestBody PromoBusinessRequest req) {
-        UUID tenantId = TenantContextHolder.getTenantId();
+        UUID tenantId = requireTenant();
         PromoBusiness updated = promotionService.updateBusiness(tenantId, id, req);
-        return ResponseEntity.ok(toDTO(updated, adRepository.countByBusinessId(id)));
+        return ResponseEntity.ok(toDTO(updated, adRepository.countByBusinessId(updated.getId())));
     }
 
     @DeleteMapping("/businesses/{id}")
     public ResponseEntity<Void> deleteBusiness(@PathVariable UUID id) {
-        promotionService.deleteBusiness(TenantContextHolder.getTenantId(), id);
+        promotionService.deleteBusiness(requireTenant(), id);
         return ResponseEntity.noContent().build();
     }
 
@@ -4245,12 +4354,12 @@ public class PromotionAdminController {
     public ResponseEntity<Page<PromoAdDTO>> listAds(
             @RequestParam(required = false) UUID businessId,
             @PageableDefault(sort = "createdAt", direction = Sort.Direction.ASC) Pageable pageable) {
-        UUID tenantId = TenantContextHolder.getTenantId();
+        UUID tenantId = requireTenant();
         Page<PromoAd> page = promotionService.listAds(tenantId, businessId, pageable);
 
         List<UUID> adIds = page.getContent().stream().map(PromoAd::getId).toList();
         // Three batched queries for the whole page, never one per row.
-        Map<UUID, List<UUID>> targeting = batchTargeting(adIds);
+        Map<UUID, List<UUID>> targeting = batchTargeting(tenantId, adIds);
         Map<UUID, PromotionStatsService.Totals> totals =
                 adIds.isEmpty() ? Map.of() : statsService.totals(tenantId, adIds);
         Map<UUID, String> businessNames = batchBusinessNames(page.getContent());
@@ -4263,7 +4372,7 @@ public class PromotionAdminController {
 
     @PostMapping("/ads")
     public ResponseEntity<PromoAdDTO> createAd(@Valid @RequestBody PromoAdRequest req) {
-        UUID tenantId = TenantContextHolder.getTenantId();
+        UUID tenantId = requireTenant();
         PromoAd created = promotionService.createAd(tenantId, req);
         return ResponseEntity.status(HttpStatus.CREATED).body(toDTO(created,
                 promotionService.getBusiness(tenantId, created.getBusinessId()).getNameEn(),
@@ -4274,7 +4383,7 @@ public class PromotionAdminController {
     @PutMapping("/ads/{id}")
     public ResponseEntity<PromoAdDTO> updateAd(@PathVariable UUID id,
                                                @Valid @RequestBody PromoAdRequest req) {
-        UUID tenantId = TenantContextHolder.getTenantId();
+        UUID tenantId = requireTenant();
         PromoAd updated = promotionService.updateAd(tenantId, id, req);
         return ResponseEntity.ok(toDTO(updated,
                 promotionService.getBusiness(tenantId, updated.getBusinessId()).getNameEn(),
@@ -4285,13 +4394,13 @@ public class PromotionAdminController {
 
     @DeleteMapping("/ads/{id}")
     public ResponseEntity<Void> deleteAd(@PathVariable UUID id) {
-        promotionService.deleteAd(TenantContextHolder.getTenantId(), id);
+        promotionService.deleteAd(requireTenant(), id);
         return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/ads/{id}/stats")
     public ResponseEntity<PromoAdStatsDTO> stats(@PathVariable UUID id) {
-        return ResponseEntity.ok(statsService.stats(TenantContextHolder.getTenantId(), id));
+        return ResponseEntity.ok(statsService.stats(requireTenant(), id));
     }
 
     // ----------------------------------------------------------------- mapping
@@ -4306,11 +4415,20 @@ public class PromotionAdminController {
                 .collect(Collectors.toMap(PromoBusiness::getId, PromoBusiness::getNameEn));
     }
 
-    private Map<UUID, List<UUID>> batchTargeting(List<UUID> adIds) {
+    private Map<UUID, Long> batchAdCounts(UUID tenantId, List<PromoBusiness> businesses) {
+        if (businesses.isEmpty()) {
+            return Map.of();
+        }
+        List<UUID> ids = businesses.stream().map(PromoBusiness::getId).toList();
+        return adRepository.countByBusinessIdIn(tenantId, ids).stream()
+                .collect(Collectors.toMap(row -> (UUID) row[0], row -> (Long) row[1]));
+    }
+
+    private Map<UUID, List<UUID>> batchTargeting(UUID tenantId, List<UUID> adIds) {
         if (adIds.isEmpty()) {
             return Map.of();
         }
-        return adPropertyRepository.findByAdIdIn(adIds).stream()
+        return adPropertyRepository.findByTenantIdAndAdIdIn(tenantId, adIds).stream()
                 .collect(Collectors.groupingBy(PromoAdProperty::getAdId,
                         Collectors.mapping(PromoAdProperty::getPropertyId, Collectors.toList())));
     }
@@ -4352,12 +4470,131 @@ Run:
 cd backend && ./gradlew test --tests 'com.datagami.rentaxis.api.PromotionAdminControllerTest'
 ```
 
-Expected: PASS, 7 tests.
+Expected: PASS, 9 tests.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Prove the `@PreAuthorize` actually fires**
+
+The unit test above calls the controller directly, which bypasses the Spring
+proxy entirely — so it says nothing about whether the annotation is enforced.
+The whole module's authorization story is that one line, so it needs evidence.
+`UserControllerRoleAuthorizationTest` is the house pattern for this.
+
+`ApiSecurityFilter` builds the SecurityContext purely from `X-User-*` headers
+with no user lookup, so no seeding is required beyond a database for the app
+to boot.
+
+Create `backend/src/test/java/com/datagami/rentaxis/api/PromotionAdminControllerAuthorizationTest.java`:
+
+```java
+package com.datagami.rentaxis.api;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.client.HttpStatusCodeException;
+import org.springframework.web.client.RestClient;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * Locks in the class-level {@code @PreAuthorize} on
+ * {@link PromotionAdminController}. The Mockito test alongside this one calls
+ * the controller directly and so proves nothing about enforcement — without
+ * this file, an admin API that creates content pushed to renters' phones would
+ * be guarded by an annotation nobody had ever exercised.
+ *
+ * <p>Auth context normally injected by the Next.js proxy is simulated via the
+ * X-User-* headers that {@code ApiSecurityFilter} reads.
+ */
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@Testcontainers
+class PromotionAdminControllerAuthorizationTest {
+
+    @Container @ServiceConnection
+    static PostgreSQLContainer<?> pg = new PostgreSQLContainer<>("postgres:16");
+
+    @LocalServerPort int port;
+
+    private final UUID tenantId = UUID.randomUUID();
+
+    private int statusFor(String role) {
+        RestClient client = RestClient.builder()
+                .baseUrl("http://localhost:" + port)
+                .build();
+        try {
+            client.get()
+                    .uri("/api/v1/promotions/ads")
+                    .header("X-User-Id", UUID.randomUUID().toString())
+                    .header("X-User-Role", role)
+                    .header("X-Tenant-Id", tenantId.toString())
+                    .header("X-User-Tenant-Id", tenantId.toString())
+                    .retrieve()
+                    .toBodilessEntity();
+            return HttpStatus.OK.value();
+        } catch (HttpStatusCodeException e) {
+            return e.getStatusCode().value();
+        }
+    }
+
+    @Test
+    void renterIsForbidden() {
+        assertThat(statusFor("RENTER")).isEqualTo(HttpStatus.FORBIDDEN.value());
+    }
+
+    @Test
+    void propertyManagerIsForbidden() {
+        // Deliberate: promotions are tenant-wide, so there is no property
+        // assignment that would meaningfully scope a manager's view.
+        assertThat(statusFor("PROPERTY_MANAGER")).isEqualTo(HttpStatus.FORBIDDEN.value());
+    }
+
+    @Test
+    void securityGuardIsForbidden() {
+        assertThat(statusFor("SECURITY_GUARD")).isEqualTo(HttpStatus.FORBIDDEN.value());
+    }
+
+    @Test
+    void tenantAdminIsAllowed() {
+        // The counterpart to the three above: proves the annotation is
+        // discriminating, not simply denying everyone.
+        assertThat(statusFor("TENANT_ADMIN")).isEqualTo(HttpStatus.OK.value());
+    }
+
+    @Test
+    void anUnauthenticatedRequestIsRejected() {
+        RestClient client = RestClient.builder()
+                .baseUrl("http://localhost:" + port)
+                .build();
+        try {
+            client.get().uri("/api/v1/promotions/ads").retrieve().toBodilessEntity();
+            assertThat(false).as("expected the request to be rejected").isTrue();
+        } catch (HttpStatusCodeException e) {
+            assertThat(e.getStatusCode().is4xxClientError()).isTrue();
+        }
+    }
+}
+```
+
+Run:
 
 ```bash
-git add backend/src/main/java/com/datagami/rentaxis/api/PromotionAdminController.java backend/src/test/java/com/datagami/rentaxis/api/PromotionAdminControllerTest.java
+cd backend && ./gradlew test --tests 'com.datagami.rentaxis.api.PromotionAdminControllerAuthorizationTest'
+```
+
+Expected: PASS, 5 tests. This one needs Docker for Testcontainers; if Docker is
+unavailable, report that rather than deleting the test.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add backend/src/main/java/com/datagami/rentaxis/api/PromotionAdminController.java backend/src/test/java/com/datagami/rentaxis/api/PromotionAdminControllerTest.java backend/src/test/java/com/datagami/rentaxis/api/PromotionAdminControllerAuthorizationTest.java
 git commit -m "feat(promotions): admin CRUD endpoints for businesses and ads"
 ```
 
