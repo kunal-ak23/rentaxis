@@ -4,13 +4,16 @@ import com.datagami.rentaxis.api.dto.PromoAdDTO;
 import com.datagami.rentaxis.api.dto.PromoAdRequest;
 import com.datagami.rentaxis.api.dto.PromoBusinessDTO;
 import com.datagami.rentaxis.api.dto.PromoBusinessRequest;
+import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.core.service.PromotionService;
 import com.datagami.rentaxis.core.service.PromotionStatsService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.PromoAd;
 import com.datagami.rentaxis.domain.entity.PromoBusiness;
 import com.datagami.rentaxis.domain.entity.enums.PromoCategory;
+import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.domain.entity.enums.PromoCtaType;
+import com.datagami.rentaxis.domain.entity.enums.PromoPlacement;
 import com.datagami.rentaxis.domain.repository.PromoAdPropertyRepository;
 import com.datagami.rentaxis.domain.repository.PromoAdRepository;
 import com.datagami.rentaxis.domain.repository.PromoBusinessRepository;
@@ -34,6 +37,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -90,7 +94,8 @@ class PromotionAdminControllerTest {
     void listBusinesses_splitsAllowedDomainsIntoAList() {
         Page<PromoBusiness> page = new PageImpl<>(List.of(business()));
         when(promotionService.listBusinesses(eq(tenantId), any(Pageable.class))).thenReturn(page);
-        when(adRepository.countByBusinessId(businessId)).thenReturn(2L);
+        when(adRepository.countByBusinessIdIn(eq(tenantId), anyCollection()))
+                .thenReturn(List.<Object[]>of(new Object[]{businessId, 2L}));
 
         ResponseEntity<Page<PromoBusinessDTO>> res =
                 controller.listBusinesses(PageRequest.of(0, 10));
@@ -98,6 +103,42 @@ class PromotionAdminControllerTest {
         PromoBusinessDTO dto = res.getBody().getContent().get(0);
         assertThat(dto.allowedDomains()).containsExactly("spice-bazaar.ae", "gym.example.com");
         assertThat(dto.adCount()).isEqualTo(2L);
+    }
+
+    @Test
+    void listBusinesses_countsAdsInOneQueryNotOnePerRow() {
+        // Spring Data's default max page size is 2000, so a COUNT per row means
+        // one request can fire 2001 queries.
+        PromoBusiness b1 = business();
+        PromoBusiness b2 = business();
+        b2.setId(UUID.randomUUID());
+        when(promotionService.listBusinesses(eq(tenantId), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(b1, b2)));
+        when(adRepository.countByBusinessIdIn(eq(tenantId), anyCollection()))
+                .thenReturn(List.<Object[]>of(new Object[]{b1.getId(), 3L}));
+
+        List<PromoBusinessDTO> rows = controller.listBusinesses(PageRequest.of(0, 10))
+                .getBody().getContent();
+
+        assertThat(rows.get(0).adCount()).isEqualTo(3L);
+        assertThat(rows.get(1).adCount()).isZero();
+        verify(adRepository, never()).countByBusinessId(any());
+    }
+
+    @Test
+    void everyEndpointRefusesWhenNoTenantIsInContext() {
+        // ApiSecurityFilter authorises a SUPER_ADMIN without a tenant header, so
+        // this is reachable. A write would otherwise be a NOT NULL violation
+        // surfaced as a 500 with a raw JDBC message.
+        TenantContextHolder.clear();
+
+        assertThatThrownBy(() -> controller.listBusinesses(PageRequest.of(0, 10)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("X-Tenant-Id");
+        assertThatThrownBy(() -> controller.deleteAd(UUID.randomUUID()))
+                .isInstanceOf(BusinessRuleViolationException.class);
+        assertThatThrownBy(() -> controller.stats(UUID.randomUUID()))
+                .isInstanceOf(BusinessRuleViolationException.class);
     }
 
     @Test
@@ -117,7 +158,8 @@ class PromotionAdminControllerTest {
         PromoAd a2 = ad();
         Page<PromoAd> page = new PageImpl<>(List.of(a1, a2));
         when(promotionService.listAds(eq(tenantId), eq(null), any(Pageable.class))).thenReturn(page);
-        when(adPropertyRepository.findByAdIdIn(anyList())).thenReturn(List.of());
+        when(adPropertyRepository.findByTenantIdAndAdIdIn(eq(tenantId), anyCollection()))
+                .thenReturn(List.of());
         when(statsService.totals(eq(tenantId), anyList())).thenReturn(Map.of(
                 a1.getId(), new PromotionStatsService.Totals(100, 10, 80, 8)));
         when(businessRepository.findByTenantIdAndIdIn(eq(tenantId), anyCollection()))
@@ -131,7 +173,7 @@ class PromotionAdminControllerTest {
         assertThat(rows.get(1).impressions()).isZero();
         assertThat(rows.get(0).businessNameEn()).isEqualTo("Spice Bazaar");
         // Three batched calls for the whole page, never one per row.
-        verify(adPropertyRepository).findByAdIdIn(anyList());
+        verify(adPropertyRepository).findByTenantIdAndAdIdIn(eq(tenantId), anyCollection());
         verify(statsService).totals(eq(tenantId), anyList());
         verify(businessRepository).findByTenantIdAndIdIn(eq(tenantId), anyCollection());
         verify(promotionService, never()).targetedPropertyIds(any());
@@ -145,7 +187,7 @@ class PromotionAdminControllerTest {
 
         controller.listAds(null, PageRequest.of(0, 10));
 
-        verify(adPropertyRepository, never()).findByAdIdIn(anyList());
+        verify(adPropertyRepository, never()).findByTenantIdAndAdIdIn(any(), anyCollection());
         verify(statsService, never()).totals(any(), anyList());
         verify(businessRepository, never()).findByTenantIdAndIdIn(any(), anyCollection());
     }
@@ -170,10 +212,17 @@ class PromotionAdminControllerTest {
         a.setEndsAt(Instant.parse("2026-12-31T00:00:00Z"));
         a.setCreatedAt(Instant.parse("2025-01-01T00:00:00Z"));
         a.setUpdatedAt(Instant.parse("2025-06-01T00:00:00Z"));
+        a.setBackgroundImageUrl("https://cdn.example.com/a.png");
+        a.setAccentColor("#FBF3E2");
+        a.setCouponCode("MIFTAH25");
+        a.setPriority(7);
+        a.setPlacement(PromoPlacement.OFFERS_ONLY);
+        a.setActive(false);
 
         when(promotionService.listAds(eq(tenantId), eq(null), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(a)));
-        when(adPropertyRepository.findByAdIdIn(anyList())).thenReturn(List.of());
+        when(adPropertyRepository.findByTenantIdAndAdIdIn(eq(tenantId), anyCollection()))
+                .thenReturn(List.of());
         when(statsService.totals(eq(tenantId), anyList())).thenReturn(Map.of(
                 a.getId(), new PromotionStatsService.Totals(1240, 87, 900, 60)));
         when(businessRepository.findByTenantIdAndIdIn(eq(tenantId), anyCollection()))
@@ -196,6 +245,20 @@ class PromotionAdminControllerTest {
         assertThat(dto.updatedAt()).isEqualTo(Instant.parse("2025-06-01T00:00:00Z"));
         assertThat(dto.impressions()).isEqualTo(1240);
         assertThat(dto.clicks()).isEqualTo(87);
+        // id/businessId are BOTH UUID and adjacent — the highest-consequence
+        // pair in the record, and the first version of this test never asserted
+        // them, so a swap passed and every row pointed at the wrong business.
+        assertThat(dto.id()).isEqualTo(a.getId());
+        assertThat(dto.businessId()).isEqualTo(businessId);
+        // Also adjacent and both String; previously left null, so a swap was
+        // invisible.
+        assertThat(dto.backgroundImageUrl()).isEqualTo("https://cdn.example.com/a.png");
+        assertThat(dto.accentColor()).isEqualTo("#FBF3E2");
+        assertThat(dto.couponCode()).isEqualTo("MIFTAH25");
+        assertThat(dto.priority()).isEqualTo(7);
+        assertThat(dto.placement()).isEqualTo(PromoPlacement.OFFERS_ONLY);
+        assertThat(dto.active()).isFalse();
+        assertThat(dto.businessNameEn()).isEqualTo("Spice Bazaar");
     }
 
     @Test

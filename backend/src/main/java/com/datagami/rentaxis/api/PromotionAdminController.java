@@ -5,6 +5,7 @@ import com.datagami.rentaxis.api.dto.PromoAdRequest;
 import com.datagami.rentaxis.api.dto.PromoAdStatsDTO;
 import com.datagami.rentaxis.api.dto.PromoBusinessDTO;
 import com.datagami.rentaxis.api.dto.PromoBusinessRequest;
+import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.core.service.PromotionService;
 import com.datagami.rentaxis.core.service.PromotionStatsService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
@@ -44,15 +45,6 @@ import java.util.stream.Collectors;
 @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
 public class PromotionAdminController {
 
-    /**
-     * {@code PromotionStatsService.Totals.EMPTY} is package-private (visible only
-     * within {@code core.service}), so it cannot be referenced from this package.
-     * The record's canonical constructor is public, so we build our own empty
-     * value with it instead.
-     */
-    private static final PromotionStatsService.Totals EMPTY_TOTALS =
-            new PromotionStatsService.Totals(0, 0, 0, 0);
-
     private final PromotionService promotionService;
     private final PromotionStatsService statsService;
     private final PromoAdRepository adRepository;
@@ -73,17 +65,37 @@ public class PromotionAdminController {
 
     // ------------------------------------------------------------- businesses
 
+    /**
+     * ApiSecurityFilter authorises a SUPER_ADMIN without requiring a tenant
+     * header, so the holder can legitimately be null here. Without this guard a
+     * write becomes a NOT NULL violation surfaced as a 500 with a raw JDBC
+     * message, and a read silently returns an empty page — telling a super-admin
+     * the tenant has no businesses rather than that they forgot the header.
+     */
+    private UUID requireTenant() {
+        UUID tenantId = TenantContextHolder.getTenantId();
+        if (tenantId == null) {
+            throw new BusinessRuleViolationException(
+                    "X-Tenant-Id is required to manage promotions");
+        }
+        return tenantId;
+    }
+
     @GetMapping("/businesses")
     public ResponseEntity<Page<PromoBusinessDTO>> listBusinesses(
             @PageableDefault(sort = "createdAt", direction = Sort.Direction.ASC) Pageable pageable) {
-        UUID tenantId = TenantContextHolder.getTenantId();
-        return ResponseEntity.ok(promotionService.listBusinesses(tenantId, pageable)
-                .map(b -> toDTO(b, adRepository.countByBusinessId(b.getId()))));
+        UUID tenantId = requireTenant();
+        Page<PromoBusiness> page = promotionService.listBusinesses(tenantId, pageable);
+        // One grouped query for the page, not a COUNT per row. Spring Data's
+        // default max page size is 2000, so per-row counting would let a single
+        // request fire 2001 queries.
+        Map<UUID, Long> adCounts = batchAdCounts(tenantId, page.getContent());
+        return ResponseEntity.ok(page.map(b -> toDTO(b, adCounts.getOrDefault(b.getId(), 0L))));
     }
 
     @PostMapping("/businesses")
     public ResponseEntity<PromoBusinessDTO> createBusiness(@Valid @RequestBody PromoBusinessRequest req) {
-        UUID tenantId = TenantContextHolder.getTenantId();
+        UUID tenantId = requireTenant();
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(toDTO(promotionService.createBusiness(tenantId, req), 0L));
     }
@@ -91,14 +103,14 @@ public class PromotionAdminController {
     @PutMapping("/businesses/{id}")
     public ResponseEntity<PromoBusinessDTO> updateBusiness(@PathVariable UUID id,
                                                            @Valid @RequestBody PromoBusinessRequest req) {
-        UUID tenantId = TenantContextHolder.getTenantId();
+        UUID tenantId = requireTenant();
         PromoBusiness updated = promotionService.updateBusiness(tenantId, id, req);
-        return ResponseEntity.ok(toDTO(updated, adRepository.countByBusinessId(id)));
+        return ResponseEntity.ok(toDTO(updated, adRepository.countByBusinessId(updated.getId())));
     }
 
     @DeleteMapping("/businesses/{id}")
     public ResponseEntity<Void> deleteBusiness(@PathVariable UUID id) {
-        promotionService.deleteBusiness(TenantContextHolder.getTenantId(), id);
+        promotionService.deleteBusiness(requireTenant(), id);
         return ResponseEntity.noContent().build();
     }
 
@@ -108,12 +120,12 @@ public class PromotionAdminController {
     public ResponseEntity<Page<PromoAdDTO>> listAds(
             @RequestParam(required = false) UUID businessId,
             @PageableDefault(sort = "createdAt", direction = Sort.Direction.ASC) Pageable pageable) {
-        UUID tenantId = TenantContextHolder.getTenantId();
+        UUID tenantId = requireTenant();
         Page<PromoAd> page = promotionService.listAds(tenantId, businessId, pageable);
 
         List<UUID> adIds = page.getContent().stream().map(PromoAd::getId).toList();
         // Three batched queries for the whole page, never one per row.
-        Map<UUID, List<UUID>> targeting = batchTargeting(adIds);
+        Map<UUID, List<UUID>> targeting = batchTargeting(tenantId, adIds);
         Map<UUID, PromotionStatsService.Totals> totals =
                 adIds.isEmpty() ? Map.of() : statsService.totals(tenantId, adIds);
         Map<UUID, String> businessNames = batchBusinessNames(page.getContent());
@@ -121,40 +133,40 @@ public class PromotionAdminController {
         return ResponseEntity.ok(page.map(a -> toDTO(a,
                 businessNames.getOrDefault(a.getBusinessId(), ""),
                 targeting.getOrDefault(a.getId(), List.of()),
-                totals.getOrDefault(a.getId(), EMPTY_TOTALS))));
+                totals.getOrDefault(a.getId(), PromotionStatsService.Totals.EMPTY))));
     }
 
     @PostMapping("/ads")
     public ResponseEntity<PromoAdDTO> createAd(@Valid @RequestBody PromoAdRequest req) {
-        UUID tenantId = TenantContextHolder.getTenantId();
+        UUID tenantId = requireTenant();
         PromoAd created = promotionService.createAd(tenantId, req);
         return ResponseEntity.status(HttpStatus.CREATED).body(toDTO(created,
                 promotionService.getBusiness(tenantId, created.getBusinessId()).getNameEn(),
                 promotionService.targetedPropertyIds(created.getId()),
-                EMPTY_TOTALS));
+                PromotionStatsService.Totals.EMPTY));
     }
 
     @PutMapping("/ads/{id}")
     public ResponseEntity<PromoAdDTO> updateAd(@PathVariable UUID id,
                                                @Valid @RequestBody PromoAdRequest req) {
-        UUID tenantId = TenantContextHolder.getTenantId();
+        UUID tenantId = requireTenant();
         PromoAd updated = promotionService.updateAd(tenantId, id, req);
         return ResponseEntity.ok(toDTO(updated,
                 promotionService.getBusiness(tenantId, updated.getBusinessId()).getNameEn(),
                 promotionService.targetedPropertyIds(id),
                 statsService.totals(tenantId, List.of(id))
-                        .getOrDefault(id, EMPTY_TOTALS)));
+                        .getOrDefault(id, PromotionStatsService.Totals.EMPTY)));
     }
 
     @DeleteMapping("/ads/{id}")
     public ResponseEntity<Void> deleteAd(@PathVariable UUID id) {
-        promotionService.deleteAd(TenantContextHolder.getTenantId(), id);
+        promotionService.deleteAd(requireTenant(), id);
         return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/ads/{id}/stats")
     public ResponseEntity<PromoAdStatsDTO> stats(@PathVariable UUID id) {
-        return ResponseEntity.ok(statsService.stats(TenantContextHolder.getTenantId(), id));
+        return ResponseEntity.ok(statsService.stats(requireTenant(), id));
     }
 
     // ----------------------------------------------------------------- mapping
@@ -169,11 +181,20 @@ public class PromotionAdminController {
                 .collect(Collectors.toMap(PromoBusiness::getId, PromoBusiness::getNameEn));
     }
 
-    private Map<UUID, List<UUID>> batchTargeting(List<UUID> adIds) {
+    private Map<UUID, Long> batchAdCounts(UUID tenantId, List<PromoBusiness> businesses) {
+        if (businesses.isEmpty()) {
+            return Map.of();
+        }
+        List<UUID> ids = businesses.stream().map(PromoBusiness::getId).toList();
+        return adRepository.countByBusinessIdIn(tenantId, ids).stream()
+                .collect(Collectors.toMap(row -> (UUID) row[0], row -> (Long) row[1]));
+    }
+
+    private Map<UUID, List<UUID>> batchTargeting(UUID tenantId, List<UUID> adIds) {
         if (adIds.isEmpty()) {
             return Map.of();
         }
-        return adPropertyRepository.findByAdIdIn(adIds).stream()
+        return adPropertyRepository.findByTenantIdAndAdIdIn(tenantId, adIds).stream()
                 .collect(Collectors.groupingBy(PromoAdProperty::getAdId,
                         Collectors.mapping(PromoAdProperty::getPropertyId, Collectors.toList())));
     }

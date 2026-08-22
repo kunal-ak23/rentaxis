@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -15,8 +16,14 @@ public interface PromoAdPropertyRepository extends JpaRepository<PromoAdProperty
 
     List<PromoAdProperty> findByAdId(UUID adId);
 
-    /** Batch fetch for list responses — one query per page, not one per row. */
-    List<PromoAdProperty> findByAdIdIn(List<UUID> adIds);
+    /**
+     * Batch fetch for list responses — one query per page, not one per row.
+     * Tenant in the signature for the same reason
+     * {@code PromoBusinessRepository.findByTenantIdAndIdIn} carries it: a
+     * privacy boundary should not rest on an ambient thread-local that a
+     * future caller without tenant context could bypass.
+     */
+    List<PromoAdProperty> findByTenantIdAndAdIdIn(UUID tenantId, Collection<UUID> adIds);
 
     /**
      * Bulk delete, so it executes immediately rather than deferring to flush —

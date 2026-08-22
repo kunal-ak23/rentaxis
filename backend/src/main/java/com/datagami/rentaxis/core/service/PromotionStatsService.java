@@ -42,7 +42,8 @@ public class PromotionStatsService {
      */
     public record Totals(long impressions, long clicks, long viewers, long clickers) {
 
-        static final Totals EMPTY = new Totals(0, 0, 0, 0);
+        /** Public: the admin controller in another package needs the zero value. */
+        public static final Totals EMPTY = new Totals(0, 0, 0, 0);
 
         /**
          * Distinct clickers over distinct viewers. Clamped at 1: a renter whose
