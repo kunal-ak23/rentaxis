@@ -1310,7 +1310,13 @@ public interface PromoBusinessRepository extends JpaRepository<PromoBusiness, UU
 
     List<PromoBusiness> findByTenantIdOrderByCreatedAtAsc(UUID tenantId);
 
-    List<PromoBusiness> findByIdIn(List<UUID> ids);
+    /**
+     * Tenant in the signature, not left to the ambient Hibernate filter. The
+     * renter feed's privacy boundary should not rest on a thread-local that a
+     * future caller without tenant context (a scheduler, a warmup job) could
+     * silently bypass.
+     */
+    List<PromoBusiness> findByTenantIdAndIdIn(UUID tenantId, Collection<UUID> ids);
 }
 ```
 
@@ -1470,23 +1476,30 @@ public interface PromoAdEventRepository extends JpaRepository<PromoAdEvent, UUID
     long countByAdId(UUID adId);
 
     /**
-     * Which of these ads this renter already has an impression for today.
+     * This renter's own event counts for these ads today, as
+     * {@code [adId, eventType, count]}.
      *
-     * <p>Deliberately batched. This runs on every home-screen load — the client
-     * flushes up to six impressions each time — so a per-ad `exists` check
-     * would put six round trips on the renter hot path, all day, forever, for
-     * a result that is `true` every time after the first load. Served by the
-     * partial index `uq_promo_impression_per_day`.
+     * <p>Deliberately batched, and deliberately counting both event types in
+     * one query, because the write path needs both numbers. This runs on every
+     * home-screen load — the client flushes up to six impressions each time —
+     * so a per-ad check would put six round trips on the renter hot path, all
+     * day, forever. Served by {@code idx_pae_ad_day} plus the renter predicate.
+     *
+     * <p>Impressions are dropped at a count of 1 (the partial unique index
+     * would otherwise fail the whole batch at commit). Clicks have no unique
+     * index by design — a second tap is a real second tap — so this count is
+     * also what bounds them; see {@code PromotionFeedService.MAX_CLICKS_PER_AD_PER_DAY}.
      */
     @Query("""
-            SELECT e.adId FROM PromoAdEvent e
+            SELECT e.adId, e.eventType, COUNT(e)
+            FROM PromoAdEvent e
             WHERE e.tenantId = :tenantId
               AND e.adId IN :adIds
               AND e.renterUserId = :renterUserId
               AND e.day = :day
-              AND e.eventType = com.datagami.rentaxis.domain.entity.enums.PromoEventType.IMPRESSION
+            GROUP BY e.adId, e.eventType
             """)
-    List<UUID> findAdIdsWithImpressionOn(@Param("tenantId") UUID tenantId,
+    List<Object[]> countTodaysEventsByAd(@Param("tenantId") UUID tenantId,
                                          @Param("adIds") Collection<UUID> adIds,
                                          @Param("renterUserId") UUID renterUserId,
                                          @Param("day") LocalDate day);
@@ -2833,6 +2846,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -2887,7 +2901,8 @@ class PromotionFeedServiceTest {
                 .thenReturn(List.of(UUID.randomUUID()));
         when(adRepository.findEligible(eq(tenantId), any(), anyList(), anyList()))
                 .thenReturn(ads(40));
-        when(businessRepository.findByIdIn(anyList())).thenReturn(List.of(business()));
+        when(businessRepository.findByTenantIdAndIdIn(eq(tenantId), anyCollection()))
+                .thenReturn(List.of(business()));
 
         assertThat(service().homeFeed(tenantId, renterId)).hasSize(6);
     }
@@ -2898,7 +2913,8 @@ class PromotionFeedServiceTest {
                 .thenReturn(List.of());
         List<PromoAd> pool = ads(40);
         when(adRepository.findEligible(eq(tenantId), any(), anyList(), anyList())).thenReturn(pool);
-        when(businessRepository.findByIdIn(anyList())).thenReturn(List.of(business()));
+        when(businessRepository.findByTenantIdAndIdIn(eq(tenantId), anyCollection()))
+                .thenReturn(List.of(business()));
 
         PromotionFeedService s = service();
         assertThat(s.homeFeed(tenantId, renterId).stream().map(PromoAdCardDTO::id).toList())
@@ -2969,7 +2985,8 @@ class PromotionFeedServiceTest {
         plain.setCtaType(PromoCtaType.NONE);
         when(adRepository.findEligible(eq(tenantId), any(), anyList(), anyList()))
                 .thenReturn(List.of(call, plain));
-        when(businessRepository.findByIdIn(anyList())).thenReturn(List.of(business()));
+        when(businessRepository.findByTenantIdAndIdIn(eq(tenantId), anyCollection()))
+                .thenReturn(List.of(business()));
 
         List<PromoAdCardDTO> cards = service().offers(tenantId, renterId, null);
 
@@ -3006,9 +3023,10 @@ class PromotionFeedServiceTest {
                 .thenReturn(List.of(a));
         when(leaseRepository.findActivePropertyIdsForRenterUser(tenantId, renterId))
                 .thenReturn(List.of());
-        when(eventRepository.findAdIdsWithImpressionOn(
+        when(eventRepository.countTodaysEventsByAd(
                 eq(tenantId), anyCollection(), eq(renterId), any()))
-                .thenReturn(List.of(a.getId()));
+                .thenReturn(List.<Object[]>of(
+                        new Object[]{a.getId(), PromoEventType.IMPRESSION, 1L}));
 
         service().recordEvents(tenantId, renterId, new PromoEventBatchRequest(List.of(
                 new PromoEventBatchRequest.Event(a.getId(), PromoEventType.IMPRESSION),
@@ -3023,13 +3041,13 @@ class PromotionFeedServiceTest {
     }
 
     @Test
-    void recordEvents_looksUpTodaysImpressionsInOneQuery() {
+    void recordEvents_looksUpTodaysCountsInOneQuery() {
         List<PromoAd> pool = List.of(ad(1), ad(1), ad(1), ad(1), ad(1), ad(1));
         when(adRepository.findEligible(eq(tenantId), any(), anyList(), anyList()))
                 .thenReturn(pool);
         when(leaseRepository.findActivePropertyIdsForRenterUser(tenantId, renterId))
                 .thenReturn(List.of());
-        when(eventRepository.findAdIdsWithImpressionOn(
+        when(eventRepository.countTodaysEventsByAd(
                 eq(tenantId), anyCollection(), eq(renterId), any()))
                 .thenReturn(List.of());
 
@@ -3041,8 +3059,108 @@ class PromotionFeedServiceTest {
 
         // Six impressions, one lookup — not one per ad. This is the renter
         // hot path; a per-ad check would run on every home-screen load.
-        verify(eventRepository, times(1)).findAdIdsWithImpressionOn(
+        verify(eventRepository, times(1)).countTodaysEventsByAd(
                 any(), anyCollection(), any(), any());
+    }
+
+    @Test
+    void recordEvents_capsClicksPerAdPerDay() {
+        // Clicks have no unique index by design, and the endpoint is
+        // authenticated but unthrottled — without a ceiling a renter could set
+        // the tap count the client is shown to justify an ad slot.
+        PromoAd a = ad(1);
+        when(adRepository.findEligible(eq(tenantId), any(), anyList(), anyList()))
+                .thenReturn(List.of(a));
+        when(leaseRepository.findActivePropertyIdsForRenterUser(tenantId, renterId))
+                .thenReturn(List.of());
+        when(eventRepository.countTodaysEventsByAd(
+                eq(tenantId), anyCollection(), eq(renterId), any()))
+                .thenReturn(List.<Object[]>of(
+                        new Object[]{a.getId(), PromoEventType.CLICK, 9L}));
+
+        // Nine already on record, three more offered — only one may land.
+        service().recordEvents(tenantId, renterId, new PromoEventBatchRequest(List.of(
+                new PromoEventBatchRequest.Event(a.getId(), PromoEventType.CLICK),
+                new PromoEventBatchRequest.Event(a.getId(), PromoEventType.CLICK),
+                new PromoEventBatchRequest.Event(a.getId(), PromoEventType.CLICK))));
+
+        ArgumentCaptor<List<PromoAdEvent>> captor = ArgumentCaptor.forClass(List.class);
+        verify(eventRepository).saveAll(captor.capture());
+        assertThat(captor.getValue()).hasSize(1);
+    }
+
+    @Test
+    void recordEvents_usesOneInstantForDayAndOccurredAt() {
+        // ck_promo_ad_event_day asserts day = occurred_at in Asia/Dubai. Reading
+        // the clock twice with a DB round trip between lets a batch straddling
+        // midnight violate it and 500 the whole request.
+        PromoAd a = ad(1);
+        when(adRepository.findEligible(eq(tenantId), any(), anyList(), anyList()))
+                .thenReturn(List.of(a));
+        when(leaseRepository.findActivePropertyIdsForRenterUser(tenantId, renterId))
+                .thenReturn(List.of());
+        when(eventRepository.countTodaysEventsByAd(
+                eq(tenantId), anyCollection(), eq(renterId), any()))
+                .thenReturn(List.of());
+
+        service().recordEvents(tenantId, renterId, new PromoEventBatchRequest(List.of(
+                new PromoEventBatchRequest.Event(a.getId(), PromoEventType.IMPRESSION),
+                new PromoEventBatchRequest.Event(a.getId(), PromoEventType.CLICK))));
+
+        ArgumentCaptor<List<PromoAdEvent>> captor = ArgumentCaptor.forClass(List.class);
+        verify(eventRepository).saveAll(captor.capture());
+        assertThat(captor.getValue()).allSatisfy(row ->
+                assertThat(row.getDay())
+                        .isEqualTo(LocalDate.ofInstant(row.getOccurredAt(),
+                                ZoneId.of("Asia/Dubai"))));
+        // And every row in one batch shares the instant.
+        assertThat(captor.getValue()).extracting(PromoAdEvent::getOccurredAt)
+                .containsOnly(captor.getValue().get(0).getOccurredAt());
+    }
+
+    @Test
+    void recordEvents_ignoresAnEmptyOrNullBatch() {
+        service().recordEvents(tenantId, renterId, null);
+        service().recordEvents(tenantId, renterId, new PromoEventBatchRequest(List.of()));
+
+        verifyNoInteractions(eventRepository);
+    }
+
+    @Test
+    void homeFeed_preservesTheSlateOrder() {
+        // The client renders in the order received, so the order the slate chose
+        // must survive the map round-trip. Comparing the service to itself, as
+        // the stability test does, would pass even if order were dropped.
+        when(leaseRepository.findActivePropertyIdsForRenterUser(tenantId, renterId))
+                .thenReturn(List.of());
+        List<PromoAd> pool = ads(20);
+        when(adRepository.findEligible(eq(tenantId), any(), anyList(), anyList()))
+                .thenReturn(pool);
+        when(businessRepository.findByTenantIdAndIdIn(eq(tenantId), anyCollection()))
+                .thenReturn(List.of(business()));
+
+        List<UUID> expected = PromotionSlate.pick(
+                pool.stream().map(a -> new Candidate(a.getId(), a.getPriority())).toList(),
+                renterId, LocalDate.now(ZoneId.of("Asia/Dubai")), 6);
+
+        assertThat(service().homeFeed(tenantId, renterId).stream().map(PromoAdCardDTO::id))
+                .containsExactlyElementsOf(expected);
+    }
+
+    @Test
+    void offers_filtersByCategory() {
+        when(leaseRepository.findActivePropertyIdsForRenterUser(tenantId, renterId))
+                .thenReturn(List.of());
+        PromoAd dining = ad(1);
+        when(adRepository.findEligible(eq(tenantId), any(), anyList(), anyList()))
+                .thenReturn(List.of(dining));
+        PromoBusiness b = business();
+        b.setCategory(PromoCategory.DINING);
+        when(businessRepository.findByTenantIdAndIdIn(eq(tenantId), anyCollection()))
+                .thenReturn(List.of(b));
+
+        assertThat(service().offers(tenantId, renterId, PromoCategory.DINING)).hasSize(1);
+        assertThat(service().offers(tenantId, renterId, PromoCategory.FITNESS)).isEmpty();
     }
 
     @Test
@@ -3099,6 +3217,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -3117,6 +3237,17 @@ import java.util.stream.Collectors;
 public class PromotionFeedService {
 
     static final int HOME_SLATE_SIZE = 6;
+
+    /**
+     * Per ad, per renter, per day. Impressions are deduped by a unique index;
+     * clicks deliberately are not, because a second tap is a real second tap —
+     * which leaves nothing bounding them. The endpoint is authenticated but
+     * unthrottled (PublicRateLimitFilter does not cover /api/v1/promotions),
+     * so without a ceiling one renter could write clicks in a loop and set the
+     * tap count the client is shown to justify an ad slot. Ten is far above
+     * any honest number of taps on one carousel card in a day.
+     */
+    static final int MAX_CLICKS_PER_AD_PER_DAY = 10;
 
     /** The product's timezone. The database's is not necessarily the same. */
     static final ZoneId DUBAI = ZoneId.of("Asia/Dubai");
@@ -3159,7 +3290,13 @@ public class PromotionFeedService {
 
         Map<UUID, PromoAd> byId = eligible.stream()
                 .collect(Collectors.toMap(PromoAd::getId, Function.identity()));
-        List<PromoAd> ordered = slate.stream().map(byId::get).filter(java.util.Objects::nonNull).toList();
+        // requireNonNull, not filter(nonNull): pick() only ever returns ids from
+        // the candidates we just built the map from, so a miss is a broken
+        // invariant, not a case to silently serve a five-card slate for.
+        List<PromoAd> ordered = slate.stream()
+                .map(id -> java.util.Objects.requireNonNull(
+                        byId.get(id), "slate returned an unknown ad id"))
+                .toList();
         return toCards(ordered);
     }
 
@@ -3177,57 +3314,94 @@ public class PromotionFeedService {
     /**
      * Ignores unknown or ineligible ad ids rather than rejecting the batch — a
      * stale flush from a backgrounded app must never surface an error to the
-     * renter. Impressions this renter already has on record today are filtered
-     * out BEFORE the insert in one batched lookup: the partial unique index
-     * only fires at commit,
-     * where the transaction is already rollback-only and no catch could save
-     * the batch (its clicks included). Two simultaneous batches can still race
-     * past the exists-check; that lone failed request is accepted — the client
+     * renter. Ad ids are re-derived from {@link #eligible} rather than trusted,
+     * so a renter cannot record an event against an ad they were never served.
+     *
+     * <p>Impressions this renter already has today are filtered out BEFORE the
+     * insert: the partial unique index only fires at commit, where the
+     * transaction is already rollback-only and no catch could save the batch's
+     * clicks. Clicks are capped at {@link #MAX_CLICKS_PER_AD_PER_DAY}. Both
+     * numbers come from one grouped query. Two simultaneous batches can still
+     * race past the check; that lone failed request is accepted — the client
      * fires and forgets.
      */
     public void recordEvents(UUID tenantId, UUID renterUserId, PromoEventBatchRequest batch) {
-        List<UUID> allowed = eligible(tenantId, renterUserId, ALL_PLACEMENTS).stream()
-                .map(PromoAd::getId).toList();
-        LocalDate day = LocalDate.now(DUBAI);
+        if (batch == null || batch.events() == null || batch.events().isEmpty()) {
+            return;
+        }
+        // ONE instant for both fields. ck_promo_ad_event_day asserts
+        // day = (occurred_at AT TIME ZONE 'Asia/Dubai')::date, so computing them
+        // separately with a DB round trip in between lets a batch straddling
+        // Dubai midnight violate the CHECK and 500 the whole request.
+        Instant now = Instant.now();
+        LocalDate day = LocalDate.ofInstant(now, DUBAI);
 
-        // One query for the whole batch rather than one per ad. This runs on
-        // every home-screen load with up to six impressions, so a per-ad check
-        // would be six round trips each time, all day, for a result that is
-        // already-seen every time after the first load.
-        List<UUID> candidates = batch.events().stream()
-                .filter(e -> e.type() == PromoEventType.IMPRESSION && allowed.contains(e.adId()))
+        Set<UUID> allowed = eligible(tenantId, renterUserId, ALL_PLACEMENTS).stream()
+                .map(PromoAd::getId)
+                .collect(Collectors.toSet());
+
+        List<UUID> touched = batch.events().stream()
+                .filter(e -> e != null && e.adId() != null && allowed.contains(e.adId()))
                 .map(PromoEventBatchRequest.Event::adId)
                 .distinct()
                 .toList();
-        Set<UUID> seenToday = candidates.isEmpty()
-                ? Set.of()
-                : new HashSet<>(eventRepository.findAdIdsWithImpressionOn(
-                        tenantId, candidates, renterUserId, day));
-
-        // Also guards the same ad appearing twice within one batch — seenToday
-        // only knows about committed rows.
-        Set<UUID> impressionsInBatch = new HashSet<>();
-
-        List<PromoAdEvent> rows = batch.events().stream()
-                .filter(e -> allowed.contains(e.adId()))
-                .filter(e -> e.type() != PromoEventType.IMPRESSION
-                        || (impressionsInBatch.add(e.adId()) && !seenToday.contains(e.adId())))
-                .map(e -> {
-                    PromoAdEvent row = new PromoAdEvent();
-                    row.setTenantId(tenantId);
-                    row.setAdId(e.adId());
-                    row.setRenterUserId(renterUserId);
-                    row.setEventType(e.type());
-                    row.setOccurredAt(Instant.now());
-                    row.setDay(day);
-                    return row;
-                })
-                .toList();
-
-        if (rows.isEmpty()) {
+        if (touched.isEmpty()) {
             return;
         }
-        eventRepository.saveAll(rows);
+
+        Map<UUID, Long> impressionsToday = new HashMap<>();
+        Map<UUID, Long> clicksToday = new HashMap<>();
+        for (Object[] row : eventRepository.countTodaysEventsByAd(
+                tenantId, touched, renterUserId, day)) {
+            UUID adId = (UUID) row[0];
+            PromoEventType type = (PromoEventType) row[1];
+            long count = (Long) row[2];
+            if (type == PromoEventType.IMPRESSION) {
+                impressionsToday.put(adId, count);
+            } else {
+                clicksToday.put(adId, count);
+            }
+        }
+
+        // Written as a loop rather than a stream: the click cap needs running
+        // per-ad state, and a stream whose filter mutates a map is the kind of
+        // clever that hides an off-by-one.
+        List<PromoAdEvent> rows = new ArrayList<>();
+        Set<UUID> impressionsInBatch = new HashSet<>();
+        Map<UUID, Long> clicksInBatch = new HashMap<>();
+
+        for (PromoEventBatchRequest.Event e : batch.events()) {
+            if (e == null || e.adId() == null || e.type() == null
+                    || !allowed.contains(e.adId())) {
+                continue;
+            }
+            if (e.type() == PromoEventType.IMPRESSION) {
+                // add() first, so a repeat within the batch short-circuits too.
+                if (!impressionsInBatch.add(e.adId())
+                        || impressionsToday.getOrDefault(e.adId(), 0L) > 0) {
+                    continue;
+                }
+            } else {
+                long already = clicksToday.getOrDefault(e.adId(), 0L)
+                        + clicksInBatch.getOrDefault(e.adId(), 0L);
+                if (already >= MAX_CLICKS_PER_AD_PER_DAY) {
+                    continue;
+                }
+                clicksInBatch.merge(e.adId(), 1L, Long::sum);
+            }
+            PromoAdEvent row = new PromoAdEvent();
+            row.setTenantId(tenantId);
+            row.setAdId(e.adId());
+            row.setRenterUserId(renterUserId);
+            row.setEventType(e.type());
+            row.setOccurredAt(now);
+            row.setDay(day);
+            rows.add(row);
+        }
+
+        if (!rows.isEmpty()) {
+            eventRepository.saveAll(rows);
+        }
     }
 
     private List<PromoAd> eligible(UUID tenantId, UUID renterUserId, List<PromoPlacement> placements) {
@@ -3245,7 +3419,8 @@ public class PromotionFeedService {
         }
         List<UUID> businessIds = ads.stream().map(PromoAd::getBusinessId).distinct().toList();
         Map<UUID, PromoBusiness> businesses = new LinkedHashMap<>();
-        for (PromoBusiness b : businessRepository.findByIdIn(businessIds)) {
+        for (PromoBusiness b : businessRepository.findByTenantIdAndIdIn(
+                ads.get(0).getTenantId(), businessIds)) {
             businesses.put(b.getId(), b);
         }
         return ads.stream()
@@ -3287,7 +3462,7 @@ Run:
 cd backend && ./gradlew test --tests 'com.datagami.rentaxis.core.service.PromotionFeedServiceTest'
 ```
 
-Expected: PASS, 11 tests.
+Expected: PASS, 16 tests.
 
 - [ ] **Step 6: Commit**
 
@@ -3573,6 +3748,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -3657,7 +3833,8 @@ class PromotionAdminControllerTest {
         when(adPropertyRepository.findByAdIdIn(anyList())).thenReturn(List.of());
         when(statsService.totals(eq(tenantId), anyList())).thenReturn(Map.of(
                 a1.getId(), new PromotionStatsService.Totals(100, 10)));
-        when(businessRepository.findByIdIn(anyList())).thenReturn(List.of(business()));
+        when(businessRepository.findByTenantIdAndIdIn(eq(tenantId), anyCollection()))
+                .thenReturn(List.of(business()));
 
         ResponseEntity<Page<PromoAdDTO>> res = controller.listAds(null, PageRequest.of(0, 10));
 
@@ -3669,7 +3846,7 @@ class PromotionAdminControllerTest {
         // Three batched calls for the whole page, never one per row.
         verify(adPropertyRepository).findByAdIdIn(anyList());
         verify(statsService).totals(eq(tenantId), anyList());
-        verify(businessRepository).findByIdIn(anyList());
+        verify(businessRepository).findByTenantIdAndIdIn(eq(tenantId), anyCollection());
         verify(promotionService, never()).targetedPropertyIds(any());
         verify(promotionService, never()).getBusiness(any(), any());
     }
@@ -3683,7 +3860,7 @@ class PromotionAdminControllerTest {
 
         verify(adPropertyRepository, never()).findByAdIdIn(anyList());
         verify(statsService, never()).totals(any(), anyList());
-        verify(businessRepository, never()).findByIdIn(anyList());
+        verify(businessRepository, never()).findByTenantIdAndIdIn(any(), anyCollection());
     }
 
     @Test
@@ -3712,7 +3889,8 @@ class PromotionAdminControllerTest {
         when(adPropertyRepository.findByAdIdIn(anyList())).thenReturn(List.of());
         when(statsService.totals(eq(tenantId), anyList())).thenReturn(Map.of(
                 a.getId(), new PromotionStatsService.Totals(1240, 87)));
-        when(businessRepository.findByIdIn(anyList())).thenReturn(List.of(business()));
+        when(businessRepository.findByTenantIdAndIdIn(eq(tenantId), anyCollection()))
+                .thenReturn(List.of(business()));
 
         PromoAdDTO dto = controller.listAds(null, PageRequest.of(0, 10))
                 .getBody().getContent().get(0);
@@ -3920,8 +4098,9 @@ public class PromotionAdminController {
         if (ads.isEmpty()) {
             return Map.of();
         }
+        UUID tenantId = TenantContextHolder.getTenantId();
         List<UUID> businessIds = ads.stream().map(PromoAd::getBusinessId).distinct().toList();
-        return businessRepository.findByIdIn(businessIds).stream()
+        return businessRepository.findByTenantIdAndIdIn(tenantId, businessIds).stream()
                 .collect(Collectors.toMap(PromoBusiness::getId, PromoBusiness::getNameEn));
     }
 
