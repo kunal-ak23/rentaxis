@@ -1300,6 +1300,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -1856,6 +1857,7 @@ import com.datagami.rentaxis.api.dto.PromoBusinessRequest;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.domain.entity.PromoAd;
+import com.datagami.rentaxis.domain.entity.PromoAdProperty;
 import com.datagami.rentaxis.domain.entity.PromoBusiness;
 import com.datagami.rentaxis.domain.entity.enums.PromoCtaType;
 import com.datagami.rentaxis.domain.repository.PromoAdEventRepository;
@@ -2343,7 +2345,6 @@ import com.datagami.rentaxis.domain.entity.PromoAdProperty;
 import com.datagami.rentaxis.domain.entity.PromoBusiness;
 import com.datagami.rentaxis.domain.entity.enums.PromoCategory;
 import com.datagami.rentaxis.domain.entity.enums.PromoCtaType;
-import com.datagami.rentaxis.domain.entity.enums.PromoEventType;
 import com.datagami.rentaxis.domain.entity.enums.PromoPlacement;
 import com.datagami.rentaxis.domain.repository.PromoAdEventRepository;
 import com.datagami.rentaxis.domain.repository.PromoAdPropertyRepository;
@@ -2815,9 +2816,11 @@ package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.dto.PromoAdCardDTO;
 import com.datagami.rentaxis.api.dto.PromoEventBatchRequest;
+import com.datagami.rentaxis.core.service.PromotionSlate.Candidate;
 import com.datagami.rentaxis.domain.entity.PromoAd;
 import com.datagami.rentaxis.domain.entity.PromoAdEvent;
 import com.datagami.rentaxis.domain.entity.PromoBusiness;
+import com.datagami.rentaxis.domain.entity.enums.PromoCategory;
 import com.datagami.rentaxis.domain.entity.enums.PromoCtaType;
 import com.datagami.rentaxis.domain.entity.enums.PromoEventType;
 import com.datagami.rentaxis.domain.entity.enums.PromoPlacement;
@@ -2834,6 +2837,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
