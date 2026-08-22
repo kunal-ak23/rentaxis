@@ -1351,9 +1351,14 @@ public interface PromoAdRepository extends JpaRepository<PromoAd, UUID> {
      * property the renter holds an active lease in. Both arms are evaluated in
      * SQL so the home screen never loads the full ad table.
      *
-     * <p>Placement is passed as a two-value list rather than an equality check
-     * so one query serves both the home slate (HOME_AND_OFFERS only) and the
-     * offers screen (both values).
+     * <p>Placement is passed as a list rather than an equality check so one
+     * query serves both the home slate (HOME_AND_OFFERS only) and the offers
+     * screen (both values).
+     *
+     * <p>The ordering is load-bearing: {@code offers()} returns this order
+     * straight to the client. {@code createdAt} is not unique, so {@code id}
+     * breaks ties and keeps paging stable when a seed or bulk import creates
+     * several ads in the same instant.
      */
     @Query("""
             SELECT a FROM PromoAd a
@@ -1367,7 +1372,7 @@ public interface PromoAdRepository extends JpaRepository<PromoAd, UUID> {
               AND (NOT EXISTS (SELECT 1 FROM PromoAdProperty p WHERE p.adId = a.id)
                    OR EXISTS (SELECT 1 FROM PromoAdProperty p
                               WHERE p.adId = a.id AND p.propertyId IN :propertyIds))
-            ORDER BY a.createdAt ASC
+            ORDER BY a.createdAt ASC, a.id ASC
             """)
     List<PromoAd> findEligible(@Param("tenantId") UUID tenantId,
                                @Param("now") Instant now,
@@ -1376,7 +1381,7 @@ public interface PromoAdRepository extends JpaRepository<PromoAd, UUID> {
 }
 ```
 
-**Note for the implementer:** `IN :propertyIds` with an empty list is invalid in JPQL on PostgreSQL. `PromotionFeedService` must pass a single-element list holding a sentinel UUID when the renter has no active lease — Task 7 does this. Do not "fix" it by allowing an empty list.
+**Note for the implementer:** `PromotionFeedService` passes a single-element list holding a sentinel UUID when the renter has no active lease, rather than an empty list. Hibernate 6+ does render an empty `IN` as `1=0`, which would in fact behave correctly here (the `EXISTS` arm goes false and the untargeted `NOT EXISTS` arm still matches) — so this is for explicitness, not because an empty list breaks. Keep the sentinel so the intent is readable at the call site, and do not add empty-list special-casing to the JPQL.
 
 - [ ] **Step 3: Write `PromoAdPropertyRepository`**
 
@@ -1401,9 +1406,21 @@ public interface PromoAdPropertyRepository extends JpaRepository<PromoAdProperty
     /** Batch fetch for list responses — one query per page, not one per row. */
     List<PromoAdProperty> findByAdIdIn(List<UUID> adIds);
 
+    /**
+     * Bulk delete, so it executes immediately rather than deferring to flush —
+     * which is what lets {@code PromotionService.replaceTargeting} delete then
+     * re-insert in one transaction without tripping {@code uq_promo_ad_property}.
+     * (The derived-delete form defers, which is why the analogous
+     * {@code FacilityService.replaceAmenityScopes} has to call {@code flush()}.)
+     * No {@code clearAutomatically}/{@code flushAutomatically} needed: nothing
+     * mutates a loaded PromoAdProperty, so there is no stale-entity hazard.
+     *
+     * <p>Scoped by tenant explicitly. The Hibernate filter would cover it, but a
+     * destructive statement should not lean on a single layer of defence.
+     */
     @Modifying
-    @Query("DELETE FROM PromoAdProperty p WHERE p.adId = :adId")
-    void deleteByAdId(@Param("adId") UUID adId);
+    @Query("DELETE FROM PromoAdProperty p WHERE p.tenantId = :tenantId AND p.adId = :adId")
+    void deleteByTenantIdAndAdId(@Param("tenantId") UUID tenantId, @Param("adId") UUID adId);
 }
 ```
 
@@ -1419,6 +1436,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -1451,8 +1470,27 @@ public interface PromoAdEventRepository extends JpaRepository<PromoAdEvent, UUID
     /** Guards the hard-delete path in PromotionService.deleteAd. */
     long countByAdId(UUID adId);
 
-    boolean existsByAdIdAndRenterUserIdAndDayAndEventType(
-            UUID adId, UUID renterUserId, java.time.LocalDate day, PromoEventType eventType);
+    /**
+     * Which of these ads this renter already has an impression for today.
+     *
+     * <p>Deliberately batched. This runs on every home-screen load — the client
+     * flushes up to six impressions each time — so a per-ad `exists` check
+     * would put six round trips on the renter hot path, all day, forever, for
+     * a result that is `true` every time after the first load. Served by the
+     * partial index `uq_promo_impression_per_day`.
+     */
+    @Query("""
+            SELECT e.adId FROM PromoAdEvent e
+            WHERE e.tenantId = :tenantId
+              AND e.adId IN :adIds
+              AND e.renterUserId = :renterUserId
+              AND e.day = :day
+              AND e.eventType = com.datagami.rentaxis.domain.entity.enums.PromoEventType.IMPRESSION
+            """)
+    List<UUID> findAdIdsWithImpressionOn(@Param("tenantId") UUID tenantId,
+                                         @Param("adIds") Collection<UUID> adIds,
+                                         @Param("renterUserId") UUID renterUserId,
+                                         @Param("day") LocalDate day);
 }
 ```
 
@@ -2050,7 +2088,7 @@ class PromotionServiceTest {
 
         service.updateAd(tenantId, existing.getId(), req);
 
-        verify(adPropertyRepository).deleteByAdId(existing.getId());
+        verify(adPropertyRepository).deleteByTenantIdAndAdId(tenantId, existing.getId());
         verify(adPropertyRepository).saveAll(any());
     }
 }
@@ -2274,7 +2312,7 @@ public class PromotionService {
     }
 
     private void replaceTargeting(UUID tenantId, UUID adId, List<UUID> propertyIds) {
-        adPropertyRepository.deleteByAdId(adId);
+        adPropertyRepository.deleteByTenantIdAndAdId(tenantId, adId);
         if (propertyIds == null || propertyIds.isEmpty()) {
             return; // zero rows = every property
         }
@@ -2452,9 +2490,11 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -2629,9 +2669,9 @@ class PromotionFeedServiceTest {
                 .thenReturn(List.of(a));
         when(leaseRepository.findActivePropertyIdsForRenterUser(tenantId, renterId))
                 .thenReturn(List.of());
-        when(eventRepository.existsByAdIdAndRenterUserIdAndDayAndEventType(
-                eq(a.getId()), eq(renterId), any(), eq(PromoEventType.IMPRESSION)))
-                .thenReturn(true);
+        when(eventRepository.findAdIdsWithImpressionOn(
+                eq(tenantId), anyCollection(), eq(renterId), any()))
+                .thenReturn(List.of(a.getId()));
 
         service().recordEvents(tenantId, renterId, new PromoEventBatchRequest(List.of(
                 new PromoEventBatchRequest.Event(a.getId(), PromoEventType.IMPRESSION),
@@ -2643,6 +2683,29 @@ class PromotionFeedServiceTest {
         // insert, because the partial unique index would only fail at commit.
         assertThat(captor.getValue()).hasSize(1);
         assertThat(captor.getValue().get(0).getEventType()).isEqualTo(PromoEventType.CLICK);
+    }
+
+    @Test
+    void recordEvents_looksUpTodaysImpressionsInOneQuery() {
+        List<PromoAd> pool = List.of(ad(1), ad(1), ad(1), ad(1), ad(1), ad(1));
+        when(adRepository.findEligible(eq(tenantId), any(), anyList(), anyList()))
+                .thenReturn(pool);
+        when(leaseRepository.findActivePropertyIdsForRenterUser(tenantId, renterId))
+                .thenReturn(List.of());
+        when(eventRepository.findAdIdsWithImpressionOn(
+                eq(tenantId), anyCollection(), eq(renterId), any()))
+                .thenReturn(List.of());
+
+        service().recordEvents(tenantId, renterId, new PromoEventBatchRequest(
+                pool.stream()
+                        .map(a -> new PromoEventBatchRequest.Event(
+                                a.getId(), PromoEventType.IMPRESSION))
+                        .toList()));
+
+        // Six impressions, one lookup — not one per ad. This is the renter
+        // hot path; a per-ad check would run on every home-screen load.
+        verify(eventRepository, times(1)).findAdIdsWithImpressionOn(
+                any(), anyCollection(), any(), any());
     }
 
     @Test
@@ -2778,7 +2841,8 @@ public class PromotionFeedService {
      * Ignores unknown or ineligible ad ids rather than rejecting the batch — a
      * stale flush from a backgrounded app must never surface an error to the
      * renter. Impressions this renter already has on record today are filtered
-     * out BEFORE the insert: the partial unique index only fires at commit,
+     * out BEFORE the insert in one batched lookup: the partial unique index
+     * only fires at commit,
      * where the transaction is already rollback-only and no catch could save
      * the batch (its clicks included). Two simultaneous batches can still race
      * past the exists-check; that lone failed request is accepted — the client
@@ -2788,16 +2852,29 @@ public class PromotionFeedService {
         List<UUID> allowed = eligible(tenantId, renterUserId, ALL_PLACEMENTS).stream()
                 .map(PromoAd::getId).toList();
         LocalDate day = LocalDate.now(DUBAI);
-        // Guards against the same ad appearing twice as an impression within
-        // one batch — the exists-check below only sees committed rows.
+
+        // One query for the whole batch rather than one per ad. This runs on
+        // every home-screen load with up to six impressions, so a per-ad check
+        // would be six round trips each time, all day, for a result that is
+        // already-seen every time after the first load.
+        List<UUID> candidates = batch.events().stream()
+                .filter(e -> e.type() == PromoEventType.IMPRESSION && allowed.contains(e.adId()))
+                .map(PromoEventBatchRequest.Event::adId)
+                .distinct()
+                .toList();
+        Set<UUID> seenToday = candidates.isEmpty()
+                ? Set.of()
+                : new HashSet<>(eventRepository.findAdIdsWithImpressionOn(
+                        tenantId, candidates, renterUserId, day));
+
+        // Also guards the same ad appearing twice within one batch — seenToday
+        // only knows about committed rows.
         Set<UUID> impressionsInBatch = new HashSet<>();
 
         List<PromoAdEvent> rows = batch.events().stream()
                 .filter(e -> allowed.contains(e.adId()))
                 .filter(e -> e.type() != PromoEventType.IMPRESSION
-                        || (impressionsInBatch.add(e.adId())
-                                && !eventRepository.existsByAdIdAndRenterUserIdAndDayAndEventType(
-                                        e.adId(), renterUserId, day, PromoEventType.IMPRESSION)))
+                        || (impressionsInBatch.add(e.adId()) && !seenToday.contains(e.adId())))
                 .map(e -> {
                     PromoAdEvent row = new PromoAdEvent();
                     row.setTenantId(tenantId);
