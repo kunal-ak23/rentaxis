@@ -30,9 +30,14 @@ public interface PromoAdRepository extends JpaRepository<PromoAd, UUID> {
      * property the renter holds an active lease in. Both arms are evaluated in
      * SQL so the home screen never loads the full ad table.
      *
-     * <p>Placement is passed as a two-value list rather than an equality check
-     * so one query serves both the home slate (HOME_AND_OFFERS only) and the
-     * offers screen (both values).
+     * <p>Placement is passed as a list rather than an equality check so one
+     * query serves both the home slate (HOME_AND_OFFERS only) and the offers
+     * screen (both values).
+     *
+     * <p>The ordering is load-bearing: {@code offers()} returns this order
+     * straight to the client. {@code createdAt} is not unique, so {@code id}
+     * breaks ties and keeps paging stable when a seed or bulk import creates
+     * several ads in the same instant.
      */
     @Query("""
             SELECT a FROM PromoAd a
@@ -46,7 +51,7 @@ public interface PromoAdRepository extends JpaRepository<PromoAd, UUID> {
               AND (NOT EXISTS (SELECT 1 FROM PromoAdProperty p WHERE p.adId = a.id)
                    OR EXISTS (SELECT 1 FROM PromoAdProperty p
                               WHERE p.adId = a.id AND p.propertyId IN :propertyIds))
-            ORDER BY a.createdAt ASC
+            ORDER BY a.createdAt ASC, a.id ASC
             """)
     List<PromoAd> findEligible(@Param("tenantId") UUID tenantId,
                                @Param("now") Instant now,

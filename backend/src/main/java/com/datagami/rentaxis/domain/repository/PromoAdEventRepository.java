@@ -7,6 +7,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -39,6 +41,25 @@ public interface PromoAdEventRepository extends JpaRepository<PromoAdEvent, UUID
     /** Guards the hard-delete path in PromotionService.deleteAd. */
     long countByAdId(UUID adId);
 
-    boolean existsByAdIdAndRenterUserIdAndDayAndEventType(
-            UUID adId, UUID renterUserId, java.time.LocalDate day, PromoEventType eventType);
+    /**
+     * Which of these ads this renter already has an impression for today.
+     *
+     * <p>Deliberately batched. This runs on every home-screen load — the client
+     * flushes up to six impressions each time — so a per-ad `exists` check
+     * would put six round trips on the renter hot path, all day, forever, for
+     * a result that is `true` every time after the first load. Served by the
+     * partial index `uq_promo_impression_per_day`.
+     */
+    @Query("""
+            SELECT e.adId FROM PromoAdEvent e
+            WHERE e.tenantId = :tenantId
+              AND e.adId IN :adIds
+              AND e.renterUserId = :renterUserId
+              AND e.day = :day
+              AND e.eventType = com.datagami.rentaxis.domain.entity.enums.PromoEventType.IMPRESSION
+            """)
+    List<UUID> findAdIdsWithImpressionOn(@Param("tenantId") UUID tenantId,
+                                         @Param("adIds") Collection<UUID> adIds,
+                                         @Param("renterUserId") UUID renterUserId,
+                                         @Param("day") LocalDate day);
 }

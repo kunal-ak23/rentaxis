@@ -18,7 +18,19 @@ public interface PromoAdPropertyRepository extends JpaRepository<PromoAdProperty
     /** Batch fetch for list responses — one query per page, not one per row. */
     List<PromoAdProperty> findByAdIdIn(List<UUID> adIds);
 
+    /**
+     * Bulk delete, so it executes immediately rather than deferring to flush —
+     * which is what lets {@code PromotionService.replaceTargeting} delete then
+     * re-insert in one transaction without tripping {@code uq_promo_ad_property}.
+     * (The derived-delete form defers, which is why the analogous
+     * {@code FacilityService.replaceAmenityScopes} has to call {@code flush()}.)
+     * No {@code clearAutomatically}/{@code flushAutomatically} needed: nothing
+     * mutates a loaded PromoAdProperty, so there is no stale-entity hazard.
+     *
+     * <p>Scoped by tenant explicitly. The Hibernate filter would cover it, but a
+     * destructive statement should not lean on a single layer of defence.
+     */
     @Modifying
-    @Query("DELETE FROM PromoAdProperty p WHERE p.adId = :adId")
-    void deleteByAdId(@Param("adId") UUID adId);
+    @Query("DELETE FROM PromoAdProperty p WHERE p.tenantId = :tenantId AND p.adId = :adId")
+    void deleteByTenantIdAndAdId(@Param("tenantId") UUID tenantId, @Param("adId") UUID adId);
 }
