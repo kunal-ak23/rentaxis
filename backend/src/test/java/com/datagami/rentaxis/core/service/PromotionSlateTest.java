@@ -5,7 +5,11 @@ import org.junit.jupiter.api.Test;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Random;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -107,6 +111,59 @@ class PromotionSlateTest {
         // Priority 10 vs 1: the heavy ad should appear far more often. The bound
         // is loose on purpose — this asserts the weighting works, not an exact rate.
         assertThat(heavyHits).isGreaterThan(lightHits * 3);
+    }
+
+    @Test
+    void pick_givesEqualPriorityAdsEqualAirtime() {
+        // The airtime test above uses sequential ids and a single renter — the
+        // most favourable possible input, which even a badly weakened hash
+        // passes. This uses random UUIDs across many renters, which is what
+        // production looks like, and is the test that catches poor avalanche.
+        Random rnd = new Random(2026L);
+        List<Candidate> pool = new ArrayList<>();
+        for (int i = 0; i < 40; i++) {
+            pool.add(new Candidate(new UUID(rnd.nextLong(), rnd.nextLong()), 1));
+        }
+
+        Map<UUID, Integer> hits = new HashMap<>();
+        pool.forEach(c -> hits.put(c.adId(), 0));
+        int renters = 20_000;
+        for (int r = 0; r < renters; r++) {
+            UUID renter = new UUID(rnd.nextLong(), rnd.nextLong());
+            for (UUID id : PromotionSlate.pick(pool, renter, DAY, 6)) {
+                hits.merge(id, 1, Integer::sum);
+            }
+        }
+
+        // Fair share is 6/40 = 15%. Binomial se at n=20k is 0.25pp, so with a
+        // good hash the worst of 40 ads sits near 14.5%. 13% is ~8 sigma out —
+        // only a biased hash lands there.
+        double worst = Collections.min(hits.values()) / (double) renters;
+        assertThat(worst).isGreaterThan(0.13);
+    }
+
+    @Test
+    void pick_doesNotCorrelateConsecutiveDays() {
+        // The day is the last value folded, so without a finalizer a one-day
+        // step barely moves the seed and the slate stops rotating.
+        Random rnd = new Random(99L);
+        List<Candidate> pool = new ArrayList<>();
+        for (int i = 0; i < 40; i++) {
+            pool.add(new Candidate(new UUID(rnd.nextLong(), rnd.nextLong()), 1));
+        }
+
+        int carried = 0;
+        int renters = 2_000;
+        for (int r = 0; r < renters; r++) {
+            UUID renter = new UUID(rnd.nextLong(), rnd.nextLong());
+            List<UUID> today = PromotionSlate.pick(pool, renter, DAY, 6);
+            List<UUID> tomorrow = PromotionSlate.pick(pool, renter, DAY.plusDays(1), 6);
+            carried += (int) today.stream().filter(tomorrow::contains).count();
+        }
+
+        // Independent draws carry 6 * 6/40 = 0.9 slots on average. A correlated
+        // hash carries far more. Under 1.5 is healthy.
+        assertThat(carried / (double) renters).isLessThan(1.5);
     }
 
     @Test

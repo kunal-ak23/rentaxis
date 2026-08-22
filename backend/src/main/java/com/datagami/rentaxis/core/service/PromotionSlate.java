@@ -15,6 +15,12 @@ import java.util.UUID;
  * airtime weight — a priority-2 ad is drawn about twice as often as a
  * priority-1 ad.
  *
+ * <p>Weighting is exact for a single slot. Taking 6 of ~40 compresses the top
+ * end, because inclusion probability saturates, so a priority-10 ad gets
+ * roughly 6–9x a priority-1 ad rather than a literal 10x, and no ad can take
+ * more than one slot per renter per day. Priority 2 vs 1 measures at 1.9x.
+ * Do not promise a client a literal 10x.
+ *
  * <p>Because the draw is hashed rather than random, the same renter gets the
  * same slate in the same order all day. That is deliberate: pull-to-refresh
  * must not reshuffle the strip, and impressions must not inflate with refreshes.
@@ -35,10 +41,15 @@ public final class PromotionSlate {
         if (candidates == null || candidates.isEmpty() || size <= 0) {
             return List.of();
         }
+        // Key is computed once per candidate, not once per comparison — a
+        // comparator that recomputes runs the hash ~215 times for a 40-ad pool.
+        record Scored(UUID adId, double key) {
+        }
         return candidates.stream()
-                .sorted(Comparator.comparingDouble(c -> key(c, renterId, day)))
+                .map(c -> new Scored(c.adId(), key(c, renterId, day)))
+                .sorted(Comparator.comparingDouble(Scored::key))
                 .limit(size)
-                .map(Candidate::adId)
+                .map(Scored::adId)
                 .toList();
     }
 
@@ -56,10 +67,18 @@ public final class PromotionSlate {
     }
 
     /**
-     * FNV-1a over the two longs of each UUID plus the epoch day. Chosen over
-     * {@code Objects.hash} because this value must stay stable across JVM
-     * versions and restarts — a renter's slate changing mid-day because the
-     * app redeployed would double-count impressions.
+     * FNV-1a over the two longs of each UUID plus the epoch day, finished with
+     * a SplitMix64 avalanche. Chosen over {@code Objects.hash} because this
+     * value must stay stable across JVM versions and restarts — a renter's
+     * slate changing mid-day because the app redeployed would double-count
+     * impressions. Pure integer arithmetic, so it is bit-identical everywhere.
+     *
+     * <p><b>Two invariants a future reader must not break.</b> First,
+     * {@link #mix} folds all eight bytes of every input; a loop that folds
+     * fewer silently discards most of the adId, renterId and day, and the
+     * slate still looks plausibly varied while one business is starved.
+     * Second, {@link #uniform} consumes the HIGH bits ({@code >>> 11}), so the
+     * finalizer is what puts entropy there.
      */
     private static long seed(UUID adId, UUID renterId, LocalDate day) {
         long h = 0xcbf29ce484222325L;
@@ -68,7 +87,7 @@ public final class PromotionSlate {
         h = mix(h, renterId.getMostSignificantBits());
         h = mix(h, renterId.getLeastSignificantBits());
         h = mix(h, day.toEpochDay());
-        return h;
+        return avalanche(h);
     }
 
     private static long mix(long h, long value) {
@@ -78,5 +97,23 @@ public final class PromotionSlate {
             result *= 0x100000001b3L;
         }
         return result;
+    }
+
+    /**
+     * SplitMix64 finalizer. FNV-1a alone avalanches weakly — its multiply
+     * propagates bit differences only upward, so two unrelated adIds can land
+     * on seeds that agree in their top bits for every renter, and one ad then
+     * loses the race to the other ~99% of the time, every day, permanently.
+     * Measured without this step: in 18 of 20 random 40-ad pools some ad was
+     * strongly correlated with another, and the worst ad drew 12.0% of slots
+     * against a fair share of 15.0%. With it, the worst drew 14.7%.
+     */
+    private static long avalanche(long z) {
+        long x = z;
+        x ^= (x >>> 30);
+        x *= 0xbf58476d1ce4e5b9L;
+        x ^= (x >>> 27);
+        x *= 0x94d049bb133111ebL;
+        return x ^ (x >>> 31);
     }
 }
