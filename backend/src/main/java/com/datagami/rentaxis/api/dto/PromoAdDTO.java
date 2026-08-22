@@ -7,6 +7,14 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * The admin view of an ad — everything, including the configuration the renter
+ * feed withholds. Nullable depending on how the ad is configured: {@code titleAr},
+ * both subtitles, {@code backgroundImageUrl}, {@code accentColor}, {@code ctaUrl}
+ * (only for WEBSITE), {@code couponCode} and both coupon terms (only for COUPON),
+ * both cta labels, and both window bounds ({@code startsAt} null = live now,
+ * {@code endsAt} null = never expires).
+ */
 public record PromoAdDTO(
         UUID id,
         UUID businessId,
