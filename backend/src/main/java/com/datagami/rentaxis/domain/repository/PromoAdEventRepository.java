@@ -41,23 +41,30 @@ public interface PromoAdEventRepository extends JpaRepository<PromoAdEvent, UUID
     long countByAdId(UUID adId);
 
     /**
-     * Which of these ads this renter already has an impression for today.
+     * This renter's own event counts for these ads today, as
+     * {@code [adId, eventType, count]}.
      *
-     * <p>Deliberately batched. This runs on every home-screen load — the client
-     * flushes up to six impressions each time — so a per-ad `exists` check
-     * would put six round trips on the renter hot path, all day, forever, for
-     * a result that is `true` every time after the first load. Served by the
-     * partial index `uq_promo_impression_per_day`.
+     * <p>Deliberately batched, and deliberately counting both event types in
+     * one query, because the write path needs both numbers. This runs on every
+     * home-screen load — the client flushes up to six impressions each time —
+     * so a per-ad check would put six round trips on the renter hot path, all
+     * day, forever. Served by {@code idx_pae_ad_day} plus the renter predicate.
+     *
+     * <p>Impressions are dropped at a count of 1 (the partial unique index
+     * would otherwise fail the whole batch at commit). Clicks have no unique
+     * index by design — a second tap is a real second tap — so this count is
+     * also what bounds them; see {@code PromotionFeedService.MAX_CLICKS_PER_AD_PER_DAY}.
      */
     @Query("""
-            SELECT e.adId FROM PromoAdEvent e
+            SELECT e.adId, e.eventType, COUNT(e)
+            FROM PromoAdEvent e
             WHERE e.tenantId = :tenantId
               AND e.adId IN :adIds
               AND e.renterUserId = :renterUserId
               AND e.day = :day
-              AND e.eventType = com.datagami.rentaxis.domain.entity.enums.PromoEventType.IMPRESSION
+            GROUP BY e.adId, e.eventType
             """)
-    List<UUID> findAdIdsWithImpressionOn(@Param("tenantId") UUID tenantId,
+    List<Object[]> countTodaysEventsByAd(@Param("tenantId") UUID tenantId,
                                          @Param("adIds") Collection<UUID> adIds,
                                          @Param("renterUserId") UUID renterUserId,
                                          @Param("day") LocalDate day);
