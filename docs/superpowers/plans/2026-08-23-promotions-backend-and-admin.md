@@ -3608,8 +3608,10 @@ class PromotionStatsServiceTest {
     void totals_ignoresAnUnknownEventType() {
         // Guards the `else if (CLICK)` rather than a bare `else`: adding a
         // DISMISS event later must not silently inflate the tap count.
-        when(eventRepository.countByAdIdIn(tenantId, List.of(adId))).thenReturn(List.of(
-                row(adId, PromoEventType.IMPRESSION, 100L, 100L)));
+        // List.<Object[]>of — a bare List.of with ONE array varargs-expands into
+        // List<Object> and will not compile against List<Object[]>.
+        when(eventRepository.countByAdIdIn(tenantId, List.of(adId))).thenReturn(
+                List.<Object[]>of(row(adId, PromoEventType.IMPRESSION, 100L, 100L)));
 
         assertThat(service.totals(tenantId, List.of(adId)).get(adId).clicks()).isZero();
     }
@@ -3876,7 +3878,8 @@ public class PromotionStatsService {
         }
         return series;
     }
-}```
+}
+```
 
 - [ ] **Step 4: Run the test to verify it passes**
 
