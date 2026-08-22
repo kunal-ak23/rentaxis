@@ -880,7 +880,11 @@ public class PromotionUrlValidator {
         if (h.endsWith(".")) {
             h = h.substring(0, h.length() - 1);
         }
-        return allowed.stream().anyMatch(d -> h.equals(d) || h.endsWith("." + d));
+        // Copied to a final local because `h` is reassigned above, and a lambda
+        // may only capture an effectively-final variable.
+        final String normalizedHost = h;
+        return allowed.stream()
+                .anyMatch(d -> normalizedHost.equals(d) || normalizedHost.endsWith("." + d));
     }
 }
 ```
