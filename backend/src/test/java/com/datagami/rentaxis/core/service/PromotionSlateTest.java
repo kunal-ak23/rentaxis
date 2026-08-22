@@ -143,6 +143,30 @@ class PromotionSlateTest {
     }
 
     @Test
+    void pick_usesEveryByteOfTheIds() {
+        // Guards the "mix folds all eight bytes" invariant directly, which the
+        // statistical tests cannot: once the avalanche finalizer is in place it
+        // spreads even a badly degraded mix well enough to clear a fairness
+        // bound. These ids differ ONLY in bytes that a mix folding just the low
+        // byte would discard, so under that mutation every ad hashes to the
+        // same seed, every key ties, the stable sort degenerates to encounter
+        // order, and every renter sees the same six ads. Deterministic — no
+        // statistics, no flakiness.
+        List<Candidate> pool = new ArrayList<>();
+        for (int i = 0; i < 40; i++) {
+            pool.add(new Candidate(new UUID(((long) i) << 24, 0L), 1));
+        }
+        List<UUID> firstSix = pool.subList(0, 6).stream().map(Candidate::adId).toList();
+
+        // Renter ids that also differ only in discarded bytes.
+        List<UUID> slateA = PromotionSlate.pick(pool, new UUID(1L << 24, 0L), DAY, 6);
+        List<UUID> slateB = PromotionSlate.pick(pool, new UUID(2L << 24, 0L), DAY, 6);
+
+        assertThat(slateA).isNotEqualTo(firstSix);
+        assertThat(slateA).isNotEqualTo(slateB);
+    }
+
+    @Test
     void pick_doesNotCorrelateConsecutiveDays() {
         // The day is the last value folded, so without a finalizer a one-day
         // step barely moves the seed and the slate stops rotating.
