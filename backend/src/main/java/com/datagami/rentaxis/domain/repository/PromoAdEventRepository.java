@@ -15,12 +15,20 @@ import java.util.UUID;
 public interface PromoAdEventRepository extends JpaRepository<PromoAdEvent, UUID> {
 
     /**
-     * Impression and click totals for a page of ads, as {@code [adId, eventType, count]}
-     * rows. Two-column grouping keeps this to one query per page rather than
-     * two per ad.
+     * Per-ad event totals for a page of ads, as
+     * {@code [adId, eventType, count, distinctRenters]}.
+     *
+     * <p>The distinct-renter column is what makes a tap rate meaningful.
+     * Impressions are already deduped to one per renter per day, but clicks are
+     * not — a renter may legitimately tap the same card several times — so
+     * {@code clicks / impressions} is "taps per unique-renter-day" and can
+     * exceed 1. Dividing distinct clickers by distinct viewers gives the figure
+     * a client actually reads as a tap rate.
+     *
+     * <p>Two-column grouping keeps this to one query per page, not two per ad.
      */
     @Query("""
-            SELECT e.adId, e.eventType, COUNT(e)
+            SELECT e.adId, e.eventType, COUNT(e), COUNT(DISTINCT e.renterUserId)
             FROM PromoAdEvent e
             WHERE e.tenantId = :tenantId AND e.adId IN :adIds
             GROUP BY e.adId, e.eventType
