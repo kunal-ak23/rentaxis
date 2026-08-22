@@ -1,0 +1,119 @@
+databaseChangeLog:
+  - changeSet:
+      id: 71-promotions
+      author: rentaxis-system
+      changes:
+        # ---- promo_businesses: one row per client-owned business ----
+        # allowed_domains is the click-through allowlist, stored as a lowercase
+        # comma-separated hostname list. It stays a column rather than a child
+        # table because it is read only on admin writes, never on the renter
+        # hot path, and a business has a handful of domains at most.
+        # Businesses are soft-deactivated, never hard-deleted, so ad history
+        # and event counts survive.
+        - createTable:
+            tableName: promo_businesses
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: name_en, type: varchar(160), constraints: { nullable: false } }
+              - column: { name: name_ar, type: varchar(160) }
+              - column: { name: logo_url, type: varchar(512) }
+              - column: { name: category, type: varchar(32), constraints: { nullable: false }, defaultValue: OTHER }
+              - column: { name: phone_e164, type: varchar(20) }
+              - column: { name: whatsapp_e164, type: varchar(20) }
+              - column: { name: allowed_domains, type: text }
+              - column: { name: active, type: boolean, constraints: { nullable: false }, defaultValueBoolean: true }
+              - column: { name: created_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
+              - column: { name: updated_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
+        - createIndex: { tableName: promo_businesses, indexName: idx_promo_businesses_tenant, columns: [ { column: { name: tenant_id } } ] }
+        - sql:
+            comment: Case-insensitive name uniqueness per tenant; expression index, so addUniqueConstraint cannot express it.
+            sql: CREATE UNIQUE INDEX uq_promo_business_name ON promo_businesses (tenant_id, lower(name_en));
+
+        # ---- promo_ads: one offer, belonging to a business ----
+        # fk_promo_ad_business RESTRICTs: a business with ads must be
+        # deactivated, not deleted (same reasoning as fk_amenity_property in 69).
+        - createTable:
+            tableName: promo_ads
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: business_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_promo_ad_business, referencedTableName: promo_businesses, referencedColumnNames: id } }
+              - column: { name: title_en, type: varchar(120) }
+              - column: { name: title_ar, type: varchar(120) }
+              - column: { name: subtitle_en, type: varchar(160) }
+              - column: { name: subtitle_ar, type: varchar(160) }
+              - column: { name: background_image_url, type: varchar(512) }
+              - column: { name: accent_color, type: varchar(9) }
+              - column: { name: cta_type, type: varchar(16), constraints: { nullable: false }, defaultValue: NONE }
+              - column: { name: cta_label_en, type: varchar(40) }
+              - column: { name: cta_label_ar, type: varchar(40) }
+              - column: { name: cta_url, type: varchar(1024) }
+              - column: { name: coupon_code, type: varchar(64) }
+              - column: { name: coupon_terms_en, type: text }
+              - column: { name: coupon_terms_ar, type: text }
+              - column: { name: starts_at, type: timestamptz }
+              - column: { name: ends_at, type: timestamptz }
+              - column: { name: priority, type: int, constraints: { nullable: false }, defaultValueNumeric: 1 }
+              - column: { name: placement, type: varchar(20), constraints: { nullable: false }, defaultValue: HOME_AND_OFFERS }
+              - column: { name: active, type: boolean, constraints: { nullable: false }, defaultValueBoolean: true }
+              - column: { name: created_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
+              - column: { name: updated_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
+        # Deliberately just (tenant_id, active). The eligibility query also
+        # range-filters starts_at/ends_at, but a btree can only narrow on one
+        # range predicate after the equality prefix, and both bounds are
+        # nullable and matched with `OR IS NULL` — trailing them here would be
+        # residual filtering, not scan narrowing. At ~40 ads per tenant the
+        # equality prefix is the whole win.
+        - createIndex:
+            tableName: promo_ads
+            indexName: idx_promo_ads_eligibility
+            columns:
+              - column: { name: tenant_id }
+              - column: { name: active }
+        - createIndex: { tableName: promo_ads, indexName: idx_promo_ads_business, columns: [ { column: { name: business_id } } ] }
+        - sql:
+            comment: priority is a relative airtime weight; 0 or negative would divide by zero in the slate's -ln(u)/priority key.
+            sql: ALTER TABLE promo_ads ADD CONSTRAINT ck_promo_ad_priority CHECK (priority BETWEEN 1 AND 10);
+        - sql:
+            comment: At least one language must carry a title, or the card renders blank.
+            sql: ALTER TABLE promo_ads ADD CONSTRAINT ck_promo_ad_title CHECK (title_en IS NOT NULL OR title_ar IS NOT NULL);
+
+        # ---- promo_ad_properties: zero rows for an ad = targets every property ----
+        # Pure join rows, cascade both ways, surrogate id + unique constraint
+        # on the pair — same shape as amenity_building_scopes in changeset 69.
+        - createTable:
+            tableName: promo_ad_properties
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: ad_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_pap_ad, referencedTableName: promo_ads, referencedColumnNames: id, deleteCascade: true } }
+              - column: { name: property_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_pap_property, referencedTableName: properties, referencedColumnNames: id, deleteCascade: true } }
+              - column: { name: created_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
+        - addUniqueConstraint: { tableName: promo_ad_properties, columnNames: "ad_id, property_id", constraintName: uq_promo_ad_property }
+        - createIndex: { tableName: promo_ad_properties, indexName: idx_pap_property, columns: [ { column: { name: property_id } } ] }
+
+        # ---- promo_ad_events: impressions and clicks ----
+        # `day` is the Asia/Dubai calendar day, written by the service, not
+        # derived in SQL — the DB's timezone is not the product's timezone.
+        # fk_pae_ad RESTRICTs rather than cascading: an ad's impression and
+        # click history is the whole point of the analytics, so an ad that has
+        # run must be deactivated, not deleted (PromotionService.deleteAd
+        # enforces the same rule with a 409, mirroring deleteBusiness).
+        - createTable:
+            tableName: promo_ad_events
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: ad_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_pae_ad, referencedTableName: promo_ads, referencedColumnNames: id } }
+              - column: { name: renter_user_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_pae_user, referencedTableName: users, referencedColumnNames: id } }
+              - column: { name: event_type, type: varchar(12), constraints: { nullable: false } }
+              - column: { name: occurred_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
+              - column: { name: day, type: date, constraints: { nullable: false } }
+        - createIndex: { tableName: promo_ad_events, indexName: idx_pae_ad_day, columns: [ { column: { name: ad_id } }, { column: { name: day } } ] }
+        - sql:
+            comment: One impression per ad, renter and day. Clicks are excluded from the constraint so repeat taps all count.
+            sql: CREATE UNIQUE INDEX uq_promo_impression_per_day ON promo_ad_events (ad_id, renter_user_id, day) WHERE event_type = 'IMPRESSION';
+        - sql:
+            comment: Backstops the application's Asia/Dubai conversion. If that ever drifts, the dedupe index would silently double-count or silently block a legitimate impression. timezone(text, timestamptz) is IMMUTABLE, so it is legal in a CHECK.
+            sql: ALTER TABLE promo_ad_events ADD CONSTRAINT ck_promo_ad_event_day CHECK (day = (occurred_at AT TIME ZONE 'Asia/Dubai')::date);
