@@ -7,6 +7,7 @@ import java.net.URISyntaxException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.regex.Pattern;
 
 /**
  * The security boundary for ad click-throughs. An admin-entered URL that
@@ -17,11 +18,29 @@ import java.util.Locale;
  * <p>Subdomain matching compares label boundaries, not string suffixes —
  * {@code evil-spice-bazaar.ae} ends with {@code spice-bazaar.ae} but is a
  * different domain and must not pass.
+ *
+ * <p><b>Known limitation:</b> internationalised (non-ASCII) domains are not
+ * supported. {@code URI.getHost()} returns null for them, so an Arabic-script
+ * domain entered in the admin panel is dropped by {@link #parseDomains} and
+ * can never match. This is fail-closed, not a hole — a punycode host is a
+ * distinct ASCII string that cannot collide with an allowlisted one, so
+ * homograph attacks are impossible. If Arabic-script domains are ever needed,
+ * run both sides through {@link java.net.IDN#toASCII} and compare punycode.
  */
 @Component
 public class PromotionUrlValidator {
 
-    /** Normalises admin input into bare lowercase hostnames. */
+    /**
+     * A hostname as {@link URI#getHost()} would return it: dot-separated
+     * alphanumeric-or-hyphen labels, at least two of them. Anything else an
+     * admin types — a wildcard, a bare TLD, a stray word — could never match
+     * a real URL, so it is dropped here rather than stored as an entry that
+     * silently allows nothing.
+     */
+    private static final Pattern HOSTNAME = Pattern.compile(
+            "^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$");
+
+    /** Normalises admin input into bare lowercase hostnames, dropping anything invalid. */
     public List<String> parseDomains(String raw) {
         if (raw == null || raw.isBlank()) {
             return List.of();
@@ -30,30 +49,50 @@ public class PromotionUrlValidator {
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())
                 .map(this::toHost)
-                .filter(s -> !s.isEmpty())
+                .filter(HOSTNAME.asMatchPredicate())
                 .distinct()
                 .toList();
     }
 
-    /** Strips scheme, credentials, port and path from whatever the admin pasted. */
+    /**
+     * Reduces whatever the admin pasted to a bare hostname.
+     *
+     * <p>Order matters and is the whole correctness argument. The authority
+     * ends at the first {@code /}, {@code ?} or {@code #}, so the path, query
+     * and fragment are cut FIRST — a {@code @} inside a query string
+     * ({@code ?email=owner@gmail.com}) is not a credential separator, and
+     * stripping userinfo before the cut would store {@code gmail.com} as the
+     * business's allowlist. Only then is userinfo removed, splitting on the
+     * LAST {@code @} because RFC 3986 permits {@code @} inside userinfo and
+     * browsers split there too. Port comes off last, and a single trailing
+     * dot is normalised away because {@code URI.getHost()} never returns one.
+     */
     private String toHost(String value) {
-        String s = value.toLowerCase(Locale.ROOT);
+        String s = value.trim().toLowerCase(Locale.ROOT);
         int scheme = s.indexOf("://");
         if (scheme >= 0) {
             s = s.substring(scheme + 3);
         }
-        int at = s.indexOf('@');
-        if (at >= 0) {
-            s = s.substring(at + 1);
-        }
         int cut = s.length();
-        for (char c : new char[]{'/', '?', '#', ':'}) {
+        for (char c : new char[]{'/', '?', '#'}) {
             int i = s.indexOf(c);
             if (i >= 0 && i < cut) {
                 cut = i;
             }
         }
-        return s.substring(0, cut);
+        s = s.substring(0, cut);
+        int at = s.lastIndexOf('@');
+        if (at >= 0) {
+            s = s.substring(at + 1);
+        }
+        int port = s.indexOf(':');
+        if (port >= 0) {
+            s = s.substring(0, port);
+        }
+        if (s.endsWith(".")) {
+            s = s.substring(0, s.length() - 1);
+        }
+        return s;
     }
 
     public boolean isAllowed(String url, String allowedDomainsRaw) {
@@ -68,6 +107,15 @@ public class PromotionUrlValidator {
             return false;
         }
         if (!"https".equalsIgnoreCase(uri.getScheme())) {
+            return false;
+        }
+        // Refuse userinfo outright. Nothing legitimate needs it in an ad link,
+        // and `https://my-bank.com@spice-bazaar.ae/` reads as the bank in an
+        // in-app browser's minimal URL chrome even though it navigates to the
+        // allowed host. Checked on the raw authority so an unparsed '@' in a
+        // registry-based authority is caught too.
+        String authority = uri.getRawAuthority();
+        if (authority == null || authority.indexOf('@') >= 0) {
             return false;
         }
         String host = uri.getHost();

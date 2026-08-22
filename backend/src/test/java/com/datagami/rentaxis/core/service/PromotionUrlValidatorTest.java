@@ -61,6 +61,78 @@ class PromotionUrlValidatorTest {
         assertThat(validator.isAllowed("https://spice-bazaar.ae/", "")).isFalse();
     }
 
+    // ---- the storage seam: parseDomains output feeding isAllowed ----
+    // Every test above hands isAllowed a hand-written bare domain. The bug
+    // class that actually bit here lives between the two, so these exercise
+    // a domain as it would really be stored.
+
+    @Test
+    void parseDomains_ignoresAnAtSignInTheQueryString() {
+        // Regression: stripping userinfo before cutting the path turned
+        // "?email=owner@gmail.com" into an allowlist of gmail.com, which both
+        // locked out the real domain and opened up an unrelated one.
+        assertThat(validator.parseDomains("https://spice-bazaar.ae/signup?email=owner@gmail.com"))
+                .containsExactly("spice-bazaar.ae");
+        assertThat(validator.parseDomains("https://spice-bazaar.ae/promo?cb=x@com"))
+                .containsExactly("spice-bazaar.ae");
+        assertThat(validator.parseDomains("https://spice-bazaar.ae/menu#contact@us"))
+                .containsExactly("spice-bazaar.ae");
+    }
+
+    @Test
+    void parseDomains_keepsTheHostFromARealUserinfoUrl() {
+        assertThat(validator.parseDomains("https://user:pw@spice-bazaar.ae/menu"))
+                .containsExactly("spice-bazaar.ae");
+    }
+
+    @Test
+    void parseDomains_stripsPortAndTrailingDot() {
+        assertThat(validator.parseDomains("https://spice-bazaar.ae:8443/x"))
+                .containsExactly("spice-bazaar.ae");
+        assertThat(validator.parseDomains("spice-bazaar.ae.")).containsExactly("spice-bazaar.ae");
+    }
+
+    @Test
+    void parseDomains_dropsEntriesThatCouldNeverMatchAUrl() {
+        // A wildcard is the most likely thing an admin types meaning "and
+        // subdomains" — storing it verbatim yields an allowlist that permits
+        // nothing, with no feedback anywhere. Dropping it keeps this
+        // fail-closed and lets the caller report the entry as rejected.
+        assertThat(validator.parseDomains("*.spice-bazaar.ae")).isEmpty();
+        assertThat(validator.parseDomains(".ae")).isEmpty();
+        assertThat(validator.parseDomains("spice-bazaar..ae")).isEmpty();
+        assertThat(validator.parseDomains("not a domain")).isEmpty();
+        assertThat(validator.parseDomains("localhost")).isEmpty();
+    }
+
+    @Test
+    void roundTrip_aStoredDomainAlwaysAllowsItsOwnApexAndSubdomains() {
+        String stored = String.join(",",
+                validator.parseDomains("https://spice-bazaar.ae/menu?ref=a@b.com"));
+
+        assertThat(validator.isAllowed("https://spice-bazaar.ae/", stored)).isTrue();
+        assertThat(validator.isAllowed("https://offers.spice-bazaar.ae/", stored)).isTrue();
+        assertThat(validator.isAllowed("https://b.com/", stored)).isFalse();
+        assertThat(validator.isAllowed("https://evil.com/", stored)).isFalse();
+    }
+
+    @Test
+    void isAllowed_rejectsUserinfoEvenOnAnAllowedHost() {
+        // Navigates to the allowed host, but reads as the bank in an in-app
+        // browser's minimal URL chrome, and can trigger a basic-auth prompt.
+        assertThat(validator.isAllowed(
+                "https://secure-login.my-bank.com@spice-bazaar.ae/pay", "spice-bazaar.ae"))
+                .isFalse();
+    }
+
+    @Test
+    void isAllowed_rejectsHostConfusionVariants() {
+        assertThat(validator.isAllowed("https://spice-bazaar.ae./", "spice-bazaar.ae")).isFalse();
+        assertThat(validator.isAllowed("https://spice-bazaar..ae/", "spice-bazaar.ae")).isFalse();
+        assertThat(validator.isAllowed("https:/\\evil.com", "spice-bazaar.ae")).isFalse();
+        assertThat(validator.isAllowed("//spice-bazaar.ae/", "spice-bazaar.ae")).isFalse();
+    }
+
     @Test
     void isAllowed_rejectsMalformedUrls() {
         assertThat(validator.isAllowed("not a url", "spice-bazaar.ae")).isFalse();
