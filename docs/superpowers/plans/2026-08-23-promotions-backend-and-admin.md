@@ -3287,7 +3287,7 @@ Run:
 cd backend && ./gradlew test --tests 'com.datagami.rentaxis.core.service.PromotionFeedServiceTest'
 ```
 
-Expected: PASS, 17 tests.
+Expected: PASS, 11 tests.
 
 - [ ] **Step 6: Commit**
 
