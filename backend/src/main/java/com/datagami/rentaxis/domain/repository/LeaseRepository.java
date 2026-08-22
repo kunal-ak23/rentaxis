@@ -68,4 +68,18 @@ public interface LeaseRepository extends JpaRepository<Lease, UUID> {
           )
     """)
     List<Lease> findActiveLeasesEnteringRenewalWindow(@Param("cutoff") LocalDate cutoff);
+
+    /**
+     * Properties a renter currently holds an active lease in. Used by the
+     * promotions feed to resolve ad targeting; returns ids only so the feed
+     * never materialises whole Lease graphs on a home-screen load.
+     */
+    @Query("""
+            SELECT DISTINCT l.unit.property.id FROM Lease l
+            WHERE l.tenantId = :tenantId
+              AND l.renter.userId = :userId
+              AND l.status = com.datagami.rentaxis.domain.entity.enums.LeaseStatus.ACTIVE
+            """)
+    List<UUID> findActivePropertyIdsForRenterUser(@Param("tenantId") UUID tenantId,
+                                                  @Param("userId") UUID userId);
 }
