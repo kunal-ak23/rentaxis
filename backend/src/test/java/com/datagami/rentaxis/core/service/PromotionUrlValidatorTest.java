@@ -127,7 +127,10 @@ class PromotionUrlValidatorTest {
 
     @Test
     void isAllowed_rejectsHostConfusionVariants() {
-        assertThat(validator.isAllowed("https://spice-bazaar.ae./", "spice-bazaar.ae")).isFalse();
+        // A single trailing dot is the FQDN form of the same host, and is
+        // normalised on both sides, so this is allowed. A doubled or empty
+        // label is not a host at all.
+        assertThat(validator.isAllowed("https://spice-bazaar.ae./", "spice-bazaar.ae")).isTrue();
         assertThat(validator.isAllowed("https://spice-bazaar..ae/", "spice-bazaar.ae")).isFalse();
         assertThat(validator.isAllowed("https:/\\evil.com", "spice-bazaar.ae")).isFalse();
         assertThat(validator.isAllowed("//spice-bazaar.ae/", "spice-bazaar.ae")).isFalse();

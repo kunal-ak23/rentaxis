@@ -123,6 +123,15 @@ public class PromotionUrlValidator {
             return false;
         }
         String h = host.toLowerCase(Locale.ROOT);
-        return allowed.stream().anyMatch(d -> h.equals(d) || h.endsWith("." + d));
+        // `host.` is the FQDN form of `host` and a browser treats them the
+        // same. toHost strips it when storing, so strip it here too — without
+        // this the two sides disagree and a business's own FQDN-form link is
+        // refused. Stripping cannot widen anything: a stored entry can never
+        // carry a trailing dot, so the "." + d suffix test is unaffected.
+        if (h.endsWith(".")) {
+            h = h.substring(0, h.length() - 1);
+        }
+        final String normalizedHost = h;
+        return allowed.stream().anyMatch(d -> normalizedHost.equals(d) || normalizedHost.endsWith("." + d));
     }
 }
