@@ -80,12 +80,15 @@ databaseChangeLog:
       id: 71-promotions
       author: rentaxis-system
       changes:
-        # ---- promo_business: one row per client-owned business ----
+        # ---- promo_businesses: one row per client-owned business ----
         # allowed_domains is the click-through allowlist, stored as a lowercase
-        # comma-separated hostname list. Businesses are soft-deactivated, never
-        # hard-deleted, so ad history and event counts survive.
+        # comma-separated hostname list. It stays a column rather than a child
+        # table because it is read only on admin writes, never on the renter
+        # hot path, and a business has a handful of domains at most.
+        # Businesses are soft-deactivated, never hard-deleted, so ad history
+        # and event counts survive.
         - createTable:
-            tableName: promo_business
+            tableName: promo_businesses
             columns:
               - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
               - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
@@ -99,20 +102,20 @@ databaseChangeLog:
               - column: { name: active, type: boolean, constraints: { nullable: false }, defaultValueBoolean: true }
               - column: { name: created_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
               - column: { name: updated_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
-        - createIndex: { tableName: promo_business, indexName: idx_promo_business_tenant, columns: [ { column: { name: tenant_id } } ] }
+        - createIndex: { tableName: promo_businesses, indexName: idx_promo_businesses_tenant, columns: [ { column: { name: tenant_id } } ] }
         - sql:
             comment: Case-insensitive name uniqueness per tenant; expression index, so addUniqueConstraint cannot express it.
-            sql: CREATE UNIQUE INDEX uq_promo_business_name ON promo_business (tenant_id, lower(name_en));
+            sql: CREATE UNIQUE INDEX uq_promo_business_name ON promo_businesses (tenant_id, lower(name_en));
 
-        # ---- promo_ad: one offer, belonging to a business ----
+        # ---- promo_ads: one offer, belonging to a business ----
         # fk_promo_ad_business RESTRICTs: a business with ads must be
         # deactivated, not deleted (same reasoning as fk_amenity_property in 69).
         - createTable:
-            tableName: promo_ad
+            tableName: promo_ads
             columns:
               - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
               - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
-              - column: { name: business_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_promo_ad_business, referencedTableName: promo_business, referencedColumnNames: id } }
+              - column: { name: business_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_promo_ad_business, referencedTableName: promo_businesses, referencedColumnNames: id } }
               - column: { name: title_en, type: varchar(120) }
               - column: { name: title_ar, type: varchar(120) }
               - column: { name: subtitle_en, type: varchar(160) }
@@ -133,51 +136,64 @@ databaseChangeLog:
               - column: { name: active, type: boolean, constraints: { nullable: false }, defaultValueBoolean: true }
               - column: { name: created_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
               - column: { name: updated_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
+        # Deliberately just (tenant_id, active). The eligibility query also
+        # range-filters starts_at/ends_at, but a btree can only narrow on one
+        # range predicate after the equality prefix, and both bounds are
+        # nullable and matched with `OR IS NULL` — trailing them here would be
+        # residual filtering, not scan narrowing. At ~40 ads per tenant the
+        # equality prefix is the whole win.
         - createIndex:
-            tableName: promo_ad
-            indexName: idx_promo_ad_eligibility
+            tableName: promo_ads
+            indexName: idx_promo_ads_eligibility
             columns:
               - column: { name: tenant_id }
               - column: { name: active }
-              - column: { name: starts_at }
-              - column: { name: ends_at }
-        - createIndex: { tableName: promo_ad, indexName: idx_promo_ad_business, columns: [ { column: { name: business_id } } ] }
+        - createIndex: { tableName: promo_ads, indexName: idx_promo_ads_business, columns: [ { column: { name: business_id } } ] }
         - sql:
             comment: priority is a relative airtime weight; 0 or negative would divide by zero in the slate's -ln(u)/priority key.
-            sql: ALTER TABLE promo_ad ADD CONSTRAINT ck_promo_ad_priority CHECK (priority BETWEEN 1 AND 10);
+            sql: ALTER TABLE promo_ads ADD CONSTRAINT ck_promo_ad_priority CHECK (priority BETWEEN 1 AND 10);
         - sql:
             comment: At least one language must carry a title, or the card renders blank.
-            sql: ALTER TABLE promo_ad ADD CONSTRAINT ck_promo_ad_title CHECK (title_en IS NOT NULL OR title_ar IS NOT NULL);
+            sql: ALTER TABLE promo_ads ADD CONSTRAINT ck_promo_ad_title CHECK (title_en IS NOT NULL OR title_ar IS NOT NULL);
 
-        # ---- promo_ad_property: zero rows for an ad = targets every property ----
-        # Pure join rows, cascade both ways (same reasoning as
-        # amenity_building_scopes in changeset 69).
+        # ---- promo_ad_properties: zero rows for an ad = targets every property ----
+        # Pure join rows, cascade both ways, surrogate id + unique constraint
+        # on the pair — same shape as amenity_building_scopes in changeset 69.
         - createTable:
-            tableName: promo_ad_property
-            columns:
-              - column: { name: ad_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_pap_ad, referencedTableName: promo_ad, referencedColumnNames: id, deleteCascade: true } }
-              - column: { name: property_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_pap_property, referencedTableName: properties, referencedColumnNames: id, deleteCascade: true } }
-              - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
-        - addPrimaryKey: { tableName: promo_ad_property, columnNames: "ad_id, property_id", constraintName: pk_promo_ad_property }
-        - createIndex: { tableName: promo_ad_property, indexName: idx_pap_property, columns: [ { column: { name: property_id } } ] }
-
-        # ---- promo_ad_event: impressions and clicks ----
-        # `day` is the Asia/Dubai calendar day, written by the service, not
-        # derived in SQL — the DB's timezone is not the product's timezone.
-        - createTable:
-            tableName: promo_ad_event
+            tableName: promo_ad_properties
             columns:
               - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
               - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
-              - column: { name: ad_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_pae_ad, referencedTableName: promo_ad, referencedColumnNames: id, deleteCascade: true } }
+              - column: { name: ad_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_pap_ad, referencedTableName: promo_ads, referencedColumnNames: id, deleteCascade: true } }
+              - column: { name: property_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_pap_property, referencedTableName: properties, referencedColumnNames: id, deleteCascade: true } }
+              - column: { name: created_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
+        - addUniqueConstraint: { tableName: promo_ad_properties, columnNames: "ad_id, property_id", constraintName: uq_promo_ad_property }
+        - createIndex: { tableName: promo_ad_properties, indexName: idx_pap_property, columns: [ { column: { name: property_id } } ] }
+
+        # ---- promo_ad_events: impressions and clicks ----
+        # `day` is the Asia/Dubai calendar day, written by the service, not
+        # derived in SQL — the DB's timezone is not the product's timezone.
+        # fk_pae_ad RESTRICTs rather than cascading: an ad's impression and
+        # click history is the whole point of the analytics, so an ad that has
+        # run must be deactivated, not deleted (PromotionService.deleteAd
+        # enforces the same rule with a 409, mirroring deleteBusiness).
+        - createTable:
+            tableName: promo_ad_events
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: ad_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_pae_ad, referencedTableName: promo_ads, referencedColumnNames: id } }
               - column: { name: renter_user_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_pae_user, referencedTableName: users, referencedColumnNames: id } }
               - column: { name: event_type, type: varchar(12), constraints: { nullable: false } }
               - column: { name: occurred_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
               - column: { name: day, type: date, constraints: { nullable: false } }
-        - createIndex: { tableName: promo_ad_event, indexName: idx_pae_ad_day, columns: [ { column: { name: ad_id } }, { column: { name: day } } ] }
+        - createIndex: { tableName: promo_ad_events, indexName: idx_pae_ad_day, columns: [ { column: { name: ad_id } }, { column: { name: day } } ] }
         - sql:
             comment: One impression per ad, renter and day. Clicks are excluded from the constraint so repeat taps all count.
-            sql: CREATE UNIQUE INDEX uq_promo_impression_per_day ON promo_ad_event (ad_id, renter_user_id, day) WHERE event_type = 'IMPRESSION';
+            sql: CREATE UNIQUE INDEX uq_promo_impression_per_day ON promo_ad_events (ad_id, renter_user_id, day) WHERE event_type = 'IMPRESSION';
+        - sql:
+            comment: Backstops the application's Asia/Dubai conversion. If that ever drifts, the dedupe index would silently double-count or silently block a legitimate impression. timezone(text, timestamptz) is IMMUTABLE, so it is legal in a CHECK.
+            sql: ALTER TABLE promo_ad_events ADD CONSTRAINT ck_promo_ad_event_day CHECK (day = (occurred_at AT TIME ZONE 'Asia/Dubai')::date);
 ```
 
 - [ ] **Step 2: Register the changeset**
@@ -204,7 +220,7 @@ Expected: a line showing `71-promotions` ran. Stop the app once you see it. If P
 Run:
 
 ```bash
-docker compose -f docker-compose.db.yml exec -T postgres psql -U rentaxis -d rentaxis -c "\d promo_ad_event" -c "\di uq_promo_impression_per_day"
+docker compose -f docker-compose.db.yml exec -T postgres psql -U rentaxis -d rentaxis -c "\d promo_ad_events" -c "\di uq_promo_impression_per_day"
 ```
 
 Expected: the table definition, and one index row for `uq_promo_impression_per_day`.
@@ -292,7 +308,7 @@ import java.util.UUID;
  * ad URL is accepted.
  */
 @Entity
-@Table(name = "promo_business")
+@Table(name = "promo_businesses")
 @Getter
 @Setter
 public class PromoBusiness extends BaseTenantEntity {
@@ -361,7 +377,7 @@ import java.util.UUID;
  * means unbounded on that side.
  */
 @Entity
-@Table(name = "promo_ad")
+@Table(name = "promo_ads")
 @Getter
 @Setter
 public class PromoAd extends BaseTenantEntity {
@@ -453,54 +469,37 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
-import java.io.Serializable;
-import java.util.Objects;
+import java.time.Instant;
 import java.util.UUID;
 
 /**
  * Targeting join. An ad with zero rows here targets every property — that is
  * the default and the common case, so no rows are written unless the client
  * narrows an ad.
+ *
+ * <p>Surrogate id plus a unique constraint on the pair, matching
+ * {@link AmenityBuildingScope} and the other join tables in this codebase,
+ * rather than a composite key — it keeps the repository a plain
+ * {@code JpaRepository<..., UUID>}.
  */
 @Entity
-@Table(name = "promo_ad_property")
-@IdClass(PromoAdProperty.Key.class)
+@Table(name = "promo_ad_properties")
 @Getter
 @Setter
 public class PromoAdProperty extends BaseTenantEntity {
 
     @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
+
     @Column(name = "ad_id", nullable = false)
     private UUID adId;
 
-    @Id
     @Column(name = "property_id", nullable = false)
     private UUID propertyId;
 
-    public static class Key implements Serializable {
-        private UUID adId;
-        private UUID propertyId;
-
-        public Key() {
-        }
-
-        public Key(UUID adId, UUID propertyId) {
-            this.adId = adId;
-            this.propertyId = propertyId;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (!(o instanceof Key key)) return false;
-            return Objects.equals(adId, key.adId) && Objects.equals(propertyId, key.propertyId);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(adId, propertyId);
-        }
-    }
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private Instant createdAt = Instant.now();
 }
 ```
 
@@ -527,7 +526,7 @@ import java.util.UUID;
  * repeat impressions within a day; clicks are excluded from it.
  */
 @Entity
-@Table(name = "promo_ad_event")
+@Table(name = "promo_ad_events")
 @Getter
 @Setter
 public class PromoAdEvent extends BaseTenantEntity {
@@ -1142,7 +1141,7 @@ import java.util.List;
 import java.util.UUID;
 
 @Repository
-public interface PromoAdPropertyRepository extends JpaRepository<PromoAdProperty, PromoAdProperty.Key> {
+public interface PromoAdPropertyRepository extends JpaRepository<PromoAdProperty, UUID> {
 
     List<PromoAdProperty> findByAdId(UUID adId);
 
@@ -1195,6 +1194,9 @@ public interface PromoAdEventRepository extends JpaRepository<PromoAdEvent, UUID
             ORDER BY e.day ASC
             """)
     List<Object[]> dailySeries(@Param("tenantId") UUID tenantId, @Param("adId") UUID adId);
+
+    /** Guards the hard-delete path in PromotionService.deleteAd. */
+    long countByAdId(UUID adId);
 
     boolean existsByAdIdAndRenterUserIdAndDayAndEventType(
             UUID adId, UUID renterUserId, java.time.LocalDate day, PromoEventType eventType);
@@ -1528,6 +1530,7 @@ import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.domain.entity.PromoAd;
 import com.datagami.rentaxis.domain.entity.PromoBusiness;
 import com.datagami.rentaxis.domain.entity.enums.PromoCtaType;
+import com.datagami.rentaxis.domain.repository.PromoAdEventRepository;
 import com.datagami.rentaxis.domain.repository.PromoAdPropertyRepository;
 import com.datagami.rentaxis.domain.repository.PromoAdRepository;
 import com.datagami.rentaxis.domain.repository.PromoBusinessRepository;
@@ -1556,6 +1559,7 @@ class PromotionServiceTest {
     @Mock PromoBusinessRepository businessRepository;
     @Mock PromoAdRepository adRepository;
     @Mock PromoAdPropertyRepository adPropertyRepository;
+    @Mock PromoAdEventRepository eventRepository;
 
     PromotionService service;
 
@@ -1565,7 +1569,7 @@ class PromotionServiceTest {
     @BeforeEach
     void setUp() {
         service = new PromotionService(businessRepository, adRepository,
-                adPropertyRepository, new PromotionUrlValidator());
+                adPropertyRepository, eventRepository, new PromotionUrlValidator());
     }
 
     private PromoBusiness business() {
@@ -1736,6 +1740,33 @@ class PromotionServiceTest {
     }
 
     @Test
+    void deleteAd_refusesWhenTheAdHasViewHistory() {
+        PromoAd existing = new PromoAd();
+        existing.setId(UUID.randomUUID());
+        existing.setTenantId(tenantId);
+        when(adRepository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(eventRepository.countByAdId(existing.getId())).thenReturn(42L);
+
+        assertThatThrownBy(() -> service.deleteAd(tenantId, existing.getId()))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Deactivate");
+        verify(adRepository, never()).delete(any());
+    }
+
+    @Test
+    void deleteAd_allowsDeletingAnAdThatNeverRan() {
+        PromoAd existing = new PromoAd();
+        existing.setId(UUID.randomUUID());
+        existing.setTenantId(tenantId);
+        when(adRepository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(eventRepository.countByAdId(existing.getId())).thenReturn(0L);
+
+        service.deleteAd(tenantId, existing.getId());
+
+        verify(adRepository).delete(existing);
+    }
+
+    @Test
     void updateAd_replacesTargetingRows() {
         PromoAd existing = new PromoAd();
         existing.setId(UUID.randomUUID());
@@ -1787,6 +1818,7 @@ import com.datagami.rentaxis.domain.entity.enums.PromoCategory;
 import com.datagami.rentaxis.domain.entity.enums.PromoCtaType;
 import com.datagami.rentaxis.domain.entity.enums.PromoEventType;
 import com.datagami.rentaxis.domain.entity.enums.PromoPlacement;
+import com.datagami.rentaxis.domain.repository.PromoAdEventRepository;
 import com.datagami.rentaxis.domain.repository.PromoAdPropertyRepository;
 import com.datagami.rentaxis.domain.repository.PromoAdRepository;
 import com.datagami.rentaxis.domain.repository.PromoBusinessRepository;
@@ -1817,15 +1849,18 @@ public class PromotionService {
     private final PromoBusinessRepository businessRepository;
     private final PromoAdRepository adRepository;
     private final PromoAdPropertyRepository adPropertyRepository;
+    private final PromoAdEventRepository eventRepository;
     private final PromotionUrlValidator urlValidator;
 
     public PromotionService(PromoBusinessRepository businessRepository,
                             PromoAdRepository adRepository,
                             PromoAdPropertyRepository adPropertyRepository,
+                            PromoAdEventRepository eventRepository,
                             PromotionUrlValidator urlValidator) {
         this.businessRepository = businessRepository;
         this.adRepository = adRepository;
         this.adPropertyRepository = adPropertyRepository;
+        this.eventRepository = eventRepository;
         this.urlValidator = urlValidator;
     }
 
@@ -1928,8 +1963,19 @@ public class PromotionService {
         return saved;
     }
 
+    /**
+     * Hard delete only when the ad never ran. Impression and click history is
+     * the entire point of the analytics, and fk_pae_ad RESTRICTs, so an ad
+     * with events is deactivated instead — the same rule deleteBusiness
+     * applies one level up.
+     */
     public void deleteAd(UUID tenantId, UUID id) {
-        adRepository.delete(getAd(tenantId, id));
+        PromoAd ad = getAd(tenantId, id);
+        if (eventRepository.countByAdId(id) > 0) {
+            throw new BusinessRuleViolationException(
+                    "This ad has view history. Deactivate it instead of deleting it.");
+        }
+        adRepository.delete(ad);
     }
 
     @Transactional(readOnly = true)
@@ -2046,7 +2092,7 @@ Run:
 cd backend && ./gradlew test --tests 'com.datagami.rentaxis.core.service.PromotionServiceTest'
 ```
 
-Expected: PASS, 14 tests.
+Expected: PASS, 16 tests.
 
 - [ ] **Step 5: Commit**
 
