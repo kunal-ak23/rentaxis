@@ -648,6 +648,78 @@ class PromotionUrlValidatorTest {
         assertThat(validator.isAllowed("https://spice-bazaar.ae/", "")).isFalse();
     }
 
+    // ---- the storage seam: parseDomains output feeding isAllowed ----
+    // Every test above hands isAllowed a hand-written bare domain. The bug
+    // class that actually bit here lives between the two, so these exercise
+    // a domain as it would really be stored.
+
+    @Test
+    void parseDomains_ignoresAnAtSignInTheQueryString() {
+        // Regression: stripping userinfo before cutting the path turned
+        // "?email=owner@gmail.com" into an allowlist of gmail.com, which both
+        // locked out the real domain and opened up an unrelated one.
+        assertThat(validator.parseDomains("https://spice-bazaar.ae/signup?email=owner@gmail.com"))
+                .containsExactly("spice-bazaar.ae");
+        assertThat(validator.parseDomains("https://spice-bazaar.ae/promo?cb=x@com"))
+                .containsExactly("spice-bazaar.ae");
+        assertThat(validator.parseDomains("https://spice-bazaar.ae/menu#contact@us"))
+                .containsExactly("spice-bazaar.ae");
+    }
+
+    @Test
+    void parseDomains_keepsTheHostFromARealUserinfoUrl() {
+        assertThat(validator.parseDomains("https://user:pw@spice-bazaar.ae/menu"))
+                .containsExactly("spice-bazaar.ae");
+    }
+
+    @Test
+    void parseDomains_stripsPortAndTrailingDot() {
+        assertThat(validator.parseDomains("https://spice-bazaar.ae:8443/x"))
+                .containsExactly("spice-bazaar.ae");
+        assertThat(validator.parseDomains("spice-bazaar.ae.")).containsExactly("spice-bazaar.ae");
+    }
+
+    @Test
+    void parseDomains_dropsEntriesThatCouldNeverMatchAUrl() {
+        // A wildcard is the most likely thing an admin types meaning "and
+        // subdomains" — storing it verbatim yields an allowlist that permits
+        // nothing, with no feedback anywhere. Dropping it keeps this
+        // fail-closed and lets the caller report the entry as rejected.
+        assertThat(validator.parseDomains("*.spice-bazaar.ae")).isEmpty();
+        assertThat(validator.parseDomains(".ae")).isEmpty();
+        assertThat(validator.parseDomains("spice-bazaar..ae")).isEmpty();
+        assertThat(validator.parseDomains("not a domain")).isEmpty();
+        assertThat(validator.parseDomains("localhost")).isEmpty();
+    }
+
+    @Test
+    void roundTrip_aStoredDomainAlwaysAllowsItsOwnApexAndSubdomains() {
+        String stored = String.join(",",
+                validator.parseDomains("https://spice-bazaar.ae/menu?ref=a@b.com"));
+
+        assertThat(validator.isAllowed("https://spice-bazaar.ae/", stored)).isTrue();
+        assertThat(validator.isAllowed("https://offers.spice-bazaar.ae/", stored)).isTrue();
+        assertThat(validator.isAllowed("https://b.com/", stored)).isFalse();
+        assertThat(validator.isAllowed("https://evil.com/", stored)).isFalse();
+    }
+
+    @Test
+    void isAllowed_rejectsUserinfoEvenOnAnAllowedHost() {
+        // Navigates to the allowed host, but reads as the bank in an in-app
+        // browser's minimal URL chrome, and can trigger a basic-auth prompt.
+        assertThat(validator.isAllowed(
+                "https://secure-login.my-bank.com@spice-bazaar.ae/pay", "spice-bazaar.ae"))
+                .isFalse();
+    }
+
+    @Test
+    void isAllowed_rejectsHostConfusionVariants() {
+        assertThat(validator.isAllowed("https://spice-bazaar.ae./", "spice-bazaar.ae")).isFalse();
+        assertThat(validator.isAllowed("https://spice-bazaar..ae/", "spice-bazaar.ae")).isFalse();
+        assertThat(validator.isAllowed("https:/\\evil.com", "spice-bazaar.ae")).isFalse();
+        assertThat(validator.isAllowed("//spice-bazaar.ae/", "spice-bazaar.ae")).isFalse();
+    }
+
     @Test
     void isAllowed_rejectsMalformedUrls() {
         assertThat(validator.isAllowed("not a url", "spice-bazaar.ae")).isFalse();
@@ -681,6 +753,7 @@ import java.net.URISyntaxException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.regex.Pattern;
 
 /**
  * The security boundary for ad click-throughs. An admin-entered URL that
@@ -691,11 +764,29 @@ import java.util.Locale;
  * <p>Subdomain matching compares label boundaries, not string suffixes —
  * {@code evil-spice-bazaar.ae} ends with {@code spice-bazaar.ae} but is a
  * different domain and must not pass.
+ *
+ * <p><b>Known limitation:</b> internationalised (non-ASCII) domains are not
+ * supported. {@code URI.getHost()} returns null for them, so an Arabic-script
+ * domain entered in the admin panel is dropped by {@link #parseDomains} and
+ * can never match. This is fail-closed, not a hole — a punycode host is a
+ * distinct ASCII string that cannot collide with an allowlisted one, so
+ * homograph attacks are impossible. If Arabic-script domains are ever needed,
+ * run both sides through {@link java.net.IDN#toASCII} and compare punycode.
  */
 @Component
 public class PromotionUrlValidator {
 
-    /** Normalises admin input into bare lowercase hostnames. */
+    /**
+     * A hostname as {@link URI#getHost()} would return it: dot-separated
+     * alphanumeric-or-hyphen labels, at least two of them. Anything else an
+     * admin types — a wildcard, a bare TLD, a stray word — could never match
+     * a real URL, so it is dropped here rather than stored as an entry that
+     * silently allows nothing.
+     */
+    private static final Pattern HOSTNAME = Pattern.compile(
+            "^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$");
+
+    /** Normalises admin input into bare lowercase hostnames, dropping anything invalid. */
     public List<String> parseDomains(String raw) {
         if (raw == null || raw.isBlank()) {
             return List.of();
@@ -704,30 +795,50 @@ public class PromotionUrlValidator {
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())
                 .map(this::toHost)
-                .filter(s -> !s.isEmpty())
+                .filter(HOSTNAME.asMatchPredicate())
                 .distinct()
                 .toList();
     }
 
-    /** Strips scheme, credentials, port and path from whatever the admin pasted. */
+    /**
+     * Reduces whatever the admin pasted to a bare hostname.
+     *
+     * <p>Order matters and is the whole correctness argument. The authority
+     * ends at the first {@code /}, {@code ?} or {@code #}, so the path, query
+     * and fragment are cut FIRST — a {@code @} inside a query string
+     * ({@code ?email=owner@gmail.com}) is not a credential separator, and
+     * stripping userinfo before the cut would store {@code gmail.com} as the
+     * business's allowlist. Only then is userinfo removed, splitting on the
+     * LAST {@code @} because RFC 3986 permits {@code @} inside userinfo and
+     * browsers split there too. Port comes off last, and a single trailing
+     * dot is normalised away because {@code URI.getHost()} never returns one.
+     */
     private String toHost(String value) {
-        String s = value.toLowerCase(Locale.ROOT);
+        String s = value.trim().toLowerCase(Locale.ROOT);
         int scheme = s.indexOf("://");
         if (scheme >= 0) {
             s = s.substring(scheme + 3);
         }
-        int at = s.indexOf('@');
-        if (at >= 0) {
-            s = s.substring(at + 1);
-        }
         int cut = s.length();
-        for (char c : new char[]{'/', '?', '#', ':'}) {
+        for (char c : new char[]{'/', '?', '#'}) {
             int i = s.indexOf(c);
             if (i >= 0 && i < cut) {
                 cut = i;
             }
         }
-        return s.substring(0, cut);
+        s = s.substring(0, cut);
+        int at = s.lastIndexOf('@');
+        if (at >= 0) {
+            s = s.substring(at + 1);
+        }
+        int port = s.indexOf(':');
+        if (port >= 0) {
+            s = s.substring(0, port);
+        }
+        if (s.endsWith(".")) {
+            s = s.substring(0, s.length() - 1);
+        }
+        return s;
     }
 
     public boolean isAllowed(String url, String allowedDomainsRaw) {
@@ -742,6 +853,15 @@ public class PromotionUrlValidator {
             return false;
         }
         if (!"https".equalsIgnoreCase(uri.getScheme())) {
+            return false;
+        }
+        // Refuse userinfo outright. Nothing legitimate needs it in an ad link,
+        // and `https://my-bank.com@spice-bazaar.ae/` reads as the bank in an
+        // in-app browser's minimal URL chrome even though it navigates to the
+        // allowed host. Checked on the raw authority so an unparsed '@' in a
+        // registry-based authority is caught too.
+        String authority = uri.getRawAuthority();
+        if (authority == null || authority.indexOf('@') >= 0) {
             return false;
         }
         String host = uri.getHost();
@@ -762,7 +882,7 @@ Run:
 cd backend && ./gradlew test --tests 'com.datagami.rentaxis.core.service.PromotionUrlValidatorTest'
 ```
 
-Expected: PASS, 10 tests.
+Expected: PASS, 17 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -1018,7 +1138,7 @@ Run:
 cd backend && ./gradlew test --tests 'com.datagami.rentaxis.core.service.PromotionSlateTest'
 ```
 
-Expected: PASS, 10 tests. If `pick_givesEveryAdAirtimeOverAMonth` fails, the hash is not spreading well — check `mix` folds all eight bytes.
+Expected: PASS, 17 tests. If `pick_givesEveryAdAirtimeOverAMonth` fails, the hash is not spreading well — check `mix` folds all eight bytes.
 
 - [ ] **Step 5: Commit**
 
@@ -2585,7 +2705,7 @@ Run:
 cd backend && ./gradlew test --tests 'com.datagami.rentaxis.core.service.PromotionFeedServiceTest'
 ```
 
-Expected: PASS, 10 tests.
+Expected: PASS, 17 tests.
 
 - [ ] **Step 6: Commit**
 
@@ -4059,6 +4179,22 @@ describe('AdEditor', () => {
         expect(onSave).not.toHaveBeenCalled()
     })
 
+    it('rejects a link carrying userinfo, matching the backend', () => {
+        const { onSave } = renderEditor()
+        fireEvent.change(screen.getByLabelText('Title (English)'), {
+            target: { value: 'Friday brunch' },
+        })
+        fireEvent.change(screen.getByLabelText('What happens on tap'), {
+            target: { value: 'WEBSITE' },
+        })
+        fireEvent.change(screen.getByLabelText('Link'), {
+            target: { value: 'https://my-bank.com@spice-bazaar.ae/pay' },
+        })
+        fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+        expect(onSave).not.toHaveBeenCalled()
+    })
+
     it('accepts a subdomain of an allowed domain', () => {
         const { onSave } = renderEditor()
         fireEvent.change(screen.getByLabelText('Title (English)'), {
@@ -4177,17 +4313,28 @@ interface AdEditorProps {
 }
 
 /**
- * Mirrors PromotionService's rules so the client sees a field-level error
- * instead of a round-trip 400. The backend check is still the authority — this
- * is a convenience layer, never the security boundary.
+ * Mirrors PromotionUrlValidator.isAllowed so the client sees a field-level
+ * error instead of a round-trip 400. The backend check is still the authority
+ * — this is a convenience layer, never the security boundary.
+ *
+ * Two implementations of a security predicate drift. If you change the rules
+ * here, change them in `PromotionUrlValidator` too, and vice versa. In
+ * particular the backend rejects userinfo outright, so this must as well or
+ * the form will call a URL valid that the server then refuses.
+ *
+ * Note `domains` arrives already normalised by the backend (it is the parsed
+ * `allowedDomains` list off the business DTO), so no host surgery is needed
+ * here — matching the raw string the admin typed is not this function's job.
  */
 function hostIsAllowed(url: string, domains: string[]): boolean {
-    let host: string;
+    let parsed: URL;
     try {
-        host = new URL(url).hostname.toLowerCase();
+        parsed = new URL(url);
     } catch {
         return false;
     }
+    if (parsed.username !== "" || parsed.password !== "") return false;
+    const host = parsed.hostname.toLowerCase();
     return domains.some(d => {
         const clean = d.trim().toLowerCase();
         return clean !== "" && (host === clean || host.endsWith(`.${clean}`));
@@ -4527,7 +4674,7 @@ Run:
 cd web && npx vitest run src/app/\[locale\]/dashboard/promotions/__tests__/AdEditor.test.tsx
 ```
 
-Expected: PASS, 9 tests. If `toBeInTheDocument` is unavailable, check that the repo's vitest setup imports `@testing-library/jest-dom` — the existing `web/src/app/[locale]/dashboard/__tests__` suites rely on it, so do not add a second setup file.
+Expected: PASS, 10 tests. If `toBeInTheDocument` is unavailable, check that the repo's vitest setup imports `@testing-library/jest-dom` — the existing `web/src/app/[locale]/dashboard/__tests__` suites rely on it, so do not add a second setup file.
 
 - [ ] **Step 5: Commit**
 
