@@ -103,7 +103,6 @@ databaseChangeLog:
         - sql:
             comment: Case-insensitive name uniqueness per tenant; expression index, so addUniqueConstraint cannot express it.
             sql: CREATE UNIQUE INDEX uq_promo_business_name ON promo_business (tenant_id, lower(name_en));
-            rollback: DROP INDEX IF EXISTS uq_promo_business_name;
 
         # ---- promo_ad: one offer, belonging to a business ----
         # fk_promo_ad_business RESTRICTs: a business with ads must be
@@ -146,11 +145,9 @@ databaseChangeLog:
         - sql:
             comment: priority is a relative airtime weight; 0 or negative would divide by zero in the slate's -ln(u)/priority key.
             sql: ALTER TABLE promo_ad ADD CONSTRAINT ck_promo_ad_priority CHECK (priority BETWEEN 1 AND 10);
-            rollback: ALTER TABLE promo_ad DROP CONSTRAINT IF EXISTS ck_promo_ad_priority;
         - sql:
             comment: At least one language must carry a title, or the card renders blank.
             sql: ALTER TABLE promo_ad ADD CONSTRAINT ck_promo_ad_title CHECK (title_en IS NOT NULL OR title_ar IS NOT NULL);
-            rollback: ALTER TABLE promo_ad DROP CONSTRAINT IF EXISTS ck_promo_ad_title;
 
         # ---- promo_ad_property: zero rows for an ad = targets every property ----
         # Pure join rows, cascade both ways (same reasoning as
@@ -181,7 +178,6 @@ databaseChangeLog:
         - sql:
             comment: One impression per ad, renter and day. Clicks are excluded from the constraint so repeat taps all count.
             sql: CREATE UNIQUE INDEX uq_promo_impression_per_day ON promo_ad_event (ad_id, renter_user_id, day) WHERE event_type = 'IMPRESSION';
-            rollback: DROP INDEX IF EXISTS uq_promo_impression_per_day;
 ```
 
 - [ ] **Step 2: Register the changeset**
@@ -201,14 +197,14 @@ Run:
 cd backend && ./gradlew bootRun --args='--spring.profiles.active=local' 2>&1 | grep -i "71-promotions\|ChangeSet.*ran successfully\|liquibase.*ERROR" | head -20
 ```
 
-Expected: a line showing `71-promotions` ran. Stop the app once you see it. If Postgres is not up, start it first with `docker compose up -d postgres`.
+Expected: a line showing `71-promotions` ran. Stop the app once you see it. If Postgres is not up, start it first with `docker compose -f docker-compose.db.yml up -d postgres` (the DB lives in its own compose file).
 
 - [ ] **Step 4: Confirm the tables and the partial index exist**
 
 Run:
 
 ```bash
-docker compose exec -T postgres psql -U rentaxis -d rentaxis -c "\d promo_ad_event" -c "\di uq_promo_impression_per_day"
+docker compose -f docker-compose.db.yml exec -T postgres psql -U rentaxis -d rentaxis -c "\d promo_ad_event" -c "\di uq_promo_impression_per_day"
 ```
 
 Expected: the table definition, and one index row for `uq_promo_impression_per_day`.
@@ -1789,6 +1785,7 @@ import com.datagami.rentaxis.domain.entity.PromoAdProperty;
 import com.datagami.rentaxis.domain.entity.PromoBusiness;
 import com.datagami.rentaxis.domain.entity.enums.PromoCategory;
 import com.datagami.rentaxis.domain.entity.enums.PromoCtaType;
+import com.datagami.rentaxis.domain.entity.enums.PromoEventType;
 import com.datagami.rentaxis.domain.entity.enums.PromoPlacement;
 import com.datagami.rentaxis.domain.repository.PromoAdPropertyRepository;
 import com.datagami.rentaxis.domain.repository.PromoAdRepository;
@@ -2292,6 +2289,29 @@ class PromotionFeedServiceTest {
     }
 
     @Test
+    void recordEvents_skipsImpressionsAlreadyRecordedToday() {
+        PromoAd a = ad(1);
+        when(adRepository.findEligible(eq(tenantId), any(), anyList(), anyList()))
+                .thenReturn(List.of(a));
+        when(leaseRepository.findActivePropertyIdsForRenterUser(tenantId, renterId))
+                .thenReturn(List.of());
+        when(eventRepository.existsByAdIdAndRenterUserIdAndDayAndEventType(
+                eq(a.getId()), eq(renterId), any(), eq(PromoEventType.IMPRESSION)))
+                .thenReturn(true);
+
+        service().recordEvents(tenantId, renterId, new PromoEventBatchRequest(List.of(
+                new PromoEventBatchRequest.Event(a.getId(), PromoEventType.IMPRESSION),
+                new PromoEventBatchRequest.Event(a.getId(), PromoEventType.CLICK))));
+
+        ArgumentCaptor<List<PromoAdEvent>> captor = ArgumentCaptor.forClass(List.class);
+        verify(eventRepository).saveAll(captor.capture());
+        // The click still lands; the repeat impression is dropped before the
+        // insert, because the partial unique index would only fail at commit.
+        assertThat(captor.getValue()).hasSize(1);
+        assertThat(captor.getValue().get(0).getEventType()).isEqualTo(PromoEventType.CLICK);
+    }
+
+    @Test
     void recordEvents_dropsAdsTheRenterIsNotEligibleFor() {
         when(adRepository.findEligible(eq(tenantId), any(), anyList(), anyList()))
                 .thenReturn(List.of());
@@ -2333,21 +2353,23 @@ import com.datagami.rentaxis.domain.entity.PromoAdEvent;
 import com.datagami.rentaxis.domain.entity.PromoBusiness;
 import com.datagami.rentaxis.domain.entity.enums.PromoCategory;
 import com.datagami.rentaxis.domain.entity.enums.PromoCtaType;
+import com.datagami.rentaxis.domain.entity.enums.PromoEventType;
 import com.datagami.rentaxis.domain.entity.enums.PromoPlacement;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.PromoAdEventRepository;
 import com.datagami.rentaxis.domain.repository.PromoAdRepository;
 import com.datagami.rentaxis.domain.repository.PromoBusinessRepository;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -2421,16 +2443,27 @@ public class PromotionFeedService {
     /**
      * Ignores unknown or ineligible ad ids rather than rejecting the batch — a
      * stale flush from a backgrounded app must never surface an error to the
-     * renter. The partial unique index collapses repeat impressions per day, so
-     * a duplicate insert is caught and dropped rather than failing the request.
+     * renter. Impressions this renter already has on record today are filtered
+     * out BEFORE the insert: the partial unique index only fires at commit,
+     * where the transaction is already rollback-only and no catch could save
+     * the batch (its clicks included). Two simultaneous batches can still race
+     * past the exists-check; that lone failed request is accepted — the client
+     * fires and forgets.
      */
     public void recordEvents(UUID tenantId, UUID renterUserId, PromoEventBatchRequest batch) {
         List<UUID> allowed = eligible(tenantId, renterUserId, ALL_PLACEMENTS).stream()
                 .map(PromoAd::getId).toList();
         LocalDate day = LocalDate.now(DUBAI);
+        // Guards against the same ad appearing twice as an impression within
+        // one batch — the exists-check below only sees committed rows.
+        Set<UUID> impressionsInBatch = new HashSet<>();
 
         List<PromoAdEvent> rows = batch.events().stream()
                 .filter(e -> allowed.contains(e.adId()))
+                .filter(e -> e.type() != PromoEventType.IMPRESSION
+                        || (impressionsInBatch.add(e.adId())
+                                && !eventRepository.existsByAdIdAndRenterUserIdAndDayAndEventType(
+                                        e.adId(), renterUserId, day, PromoEventType.IMPRESSION)))
                 .map(e -> {
                     PromoAdEvent row = new PromoAdEvent();
                     row.setTenantId(tenantId);
@@ -2446,11 +2479,7 @@ public class PromotionFeedService {
         if (rows.isEmpty()) {
             return;
         }
-        try {
-            eventRepository.saveAll(rows);
-        } catch (DataIntegrityViolationException duplicateImpression) {
-            // uq_promo_impression_per_day fired. The count is already correct.
-        }
+        eventRepository.saveAll(rows);
     }
 
     private List<PromoAd> eligible(UUID tenantId, UUID renterUserId, List<PromoPlacement> placements) {
@@ -2510,7 +2539,7 @@ Run:
 cd backend && ./gradlew test --tests 'com.datagami.rentaxis.core.service.PromotionFeedServiceTest'
 ```
 
-Expected: PASS, 9 tests.
+Expected: PASS, 10 tests.
 
 - [ ] **Step 6: Commit**
 
@@ -2606,8 +2635,10 @@ class PromotionStatsServiceTest {
 
     @Test
     void stats_tapThroughRateIsZeroWithNoImpressions() {
-        when(eventRepository.countByAdIdIn(tenantId, List.of(adId))).thenReturn(List.of(
-                new Object[]{adId, PromoEventType.CLICK, 3L}));
+        // List.<Object[]>of — a bare List.of with ONE array varargs-expands
+        // into List<Object> and does not compile against List<Object[]>.
+        when(eventRepository.countByAdIdIn(tenantId, List.of(adId)))
+                .thenReturn(List.<Object[]>of(new Object[]{adId, PromoEventType.CLICK, 3L}));
         when(eventRepository.dailySeries(tenantId, adId)).thenReturn(List.of());
 
         // No division by zero, and no misleading "300%".
@@ -3679,6 +3710,7 @@ Add a `Promotions` namespace to `web/messages/en.json`:
     "previewAr": "Arabic",
     "save": "Save",
     "cancel": "Cancel",
+    "edit": "Edit",
     "delete": "Delete",
     "deleteBusinessBlocked": "This business has ads. Deactivate it instead of deleting it.",
     "domainNotAllowed": "This link is not on one of the business's allowed domains.",
@@ -3690,7 +3722,7 @@ Add a `Promotions` namespace to `web/messages/en.json`:
   },
 ```
 
-Add the same keys to `web/messages/ar.json` with Arabic values. Use `"navLabel": "العروض"`, `"title": "العروض"`, `"businessesTab": "الشركات"`, `"adsTab": "الإعلانات"`, `"addBusiness": "إضافة شركة"`, `"addAd": "إضافة إعلان"`, `"statusLIVE": "نشط"`, `"statusSCHEDULED": "مجدول"`, `"statusEXPIRED": "منتهي"`, `"statusPAUSED": "متوقف"`, `"views": "المشاهدات"`, `"taps": "النقرات"`, `"save": "حفظ"`, `"cancel": "إلغاء"`, `"delete": "حذف"`, and translate the rest in the same register as the neighbouring `Bookings` namespace.
+Add the same keys to `web/messages/ar.json` with Arabic values. Use `"navLabel": "العروض"`, `"title": "العروض"`, `"businessesTab": "الشركات"`, `"adsTab": "الإعلانات"`, `"addBusiness": "إضافة شركة"`, `"addAd": "إضافة إعلان"`, `"statusLIVE": "نشط"`, `"statusSCHEDULED": "مجدول"`, `"statusEXPIRED": "منتهي"`, `"statusPAUSED": "متوقف"`, `"views": "المشاهدات"`, `"taps": "النقرات"`, `"save": "حفظ"`, `"cancel": "إلغاء"`, `"edit": "تعديل"`, `"delete": "حذف"`, and translate the rest in the same register as the neighbouring `Bookings` namespace.
 
 - [ ] **Step 6: Verify it type-checks**
 
@@ -4749,7 +4781,7 @@ export function BusinessesTab({ onChanged }: { onChanged?: () => void }) {
                                 <td>{row.active ? "✓" : "—"}</td>
                                 <td className="text-right">
                                     <button type="button" className="mr-3 underline"
-                                        onClick={() => setEditing(row)}>{t("save")}</button>
+                                        onClick={() => setEditing(row)}>{t("edit")}</button>
                                     <button type="button" className="text-red-600 underline"
                                         onClick={() => void remove(row)}>{t("delete")}</button>
                                 </td>
@@ -4938,7 +4970,7 @@ export function AdsTab({ businesses, properties }: AdsTabProps) {
                                     <td className="text-right">{(rate * 100).toFixed(1)}%</td>
                                     <td className="text-right">
                                         <button type="button" className="mr-3 underline"
-                                            onClick={() => setEditing(row)}>{t("save")}</button>
+                                            onClick={() => setEditing(row)}>{t("edit")}</button>
                                         <button type="button" className="text-red-600 underline"
                                             onClick={async () => {
                                                 await deleteAd(row.id);
@@ -5092,7 +5124,7 @@ Expected: clean.
 Run:
 
 ```bash
-docker compose up -d && sleep 20 && curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/api/v1/promotions/ads
+docker compose -f docker-compose.db.yml up -d && docker compose up -d && sleep 20 && curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/api/v1/promotions/ads
 ```
 
 Expected: `401` or `403` — the endpoint exists and is not publicly readable. A `404` means the controller did not register.

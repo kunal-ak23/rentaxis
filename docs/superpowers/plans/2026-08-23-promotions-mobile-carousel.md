@@ -923,7 +923,20 @@ Widget host(Widget child, {double textScale = 1.0}) => MaterialApp(
       theme: AppTheme.lightTheme,
       home: MediaQuery(
         data: MediaQueryData(textScaler: TextScaler.linear(textScale)),
-        child: Scaffold(body: Center(child: SizedBox(width: 320, child: child))),
+        child: Scaffold(
+          body: Center(
+            // AdCard relies on its parent for height, exactly as the carousel
+            // provides it — its Flexible child throws in an unbounded Column.
+            // Builder so adCardHeight sees the scaled MediaQuery above.
+            child: Builder(
+              builder: (context) => SizedBox(
+                width: 320,
+                height: adCardHeight(context),
+                child: child,
+              ),
+            ),
+          ),
+        ),
       ),
     );
 
@@ -2411,20 +2424,28 @@ class _HomeAdsStripState extends ConsumerState<HomeAdsStrip>
 
     // The home ListView has a 20px horizontal gutter; the strip needs the full
     // screen width for the next card to peek in correctly. OverflowBox lets it
-    // out of the gutter without changing the padding of every sibling.
+    // out of the gutter without changing the padding of every sibling — but an
+    // OverflowBox sizes ITSELF to its incoming constraints, and a ListView
+    // hands it unbounded height, so the strip's height must be pinned here:
+    // the card, plus the dots row (10px gap + 6px dots) when dots show.
     final screenWidth = MediaQuery.sizeOf(context).width;
-    return OverflowBox(
-      maxWidth: screenWidth,
-      minWidth: screenWidth,
-      alignment: Alignment.center,
-      child: AdsCarousel(
-        ads: ads,
-        onImpression: queue.recordImpression,
-        onSeeAll: hasMore ? () => context.push('/offers') : null,
-        onTapAd: (ad) {
-          queue.recordClick(ad.id);
-          actions.handleTap(context, ad);
-        },
+    final pageCount = ads.length + (hasMore ? 1 : 0);
+    final stripHeight = adCardHeight(context) + (pageCount > 1 ? 16 : 0);
+    return SizedBox(
+      height: stripHeight,
+      child: OverflowBox(
+        maxWidth: screenWidth,
+        minWidth: screenWidth,
+        alignment: Alignment.center,
+        child: AdsCarousel(
+          ads: ads,
+          onImpression: queue.recordImpression,
+          onSeeAll: hasMore ? () => context.push('/offers') : null,
+          onTapAd: (ad) {
+            queue.recordClick(ad.id);
+            actions.handleTap(context, ad);
+          },
+        ),
       ),
     );
   }
