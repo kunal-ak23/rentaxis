@@ -5,17 +5,21 @@ import com.datagami.rentaxis.api.dto.PromoBusinessRequest;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.domain.entity.PromoAd;
+import com.datagami.rentaxis.domain.entity.PromoAdProperty;
 import com.datagami.rentaxis.domain.entity.PromoBusiness;
 import com.datagami.rentaxis.domain.entity.enums.PromoCtaType;
 import com.datagami.rentaxis.domain.repository.PromoAdEventRepository;
 import com.datagami.rentaxis.domain.repository.PromoAdPropertyRepository;
 import com.datagami.rentaxis.domain.repository.PromoAdRepository;
 import com.datagami.rentaxis.domain.repository.PromoBusinessRepository;
+import com.datagami.rentaxis.domain.repository.PropertyRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -37,6 +41,7 @@ class PromotionServiceTest {
     @Mock PromoAdRepository adRepository;
     @Mock PromoAdPropertyRepository adPropertyRepository;
     @Mock PromoAdEventRepository eventRepository;
+    @Mock PropertyRepository propertyRepository;
 
     PromotionService service;
 
@@ -46,7 +51,8 @@ class PromotionServiceTest {
     @BeforeEach
     void setUp() {
         service = new PromotionService(businessRepository, adRepository,
-                adPropertyRepository, eventRepository, new PromotionUrlValidator());
+                adPropertyRepository, eventRepository, propertyRepository,
+                new PromotionUrlValidator());
     }
 
     private PromoBusiness business() {
@@ -70,7 +76,7 @@ class PromotionServiceTest {
 
     @Test
     void createBusiness_normalisesAllowedDomains() {
-        when(businessRepository.save(any(PromoBusiness.class))).thenAnswer(i -> i.getArgument(0));
+        when(businessRepository.saveAndFlush(any(PromoBusiness.class))).thenAnswer(i -> i.getArgument(0));
 
         PromoBusiness saved = service.createBusiness(tenantId, new PromoBusinessRequest(
                 "Spice Bazaar", null, null, null, null, null,
@@ -89,7 +95,7 @@ class PromotionServiceTest {
                 List.of("*.spice-bazaar.ae"), null)))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("*.spice-bazaar.ae");
-        verify(businessRepository, never()).save(any(PromoBusiness.class));
+        verify(businessRepository, never()).saveAndFlush(any(PromoBusiness.class));
     }
 
     @Test
@@ -272,9 +278,190 @@ class PromotionServiceTest {
                 null, null, PromoCtaType.NONE, null, null, null, null, null, null,
                 null, null, 1, null, List.of(propertyId), null);
 
+        when(propertyRepository.existsByIdAndTenantId(propertyId, tenantId)).thenReturn(true);
+
         service.updateAd(tenantId, existing.getId(), req);
 
         verify(adPropertyRepository).deleteByTenantIdAndAdId(tenantId, existing.getId());
-        verify(adPropertyRepository).saveAll(any());
+        // Captured, not `any()` — asserting the mock was merely called would
+        // pass even if the rows carried a foreign tenant or property.
+        ArgumentCaptor<List<PromoAdProperty>> rows = ArgumentCaptor.forClass(List.class);
+        verify(adPropertyRepository).saveAll(rows.capture());
+        assertThat(rows.getValue()).singleElement().satisfies(row -> {
+            assertThat(row.getTenantId()).isEqualTo(tenantId);
+            assertThat(row.getAdId()).isEqualTo(existing.getId());
+            assertThat(row.getPropertyId()).isEqualTo(propertyId);
+        });
+    }
+
+    // ---------------------------------------------------- targeting ownership
+
+    @Test
+    void updateAd_rejectsAPropertyBelongingToAnotherTenant() {
+        // fk_pap_property has no tenant predicate, so Postgres would accept the
+        // row. Worse, it cascades: the other tenant deleting that property would
+        // drop this ad's last targeting row, and zero rows means "every
+        // property" — the failure broadens the ad instead of hiding it.
+        PromoAd existing = new PromoAd();
+        existing.setId(UUID.randomUUID());
+        existing.setTenantId(tenantId);
+        existing.setBusinessId(businessId);
+        UUID foreignProperty = UUID.randomUUID();
+
+        when(adRepository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(businessRepository.findById(businessId)).thenReturn(Optional.of(business()));
+        when(adRepository.save(any(PromoAd.class))).thenAnswer(i -> i.getArgument(0));
+        when(propertyRepository.existsByIdAndTenantId(foreignProperty, tenantId))
+                .thenReturn(false);
+
+        PromoAdRequest req = new PromoAdRequest(businessId, "Brunch", null, null, null,
+                null, null, PromoCtaType.NONE, null, null, null, null, null, null,
+                null, null, 1, null, List.of(foreignProperty), null);
+
+        assertThatThrownBy(() -> service.updateAd(tenantId, existing.getId(), req))
+                .isInstanceOf(NotFoundException.class);
+        // Validated before the delete, so a bad id cannot destroy existing targeting.
+        verify(adPropertyRepository, never()).deleteByTenantIdAndAdId(any(), any());
+        verify(adPropertyRepository, never()).saveAll(any());
+    }
+
+    @Test
+    void createAd_rejectsNullInsidePropertyIds() {
+        when(businessRepository.findById(businessId)).thenReturn(Optional.of(business()));
+        when(adRepository.save(any(PromoAd.class))).thenAnswer(i -> i.getArgument(0));
+
+        List<UUID> withNull = new java.util.ArrayList<>();
+        withNull.add(null);
+        PromoAdRequest req = new PromoAdRequest(businessId, "Brunch", null, null, null,
+                null, null, PromoCtaType.NONE, null, null, null, null, null, null,
+                null, null, 1, null, withNull, null);
+
+        // property_id is NOT NULL; without this the insert 500s at commit.
+        assertThatThrownBy(() -> service.createAd(tenantId, req))
+                .isInstanceOf(BusinessRuleViolationException.class);
+    }
+
+    // -------------------------------------------------------- update hygiene
+
+    @Test
+    void updateAd_rejectsRepointingAtAnotherTenantsBusiness() {
+        PromoAd existing = new PromoAd();
+        existing.setId(UUID.randomUUID());
+        existing.setTenantId(tenantId);
+        existing.setBusinessId(businessId);
+        PromoBusiness foreign = business();
+        foreign.setTenantId(UUID.randomUUID());
+
+        when(adRepository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(businessRepository.findById(businessId)).thenReturn(Optional.of(foreign));
+
+        assertThatThrownBy(() -> service.updateAd(tenantId, existing.getId(),
+                adRequest(PromoCtaType.NONE, null, null)))
+                .isInstanceOf(NotFoundException.class);
+        // The managed entity must not be left carrying the foreign id.
+        assertThat(existing.getBusinessId()).isEqualTo(businessId);
+    }
+
+    @Test
+    void updateAd_revalidatesTheUrlAgainstTheNewBusiness() {
+        // Moving an ad to a business whose allowlist does not cover the URL it
+        // already stores must fail, not silently keep an off-allowlist link.
+        PromoAd existing = new PromoAd();
+        existing.setId(UUID.randomUUID());
+        existing.setTenantId(tenantId);
+        existing.setBusinessId(businessId);
+        PromoBusiness other = business();
+        other.setAllowedDomains("gym.example.com");
+
+        when(adRepository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(businessRepository.findById(businessId)).thenReturn(Optional.of(other));
+
+        assertThatThrownBy(() -> service.updateAd(tenantId, existing.getId(),
+                adRequest(PromoCtaType.WEBSITE, "https://spice-bazaar.ae/friday", null)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("allowed domains");
+    }
+
+    // ----------------------------------------------------- business hygiene
+
+    @Test
+    void updateBusiness_leavesTheAllowlistAloneWhenTheFieldIsOmitted() {
+        // A partial update that omits allowedDomains must not wipe a
+        // security-relevant list. null = unchanged, [] = clear.
+        PromoBusiness existing = business();
+        when(businessRepository.findById(businessId)).thenReturn(Optional.of(existing));
+        when(businessRepository.saveAndFlush(any(PromoBusiness.class)))
+                .thenAnswer(i -> i.getArgument(0));
+
+        PromoBusiness saved = service.updateBusiness(tenantId, businessId,
+                new PromoBusinessRequest("Spice Bazaar", null, null, null,
+                        "+971501234567", null, null, null));
+
+        assertThat(saved.getAllowedDomains()).isEqualTo("spice-bazaar.ae");
+    }
+
+    @Test
+    void updateBusiness_clearsTheAllowlistOnAnExplicitEmptyList() {
+        PromoBusiness existing = business();
+        when(businessRepository.findById(businessId)).thenReturn(Optional.of(existing));
+        when(businessRepository.saveAndFlush(any(PromoBusiness.class)))
+                .thenAnswer(i -> i.getArgument(0));
+
+        PromoBusiness saved = service.updateBusiness(tenantId, businessId,
+                new PromoBusinessRequest("Spice Bazaar", null, null, null, null, null,
+                        List.of(), null));
+
+        assertThat(saved.getAllowedDomains()).isNull();
+    }
+
+    @Test
+    void createBusiness_translatesADuplicateNameIntoA400() {
+        when(businessRepository.saveAndFlush(any(PromoBusiness.class)))
+                .thenThrow(new DataIntegrityViolationException(
+                        "duplicate key value violates unique constraint \"uq_promo_business_name\""));
+
+        assertThatThrownBy(() -> service.createBusiness(tenantId, new PromoBusinessRequest(
+                "Spice Bazaar", null, null, null, null, null, List.of(), null)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("already exists");
+    }
+
+    @Test
+    void createBusiness_rejectsANonHttpsLogo() {
+        assertThatThrownBy(() -> service.createBusiness(tenantId, new PromoBusinessRequest(
+                "Spice Bazaar", null, "http://cdn.example.com/logo.png", null, null, null,
+                List.of(), null)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("https");
+    }
+
+    @Test
+    void createAd_rejectsNonHttpsArtwork() {
+        // Artwork is loaded by CachedNetworkImageProvider on the renter's phone,
+        // so an arbitrary http host would have the device make a plaintext
+        // outbound request to whatever an admin typed.
+        when(businessRepository.findById(businessId)).thenReturn(Optional.of(business()));
+
+        PromoAdRequest req = new PromoAdRequest(businessId, "Brunch", null, null, null,
+                "http://evil.example.com/a.png", null, PromoCtaType.NONE, null, null,
+                null, null, null, null, null, null, 1, null, List.of(), null);
+
+        assertThatThrownBy(() -> service.createAd(tenantId, req))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("https");
+    }
+
+    @Test
+    void createAd_rejectsAPriorityOutsideTheDbCheckRange() {
+        when(businessRepository.findById(businessId)).thenReturn(Optional.of(business()));
+
+        PromoAdRequest req = new PromoAdRequest(businessId, "Brunch", null, null, null,
+                null, null, PromoCtaType.NONE, null, null, null, null, null, null,
+                null, null, 9999, null, List.of(), null);
+
+        // ck_promo_ad_priority would otherwise make this a 500 at commit.
+        assertThatThrownBy(() -> service.createAd(tenantId, req))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("priority");
     }
 }
