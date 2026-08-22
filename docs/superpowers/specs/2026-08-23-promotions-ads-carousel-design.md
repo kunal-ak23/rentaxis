@@ -263,7 +263,7 @@ Every one of these first enqueues a `CLICK` event.
 
 **Offers screen** — a scrollable list of every eligible ad, grouped under category filter chips, using the same `AdCard` at a taller fixed height. Standard `EmptyState` when the client has configured nothing. No FAB (renter shell rule).
 
-All user-facing strings follow the existing `_L(context.isAr)` pattern; ad content itself comes from the API already resolved by locale.
+Chrome strings follow the existing `_L(context.isAr)` pattern. **Ad content is delivered in both languages and resolved on the client** by `PromoAd.title(isAr)` and friends — so switching the app's language re-renders the strip without a refetch, and a cached feed stays correct in either language.
 
 ## Testing
 
