@@ -1596,6 +1596,14 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * The admin view of an ad — everything, including the configuration the renter
+ * feed withholds. Nullable depending on how the ad is configured: {@code titleAr},
+ * both subtitles, {@code backgroundImageUrl}, {@code accentColor}, {@code ctaUrl}
+ * (only for WEBSITE), {@code couponCode} and both coupon terms (only for COUPON),
+ * both cta labels, and both window bounds ({@code startsAt} null = live now,
+ * {@code endsAt} null = never expires).
+ */
 public record PromoAdDTO(
         UUID id,
         UUID businessId,
@@ -1644,10 +1652,14 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Cross-field rules (at least one title, URL required for WEBSITE, coupon code
- * required for COUPON, contact number required for CALL/WHATSAPP, window order,
- * URL against the business allowlist) are enforced in PromotionService, not by
- * bean validation — they need the owning business row to decide.
+ * Null-means-default: ctaType null = NONE; placement null = HOME_AND_OFFERS;
+ * priority null = 1; active null = true; propertyIds null/empty = every
+ * property.
+ *
+ * <p>Cross-field rules (at least one title, URL required for WEBSITE, coupon
+ * code required for COUPON, contact number required for CALL/WHATSAPP, window
+ * order, URL against the business allowlist) are enforced in PromotionService,
+ * not by bean validation — they need the owning business row to decide.
  */
 public record PromoAdRequest(
         @NotNull UUID businessId,
@@ -1670,7 +1682,11 @@ public record PromoAdRequest(
         Instant endsAt,
         @Min(1) @Max(10) Integer priority,
         PromoPlacement placement,
-        List<UUID> propertyIds,
+        // Bounded like PromoEventBatchRequest. A tenant has far fewer than 500
+        // properties, and an unbounded list would flow straight into bulk
+        // inserts on promo_ad_properties with no DTO-level backstop. 500 mirrors
+        // FacilityService.MAX_BULK_SPOT_NUMBERS.
+        @Size(max = 500) List<UUID> propertyIds,
         Boolean active) {
 }
 ```
@@ -1763,6 +1779,7 @@ public record PromoAdStatsDTO(
 package com.datagami.rentaxis.api.dto;
 
 import com.datagami.rentaxis.domain.entity.enums.PromoEventType;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -1770,9 +1787,17 @@ import jakarta.validation.constraints.Size;
 import java.util.List;
 import java.util.UUID;
 
-/** Batched from the app on carousel dispose and on app background. */
+/**
+ * Batched from the app on carousel dispose and on app background.
+ *
+ * <p>{@code @Valid} is load-bearing: Bean Validation does not descend into
+ * collection elements without it, so without it {@link Event}'s {@code @NotNull}
+ * constraints are dead code and a body like
+ * {@code {"events":[{"adId":null,"type":null}]}} reaches the service, where it
+ * becomes a 500 from a NOT NULL violation instead of a 400.
+ */
 public record PromoEventBatchRequest(
-        @NotEmpty @Size(max = 50) List<Event> events) {
+        @NotEmpty @Valid @Size(max = 50) List<Event> events) {
 
     public record Event(@NotNull UUID adId, @NotNull PromoEventType type) {
     }
@@ -3228,6 +3253,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -3345,6 +3371,53 @@ class PromotionAdminControllerTest {
         verify(adPropertyRepository, never()).findByAdIdIn(anyList());
         verify(statsService, never()).totals(any(), anyList());
         verify(businessRepository, never()).findByIdIn(anyList());
+    }
+
+    @Test
+    void listAds_mapsEverySwapProneFieldToTheRightSlot() {
+        // PromoAdDTO is built positionally with 26 arguments, and seven pairs of
+        // adjacent components share a type — titleEn/titleAr, the subtitles, the
+        // cta labels, the coupon terms, startsAt/endsAt, impressions/clicks,
+        // createdAt/updatedAt. Transposing any pair compiles cleanly and ships
+        // wrong data, so give each a distinct value and check where it lands.
+        PromoAd a = ad();
+        a.setTitleEn("EN title");
+        a.setTitleAr("AR title");
+        a.setSubtitleEn("EN subtitle");
+        a.setSubtitleAr("AR subtitle");
+        a.setCtaLabelEn("EN label");
+        a.setCtaLabelAr("AR label");
+        a.setCouponTermsEn("EN terms");
+        a.setCouponTermsAr("AR terms");
+        a.setStartsAt(Instant.parse("2026-01-01T00:00:00Z"));
+        a.setEndsAt(Instant.parse("2026-12-31T00:00:00Z"));
+        a.setCreatedAt(Instant.parse("2025-01-01T00:00:00Z"));
+        a.setUpdatedAt(Instant.parse("2025-06-01T00:00:00Z"));
+
+        when(promotionService.listAds(eq(tenantId), eq(null), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(a)));
+        when(adPropertyRepository.findByAdIdIn(anyList())).thenReturn(List.of());
+        when(statsService.totals(eq(tenantId), anyList())).thenReturn(Map.of(
+                a.getId(), new PromotionStatsService.Totals(1240, 87)));
+        when(businessRepository.findByIdIn(anyList())).thenReturn(List.of(business()));
+
+        PromoAdDTO dto = controller.listAds(null, PageRequest.of(0, 10))
+                .getBody().getContent().get(0);
+
+        assertThat(dto.titleEn()).isEqualTo("EN title");
+        assertThat(dto.titleAr()).isEqualTo("AR title");
+        assertThat(dto.subtitleEn()).isEqualTo("EN subtitle");
+        assertThat(dto.subtitleAr()).isEqualTo("AR subtitle");
+        assertThat(dto.ctaLabelEn()).isEqualTo("EN label");
+        assertThat(dto.ctaLabelAr()).isEqualTo("AR label");
+        assertThat(dto.couponTermsEn()).isEqualTo("EN terms");
+        assertThat(dto.couponTermsAr()).isEqualTo("AR terms");
+        assertThat(dto.startsAt()).isEqualTo(Instant.parse("2026-01-01T00:00:00Z"));
+        assertThat(dto.endsAt()).isEqualTo(Instant.parse("2026-12-31T00:00:00Z"));
+        assertThat(dto.createdAt()).isEqualTo(Instant.parse("2025-01-01T00:00:00Z"));
+        assertThat(dto.updatedAt()).isEqualTo(Instant.parse("2025-06-01T00:00:00Z"));
+        assertThat(dto.impressions()).isEqualTo(1240);
+        assertThat(dto.clicks()).isEqualTo(87);
     }
 
     @Test
@@ -3557,6 +3630,12 @@ public class PromotionAdminController {
                 b.isActive(), adCount, b.getCreatedAt(), b.getUpdatedAt());
     }
 
+    /**
+     * 26 positional arguments, seven pairs of which are adjacent and share a
+     * type. Keep the arguments one per line and in the record's declared order
+     * so a transposition is visible in review — the compiler cannot catch one.
+     * {@code listAds_mapsEverySwapProneFieldToTheRightSlot} is the backstop.
+     */
     private PromoAdDTO toDTO(PromoAd a, String businessName, List<UUID> propertyIds,
                             PromotionStatsService.Totals totals) {
         return new PromoAdDTO(a.getId(), a.getBusinessId(), businessName,
@@ -3579,7 +3658,7 @@ Run:
 cd backend && ./gradlew test --tests 'com.datagami.rentaxis.api.PromotionAdminControllerTest'
 ```
 
-Expected: PASS, 6 tests.
+Expected: PASS, 7 tests.
 
 - [ ] **Step 5: Commit**
 
