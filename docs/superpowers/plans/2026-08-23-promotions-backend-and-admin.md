@@ -1451,12 +1451,20 @@ import java.util.UUID;
 public interface PromoAdEventRepository extends JpaRepository<PromoAdEvent, UUID> {
 
     /**
-     * Impression and click totals for a page of ads, as {@code [adId, eventType, count]}
-     * rows. Two-column grouping keeps this to one query per page rather than
-     * two per ad.
+     * Per-ad event totals for a page of ads, as
+     * {@code [adId, eventType, count, distinctRenters]}.
+     *
+     * <p>The distinct-renter column is what makes a tap rate meaningful.
+     * Impressions are already deduped to one per renter per day, but clicks are
+     * not — a renter may legitimately tap the same card several times — so
+     * {@code clicks / impressions} is "taps per unique-renter-day" and can
+     * exceed 1. Dividing distinct clickers by distinct viewers gives the figure
+     * a client actually reads as a tap rate.
+     *
+     * <p>Two-column grouping keeps this to one query per page, not two per ad.
      */
     @Query("""
-            SELECT e.adId, e.eventType, COUNT(e)
+            SELECT e.adId, e.eventType, COUNT(e), COUNT(DISTINCT e.renterUserId)
             FROM PromoAdEvent e
             WHERE e.tenantId = :tenantId AND e.adId IN :adIds
             GROUP BY e.adId, e.eventType
@@ -3492,22 +3500,27 @@ Create `backend/src/test/java/com/datagami/rentaxis/core/service/PromotionStatsS
 package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.dto.PromoAdStatsDTO;
+import com.datagami.rentaxis.api.exception.NotFoundException;
+import com.datagami.rentaxis.domain.entity.PromoAd;
 import com.datagami.rentaxis.domain.entity.enums.PromoEventType;
 import com.datagami.rentaxis.domain.repository.PromoAdEventRepository;
+import com.datagami.rentaxis.domain.repository.PromoAdRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyList;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -3516,21 +3529,64 @@ import static org.mockito.Mockito.when;
 class PromotionStatsServiceTest {
 
     @Mock PromoAdEventRepository eventRepository;
-    @InjectMocks PromotionStatsService service;
+    @Mock PromoAdRepository adRepository;
+
+    PromotionStatsService service;
 
     private final UUID tenantId = UUID.randomUUID();
     private final UUID adId = UUID.randomUUID();
 
+    @BeforeEach
+    void setUp() {
+        service = new PromotionStatsService(eventRepository, adRepository);
+    }
+
+    private PromoAd ad(UUID id) {
+        PromoAd a = new PromoAd();
+        a.setId(id);
+        a.setTenantId(tenantId);
+        return a;
+    }
+
+    /** {@code [adId, eventType, count, distinctRenters]} */
+    private Object[] row(UUID id, PromoEventType type, long count, long distinct) {
+        return new Object[]{id, type, count, distinct};
+    }
+
+    // ------------------------------------------------------------- totals
+
     @Test
     void totals_foldsGroupedRowsIntoImpressionsAndClicks() {
         when(eventRepository.countByAdIdIn(tenantId, List.of(adId))).thenReturn(List.of(
-                new Object[]{adId, PromoEventType.IMPRESSION, 1240L},
-                new Object[]{adId, PromoEventType.CLICK, 87L}));
+                row(adId, PromoEventType.IMPRESSION, 1240L, 800L),
+                row(adId, PromoEventType.CLICK, 87L, 60L)));
 
         Map<UUID, PromotionStatsService.Totals> totals = service.totals(tenantId, List.of(adId));
 
         assertThat(totals.get(adId).impressions()).isEqualTo(1240L);
         assertThat(totals.get(adId).clicks()).isEqualTo(87L);
+    }
+
+    @Test
+    void totals_keepsEachAdsCountsSeparate() {
+        // The mutation this kills: one shared accumulator sprayed across every
+        // requested id, which puts one business's numbers on another's row in
+        // the admin table — cross-client mis-attribution on the exact figure a
+        // client is sold on. Asymmetric counts so a swap cannot look right.
+        UUID other = UUID.randomUUID();
+        when(eventRepository.countByAdIdIn(tenantId, List.of(adId, other))).thenReturn(List.of(
+                row(adId, PromoEventType.IMPRESSION, 1000L, 900L),
+                row(adId, PromoEventType.CLICK, 10L, 9L),
+                row(other, PromoEventType.IMPRESSION, 5L, 4L),
+                row(other, PromoEventType.CLICK, 4L, 3L)));
+
+        Map<UUID, PromotionStatsService.Totals> totals =
+                service.totals(tenantId, List.of(adId, other));
+
+        assertThat(totals.get(adId).impressions()).isEqualTo(1000L);
+        assertThat(totals.get(adId).clicks()).isEqualTo(10L);
+        assertThat(totals.get(other).impressions()).isEqualTo(5L);
+        assertThat(totals.get(other).clicks()).isEqualTo(4L);
     }
 
     @Test
@@ -3543,50 +3599,114 @@ class PromotionStatsServiceTest {
     void totals_defaultsToZeroForAnAdWithNoEvents() {
         when(eventRepository.countByAdIdIn(tenantId, List.of(adId))).thenReturn(List.of());
 
-        Map<UUID, PromotionStatsService.Totals> totals = service.totals(tenantId, List.of(adId));
-
-        assertThat(totals.getOrDefault(adId, new PromotionStatsService.Totals(0, 0)).impressions())
+        assertThat(service.totals(tenantId, List.of(adId))
+                .getOrDefault(adId, PromotionStatsService.Totals.EMPTY).impressions())
                 .isZero();
     }
 
     @Test
-    void stats_computesTapThroughRate() {
+    void totals_ignoresAnUnknownEventType() {
+        // Guards the `else if (CLICK)` rather than a bare `else`: adding a
+        // DISMISS event later must not silently inflate the tap count.
         when(eventRepository.countByAdIdIn(tenantId, List.of(adId))).thenReturn(List.of(
-                new Object[]{adId, PromoEventType.IMPRESSION, 200L},
-                new Object[]{adId, PromoEventType.CLICK, 50L}));
+                row(adId, PromoEventType.IMPRESSION, 100L, 100L)));
+
+        assertThat(service.totals(tenantId, List.of(adId)).get(adId).clicks()).isZero();
+    }
+
+    // -------------------------------------------------------------- stats
+
+    @Test
+    void stats_computesTapThroughRateFromDistinctRenters() {
+        when(adRepository.findById(adId)).thenReturn(Optional.of(ad(adId)));
+        when(eventRepository.countByAdIdIn(tenantId, List.of(adId))).thenReturn(List.of(
+                row(adId, PromoEventType.IMPRESSION, 400L, 200L),
+                row(adId, PromoEventType.CLICK, 120L, 50L)));
         when(eventRepository.dailySeries(tenantId, adId)).thenReturn(List.of());
 
-        PromoAdStatsDTO stats = service.stats(tenantId, adId);
+        // 50 distinct clickers over 200 distinct viewers, not 120/400.
+        assertThat(service.stats(tenantId, adId).tapThroughRate()).isEqualTo(0.25);
+    }
 
-        assertThat(stats.tapThroughRate()).isEqualTo(0.25);
+    @Test
+    void stats_neverReportsARateAboveOne() {
+        // Raw clicks can exceed raw impressions — impressions are deduped per
+        // renter-day, clicks are not — and a lost impression flush can leave a
+        // clicker with no view on record. "333.3%" reads as a broken dashboard.
+        when(adRepository.findById(adId)).thenReturn(Optional.of(ad(adId)));
+        when(eventRepository.countByAdIdIn(tenantId, List.of(adId))).thenReturn(List.of(
+                row(adId, PromoEventType.IMPRESSION, 3L, 3L),
+                row(adId, PromoEventType.CLICK, 10L, 5L)));
+        when(eventRepository.dailySeries(tenantId, adId)).thenReturn(List.of());
+
+        assertThat(service.stats(tenantId, adId).tapThroughRate()).isEqualTo(1.0);
     }
 
     @Test
     void stats_tapThroughRateIsZeroWithNoImpressions() {
-        // List.<Object[]>of — a bare List.of with ONE array varargs-expands
-        // into List<Object> and does not compile against List<Object[]>.
-        when(eventRepository.countByAdIdIn(tenantId, List.of(adId)))
-                .thenReturn(List.<Object[]>of(new Object[]{adId, PromoEventType.CLICK, 3L}));
+        when(adRepository.findById(adId)).thenReturn(Optional.of(ad(adId)));
+        when(eventRepository.countByAdIdIn(tenantId, List.of(adId))).thenReturn(
+                List.<Object[]>of(row(adId, PromoEventType.CLICK, 3L, 3L)));
         when(eventRepository.dailySeries(tenantId, adId)).thenReturn(List.of());
 
-        // No division by zero, and no misleading "300%".
+        // No division by zero, and no NaN — NaN is not valid JSON.
         assertThat(service.stats(tenantId, adId).tapThroughRate()).isZero();
     }
 
     @Test
-    void stats_mergesDailyRowsIntoOnePointPerDay() {
+    void stats_404sForAnAdThatIsNotThisTenants() {
+        PromoAd foreign = ad(adId);
+        foreign.setTenantId(UUID.randomUUID());
+        when(adRepository.findById(adId)).thenReturn(Optional.of(foreign));
+
+        assertThatThrownBy(() -> service.stats(tenantId, adId))
+                .isInstanceOf(NotFoundException.class);
+        verify(eventRepository, never()).countByAdIdIn(any(), anyList());
+    }
+
+    @Test
+    void stats_404sForAnAdThatDoesNotExist() {
+        when(adRepository.findById(adId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.stats(tenantId, adId))
+                .isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    void stats_mergesDailyRowsIntoOnePointPerDayInDayOrder() {
         LocalDate day = LocalDate.of(2026, 8, 20);
+        when(adRepository.findById(adId)).thenReturn(Optional.of(ad(adId)));
         when(eventRepository.countByAdIdIn(tenantId, List.of(adId))).thenReturn(List.of());
+        // Deliberately out of order, so the ordering is actually asserted rather
+        // than inherited from the fixture.
         when(eventRepository.dailySeries(tenantId, adId)).thenReturn(List.of(
-                new Object[]{day, PromoEventType.IMPRESSION, 10L},
+                new Object[]{day.plusDays(1), PromoEventType.IMPRESSION, 7L},
                 new Object[]{day, PromoEventType.CLICK, 2L},
-                new Object[]{day.plusDays(1), PromoEventType.IMPRESSION, 7L}));
+                new Object[]{day, PromoEventType.IMPRESSION, 10L}));
 
         List<PromoAdStatsDTO.DayPoint> series = service.stats(tenantId, adId).series();
 
-        assertThat(series).hasSize(2);
-        assertThat(series.get(0)).isEqualTo(new PromoAdStatsDTO.DayPoint(day, 10L, 2L));
-        assertThat(series.get(1)).isEqualTo(new PromoAdStatsDTO.DayPoint(day.plusDays(1), 7L, 0L));
+        assertThat(series).containsExactly(
+                new PromoAdStatsDTO.DayPoint(day, 10L, 2L),
+                new PromoAdStatsDTO.DayPoint(day.plusDays(1), 7L, 0L));
+    }
+
+    @Test
+    void stats_zeroFillsDaysWithNoEvents() {
+        // A gap would make a line chart interpolate straight across a dead
+        // week, visually inflating a period where the ad served nothing.
+        LocalDate day = LocalDate.of(2026, 8, 20);
+        when(adRepository.findById(adId)).thenReturn(Optional.of(ad(adId)));
+        when(eventRepository.countByAdIdIn(tenantId, List.of(adId))).thenReturn(List.of());
+        when(eventRepository.dailySeries(tenantId, adId)).thenReturn(List.of(
+                new Object[]{day, PromoEventType.IMPRESSION, 10L},
+                new Object[]{day.plusDays(3), PromoEventType.IMPRESSION, 4L}));
+
+        List<PromoAdStatsDTO.DayPoint> series = service.stats(tenantId, adId).series();
+
+        assertThat(series).hasSize(4);
+        assertThat(series.get(1)).isEqualTo(new PromoAdStatsDTO.DayPoint(day.plusDays(1), 0L, 0L));
+        assertThat(series.get(2)).isEqualTo(new PromoAdStatsDTO.DayPoint(day.plusDays(2), 0L, 0L));
     }
 }
 ```
@@ -3609,8 +3729,11 @@ Create `backend/src/main/java/com/datagami/rentaxis/core/service/PromotionStatsS
 package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.dto.PromoAdStatsDTO;
+import com.datagami.rentaxis.api.exception.NotFoundException;
+import com.datagami.rentaxis.domain.entity.PromoAd;
 import com.datagami.rentaxis.domain.entity.enums.PromoEventType;
 import com.datagami.rentaxis.domain.repository.PromoAdEventRepository;
+import com.datagami.rentaxis.domain.repository.PromoAdRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -3619,21 +3742,54 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.TreeMap;
 import java.util.UUID;
 
-/** Impression and click aggregates for the admin panel. */
+/**
+ * Impression and click aggregates for the admin panel — the numbers a client
+ * reads to decide whether an ad slot is working.
+ *
+ * <p><b>Known scaling limit.</b> Neither query is windowed, so a page of the
+ * admin ad list aggregates every event those ads have ever produced. At the
+ * launch shape (~40 ads, a few thousand renters) that is a few hundred
+ * thousand rows and fine. It grows without bound, and there is no retention
+ * policy, so before this feature has been live a year it wants a date window
+ * plus an index on {@code (tenant_id, ad_id, event_type)} — today only
+ * {@code idx_pae_ad_day} exists and {@code tenant_id}/{@code event_type} are
+ * heap filters.
+ */
 @Service
 @Transactional(readOnly = true)
 public class PromotionStatsService {
 
-    public record Totals(long impressions, long clicks) {
+    /**
+     * Raw counts plus the distinct-renter counts the rate is derived from.
+     * {@code impressions} and {@code clicks} are what the panel displays;
+     * {@code viewers} and {@code clickers} exist only to make the rate honest.
+     */
+    public record Totals(long impressions, long clicks, long viewers, long clickers) {
+
+        static final Totals EMPTY = new Totals(0, 0, 0, 0);
+
+        /**
+         * Distinct clickers over distinct viewers. Clamped at 1: a renter whose
+         * impression flush was lost but whose click landed would otherwise push
+         * this above 100%, and a tap rate over 100% reads as a broken dashboard
+         * rather than as the edge case it is.
+         */
+        public double tapThroughRate() {
+            return viewers == 0 ? 0d : Math.min(1d, (double) clickers / viewers);
+        }
     }
 
     private final PromoAdEventRepository eventRepository;
+    private final PromoAdRepository adRepository;
 
-    public PromotionStatsService(PromoAdEventRepository eventRepository) {
+    public PromotionStatsService(PromoAdEventRepository eventRepository,
+                                 PromoAdRepository adRepository) {
         this.eventRepository = eventRepository;
+        this.adRepository = adRepository;
     }
 
     /** One query for a whole page of ads, not two per row. */
@@ -3641,48 +3797,86 @@ public class PromotionStatsService {
         if (adIds.isEmpty()) {
             return Map.of();
         }
+        // long[]{impressions, clicks, viewers, clickers}, accumulated per ad —
+        // per ad, not shared, or one business's numbers land on another's row.
         Map<UUID, long[]> acc = new HashMap<>();
         for (Object[] row : eventRepository.countByAdIdIn(tenantId, adIds)) {
             UUID adId = (UUID) row[0];
             PromoEventType type = (PromoEventType) row[1];
             long count = (Long) row[2];
-            long[] pair = acc.computeIfAbsent(adId, k -> new long[2]);
+            long distinct = (Long) row[3];
+            long[] slot = acc.computeIfAbsent(adId, k -> new long[4]);
             if (type == PromoEventType.IMPRESSION) {
-                pair[0] += count;
-            } else {
-                pair[1] += count;
+                slot[0] += count;
+                slot[2] += distinct;
+            } else if (type == PromoEventType.CLICK) {
+                // Explicitly CLICK, not `else`: a future event type must be
+                // ignored rather than silently booked as a tap.
+                slot[1] += count;
+                slot[3] += distinct;
             }
         }
         Map<UUID, Totals> out = new HashMap<>();
-        acc.forEach((adId, pair) -> out.put(adId, new Totals(pair[0], pair[1])));
+        acc.forEach((adId, v) -> out.put(adId, new Totals(v[0], v[1], v[2], v[3])));
         return out;
     }
 
+    /**
+     * One ad's detail view.
+     *
+     * <p>The headline totals and the daily series come from two statements, so
+     * under READ COMMITTED an event landing between them can make the headline
+     * and the chart differ by one. Accepted: the alternative is deriving the
+     * headline from the series, which would lose the distinct-renter counts the
+     * rate needs, since distinct renters per day do not sum to distinct renters
+     * overall.
+     */
     public PromoAdStatsDTO stats(UUID tenantId, UUID adId) {
-        Totals t = totals(tenantId, List.of(adId)).getOrDefault(adId, new Totals(0, 0));
-        // Guarded so an ad with clicks but no recorded impressions reports 0,
-        // not a misleading rate above 1.
-        double rate = t.impressions() == 0 ? 0d : (double) t.clicks() / t.impressions();
+        // 404 rather than a convincing page of zeros. A stale bookmark or a
+        // mistyped id should say "gone", not "this campaign performed terribly".
+        PromoAd ad = adRepository.findById(adId)
+                .filter(a -> Objects.equals(a.getTenantId(), tenantId))
+                .orElseThrow(() -> new NotFoundException("Ad not found"));
+
+        Totals t = totals(tenantId, List.of(ad.getId())).getOrDefault(ad.getId(), Totals.EMPTY);
 
         Map<LocalDate, long[]> byDay = new TreeMap<>();
-        for (Object[] row : eventRepository.dailySeries(tenantId, adId)) {
+        for (Object[] row : eventRepository.dailySeries(tenantId, ad.getId())) {
             LocalDate day = (LocalDate) row[0];
             PromoEventType type = (PromoEventType) row[1];
             long count = (Long) row[2];
             long[] pair = byDay.computeIfAbsent(day, k -> new long[2]);
             if (type == PromoEventType.IMPRESSION) {
                 pair[0] += count;
-            } else {
+            } else if (type == PromoEventType.CLICK) {
                 pair[1] += count;
             }
         }
-        List<PromoAdStatsDTO.DayPoint> series = new ArrayList<>();
-        byDay.forEach((day, pair) -> series.add(new PromoAdStatsDTO.DayPoint(day, pair[0], pair[1])));
 
-        return new PromoAdStatsDTO(adId, t.impressions(), t.clicks(), rate, series);
+        return new PromoAdStatsDTO(ad.getId(), t.impressions(), t.clicks(),
+                t.tapThroughRate(), zeroFilled(byDay));
     }
-}
-```
+
+    /**
+     * Days with no events produce no row, which would make a line chart
+     * interpolate straight across a dead week instead of dipping to zero —
+     * visually inflating a period where the ad served nothing. Same reasoning as
+     * {@code DashboardService.getMonthlyCollections}, which zero-fills its
+     * calendar for exactly this.
+     */
+    private List<PromoAdStatsDTO.DayPoint> zeroFilled(Map<LocalDate, long[]> byDay) {
+        List<PromoAdStatsDTO.DayPoint> series = new ArrayList<>();
+        if (byDay.isEmpty()) {
+            return series;
+        }
+        TreeMap<LocalDate, long[]> sorted = new TreeMap<>(byDay);
+        for (LocalDate d = sorted.firstKey(); !d.isAfter(sorted.lastKey()); d = d.plusDays(1)) {
+            long[] pair = sorted.getOrDefault(d, new long[2]);
+            series.add(new PromoAdStatsDTO.DayPoint(d, pair[0], pair[1]));
+        }
+        return series;
+    }
+}```
 
 - [ ] **Step 4: Run the test to verify it passes**
 
@@ -3692,7 +3886,7 @@ Run:
 cd backend && ./gradlew test --tests 'com.datagami.rentaxis.core.service.PromotionStatsServiceTest'
 ```
 
-Expected: PASS, 6 tests.
+Expected: PASS, 12 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -3837,7 +4031,7 @@ class PromotionAdminControllerTest {
         when(promotionService.listAds(eq(tenantId), eq(null), any(Pageable.class))).thenReturn(page);
         when(adPropertyRepository.findByAdIdIn(anyList())).thenReturn(List.of());
         when(statsService.totals(eq(tenantId), anyList())).thenReturn(Map.of(
-                a1.getId(), new PromotionStatsService.Totals(100, 10)));
+                a1.getId(), new PromotionStatsService.Totals(100, 10, 80, 8)));
         when(businessRepository.findByTenantIdAndIdIn(eq(tenantId), anyCollection()))
                 .thenReturn(List.of(business()));
 
@@ -3893,7 +4087,7 @@ class PromotionAdminControllerTest {
                 .thenReturn(new PageImpl<>(List.of(a)));
         when(adPropertyRepository.findByAdIdIn(anyList())).thenReturn(List.of());
         when(statsService.totals(eq(tenantId), anyList())).thenReturn(Map.of(
-                a.getId(), new PromotionStatsService.Totals(1240, 87)));
+                a.getId(), new PromotionStatsService.Totals(1240, 87, 900, 60)));
         when(businessRepository.findByTenantIdAndIdIn(eq(tenantId), anyCollection()))
                 .thenReturn(List.of(business()));
 
@@ -4061,7 +4255,7 @@ public class PromotionAdminController {
         return ResponseEntity.ok(page.map(a -> toDTO(a,
                 businessNames.getOrDefault(a.getBusinessId(), ""),
                 targeting.getOrDefault(a.getId(), List.of()),
-                totals.getOrDefault(a.getId(), new PromotionStatsService.Totals(0, 0)))));
+                totals.getOrDefault(a.getId(), PromotionStatsService.Totals.EMPTY))));
     }
 
     @PostMapping("/ads")
@@ -4071,7 +4265,7 @@ public class PromotionAdminController {
         return ResponseEntity.status(HttpStatus.CREATED).body(toDTO(created,
                 promotionService.getBusiness(tenantId, created.getBusinessId()).getNameEn(),
                 promotionService.targetedPropertyIds(created.getId()),
-                new PromotionStatsService.Totals(0, 0)));
+                PromotionStatsService.Totals.EMPTY));
     }
 
     @PutMapping("/ads/{id}")
@@ -4083,7 +4277,7 @@ public class PromotionAdminController {
                 promotionService.getBusiness(tenantId, updated.getBusinessId()).getNameEn(),
                 promotionService.targetedPropertyIds(id),
                 statsService.totals(tenantId, List.of(id))
-                        .getOrDefault(id, new PromotionStatsService.Totals(0, 0))));
+                        .getOrDefault(id, PromotionStatsService.Totals.EMPTY)));
     }
 
     @DeleteMapping("/ads/{id}")
