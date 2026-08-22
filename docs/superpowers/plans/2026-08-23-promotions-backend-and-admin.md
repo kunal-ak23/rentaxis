@@ -2230,8 +2230,10 @@ public class PromotionService {
     public void deleteBusiness(UUID tenantId, UUID id) {
         PromoBusiness b = getBusiness(tenantId, id);
         if (adRepository.countByBusinessId(id) > 0) {
+            // Lowercase "deactivate" is asserted by the test; an em dash keeps it
+            // mid-sentence rather than starting a new one.
             throw new BusinessRuleViolationException(
-                    "This business has ads. Deactivate it instead of deleting it.");
+                    "This business has ads — deactivate it instead of deleting it.");
         }
         businessRepository.delete(b);
     }
