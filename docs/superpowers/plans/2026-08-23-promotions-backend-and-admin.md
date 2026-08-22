@@ -1138,7 +1138,7 @@ Run:
 cd backend && ./gradlew test --tests 'com.datagami.rentaxis.core.service.PromotionSlateTest'
 ```
 
-Expected: PASS, 17 tests. If `pick_givesEveryAdAirtimeOverAMonth` fails, the hash is not spreading well — check `mix` folds all eight bytes.
+Expected: PASS, 10 tests. If `pick_givesEveryAdAirtimeOverAMonth` fails, the hash is not spreading well — check `mix` folds all eight bytes.
 
 - [ ] **Step 5: Commit**
 
