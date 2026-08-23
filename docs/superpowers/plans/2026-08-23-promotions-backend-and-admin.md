@@ -5414,7 +5414,7 @@ export function AdCardPreview({
                             fontWeight: 800,
                         }}
                     >
-                        {`${label} ${rtl ? "←" : "→"}`}
+                        {rtl ? `← ${label}` : `${label} →`}
                     </span>
                 </div>
             )}
@@ -5457,8 +5457,8 @@ git commit -m "feat(promotions): live preview of the mobile ad card"
 Create `web/src/app/[locale]/dashboard/promotions/__tests__/AdEditor.test.tsx`:
 
 ```tsx
-import { describe, expect, it, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, render, screen, fireEvent } from '@testing-library/react'
 import { NextIntlClientProvider } from 'next-intl'
 import messages from '../../../../../../messages/en.json'
 import { AdEditor } from '../_components/AdEditor'
@@ -5493,6 +5493,13 @@ function renderEditor(onSave = vi.fn()) {
     )
     return { onSave }
 }
+
+// This repo's vitest config does not set `globals: true`, so RTL's automatic
+// afterEach(cleanup) never registers and DOM from one `it` leaks into the next.
+// Same reason overdue-card-link.test.tsx does this.
+afterEach(() => {
+    cleanup()
+})
 
 describe('AdEditor', () => {
     it('shows the link field only for a website ad', () => {

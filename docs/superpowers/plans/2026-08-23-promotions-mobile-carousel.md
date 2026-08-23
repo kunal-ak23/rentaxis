@@ -189,6 +189,14 @@ void main() {
     test('ctaLabel is empty for a card with no call to action', () {
       expect(PromoAd.fromJson(json()).ctaLabel(false), '');
     });
+
+    test('a leftover label on a NONE ad does not resurrect the pill', () {
+      // The backend keeps cta labels when an ad is switched to NONE, so this
+      // state is reachable. A pill that does nothing when tapped is worse than
+      // no pill, and the admin panel's preview hides it too.
+      final ad = PromoAd.fromJson(json(ctaType: 'NONE', ctaLabelEn: 'Grab it'));
+      expect(ad.ctaLabel(false), '');
+    });
   });
 
   group('accent colour', () {
@@ -335,6 +343,12 @@ class PromoAd {
   /// The configured label, or a sensible default for the CTA type. Empty when
   /// there is no call to action, so callers can test it rather than the enum.
   String ctaLabel(bool isAr) {
+    // ctaType first, deliberately. The backend does not clear cta labels when
+    // an ad is switched to NONE, so a leftover label can sit on a NONE ad —
+    // and checking `configured` first would render a CTA pill for an ad that
+    // does nothing when tapped. It would also disagree with the admin panel's
+    // preview, which gates the pill on ctaType alone.
+    if (ctaType == PromoCtaType.none) return '';
     final configured = _pick(isAr, ctaLabelAr, ctaLabelEn);
     if (configured != null) return configured;
     switch (ctaType) {
@@ -434,7 +448,7 @@ Run:
 cd mobile/packages/rentaxis_core && flutter test test/promo_ad_test.dart
 ```
 
-Expected: PASS, 17 tests.
+Expected: PASS, 18 tests.
 
 - [ ] **Step 5: Export it**
 

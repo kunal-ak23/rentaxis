@@ -7,9 +7,10 @@ import type { PromoCtaType } from "@/types/promotion";
 const INK = "#12101A";
 const SURFACE = "#FFFFFF";
 const SURFACE_ALT = "#F4F2F9";
-const BRASS_TINT = "#FBF3E2";
 const WARNING = "#8A6412";
 const TEXT_SECONDARY = "#4A4358";
+
+const HEX_COLOUR = /^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 
 export interface AdCardPreviewProps {
     title: string;
@@ -38,7 +39,12 @@ export function AdCardPreview({
     ctaType, ctaLabel, rtl = false,
 }: AdCardPreviewProps) {
     const hasImage = Boolean(backgroundImageUrl);
-    const fill = accentColor ?? SURFACE_ALT;
+    // Matches Flutter's parseHexColor: only #RRGGBB / #AARRGGBB is a colour,
+    // anything else falls back to the neutral surface tint. This component
+    // renders unsaved draft values straight from the editor, so an admin
+    // half-way through typing "#FF" must see what the phone would show, not a
+    // colour CSS happens to accept or a transparent card from invalid CSS.
+    const fill = HEX_COLOUR.test(accentColor ?? "") ? accentColor! : SURFACE_ALT;
     const fg = hasImage ? "#FFFFFF" : INK;
     const label = (ctaLabel?.trim() || defaultCtaLabel(ctaType, rtl));
 
@@ -121,13 +127,13 @@ export function AdCardPreview({
                             fontWeight: 800,
                         }}
                     >
-                        {`${label} ${rtl ? "←" : "→"}`}
+                        {rtl ? `← ${label}` : `${label} →`}
                     </span>
                 </div>
             )}
 
-            {!hasImage && !accentColor && (
-                <span className="sr-only">{`Fallback card colour ${BRASS_TINT}`}</span>
+            {!hasImage && fill === SURFACE_ALT && (
+                <span className="sr-only">No card colour set; using the default</span>
             )}
         </div>
     );
