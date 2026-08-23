@@ -34,14 +34,17 @@ test('provision tenant + property + unit + renter + active lease', async () => {
     JSON.stringify({ ...ctx, tenant: { id: tenant.id, name: tenant.name } }, null, 2),
   );
 
-  // 2. Enable EMAIL_NOTIFICATIONS on the new tenant. Defaults to false per
-  //    TenantFeature.EMAIL_NOTIFICATIONS (phased-rollout pattern), which
-  //    would otherwise cause EmailDispatcher to skip every event with
-  //    `email.dispatch.skipped reason=feature_disabled`. Without this,
-  //    no USER_INVITED / USER_WELCOMED / etc. emails are dispatched to
-  //    the renter's gmail +alias and the operator can't manually verify
-  //    the SMTP pipeline end-to-end.
-  await api.setTenantFeature(pctx, tenant.id, 'EMAIL_NOTIFICATIONS', true);
+  // 2. Enable every gated capability on this disposable tenant so later specs
+  //    validate the complete product without changing a real customer's flags.
+  for (const feature of [
+    'EMAIL_NOTIFICATIONS',
+    'LISTINGS',
+    'MEETINGS',
+    'LEASE_RENEWALS',
+    'GATEPASS',
+  ] as const) {
+    await api.setTenantFeature(pctx, tenant.id, feature, true);
+  }
 
   // 3. Pivot SUPER_ADMIN's effective tenant for subsequent scoped calls.
   await setActiveTenant(pctx, tenant.id);

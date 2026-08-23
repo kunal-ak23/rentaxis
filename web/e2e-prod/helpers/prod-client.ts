@@ -167,6 +167,17 @@ async function deleteOk(pctx: ProdContext, path: string): Promise<void> {
   }
 }
 
+async function postOk(pctx: ProdContext, path: string, body?: unknown): Promise<void> {
+  const res = await pctx.request.post(`/api/proxy${path}`, {
+    ...(body === undefined ? {} : { data: body, headers: { 'Content-Type': 'application/json' } }),
+    failOnStatusCode: false,
+  });
+  if (!res.ok()) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`POST /api/proxy${path} → ${res.status()}: ${txt.slice(0, 400)}`);
+  }
+}
+
 export const api = {
   // Provisioning
   createTenant: (pctx: ProdContext, name: string) =>
@@ -203,7 +214,12 @@ export const api = {
   setTenantFeature: async (
     pctx: ProdContext,
     tenantId: string,
-    feature: 'EMAIL_NOTIFICATIONS' | 'LISTINGS' | 'MEETINGS',
+    feature:
+      | 'EMAIL_NOTIFICATIONS'
+      | 'LISTINGS'
+      | 'MEETINGS'
+      | 'LEASE_RENEWALS'
+      | 'GATEPASS',
     enabled: boolean,
   ): Promise<void> => {
     const res = await pctx.request.put(
@@ -573,6 +589,108 @@ export const api = {
         netAmount: Math.max(t.debit, t.credit),
         notes: 'Production E2E fixture',
       },
+    ),
+
+  createListing: (
+    pctx: ProdContext,
+    l: { unitId: string; titleEn: string; annualRent: number; availableFrom: string },
+  ) =>
+    postJson<{
+      id: string;
+      unitId: string;
+      status: string;
+      titleEn: string;
+      annualRent: number;
+      tenantSlug: string;
+      slug: string;
+    }>(pctx, '/listings', {
+      unitId: l.unitId,
+      titleEn: l.titleEn,
+      titleAr: l.titleEn,
+      descriptionEn: 'Production E2E marketplace fixture',
+      descriptionAr: 'Production E2E marketplace fixture',
+      bedrooms: 1,
+      bathrooms: 1,
+      sizeSqft: 600,
+      floor: 12,
+      parkingSpaces: 1,
+      furnishing: 'UNFURNISHED',
+      viewType: 'CITY',
+      annualRent: l.annualRent,
+      securityDeposit: 5000,
+      minLeaseMonths: 12,
+      chequesAccepted: 4,
+      dewaIncluded: false,
+      chillerIncluded: false,
+      utilitiesEstimate: 500,
+      availableFrom: l.availableFrom,
+      seoTitle: l.titleEn,
+      seoDescription: 'TEST-E2E listing',
+      seoKeywords: 'test,e2e,rental',
+      lat: 25.2048,
+      lng: 55.2708,
+      amenities: [
+        { amenity: 'GYM', customLabel: null },
+        { amenity: 'COVERED_PARKING', customLabel: null },
+      ],
+    }),
+  updateListing: (
+    pctx: ProdContext,
+    listingId: string,
+    l: { titleEn: string; annualRent: number; availableFrom: string },
+  ) =>
+    putJson<{ id: string; titleEn: string; annualRent: number; status: string }>(
+      pctx,
+      `/listings/${listingId}`,
+      {
+        titleEn: l.titleEn,
+        titleAr: l.titleEn,
+        descriptionEn: 'Updated production E2E marketplace fixture',
+        descriptionAr: 'Updated production E2E marketplace fixture',
+        bedrooms: 1,
+        bathrooms: 1,
+        sizeSqft: 600,
+        floor: 12,
+        parkingSpaces: 1,
+        furnishing: 'SEMI_FURNISHED',
+        viewType: 'CITY',
+        annualRent: l.annualRent,
+        securityDeposit: 5000,
+        minLeaseMonths: 12,
+        chequesAccepted: 4,
+        dewaIncluded: false,
+        chillerIncluded: false,
+        utilitiesEstimate: 500,
+        availableFrom: l.availableFrom,
+        amenities: [{ amenity: 'GYM', customLabel: null }],
+      },
+    ),
+  publishListing: (pctx: ProdContext, listingId: string) =>
+    postOk(pctx, `/listings/${listingId}/publish`),
+  unlistListing: (pctx: ProdContext, listingId: string) =>
+    postOk(pctx, `/listings/${listingId}/unlist`),
+  deleteListing: (pctx: ProdContext, listingId: string) =>
+    deleteOk(pctx, `/listings/${listingId}`),
+  getMarketplaceListings: (pctx: ProdContext, tenantSlug: string) =>
+    getJson<{ content: Array<{ id: string; titleEn: string; status: string; slug: string }> }>(
+      pctx,
+      `/marketplace/${tenantSlug}/listings`,
+    ),
+  getMarketplaceListing: (pctx: ProdContext, tenantSlug: string, listingSlug: string) =>
+    getJson<{ id: string; titleEn: string; tenantSlug: string; slug: string }>(
+      pctx,
+      `/marketplace/${tenantSlug}/listings/${listingSlug}`,
+    ),
+  addListingInterest: (pctx: ProdContext, listingId: string, note: string) =>
+    postOk(pctx, `/marketplace/listings/${listingId}/interest`, { note }),
+  withdrawListingInterest: (pctx: ProdContext, listingId: string) =>
+    deleteOk(pctx, `/marketplace/listings/${listingId}/interest`),
+  getWishlist: (pctx: ProdContext) =>
+    getJson<Array<{ id: string; titleEn: string }>>(pctx, '/marketplace/me/wishlist'),
+  getListingInterests: (pctx: ProdContext, listingId: string) =>
+    getJson<{ content: Array<{ id: string; renterUserId: string; note: string }> }>(
+      pctx,
+      `/listings/${listingId}/interests`,
     ),
 
   // Renter + Lease
