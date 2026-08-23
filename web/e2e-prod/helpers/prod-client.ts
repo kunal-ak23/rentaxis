@@ -992,6 +992,66 @@ export const api = {
       tapThroughRate: number;
     }>(pctx, `/v1/promotions/ads/${adId}/stats`),
 
+  getAvailablePaymentGateways: (pctx: ProdContext) =>
+    getJson<
+      Array<{
+        id: string;
+        code: string;
+        name: string;
+        isActive: boolean;
+        supportedCurrencies: string;
+      }>
+    >(pctx, '/v1/gateway-config/gateways'),
+  savePaymentGatewayConfig: (
+    pctx: ProdContext,
+    body: {
+      gatewayId: string;
+      apiKey?: string | null;
+      apiSecret?: string | null;
+      webhookSecret?: string | null;
+      isActive: boolean;
+      isTestMode: boolean;
+    },
+  ) =>
+    postJson<{
+      id: string;
+      gatewayId: string;
+      gatewayCode: string;
+      gatewayName: string;
+      apiKey: null;
+      apiSecret: null;
+      webhookSecret: null;
+      apiKeyMasked: string;
+      hasWebhookSecret: boolean;
+      isActive: boolean;
+      isTestMode: boolean;
+    }>(pctx, '/v1/gateway-config', body),
+  getActivePaymentGatewayConfig: async (pctx: ProdContext) => {
+    const res = await pctx.request.get('/api/proxy/v1/gateway-config', {
+      failOnStatusCode: false,
+    });
+    if (res.status() === 204) {
+      return null;
+    }
+    if (!res.ok()) {
+      const txt = await res.text().catch(() => '');
+      throw new Error(`GET /api/proxy/v1/gateway-config → ${res.status()}: ${txt.slice(0, 400)}`);
+    }
+    return res.json() as Promise<{
+      id: string;
+      gatewayId: string;
+      gatewayCode: string;
+      gatewayName: string;
+      apiKey: null;
+      apiSecret: null;
+      webhookSecret: null;
+      apiKeyMasked: string;
+      hasWebhookSecret: boolean;
+      isActive: boolean;
+      isTestMode: boolean;
+    }>;
+  },
+
   // Renter + Lease
   // Backend defaults createPortalAccount=true and returns portalPassword on
   // the response. We don't need to pass the flag explicitly anymore.
