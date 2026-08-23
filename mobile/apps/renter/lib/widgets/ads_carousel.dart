@@ -42,7 +42,24 @@ class _AdsCarouselState extends State<AdsCarousel> {
   static const _resumeDelay = Duration(seconds: 3);
   static const _pageAnimationDuration = Duration(milliseconds: 450);
 
-  final _pageController = PageController(viewportFraction: 0.88);
+  /// The card's outer margin and the peek of the next card are not independent
+  /// knobs. With `padEnds: true` the viewport pads each end by half the
+  /// off-viewport fraction, so for a screen of width W:
+  ///
+  ///     margin = (1 - f) * W / 2 + p
+  ///     peek   = (1 - f) * W / 2 - p
+  ///
+  /// and therefore `margin - peek == 2 * p`, always. `HomeAdsStrip` escapes
+  /// the home `ListView`'s 20px gutter to take the full screen width, so this
+  /// widget has to reproduce that 20px itself or the promo cards sit visibly
+  /// deeper than every sibling card on the screen. f = 0.92 with p = 4 puts
+  /// the margin within 1.6px of 20 from 360pt to 430pt — every phone we ship
+  /// to — while still leaving the next card at least 10px of peek.
+  static const _viewportFraction = 0.92;
+  static const _itemPadding = EdgeInsets.symmetric(horizontal: 4);
+
+  final _pageController = PageController(viewportFraction: _viewportFraction);
+
   Timer? _autoAdvanceTimer;
   Timer? _resumeTimer;
   int _page = 0;
@@ -92,6 +109,34 @@ class _AdsCarouselState extends State<AdsCarousel> {
     if (!reducedMotion) _startAutoAdvance(length);
   }
 
+  /// Pulls [_page] back inside the list after the feed changes under us.
+  ///
+  /// [_page] is otherwise written only by `onPageChanged`, and a `PageView`
+  /// whose `itemCount` shrinks clamps its own scroll offset during layout
+  /// *without* firing that callback. Left alone, [_page] then points past the
+  /// end for good, and every consequence is silent: the dot row lights no dot
+  /// at all, the auto-advance animates to `(_page + 1) % length` — a page the
+  /// controller is already parked on, so it never moves and `onPageChanged`
+  /// never gets the chance to repair [_page] — and not one impression is
+  /// recorded for the new slate for the rest of the session.
+  ///
+  /// The strip is rebuilt in place rather than recreated (`HomeAdsStrip`
+  /// passes no key), so this State really does outlive the list it was
+  /// describing.
+  void _reconcilePage() {
+    final pageCount = _pageCount;
+    if (pageCount == 0 || _page < pageCount) return;
+    // No setState: didUpdateWidget is followed by a build regardless, and the
+    // controller has already clamped its own offset to this same page.
+    _page = pageCount - 1;
+    // Deferred for the same reason the first impression is: onImpression may
+    // reach a provider, and the parent is mid-build right now.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _reportImpression(_page);
+    });
+  }
+
   void _reportImpression(int index) {
     final onImpression = widget.onImpression;
     // The see-all tile is a page but not an ad — it never counts as a view.
@@ -107,6 +152,12 @@ class _AdsCarouselState extends State<AdsCarousel> {
       if (!mounted || widget.ads.isEmpty) return;
       _reportImpression(0);
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant AdsCarousel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _reconcilePage();
   }
 
   @override
@@ -147,12 +198,13 @@ class _AdsCarouselState extends State<AdsCarousel> {
             },
             // padEnds stays at its default `true`. A fractional-viewport
             // PageView with padEnds: false tops out at `count - 1 /
-            // viewportFraction` pages — at 0.88 that is 1.14 pages short of
+            // viewportFraction` pages — at 0.92 that is 1.09 pages short of
             // the end, so the last ad can never become the current page: it
             // sits clamped against the trailing edge, never on stage, and the
             // auto-advance animates to an index the controller then refuses.
             // Padded ends cost a wider outer margin and a smaller peek; a
-            // reachable last banner is worth both.
+            // reachable last banner is worth both, and _viewportFraction and
+            // _itemPadding are tuned together to buy the margin back.
             child: PageView.builder(
               controller: _pageController,
               itemCount: pageCount,
@@ -164,16 +216,15 @@ class _AdsCarouselState extends State<AdsCarousel> {
                 // Uniform: padded ends already inset the first and last page
                 // by half the off-viewport fraction, so a wider edge padding
                 // would only make the outer cards narrower than the rest.
-                const padding = EdgeInsets.symmetric(horizontal: 6);
                 if (i >= widget.ads.length) {
                   return Padding(
-                    padding: padding,
+                    padding: _itemPadding,
                     child: _SeeAllTile(onTap: widget.onSeeAll!),
                   );
                 }
                 final ad = widget.ads[i];
                 return Padding(
-                  padding: padding,
+                  padding: _itemPadding,
                   child: AdCard(ad: ad, onTap: () => widget.onTapAd(ad)),
                 );
               },
