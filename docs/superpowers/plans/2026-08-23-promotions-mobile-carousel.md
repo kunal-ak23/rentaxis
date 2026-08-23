@@ -1377,6 +1377,27 @@ void main() {
       expect(title.left, greaterThan(card.left + _cardInset));
     });
   });
+  testWidgets('a photo card paints a readable surface before its artwork lands',
+      (tester) async {
+    // `hasImage` is decided from the URL being non-blank, not from the image
+    // having arrived. A DecorationImage paints nothing while it loads and
+    // nothing at all if the blob was deleted or its SAS token expired, so
+    // without a colour underneath, a photo ad was an invisible rectangle on a
+    // slow connection and permanently invisible on a dead URL. It must be
+    // `ink`, not the accent fill: a photo card's copy is white.
+    await tester.pumpWidget(host(AdCard(
+      ad: testAd(backgroundImageUrl: 'https://example.invalid/never-loads.jpg'),
+      onTap: () {},
+    )));
+
+    final decoration = tester
+        .widget<Container>(find.byKey(const Key('ad-card-surface')))
+        .decoration! as BoxDecoration;
+
+    expect(decoration.color, MiftahColors.ink);
+    expect(decoration.image, isNotNull);
+  });
+
 }
 ```
 
@@ -1477,7 +1498,15 @@ class AdCard extends StatelessWidget {
       child: Container(
         key: const Key('ad-card-surface'),
         decoration: BoxDecoration(
-          color: hasImage ? null : fill,
+          // A photo card paints `ink` underneath its artwork rather than
+          // nothing. `hasImage` is decided from the URL being non-blank, not
+          // from the image having arrived, and a DecorationImage draws nothing
+          // while it loads and nothing at all if the blob was deleted or its
+          // SAS token expired -- so this card used to be a completely invisible
+          // rectangle on a slow connection and permanently invisible on a dead
+          // URL. `ink` is the right placeholder rather than `fill`: a photo
+          // card's copy is white, and white on brassTint cannot be read.
+          color: hasImage ? MiftahColors.ink : fill,
           border: hasImage
               ? null
               : Border.all(color: MiftahColors.brassTintBorder),
@@ -1686,7 +1715,7 @@ Run:
 cd mobile/apps/renter && flutter test test/ad_card_test.dart
 ```
 
-Expected: PASS, 27 tests.
+Expected: PASS, 28 tests.
 
 - [ ] **Step 5: Commit**
 
