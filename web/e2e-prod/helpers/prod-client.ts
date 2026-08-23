@@ -849,6 +849,149 @@ export const api = {
   cancelGatePass: (pctx: ProdContext, gatePassId: string) =>
     postJson<{ id: string; status: string }>(pctx, `/v1/gatepass/${gatePassId}/cancel`, {}),
 
+  createPromoBusiness: (
+    pctx: ProdContext,
+    body: {
+      nameEn: string;
+      nameAr?: string;
+      category: string;
+      phoneE164?: string;
+      whatsappE164?: string;
+      allowedDomains?: string[];
+      active: boolean;
+    },
+  ) =>
+    postJson<{ id: string; nameEn: string; category: string; active: boolean }>(
+      pctx,
+      '/v1/promotions/businesses',
+      body,
+    ),
+  updatePromoBusiness: (
+    pctx: ProdContext,
+    businessId: string,
+    body: {
+      nameEn: string;
+      nameAr?: string;
+      category: string;
+      phoneE164?: string;
+      whatsappE164?: string;
+      allowedDomains?: string[];
+      active: boolean;
+    },
+  ) =>
+    putJson<{ id: string; nameEn: string; category: string; active: boolean }>(
+      pctx,
+      `/v1/promotions/businesses/${businessId}`,
+      body,
+    ),
+  listPromoBusinesses: (pctx: ProdContext) =>
+    getJson<{ content: Array<{ id: string; nameEn: string; active: boolean; adCount: number }> }>(
+      pctx,
+      '/v1/promotions/businesses?size=100',
+    ),
+  deletePromoBusiness: (pctx: ProdContext, businessId: string) =>
+    deleteOk(pctx, `/v1/promotions/businesses/${businessId}`),
+  createPromoAd: (
+    pctx: ProdContext,
+    body: {
+      businessId: string;
+      titleEn: string;
+      titleAr?: string;
+      subtitleEn?: string;
+      accentColor?: string;
+      ctaType: string;
+      ctaLabelEn?: string;
+      couponCode?: string;
+      couponTermsEn?: string;
+      startsAt: string;
+      endsAt: string;
+      priority: number;
+      placement: string;
+      propertyIds: string[];
+      active: boolean;
+    },
+  ) =>
+    postJson<{
+      id: string;
+      businessId: string;
+      titleEn: string;
+      couponCode: string | null;
+      priority: number;
+      placement: string;
+      active: boolean;
+      propertyIds: string[];
+    }>(pctx, '/v1/promotions/ads', body),
+  updatePromoAd: (
+    pctx: ProdContext,
+    adId: string,
+    body: {
+      businessId: string;
+      titleEn: string;
+      titleAr?: string;
+      subtitleEn?: string;
+      accentColor?: string;
+      ctaType: string;
+      ctaLabelEn?: string;
+      couponCode?: string;
+      couponTermsEn?: string;
+      startsAt: string;
+      endsAt: string;
+      priority: number;
+      placement: string;
+      propertyIds: string[];
+      active: boolean;
+    },
+  ) =>
+    putJson<{
+      id: string;
+      titleEn: string;
+      priority: number;
+      placement: string;
+      active: boolean;
+      propertyIds: string[];
+    }>(pctx, `/v1/promotions/ads/${adId}`, body),
+  listPromoAds: (pctx: ProdContext, businessId: string) =>
+    getJson<{
+      content: Array<{
+        id: string;
+        titleEn: string;
+        impressions: number;
+        clicks: number;
+        active: boolean;
+      }>;
+    }>(pctx, `/v1/promotions/ads?businessId=${businessId}&size=100`),
+  getPromotionFeed: (pctx: ProdContext) =>
+    getJson<
+      Array<{
+        id: string;
+        titleEn: string;
+        ctaType: string;
+        couponCode: string | null;
+        business: { id: string; nameEn: string; category: string };
+      }>
+    >(pctx, '/v1/promotions/feed'),
+  getPromotionOffers: (pctx: ProdContext, category?: string) =>
+    getJson<
+      Array<{
+        id: string;
+        titleEn: string;
+        ctaType: string;
+        couponCode: string | null;
+        business: { id: string; nameEn: string; category: string };
+      }>
+    >(pctx, `/v1/promotions/offers${category ? `?category=${category}` : ''}`),
+  recordPromotionEvents: (
+    pctx: ProdContext,
+    events: Array<{ adId: string; type: 'IMPRESSION' | 'CLICK' }>,
+  ) => postOk(pctx, '/v1/promotions/events', { events }),
+  getPromoAdStats: (pctx: ProdContext, adId: string) =>
+    getJson<{
+      adId: string;
+      impressions: number;
+      clicks: number;
+      tapThroughRate: number;
+    }>(pctx, `/v1/promotions/ads/${adId}/stats`),
+
   // Renter + Lease
   // Backend defaults createPortalAccount=true and returns portalPassword on
   // the response. We don't need to pass the flag explicitly anymore.
