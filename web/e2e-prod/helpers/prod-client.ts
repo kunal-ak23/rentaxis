@@ -693,6 +693,56 @@ export const api = {
       `/listings/${listingId}/interests`,
     ),
 
+  getMeetingSlots: (pctx: ProdContext, hostUserId: string, date: string) =>
+    getJson<Array<{ start: string; end: string; available: boolean }>>(
+      pctx,
+      `/v1/meetings/slots?hostUserId=${hostUserId}&date=${date}`,
+    ),
+  createMeeting: (
+    pctx: ProdContext,
+    m: {
+      hostUserId: string;
+      slotStart: string;
+      propertyId: string;
+      unitId: string;
+      title: string;
+    },
+  ) =>
+    postJson<{
+      id: string;
+      status: string;
+      requesterUserId: string;
+      hostUserId: string;
+      slotStart: string;
+    }>(pctx, '/v1/meetings', {
+      type: 'PROPERTY_VISIT',
+      purpose: 'PROPERTY_VIEWING',
+      title: m.title,
+      notes: 'Production E2E fixture',
+      slotStart: m.slotStart,
+      hostUserId: m.hostUserId,
+      propertyId: m.propertyId,
+      unitId: m.unitId,
+    }),
+  approveMeeting: (pctx: ProdContext, meetingId: string) =>
+    putJson<{ id: string; status: string }>(pctx, `/v1/meetings/${meetingId}/approve`, {}),
+  completeMeeting: (pctx: ProdContext, meetingId: string) =>
+    putJson<{ id: string; status: string }>(pctx, `/v1/meetings/${meetingId}/complete`, {}),
+  getMeeting: (pctx: ProdContext, meetingId: string) =>
+    getJson<{ id: string; status: string; title: string }>(pctx, `/v1/meetings/${meetingId}`),
+  getMyMeetings: (pctx: ProdContext, perspective = 'requester') =>
+    getJson<{ content: Array<{ id: string; status: string }> }>(
+      pctx,
+      `/v1/meetings/my?perspective=${perspective}`,
+    ),
+  getMeetings: (pctx: ProdContext) =>
+    getJson<{ content: Array<{ id: string; status: string }> }>(pctx, '/v1/meetings'),
+  getMeetingCalendar: (pctx: ProdContext, start: string, end: string) =>
+    getJson<{ content: Array<{ id: string; status: string }> }>(
+      pctx,
+      `/v1/meetings/calendar?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`,
+    ),
+
   // Renter + Lease
   // Backend defaults createPortalAccount=true and returns portalPassword on
   // the response. We don't need to pass the flag explicitly anymore.
