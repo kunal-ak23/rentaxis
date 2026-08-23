@@ -3067,7 +3067,9 @@ Run:
 cd mobile && melos exec -- flutter analyze
 ```
 
-Expected: `No issues found!` in every package. If `melos` is not on PATH, run `flutter analyze` in `packages/rentaxis_core`, `apps/renter`, `apps/manager` and `apps/security` in turn — the shared package change affects all three apps.
+Expected: `No issues found!` in `apps/renter`, `apps/manager` and `apps/security`, and **exactly 53 issues** in `packages/rentaxis_core` — that is the package's pre-existing baseline, all of them `info`-level lints in files this feature never touches (`unnecessary_underscores` and friends). Do not "fix" them; 53 unchanged is the pass condition, 54 is a regression.
+
+`melos` is not on PATH in this environment, so the fallback is the path that will actually run: `flutter analyze` in `packages/rentaxis_core`, `apps/renter`, `apps/manager` and `apps/security` in turn — the shared package change affects all three apps.
 
 - [ ] **Step 2: Run the core package tests**
 
