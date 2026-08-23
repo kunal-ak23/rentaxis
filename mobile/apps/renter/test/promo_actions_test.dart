@@ -133,4 +133,60 @@ void main() {
     // A missing browser must not crash the home screen.
     expect(tester.takeException(), isNull);
   });
+  testWidgets('a credentials-in-authority url is refused', (tester) async {
+    // https://my-bank.com@spice-bazaar.ae/ renders as "my-bank.com" in the
+    // minimal chrome of an in-app browser. The server refuses any '@' in the
+    // authority for exactly this reason; Uri.tryParse happily reports
+    // scheme=https, so checking the scheme alone would have launched it.
+    final launcher = _RecordingLauncher();
+    await tapWith(
+      tester,
+      PromoActions(launcher: launcher.call),
+      testAd(
+        ctaType: 'WEBSITE',
+        ctaUrl: 'https://my-bank.com@spice-bazaar.ae/friday',
+      ),
+    );
+
+    expect(launcher.uris, isEmpty);
+  });
+
+  testWidgets('an https url with no host is refused', (tester) async {
+    // Uri.tryParse('https:///nohost') yields scheme=https with an empty host.
+    final launcher = _RecordingLauncher();
+    await tapWith(
+      tester,
+      PromoActions(launcher: launcher.call),
+      testAd(ctaType: 'WEBSITE', ctaUrl: 'https:///nohost'),
+    );
+
+    expect(launcher.uris, isEmpty);
+  });
+
+  testWidgets('a whatsapp number keyed with spaces still resolves',
+      (tester) async {
+    // wa.me wants bare digits. An admin typing the number the way it appears
+    // on a business card used to produce a link with encoded spaces in it.
+    final launcher = _RecordingLauncher();
+    await tapWith(
+      tester,
+      PromoActions(launcher: launcher.call),
+      testAd(ctaType: 'WHATSAPP', ctaPhone: '+971 50 123 4567'),
+    );
+
+    expect(launcher.uris.single, Uri.parse('https://wa.me/971501234567'));
+  });
+
+  testWidgets('a whatsapp number with no digits at all does nothing',
+      (tester) async {
+    final launcher = _RecordingLauncher();
+    await tapWith(
+      tester,
+      PromoActions(launcher: launcher.call),
+      testAd(ctaType: 'WHATSAPP', ctaPhone: '---'),
+    );
+
+    expect(launcher.uris, isEmpty);
+  });
+
 }
