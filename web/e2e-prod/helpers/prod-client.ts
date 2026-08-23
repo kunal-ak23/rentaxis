@@ -1279,9 +1279,38 @@ export const api = {
   getTrialBalance: (pctx: ProdContext) =>
     getJson<unknown>(pctx, '/v1/finance/reports/trial-balance'),
 
-  // Ops renewal — triggers the renewal scanner manually for the test tenant.
-  triggerRenewalScan: (pctx: ProdContext) =>
-    postJson<unknown>(pctx, '/v1/admin/renewals/run-now', {}),
+  // Ops renewal — PR #99's tenant-scoped operation avoids processing unrelated
+  // opted-in organizations while the disposable production fixture is tested.
+  triggerRenewalScan: (pctx: ProdContext, tenantId: string) =>
+    postOk(pctx, `/v1/admin/renewals/run-now/${tenantId}`),
+  getMyRenewals: (pctx: ProdContext) =>
+    getJson<{
+      leases: Array<{
+        leaseId: string;
+        endDate: string;
+        daysRemaining: number;
+        opportunityId: string | null;
+        stage: string | null;
+        intent: string | null;
+        reminders: Array<{ slot: number; status: string; sentAt: string | null }>;
+      }>;
+    }>(pctx, '/v1/me/renewals'),
+  setRenewalIntent: (
+    pctx: ProdContext,
+    opportunityId: string,
+    intent: 'RENEW' | 'MOVE_OUT' | 'DISCUSS',
+  ) =>
+    postJson<{ intent: string; stage: string }>(
+      pctx,
+      `/v1/me/renewals/${opportunityId}/intent`,
+      { intent },
+    ),
+  markLeaseRenewed: (pctx: ProdContext, leaseId: string, note: string) =>
+    postJson<{ id: string; stage: string; outcome: string; closedAt: string }>(
+      pctx,
+      `/v1/leases/${leaseId}/renewal/mark-renewed`,
+      { note },
+    ),
 
   // Sanity / identity (used by smoke).
   listTenants: (pctx: ProdContext) =>

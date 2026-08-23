@@ -112,12 +112,12 @@ test('provision tenant + property + unit + renter + active lease', async () => {
   expect(renter.userId, 'renter creation must auto-create a portal User').toBeTruthy();
   expect(renter.portalPassword, 'response must include the generated portal password').toBeTruthy();
 
-  // 7. Lease (TA) — 1-year, quarterly (paymentTerms=4) for cheque lifecycle.
+  // 7. Lease (TA) — ends inside the 90-day renewal window while retaining four
+  //    installments for the cheque lifecycle. A tenant-scoped renewal scan later
+  //    opens the opportunity without processing any real customer tenant.
   const today = new Date();
   const startDate = today.toISOString().slice(0, 10);
-  const endDate = new Date(today.getFullYear() + 1, today.getMonth(), today.getDate())
-    .toISOString()
-    .slice(0, 10);
+  const endDate = new Date(today.getTime() + 60 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const lease = await api.createLease(taCtx, {
     unitId: unit.id,
     renterId: renter.id,
