@@ -100,7 +100,11 @@ export function AdsTab({ businesses, properties }: AdsTabProps) {
                 </button>
             </div>
 
-            {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+            {error && (
+                <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+                    {error}
+                </p>
+            )}
 
             {loading ? (
                 <div className="flex justify-center py-10"><Loader2 className="animate-spin" /></div>
@@ -146,8 +150,29 @@ export function AdsTab({ businesses, properties }: AdsTabProps) {
                                             onClick={() => setEditing(row)}>{t("edit")}</button>
                                         <button type="button" className="text-red-600 underline"
                                             onClick={async () => {
-                                                await deleteAd(row.id);
-                                                await load(page, businessId);
+                                                if (!window.confirm(
+                                                    t("confirmDeleteAd", {
+                                                        name: row.titleEn ?? row.titleAr ?? "",
+                                                    }))) {
+                                                    return;
+                                                }
+                                                try {
+                                                    await deleteAd(row.id);
+                                                } catch (e) {
+                                                    // Deleting an ad with view
+                                                    // history is refused, and
+                                                    // that 400 was previously
+                                                    // an unhandled rejection.
+                                                    setError(e instanceof ApiError
+                                                        ? e.message : t("saveError"));
+                                                    return;
+                                                }
+                                                const remaining = total - 1;
+                                                const lastPage = Math.max(
+                                                    0, Math.ceil(remaining / PAGE_SIZE) - 1);
+                                                const next = Math.min(page, lastPage);
+                                                setPage(next);
+                                                await load(next, businessId);
                                             }}>{t("delete")}</button>
                                     </td>
                                 </tr>

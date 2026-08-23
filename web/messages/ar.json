@@ -1320,6 +1320,9 @@
     "couponRequired": "أدخل رمز الكوبون الذي سيراه المستأجرون.",
     "businessHasNoPhone": "لا يوجد رقم هاتف لهذه الشركة. أضف رقماً قبل استخدام إعلان اتصال.",
     "businessHasNoWhatsapp": "لا يوجد رقم واتساب لهذه الشركة. أضف رقماً قبل استخدام إعلان واتساب.",
-    "accentColorInvalid": "استخدم لوناً بصيغة hex مثل ‎#FBF3E2."
+    "accentColorInvalid": "استخدم لوناً بصيغة hex مثل ‎#FBF3E2.",
+    "confirmDeleteBusiness": "حذف {name}؟ لا يمكن التراجع عن هذا.",
+    "confirmDeleteAd": "حذف {name}؟ لا يمكن التراجع عن هذا.",
+    "domainInvalid": "أدخل اسم نطاق مثل spice-bazaar.ae. النطاق يشمل نطاقاته الفرعية، لذا لا حاجة لرموز البدل."
   }
 }

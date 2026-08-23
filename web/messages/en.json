@@ -1320,6 +1320,9 @@
     "couponRequired": "Enter the coupon code renters will see.",
     "businessHasNoPhone": "This business has no phone number. Add one before using a call ad.",
     "businessHasNoWhatsapp": "This business has no WhatsApp number. Add one before using a WhatsApp ad.",
-    "accentColorInvalid": "Use a hex colour like #FBF3E2."
+    "accentColorInvalid": "Use a hex colour like #FBF3E2.",
+    "confirmDeleteBusiness": "Delete {name}? This cannot be undone.",
+    "confirmDeleteAd": "Delete {name}? This cannot be undone.",
+    "domainInvalid": "Enter a hostname like spice-bazaar.ae. A domain already covers its subdomains, so wildcards are not needed."
   }
 }

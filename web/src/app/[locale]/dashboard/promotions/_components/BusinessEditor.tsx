@@ -34,6 +34,9 @@ function toHost(value: string): string {
     return s.slice(0, cut);
 }
 
+/** Mirrors PromotionUrlValidator.HOSTNAME, so a chip cannot be added that the server will reject. */
+const HOSTNAME = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/;
+
 const trimOrNull = (s: string): string | null => (s.trim() === "" ? null : s.trim());
 
 export function BusinessEditor({ business, onSave, onCancel }: BusinessEditorProps) {
@@ -47,6 +50,7 @@ export function BusinessEditor({ business, onSave, onCancel }: BusinessEditorPro
     const [whatsappE164, setWhatsappE164] = useState(business?.whatsappE164 ?? "");
     const [domains, setDomains] = useState<string[]>(business?.allowedDomains ?? []);
     const [domainDraft, setDomainDraft] = useState("");
+    const [domainError, setDomainError] = useState<string | null>(null);
     const [active, setActive] = useState(business?.active ?? true);
     const [error, setError] = useState<string | null>(null);
 
@@ -56,6 +60,16 @@ export function BusinessEditor({ business, onSave, onCancel }: BusinessEditorPro
             setDomainDraft("");
             return;
         }
+        // Mirrors PromotionUrlValidator.HOSTNAME. Without it the chip accepts
+        // "*.example.com" — the most likely thing an admin types meaning "and
+        // subdomains" — a bare TLD, or a value with a space, then the whole
+        // save fails with a list of rejected entries the admin has to
+        // reconcile against the chips after the fact.
+        if (!HOSTNAME.test(host)) {
+            setDomainError(t("domainInvalid"));
+            return;
+        }
+        setDomainError(null);
         setDomains([...domains, host]);
         setDomainDraft("");
     }
@@ -136,6 +150,9 @@ export function BusinessEditor({ business, onSave, onCancel }: BusinessEditorPro
                         onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addDomain(); } }} />
                     <button type="button" className="rounded-lg border px-3 py-2" onClick={addDomain}>+</button>
                 </div>
+                {domainError && (
+                    <p role="alert" className="mt-1 text-sm text-red-600">{domainError}</p>
+                )}
                 <p className="mt-1 text-xs text-gray-500">{t("allowedDomainsHint")}</p>
             </div>
 
@@ -144,7 +161,7 @@ export function BusinessEditor({ business, onSave, onCancel }: BusinessEditorPro
                 {t("active")}
             </label>
 
-            {error && <p className="text-sm text-red-600">{error}</p>}
+            {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
 
             <div className="flex gap-2">
                 <button type="button" onClick={submit}

@@ -61,9 +61,22 @@ export function BusinessesTab({ onChanged }: { onChanged?: () => void }) {
     }
 
     async function remove(row: PromoBusinessDTO) {
+        // Irreversible, and the row gives no other signal of what is about to
+        // happen. The server refuses when ads reference it, but a business with
+        // none is gone for good.
+        if (!window.confirm(t("confirmDeleteBusiness", { name: row.nameEn }))) {
+            return;
+        }
         try {
             await deleteBusiness(row.id);
-            await load(page);
+            // Deleting the last row on the last page leaves `page` past the end.
+            // Pagination does not self-correct, so the list would render the
+            // empty state while earlier pages still hold data.
+            const remaining = total - 1;
+            const lastPage = Math.max(0, Math.ceil(remaining / PAGE_SIZE) - 1);
+            const next = Math.min(page, lastPage);
+            setPage(next);
+            await load(next);
             onChanged?.();
         } catch (e) {
             // Every business-rule failure on this API is a 400, not a 409 —
@@ -85,7 +98,11 @@ export function BusinessesTab({ onChanged }: { onChanged?: () => void }) {
                     className="rounded-lg bg-gray-900 px-4 py-2 text-white">{t("addBusiness")}</button>
             </div>
 
-            {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+            {error && (
+                <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+                    {error}
+                </p>
+            )}
 
             {loading ? (
                 <div className="flex justify-center py-10"><Loader2 className="animate-spin" /></div>
