@@ -92,7 +92,7 @@ export default function MvpSidebar() {
                 ...(hasPermission(userRole, 'canManageFacilities')
                     ? [{ name: tBookings("navLabel"), href: "/dashboard/bookings", icon: CalendarCheck, tourId: 'sidebar-bookings' }]
                     : []),
-                ...(hasPermission(userRole, "canManagePromotions")
+                ...(hasPermission(userRole, 'canManagePromotions')
                     ? [{ name: tPromotions("navLabel"), href: "/dashboard/promotions", icon: Megaphone, tourId: 'sidebar-promotions' }]
                     : []),
             ]

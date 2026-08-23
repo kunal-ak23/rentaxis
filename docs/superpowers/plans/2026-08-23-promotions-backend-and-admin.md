@@ -6294,10 +6294,11 @@ export function BusinessesTab({ onChanged }: { onChanged?: () => void }) {
             await load(page);
             onChanged?.();
         } catch (e) {
-            // 409 from the backend when ads still reference it.
-            setError(e instanceof ApiError && e.status === 409
-                ? t("deleteBusinessBlocked")
-                : t("saveError"));
+            // Every business-rule failure on this API is a 400, not a 409 —
+            // BusinessRuleViolationException maps unconditionally to BAD_REQUEST
+            // — so status cannot tell "has ads" from "bad name". The server
+            // message is the only signal, and it is already a complete sentence.
+            setError(e instanceof ApiError ? e.message : t("saveError"));
         }
     }
 
@@ -6416,6 +6417,14 @@ interface AdsTabProps {
     properties: PropertyOption[];
 }
 
+/**
+ * No tap-rate column. `clicks / impressions` is NOT the tap rate: impressions
+ * are deduped per renter-day and clicks are not, so the ratio is
+ * taps-per-renter-day and can exceed 1 — three renters, one tapping ten times,
+ * renders as "333%". The real figure is distinct clickers over distinct
+ * viewers, which only `PromoAdStatsDTO` carries. Show it on the ad detail view,
+ * never derive it here.
+ */
 export function AdsTab({ businesses, properties }: AdsTabProps) {
     const t = useTranslations("Promotions");
 
@@ -6503,16 +6512,17 @@ export function AdsTab({ businesses, properties }: AdsTabProps) {
                             <th>{t("status")}</th>
                             <th className="text-right">{t("views")}</th>
                             <th className="text-right">{t("taps")}</th>
-                            <th className="text-right">{t("tapRate")}</th>
                             <th />
                         </tr>
                     </thead>
                     <tbody>
                         {rows.map(row => {
-                            const status = adStatus(row);
-                            const rate = row.impressions === 0
-                                ? 0
-                                : row.clicks / row.impressions;
+                            // businessActive is part of the server's eligibility
+                            // rule and is not on PromoAdDTO. Without it, an admin
+                            // who deactivates a business still sees all its ads
+                            // reading "Live" while the feed serves none of them.
+                            const business = businesses.find(b => b.id === row.businessId);
+                            const status = adStatus(row, new Date(), business?.active ?? true);
                             return (
                                 <tr key={row.id} className="border-b">
                                     <td className="py-2">{row.titleEn ?? row.titleAr}</td>
@@ -6526,7 +6536,6 @@ export function AdsTab({ businesses, properties }: AdsTabProps) {
                                     </td>
                                     <td className="text-right">{row.impressions.toLocaleString()}</td>
                                     <td className="text-right">{row.clicks.toLocaleString()}</td>
-                                    <td className="text-right">{(rate * 100).toFixed(1)}%</td>
                                     <td className="text-right">
                                         <button type="button" className="mr-3 underline"
                                             onClick={() => setEditing(row)}>{t("edit")}</button>
