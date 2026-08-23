@@ -29,7 +29,7 @@ Make sure you have these credentials ready:
 
 - Show **Tenants** page — list of all landlord organizations
 - Show **Users** page — all users across tenants with role assignments
-- Point out the **5 RBAC roles**: Super Admin, Tenant Admin, Property Manager, Tenant User, Renter
+- Point out the **6 RBAC roles**: Super Admin, Tenant Admin, Property Manager, Security Guard, Tenant User, Renter
 
 > "Each tenant is completely isolated — a landlord can never see another landlord's data. This is enforced at the database level on every query."
 
