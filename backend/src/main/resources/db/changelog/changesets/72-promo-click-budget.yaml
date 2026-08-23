@@ -1,0 +1,72 @@
+databaseChangeLog:
+  - changeSet:
+      id: 72-promo-click-budget
+      author: rentaxis-system
+      changes:
+        # ---- promo_ad_click_budgets: one click allowance per ad, renter and day ----
+        # Impressions are capped exactly by uq_promo_impression_per_day, because
+        # capping them and deduplicating them are the same operation. Clicks are
+        # not: a second tap is a real second tap and the tap rate a client is
+        # shown depends on every one of them being counted, so a unique index on
+        # (ad_id, renter_user_id, day) is the wrong instrument here — it would
+        # collapse the very rows the analytics exist to count.
+        #
+        # What is needed instead is an atomic "increment if below the cap", and
+        # that is what this counter row is. PromotionFeedService claims a slot
+        # with INSERT ... ON CONFLICT DO UPDATE ... WHERE clicks < :cap: two
+        # upserts on one key serialize on the row inside Postgres, so the second
+        # one re-reads the committed count instead of the stale snapshot a
+        # SELECT-then-INSERT would have given it. Without this the cap was
+        # check-then-act under READ COMMITTED and multiplied with parallelism.
+        #
+        # Deliberately a separate table, not a column on promo_ad_events: the
+        # events are the history and are append-only, while this is derived
+        # state whose only job is to be contended on.
+        - createTable:
+            tableName: promo_ad_click_budgets
+            columns:
+              - column: { name: id, type: uuid, defaultValueComputed: gen_random_uuid(), constraints: { primaryKey: true, nullable: false } }
+              - column: { name: tenant_id, type: uuid, constraints: { nullable: false } }
+              # Both FKs cascade, unlike fk_pae_ad / fk_pae_user on promo_ad_events,
+              # which RESTRICT. That is not an inconsistency: those rows are the
+              # analytics history and must outlive nothing, whereas a budget row is
+              # a running total that is meaningless once its ad or renter is gone.
+              # A budget row also never outlives its events — a slot is only spent
+              # in the same transaction that writes the click — so the RESTRICT on
+              # promo_ad_events is still what actually guards an ad from deletion.
+              - column: { name: ad_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_pacb_ad, referencedTableName: promo_ads, referencedColumnNames: id, deleteCascade: true } }
+              - column: { name: renter_user_id, type: uuid, constraints: { nullable: false, foreignKeyName: fk_pacb_user, referencedTableName: users, referencedColumnNames: id, deleteCascade: true } }
+              # The Asia/Dubai calendar day, written by the service to match
+              # promo_ad_events.day exactly — the database's timezone is not the
+              # product's. No CHECK mirroring ck_promo_ad_event_day is possible
+              # here because there is no occurred_at to derive it from; the
+              # service passes the same LocalDate it stamps on the event rows.
+              - column: { name: day, type: date, constraints: { nullable: false } }
+              - column: { name: clicks, type: int, constraints: { nullable: false }, defaultValueNumeric: 0 }
+              - column: { name: created_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
+              - column: { name: updated_at, type: timestamptz, constraints: { nullable: false }, defaultValueComputed: now() }
+        # The ON CONFLICT arbiter. It must match the conflict target in
+        # PromotionFeedService's reservation statement column for column, or
+        # Postgres cannot infer an index and the upsert fails outright.
+        - addUniqueConstraint: { tableName: promo_ad_click_budgets, columnNames: "ad_id, renter_user_id, day", constraintName: uq_promo_click_budget }
+        - createIndex: { tableName: promo_ad_click_budgets, indexName: idx_pacb_tenant, columns: [ { column: { name: tenant_id } } ] }
+        - sql:
+            comment: A row exists only because a click landed, so zero is not a state this table can be in. Deliberately not "clicks <= 10" — the cap is the service's constant and the backfill below can legitimately exceed it.
+            sql: ALTER TABLE promo_ad_click_budgets ADD CONSTRAINT ck_promo_click_budget_positive CHECK (clicks > 0);
+
+        # ---- backfill ----
+        # Without this, every renter's allowance silently resets on deploy and
+        # today's already-recorded clicks are spendable a second time. Counts are
+        # carried over as they are rather than clamped to the cap: rows written
+        # while the cap was advisory can exceed it, and clamping them down would
+        # hand those renters fresh slots — the opposite of the point.
+        # tenant_id is grouped alongside ad_id only to carry the value through;
+        # an ad belongs to exactly one tenant, so it cannot split a group.
+        - sql:
+            comment: Carry existing click history into the counter so the cap is continuous across the deploy.
+            sql: >-
+              INSERT INTO promo_ad_click_budgets (tenant_id, ad_id, renter_user_id, day, clicks)
+              SELECT e.tenant_id, e.ad_id, e.renter_user_id, e.day, COUNT(*)
+              FROM promo_ad_events e
+              WHERE e.event_type = 'CLICK'
+              GROUP BY e.tenant_id, e.ad_id, e.renter_user_id, e.day;

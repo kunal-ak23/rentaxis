@@ -447,31 +447,44 @@ class _Actions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final field = allowed ? _allowField : _rejectField;
+    // What the last exit attempt came back with, on the line above the row: a
+    // refusal or a failure in the reject tone, the confirmation in plain white.
+    // The two are mutually exclusive — [_ResultScreenState._logExit] clears the
+    // error before it sets the flag — but the error wins the read if that ever
+    // stops being true, because an unreported failure is the dangerous one.
+    final failed = exitError != null;
+    final note = exitError ?? (exitLogged ? l.exitLogged : null);
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (exitError != null)
+          if (note != null)
             Padding(
               padding: const EdgeInsets.only(bottom: 12),
               child: Text(
-                exitError!,
+                note,
                 textAlign: TextAlign.center,
                 style: l.ar
                     ? MiftahType.ar(
                         size: 14,
                         weight: FontWeight.w600,
-                        color: _rejectText,
+                        color: failed ? _rejectText : Colors.white,
                       )
-                    : MiftahType.body(size: 14, color: _rejectText),
+                    : MiftahType.body(
+                        size: 14,
+                        color: failed ? _rejectText : Colors.white,
+                      ),
               ),
             ),
           Row(
             children: [
               Expanded(
                 child: _GuardButton(
-                  label: l.done,
+                  key: const Key('doneButton'),
+                  // A refusal is not something the guard *did*; the button pops
+                  // straight back to the viewfinder, so on a refusal it says so.
+                  label: allowed ? l.done : l.scanAgain,
                   filled: true,
                   fieldColor: field,
                   onTap: onDone,
@@ -479,19 +492,20 @@ class _Actions extends StatelessWidget {
                 ),
               ),
               // Exit is only meaningful once an entry was admitted; a refused
-              // visitor never came in.
-              if (allowed) ...[
+              // visitor never came in. It is withdrawn the moment the exit is
+              // recorded rather than left on screen disabled: one departure is
+              // one scan row, and the confirmation above already says so.
+              if (allowed && !exitLogged) ...[
                 const SizedBox(width: 10),
                 _GuardButton(
-                  label: exitLogged
-                      ? l.exitLogged
-                      : (loggingExit ? l.loggingExit : l.logExit),
+                  key: const Key('logExitButton'),
+                  label: loggingExit ? l.loggingExit : l.logExit,
                   filled: false,
                   fieldColor: field,
-                  onTap: exitLogged || loggingExit ? null : onLogExit,
+                  onTap: loggingExit ? null : onLogExit,
                   l: l,
                 ),
-              ] else ...[
+              ] else if (!allowed) ...[
                 const SizedBox(width: 10),
                 _GuardButton(
                   label: l.walkIn,
@@ -511,6 +525,7 @@ class _Actions extends StatelessWidget {
 
 class _GuardButton extends StatelessWidget {
   const _GuardButton({
+    super.key,
     required this.label,
     required this.filled,
     required this.fieldColor,

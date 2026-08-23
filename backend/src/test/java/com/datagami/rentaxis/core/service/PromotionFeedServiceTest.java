@@ -14,9 +14,10 @@ import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.PromoAdEventRepository;
 import com.datagami.rentaxis.domain.repository.PromoAdRepository;
 import com.datagami.rentaxis.domain.repository.PromoBusinessRepository;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.Query;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -33,7 +34,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.RETURNS_SELF;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -47,6 +51,7 @@ class PromotionFeedServiceTest {
     @Mock PromoBusinessRepository businessRepository;
     @Mock PromoAdEventRepository eventRepository;
     @Mock LeaseRepository leaseRepository;
+    @Mock EntityManager entityManager;
 
     private final UUID tenantId = UUID.randomUUID();
     private final UUID renterId = UUID.randomUUID();
@@ -54,7 +59,24 @@ class PromotionFeedServiceTest {
 
     private PromotionFeedService service() {
         return new PromotionFeedService(adRepository, businessRepository,
-                eventRepository, leaseRepository);
+                eventRepository, leaseRepository, entityManager);
+    }
+
+    /**
+     * Stubs the click-slot reservations the service now defers to, in the order
+     * they will be issued: 1 for a slot granted, 0 for one refused.
+     *
+     * <p>These mocked tests can only pin down that the service asks and honours
+     * the answer. That the answer is right under concurrency is the database's
+     * job and is proven in {@code PromotionClickCapConcurrencyIT} — this whole
+     * file passed just as happily on the check-then-act version that multiplied
+     * the cap with parallelism.
+     */
+    private Query stubReservations(Integer first, Integer... rest) {
+        Query reservation = mock(Query.class, RETURNS_SELF);
+        when(reservation.executeUpdate()).thenReturn(first, rest);
+        when(entityManager.createNativeQuery(anyString())).thenReturn(reservation);
+        return reservation;
     }
 
     private PromoBusiness business() {
@@ -194,6 +216,7 @@ class PromotionFeedServiceTest {
                 .thenReturn(List.of(a));
         when(leaseRepository.findActivePropertyIdsForRenterUser(tenantId, renterId))
                 .thenReturn(List.of());
+        stubReservations(1);
 
         service().recordEvents(tenantId, renterId, new PromoEventBatchRequest(List.of(
                 new PromoEventBatchRequest.Event(a.getId(), PromoEventType.IMPRESSION),
@@ -218,6 +241,7 @@ class PromotionFeedServiceTest {
                 eq(tenantId), anyCollection(), eq(renterId), any()))
                 .thenReturn(List.<Object[]>of(
                         new Object[]{a.getId(), PromoEventType.IMPRESSION, 1L}));
+        stubReservations(1);
 
         service().recordEvents(tenantId, renterId, new PromoEventBatchRequest(List.of(
                 new PromoEventBatchRequest.Event(a.getId(), PromoEventType.IMPRESSION),
@@ -255,21 +279,20 @@ class PromotionFeedServiceTest {
     }
 
     @Test
-    void recordEvents_capsClicksPerAdPerDay() {
-        // Clicks have no unique index by design, and the endpoint is
-        // authenticated but unthrottled — without a ceiling a renter could set
-        // the tap count the client is shown to justify an ad slot.
+    void recordEvents_writesOnlyTheClicksTheDatabaseGrantsASlotFor() {
+        // Clicks have no unique index by design — a second tap is a real second
+        // tap — so the cap lives in a counter row the database owns. The service
+        // must write exactly the clicks it was granted a slot for: without a
+        // ceiling of some kind a renter could set the tap count the client is
+        // shown to justify an ad slot.
         PromoAd a = ad(1);
         when(adRepository.findEligible(eq(tenantId), any(), anyList(), anyList()))
                 .thenReturn(List.of(a));
         when(leaseRepository.findActivePropertyIdsForRenterUser(tenantId, renterId))
                 .thenReturn(List.of());
-        when(eventRepository.countTodaysEventsByAd(
-                eq(tenantId), anyCollection(), eq(renterId), any()))
-                .thenReturn(List.<Object[]>of(
-                        new Object[]{a.getId(), PromoEventType.CLICK, 9L}));
+        // One slot left, three clicks offered.
+        stubReservations(1, 0);
 
-        // Nine already on record, three more offered — only one may land.
         service().recordEvents(tenantId, renterId, new PromoEventBatchRequest(List.of(
                 new PromoEventBatchRequest.Event(a.getId(), PromoEventType.CLICK),
                 new PromoEventBatchRequest.Event(a.getId(), PromoEventType.CLICK),
@@ -278,6 +301,42 @@ class PromotionFeedServiceTest {
         ArgumentCaptor<List<PromoAdEvent>> captor = ArgumentCaptor.forClass(List.class);
         verify(eventRepository).saveAll(captor.capture());
         assertThat(captor.getValue()).hasSize(1);
+        // Two statements, not three: the counter only climbs inside this
+        // transaction, so the first refusal settles the rest of the batch. A
+        // 50-event batch aimed at one ad must not become 50 round trips.
+        verify(entityManager, times(2)).createNativeQuery(anyString());
+    }
+
+    @Test
+    void recordEvents_reservesEachClickSlotAgainstTheCallersTenantAndTheCap() {
+        // The reservation is native SQL, so it runs outside Hibernate's
+        // tenantFilter — every part of the isolation has to be written out here
+        // rather than inherited, and the cap has to reach the statement that
+        // enforces it.
+        PromoAd a = ad(1);
+        when(adRepository.findEligible(eq(tenantId), any(), anyList(), anyList()))
+                .thenReturn(List.of(a));
+        when(leaseRepository.findActivePropertyIdsForRenterUser(tenantId, renterId))
+                .thenReturn(List.of());
+        Query reservation = stubReservations(1);
+
+        service().recordEvents(tenantId, renterId, new PromoEventBatchRequest(List.of(
+                new PromoEventBatchRequest.Event(a.getId(), PromoEventType.CLICK))));
+
+        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+        verify(entityManager).createNativeQuery(sql.capture());
+        // A plain INSERT here would pass every other assertion in this file and
+        // put the cap back where it started.
+        assertThat(sql.getValue()).contains("ON CONFLICT");
+        assertThat(sql.getValue()).contains("clicks < :cap");
+        assertThat(sql.getValue()).contains("promo_ad_click_budgets.tenant_id = :tenantId");
+        verify(reservation).setParameter("tenantId", tenantId);
+        verify(reservation).setParameter("renterUserId", renterId);
+        verify(reservation).setParameter("adId", a.getId());
+        verify(reservation).setParameter("cap", PromotionFeedService.MAX_CLICKS_PER_AD_PER_DAY);
+        // The same Dubai day the event rows are stamped with — a batch
+        // straddling midnight must not spend one day's budget and file under the next.
+        verify(reservation).setParameter("day", LocalDate.now(ZoneId.of("Asia/Dubai")));
     }
 
     @Test
@@ -293,6 +352,7 @@ class PromotionFeedServiceTest {
         when(eventRepository.countTodaysEventsByAd(
                 eq(tenantId), anyCollection(), eq(renterId), any()))
                 .thenReturn(List.of());
+        stubReservations(1);
 
         service().recordEvents(tenantId, renterId, new PromoEventBatchRequest(List.of(
                 new PromoEventBatchRequest.Event(a.getId(), PromoEventType.IMPRESSION),
@@ -315,6 +375,7 @@ class PromotionFeedServiceTest {
         service().recordEvents(tenantId, renterId, new PromoEventBatchRequest(List.of()));
 
         verifyNoInteractions(eventRepository);
+        verifyNoInteractions(entityManager);
     }
 
     @Test
@@ -366,5 +427,8 @@ class PromotionFeedServiceTest {
 
         // A stale batch from a backgrounded app must be ignored silently, not 400.
         verify(eventRepository, never()).saveAll(anyList());
+        // And it must not spend a slot on the way out: re-deriving the ad ids
+        // from eligible() is what stops a renter burning someone else's budget.
+        verifyNoInteractions(entityManager);
     }
 }

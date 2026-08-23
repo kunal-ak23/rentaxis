@@ -5,16 +5,23 @@ import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.api.exception.SlotConflictException;
 import com.datagami.rentaxis.core.service.BulkAttachValidationException;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @ControllerAdvice
@@ -130,13 +137,136 @@ public class GlobalExceptionHandler {
         ));
     }
 
+    /**
+     * Request body that would not parse or would not deserialize.
+     *
+     * <p>400, not 500: nothing of ours ran, so nothing of ours failed. See
+     * {@link #clientError} for why the caller is not told what Jackson said.
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<Map<String, Object>> handleUnreadableBody(HttpMessageNotReadableException ex) {
+        return clientError("Malformed request body", ex);
+    }
+
+    /**
+     * A parameter or path variable that would not convert to the declared type
+     * — most often a non-UUID where a UUID is expected.
+     *
+     * <p>The parameter name is safe to return and is the only part worth
+     * returning: it comes from the handler signature, and it is what the
+     * caller needs in order to fix the request. The rejected value and the
+     * required Java type stay out of the response.
+     */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<Map<String, Object>> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
+        return clientError("Invalid value for parameter '" + ex.getName() + "'", ex);
+    }
+
+    /**
+     * A required request parameter the caller did not send.
+     *
+     * <p>Unlike its three neighbours this one is a checked ServletException,
+     * so it never reached {@link #handleRuntime} and Spring's default resolver
+     * already answered 400. What it did not do is produce our error body — the
+     * response was 400 with nothing in it, which a client parsing
+     * {@code message} cannot read. Handled here for shape, not for status.
+     */
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<Map<String, Object>> handleMissingParameter(MissingServletRequestParameterException ex) {
+        return clientError("Required parameter '" + ex.getParameterName() + "' is missing", ex);
+    }
+
+    /**
+     * Bean-validation failure raised outside request-body binding: on a method
+     * parameter where a controller is {@code @Validated}, or by Hibernate on
+     * an annotated entity at flush (today, {@code Vendor}).
+     *
+     * <p>Returns the constraint messages but not {@code ex.getMessage()},
+     * which prefixes each with its violation path. Those messages are written
+     * for exactly this audience — "Vendor name (English) is required" — so
+     * answering a bare "Validation failed" would throw away the only part the
+     * caller can act on. The path is the part that must not go out: for method
+     * validation it is the handler's own method and parameter name
+     * ({@code someMethod.someParam}), which describes our code, not the
+     * request.
+     *
+     * <p>De-duplicated and sorted because the violation set is unordered: two
+     * identical bad requests must not produce two different strings.
+     */
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<Map<String, Object>> handleConstraintViolation(ConstraintViolationException ex) {
+        Set<ConstraintViolation<?>> violations = ex.getConstraintViolations();
+        String messages = violations == null ? "" : violations.stream()
+                .map(ConstraintViolation::getMessage)
+                .filter(Objects::nonNull)
+                .distinct()
+                .sorted()
+                .collect(Collectors.joining(", "));
+        return clientError(messages.isBlank() ? "Validation failed" : "Validation failed: " + messages, ex);
+    }
+
+    /**
+     * Shared body for the framework-raised caller errors above: the request
+     * never reached application code because it did not parse, did not
+     * convert, or was missing a value the signature requires.
+     *
+     * <p>Two things this exists to get right.
+     *
+     * <p>Status. Three of the four are RuntimeExceptions, so without
+     * an explicit handler {@link #handleRuntime} claims them and answers 500.
+     * That misleads clients that branch on status — a 500 invites a retry of a
+     * request that can never succeed — and it buries genuine server faults in
+     * whatever counts 5xx.
+     *
+     * <p>Body. The catch-all copies {@code ex.getMessage()} into the response,
+     * and for these types the message is internal detail: Jackson quotes the
+     * rejected payload fragment and names the target type, the mismatch
+     * message names the required Java class and echoes the offending value,
+     * and a violation message spells out the controller method it came from.
+     * This advice serves unauthenticated endpoints — {@code /public/**} and
+     * the Firebase token exchange, see
+     * {@link com.datagami.rentaxis.security.PublicRateLimitFilter} — so the
+     * detail goes to the log and only the shape of the mistake goes back.
+     *
+     * <p>WARN rather than ERROR, and the message rather than the stack: a
+     * malformed request is ordinary traffic on a public surface. Logging it at
+     * ERROR would recreate, in the alerting channel, exactly the noise the
+     * status fix removes.
+     */
+    private ResponseEntity<Map<String, Object>> clientError(String message, Exception ex) {
+        log.warn("Rejected as 400 ({}): {}", ex.getClass().getSimpleName(), ex.getMessage());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+                "error", true,
+                "message", message,
+                "status", 400
+        ));
+    }
+
+    /**
+     * The catch-all. Its message is a CONSTANT, deliberately.
+     *
+     * <p>This used to copy {@code ex.getMessage()} into the response body,
+     * which made every unhandled exception an information-disclosure channel.
+     * The realistic sources are worse than they first look: Hibernate and JPA
+     * exceptions carry SQL fragments plus table, column and constraint names;
+     * Java's helpful NullPointerExceptions name our own classes, fields and
+     * methods; and the Azure and Razorpay SDKs can surface endpoint URLs and
+     * request ids. This advice is reachable unauthenticated — see the public
+     * paths in {@code PublicRateLimitFilter} — so anything that reaches here is
+     * assumed to be something an anonymous caller must not read.
+     *
+     * <p>Nothing is lost operationally: the full exception and its stack still
+     * go to the log at ERROR, which is where a 500 belongs. Only the caller's
+     * copy is redacted. Note the contrast with the client-error handlers above,
+     * which log at WARN — a malformed request is ordinary traffic, an unhandled
+     * exception is not.
+     */
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<Map<String, Object>> handleRuntime(RuntimeException ex) {
         log.error("Unhandled exception", ex);
-        String message = ex.getMessage() != null ? ex.getMessage() : "An internal error occurred";
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
                 "error", true,
-                "message", message,
+                "message", "An internal error occurred",
                 "status", 500
         ));
     }
