@@ -5289,6 +5289,8 @@ Create `web/src/app/[locale]/dashboard/promotions/_components/AdCardPreview.tsx`
 ```tsx
 "use client";
 
+import type { CSSProperties } from "react";
+
 import type { PromoCtaType } from "@/types/promotion";
 
 /** Miftah mobile tokens — see mobile/packages/rentaxis_core/lib/ui/miftah_tokens.dart. */
@@ -5330,7 +5332,10 @@ export function AdCardPreview({
     const fg = hasImage ? "#FFFFFF" : INK;
     const label = (ctaLabel?.trim() || defaultCtaLabel(ctaType, rtl));
 
-    const clamp2: React.CSSProperties = {
+    // CSSProperties imported explicitly: this repo uses jsx: "react-jsx", which
+    // does not put a `React` namespace in module scope, so `React.CSSProperties`
+    // is a compile error here.
+    const clamp2: CSSProperties = {
         display: "-webkit-box",
         WebkitLineClamp: 2,
         WebkitBoxOrient: "vertical",
@@ -5409,7 +5414,7 @@ export function AdCardPreview({
                             fontWeight: 800,
                         }}
                     >
-                        {`${label} ${rtl ? "←" : "→"}`}
+                        {rtl ? `← ${label}` : `${label} →`}
                     </span>
                 </div>
             )}
@@ -5452,8 +5457,8 @@ git commit -m "feat(promotions): live preview of the mobile ad card"
 Create `web/src/app/[locale]/dashboard/promotions/__tests__/AdEditor.test.tsx`:
 
 ```tsx
-import { describe, expect, it, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, render, screen, fireEvent } from '@testing-library/react'
 import { NextIntlClientProvider } from 'next-intl'
 import messages from '../../../../../../messages/en.json'
 import { AdEditor } from '../_components/AdEditor'
@@ -5488,6 +5493,13 @@ function renderEditor(onSave = vi.fn()) {
     )
     return { onSave }
 }
+
+// This repo's vitest config does not set `globals: true`, so RTL's automatic
+// afterEach(cleanup) never registers and DOM from one `it` leaks into the next.
+// Same reason overdue-card-link.test.tsx does this.
+afterEach(() => {
+    cleanup()
+})
 
 describe('AdEditor', () => {
     it('shows the link field only for a website ad', () => {
@@ -5700,12 +5712,19 @@ function hostIsAllowed(url: string, domains: string[]): boolean {
         return false;
     }
     if (parsed.username !== "" || parsed.password !== "") return false;
-    const host = parsed.hostname.toLowerCase();
+    let host = parsed.hostname.toLowerCase();
+    if (host.endsWith(".")) host = host.slice(0, -1);
     return domains.some(d => {
         const clean = d.trim().toLowerCase();
         return clean !== "" && (host === clean || host.endsWith(`.${clean}`));
     });
 }
+
+/** Asia/Dubai is a fixed +04 with no DST. */
+const DUBAI_OFFSET = "+04:00";
+
+/** Mirrors PromoAdRequest's @Pattern and the column's varchar(9). */
+const HEX_COLOUR = /^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 
 const trimOrNull = (s: string): string | null => (s.trim() === "" ? null : s.trim());
 
@@ -5743,10 +5762,12 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel }: AdEdi
     function validate(): Record<string, string> {
         const next: Record<string, string> = {};
         if (trimOrNull(titleEn) === null && trimOrNull(titleAr) === null) {
-            next.title = t("saveError");
+            next.title = t("titleRequired");
         }
-        if (startsAt && endsAt && new Date(endsAt) <= new Date(startsAt)) {
-            next.endsAt = t("saveError");
+        if (startsAt && endsAt
+            && new Date(`${endsAt}T23:59:59${DUBAI_OFFSET}`)
+               <= new Date(`${startsAt}T00:00:00${DUBAI_OFFSET}`)) {
+            next.endsAt = t("windowOrder");
         }
         if (ctaType === "WEBSITE") {
             const url = ctaUrl.trim();
@@ -5757,7 +5778,7 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel }: AdEdi
             }
         }
         if (ctaType === "COUPON" && trimOrNull(couponCode) === null) {
-            next.couponCode = t("saveError");
+            next.couponCode = t("couponRequired");
         }
         if (ctaType === "CALL" && !business?.phoneE164) {
             next.ctaType = t("saveError");
@@ -5790,8 +5811,8 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel }: AdEdi
             couponCode: ctaType === "COUPON" ? trimOrNull(couponCode) : null,
             couponTermsEn: ctaType === "COUPON" ? trimOrNull(couponTermsEn) : null,
             couponTermsAr: ctaType === "COUPON" ? trimOrNull(couponTermsAr) : null,
-            startsAt: startsAt ? new Date(`${startsAt}T00:00:00Z`).toISOString() : null,
-            endsAt: endsAt ? new Date(`${endsAt}T23:59:59Z`).toISOString() : null,
+            startsAt: startsAt ? new Date(`${startsAt}T00:00:00${DUBAI_OFFSET}`).toISOString() : null,
+            endsAt: endsAt ? new Date(`${endsAt}T23:59:59${DUBAI_OFFSET}`).toISOString() : null,
             priority,
             placement,
             propertyIds,
@@ -6098,6 +6119,12 @@ function toHost(value: string): string {
     return s.slice(0, cut);
 }
 
+/** Asia/Dubai is a fixed +04 with no DST. */
+const DUBAI_OFFSET = "+04:00";
+
+/** Mirrors PromoAdRequest's @Pattern and the column's varchar(9). */
+const HEX_COLOUR = /^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+
 const trimOrNull = (s: string): string | null => (s.trim() === "" ? null : s.trim());
 
 export function BusinessEditor({ business, onSave, onCancel }: BusinessEditorProps) {
@@ -6294,10 +6321,11 @@ export function BusinessesTab({ onChanged }: { onChanged?: () => void }) {
             await load(page);
             onChanged?.();
         } catch (e) {
-            // 409 from the backend when ads still reference it.
-            setError(e instanceof ApiError && e.status === 409
-                ? t("deleteBusinessBlocked")
-                : t("saveError"));
+            // Every business-rule failure on this API is a 400, not a 409 —
+            // BusinessRuleViolationException maps unconditionally to BAD_REQUEST
+            // — so status cannot tell "has ads" from "bad name". The server
+            // message is the only signal, and it is already a complete sentence.
+            setError(e instanceof ApiError ? e.message : t("saveError"));
         }
     }
 
@@ -6416,6 +6444,14 @@ interface AdsTabProps {
     properties: PropertyOption[];
 }
 
+/**
+ * No tap-rate column. `clicks / impressions` is NOT the tap rate: impressions
+ * are deduped per renter-day and clicks are not, so the ratio is
+ * taps-per-renter-day and can exceed 1 — three renters, one tapping ten times,
+ * renders as "333%". The real figure is distinct clickers over distinct
+ * viewers, which only `PromoAdStatsDTO` carries. Show it on the ad detail view,
+ * never derive it here.
+ */
 export function AdsTab({ businesses, properties }: AdsTabProps) {
     const t = useTranslations("Promotions");
 
@@ -6503,16 +6539,17 @@ export function AdsTab({ businesses, properties }: AdsTabProps) {
                             <th>{t("status")}</th>
                             <th className="text-right">{t("views")}</th>
                             <th className="text-right">{t("taps")}</th>
-                            <th className="text-right">{t("tapRate")}</th>
                             <th />
                         </tr>
                     </thead>
                     <tbody>
                         {rows.map(row => {
-                            const status = adStatus(row);
-                            const rate = row.impressions === 0
-                                ? 0
-                                : row.clicks / row.impressions;
+                            // businessActive is part of the server's eligibility
+                            // rule and is not on PromoAdDTO. Without it, an admin
+                            // who deactivates a business still sees all its ads
+                            // reading "Live" while the feed serves none of them.
+                            const business = businesses.find(b => b.id === row.businessId);
+                            const status = adStatus(row, new Date(), business?.active ?? true);
                             return (
                                 <tr key={row.id} className="border-b">
                                     <td className="py-2">{row.titleEn ?? row.titleAr}</td>
@@ -6526,7 +6563,6 @@ export function AdsTab({ businesses, properties }: AdsTabProps) {
                                     </td>
                                     <td className="text-right">{row.impressions.toLocaleString()}</td>
                                     <td className="text-right">{row.clicks.toLocaleString()}</td>
-                                    <td className="text-right">{(rate * 100).toFixed(1)}%</td>
                                     <td className="text-right">
                                         <button type="button" className="mr-3 underline"
                                             onClick={() => setEditing(row)}>{t("edit")}</button>
