@@ -579,7 +579,10 @@ Run:
 cd mobile/packages/rentaxis_core && flutter analyze
 ```
 
-Expected: `No issues found!`
+Expected: **53 issues** — the package's pre-existing baseline, unchanged. "No
+issues found" is not achievable here and chasing the existing 53 is out of
+scope; what matters is not adding to the count. Use
+`flutter test -r failures-only`; the default reporter is unusably verbose.
 
 - [ ] **Step 5: Commit**
 
@@ -926,15 +929,36 @@ Photo-hero when the ad has artwork, split colour card when it does not. The copy
 Create `mobile/apps/renter/test/ad_card_test.dart`:
 
 ```dart
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 import 'package:renter/widgets/ad_card.dart';
 
 import 'support/fake_promotion_service.dart';
 
-Widget host(Widget child, {double textScale = 1.0}) => MaterialApp(
+Widget host(
+  Widget child, {
+  double textScale = 1.0,
+  double width = 320,
+  bool arabic = false,
+}) =>
+    MaterialApp(
       theme: AppTheme.lightTheme,
+      // A real locale, not a bare Directionality: the card reads `context.isAr`
+      // (which follows Localizations) for its copy and Directionality for its
+      // layout, and only the delegates below make the two agree the way they do
+      // in the running app.
+      locale: Locale(arabic ? 'ar' : 'en'),
+      supportedLocales: const [Locale('en'), Locale('ar')],
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       home: MediaQuery(
         data: MediaQueryData(textScaler: TextScaler.linear(textScale)),
         child: Scaffold(
@@ -944,7 +968,7 @@ Widget host(Widget child, {double textScale = 1.0}) => MaterialApp(
             // Builder so adCardHeight sees the scaled MediaQuery above.
             child: Builder(
               builder: (context) => SizedBox(
-                width: 320,
+                width: width,
                 height: adCardHeight(context),
                 child: child,
               ),
@@ -954,7 +978,110 @@ Widget host(Widget child, {double textScale = 1.0}) => MaterialApp(
       ),
     );
 
+/// The card widths the promo strip hands an [AdCard] on the phones this app
+/// ships to. The strip is a peeking `PageView`, so a card is narrower than the
+/// screen it sits on; these are the three screen widths through that geometry.
+const _cardWidths = <String, double>{
+  '360pt': 360 * 0.92 - 8,
+  '393pt': 393 * 0.92 - 8,
+  '430pt': 430 * 0.92 - 8,
+};
+
+/// How far the card's content sits from its outer edge: 14pt of padding
+/// inside the 1pt border an artwork-less card draws.
+const _cardInset = 15.0;
+
+/// Loads the faces the renter actually sees, so the layout tests below measure
+/// real line boxes.
+///
+/// Without this every line is a flat 1.0em test-font box — *shorter* than
+/// anything this app renders (Plus Jakarta Sans runs ~1.55em, the Arabic
+/// fallback ~1.9em), so a card that fits under the test font can still slice
+/// its last line on a phone. `google_fonts` names the families it asks for;
+/// registering the bundled `rentaxis_core` files under those names is what
+/// makes the widget render with real metrics offline.
+Future<void> _loadRealFonts() async {
+  const dir = '../../packages/rentaxis_core/assets/fonts';
+  Future<void> load(String family, String file) async {
+    final path = '$dir/$file';
+    expect(File(path).existsSync(), isTrue,
+        reason: '$path is missing — these tests measure real font metrics');
+    await (FontLoader(family)
+          ..addFont(
+              File(path).readAsBytes().then((b) => ByteData.view(b.buffer))))
+        .load();
+  }
+
+  await load('PlusJakartaSans_800', 'PlusJakartaSans-ExtraBold.ttf');
+  await load('PlusJakartaSans_regular', 'PlusJakartaSans-Regular.ttf');
+  // `google_fonts` declares `PlusJakartaSans` as the fallback family. Jakarta
+  // carries no Arabic, so on a phone Arabic resolves past it into the system
+  // Arabic face; Noto Naskh stands in for that here and brings its real (much
+  // taller) line metrics with it.
+  await load('PlusJakartaSans', 'NotoNaskhArabic-Regular.ttf');
+}
+
+/// An ad whose copy is genuinely Arabic. [testAd] carries English fields only,
+/// and an Arabic-locale card rendering English strings would measure the wrong
+/// font.
+PromoAd _arabicAd({
+  String title = 'خصم خمسة وعشرين بالمئة على برانش الجمعة في ممشى مارينا دبي',
+  String? subtitle,
+  String ctaType = 'NONE',
+}) =>
+    PromoAd.fromJson({
+      'id': 'ad-ar',
+      'business': {
+        'id': 'b-1',
+        'nameEn': 'Spice Bazaar',
+        'nameAr': 'سبايس بازار',
+        'category': 'DINING',
+      },
+      'titleEn': 'Twenty five percent off every Friday brunch at the marina',
+      'titleAr': title,
+      'subtitleEn': 'Marina walk',
+      'subtitleAr': subtitle,
+      'ctaType': ctaType,
+    });
+
+/// The clipped copy block — the rect the card allows it, and the line it holds.
+({Rect clip, List<Text> lines}) _copyBlock(WidgetTester tester) {
+  final block = find
+      .descendant(of: find.byType(AdCard), matching: find.byType(ClipRect))
+      .first;
+  return (
+    clip: tester.getRect(block),
+    lines: tester
+        .widgetList<Text>(find.descendant(of: block, matching: find.byType(Text)))
+        .toList(),
+  );
+}
+
+/// Fails when any line of the copy block is cut through its glyphs — the card
+/// may drop a line it has no room for, but it may never slice one.
+void _expectNoSlicedLine(WidgetTester tester) {
+  final block = _copyBlock(tester);
+  expect(block.lines, isNotEmpty);
+  for (final line in block.lines) {
+    final rect = tester.getRect(find.text(line.data!));
+    expect(
+      rect.bottom,
+      lessThanOrEqualTo(block.clip.bottom),
+      reason: '"${line.data}" is sliced: the line runs to ${rect.bottom} but '
+          'the card clips at ${block.clip.bottom}',
+    );
+    expect(
+      rect.top,
+      greaterThanOrEqualTo(block.clip.top),
+      reason: '"${line.data}" is sliced at the top: the line starts at '
+          '${rect.top} but the card clips from ${block.clip.top}',
+    );
+  }
+}
+
 void main() {
+  setUpAll(_loadRealFonts);
+
   testWidgets('renders the title and the uppercase eyebrow', (tester) async {
     await tester.pumpWidget(host(AdCard(
       ad: testAd(titleEn: 'Friday brunch', subtitleEn: 'Marina walk'),
@@ -987,17 +1114,6 @@ void main() {
     expect(decoration.image, isNull);
   });
 
-  testWidgets('falls back to a theme colour when accentColor is absent',
-      (tester) async {
-    await tester.pumpWidget(host(AdCard(ad: testAd(), onTap: () {})));
-
-    final container = tester.widget<Container>(
-      find.byKey(const Key('ad-card-surface')),
-    );
-    expect((container.decoration! as BoxDecoration).color,
-        MiftahColors.surfaceAlt);
-  });
-
   testWidgets('shows the CTA pill for an ad with a call to action',
       (tester) async {
     await tester.pumpWidget(host(AdCard(
@@ -1023,6 +1139,41 @@ void main() {
     expect(taps, 1);
   });
 
+  testWidgets('a card with no artwork is visible against the home canvas',
+      (tester) async {
+    // surfaceAlt differs from the canvas by six across all channels combined,
+    // so the old fallback rendered an invisible rectangle on the home screen.
+    await tester.pumpWidget(host(AdCard(ad: testAd(), onTap: () {})));
+
+    final container = tester.widget<Container>(
+      find.byKey(const Key('ad-card-surface')),
+    );
+    final decoration = container.decoration! as BoxDecoration;
+    expect(decoration.color, MiftahColors.brassTint);
+    expect(decoration.border, isNotNull);
+  });
+
+  testWidgets('shows the business name when the eyebrow is taken by a subtitle',
+      (tester) async {
+    // Otherwise a renter looking at an artwork-less card has no clue who is
+    // offering it. The admin preview already rendered this line.
+    await tester.pumpWidget(host(AdCard(
+      ad: testAd(subtitleEn: 'Marina walk'),
+      onTap: () {},
+    )));
+
+    expect(find.text('MARINA WALK'), findsOneWidget);
+    expect(find.text('Spice Bazaar'), findsOneWidget);
+  });
+
+  testWidgets('does not repeat the business name when it IS the eyebrow',
+      (tester) async {
+    await tester.pumpWidget(host(AdCard(ad: testAd(), onTap: () {})));
+
+    expect(find.text('SPICE BAZAAR'), findsOneWidget);
+    expect(find.text('Spice Bazaar'), findsNothing);
+  });
+
   testWidgets('does not overflow at 2.0 text scale', (tester) async {
     await tester.pumpWidget(host(
       AdCard(
@@ -1037,9 +1188,216 @@ void main() {
       textScale: 2.0,
     ));
 
-    // The card clamps its own height at 1.5x and clips; nothing should throw.
+    // The card clamps its own height at 1.5x and the copy yields lines rather
+    // than growing past it; either way nothing should throw.
     expect(tester.takeException(), isNull);
   });
+
+  // The card's height is fixed by [adCardHeight] before it knows what copy it
+  // is holding, so "it fits" is a claim about pixels and has to be measured as
+  // pixels. A line that runs past the clip is cut through its glyphs — letter
+  // bottoms and descenders gone — which reads as a rendering fault, not as
+  // truncation.
+  group('the copy block fits the height the card allows it', () {
+    for (final device in _cardWidths.entries) {
+      testWidgets('three lines are whole at default text scale on '
+          '${device.key}', (tester) async {
+        await tester.pumpWidget(host(
+          AdCard(
+            ad: testAd(
+              titleEn:
+                  'Twenty five percent off every Friday brunch at the marina',
+              subtitleEn: 'Marina walk',
+              ctaType: 'COUPON',
+              couponCode: 'MIFTAH25',
+            ),
+            onTap: () {},
+          ),
+          width: device.value,
+        ));
+
+        expect(find.text('Spice Bazaar'), findsOneWidget);
+        _expectNoSlicedLine(tester);
+      });
+
+      testWidgets('three Arabic lines are whole at default text scale on '
+          '${device.key}', (tester) async {
+        // Arabic is the taller script — the fallback face runs about 1.9em a
+        // line against Jakarta's 1.55em — so a card sized off English alone
+        // slices the Arabic card while the English one looks fine.
+        await tester.pumpWidget(host(
+          AdCard(
+            ad: _arabicAd(subtitle: 'ممشى المارينا', ctaType: 'COUPON'),
+            onTap: () {},
+          ),
+          width: device.value,
+          arabic: true,
+        ));
+
+        expect(find.text('سبايس بازار'), findsOneWidget);
+        _expectNoSlicedLine(tester);
+      });
+    }
+
+    for (final scale in <double>[1.0, 1.25, 1.5, 2.0, 3.0]) {
+      testWidgets('no line is sliced at ${scale}x text scale', (tester) async {
+        for (final arabic in [false, true]) {
+          await tester.pumpWidget(host(
+            AdCard(
+              ad: arabic
+                  ? _arabicAd(subtitle: 'ممشى المارينا', ctaType: 'COUPON')
+                  : testAd(
+                      titleEn: 'Twenty five percent off every Friday brunch '
+                          'at the marina',
+                      subtitleEn: 'Marina walk',
+                      ctaType: 'COUPON',
+                      couponCode: 'MIFTAH25',
+                    ),
+              onTap: () {},
+            ),
+            width: _cardWidths['360pt']!,
+            textScale: scale,
+            arabic: arabic,
+          ));
+
+          expect(tester.takeException(), isNull);
+          _expectNoSlicedLine(tester);
+        }
+      });
+    }
+
+    testWidgets('the business name yields instead of being sliced once the '
+        'copy outgrows the clamped card', (tester) async {
+      // Past 1.5x the card stops growing but the copy does not, and the
+      // business name is the first line to give way. At 3x the CTA label wraps
+      // as well and takes most of the card with it, so the eyebrow follows and
+      // the headline drops to one line — but every line left is whole.
+      await tester.pumpWidget(host(
+        AdCard(
+          ad: testAd(
+            titleEn:
+                'Twenty five percent off every Friday brunch at the marina',
+            subtitleEn: 'Marina walk',
+            ctaType: 'COUPON',
+            couponCode: 'MIFTAH25',
+          ),
+          onTap: () {},
+        ),
+        width: _cardWidths['360pt']!,
+        textScale: 3.0,
+      ));
+
+      // The headline is the offer, so it is the line still standing after the
+      // business name and then the eyebrow have given up their room.
+      expect(find.text('Twenty five percent off every Friday brunch at the '
+          'marina'), findsOneWidget);
+      expect(find.text('Spice Bazaar'), findsNothing);
+      expect(find.text('MARINA WALK'), findsNothing);
+      _expectNoSlicedLine(tester);
+    });
+
+    testWidgets('the Arabic business name yields the same way', (tester) async {
+      // Arabic gets there sooner — the taller face runs out of card first.
+      await tester.pumpWidget(host(
+        AdCard(
+          ad: _arabicAd(subtitle: 'ممشى المارينا', ctaType: 'COUPON'),
+          onTap: () {},
+        ),
+        width: _cardWidths['360pt']!,
+        textScale: 2.0,
+        arabic: true,
+      ));
+
+      expect(find.text('سبايس بازار'), findsNothing);
+      _expectNoSlicedLine(tester);
+    });
+  });
+
+  // Arabic is half this product's audience, and every one of these assertions
+  // is a line of `ad_card.dart` that no English test touches.
+  group('Arabic', () {
+    testWidgets('turns the CTA arrow around to point at the start edge',
+        (tester) async {
+      await tester.pumpWidget(host(
+        AdCard(ad: _arabicAd(ctaType: 'COUPON'), onTap: () {}),
+        arabic: true,
+      ));
+
+      expect(find.text('← استخدام الكوبون'), findsOneWidget);
+      expect(find.text('استخدام الكوبون →'), findsNothing);
+    });
+
+    testWidgets('anchors the CTA pill to the right edge of the card',
+        (tester) async {
+      await tester.pumpWidget(host(
+        AdCard(ad: _arabicAd(ctaType: 'COUPON'), onTap: () {}),
+        arabic: true,
+      ));
+
+      final card = tester.getRect(find.byKey(const Key('ad-card-surface')));
+      final pill = tester.getRect(find.byKey(const Key('ad-card-cta')));
+      // Hugs the leading edge — which under RTL is the right one — and is a
+      // pill, not a full-width bar, so this says something.
+      expect(pill.right, moreOrLessEquals(card.right - _cardInset,
+          epsilon: 0.5));
+      expect(pill.left, greaterThan(card.left + _cardInset));
+    });
+
+    testWidgets('anchors the CTA pill to the left edge in English',
+        (tester) async {
+      await tester.pumpWidget(host(
+        AdCard(
+          ad: testAd(ctaType: 'COUPON', couponCode: 'MIFTAH25'),
+          onTap: () {},
+        ),
+      ));
+
+      final card = tester.getRect(find.byKey(const Key('ad-card-surface')));
+      final pill = tester.getRect(find.byKey(const Key('ad-card-cta')));
+      expect(pill.left, moreOrLessEquals(card.left + _cardInset,
+          epsilon: 0.5));
+      expect(pill.right, lessThan(card.right - _cardInset));
+    });
+
+    testWidgets('lays the copy block out from the right edge', (tester) async {
+      // A short headline, so the block is visibly narrower than the card and
+      // which edge it was hung from is measurable.
+      await tester.pumpWidget(host(
+        AdCard(ad: _arabicAd(title: 'عرض'), onTap: () {}),
+        arabic: true,
+      ));
+
+      final card = tester.getRect(find.byKey(const Key('ad-card-surface')));
+      final title = tester.getRect(find.text('عرض'));
+      final eyebrow = tester.getRect(find.text('سبايس بازار'));
+      expect(title.right, moreOrLessEquals(card.right - _cardInset,
+          epsilon: 0.5));
+      expect(eyebrow.right, moreOrLessEquals(card.right - _cardInset,
+          epsilon: 0.5));
+      expect(title.left, greaterThan(card.left + _cardInset));
+    });
+  });
+  testWidgets('a photo card paints a readable surface before its artwork lands',
+      (tester) async {
+    // `hasImage` is decided from the URL being non-blank, not from the image
+    // having arrived. A DecorationImage paints nothing while it loads and
+    // nothing at all if the blob was deleted or its SAS token expired, so
+    // without a colour underneath, a photo ad was an invisible rectangle on a
+    // slow connection and permanently invisible on a dead URL. It must be
+    // `ink`, not the accent fill: a photo card's copy is white.
+    await tester.pumpWidget(host(AdCard(
+      ad: testAd(backgroundImageUrl: 'https://example.invalid/never-loads.jpg'),
+      onTap: () {},
+    )));
+
+    final decoration = tester
+        .widget<Container>(find.byKey(const Key('ad-card-surface')))
+        .decoration! as BoxDecoration;
+
+    expect(decoration.color, MiftahColors.ink);
+    expect(decoration.image, isNotNull);
+  });
+
 }
 ```
 
@@ -1062,12 +1420,33 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
+/// The card's height before text scaling.
+///
+/// 160, not the 140 this shipped with. A card carrying the business-name line
+/// needs 146pt in Latin and 155pt in Arabic at default text scale — measured
+/// against the real faces, with a two-line headline and the CTA pill showing —
+/// and Arabic is the taller script by a wide margin: its fallback face runs
+/// about 1.9em a line against Plus Jakarta's 1.55em. At 140 the last line was
+/// cut through its glyphs on every phone, which reads as a rendering fault
+/// rather than as truncation. 160 leaves the Arabic card whole with headroom
+/// for a system Arabic face taller than the one measured.
+const _cardHeight = 160.0;
+
+/// Past this the card stops growing and the copy yields a line instead — see
+/// [_CopyFit]. Letting it grow with the scaler would hand half the home screen
+/// to an ad.
+const _maxHeightScale = 1.5;
+
+/// Space between the lines of the copy block.
+const _copyGap = 3.0;
+
 /// The height an [AdCard] occupies at a given text scale. The carousel needs
 /// this before it builds a card, so it lives here rather than inside the
-/// widget. Clamped at 1.5x: past that the copy is clipped rather than allowed
-/// to push the strip to half the screen.
+/// widget. Clamped at 1.5x: past that the card holds still and the copy block
+/// drops its optional lines rather than pushing the strip to half the screen.
 double adCardHeight(BuildContext context) =>
-    140.0 * MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 1.5);
+    _cardHeight *
+    MediaQuery.textScalerOf(context).scale(1).clamp(1.0, _maxHeightScale);
 
 /// One promotion card.
 ///
@@ -1084,10 +1463,34 @@ class AdCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isAr = context.isAr;
     final hasImage = ad.hasImage;
-    final fill = ad.accentColor ?? MiftahColors.surfaceAlt;
+    // brassTint, not surfaceAlt. surfaceAlt (#F4F2F9) differs from the home
+    // canvas (#F6F5FA) by six across all three channels combined, so a card
+    // with neither artwork nor an accent colour was an invisible rectangle on
+    // the home screen. brassTint is the token's documented chip/badge fill and
+    // reads as deliberate. The border gives it an edge either way, including
+    // when a client picks an accent close to the canvas.
+    final fill = ad.accentColor ?? MiftahColors.brassTint;
     final onFill = hasImage ? Colors.white : MiftahColors.textPrimary;
     final eyebrow = ad.subtitle(isAr) ?? ad.business.name(isAr);
     final ctaLabel = ad.ctaLabel(isAr);
+    final businessName = ad.business.name(isAr);
+    // When the eyebrow is showing the subtitle, the business name has nowhere
+    // else to appear — and on a card with no artwork the renter has no other
+    // clue who is offering this. The admin panel's preview already renders this
+    // line; the widget was the side that was missing it.
+    final wantsBusinessName =
+        !hasImage && ad.subtitle(isAr) != null && businessName.isNotEmpty;
+
+    // Held as locals because the fit pass below has to measure the very styles
+    // the Text widgets render with — a style that drifts between the two is a
+    // sliced line.
+    final eyebrowStyle = MiftahType.sectionLabel(
+      color: hasImage ? MiftahColors.brassPale : MiftahColors.warning,
+    );
+    final titleStyle =
+        MiftahType.cardTitle(color: onFill).copyWith(fontSize: 18, height: 1.1);
+    final businessStyle =
+        MiftahType.body(size: 12, color: MiftahColors.textSecondary);
 
     return InkWell(
       borderRadius: BorderRadius.circular(MiftahRadii.card),
@@ -1095,7 +1498,18 @@ class AdCard extends StatelessWidget {
       child: Container(
         key: const Key('ad-card-surface'),
         decoration: BoxDecoration(
-          color: hasImage ? null : fill,
+          // A photo card paints `ink` underneath its artwork rather than
+          // nothing. `hasImage` is decided from the URL being non-blank, not
+          // from the image having arrived, and a DecorationImage draws nothing
+          // while it loads and nothing at all if the blob was deleted or its
+          // SAS token expired -- so this card used to be a completely invisible
+          // rectangle on a slow connection and permanently invisible on a dead
+          // URL. `ink` is the right placeholder rather than `fill`: a photo
+          // card's copy is white, and white on brassTint cannot be read.
+          color: hasImage ? MiftahColors.ink : fill,
+          border: hasImage
+              ? null
+              : Border.all(color: MiftahColors.brassTintBorder),
           borderRadius: BorderRadius.circular(MiftahRadii.card),
           image: hasImage
               ? DecorationImage(
@@ -1109,49 +1523,77 @@ class AdCard extends StatelessWidget {
               : null,
         ),
         padding: const EdgeInsets.all(14),
-        // The card has a fixed height (clamped at 1.5x text scale) but the
-        // copy keeps scaling. The text block takes whatever is left after the
-        // CTA and lays out at its natural size inside a clipping OverflowBox:
-        // when it fits it renders exactly as an unconstrained Column would (no
-        // line is ever cut early); when it doesn't, the bottom is clipped
-        // instead of throwing "RenderFlex overflowed by N pixels on the
-        // bottom".
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Flexible(
-              child: ClipRect(
-                child: OverflowBox(
-                  alignment: isAr ? Alignment.topRight : Alignment.topLeft,
-                  minHeight: 0,
-                  maxHeight: double.infinity,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (eyebrow.isNotEmpty)
-                        Text(
-                          eyebrow.toUpperCase(),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: MiftahType.sectionLabel(
-                            color: hasImage
-                                ? MiftahColors.brassPale
-                                : MiftahColors.warning,
-                          ),
-                        ),
-                      const SizedBox(height: 3),
+              // The card's height is fixed before it knows what copy it holds,
+              // so the block asks how much room it was given and renders what
+              // fits: a line is either whole or not asked for. The clipping
+              // OverflowBox below stays as the last resort — it keeps a card
+              // that still doesn't fit (a scaler past the clamp, a headline in
+              // a face taller than any measured here) from throwing
+              // "RenderFlex overflowed by N pixels on the bottom".
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final fit = _CopyFit.measure(
+                    context,
+                    available: constraints.maxHeight,
+                    maxWidth: constraints.maxWidth,
+                    eyebrow: eyebrow.isEmpty ? null : eyebrow.toUpperCase(),
+                    eyebrowStyle: eyebrowStyle,
+                    title: ad.title(isAr),
+                    titleStyle: titleStyle,
+                    businessName: wantsBusinessName ? businessName : null,
+                    businessStyle: businessStyle,
+                  );
+
+                  final lines = <Widget>[
+                    if (fit.showEyebrow)
                       Text(
-                        ad.title(isAr),
-                        maxLines: 2,
+                        eyebrow.toUpperCase(),
+                        // One line, always. The eyebrow is a tracked uppercase
+                        // label; a second line of it is not a label any more,
+                        // and the fixed height cannot promise one on top of the
+                        // headline and the business name.
+                        maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: MiftahType.cardTitle(color: onFill)
-                            .copyWith(fontSize: 18, height: 1.1),
+                        style: eyebrowStyle,
                       ),
-                    ],
-                  ),
-                ),
+                    Text(
+                      ad.title(isAr),
+                      maxLines: fit.titleMaxLines,
+                      overflow: TextOverflow.ellipsis,
+                      style: titleStyle,
+                    ),
+                    if (fit.showBusinessName)
+                      Text(
+                        businessName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: businessStyle,
+                      ),
+                  ];
+
+                  return ClipRect(
+                    child: OverflowBox(
+                      alignment: isAr ? Alignment.topRight : Alignment.topLeft,
+                      minHeight: 0,
+                      maxHeight: double.infinity,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          for (var i = 0; i < lines.length; i++) ...[
+                            if (i > 0) const SizedBox(height: _copyGap),
+                            lines[i],
+                          ],
+                        ],
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
             if (ctaLabel.isNotEmpty) ...[
@@ -1178,6 +1620,91 @@ class AdCard extends StatelessWidget {
     );
   }
 }
+
+/// How much of the copy the card has room for, given the height left after the
+/// CTA pill has taken its share.
+///
+/// The card gives up its optional copy in a fixed order — the business name,
+/// then the headline's second line, then the eyebrow — because that is the
+/// order the renter can afford to lose it in. A line is either rendered whole
+/// or not asked for; nothing here is cut halfway down its glyphs.
+class _CopyFit {
+  const _CopyFit({
+    required this.showEyebrow,
+    required this.titleMaxLines,
+    required this.showBusinessName,
+  });
+
+  final bool showEyebrow;
+  final int titleMaxLines;
+  final bool showBusinessName;
+
+  static _CopyFit measure(
+    BuildContext context, {
+    required double available,
+    required double maxWidth,
+    required String? eyebrow,
+    required TextStyle eyebrowStyle,
+    required String title,
+    required TextStyle titleStyle,
+    required String? businessName,
+    required TextStyle businessStyle,
+  }) {
+    final defaults = DefaultTextStyle.of(context);
+    final scaler = MediaQuery.textScalerOf(context);
+    final direction = Directionality.of(context);
+    final heightBehavior = defaults.textHeightBehavior ??
+        DefaultTextHeightBehavior.maybeOf(context);
+
+    double lineBox(String text, TextStyle style, int maxLines) {
+      // Merged and scaled exactly as `Text` will merge and scale it, or the
+      // measurement is of a style nothing renders.
+      final resolved = style.inherit ? defaults.style.merge(style) : style;
+      final painter = TextPainter(
+        text: TextSpan(text: text, style: resolved),
+        maxLines: maxLines,
+        ellipsis: '…',
+        textScaler: scaler,
+        textDirection: direction,
+        textHeightBehavior: heightBehavior,
+      )..layout(maxWidth: maxWidth);
+      final height = painter.height;
+      painter.dispose();
+      return height;
+    }
+
+    final eyebrowHeight =
+        eyebrow == null ? 0.0 : lineBox(eyebrow, eyebrowStyle, 1);
+    final businessHeight =
+        businessName == null ? 0.0 : lineBox(businessName, businessStyle, 1);
+
+    var showEyebrow = eyebrow != null;
+    var titleMaxLines = 2;
+    var showBusinessName = businessName != null;
+    var titleHeight = lineBox(title, titleStyle, titleMaxLines);
+
+    double total() =>
+        (showEyebrow ? eyebrowHeight + _copyGap : 0.0) +
+        titleHeight +
+        (showBusinessName ? _copyGap + businessHeight : 0.0);
+
+    // The order things are given up in is the order the renter can afford to
+    // lose them: the business name, then the headline's second line, then the
+    // eyebrow. The headline is the offer, so it is the last thing standing.
+    if (total() > available) showBusinessName = false;
+    if (total() > available) {
+      titleMaxLines = 1;
+      titleHeight = lineBox(title, titleStyle, titleMaxLines);
+    }
+    if (total() > available) showEyebrow = false;
+
+    return _CopyFit(
+      showEyebrow: showEyebrow,
+      titleMaxLines: titleMaxLines,
+      showBusinessName: showBusinessName,
+    );
+  }
+}
 ```
 
 - [ ] **Step 4: Run the test to verify it passes**
@@ -1188,7 +1715,7 @@ Run:
 cd mobile/apps/renter && flutter test test/ad_card_test.dart
 ```
 
-Expected: PASS, 8 tests.
+Expected: PASS, 28 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -1213,28 +1740,114 @@ Create `mobile/apps/renter/test/coupon_sheet_test.dart`:
 
 ```dart
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 import 'package:renter/widgets/coupon_sheet.dart';
 
 import 'support/fake_promotion_service.dart';
 
+/// Pumps the sheet the way `app.dart` mounts it: a real locale plus the
+/// Global*Localizations delegates. Those delegates are what make the Arabic
+/// subtree `TextDirection.rtl` **and** what initialise `intl`'s date symbols,
+/// so a sheet pumped without them would not exercise either behaviour.
+Future<void> _pump(
+  WidgetTester tester, {
+  required PromoAd ad,
+  bool ar = false,
+}) async {
+  await tester.pumpWidget(MaterialApp(
+    theme: AppTheme.lightTheme,
+    locale: Locale(ar ? 'ar' : 'en'),
+    supportedLocales: const [Locale('en'), Locale('ar')],
+    localizationsDelegates: const [
+      GlobalMaterialLocalizations.delegate,
+      GlobalWidgetsLocalizations.delegate,
+      GlobalCupertinoLocalizations.delegate,
+    ],
+    home: Scaffold(body: CouponSheet(ad: ad)),
+  ));
+  await tester.pumpAndSettle();
+}
+
+/// `testAd` exposes neither `endsAt` nor the Arabic text fields, and it is
+/// shared with the carousel suites — so the cases that need them build their
+/// own card here rather than widening a helper other files depend on.
+PromoAd _ad({
+  String? couponCode,
+  String? couponTermsEn,
+  String? couponTermsAr,
+  DateTime? endsAt,
+}) =>
+    PromoAd.fromJson({
+      'id': 'ad-1',
+      'business': {
+        'id': 'b-1',
+        'nameEn': 'Spice Bazaar',
+        'nameAr': 'سبايس بازار',
+        'category': 'DINING',
+      },
+      'titleEn': 'Friday brunch',
+      'titleAr': 'برانش الجمعة',
+      'ctaType': 'COUPON',
+      'couponCode': couponCode,
+      'couponTermsEn': couponTermsEn,
+      'couponTermsAr': couponTermsAr,
+      'endsAt': endsAt?.toIso8601String(),
+    });
+
+/// The code as a reader actually sees it, left to right.
+///
+/// Reconstructed from the laid-out glyph boxes rather than from the string we
+/// handed the widget, because bidi reordering happens at layout time: under
+/// `TextDirection.rtl` a `Text('10-OFF')` still satisfies `find.text('10-OFF')`
+/// while painting `OFF-10`. Only the geometry can tell the two apart.
+String _asRendered(WidgetTester tester, String code) {
+  final paragraph = tester.renderObject<RenderParagraph>(find.text(code));
+  final glyphs = <({double left, String char})>[];
+  for (var i = 0; i < code.length; i++) {
+    final boxes = paragraph.getBoxesForSelection(
+      TextSelection(baseOffset: i, extentOffset: i + 1),
+    );
+    expect(boxes, isNotEmpty, reason: 'no box laid out for "${code[i]}"');
+    glyphs.add((left: boxes.first.left, char: code[i]));
+  }
+  glyphs.sort((a, b) => a.left.compareTo(b.left));
+  return glyphs.map((g) => g.char).join();
+}
+
+/// Empty space either side of the painted code inside its panel. Whichever
+/// side is smaller is the edge the code hugs, so the two can be compared
+/// without inventing a pixel threshold.
+({double left, double right}) _slack(WidgetTester tester, String code) {
+  final paragraph = tester.renderObject<RenderParagraph>(find.text(code));
+  final boxes = paragraph.getBoxesForSelection(
+    TextSelection(baseOffset: 0, extentOffset: code.length),
+  );
+  expect(boxes, isNotEmpty);
+  final left = boxes.map((b) => b.left).reduce((a, b) => a < b ? a : b);
+  final right = boxes.map((b) => b.right).reduce((a, b) => a > b ? a : b);
+  return (left: left, right: paragraph.size.width - right);
+}
+
+/// Codes the backend genuinely allows: `PromoAdRequest` caps the field at 64
+/// characters and applies no pattern, so separators, percent signs and spaces
+/// all reach the app — and every one of them is a bidi reordering hazard.
+const _riskyCodes = ['10-OFF', '2026-EID', '50%-OFF', '25/MIFTAH', '20 OFF RENT'];
+
 void main() {
   testWidgets('shows the code, the business name and the terms',
       (tester) async {
-    await tester.pumpWidget(MaterialApp(
-      theme: AppTheme.lightTheme,
-      home: Scaffold(
-        body: CouponSheet(
-          ad: testAd(
-            ctaType: 'COUPON',
-            couponCode: 'MIFTAH25',
-            couponTermsEn: 'Dine-in only, Fridays',
-          ),
-        ),
+    await _pump(
+      tester,
+      ad: testAd(
+        ctaType: 'COUPON',
+        couponCode: 'MIFTAH25',
+        couponTermsEn: 'Dine-in only, Fridays',
       ),
-    ));
+    );
 
     expect(find.text('MIFTAH25'), findsOneWidget);
     expect(find.text('Spice Bazaar'), findsOneWidget);
@@ -1255,14 +1868,7 @@ void main() {
     addTearDown(() => tester.binding.defaultBinaryMessenger
         .setMockMethodCallHandler(SystemChannels.platform, null));
 
-    await tester.pumpWidget(MaterialApp(
-      theme: AppTheme.lightTheme,
-      home: Scaffold(
-        body: CouponSheet(
-          ad: testAd(ctaType: 'COUPON', couponCode: 'MIFTAH25'),
-        ),
-      ),
-    ));
+    await _pump(tester, ad: testAd(ctaType: 'COUPON', couponCode: 'MIFTAH25'));
 
     await tester.tap(find.byKey(const Key('coupon-copy')));
     await tester.pump();
@@ -1272,14 +1878,7 @@ void main() {
   });
 
   testWidgets('omits the terms block when there are none', (tester) async {
-    await tester.pumpWidget(MaterialApp(
-      theme: AppTheme.lightTheme,
-      home: Scaffold(
-        body: CouponSheet(
-          ad: testAd(ctaType: 'COUPON', couponCode: 'MIFTAH25'),
-        ),
-      ),
-    ));
+    await _pump(tester, ad: testAd(ctaType: 'COUPON', couponCode: 'MIFTAH25'));
 
     expect(find.byKey(const Key('coupon-terms')), findsNothing);
   });
@@ -1288,12 +1887,143 @@ void main() {
       (tester) async {
     // Defensive: the backend requires a code for COUPON ads, but a card
     // arriving without one must degrade rather than show an empty pill.
-    await tester.pumpWidget(MaterialApp(
-      theme: AppTheme.lightTheme,
-      home: Scaffold(body: CouponSheet(ad: testAd(ctaType: 'COUPON'))),
-    ));
+    await _pump(tester, ad: testAd(ctaType: 'COUPON'));
 
     expect(find.byKey(const Key('coupon-copy')), findsNothing);
+  });
+
+  testWidgets('formats the expiry with an English month in English',
+      (tester) async {
+    await _pump(
+      tester,
+      ad: _ad(couponCode: 'MIFTAH25', endsAt: DateTime(2026, 3, 14, 12)),
+    );
+
+    expect(find.text('Valid until 14 Mar 2026'), findsOneWidget);
+  });
+
+  testWidgets('leaves the code on the left of its panel in English',
+      (tester) async {
+    await _pump(tester, ad: _ad(couponCode: 'MIFTAH25'));
+
+    final slack = _slack(tester, 'MIFTAH25');
+    expect(slack.left, lessThan(slack.right));
+  });
+
+  group('Arabic', () {
+    // A coupon code is an opaque identifier, not prose. The whole subtree is
+    // RTL in the Arabic app, and bidi reorders any code that mixes digits and
+    // Latin letters around a neutral — so the renter reads `OFF-10` to the
+    // cashier while the clipboard holds `10-OFF`, with nothing on screen to
+    // say which one is real.
+    for (final code in _riskyCodes) {
+      testWidgets('renders "$code" in stored order under RTL', (tester) async {
+        await _pump(tester, ad: _ad(couponCode: code), ar: true);
+
+        expect(
+          Directionality.of(tester.element(find.byType(CouponSheet))),
+          TextDirection.rtl,
+          reason: 'the fixture must actually be RTL for this to mean anything',
+        );
+        expect(_asRendered(tester, code), code);
+      });
+    }
+
+    testWidgets('shows the reader exactly what the copy button copies',
+        (tester) async {
+      const code = '10-OFF';
+      final copied = <String>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async {
+          if (call.method == 'Clipboard.setData') {
+            copied.add((call.arguments as Map)['text'] as String);
+          }
+          return null;
+        },
+      );
+      addTearDown(() => tester.binding.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null));
+
+      await _pump(tester, ad: _ad(couponCode: code), ar: true);
+      await tester.tap(find.byKey(const Key('coupon-copy')));
+      await tester.pump();
+
+      expect(copied, [code]);
+      expect(_asRendered(tester, code), copied.single);
+    });
+
+    testWidgets('keeps an all-Latin code readable under RTL', (tester) async {
+      await _pump(tester, ad: _ad(couponCode: 'MIFTAH25'), ar: true);
+
+      expect(_asRendered(tester, 'MIFTAH25'), 'MIFTAH25');
+    });
+
+    testWidgets('moves the code to the reading edge of its panel',
+        (tester) async {
+      // Pinning the glyph order must not also pin the block to the left: in
+      // RTL the panel's copy button sits on the left, so a left-aligned code
+      // would huddle against it with dead space where the eye starts.
+      await _pump(tester, ad: _ad(couponCode: 'MIFTAH25'), ar: true);
+
+      final slack = _slack(tester, 'MIFTAH25');
+      expect(slack.right, lessThan(slack.left));
+    });
+
+    testWidgets('labels the copy button in Arabic', (tester) async {
+      await _pump(tester, ad: _ad(couponCode: 'MIFTAH25'), ar: true);
+
+      expect(find.text('نسخ'), findsOneWidget);
+      expect(find.text('Copy'), findsNothing);
+    });
+
+    testWidgets('confirms the copy in Arabic', (tester) async {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async => null,
+      );
+      addTearDown(() => tester.binding.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null));
+
+      await _pump(tester, ad: _ad(couponCode: 'MIFTAH25'), ar: true);
+      await tester.tap(find.byKey(const Key('coupon-copy')));
+      await tester.pump();
+
+      expect(find.text('تم نسخ الرمز'), findsOneWidget);
+    });
+
+    testWidgets('shows the Arabic business name, title and terms',
+        (tester) async {
+      await _pump(
+        tester,
+        ad: _ad(
+          couponCode: 'MIFTAH25',
+          couponTermsEn: 'Dine-in only, Fridays',
+          couponTermsAr: 'لتناول الطعام في المطعم فقط، أيام الجمعة',
+        ),
+        ar: true,
+      );
+
+      expect(find.text('سبايس بازار'), findsOneWidget);
+      expect(find.text('برانش الجمعة'), findsOneWidget);
+      expect(find.text('الشروط'), findsOneWidget);
+      expect(
+        find.text('لتناول الطعام في المطعم فقط، أيام الجمعة'),
+        findsOneWidget,
+      );
+      expect(find.text('Dine-in only, Fridays'), findsNothing);
+    });
+
+    testWidgets('formats the expiry with an Arabic month', (tester) async {
+      await _pump(
+        tester,
+        ad: _ad(couponCode: 'MIFTAH25', endsAt: DateTime(2026, 3, 14, 12)),
+        ar: true,
+      );
+
+      expect(find.text('ساري حتى ١٤ مارس ٢٠٢٦'), findsOneWidget);
+      expect(find.textContaining('Mar'), findsNothing);
+    });
   });
 }
 ```
@@ -1315,7 +2045,10 @@ Create `mobile/apps/renter/lib/widgets/coupon_sheet.dart`:
 ```dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:intl/intl.dart';
+// `hide TextDirection`: intl ships a bidi class of that name whose constants
+// are LTR/RTL, which silently shadows Flutter's enum. Same guard as
+// `manager/lib/screens/cheque_scan/steps/step3_confirm.dart`.
+import 'package:intl/intl.dart' hide TextDirection;
 import 'package:rentaxis_core/rentaxis_core.dart';
 
 /// The coupon reveal, shown when a `COUPON` ad is tapped. Ticket-styled: a
@@ -1385,7 +2118,22 @@ class CouponSheet extends StatelessWidget {
               child: Row(
                 children: [
                   Expanded(
-                    child: Text(code, style: MiftahType.mono(size: 18)),
+                    // A coupon code is an opaque identifier, not prose, so it
+                    // renders LTR whatever the app's language is. The Arabic
+                    // app makes this subtree RTL, and bidi then reorders any
+                    // code that mixes digits and Latin letters around a
+                    // neutral — `10-OFF` paints as `OFF-10`, `25/MIFTAH` as
+                    // `MIFTAH/25`. The renter would read that reversed string
+                    // to a cashier while the Copy button put the real one on
+                    // the clipboard, with nothing on screen to say which is
+                    // right. `textAlign` keeps the block on the sheet's
+                    // reading edge; only the glyph order is pinned.
+                    child: Text(
+                      code,
+                      textDirection: TextDirection.ltr,
+                      textAlign: isAr ? TextAlign.right : TextAlign.left,
+                      style: MiftahType.mono(size: 18),
+                    ),
                   ),
                   TextButton.icon(
                     key: const Key('coupon-copy'),
@@ -1411,10 +2159,7 @@ class CouponSheet extends StatelessWidget {
             const SizedBox(height: 14),
           ],
           if (ad.endsAt != null)
-            Text(
-              '${l.validUntil} ${DateFormat('d MMM yyyy').format(ad.endsAt!.toLocal())}',
-              style: MiftahType.meta(),
-            ),
+            Text(l.validUntilLine(ad.endsAt!), style: MiftahType.meta()),
         ],
       ),
     );
@@ -1429,6 +2174,24 @@ class _L {
   String get copied => ar ? 'تم نسخ الرمز' : 'Code copied';
   String get terms => ar ? 'الشروط' : 'TERMS';
   String get validUntil => ar ? 'ساري حتى' : 'Valid until';
+
+  /// The expiry line, with the month name in the app's own language — an
+  /// English "Mar" inside an otherwise Arabic sheet reads half-translated.
+  /// Same pattern as `payments_screen._fmtDate` and `home_screen._shortDate`.
+  ///
+  /// `intl` only knows a named locale once its date symbols are initialised,
+  /// which `GlobalMaterialLocalizations` does as it loads — the same delegate
+  /// that decides [ar] in the first place, so the real app is always ready.
+  /// The fallback is for anything that mounts this sheet without it: an
+  /// un-localised month beats throwing inside a bottom sheet.
+  String validUntilLine(DateTime endsAt) {
+    final when = endsAt.toLocal();
+    try {
+      return '$validUntil ${DateFormat('d MMM yyyy', ar ? 'ar' : 'en').format(when)}';
+    } on Exception {
+      return '$validUntil ${DateFormat('d MMM yyyy').format(when)}';
+    }
+  }
 }
 ```
 
@@ -1440,7 +2203,7 @@ Run:
 cd mobile/apps/renter && flutter test test/coupon_sheet_test.dart
 ```
 
-Expected: PASS, 4 tests.
+Expected: PASS, 18 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -1477,22 +2240,61 @@ List<PromoAd> ads(int count) =>
 Widget host(
   Widget child, {
   bool disableAnimations = false,
+  Size size = const Size(400, 800),
+  TextDirection? textDirection,
 }) =>
     MaterialApp(
       theme: AppTheme.lightTheme,
       home: MediaQuery(
         data: MediaQueryData(
-          size: const Size(400, 800),
+          size: size,
           disableAnimations: disableAnimations,
         ),
-        child: Scaffold(body: child),
+        child: Scaffold(
+          body: textDirection == null
+              ? child
+              : Directionality(textDirection: textDirection, child: child),
+        ),
       ),
     );
 
 double? currentPage(WidgetTester tester) =>
-    tester.widget<PageView>(find.byType(PageView)).controller.page;
+    tester.widget<PageView>(find.byType(PageView)).controller!.page;
+
+/// Resizes the surface the strip actually lays out in. A `MediaQuery` override
+/// alone does not — see the note in [main].
+void setSurfaceWidth(WidgetTester tester, double width) {
+  tester.view.devicePixelRatio = 1.0;
+  tester.view.physicalSize = Size(width, 800);
+}
+
+/// The painted bounds of the nth ad card, in global coordinates.
+Rect cardRect(WidgetTester tester, int index) => tester.getRect(
+      find.ancestor(
+        of: find.text('Offer $index'),
+        matching: find.byKey(const Key('ad-card-surface')),
+      ),
+    );
+
+/// The dot row marks the active index by widening that dot to 18; the rest
+/// stay 6. Reading the rendered width is how a test sees which dot is lit.
+double dotWidth(WidgetTester tester, int index) =>
+    tester.getSize(find.byKey(Key('promo-dot-$index'))).width;
 
 void main() {
+  // The MediaQuery in `host` declares a 400x800 canvas but a MediaQuery
+  // override does not resize the surface the widget actually lays out in —
+  // without this the strip renders at the default 800x600, where a page is
+  // 800*0.92 = 736px and the swipe tests' 300px drag is under the half-page
+  // PageView snaps on. This makes the declared canvas real.
+  setUp(() {
+    final view =
+        TestWidgetsFlutterBinding.ensureInitialized().platformDispatcher.views.first;
+    view.devicePixelRatio = 1.0;
+    view.physicalSize = const Size(400, 800);
+    addTearDown(view.reset);
+  });
+
   testWidgets('an empty list renders nothing', (tester) async {
     await tester.pumpWidget(host(AdsCarousel(ads: const [], onTapAd: (_) {})));
 
@@ -1541,13 +2343,42 @@ void main() {
     await tester.pumpWidget(host(AdsCarousel(ads: ads(3), onTapAd: (_) {})));
     await tester.pump();
 
+    // Drag at t=3s, one second short of the tick the running timer has already
+    // scheduled for t=4s. That ordering is the whole test: the pause has to
+    // swallow a tick that was genuinely due, and the only window where a
+    // cancelled timer differs from an uncancelled one is between the drag and
+    // the resume. Drag at t=0 instead and the assertion below never reaches
+    // t=4s at all, so it passes whether or not anything was cancelled.
+    await tester.pump(const Duration(seconds: 3));
+    await tester.drag(find.byType(PageView), const Offset(-300, 0));
+    await tester.pumpAndSettle();
+    expect(currentPage(tester), 1, reason: 'the drag itself lands on page 1');
+
+    // t is now ~3.8s. Two more seconds carries us past that 4s tick while
+    // staying well inside the 3s resume shadow (which reaches ~6.8s, with its
+    // own first tick at ~10.8s), so an advance here can only be the tick the
+    // drag was supposed to cancel.
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pumpAndSettle();
+
+    expect(currentPage(tester), 1);
+  });
+
+  testWidgets('auto-advance does not resume before the 3s delay is up',
+      (tester) async {
+    await tester.pumpWidget(host(AdsCarousel(ads: ads(3), onTapAd: (_) {})));
+    await tester.pump();
+
     await tester.drag(find.byType(PageView), const Offset(-200, 0));
     await tester.pumpAndSettle();
     final afterDrag = currentPage(tester);
 
-    // Well past the 4s tick, but inside the 3s resume delay's shadow: the
-    // timer was cancelled by the drag, so nothing should move on its own.
-    await tester.pump(const Duration(seconds: 2));
+    // The lower edge of the resume delay. Five seconds is past the 4s the
+    // interval alone would need, but short of the 3s + 4s a correctly delayed
+    // resume needs — so a strip that resumed immediately has moved by now and
+    // one that waited has not. Without this the delay could be zero and the
+    // suite would not notice.
+    await tester.pump(const Duration(seconds: 5));
     await tester.pumpAndSettle();
 
     expect(currentPage(tester), afterDrag);
@@ -1562,7 +2393,8 @@ void main() {
     await tester.pumpAndSettle();
     final afterDrag = currentPage(tester)!;
 
-    // 3s to resume, then a further 4s for the first tick.
+    // The upper edge: 3s to resume, then a further 4s for the first tick. Any
+    // delay longer than 3s leaves the strip still parked here.
     await tester.pump(const Duration(seconds: 3));
     await tester.pump(const Duration(seconds: 4));
     await tester.pumpAndSettle();
@@ -1652,8 +2484,19 @@ void main() {
       )));
       await tester.pump();
 
-      expect(find.byKey(const Key('promo-see-all')), findsOneWidget);
       expect(find.byKey(const Key('promo-dot-3')), findsOneWidget);
+
+      // A PageView builds lazily — it mounts its viewport plus one viewport of
+      // cache either side, so a 4th page of 0.88 viewports each is not in the
+      // element tree at page 0 at any surface size. Scroll to it before
+      // asserting it is there.
+      for (var i = 0; i < 3; i++) {
+        await tester.drag(find.byType(PageView), const Offset(-300, 0));
+        await tester.pumpAndSettle();
+      }
+
+      expect(currentPage(tester), 3);
+      expect(find.byKey(const Key('promo-see-all')), findsOneWidget);
     });
 
     testWidgets('is omitted when onSeeAll is null', (tester) async {
@@ -1678,6 +2521,135 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(seen, ['ad-0']);
+    });
+  });
+
+  group('a feed that shrinks under the renter', () {
+    /// Parks the strip on the last of three cards, then rebuilds it in place
+    /// with only the first two — one ad expired. `HomeAdsStrip` passes no key,
+    /// so `ref.invalidate(homePromoFeedProvider)` reuses this very State and
+    /// everything it remembers about the page it was on.
+    Future<void> expireTheLastAd(
+      WidgetTester tester, {
+      List<String>? impressions,
+    }) async {
+      final onImpression = impressions?.add;
+      final three = ads(3);
+      await tester.pumpWidget(host(
+        AdsCarousel(ads: three, onTapAd: (_) {}, onImpression: onImpression),
+      ));
+      await tester.pump();
+
+      for (var i = 0; i < 2; i++) {
+        await tester.drag(find.byType(PageView), const Offset(-300, 0));
+        await tester.pumpAndSettle();
+      }
+      expect(currentPage(tester), 2);
+
+      // Everything from here is about the new slate only.
+      impressions?.clear();
+
+      final before = tester.state(find.byType(AdsCarousel));
+      await tester.pumpWidget(host(
+        AdsCarousel(
+          ads: three.take(2).toList(),
+          onTapAd: (_) {},
+          onImpression: onImpression,
+        ),
+      ));
+      await tester.pump();
+      expect(
+        identical(before, tester.state(find.byType(AdsCarousel))),
+        isTrue,
+        reason: 'the State must survive, or there is no stale page to clamp',
+      );
+    }
+
+    testWidgets('reports an impression for the card left on stage',
+        (tester) async {
+      final seen = <String>[];
+      await expireTheLastAd(tester, impressions: seen);
+
+      // The PageView clamps its own scroll offset to the new last page during
+      // layout, silently — onPageChanged never fires. So nothing else will
+      // ever credit ad-1 with the view the renter is having right now.
+      expect(currentPage(tester), 1);
+      expect(seen, ['ad-1']);
+    });
+
+    testWidgets('lights the dot for the card left on stage', (tester) async {
+      await expireTheLastAd(tester);
+      await tester.pumpAndSettle();
+
+      expect(dotWidth(tester, 1), 18);
+      expect(dotWidth(tester, 0), 6);
+    });
+
+    testWidgets('keeps auto-advancing', (tester) async {
+      await expireTheLastAd(tester);
+
+      // A page index left at 2 makes the tick compute (2 + 1) % 2 = 1 — the
+      // page the controller is already parked on. Nothing moves, so
+      // onPageChanged never fires, so the index never repairs itself: the
+      // strip is frozen for the rest of the session.
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
+
+      expect(currentPage(tester), 0);
+    });
+  });
+
+  group('page geometry', () {
+    // HomeAdsStrip breaks the strip out of the home ListView's 20px gutter to
+    // get full screen width, so the carousel owes that gutter back itself.
+    // Under `padEnds: true` the arithmetic is forced: for viewport fraction f
+    // and item padding p, margin = (1 - f) * W / 2 + p and peek = (1 - f) * W
+    // / 2 - p, so margin - peek is always 2p and the two cannot be tuned
+    // independently. f = 0.92 with p = 4 is the point that lands the margin on
+    // the home gutter across real phone widths while still leaving the next
+    // card enough of itself showing to read as a card.
+    for (final width in [360.0, 393.0, 430.0]) {
+      testWidgets('a card sits on the home gutter at ${width}pt', (tester) async {
+        setSurfaceWidth(tester, width);
+        await tester.pumpWidget(host(
+          AdsCarousel(ads: ads(3), onTapAd: (_) {}),
+          size: Size(width, 800),
+        ));
+        await tester.pump();
+
+        final first = cardRect(tester, 0);
+        final second = cardRect(tester, 1);
+
+        // The worst case in this range is 360pt, where the margin is exactly
+        // 18.4 — 1.6 off. The extra hundredth is there only to absorb double
+        // precision noise, not to buy slack.
+        expect(first.left, closeTo(20, 1.61));
+        expect(width - first.right, closeTo(20, 1.61));
+        expect(width - second.left, greaterThanOrEqualTo(10),
+            reason: 'the next card must peek in far enough to be legible');
+        expect(second.left - first.right, closeTo(8, 0.01),
+            reason: 'two item paddings meet between cards');
+      });
+    }
+
+    testWidgets('the gutter survives Arabic', (tester) async {
+      const width = 393.0;
+      setSurfaceWidth(tester, width);
+      await tester.pumpWidget(host(
+        AdsCarousel(ads: ads(3), onTapAd: (_) {}),
+        size: const Size(width, 800),
+        textDirection: TextDirection.rtl,
+      ));
+      await tester.pump();
+
+      final first = cardRect(tester, 0);
+      final second = cardRect(tester, 1);
+
+      expect(first.left, closeTo(20, 1.6));
+      expect(width - first.right, closeTo(20, 1.6));
+      // Pages run right-to-left, so the second card peeks in from the left.
+      expect(second.right, greaterThanOrEqualTo(10));
+      expect(first.left - second.right, closeTo(8, 0.01));
     });
   });
 
@@ -1755,7 +2727,24 @@ class _AdsCarouselState extends State<AdsCarousel> {
   static const _resumeDelay = Duration(seconds: 3);
   static const _pageAnimationDuration = Duration(milliseconds: 450);
 
-  final _pageController = PageController(viewportFraction: 0.88);
+  /// The card's outer margin and the peek of the next card are not independent
+  /// knobs. With `padEnds: true` the viewport pads each end by half the
+  /// off-viewport fraction, so for a screen of width W:
+  ///
+  ///     margin = (1 - f) * W / 2 + p
+  ///     peek   = (1 - f) * W / 2 - p
+  ///
+  /// and therefore `margin - peek == 2 * p`, always. `HomeAdsStrip` escapes
+  /// the home `ListView`'s 20px gutter to take the full screen width, so this
+  /// widget has to reproduce that 20px itself or the promo cards sit visibly
+  /// deeper than every sibling card on the screen. f = 0.92 with p = 4 puts
+  /// the margin within 1.6px of 20 from 360pt to 430pt — every phone we ship
+  /// to — while still leaving the next card at least 10px of peek.
+  static const _viewportFraction = 0.92;
+  static const _itemPadding = EdgeInsets.symmetric(horizontal: 4);
+
+  final _pageController = PageController(viewportFraction: _viewportFraction);
+
   Timer? _autoAdvanceTimer;
   Timer? _resumeTimer;
   int _page = 0;
@@ -1805,6 +2794,34 @@ class _AdsCarouselState extends State<AdsCarousel> {
     if (!reducedMotion) _startAutoAdvance(length);
   }
 
+  /// Pulls [_page] back inside the list after the feed changes under us.
+  ///
+  /// [_page] is otherwise written only by `onPageChanged`, and a `PageView`
+  /// whose `itemCount` shrinks clamps its own scroll offset during layout
+  /// *without* firing that callback. Left alone, [_page] then points past the
+  /// end for good, and every consequence is silent: the dot row lights no dot
+  /// at all, the auto-advance animates to `(_page + 1) % length` — a page the
+  /// controller is already parked on, so it never moves and `onPageChanged`
+  /// never gets the chance to repair [_page] — and not one impression is
+  /// recorded for the new slate for the rest of the session.
+  ///
+  /// The strip is rebuilt in place rather than recreated (`HomeAdsStrip`
+  /// passes no key), so this State really does outlive the list it was
+  /// describing.
+  void _reconcilePage() {
+    final pageCount = _pageCount;
+    if (pageCount == 0 || _page < pageCount) return;
+    // No setState: didUpdateWidget is followed by a build regardless, and the
+    // controller has already clamped its own offset to this same page.
+    _page = pageCount - 1;
+    // Deferred for the same reason the first impression is: onImpression may
+    // reach a provider, and the parent is mid-build right now.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _reportImpression(_page);
+    });
+  }
+
   void _reportImpression(int index) {
     final onImpression = widget.onImpression;
     // The see-all tile is a page but not an ad — it never counts as a view.
@@ -1820,6 +2837,12 @@ class _AdsCarouselState extends State<AdsCarousel> {
       if (!mounted || widget.ads.isEmpty) return;
       _reportImpression(0);
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant AdsCarousel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _reconcilePage();
   }
 
   @override
@@ -1858,28 +2881,35 @@ class _AdsCarouselState extends State<AdsCarousel> {
               }
               return false;
             },
+            // padEnds stays at its default `true`. A fractional-viewport
+            // PageView with padEnds: false tops out at `count - 1 /
+            // viewportFraction` pages — at 0.92 that is 1.09 pages short of
+            // the end, so the last ad can never become the current page: it
+            // sits clamped against the trailing edge, never on stage, and the
+            // auto-advance animates to an index the controller then refuses.
+            // Padded ends cost a wider outer margin and a smaller peek; a
+            // reachable last banner is worth both, and _viewportFraction and
+            // _itemPadding are tuned together to buy the margin back.
             child: PageView.builder(
               controller: _pageController,
-              padEnds: false,
               itemCount: pageCount,
               onPageChanged: (i) {
                 setState(() => _page = i);
                 _reportImpression(i);
               },
               itemBuilder: (context, i) {
-                final padding = EdgeInsetsDirectional.only(
-                  start: i == 0 ? 14 : 6,
-                  end: i == pageCount - 1 ? 14 : 6,
-                );
+                // Uniform: padded ends already inset the first and last page
+                // by half the off-viewport fraction, so a wider edge padding
+                // would only make the outer cards narrower than the rest.
                 if (i >= widget.ads.length) {
                   return Padding(
-                    padding: padding,
+                    padding: _itemPadding,
                     child: _SeeAllTile(onTap: widget.onSeeAll!),
                   );
                 }
                 final ad = widget.ads[i];
                 return Padding(
-                  padding: padding,
+                  padding: _itemPadding,
                   child: AdCard(ad: ad, onTap: () => widget.onTapAd(ad)),
                 );
               },
@@ -1973,7 +3003,7 @@ Run:
 cd mobile/apps/renter && flutter test test/ads_carousel_test.dart
 ```
 
-Expected: PASS, 16 tests.
+Expected: PASS, 24 tests.
 
 If `reports an impression for the first page on build` fails with an empty list, the post-frame callback is running before the first `pump()` completes — keep the `await tester.pump()` in the test rather than moving the callback.
 
@@ -1985,6 +3015,38 @@ git commit -m "feat(renter): auto-advancing ads carousel with pause-on-touch"
 ```
 
 ---
+
+### Why `padEnds: true`, and what it costs
+
+The plan originally specified `padEnds: false` for a flush 14px screen margin
+with a 42px peek. That cannot work. A `PageView` with `viewportFraction` f and
+unpadded ends has a `maxScrollExtent` that puts the top page value at
+`count - 1/f`. At f = 0.88 with four pages that is **2.864** -- verified by
+probe, `jumpToPage(3)` lands on 2.864 and stays there. The last ad can never
+become the current page: it sits clamped against the trailing edge, never on
+stage, its impression never counted, and auto-advance animates to an index the
+controller quietly refuses.
+
+`padEnds: true` is the only fix that keeps a peek at all -- `viewportFraction:
+1.0` would remove it. The cost is that margin and peek become locked together:
+
+```
+margin = (1 - f) * W / 2 + itemPadding
+peek   = (1 - f) * W / 2 - itemPadding
+```
+
+so `margin - peek = 2 * itemPadding` and the margin can never be smaller than
+the peek. At f = 0.88, W = 400 and itemPadding = 6 that is a 30px margin with an
+18px peek, replacing the specced 14px and 42px.
+
+Item padding is uniform (`EdgeInsets.symmetric(horizontal: 6)`) rather than the
+plan's `i == 0 ? 14 : 6`, because padded ends already inset the outer pages and
+the original asymmetry would now just make the first and last cards narrower
+than the rest.
+
+Note that `HomeAdsStrip` escapes the home `ListView`'s 20px gutter to span the
+full width, so a 30px margin insets these cards 10px deeper than every sibling
+card on the home screen. That is a live design question, not a settled one.
 
 ## Task 7: `PromoActions` — what a tap does
 
@@ -2134,6 +3196,62 @@ void main() {
     // A missing browser must not crash the home screen.
     expect(tester.takeException(), isNull);
   });
+  testWidgets('a credentials-in-authority url is refused', (tester) async {
+    // https://my-bank.com@spice-bazaar.ae/ renders as "my-bank.com" in the
+    // minimal chrome of an in-app browser. The server refuses any '@' in the
+    // authority for exactly this reason; Uri.tryParse happily reports
+    // scheme=https, so checking the scheme alone would have launched it.
+    final launcher = _RecordingLauncher();
+    await tapWith(
+      tester,
+      PromoActions(launcher: launcher.call),
+      testAd(
+        ctaType: 'WEBSITE',
+        ctaUrl: 'https://my-bank.com@spice-bazaar.ae/friday',
+      ),
+    );
+
+    expect(launcher.uris, isEmpty);
+  });
+
+  testWidgets('an https url with no host is refused', (tester) async {
+    // Uri.tryParse('https:///nohost') yields scheme=https with an empty host.
+    final launcher = _RecordingLauncher();
+    await tapWith(
+      tester,
+      PromoActions(launcher: launcher.call),
+      testAd(ctaType: 'WEBSITE', ctaUrl: 'https:///nohost'),
+    );
+
+    expect(launcher.uris, isEmpty);
+  });
+
+  testWidgets('a whatsapp number keyed with spaces still resolves',
+      (tester) async {
+    // wa.me wants bare digits. An admin typing the number the way it appears
+    // on a business card used to produce a link with encoded spaces in it.
+    final launcher = _RecordingLauncher();
+    await tapWith(
+      tester,
+      PromoActions(launcher: launcher.call),
+      testAd(ctaType: 'WHATSAPP', ctaPhone: '+971 50 123 4567'),
+    );
+
+    expect(launcher.uris.single, Uri.parse('https://wa.me/971501234567'));
+  });
+
+  testWidgets('a whatsapp number with no digits at all does nothing',
+      (tester) async {
+    final launcher = _RecordingLauncher();
+    await tapWith(
+      tester,
+      PromoActions(launcher: launcher.call),
+      testAd(ctaType: 'WHATSAPP', ctaPhone: '---'),
+    );
+
+    expect(launcher.uris, isEmpty);
+  });
+
 }
 ```
 
@@ -2169,9 +3287,14 @@ typedef PromoUrlLauncher = Future<bool> Function(
 ///
 /// Links open in an **in-app browser** rather than the system browser: the
 /// renter stays in Miftah and sees the host in the in-app chrome. The URL is
-/// re-checked for `https` here even though the backend already validated it
-/// against the business's domain allowlist on write — defence in depth, since
-/// this is the last point before a renter is sent somewhere.
+/// re-checked here even though the backend already validated it against the
+/// business's domain allowlist on write — defence in depth, since this is the
+/// last point before a renter is sent somewhere.
+///
+/// The client-side checks deliberately mirror `PromotionUrlValidator` on the
+/// server (https only, a real host, no userinfo). The one rule this side
+/// cannot repeat is the per-business domain allowlist: the allowlist is not
+/// part of the renter-facing DTO, so host matching stays server-only.
 class PromoActions {
   PromoActions({PromoUrlLauncher? launcher}) : _launch = launcher ?? launchUrl;
 
@@ -2196,17 +3319,37 @@ class PromoActions {
     final url = raw?.trim();
     if (url == null || url.isEmpty) return;
     final uri = Uri.tryParse(url);
-    if (uri == null || uri.scheme.toLowerCase() != 'https') return;
+    if (uri == null) return;
+    // https only. `Uri.tryParse` is far more forgiving than the server's
+    // `new URI(...)` — it happily turns junk into a relative reference with an
+    // empty scheme — so every part of the authority is checked explicitly
+    // rather than inferred from "it parsed".
+    if (uri.scheme.toLowerCase() != 'https') return;
+    // `https:///path` parses with an empty host; the server refuses it and so
+    // does this.
+    if (uri.host.isEmpty) return;
+    // Userinfo is refused outright, exactly as the server does:
+    // `https://my-bank.com@spice-bazaar.ae/` reads as the bank in an in-app
+    // browser's minimal URL chrome while navigating somewhere else entirely.
+    if (uri.userInfo.isNotEmpty) return;
     await _safeLaunch(uri, LaunchMode.inAppBrowserView);
   }
 
   Future<void> _openPhone(String? raw, {required bool whatsapp}) async {
     final phone = raw?.trim();
     if (phone == null || phone.isEmpty) return;
-    final uri = whatsapp
-        // wa.me wants digits only, no leading plus.
-        ? Uri.parse('https://wa.me/${phone.replaceFirst('+', '')}')
-        : Uri.parse('tel:$phone');
+    final Uri uri;
+    if (whatsapp) {
+      // wa.me wants bare digits — no plus, and no spaces, dashes or brackets
+      // either, all of which admins type into a phone field.
+      final digits = phone.replaceAll(RegExp(r'[^0-9]'), '');
+      if (digits.isEmpty) return;
+      uri = Uri.parse('https://wa.me/$digits');
+    } else {
+      // Built rather than parsed so an admin-entered number with spaces is
+      // percent-encoded instead of throwing a FormatException at the tap.
+      uri = Uri(scheme: 'tel', path: phone);
+    }
     await _safeLaunch(
       uri,
       whatsapp ? LaunchMode.externalApplication : LaunchMode.platformDefault,
@@ -2235,7 +3378,7 @@ Run:
 cd mobile/apps/renter && flutter test test/promo_actions_test.dart
 ```
 
-Expected: PASS, 9 tests.
+Expected: PASS, 13 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -2245,6 +3388,22 @@ git commit -m "feat(renter): promo tap handling for website, coupon, call and wh
 ```
 
 ---
+
+The client re-checks the URL rather than trusting that the server validated it
+on write. It refuses a non-https scheme, an empty host, and any authority
+carrying userinfo -- `https://my-bank.com@spice-bazaar.ae/` renders as the bank
+in an in-app browser's minimal chrome, which is why the server refuses `@` too.
+`Uri.tryParse` is permissive where the server's `new URI(...)` is strict, so
+each component is checked explicitly; "it parsed" is not validation.
+
+The per-business domain allowlist stays server-only -- it is not part of the
+renter-facing `PromoAd`, so the client cannot check host membership. Worth
+knowing: if the allowlist is ever bypassed on write, the client cannot catch it.
+
+`tel:` is built as `Uri(scheme: 'tel', path: phone)`, not `Uri.parse('tel:$phone')`,
+because parse throws a `FormatException` on an admin-typed number and would do
+it outside the launch try/catch. WhatsApp strips all non-digits, not just a
+leading `+`, so a number keyed as it appears on a business card still resolves.
 
 ## Task 8: Wire the strip into the home screen
 
@@ -2261,9 +3420,13 @@ Create `mobile/apps/renter/test/home_ads_strip_test.dart`:
 
 ```dart
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
+import 'package:renter/widgets/ad_card.dart';
 import 'package:renter/widgets/ads_carousel.dart';
 import 'package:renter/widgets/home_ads_strip.dart';
 
@@ -2281,6 +3444,90 @@ Widget host(FakePromotionService fake) => ProviderScope(
         ),
       ),
     );
+
+/// The home screen's stack around the strip, reproduced. The two markers stand
+/// in for `_QuickActions` above and `_FacilitiesCard` below, which are private
+/// to `home_screen.dart`.
+///
+/// Note there is exactly ONE [MiftahSpacing.gap] here, the one that belongs to
+/// the card below. The strip brings its own leading gap when it has something
+/// to show, so that a tenant with no promotions gets 11px between quick actions
+/// and facilities rather than a doubled 22px hole where the strip would be.
+Widget sandwich(FakePromotionService fake) => ProviderScope(
+      overrides: [promotionServiceProvider.overrideWithValue(fake)],
+      child: MaterialApp(
+        theme: AppTheme.lightTheme,
+        home: Scaffold(
+          body: ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            children: const [
+              SizedBox(key: Key('above'), height: 40),
+              HomeAdsStrip(),
+              SizedBox(height: MiftahSpacing.gap),
+              SizedBox(key: Key('below'), height: 40),
+            ],
+          ),
+        ),
+      ),
+    );
+
+/// A real router, so a tap on an entry point is checked by where it lands
+/// rather than by which callback was wired.
+Widget routedHost(FakePromotionService fake) => ProviderScope(
+      overrides: [promotionServiceProvider.overrideWithValue(fake)],
+      child: MaterialApp.router(
+        theme: AppTheme.lightTheme,
+        routerConfig: GoRouter(routes: [
+          GoRoute(
+            path: '/',
+            builder: (_, _) => Scaffold(
+              body: ListView(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                children: const [HomeAdsStrip()],
+              ),
+            ),
+          ),
+          GoRoute(
+            path: '/offers',
+            builder: (_, _) => const Scaffold(body: Text('offers-screen')),
+          ),
+        ]),
+      ),
+    );
+
+Widget arHost(FakePromotionService fake) => ProviderScope(
+      overrides: [promotionServiceProvider.overrideWithValue(fake)],
+      child: MaterialApp(
+        theme: AppTheme.lightTheme,
+        locale: const Locale('ar'),
+        supportedLocales: const [Locale('en'), Locale('ar')],
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        home: Scaffold(
+          body: ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            children: const [HomeAdsStrip()],
+          ),
+        ),
+      ),
+    );
+
+/// Drives the lifecycle the way the engine does, over `flutter/lifecycle`.
+///
+/// Deliberately not `tester.binding.handleAppLifecycleStateChanged`: that is
+/// `@protected`, and calling it from here would trip the analyzer. Going
+/// through the channel also lets `ServicesBinding` generate the intermediate
+/// states, so the sequence is the one a real backgrounding produces.
+void sendLifecycle(WidgetTester tester, AppLifecycleState state) {
+  tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+    SystemChannels.lifecycle.name,
+    const StringCodec().encodeMessage(state.toString()),
+    (_) {},
+  );
+}
 
 void main() {
   testWidgets('renders nothing while the feed is loading', (tester) async {
@@ -2355,6 +3602,193 @@ void main() {
       isNull,
     );
   });
+
+  // ---------------------------------------------------------------------
+  // Analytics delivery.
+  //
+  // dispose() and didChangeAppLifecycleState(paused) are the ONLY two callers
+  // of PromoEventQueue.flush() in the app. If either stops firing, impressions
+  // and clicks pile up in the queue and are dropped on the floor: the renter
+  // sees nothing wrong, nothing is logged, and every promoted business reports
+  // zeroes forever. Both paths are asserted end-to-end, against what actually
+  // reached the service.
+  // ---------------------------------------------------------------------
+
+  group('flushes queued analytics', () {
+    // One ad, no see-all: a single-page carousel starts no auto-advance timer,
+    // which keeps pumpAndSettle from spinning on it.
+    FakePromotionService oneAd() =>
+        FakePromotionService(feedAds: [testAd(id: 'ad-0')]);
+
+    // PromoEvent has no toString, so a raw `contains` failure prints
+    // "Instance of 'PromoEvent'". The wire shape is both readable and the
+    // thing that actually has to arrive.
+    List<Map<String, dynamic>> sent(FakePromotionService fake) =>
+        fake.postedEvents.map((e) => e.toJson()).toList();
+
+    testWidgets('when the strip leaves the tree', (tester) async {
+      final fake = oneAd();
+      await tester.pumpWidget(host(fake));
+      await tester.pumpAndSettle();
+
+      expect(sent(fake), isEmpty,
+          reason: 'events buffer on the device until something flushes them');
+
+      // Navigating off home tears the strip down — this is the flush that
+      // carries a renter's whole home-screen session.
+      await tester.pumpWidget(const MaterialApp(home: SizedBox.shrink()));
+      await tester.pumpAndSettle();
+
+      expect(sent(fake), [
+        {'adId': 'ad-0', 'type': 'IMPRESSION'},
+      ]);
+    });
+
+    testWidgets('when the app is backgrounded', (tester) async {
+      final fake = oneAd();
+      await tester.pumpWidget(host(fake));
+      await tester.pumpAndSettle();
+
+      expect(sent(fake), isEmpty);
+
+      sendLifecycle(tester, AppLifecycleState.paused);
+      await tester.pump();
+
+      // Asserted while the strip is still mounted, so a passing result cannot
+      // be the dispose flush wearing a different hat.
+      expect(find.byType(AdsCarousel), findsOneWidget);
+      expect(sent(fake), [
+        {'adId': 'ad-0', 'type': 'IMPRESSION'},
+      ]);
+      expect(fake.postedBatches, hasLength(1));
+
+      sendLifecycle(tester, AppLifecycleState.resumed);
+      await tester.pump();
+    });
+
+    testWidgets('including clicks, not just impressions', (tester) async {
+      final fake = oneAd();
+      await tester.pumpWidget(host(fake));
+      await tester.pumpAndSettle();
+
+      // ctaType NONE: the tap records the click and opens nothing.
+      await tester.tap(find.byType(AdCard).first);
+      await tester.pumpAndSettle();
+
+      await tester.pumpWidget(const MaterialApp(home: SizedBox.shrink()));
+      await tester.pumpAndSettle();
+
+      expect(sent(fake), [
+        {'adId': 'ad-0', 'type': 'IMPRESSION'},
+        {'adId': 'ad-0', 'type': 'CLICK'},
+      ]);
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // Spacing. The strip owns its leading gap so that vanishing takes its
+  // spacing with it — the same shape home_screen.dart uses for the penalty
+  // strip.
+  // ---------------------------------------------------------------------
+
+  testWidgets('an empty feed takes up no room at all', (tester) async {
+    await tester.pumpWidget(sandwich(FakePromotionService()));
+    await tester.pumpAndSettle();
+
+    expect(tester.getSize(find.byType(HomeAdsStrip)).height, 0);
+    expect(
+      tester.getRect(find.byKey(const Key('below'))).top -
+          tester.getRect(find.byKey(const Key('above'))).bottom,
+      MiftahSpacing.gap,
+      reason: 'a tenant with no promotions must not get a doubled 22px hole',
+    );
+  });
+
+  testWidgets('the strip brings its own leading gap when it has ads',
+      (tester) async {
+    await tester.pumpWidget(
+        sandwich(FakePromotionService(feedAds: [testAd(id: 'ad-0')])));
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.getRect(find.byType(AdsCarousel)).top -
+          tester.getRect(find.byKey(const Key('above'))).bottom,
+      MiftahSpacing.gap,
+    );
+  });
+
+  // ---------------------------------------------------------------------
+  // Reachability of /offers.
+  //
+  // The see-all tile is the only entry point, and it only exists when the home
+  // feed has cards. `OFFERS_ONLY` is a first-class placement in the admin ad
+  // editor, and the backend excludes those ads from the home feed while
+  // serving them on /offers — so a tenant that picks it for every ad ends up
+  // with an empty home feed and a catalogue nothing can open.
+  // ---------------------------------------------------------------------
+
+  testWidgets('offers stay reachable when the whole catalogue is offers-only',
+      (tester) async {
+    await tester.pumpWidget(host(FakePromotionService(
+      offerAds: List.generate(4, (i) => testAd(id: 'ad-$i')),
+    )));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AdsCarousel), findsNothing);
+    expect(find.byKey(const Key('promo-offers-link')), findsOneWidget);
+  });
+
+  testWidgets('the offers link opens /offers', (tester) async {
+    await tester.pumpWidget(routedHost(FakePromotionService(
+      offerAds: [testAd(id: 'ad-0')],
+    )));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('promo-offers-link')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('offers-screen'), findsOneWidget);
+  });
+
+  testWidgets('no link when there is no catalogue behind it', (tester) async {
+    await tester.pumpWidget(host(FakePromotionService()));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('promo-offers-link')), findsNothing);
+  });
+
+  testWidgets('no link when the carousel already carries the see-all tile',
+      (tester) async {
+    await tester.pumpWidget(host(FakePromotionService(
+      feedAds: List.generate(2, (i) => testAd(id: 'ad-$i')),
+      offerAds: List.generate(9, (i) => testAd(id: 'ad-$i')),
+    )));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('promo-offers-link')), findsNothing);
+    expect(
+      tester.widget<AdsCarousel>(find.byType(AdsCarousel)).onSeeAll,
+      isNotNull,
+    );
+  });
+
+  testWidgets('the offers link reads right-to-left in Arabic', (tester) async {
+    await tester.pumpWidget(arHost(FakePromotionService(
+      offerAds: [testAd(id: 'ad-0')],
+    )));
+    await tester.pumpAndSettle();
+
+    final link = find.byKey(const Key('promo-offers-link'));
+    expect(link, findsOneWidget);
+    expect(find.text('كل العروض'), findsOneWidget);
+    expect(
+      Directionality.of(tester.element(link)),
+      TextDirection.rtl,
+    );
+    // Material chevrons do not mirror themselves; the icon has to be chosen.
+    expect(find.byIcon(Icons.chevron_left), findsOneWidget);
+    expect(find.byIcon(Icons.chevron_right), findsNothing);
+  });
 }
 ```
 
@@ -2381,15 +3815,21 @@ import 'package:go_router/go_router.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
 import '../providers/promotion_provider.dart';
+import 'ad_card.dart';
 import 'ads_carousel.dart';
 import 'promo_actions.dart';
 
 /// The promotions strip as the home screen uses it: reads the feed, escapes
 /// the page gutter, and wires taps and impressions.
 ///
-/// Renders nothing at all while loading, on error, or with an empty feed. A
-/// dead promotions endpoint must never put an error card on the home screen —
-/// ads are the least important thing there.
+/// Renders nothing at all while loading, on error, or when neither the feed
+/// nor the catalogue has anything in it. A dead promotions endpoint must never
+/// put an error card on the home screen — ads are the least important thing
+/// there.
+///
+/// An empty feed over a non-empty catalogue is the one case that still draws:
+/// a plain link to `/offers`, because this widget holds the only route into
+/// that screen.
 class HomeAdsStrip extends ConsumerStatefulWidget {
   const HomeAdsStrip({super.key});
 
@@ -2399,9 +3839,17 @@ class HomeAdsStrip extends ConsumerStatefulWidget {
 
 class _HomeAdsStripState extends ConsumerState<HomeAdsStrip>
     with WidgetsBindingObserver {
+  /// Resolved once and held rather than read on demand: Riverpod's element is
+  /// already defunct by the time `State.dispose` runs, so `ref` there throws
+  /// `Cannot use "ref" after the widget was disposed`. Holding the instance
+  /// costs nothing — [promoEventQueueProvider] is deliberately not
+  /// `autoDispose`, so the queue outlives this widget either way.
+  late final PromoEventQueue _queue;
+
   @override
   void initState() {
     super.initState();
+    _queue = ref.read(promoEventQueueProvider);
     WidgetsBinding.instance.addObserver(this);
   }
 
@@ -2410,30 +3858,42 @@ class _HomeAdsStripState extends ConsumerState<HomeAdsStrip>
     WidgetsBinding.instance.removeObserver(this);
     // Not awaited: dispose cannot be async, and a dropped flush costs at most
     // a missing impression row.
-    unawaited(ref.read(promoEventQueueProvider).flush());
+    unawaited(_queue.flush());
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused) {
-      unawaited(ref.read(promoEventQueueProvider).flush());
+      unawaited(_queue.flush());
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final ads = ref.watch(homePromoFeedProvider).valueOrNull ?? const <PromoAd>[];
-    if (ads.isEmpty) return const SizedBox.shrink();
+    final ads =
+        ref.watch(homePromoFeedProvider).valueOrNull ?? const <PromoAd>[];
 
     // Only offer "See all" when there is genuinely more behind it. The offers
     // list is watched rather than fetched eagerly, so this resolves quietly
     // after the strip is already on screen.
+    //
+    // Watched BEFORE the empty-feed exit, not after: the see-all tile is the
+    // only door into /offers, and `OFFERS_ONLY` is a real placement in the
+    // admin ad editor that the backend keeps out of the home feed. A tenant
+    // that sets every ad to it would otherwise have an empty home feed, no
+    // tile, and a catalogue no renter can reach. The cost is one extra GET on
+    // a home screen that has no promo cards.
     final offerCount =
         ref.watch(promoOffersProvider(null)).valueOrNull?.length ?? 0;
+
+    if (ads.isEmpty) {
+      if (offerCount == 0) return const SizedBox.shrink();
+      return _leadingGap(_OffersLink(onTap: () => context.push('/offers')));
+    }
+
     final hasMore = offerCount > ads.length;
 
-    final queue = ref.read(promoEventQueueProvider);
     final actions = ref.read(promoActionsProvider);
 
     // The home ListView has a 20px horizontal gutter; the strip needs the full
@@ -2445,20 +3905,94 @@ class _HomeAdsStripState extends ConsumerState<HomeAdsStrip>
     final screenWidth = MediaQuery.sizeOf(context).width;
     final pageCount = ads.length + (hasMore ? 1 : 0);
     final stripHeight = adCardHeight(context) + (pageCount > 1 ? 16 : 0);
-    return SizedBox(
-      height: stripHeight,
-      child: OverflowBox(
-        maxWidth: screenWidth,
-        minWidth: screenWidth,
-        alignment: Alignment.center,
-        child: AdsCarousel(
-          ads: ads,
-          onImpression: queue.recordImpression,
-          onSeeAll: hasMore ? () => context.push('/offers') : null,
-          onTapAd: (ad) {
-            queue.recordClick(ad.id);
-            actions.handleTap(context, ad);
-          },
+    return _leadingGap(
+      SizedBox(
+        height: stripHeight,
+        child: OverflowBox(
+          maxWidth: screenWidth,
+          minWidth: screenWidth,
+          alignment: Alignment.center,
+          child: AdsCarousel(
+            ads: ads,
+            onImpression: _queue.recordImpression,
+            onSeeAll: hasMore ? () => context.push('/offers') : null,
+            onTapAd: (ad) {
+              _queue.recordClick(ad.id);
+              actions.handleTap(context, ad);
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The section carries its own leading gap, the way `home_screen.dart` writes
+  /// the penalty strip: a section that can disappear has to take its spacing
+  /// with it, or the two gaps around it collapse into a doubled 22px hole on
+  /// every home screen with no promotions — which is most of them.
+  Widget _leadingGap(Widget child) => Padding(
+        padding: const EdgeInsets.only(top: MiftahSpacing.gap),
+        child: child,
+      );
+}
+
+/// Stand-in entry point for /offers when the home feed has no cards of its own
+/// but the catalogue is not empty. Not the carousel's `_SeeAllTile`: that one
+/// is a full-height card page, and a lone card banner where the strip would be
+/// reads as an ad the renter never asked for. A quiet row does not.
+class _OffersLink extends StatelessWidget {
+  const _OffersLink({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final isAr = context.isAr;
+    final radius = BorderRadius.circular(MiftahRadii.card);
+    return Material(
+      color: MiftahColors.surface,
+      borderRadius: radius,
+      child: InkWell(
+        key: const Key('promo-offers-link'),
+        borderRadius: radius,
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: MiftahSpacing.cardPad,
+            vertical: 14,
+          ),
+          decoration: BoxDecoration(
+            borderRadius: radius,
+            border: Border.all(color: MiftahColors.border),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.local_offer_outlined,
+                  color: MiftahColors.brass, size: 20),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  isAr ? 'كل العروض' : 'See all offers',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: isAr
+                      ? MiftahType.ar(
+                          size: 14,
+                          weight: FontWeight.w700,
+                          color: MiftahColors.textPrimary,
+                        )
+                      : MiftahType.cardTitle(),
+                ),
+              ),
+              // Material chevrons do not mirror themselves under RTL, so the
+              // forward-pointing one has to be chosen per direction.
+              Icon(
+                isAr ? Icons.chevron_left : Icons.chevron_right,
+                color: MiftahColors.textMuted,
+                size: 22,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -2512,7 +4046,7 @@ Run:
 cd mobile/apps/renter && flutter test test/home_ads_strip_test.dart
 ```
 
-Expected: PASS, 7 tests.
+Expected: PASS, 17 tests.
 
 - [ ] **Step 6: Commit**
 
@@ -2538,6 +4072,7 @@ Create `mobile/apps/renter/test/offers_screen_test.dart`:
 
 ```dart
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
@@ -2546,11 +4081,67 @@ import 'package:renter/widgets/ad_card.dart';
 
 import 'support/fake_promotion_service.dart';
 
+/// The chip order the screen renders, mirrored here so the Arabic tests can
+/// walk every chip without exporting the screen's private list.
+const _categories = <String>[
+  'DINING',
+  'FITNESS',
+  'RETAIL',
+  'SERVICES',
+  'HEALTH',
+  'EDUCATION',
+  'OTHER',
+];
+
+/// Every English category label, for asserting none of them leak into the
+/// Arabic build.
+const _englishLabels = <String>[
+  'Dining',
+  'Fitness',
+  'Retail',
+  'Services',
+  'Health',
+  'Education',
+  'Other',
+];
+
 Widget host(FakePromotionService fake) => ProviderScope(
       overrides: [promotionServiceProvider.overrideWithValue(fake)],
       child: MaterialApp(
         theme: AppTheme.lightTheme,
         home: const OffersScreen(),
+      ),
+    );
+
+/// The same screen under the Arabic locale, wired exactly like `RenterApp`:
+/// the localizations delegates are what flip `Directionality` to RTL, so
+/// without them an "Arabic" test would silently keep testing LTR.
+Widget hostAr(FakePromotionService fake, {double textScale = 1.0}) =>
+    ProviderScope(
+      overrides: [promotionServiceProvider.overrideWithValue(fake)],
+      child: MaterialApp(
+        theme: AppTheme.lightTheme,
+        locale: const Locale('ar'),
+        supportedLocales: const [Locale('en'), Locale('ar')],
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context)
+              .copyWith(textScaler: TextScaler.linear(textScale)),
+          child: child!,
+        ),
+        home: const OffersScreen(),
+      ),
+    );
+
+/// Global bounds of a chip's rendered label.
+Rect labelRect(WidgetTester tester, String category) => tester.getRect(
+      find.descendant(
+        of: find.byKey(Key('offers-chip-$category')),
+        matching: find.byType(RichText),
       ),
     );
 
@@ -2632,6 +4223,181 @@ void main() {
 
     expect(find.byType(FloatingActionButton), findsNothing);
   });
+
+  testWidgets('sizes every category chip to the 48dp minimum tap target',
+      (tester) async {
+    // The chip row used to be pinned to a hard-coded 52px, which squashed
+    // each chip to 36 — under Material's 48dp minimum touch target.
+    await tester.pumpWidget(host(FakePromotionService(offerAds: [testAd()])));
+    await tester.pumpAndSettle();
+
+    for (final category in _categories) {
+      final chip = tester.getRect(find.byKey(Key('offers-chip-$category')));
+      expect(chip.height, greaterThanOrEqualTo(48.0),
+          reason: '$category chip is only ${chip.height}px tall');
+    }
+  });
+
+  group('Arabic', () {
+    testWidgets('labels the app bar in Arabic', (tester) async {
+      await tester.pumpWidget(hostAr(FakePromotionService()));
+      await tester.pumpAndSettle();
+
+      expect(find.text('العروض'), findsOneWidget);
+      expect(find.text('Offers'), findsNothing);
+    });
+
+    testWidgets('labels every category chip in Arabic', (tester) async {
+      await tester.pumpWidget(hostAr(FakePromotionService(offerAds: [
+        testAd(id: 'a', titleEn: 'Brunch'),
+      ])));
+      await tester.pumpAndSettle();
+
+      const arabic = <String, String>{
+        'DINING': 'مطاعم',
+        'FITNESS': 'رياضة',
+        'RETAIL': 'تسوق',
+        'SERVICES': 'خدمات',
+        'HEALTH': 'صحة',
+        'EDUCATION': 'تعليم',
+        'OTHER': 'أخرى',
+      };
+      for (final entry in arabic.entries) {
+        expect(
+          find.descendant(
+            of: find.byKey(Key('offers-chip-${entry.key}')),
+            matching: find.text(entry.value),
+          ),
+          findsOneWidget,
+          reason: '${entry.key} chip should read "${entry.value}"',
+        );
+      }
+      // A single untranslated label is the whole bug: an Arabic renter must
+      // not see any English chip.
+      for (final english in _englishLabels) {
+        expect(find.text(english), findsNothing,
+            reason: '"$english" leaked into the Arabic chip row');
+      }
+    });
+
+    testWidgets('still filters by the category behind the Arabic label',
+        (tester) async {
+      // Translating the label must not translate the value sent to the API.
+      final fake = FakePromotionService(offerAds: [
+        testAd(id: 'a', titleEn: 'Brunch'),
+        testAd(id: 'b', titleEn: 'Gym trial', category: 'FITNESS'),
+      ]);
+      await tester.pumpWidget(hostAr(fake));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('رياضة'));
+      await tester.pumpAndSettle();
+
+      expect(fake.requestedCategories, [null, 'FITNESS']);
+      expect(find.text('Gym trial'), findsOneWidget);
+    });
+
+    testWidgets('writes the empty state in Arabic', (tester) async {
+      await tester.pumpWidget(hostAr(FakePromotionService()));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(EmptyState), findsOneWidget);
+      expect(find.text('لا توجد عروض'), findsOneWidget);
+      expect(find.text('ستظهر عروض شركائنا هنا فور توفرها.'), findsOneWidget);
+      expect(find.text('No offers yet'), findsNothing);
+    });
+
+    testWidgets('writes the error state in Arabic and retries from it',
+        (tester) async {
+      final fake = FakePromotionService()..offersError = StateError('boom');
+      await tester.pumpWidget(hostAr(fake));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(ErrorState), findsOneWidget);
+      expect(find.text('تعذر تحميل العروض'), findsOneWidget);
+      expect(find.text('Could not load offers'), findsNothing);
+
+      fake.offersError = null;
+      fake.offerAds = [testAd(titleEn: 'Brunch')];
+      // The retry affordance is ErrorState's own Arabic label — tapping it
+      // proves the Arabic build is still wired to the retry, not just painted.
+      await tester.tap(find.text('إعادة المحاولة'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Brunch'), findsOneWidget);
+    });
+
+    testWidgets('lays the chip row out right-to-left', (tester) async {
+      await tester.pumpWidget(hostAr(FakePromotionService()));
+      await tester.pumpAndSettle();
+
+      expect(
+        Directionality.of(tester.element(find.byType(OffersScreen))),
+        TextDirection.rtl,
+      );
+      // First chip on the right, last chip on the left, strictly descending.
+      final lefts = [
+        for (final category in _categories)
+          tester.getRect(find.byKey(Key('offers-chip-$category'))).left,
+      ];
+      for (var i = 1; i < lefts.length; i++) {
+        expect(lefts[i], lessThan(lefts[i - 1]),
+            reason: '${_categories[i]} should sit left of ${_categories[i - 1]}'
+                ' in RTL, got $lefts');
+      }
+    });
+
+    testWidgets('keeps chip labels inside their pill at 2.0 text scale',
+        (tester) async {
+      await tester.pumpWidget(hostAr(
+        FakePromotionService(offerAds: [testAd()]),
+        textScale: 2.0,
+      ));
+      await tester.pumpAndSettle();
+
+      for (final category in _categories) {
+        final chip = tester.getRect(find.byKey(Key('offers-chip-$category')));
+        final label = labelRect(tester, category);
+        expect(label.top, greaterThanOrEqualTo(chip.top - 0.5),
+            reason: '$category label $label spills above its chip $chip');
+        expect(label.bottom, lessThanOrEqualTo(chip.bottom + 0.5),
+            reason: '$category label $label spills below its chip $chip');
+      }
+    });
+
+    testWidgets('renders Arabic at 2.0 text scale on a phone without '
+        'overflowing', (tester) async {
+      tester.view.physicalSize = const Size(360 * 3, 800 * 3);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+
+      // Each state exercises a different subtree under the chip row; a
+      // RenderFlex overflow in any of them fails the test.
+      await tester.pumpWidget(hostAr(FakePromotionService(), textScale: 2.0));
+      await tester.pumpAndSettle();
+      expect(find.byType(EmptyState), findsOneWidget);
+
+      final failing = FakePromotionService()..offersError = StateError('boom');
+      await tester.pumpWidget(hostAr(failing, textScale: 2.0));
+      await tester.pumpAndSettle();
+      expect(find.byType(ErrorState), findsOneWidget);
+
+      await tester.pumpWidget(hostAr(
+        FakePromotionService(offerAds: [
+          testAd(
+            id: 'a',
+            titleEn: 'Friday brunch at the marina terrace',
+            subtitleEn: 'Two for one all weekend long',
+            ctaType: 'COUPON',
+            couponCode: 'BRUNCH50',
+          ),
+        ]),
+        textScale: 2.0,
+      ));
+      await tester.pumpAndSettle();
+      expect(find.byType(AdCard), findsOneWidget);
+    });
+  });
 }
 ```
 
@@ -2694,14 +4460,16 @@ class _OffersScreenState extends ConsumerState<OffersScreen> {
       appBar: AppBar(title: Text(l.title)),
       body: Column(
         children: [
-          SizedBox(
-            height: 52,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(
-                horizontal: MiftahSpacing.page,
-                vertical: 8,
-              ),
+          // Sized by its chips, not pinned to a height. A fixed 52 squashed
+          // every chip to 36 — below Material's 48dp tap target — and at 2.0
+          // text scale the label outgrew the pill and painted below it.
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(
+              horizontal: MiftahSpacing.page,
+              vertical: 8,
+            ),
+            child: Row(
               children: [
                 for (final category in _categories) ...[
                   ChoiceChip(
@@ -2809,11 +4577,21 @@ In `mobile/apps/renter/lib/router.dart`, inside the shell's route list, next to 
 ```dart
           GoRoute(
             path: '/offers',
-            builder: (context, state) => const OffersScreen(),
+            pageBuilder: (context, state) =>
+                fadeTransition(const OffersScreen(), state),
           ),
 ```
 
 and import `screens/offers_screen.dart`.
+
+`pageBuilder` with `fadeTransition`, not a plain `builder` — every one of the
+nineteen routes inside this shell branch uses it, `/facilities` included, so a
+plain builder would give Offers the platform default transition and make it the
+one screen in the app that animates differently from its neighbours.
+
+Keep `OffersScreen` parameterless and self-fetching, for the reason the comment
+above `/facilities` gives: this router rebuilds on `authProvider` and would
+discard anything passed through `extra`.
 
 - [ ] **Step 5: Run the tests**
 
@@ -2823,7 +4601,7 @@ Run:
 cd mobile/apps/renter && flutter test test/offers_screen_test.dart
 ```
 
-Expected: PASS, 6 tests.
+Expected: PASS, 15 tests.
 
 - [ ] **Step 6: Commit**
 
@@ -2833,6 +4611,13 @@ git commit -m "feat(renter): offers screen with category filters"
 ```
 
 ---
+
+> **Counting tests:** take every `Expected: PASS, N tests.` figure in this plan
+> from `flutter test`, never from grepping for `testWidgets(`. Several of these
+> suites build cases in a loop, so one `testWidgets(` line produces several
+> tests, and some sit inside a `group()` at an indentation a naive line match
+> misses. Both errors were made while writing this plan; both were caught by
+> running the suite.
 
 ## Task 10: Full verification
 
@@ -2844,7 +4629,9 @@ Run:
 cd mobile && melos exec -- flutter analyze
 ```
 
-Expected: `No issues found!` in every package. If `melos` is not on PATH, run `flutter analyze` in `packages/rentaxis_core`, `apps/renter`, `apps/manager` and `apps/security` in turn — the shared package change affects all three apps.
+Expected: `No issues found!` in `apps/renter`, `apps/manager` and `apps/security`, and **exactly 53 issues** in `packages/rentaxis_core` — that is the package's pre-existing baseline, all of them `info`-level lints in files this feature never touches (`unnecessary_underscores` and friends). Do not "fix" them; 53 unchanged is the pass condition, 54 is a regression.
+
+`melos` is not on PATH in this environment, so the fallback is the path that will actually run: `flutter analyze` in `packages/rentaxis_core`, `apps/renter`, `apps/manager` and `apps/security` in turn — the shared package change affects all three apps.
 
 - [ ] **Step 2: Run the core package tests**
 

@@ -31,9 +31,11 @@ export 'api/services/meeting_service.dart';
 export 'api/services/cheque_extraction_service.dart';
 export 'api/services/gate_pass_service.dart';
 export 'api/services/facility_service.dart';
+export 'api/services/promotion_service.dart';
 
 // Models
 export 'models/auth_response.dart';
+export 'models/promo_ad.dart';
 
 // Providers
 export 'providers/auth_provider.dart';
