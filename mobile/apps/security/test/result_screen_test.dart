@@ -89,7 +89,11 @@ void main() {
       expect(find.text('Delivery'), findsOneWidget);
       expect(find.text('single use'), findsOneWidget);
       expect(find.byKey(const Key('logExitButton')), findsOneWidget);
-      expect(find.text('DONE'), findsOneWidget);
+      // Sentence case, not DONE: the buttons are no longer the legacy
+      // GoldButton, which uppercased every English label for itself. Miftah
+      // reserves tracked uppercase for section labels, so a guard button now
+      // renders the string as written.
+      expect(find.text('Done'), findsOneWidget);
     });
 
     testWidgets('Log exit re-presents the same credential as an EXIT', (
@@ -194,7 +198,10 @@ void main() {
       expect(find.textContaining('No guest details'), findsOneWidget);
       // Nothing to exit, and no identity to leak.
       expect(find.byKey(const Key('logExitButton')), findsNothing);
-      expect(find.text('SCAN AGAIN'), findsOneWidget);
+      // Sentence case for the same reason as the ALLOWED case above; the word
+      // itself still has to be "Scan again", because on a refusal the primary
+      // action pops straight back to the viewfinder and nothing was "done".
+      expect(find.text('Scan again'), findsOneWidget);
     });
 
     testWidgets('a rejection at the guard\'s own gate keeps the guest so the '
