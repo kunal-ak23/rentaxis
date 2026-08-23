@@ -10,9 +10,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.*;
 
@@ -27,40 +27,41 @@ class EmailOutboxWorkerTest {
     @Test
     void successfulSendMarksRowSent() {
         EmailOutbox row = newPendingRow();
-        when(sender.send(row)).thenReturn(new SendResult("msg-123", "Queued"));
+        SendResult result = new SendResult("msg-123", "Queued");
+        when(service.claimForSending(row.getId())).thenReturn(Optional.of(row));
+        when(sender.send(row)).thenReturn(result);
+        when(service.markSent(row.getId(), result)).thenReturn(true);
 
         processor.processOne(row);
 
-        assertThat(row.getStatus()).isEqualTo(EmailOutbox.Status.SENT);
-        assertThat(row.getAzureMessageId()).isEqualTo("msg-123");
-        verify(repo, atLeastOnce()).save(row);
+        verify(service).markSent(row.getId(), result);
     }
 
     @Test
     void failedSendRequeuesWithBackoff() {
         EmailOutbox row = newPendingRow();
+        EmailOutbox failed = newPendingRow();
+        failed.setId(row.getId());
+        failed.setAttempts(1);
+        failed.setStatus(EmailOutbox.Status.PENDING);
+        failed.setScheduledAt(Instant.now().plusSeconds(60));
+        when(service.claimForSending(row.getId())).thenReturn(Optional.of(row));
         when(sender.send(row)).thenThrow(new RuntimeException("ACS 503"));
-        when(service.backoff(1)).thenReturn(java.time.Duration.ofMinutes(1));
+        when(service.markFailedAttempt(row.getId(), "ACS 503")).thenReturn(Optional.of(failed));
 
         processor.processOne(row);
 
-        assertThat(row.getStatus()).isEqualTo(EmailOutbox.Status.PENDING);
-        assertThat(row.getAttempts()).isEqualTo(1);
-        assertThat(row.getLastError()).contains("ACS 503");
+        verify(service).markFailedAttempt(row.getId(), "ACS 503");
     }
 
     @Test
-    void exhaustingMaxAttemptsMarksFailed() {
+    void unclaimedRowIsNotSent() {
         EmailOutbox row = newPendingRow();
-        row.setAttempts(4);
-        row.setMaxAttempts(5);
-        when(sender.send(row)).thenThrow(new RuntimeException("permanent"));
-        lenient().when(service.backoff(anyInt())).thenReturn(java.time.Duration.ofHours(1));
+        when(service.claimForSending(row.getId())).thenReturn(Optional.empty());
 
         processor.processOne(row);
 
-        assertThat(row.getStatus()).isEqualTo(EmailOutbox.Status.FAILED);
-        assertThat(row.getAttempts()).isEqualTo(5);
+        verifyNoInteractions(sender);
     }
 
     @Test
