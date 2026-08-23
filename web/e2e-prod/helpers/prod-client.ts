@@ -264,24 +264,38 @@ export const api = {
   // helper will silently desync from one of them.
   createLease: (
     pctx: ProdContext,
-    l: { unitId: string; renterId: string; startDate: string; endDate: string; rentAmount: number },
+    l: {
+      unitId: string;
+      renterId: string;
+      startDate: string;
+      endDate: string;
+      rentAmount: number;
+      paymentTerms?: number;
+      depositAmount?: number;
+    },
   ) => {
     const start = new Date(l.startDate);
     const end = new Date(l.endDate);
     const months = Math.max(
       1,
-      (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth()),
+      (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth()) + 1,
     );
+    const paymentTerms = l.paymentTerms ?? 4;
+    const totalRent = l.rentAmount * months;
+    // PaymentScheduleService caps the largest cheque at the deposit amount.
+    // Default the fixture deposit to the average installment so the helper
+    // remains valid as dates, monthly rent, or cheque count change.
+    const depositAmount = l.depositAmount ?? Math.ceil(totalRent / paymentTerms);
     return postJson<{ id: string; status: string }>(pctx, '/v1/leases', {
       unitId: l.unitId,
       renterId: l.renterId,
       startDate: l.startDate,
       endDate: l.endDate,
-      rentAmount: l.rentAmount * months, // lifetime — matches wizard
+      rentAmount: totalRent, // lifetime — matches wizard
       monthlyRent: l.rentAmount,
-      depositAmount: 5000,
+      depositAmount,
       ejariNumber: null,
-      paymentTerms: 4,
+      paymentTerms,
       paymentMethod: 'CHEQUE',
       depositPaymentMethod: 'CHEQUE',
       paymentReferenceNumber: null,
