@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:intl/intl.dart';
+// `hide TextDirection`: intl ships a bidi class of that name whose constants
+// are LTR/RTL, which silently shadows Flutter's enum. Same guard as
+// `manager/lib/screens/cheque_scan/steps/step3_confirm.dart`.
+import 'package:intl/intl.dart' hide TextDirection;
 import 'package:rentaxis_core/rentaxis_core.dart';
 
 /// The coupon reveal, shown when a `COUPON` ad is tapped. Ticket-styled: a
@@ -70,7 +73,22 @@ class CouponSheet extends StatelessWidget {
               child: Row(
                 children: [
                   Expanded(
-                    child: Text(code, style: MiftahType.mono(size: 18)),
+                    // A coupon code is an opaque identifier, not prose, so it
+                    // renders LTR whatever the app's language is. The Arabic
+                    // app makes this subtree RTL, and bidi then reorders any
+                    // code that mixes digits and Latin letters around a
+                    // neutral — `10-OFF` paints as `OFF-10`, `25/MIFTAH` as
+                    // `MIFTAH/25`. The renter would read that reversed string
+                    // to a cashier while the Copy button put the real one on
+                    // the clipboard, with nothing on screen to say which is
+                    // right. `textAlign` keeps the block on the sheet's
+                    // reading edge; only the glyph order is pinned.
+                    child: Text(
+                      code,
+                      textDirection: TextDirection.ltr,
+                      textAlign: isAr ? TextAlign.right : TextAlign.left,
+                      style: MiftahType.mono(size: 18),
+                    ),
                   ),
                   TextButton.icon(
                     key: const Key('coupon-copy'),
@@ -96,10 +114,7 @@ class CouponSheet extends StatelessWidget {
             const SizedBox(height: 14),
           ],
           if (ad.endsAt != null)
-            Text(
-              '${l.validUntil} ${DateFormat('d MMM yyyy').format(ad.endsAt!.toLocal())}',
-              style: MiftahType.meta(),
-            ),
+            Text(l.validUntilLine(ad.endsAt!), style: MiftahType.meta()),
         ],
       ),
     );
@@ -114,4 +129,22 @@ class _L {
   String get copied => ar ? 'تم نسخ الرمز' : 'Code copied';
   String get terms => ar ? 'الشروط' : 'TERMS';
   String get validUntil => ar ? 'ساري حتى' : 'Valid until';
+
+  /// The expiry line, with the month name in the app's own language — an
+  /// English "Mar" inside an otherwise Arabic sheet reads half-translated.
+  /// Same pattern as `payments_screen._fmtDate` and `home_screen._shortDate`.
+  ///
+  /// `intl` only knows a named locale once its date symbols are initialised,
+  /// which `GlobalMaterialLocalizations` does as it loads — the same delegate
+  /// that decides [ar] in the first place, so the real app is always ready.
+  /// The fallback is for anything that mounts this sheet without it: an
+  /// un-localised month beats throwing inside a bottom sheet.
+  String validUntilLine(DateTime endsAt) {
+    final when = endsAt.toLocal();
+    try {
+      return '$validUntil ${DateFormat('d MMM yyyy', ar ? 'ar' : 'en').format(when)}';
+    } on Exception {
+      return '$validUntil ${DateFormat('d MMM yyyy').format(when)}';
+    }
+  }
 }
