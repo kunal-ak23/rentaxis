@@ -379,6 +379,202 @@ export const api = {
   deactivateParkingSpot: (pctx: ProdContext, spotId: string) =>
     deleteOk(pctx, `/v1/parking-spots/${spotId}`),
 
+  createStaff: (
+    pctx: ProdContext,
+    s: { propertyId: string; nameEn: string; employeeId: string },
+  ) =>
+    postJson<{ id: string; nameEn: string; designation: string; active: boolean }>(
+      pctx,
+      '/v1/staff',
+      {
+        nameEn: s.nameEn,
+        nameAr: s.nameEn,
+        employeeId: s.employeeId,
+        designation: 'Facilities Coordinator',
+        department: 'Operations',
+        monthlySalary: 7500,
+        joinDate: new Date().toISOString().slice(0, 10),
+        phone: '+971500000004',
+        emiratesId: '',
+        passportNumber: '',
+        active: true,
+        property: { id: s.propertyId },
+      },
+    ),
+  updateStaff: (
+    pctx: ProdContext,
+    staffId: string,
+    s: { nameEn: string; propertyId: string; active: boolean },
+  ) =>
+    putJson<{ id: string; nameEn: string; active: boolean }>(pctx, `/v1/staff/${staffId}`, {
+      nameEn: s.nameEn,
+      nameAr: s.nameEn,
+      employeeId: `UPDATED-${staffId.slice(0, 6)}`,
+      designation: 'Senior Facilities Coordinator',
+      department: 'Operations',
+      monthlySalary: 8000,
+      joinDate: new Date().toISOString().slice(0, 10),
+      phone: '+971500000004',
+      active: s.active,
+      property: { id: s.propertyId },
+    }),
+  getStaffByProperty: (pctx: ProdContext, propertyId: string) =>
+    getJson<Array<{ id: string; nameEn: string; active: boolean }>>(
+      pctx,
+      `/v1/staff/by-property/${propertyId}`,
+    ),
+  deleteStaff: (pctx: ProdContext, staffId: string) => deleteOk(pctx, `/v1/staff/${staffId}`),
+
+  createBankAccount: (
+    pctx: ProdContext,
+    b: { propertyId: string; bankName: string; accountNumber: string },
+  ) =>
+    postJson<{
+      id: string;
+      bankName: string;
+      branchName: string;
+      isDefault: boolean;
+      active: boolean;
+    }>(pctx, '/v1/bank-accounts', {
+      bankName: b.bankName,
+      accountNumber: b.accountNumber,
+      iban: 'AE070331234567890123456',
+      branchName: 'Dubai Main',
+      currency: 'AED',
+      isDefault: true,
+      active: true,
+      property: { id: b.propertyId },
+    }),
+  updateBankAccount: (
+    pctx: ProdContext,
+    bankAccountId: string,
+    b: { propertyId: string; bankName: string; accountNumber: string },
+  ) =>
+    putJson<{ id: string; bankName: string; branchName: string; isDefault: boolean }>(
+      pctx,
+      `/v1/bank-accounts/${bankAccountId}`,
+      {
+        bankName: b.bankName,
+        accountNumber: b.accountNumber,
+        iban: 'AE070331234567890123456',
+        branchName: 'Marina Branch',
+        currency: 'AED',
+        isDefault: true,
+        active: true,
+        property: { id: b.propertyId },
+      },
+    ),
+  getBankAccountsByProperty: (pctx: ProdContext, propertyId: string) =>
+    getJson<Array<{ id: string; bankName: string; isDefault: boolean }>>(
+      pctx,
+      `/v1/bank-accounts/by-property/${propertyId}`,
+    ),
+  deleteBankAccount: (pctx: ProdContext, bankAccountId: string) =>
+    deleteOk(pctx, `/v1/bank-accounts/${bankAccountId}`),
+
+  getFineSettings: (pctx: ProdContext) =>
+    getJson<{
+      bounceAmount: number;
+      signatureMismatchAmount: number;
+      accountClosedAmount: number;
+      graceDays: number;
+      perDayRate: number;
+    }>(pctx, '/v1/settings/fines'),
+  updateFineSettings: (
+    pctx: ProdContext,
+    f: {
+      bounceAmount: number;
+      signatureMismatchAmount: number;
+      accountClosedAmount: number;
+      graceDays: number;
+      perDayRate: number;
+    },
+  ) =>
+    putJson<{
+      bounceAmount: number;
+      signatureMismatchAmount: number;
+      accountClosedAmount: number;
+      graceDays: number;
+      perDayRate: number;
+    }>(pctx, '/v1/settings/fines', f),
+  saveRentSettings: (
+    pctx: ProdContext,
+    propertyId: string,
+    s: {
+      dueDayOfMonth: number;
+      gracePeriodDays: number;
+      penaltyType: string;
+      penaltyAmount: number;
+      onlinePaymentEnabled: boolean;
+    },
+  ) =>
+    postJson<{
+      propertyId: string;
+      dueDayOfMonth: number;
+      gracePeriodDays: number;
+      penaltyType: string;
+      penaltyAmount: number;
+      onlinePaymentEnabled: boolean;
+    }>(pctx, `/v1/rent-settings/${propertyId}`, s),
+  getRentSettings: (pctx: ProdContext, propertyId: string) =>
+    getJson<{
+      propertyId: string;
+      dueDayOfMonth: number;
+      gracePeriodDays: number;
+      penaltyType: string;
+      penaltyAmount: number;
+      onlinePaymentEnabled: boolean;
+    }>(pctx, `/v1/rent-settings/${propertyId}`),
+
+  seedAccounts: (pctx: ProdContext) =>
+    postJson<Array<{ id: string; code: string; nameEn: string; accountType: string }>>(
+      pctx,
+      '/v1/finance/accounts/seed',
+      {},
+    ),
+  getAccounts: (pctx: ProdContext) =>
+    getJson<Array<{ id: string; code: string; nameEn: string; accountType: string }>>(
+      pctx,
+      '/v1/finance/accounts',
+    ),
+  saveAccountMapping: (
+    pctx: ProdContext,
+    m: { transactionNature: string; debitAccountId: string; creditAccountId: string },
+  ) =>
+    postJson<{
+      id: string;
+      transactionNature: string;
+      debitAccountId: string;
+      creditAccountId: string;
+    }>(pctx, '/v1/finance/account-mappings', m),
+  getAccountMappings: (pctx: ProdContext) =>
+    getJson<Array<{ id: string; transactionNature: string }>>(
+      pctx,
+      '/v1/finance/account-mappings',
+    ),
+  createFinancialTransaction: (
+    pctx: ProdContext,
+    t: { accountId: string; propertyId: string; description: string; debit: number; credit: number },
+  ) =>
+    postJson<{ id: string; description: string; accountCode: string; debit: number; credit: number }>(
+      pctx,
+      '/v1/finance/transactions',
+      {
+        date: new Date().toISOString().slice(0, 10),
+        description: t.description,
+        account: { id: t.accountId },
+        property: { id: t.propertyId },
+        debit: t.debit,
+        credit: t.credit,
+        vatApplicable: false,
+        vatAmount: 0,
+        vatRate: 0,
+        grossAmount: Math.max(t.debit, t.credit),
+        netAmount: Math.max(t.debit, t.credit),
+        notes: 'Production E2E fixture',
+      },
+    ),
+
   // Renter + Lease
   // Backend defaults createPortalAccount=true and returns portalPassword on
   // the response. We don't need to pass the flag explicitly anymore.
