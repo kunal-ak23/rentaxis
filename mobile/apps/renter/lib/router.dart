@@ -26,6 +26,7 @@ import 'screens/gatepass/resident_approvals_screen.dart';
 import 'screens/facilities/facilities_screen.dart';
 import 'screens/facilities/my_requests_screen.dart';
 import 'screens/services_hub_screen.dart';
+import 'screens/offers_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authProvider);
@@ -209,6 +210,14 @@ final routerProvider = Provider<GoRouter>((ref) {
                     slideUpTransition(const MyRequestsScreen(), state),
               ),
             ],
+          ),
+          // Parameterless and self-fetching, same reason as the facility and
+          // gate-pass screens above: this router rebuilds on authProvider and
+          // would discard an `extra` payload.
+          GoRoute(
+            path: '/offers',
+            pageBuilder: (context, state) =>
+                fadeTransition(const OffersScreen(), state),
           ),
         ],
       ),
