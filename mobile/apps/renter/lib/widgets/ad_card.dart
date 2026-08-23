@@ -2,12 +2,33 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
+/// The card's height before text scaling.
+///
+/// 160, not the 140 this shipped with. A card carrying the business-name line
+/// needs 146pt in Latin and 155pt in Arabic at default text scale — measured
+/// against the real faces, with a two-line headline and the CTA pill showing —
+/// and Arabic is the taller script by a wide margin: its fallback face runs
+/// about 1.9em a line against Plus Jakarta's 1.55em. At 140 the last line was
+/// cut through its glyphs on every phone, which reads as a rendering fault
+/// rather than as truncation. 160 leaves the Arabic card whole with headroom
+/// for a system Arabic face taller than the one measured.
+const _cardHeight = 160.0;
+
+/// Past this the card stops growing and the copy yields a line instead — see
+/// [_CopyFit]. Letting it grow with the scaler would hand half the home screen
+/// to an ad.
+const _maxHeightScale = 1.5;
+
+/// Space between the lines of the copy block.
+const _copyGap = 3.0;
+
 /// The height an [AdCard] occupies at a given text scale. The carousel needs
 /// this before it builds a card, so it lives here rather than inside the
-/// widget. Clamped at 1.5x: past that the copy is clipped rather than allowed
-/// to push the strip to half the screen.
+/// widget. Clamped at 1.5x: past that the card holds still and the copy block
+/// drops its optional lines rather than pushing the strip to half the screen.
 double adCardHeight(BuildContext context) =>
-    140.0 * MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 1.5);
+    _cardHeight *
+    MediaQuery.textScalerOf(context).scale(1).clamp(1.0, _maxHeightScale);
 
 /// One promotion card.
 ///
@@ -34,6 +55,24 @@ class AdCard extends StatelessWidget {
     final onFill = hasImage ? Colors.white : MiftahColors.textPrimary;
     final eyebrow = ad.subtitle(isAr) ?? ad.business.name(isAr);
     final ctaLabel = ad.ctaLabel(isAr);
+    final businessName = ad.business.name(isAr);
+    // When the eyebrow is showing the subtitle, the business name has nowhere
+    // else to appear — and on a card with no artwork the renter has no other
+    // clue who is offering this. The admin panel's preview already renders this
+    // line; the widget was the side that was missing it.
+    final wantsBusinessName =
+        !hasImage && ad.subtitle(isAr) != null && businessName.isNotEmpty;
+
+    // Held as locals because the fit pass below has to measure the very styles
+    // the Text widgets render with — a style that drifts between the two is a
+    // sliced line.
+    final eyebrowStyle = MiftahType.sectionLabel(
+      color: hasImage ? MiftahColors.brassPale : MiftahColors.warning,
+    );
+    final titleStyle =
+        MiftahType.cardTitle(color: onFill).copyWith(fontSize: 18, height: 1.1);
+    final businessStyle =
+        MiftahType.body(size: 12, color: MiftahColors.textSecondary);
 
     return InkWell(
       borderRadius: BorderRadius.circular(MiftahRadii.card),
@@ -58,66 +97,77 @@ class AdCard extends StatelessWidget {
               : null,
         ),
         padding: const EdgeInsets.all(14),
-        // The card has a fixed height (clamped at 1.5x text scale) but the
-        // copy keeps scaling. The text block takes whatever is left after the
-        // CTA and lays out at its natural size inside a clipping OverflowBox:
-        // when it fits it renders exactly as an unconstrained Column would (no
-        // line is ever cut early); when it doesn't, the bottom is clipped
-        // instead of throwing "RenderFlex overflowed by N pixels on the
-        // bottom".
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Flexible(
-              child: ClipRect(
-                child: OverflowBox(
-                  alignment: isAr ? Alignment.topRight : Alignment.topLeft,
-                  minHeight: 0,
-                  maxHeight: double.infinity,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (eyebrow.isNotEmpty)
-                        Text(
-                          eyebrow.toUpperCase(),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: MiftahType.sectionLabel(
-                            color: hasImage
-                                ? MiftahColors.brassPale
-                                : MiftahColors.warning,
-                          ),
-                        ),
-                      const SizedBox(height: 3),
+              // The card's height is fixed before it knows what copy it holds,
+              // so the block asks how much room it was given and renders what
+              // fits: a line is either whole or not asked for. The clipping
+              // OverflowBox below stays as the last resort — it keeps a card
+              // that still doesn't fit (a scaler past the clamp, a headline in
+              // a face taller than any measured here) from throwing
+              // "RenderFlex overflowed by N pixels on the bottom".
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final fit = _CopyFit.measure(
+                    context,
+                    available: constraints.maxHeight,
+                    maxWidth: constraints.maxWidth,
+                    eyebrow: eyebrow.isEmpty ? null : eyebrow.toUpperCase(),
+                    eyebrowStyle: eyebrowStyle,
+                    title: ad.title(isAr),
+                    titleStyle: titleStyle,
+                    businessName: wantsBusinessName ? businessName : null,
+                    businessStyle: businessStyle,
+                  );
+
+                  final lines = <Widget>[
+                    if (fit.showEyebrow)
                       Text(
-                        ad.title(isAr),
-                        maxLines: 2,
+                        eyebrow.toUpperCase(),
+                        // One line, always. The eyebrow is a tracked uppercase
+                        // label; a second line of it is not a label any more,
+                        // and the fixed height cannot promise one on top of the
+                        // headline and the business name.
+                        maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: MiftahType.cardTitle(color: onFill)
-                            .copyWith(fontSize: 18, height: 1.1),
+                        style: eyebrowStyle,
                       ),
-                      // When the eyebrow is showing the subtitle, the business
-                      // name has nowhere else to appear — and on a card with no
-                      // artwork the renter has no other clue who is offering
-                      // this. The admin panel's preview already renders this
-                      // line; the widget was the side that was missing it.
-                      if (!hasImage
-                          && ad.subtitle(isAr) != null
-                          && ad.business.name(isAr).isNotEmpty) ...[
-                        const SizedBox(height: 3),
-                        Text(
-                          ad.business.name(isAr),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: MiftahType.body(
-                              size: 12, color: MiftahColors.textSecondary),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
+                    Text(
+                      ad.title(isAr),
+                      maxLines: fit.titleMaxLines,
+                      overflow: TextOverflow.ellipsis,
+                      style: titleStyle,
+                    ),
+                    if (fit.showBusinessName)
+                      Text(
+                        businessName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: businessStyle,
+                      ),
+                  ];
+
+                  return ClipRect(
+                    child: OverflowBox(
+                      alignment: isAr ? Alignment.topRight : Alignment.topLeft,
+                      minHeight: 0,
+                      maxHeight: double.infinity,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          for (var i = 0; i < lines.length; i++) ...[
+                            if (i > 0) const SizedBox(height: _copyGap),
+                            lines[i],
+                          ],
+                        ],
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
             if (ctaLabel.isNotEmpty) ...[
@@ -141,6 +191,91 @@ class AdCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// How much of the copy the card has room for, given the height left after the
+/// CTA pill has taken its share.
+///
+/// The card gives up its optional copy in a fixed order — the business name,
+/// then the headline's second line, then the eyebrow — because that is the
+/// order the renter can afford to lose it in. A line is either rendered whole
+/// or not asked for; nothing here is cut halfway down its glyphs.
+class _CopyFit {
+  const _CopyFit({
+    required this.showEyebrow,
+    required this.titleMaxLines,
+    required this.showBusinessName,
+  });
+
+  final bool showEyebrow;
+  final int titleMaxLines;
+  final bool showBusinessName;
+
+  static _CopyFit measure(
+    BuildContext context, {
+    required double available,
+    required double maxWidth,
+    required String? eyebrow,
+    required TextStyle eyebrowStyle,
+    required String title,
+    required TextStyle titleStyle,
+    required String? businessName,
+    required TextStyle businessStyle,
+  }) {
+    final defaults = DefaultTextStyle.of(context);
+    final scaler = MediaQuery.textScalerOf(context);
+    final direction = Directionality.of(context);
+    final heightBehavior = defaults.textHeightBehavior ??
+        DefaultTextHeightBehavior.maybeOf(context);
+
+    double lineBox(String text, TextStyle style, int maxLines) {
+      // Merged and scaled exactly as `Text` will merge and scale it, or the
+      // measurement is of a style nothing renders.
+      final resolved = style.inherit ? defaults.style.merge(style) : style;
+      final painter = TextPainter(
+        text: TextSpan(text: text, style: resolved),
+        maxLines: maxLines,
+        ellipsis: '…',
+        textScaler: scaler,
+        textDirection: direction,
+        textHeightBehavior: heightBehavior,
+      )..layout(maxWidth: maxWidth);
+      final height = painter.height;
+      painter.dispose();
+      return height;
+    }
+
+    final eyebrowHeight =
+        eyebrow == null ? 0.0 : lineBox(eyebrow, eyebrowStyle, 1);
+    final businessHeight =
+        businessName == null ? 0.0 : lineBox(businessName, businessStyle, 1);
+
+    var showEyebrow = eyebrow != null;
+    var titleMaxLines = 2;
+    var showBusinessName = businessName != null;
+    var titleHeight = lineBox(title, titleStyle, titleMaxLines);
+
+    double total() =>
+        (showEyebrow ? eyebrowHeight + _copyGap : 0.0) +
+        titleHeight +
+        (showBusinessName ? _copyGap + businessHeight : 0.0);
+
+    // The order things are given up in is the order the renter can afford to
+    // lose them: the business name, then the headline's second line, then the
+    // eyebrow. The headline is the offer, so it is the last thing standing.
+    if (total() > available) showBusinessName = false;
+    if (total() > available) {
+      titleMaxLines = 1;
+      titleHeight = lineBox(title, titleStyle, titleMaxLines);
+    }
+    if (total() > available) showEyebrow = false;
+
+    return _CopyFit(
+      showEyebrow: showEyebrow,
+      titleMaxLines: titleMaxLines,
+      showBusinessName: showBusinessName,
     );
   }
 }
