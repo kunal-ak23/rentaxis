@@ -25,6 +25,7 @@ import {
     CalendarDays,
     ScanLine,
     CalendarCheck,
+    Megaphone,
 } from 'lucide-react';
 import Image from "next/image";
 import { Link } from "@/i18n/routing";
@@ -50,6 +51,7 @@ export default function MvpSidebar() {
     const tStaff = useTranslations("Staff");
     const tGatePass = useTranslations("GatePass");
     const tBookings = useTranslations("Bookings");
+    const tPromotions = useTranslations("Promotions");
     const pathname = usePathname();
     const [isCollapsed, setIsCollapsed] = useState(() => {
         if (typeof window !== 'undefined') {
@@ -89,6 +91,9 @@ export default function MvpSidebar() {
                     : []),
                 ...(hasPermission(userRole, 'canManageFacilities')
                     ? [{ name: tBookings("navLabel"), href: "/dashboard/bookings", icon: CalendarCheck, tourId: 'sidebar-bookings' }]
+                    : []),
+                ...(hasPermission(userRole, "canManagePromotions")
+                    ? [{ name: tPromotions("navLabel"), href: "/dashboard/promotions", icon: Megaphone, tourId: 'sidebar-promotions' }]
                     : []),
             ]
             : []),

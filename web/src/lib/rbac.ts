@@ -34,6 +34,10 @@ export const PERMISSIONS = {
     // canViewGatePassReport, SUPER_ADMIN is deliberately included here because
     // the backend admits it.
     canManageFacilities: ['SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER'] as UserRole[],
+    // Mirrors PromotionAdminController's @PreAuthorize("hasAnyRole('SUPER_ADMIN','TENANT_ADMIN')").
+    // Promotions are tenant-wide (not scoped to a single property), so
+    // PROPERTY_MANAGER is deliberately excluded, unlike canManageFacilities.
+    canManagePromotions: ['SUPER_ADMIN', 'TENANT_ADMIN'] as UserRole[],
 } as const;
 
 export type Permission = keyof typeof PERMISSIONS;
