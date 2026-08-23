@@ -12,7 +12,7 @@ import { BusinessEditor } from "./BusinessEditor";
 
 const PAGE_SIZE = 10;
 
-export function BusinessesTab({ onChanged }: { onChanged?: () => void }) {
+export function BusinessesTab({ onChanged }: { onChanged?: () => void | Promise<void> }) {
     const t = useTranslations("Promotions");
 
     const [rows, setRows] = useState<PromoBusinessDTO[]>([]);
@@ -54,7 +54,10 @@ export function BusinessesTab({ onChanged }: { onChanged?: () => void }) {
             }
             setEditing(undefined);
             await load(page);
-            onChanged?.();
+            // Awaited inside the try: onChanged reloads the shell's business
+            // lookup, and letting it float left a rejection unhandled and the
+            // ad editor's picker stale until a full reload.
+            await onChanged?.();
         } catch (e) {
             setError(e instanceof ApiError ? e.message : t("saveError"));
         }
@@ -77,7 +80,7 @@ export function BusinessesTab({ onChanged }: { onChanged?: () => void }) {
             const next = Math.min(page, lastPage);
             setPage(next);
             await load(next);
-            onChanged?.();
+            await onChanged?.();
         } catch (e) {
             // Every business-rule failure on this API is a 400, not a 409 —
             // BusinessRuleViolationException maps unconditionally to BAD_REQUEST
@@ -124,7 +127,7 @@ export function BusinessesTab({ onChanged }: { onChanged?: () => void }) {
                         {rows.map(row => (
                             <tr key={row.id} className="border-b">
                                 <td className="py-2">{row.nameEn}</td>
-                                <td>{row.category}</td>
+                                <td>{t(`category${row.category}`)}</td>
                                 <td>{row.phoneE164 ?? "—"}</td>
                                 <td>{row.adCount}</td>
                                 <td>{row.active ? "✓" : "—"}</td>

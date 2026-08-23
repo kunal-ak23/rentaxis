@@ -110,7 +110,7 @@ export function BusinessEditor({ business, onSave, onCancel }: BusinessEditorPro
                     <select aria-label={t("category")} className="w-full rounded-lg border px-3 py-2"
                         value={category}
                         onChange={e => setCategory(e.target.value as PromoCategory)}>
-                        {PROMO_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                        {PROMO_CATEGORIES.map(c => <option key={c} value={c}>{t(`category${c}`)}</option>)}
                     </select>
                 </label>
                 <label className="block">

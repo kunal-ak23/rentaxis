@@ -1323,6 +1323,16 @@
     "accentColorInvalid": "Use a hex colour like #FBF3E2.",
     "confirmDeleteBusiness": "Delete {name}? This cannot be undone.",
     "confirmDeleteAd": "Delete {name}? This cannot be undone.",
-    "domainInvalid": "Enter a hostname like spice-bazaar.ae. A domain already covers its subdomains, so wildcards are not needed."
+    "domainInvalid": "Enter a hostname like spice-bazaar.ae. A domain already covers its subdomains, so wildcards are not needed.",
+    "categoryDINING": "Dining",
+    "categoryFITNESS": "Fitness",
+    "categoryRETAIL": "Retail",
+    "categorySERVICES": "Services",
+    "categoryHEALTH": "Health",
+    "categoryEDUCATION": "Education",
+    "categoryOTHER": "Other",
+    "allBusinesses": "All businesses",
+    "noAccess": "You do not have access to promotions.",
+    "tooManyBusinesses": "Showing the first {cap} businesses. Some may be missing from the pickers."
   }
 }

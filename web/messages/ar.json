@@ -1323,6 +1323,16 @@
     "accentColorInvalid": "استخدم لوناً بصيغة hex مثل ‎#FBF3E2.",
     "confirmDeleteBusiness": "حذف {name}؟ لا يمكن التراجع عن هذا.",
     "confirmDeleteAd": "حذف {name}؟ لا يمكن التراجع عن هذا.",
-    "domainInvalid": "أدخل اسم نطاق مثل spice-bazaar.ae. النطاق يشمل نطاقاته الفرعية، لذا لا حاجة لرموز البدل."
+    "domainInvalid": "أدخل اسم نطاق مثل spice-bazaar.ae. النطاق يشمل نطاقاته الفرعية، لذا لا حاجة لرموز البدل.",
+    "categoryDINING": "مطاعم",
+    "categoryFITNESS": "رياضة",
+    "categoryRETAIL": "تسوق",
+    "categorySERVICES": "خدمات",
+    "categoryHEALTH": "صحة",
+    "categoryEDUCATION": "تعليم",
+    "categoryOTHER": "أخرى",
+    "allBusinesses": "كل الشركات",
+    "noAccess": "ليس لديك صلاحية الوصول إلى العروض.",
+    "tooManyBusinesses": "يتم عرض أول {cap} شركة فقط. قد لا تظهر بعض الشركات في القوائم."
   }
 }

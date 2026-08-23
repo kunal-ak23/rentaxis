@@ -90,7 +90,7 @@ export function AdsTab({ businesses, properties }: AdsTabProps) {
                 <select aria-label={t("business")} className="rounded-lg border px-3 py-2 text-sm"
                     value={businessId}
                     onChange={e => { setPage(0); setBusinessId(e.target.value); }}>
-                    <option value="">{t("business")}</option>
+                    <option value="">{t("allBusinesses")}</option>
                     {businesses.map(b => <option key={b.id} value={b.id}>{b.nameEn}</option>)}
                 </select>
                 <button type="button" disabled={businesses.length === 0}
@@ -130,8 +130,15 @@ export function AdsTab({ businesses, properties }: AdsTabProps) {
                             // rule and is not on PromoAdDTO. Without it, an admin
                             // who deactivates a business still sees all its ads
                             // reading "Live" while the feed serves none of them.
+                            // businesses arrives asynchronously from the shell.
+                            // Until it does, every find() misses and every ad
+                            // would fall back to "active", showing Live for ads
+                            // whose business is deactivated. Show nothing rather
+                            // than something wrong.
                             const business = businesses.find(b => b.id === row.businessId);
-                            const status = adStatus(row, new Date(), business?.active ?? true);
+                            const status = businesses.length === 0
+                                ? null
+                                : adStatus(row, new Date(), business?.active ?? true);
                             return (
                                 <tr key={row.id} className="border-b">
                                     <td className="py-2">{row.titleEn ?? row.titleAr}</td>
@@ -139,9 +146,13 @@ export function AdsTab({ businesses, properties }: AdsTabProps) {
                                     <td>{t(`ctaType${row.ctaType}`)}</td>
                                     <td>{row.priority}</td>
                                     <td>
-                                        <span className={`rounded-full px-2 py-1 text-xs ${STATUS_CLASSES[status]}`}>
-                                            {t(`status${status}`)}
-                                        </span>
+                                        {status === null ? (
+                                            <span className="text-xs text-gray-400">—</span>
+                                        ) : (
+                                            <span className={`rounded-full px-2 py-1 text-xs ${STATUS_CLASSES[status]}`}>
+                                                {t(`status${status}`)}
+                                            </span>
+                                        )}
                                     </td>
                                     <td className="text-right">{row.impressions.toLocaleString()}</td>
                                     <td className="text-right">{row.clicks.toLocaleString()}</td>
