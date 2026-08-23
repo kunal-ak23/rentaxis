@@ -145,3 +145,5 @@ databaseChangeLog:
       file: db/changelog/changesets/69-amenities-parking.yaml
   - include:
       file: db/changelog/changesets/70-reset-stale-occupied-units.yaml
+  - include:
+      file: db/changelog/changesets/71-promotions.yaml
