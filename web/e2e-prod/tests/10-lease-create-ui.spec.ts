@@ -70,13 +70,13 @@ test('TENANT_ADMIN creates a lease via the wizard UI', async ({ browser }) => {
   const wizardDialog = page.locator('div.fixed').filter({ hasText: /Step \d of 5/ });
   await expect(wizardDialog).toBeVisible();
 
-  // The wizard's Field component renders <label> without `htmlFor`, so
-  // Playwright's getByLabel can't bind them to the select. Use positional
-  // selectors scoped to the dialog body instead — step 1 has exactly two
-  // <select> elements (Unit, Renter) in that order. selectOption(value)
-  // matches the <option value=...> attribute, which is the entity UUID.
-  await wizardDialog.locator('select').nth(0).selectOption(unit.id);
-  await wizardDialog.locator('select').nth(1).selectOption(renter.id);
+  // SearchableSelect renders ARIA combobox + option controls rather than a
+  // native <select>. Pick by visible entity text so this follows the same
+  // interaction path a user takes and remains independent of UUID markup.
+  await wizardDialog.getByRole('combobox').nth(0).click();
+  await wizardDialog.getByRole('option').filter({ hasText: unit.unitNumber }).click();
+  await wizardDialog.getByRole('combobox').nth(1).click();
+  await wizardDialog.getByRole('option').filter({ hasText: renter.nameEn }).click();
 
   await wizardDialog.getByRole('button', { name: /^next$/i }).click();
 
@@ -92,7 +92,10 @@ test('TENANT_ADMIN creates a lease via the wizard UI', async ({ browser }) => {
   await wizardDialog.locator('input[type="date"]').nth(1).fill(endDate);
   // Rent + deposit. First two number inputs on this step.
   await wizardDialog.locator('input[type="number"]').nth(0).fill('60000');
-  await wizardDialog.locator('input[type="number"]').nth(1).fill('5000');
+  // The payment scheduler caps the largest cheque at the deposit amount.
+  // A 13-month inclusive lease at AED 60,000/month split quarterly needs a
+  // deposit of at least AED 195,000 for the default LAST_LARGER strategy.
+  await wizardDialog.locator('input[type="number"]').nth(1).fill('195000');
 
   await wizardDialog.getByRole('button', { name: /^next$/i }).click();
 

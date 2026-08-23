@@ -26,6 +26,14 @@ test('provision tenant + property + unit + renter + active lease', async () => {
   const tenant = await api.createTenant(pctx, `TEST-E2E ${new Date().toISOString().slice(0, 10)} ${suffix}`);
   expect(tenant.id).toBeTruthy();
 
+  // Persist the tenant immediately so 99-cleanup can remove it even if a
+  // later provisioning step fails. Without this checkpoint, a failed seed
+  // leaves an orphaned TEST-E2E organization in production.
+  fs.writeFileSync(
+    CONTEXT_FILE,
+    JSON.stringify({ ...ctx, tenant: { id: tenant.id, name: tenant.name } }, null, 2),
+  );
+
   // 2. Enable EMAIL_NOTIFICATIONS on the new tenant. Defaults to false per
   //    TenantFeature.EMAIL_NOTIFICATIONS (phased-rollout pattern), which
   //    would otherwise cause EmailDispatcher to skip every event with
