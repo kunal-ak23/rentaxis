@@ -16,6 +16,10 @@ import { api, ProdContext } from '../helpers/prod-client';
 const CONTEXT_FILE = path.join(__dirname, '..', '.test-context.json');
 
 test('delete test tenant', async () => {
+  // Tenant deletion walks every tenant-scoped table and can approach the
+  // suite-wide 60s default on production-sized schemas. Keep this bounded but
+  // separate from the tighter functional-test timeout.
+  test.setTimeout(180_000);
   test.skip(process.env.SKIP_CLEANUP === '1', 'SKIP_CLEANUP set');
 
   const ctx = JSON.parse(fs.readFileSync(CONTEXT_FILE, 'utf8'));
