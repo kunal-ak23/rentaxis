@@ -2187,6 +2187,62 @@ void main() {
     // A missing browser must not crash the home screen.
     expect(tester.takeException(), isNull);
   });
+  testWidgets('a credentials-in-authority url is refused', (tester) async {
+    // https://my-bank.com@spice-bazaar.ae/ renders as "my-bank.com" in the
+    // minimal chrome of an in-app browser. The server refuses any '@' in the
+    // authority for exactly this reason; Uri.tryParse happily reports
+    // scheme=https, so checking the scheme alone would have launched it.
+    final launcher = _RecordingLauncher();
+    await tapWith(
+      tester,
+      PromoActions(launcher: launcher.call),
+      testAd(
+        ctaType: 'WEBSITE',
+        ctaUrl: 'https://my-bank.com@spice-bazaar.ae/friday',
+      ),
+    );
+
+    expect(launcher.uris, isEmpty);
+  });
+
+  testWidgets('an https url with no host is refused', (tester) async {
+    // Uri.tryParse('https:///nohost') yields scheme=https with an empty host.
+    final launcher = _RecordingLauncher();
+    await tapWith(
+      tester,
+      PromoActions(launcher: launcher.call),
+      testAd(ctaType: 'WEBSITE', ctaUrl: 'https:///nohost'),
+    );
+
+    expect(launcher.uris, isEmpty);
+  });
+
+  testWidgets('a whatsapp number keyed with spaces still resolves',
+      (tester) async {
+    // wa.me wants bare digits. An admin typing the number the way it appears
+    // on a business card used to produce a link with encoded spaces in it.
+    final launcher = _RecordingLauncher();
+    await tapWith(
+      tester,
+      PromoActions(launcher: launcher.call),
+      testAd(ctaType: 'WHATSAPP', ctaPhone: '+971 50 123 4567'),
+    );
+
+    expect(launcher.uris.single, Uri.parse('https://wa.me/971501234567'));
+  });
+
+  testWidgets('a whatsapp number with no digits at all does nothing',
+      (tester) async {
+    final launcher = _RecordingLauncher();
+    await tapWith(
+      tester,
+      PromoActions(launcher: launcher.call),
+      testAd(ctaType: 'WHATSAPP', ctaPhone: '---'),
+    );
+
+    expect(launcher.uris, isEmpty);
+  });
+
 }
 ```
 
@@ -2222,9 +2278,14 @@ typedef PromoUrlLauncher = Future<bool> Function(
 ///
 /// Links open in an **in-app browser** rather than the system browser: the
 /// renter stays in Miftah and sees the host in the in-app chrome. The URL is
-/// re-checked for `https` here even though the backend already validated it
-/// against the business's domain allowlist on write — defence in depth, since
-/// this is the last point before a renter is sent somewhere.
+/// re-checked here even though the backend already validated it against the
+/// business's domain allowlist on write — defence in depth, since this is the
+/// last point before a renter is sent somewhere.
+///
+/// The client-side checks deliberately mirror `PromotionUrlValidator` on the
+/// server (https only, a real host, no userinfo). The one rule this side
+/// cannot repeat is the per-business domain allowlist: the allowlist is not
+/// part of the renter-facing DTO, so host matching stays server-only.
 class PromoActions {
   PromoActions({PromoUrlLauncher? launcher}) : _launch = launcher ?? launchUrl;
 
@@ -2249,17 +2310,37 @@ class PromoActions {
     final url = raw?.trim();
     if (url == null || url.isEmpty) return;
     final uri = Uri.tryParse(url);
-    if (uri == null || uri.scheme.toLowerCase() != 'https') return;
+    if (uri == null) return;
+    // https only. `Uri.tryParse` is far more forgiving than the server's
+    // `new URI(...)` — it happily turns junk into a relative reference with an
+    // empty scheme — so every part of the authority is checked explicitly
+    // rather than inferred from "it parsed".
+    if (uri.scheme.toLowerCase() != 'https') return;
+    // `https:///path` parses with an empty host; the server refuses it and so
+    // does this.
+    if (uri.host.isEmpty) return;
+    // Userinfo is refused outright, exactly as the server does:
+    // `https://my-bank.com@spice-bazaar.ae/` reads as the bank in an in-app
+    // browser's minimal URL chrome while navigating somewhere else entirely.
+    if (uri.userInfo.isNotEmpty) return;
     await _safeLaunch(uri, LaunchMode.inAppBrowserView);
   }
 
   Future<void> _openPhone(String? raw, {required bool whatsapp}) async {
     final phone = raw?.trim();
     if (phone == null || phone.isEmpty) return;
-    final uri = whatsapp
-        // wa.me wants digits only, no leading plus.
-        ? Uri.parse('https://wa.me/${phone.replaceFirst('+', '')}')
-        : Uri.parse('tel:$phone');
+    final Uri uri;
+    if (whatsapp) {
+      // wa.me wants bare digits — no plus, and no spaces, dashes or brackets
+      // either, all of which admins type into a phone field.
+      final digits = phone.replaceAll(RegExp(r'[^0-9]'), '');
+      if (digits.isEmpty) return;
+      uri = Uri.parse('https://wa.me/$digits');
+    } else {
+      // Built rather than parsed so an admin-entered number with spaces is
+      // percent-encoded instead of throwing a FormatException at the tap.
+      uri = Uri(scheme: 'tel', path: phone);
+    }
     await _safeLaunch(
       uri,
       whatsapp ? LaunchMode.externalApplication : LaunchMode.platformDefault,
@@ -2288,7 +2369,7 @@ Run:
 cd mobile/apps/renter && flutter test test/promo_actions_test.dart
 ```
 
-Expected: PASS, 9 tests.
+Expected: PASS, 13 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -2298,6 +2379,22 @@ git commit -m "feat(renter): promo tap handling for website, coupon, call and wh
 ```
 
 ---
+
+The client re-checks the URL rather than trusting that the server validated it
+on write. It refuses a non-https scheme, an empty host, and any authority
+carrying userinfo -- `https://my-bank.com@spice-bazaar.ae/` renders as the bank
+in an in-app browser's minimal chrome, which is why the server refuses `@` too.
+`Uri.tryParse` is permissive where the server's `new URI(...)` is strict, so
+each component is checked explicitly; "it parsed" is not validation.
+
+The per-business domain allowlist stays server-only -- it is not part of the
+renter-facing `PromoAd`, so the client cannot check host membership. Worth
+knowing: if the allowlist is ever bypassed on write, the client cannot catch it.
+
+`tel:` is built as `Uri(scheme: 'tel', path: phone)`, not `Uri.parse('tel:$phone')`,
+because parse throws a `FormatException` on an admin-typed number and would do
+it outside the launch try/catch. WhatsApp strips all non-digits, not just a
+leading `+`, so a number keyed as it appears on a business card still resolves.
 
 ## Task 8: Wire the strip into the home screen
 
