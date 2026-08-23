@@ -34,6 +34,7 @@ export 'api/services/facility_service.dart';
 
 // Models
 export 'models/auth_response.dart';
+export 'models/promo_ad.dart';
 
 // Providers
 export 'providers/auth_provider.dart';
