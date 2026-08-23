@@ -650,6 +650,61 @@ export const api = {
   // Our helper sends `{}` which is functionally equivalent.
   activateLease: (pctx: ProdContext, leaseId: string) =>
     putJson<{ id: string; status: string }>(pctx, `/v1/leases/${leaseId}/activate`, {}),
+  extendLease: (pctx: ProdContext, leaseId: string, newEndDate: string) =>
+    postJson<{ id: string; status: string; endDate: string }>(pctx, `/v1/leases/${leaseId}/extend`, {
+      newEndDate,
+    }),
+  getSettlementPreview: (pctx: ProdContext, leaseId: string) =>
+    getJson<{
+      depositAmount: number;
+      unpaidRentTotal: number;
+      penaltyTotal: number;
+      suggestedRefund: number;
+    }>(pctx, `/v1/leases/${leaseId}/settlement/preview`),
+  saveSettlementDraft: (
+    pctx: ProdContext,
+    leaseId: string,
+    body: {
+      notes: string;
+      deductions: Array<{
+        category?: string;
+        description: string;
+        amount: number;
+        autoCalculated: boolean;
+        type: 'DEDUCTION' | 'ADDITION';
+        additionCategory?: string;
+      }>;
+    },
+  ) =>
+    postJson<{
+      id: string;
+      leaseId: string;
+      status: string;
+      totalDeductions: number;
+      totalAdditions: number;
+      refundAmount: number;
+      deductions: Array<{ id: string; type: string; amount: number }>;
+    }>(pctx, `/v1/leases/${leaseId}/settlement/draft`, body),
+  getSettlement: (pctx: ProdContext, leaseId: string) =>
+    getJson<{
+      id: string;
+      leaseId: string;
+      status: string;
+      totalDeductions: number;
+      totalAdditions: number;
+      refundAmount: number;
+    }>(pctx, `/v1/leases/${leaseId}/settlement`),
+  finalizeSettlement: (pctx: ProdContext, leaseId: string) =>
+    postJson<{ id: string; status: string }>(pctx, `/v1/leases/${leaseId}/settlement/finalize`, {}),
+  getLeaseEvents: (pctx: ProdContext, leaseId: string) =>
+    getJson<
+      Array<{
+        id: string;
+        previousState: string;
+        newState: string;
+        notes: string;
+      }>
+    >(pctx, `/v1/leases/${leaseId}/events`),
 
   // Maintenance tickets. This models the cross-role journey used by the UI:
   // renter reports/replies/shares OTP/rates; manager progresses and closes.
