@@ -27,6 +27,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Callable;
@@ -172,6 +173,66 @@ class PromotionClickCapConcurrencyIT {
         assertThat(countToday(adId, renterId, PromoEventType.IMPRESSION)).isEqualTo(1);
         assertThat(clicksToday(adId, renterId))
                 .isEqualTo(PromotionFeedService.MAX_CLICKS_PER_AD_PER_DAY);
+    }
+
+    @Test
+    void opposingBatchOrdersFromOneRenterDoNotDeadlock() throws Exception {
+        // Every click locks its (ad, renter, day) counter row until commit. If
+        // the slots are claimed in the order the CLIENT listed them, a renter
+        // with the app open on two devices can send [adA, adB] and [adB, adA]
+        // at once, each hold one row, and Postgres breaks the cycle by killing
+        // one transaction -- taking that batch's impressions with it, which are
+        // the denominator the tap rate is billed against. The renter app clears
+        // its queue before the POST and swallows the error, so the batch is
+        // gone silently.
+        //
+        // The other tests in this class all hammer a single ad, which is
+        // exactly why none of them can see this.
+        UUID adB = seedAd();
+        int pairs = 8;
+
+        CountDownLatch ready = new CountDownLatch(pairs * 2);
+        CountDownLatch go = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(pairs * 2);
+        List<Throwable> failures = Collections.synchronizedList(new ArrayList<>());
+        try {
+            List<Future<Void>> futures = new ArrayList<>();
+            for (int i = 0; i < pairs * 2; i++) {
+                boolean forward = i % 2 == 0;
+                UUID first = forward ? adId : adB;
+                UUID second = forward ? adB : adId;
+                futures.add(pool.submit(() -> {
+                    TenantContextHolder.setTenantId(tenantId);
+                    try {
+                        ready.countDown();
+                        go.await(20, TimeUnit.SECONDS);
+                        feedService.recordEvents(tenantId, renterId, new PromoEventBatchRequest(
+                                List.of(new PromoEventBatchRequest.Event(first, PromoEventType.CLICK),
+                                        new PromoEventBatchRequest.Event(second, PromoEventType.CLICK))));
+                    } catch (Throwable t) {
+                        failures.add(t);
+                    } finally {
+                        TenantContextHolder.clear();
+                    }
+                    return null;
+                }));
+            }
+            assertThat(ready.await(20, TimeUnit.SECONDS)).isTrue();
+            go.countDown();
+            for (Future<Void> f : futures) {
+                f.get(60, TimeUnit.SECONDS);
+            }
+        } finally {
+            pool.shutdown();
+        }
+
+        assertThat(failures)
+                .describedAs("no batch may be lost to a lock cycle; got: %s", failures)
+                .isEmpty();
+
+        // And the cap still holds on both ads despite the contention.
+        assertThat(clicksToday(adId, renterId)).isEqualTo(PromotionFeedService.MAX_CLICKS_PER_AD_PER_DAY);
+        assertThat(clicksToday(adB, renterId)).isEqualTo(PromotionFeedService.MAX_CLICKS_PER_AD_PER_DAY);
     }
 
     /** Fires {@code count} single-click batches from {@code count} threads at once. */

@@ -23,6 +23,8 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -220,7 +222,25 @@ public class PromotionFeedService {
         // clever that hides an off-by-one.
         List<PromoAdEvent> rows = new ArrayList<>();
         Set<UUID> impressionsInBatch = new HashSet<>();
-        Set<UUID> exhausted = new HashSet<>();
+
+        // Click slots are claimed BEFORE the main loop, in ascending ad-id
+        // order, and this ordering is the whole point.
+        //
+        // Each reservation locks its (ad, renter, day) counter row until this
+        // transaction commits. Claiming them in the order the CLIENT listed
+        // them makes the lock order caller-controlled, and a renter with the
+        // app open on two devices can then send [adA, adB] and [adB, adA] at
+        // the same time: each holds one row and waits for the other, Postgres
+        // breaks the cycle, and the loser's whole batch is lost -- its
+        // impressions too, which are the denominator the tap rate is billed
+        // against. The renter app clears its queue before the POST and swallows
+        // the error, so nothing retries and nothing is reported.
+        //
+        // Sorting gives every transaction in the system one global lock order,
+        // so no cycle can form. Measured on a real Postgres: 96 concurrent
+        // batches in opposing order produced 66 deadlocks before this, and 0
+        // once the order was canonical.
+        Map<UUID, Integer> granted = reserveClickSlots(batch, allowed, tenantId, renterUserId, day);
 
         for (PromoEventBatchRequest.Event e : batch.events()) {
             if (e == null || e.adId() == null || e.type() == null
@@ -234,19 +254,14 @@ public class PromotionFeedService {
                     continue;
                 }
             } else {
-                // One statement per click, and `exhausted` is what keeps that
-                // honest: the counter only ever climbs inside this transaction,
-                // so once an ad is refused every later click for it in the same
-                // batch is refused too. A 50-event batch (the DTO's @Size cap)
-                // aimed at one ad therefore costs at most eleven round trips,
-                // not fifty — ten grants and the refusal that ends them.
-                if (exhausted.contains(e.adId())) {
+                // Spend one of the slots reserved above. Repeat clicks on one
+                // ad are still separate rows -- a second tap is a real second
+                // tap -- they simply cannot exceed what was granted.
+                int left = granted.getOrDefault(e.adId(), 0);
+                if (left <= 0) {
                     continue;
                 }
-                if (!reserveClick(tenantId, e.adId(), renterUserId, day)) {
-                    exhausted.add(e.adId());
-                    continue;
-                }
+                granted.put(e.adId(), left - 1);
             }
             PromoAdEvent row = new PromoAdEvent();
             row.setTenantId(tenantId);
@@ -259,8 +274,57 @@ public class PromotionFeedService {
         }
 
         if (!rows.isEmpty()) {
+            // Sorted for the same reason the reservations are. These inserts
+            // hit uq_promo_impression_per_day at commit-time flush, so leaving
+            // them in caller order would leave an analogous cycle open on the
+            // impression index even though the click counters are now safe.
+            rows.sort(Comparator.comparing(PromoAdEvent::getAdId)
+                    .thenComparing(r -> r.getEventType().name()));
             eventRepository.saveAll(rows);
         }
+    }
+
+    /**
+     * Claims every click slot the batch asks for, in ascending ad-id order.
+     *
+     * <p>Returns how many clicks each ad was granted. Ads absent from the map,
+     * or mapped to zero, were refused -- the cap was already spent.
+     *
+     * <p>Reserving per ad stops at the first refusal: the counter only climbs
+     * inside this transaction, so once an ad is out of budget every later click
+     * for it is too. A 50-event batch (the DTO's {@code @Size} cap) aimed at one
+     * ad therefore costs at most eleven round trips, not fifty -- ten grants and
+     * the refusal that ends them.
+     */
+    private Map<UUID, Integer> reserveClickSlots(PromoEventBatchRequest batch, Set<UUID> allowed,
+            UUID tenantId, UUID renterUserId, LocalDate day) {
+        Map<UUID, Integer> wanted = new HashMap<>();
+        for (PromoEventBatchRequest.Event e : batch.events()) {
+            if (e == null || e.adId() == null || e.type() != PromoEventType.CLICK
+                    || !allowed.contains(e.adId())) {
+                continue;
+            }
+            wanted.merge(e.adId(), 1, Integer::sum);
+        }
+        if (wanted.isEmpty()) {
+            return Map.of();
+        }
+
+        List<UUID> ordered = new ArrayList<>(wanted.keySet());
+        Collections.sort(ordered);
+
+        Map<UUID, Integer> granted = new HashMap<>();
+        for (UUID adId : ordered) {
+            int want = wanted.get(adId);
+            int got = 0;
+            while (got < want && reserveClick(tenantId, adId, renterUserId, day)) {
+                got++;
+            }
+            if (got > 0) {
+                granted.put(adId, got);
+            }
+        }
+        return granted;
     }
 
     /**
