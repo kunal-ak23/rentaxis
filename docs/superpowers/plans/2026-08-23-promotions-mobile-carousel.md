@@ -2862,11 +2862,21 @@ In `mobile/apps/renter/lib/router.dart`, inside the shell's route list, next to 
 ```dart
           GoRoute(
             path: '/offers',
-            builder: (context, state) => const OffersScreen(),
+            pageBuilder: (context, state) =>
+                fadeTransition(const OffersScreen(), state),
           ),
 ```
 
 and import `screens/offers_screen.dart`.
+
+`pageBuilder` with `fadeTransition`, not a plain `builder` — every one of the
+nineteen routes inside this shell branch uses it, `/facilities` included, so a
+plain builder would give Offers the platform default transition and make it the
+one screen in the app that animates differently from its neighbours.
+
+Keep `OffersScreen` parameterless and self-fetching, for the reason the comment
+above `/facilities` gives: this router rebuilds on `authProvider` and would
+discard anything passed through `extra`.
 
 - [ ] **Step 5: Run the tests**
 
