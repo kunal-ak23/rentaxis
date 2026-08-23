@@ -95,6 +95,17 @@ class GlobalExceptionHandlerClientErrorTest {
         String constraint() {
             throw new ConstraintViolationException(realMethodValidationViolations());
         }
+
+        @GetMapping("/probe/boom")
+        String boom() {
+            // Shaped like the exceptions that actually reach the catch-all in
+            // this codebase: Hibernate naming a table, a column and a
+            // constraint. Nothing in this string may reach the caller.
+            throw new IllegalStateException(
+                    "could not execute statement [ERROR: duplicate key value violates unique "
+                            + "constraint \"uq_promo_impression_per_day\"  Detail: Key "
+                            + "(ad_id, renter_user_id, day)=(...) already exists.]");
+        }
     }
 
     /**
@@ -194,4 +205,34 @@ class GlobalExceptionHandlerClientErrorTest {
         assertThat(resolved.getMessage()).isNotBlank();
         assertThat(result.getResponse().getContentAsString()).doesNotContain(resolved.getMessage());
     }
+    @Test
+    void unhandledExceptionIs500AndDisclosesNothingAboutTheCause() throws Exception {
+        // The catch-all used to copy ex.getMessage() into the body. Anything
+        // unhandled reaching this advice is assumed to be something an
+        // anonymous caller must not read: Hibernate carries table, column and
+        // constraint names, NPEs name our own fields, and the payment/storage
+        // SDKs carry endpoint URLs and request ids. This advice is reachable
+        // unauthenticated via the public paths in PublicRateLimitFilter.
+        // Matches the house style in this file: assert on the response object
+        // rather than pulling in a MockMvcResultMatchers static import for one
+        // call site.
+        var response = mvc.perform(get("/probe/boom")).andReturn().getResponse();
+        String raw = response.getContentAsString();
+
+        assertThat(response.getStatus()).isEqualTo(500);
+        Map<String, Object> body = MAPPER.readValue(raw, new TypeReference<>() {
+        });
+        assertThat(body).containsOnlyKeys("error", "message", "status");
+        assertThat(body.get("error")).isEqualTo(true);
+        assertThat(body.get("status")).isEqualTo(500);
+        assertThat(body.get("message")).isEqualTo("An internal error occurred");
+
+        // Not merely "the message differs" — none of the leaked nouns survive.
+        assertThat(raw)
+                .doesNotContain("uq_promo_impression_per_day")
+                .doesNotContain("duplicate key")
+                .doesNotContain("renter_user_id")
+                .doesNotContain("could not execute statement");
+    }
+
 }

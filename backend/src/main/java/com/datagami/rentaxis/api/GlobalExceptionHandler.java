@@ -242,13 +242,31 @@ public class GlobalExceptionHandler {
         ));
     }
 
+    /**
+     * The catch-all. Its message is a CONSTANT, deliberately.
+     *
+     * <p>This used to copy {@code ex.getMessage()} into the response body,
+     * which made every unhandled exception an information-disclosure channel.
+     * The realistic sources are worse than they first look: Hibernate and JPA
+     * exceptions carry SQL fragments plus table, column and constraint names;
+     * Java's helpful NullPointerExceptions name our own classes, fields and
+     * methods; and the Azure and Razorpay SDKs can surface endpoint URLs and
+     * request ids. This advice is reachable unauthenticated — see the public
+     * paths in {@code PublicRateLimitFilter} — so anything that reaches here is
+     * assumed to be something an anonymous caller must not read.
+     *
+     * <p>Nothing is lost operationally: the full exception and its stack still
+     * go to the log at ERROR, which is where a 500 belongs. Only the caller's
+     * copy is redacted. Note the contrast with the client-error handlers above,
+     * which log at WARN — a malformed request is ordinary traffic, an unhandled
+     * exception is not.
+     */
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<Map<String, Object>> handleRuntime(RuntimeException ex) {
         log.error("Unhandled exception", ex);
-        String message = ex.getMessage() != null ? ex.getMessage() : "An internal error occurred";
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
                 "error", true,
-                "message", message,
+                "message", "An internal error occurred",
                 "status", 500
         ));
     }
