@@ -36,8 +36,9 @@ public class NotificationController {
 
     @PutMapping("/{id}/read")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<Void> markAsRead(@PathVariable UUID id) {
-        notificationService.markAsRead(id);
+    public ResponseEntity<Void> markAsRead(@PathVariable UUID id,
+                                           @RequestHeader("X-User-Id") UUID userId) {
+        notificationService.markAsRead(id, userId);
         return ResponseEntity.ok().build();
     }
 

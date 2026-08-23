@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
@@ -25,4 +26,9 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
 
     @org.springframework.data.jpa.repository.Query(value = "SELECT * FROM notifications WHERE user_id = :userId AND is_read = false", nativeQuery = true)
     List<Notification> findUnreadByUserIdUnfiltered(@org.springframework.data.repository.query.Param("userId") UUID userId);
+
+    @org.springframework.data.jpa.repository.Query(value = "SELECT * FROM notifications WHERE id = :notificationId AND user_id = :userId", nativeQuery = true)
+    Optional<Notification> findByIdAndUserIdUnfiltered(
+            @org.springframework.data.repository.query.Param("notificationId") UUID notificationId,
+            @org.springframework.data.repository.query.Param("userId") UUID userId);
 }
