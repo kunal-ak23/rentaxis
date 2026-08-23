@@ -17,6 +17,9 @@ dependencies:
   # Declared directly — as manager and security already do — because the app's
   # own code reads Dio's error type to tell a 404 apart from a network failure.
   dio: ^5.7.0
+  # Declared directly (matching rentaxis_core's constraint) because ad_card.dart
+  # imports CachedNetworkImageProvider itself rather than through a core widget.
+  cached_network_image: ^3.4.1
   flutter_riverpod: ^2.6.1
   go_router: ^14.8.1
   image_picker: ^1.1.2
