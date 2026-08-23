@@ -789,6 +789,66 @@ export const api = {
   releaseBooking: (pctx: ProdContext, bookingId: string) =>
     postJson<{ id: string; status: string }>(pctx, `/v1/bookings/${bookingId}/release`, {}),
 
+  setGuardProperties: (pctx: ProdContext, guardUserId: string, propertyIds: string[]) =>
+    putJson<string[]>(pctx, `/v1/gatepass/guards/${guardUserId}/properties`, propertyIds),
+  getGuardProperties: (pctx: ProdContext) =>
+    getJson<Array<{ id: string; name: string }>>(pctx, '/v1/gatepass/my-properties'),
+  createGatePass: (
+    pctx: ProdContext,
+    p: { unitId: string; validFrom: string; validTo: string; guestName: string },
+  ) =>
+    postJson<{
+      id: string;
+      propertyId: string;
+      unitId: string;
+      status: string;
+      qrToken: string;
+      numericCode: string;
+    }>(pctx, '/v1/gatepass', {
+      unitId: p.unitId,
+      guestName: p.guestName,
+      guestPhone: '+971500000005',
+      purpose: 'TEST-Visitor access',
+      vehicleNumber: 'TEST-E2E',
+      passType: 'RECURRING',
+      validFrom: p.validFrom,
+      validTo: p.validTo,
+    }),
+  getMyGatePasses: (pctx: ProdContext) =>
+    getJson<Array<{ id: string; status: string; qrToken: string; numericCode: string }>>(
+      pctx,
+      '/v1/gatepass/mine',
+    ),
+  getGatePassApprovals: (pctx: ProdContext) =>
+    getJson<Array<{ id: string; propertyId: string; status: string }>>(pctx, '/v1/gatepass/approvals'),
+  approveGatePass: (pctx: ProdContext, gatePassId: string, approved: boolean) =>
+    postJson<{ id: string; propertyId: string; status: string }>(
+      pctx,
+      `/v1/gatepass/${gatePassId}/approval`,
+      { approved },
+    ),
+  getExpectedGatePasses: (pctx: ProdContext) =>
+    getJson<Array<{ id: string; propertyId: string; status: string }>>(
+      pctx,
+      '/v1/gatepass/expected-today',
+    ),
+  scanGatePass: (
+    pctx: ProdContext,
+    body: { qrToken?: string; numericCode?: string; direction: 'ENTRY' | 'EXIT' },
+  ) =>
+    postJson<{ result: string; reason: string | null; guestName: string; unitNumber: string }>(
+      pctx,
+      '/v1/gatepass/scan',
+      body,
+    ),
+  getGatePassReport: (pctx: ProdContext, from: string, to: string, propertyId: string) =>
+    getJson<Array<{ scanId: string; gatePassId: string; result: string; propertyId: string }>>(
+      pctx,
+      `/v1/gatepass/report?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&propertyId=${propertyId}`,
+    ),
+  cancelGatePass: (pctx: ProdContext, gatePassId: string) =>
+    postJson<{ id: string; status: string }>(pctx, `/v1/gatepass/${gatePassId}/cancel`, {}),
+
   // Renter + Lease
   // Backend defaults createPortalAccount=true and returns portalPassword on
   // the response. We don't need to pass the flag explicitly anymore.

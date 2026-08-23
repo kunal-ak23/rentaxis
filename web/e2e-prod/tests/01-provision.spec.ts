@@ -72,6 +72,15 @@ test('provision tenant + property + unit + renter + active lease', async () => {
     role: 'PROPERTY_MANAGER',
   });
 
+  const guardEmail = `test-guard-${suffix}@e2e.rentaxis.test`;
+  const guardPassword = 'TestGuard!23';
+  const guard = await api.createUser(pctx, tenant.id, {
+    name: `TEST-Guard ${suffix}`,
+    email: guardEmail,
+    password: guardPassword,
+    role: 'SECURITY_GUARD',
+  });
+
   // 4. Switch session to TENANT_ADMIN for the rest of provisioning — that's
   //    the role a real org admin uses to set up properties/units/renters/leases.
   //    Doing this as SUPER_ADMIN (the prior shape) would hide any TA-only
@@ -81,6 +90,7 @@ test('provision tenant + property + unit + renter + active lease', async () => {
   // 5. Property + unit (TA).
   const property = await api.createProperty(taCtx, { nameEn: `TEST-Tower ${suffix}` });
   await api.assignUserToProperty(taCtx, pm.id, property.id);
+  await api.setGuardProperties(taCtx, guard.id, [property.id]);
   const unit = await api.createUnit(taCtx, {
     propertyId: property.id,
     unitNumber: `TEST-${suffix}`,
@@ -141,6 +151,9 @@ test('provision tenant + property + unit + renter + active lease', async () => {
         pmEmail,
         pmPassword,
         pmUserId: pm.id,
+        guardEmail,
+        guardPassword,
+        guardUserId: guard.id,
       },
       null,
       2,
