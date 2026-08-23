@@ -147,3 +147,5 @@ databaseChangeLog:
       file: db/changelog/changesets/70-reset-stale-occupied-units.yaml
   - include:
       file: db/changelog/changesets/71-promotions.yaml
+  - include:
+      file: db/changelog/changesets/72-promo-click-budget.yaml

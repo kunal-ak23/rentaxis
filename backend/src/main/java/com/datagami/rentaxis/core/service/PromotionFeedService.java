@@ -15,6 +15,7 @@ import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.PromoAdEventRepository;
 import com.datagami.rentaxis.domain.repository.PromoAdRepository;
 import com.datagami.rentaxis.domain.repository.PromoBusinessRepository;
+import jakarta.persistence.EntityManager;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -47,15 +48,52 @@ public class PromotionFeedService {
      * clicks deliberately are not, because a second tap is a real second tap.
      * Ten is far above any honest number of taps on one carousel card in a day.
      *
-     * <p>This cap is <b>advisory</b>, and knowing why matters. It is
-     * check-then-act under READ COMMITTED: concurrent requests all read the same
-     * count, all pass, and all insert, so parallelism multiplies it. What bounds
-     * the residual is the 20/min bucket for {@code POST /api/v1/promotions/events}
-     * in {@code PublicRateLimitFilter} — do not remove that believing this cap
-     * stands alone. Making the cap exact needs a DB constraint for clicks, the
-     * way {@code uq_promo_impression_per_day} does it for impressions.
+     * <p>This cap is <b>exact</b>, and the mechanism is worth knowing. It used
+     * to be check-then-act under READ COMMITTED — concurrent requests all read
+     * the same count, all passed, all inserted, so parallelism multiplied it.
+     * A unique index, the way {@code uq_promo_impression_per_day} does it for
+     * impressions, cannot fix that here: it would collapse the repeat clicks
+     * the analytics exist to count. So the cap is a counter instead. Every
+     * click spends one slot from a per (ad, renter, day) row in
+     * {@code promo_ad_click_budgets}, claimed by {@link #RESERVE_CLICK_SQL} —
+     * two upserts on one key serialize on that row inside Postgres, so the
+     * eleventh claim re-reads the committed count and updates nothing. Counter
+     * and events are written in the same transaction, so a rollback returns the
+     * slots with the clicks.
+     *
+     * <p>The 20/min bucket for {@code POST /api/v1/promotions/events} in
+     * {@code PublicRateLimitFilter} is still worth keeping — it bounds how much
+     * work an abusive client can make the server do — but the cap no longer
+     * leans on it for correctness, so its own comment now overstates its job.
      */
     static final int MAX_CLICKS_PER_AD_PER_DAY = 10;
+
+    /**
+     * Claims one click slot, atomically. Returns 1 row affected if the slot was
+     * granted and 0 if the day's allowance is already spent.
+     *
+     * <p>The {@code WHERE} on {@code DO UPDATE} is the whole enforcement: a
+     * refusal is zero rows updated, not an error, so a capped click costs the
+     * batch nothing — unlike the impression index, which fails at commit and
+     * would take the batch's other rows down with it. Postgres re-checks that
+     * predicate against the row as it stands after any conflicting transaction
+     * commits, which is exactly the read the old in-Java count could not make.
+     *
+     * <p>The tenant predicate is belt and braces. {@code ad_id} already resolves
+     * to one tenant, and {@code recordEvents} only ever passes ads that survived
+     * a tenant-scoped eligibility query, but this statement is native SQL and so
+     * runs outside Hibernate's {@code tenantFilter} — the isolation has to be
+     * written out rather than inherited.
+     */
+    private static final String RESERVE_CLICK_SQL = """
+            INSERT INTO promo_ad_click_budgets (tenant_id, ad_id, renter_user_id, day, clicks)
+            VALUES (:tenantId, :adId, :renterUserId, :day, 1)
+            ON CONFLICT (ad_id, renter_user_id, day) DO UPDATE
+               SET clicks = promo_ad_click_budgets.clicks + 1,
+                   updated_at = now()
+             WHERE promo_ad_click_budgets.clicks < :cap
+               AND promo_ad_click_budgets.tenant_id = :tenantId
+            """;
 
     /** The product's timezone. The database's is not necessarily the same. */
     static final ZoneId DUBAI = ZoneId.of("Asia/Dubai");
@@ -79,15 +117,18 @@ public class PromotionFeedService {
     private final PromoBusinessRepository businessRepository;
     private final PromoAdEventRepository eventRepository;
     private final LeaseRepository leaseRepository;
+    private final EntityManager entityManager;
 
     public PromotionFeedService(PromoAdRepository adRepository,
                                 PromoBusinessRepository businessRepository,
                                 PromoAdEventRepository eventRepository,
-                                LeaseRepository leaseRepository) {
+                                LeaseRepository leaseRepository,
+                                EntityManager entityManager) {
         this.adRepository = adRepository;
         this.businessRepository = businessRepository;
         this.eventRepository = eventRepository;
         this.leaseRepository = leaseRepository;
+        this.entityManager = entityManager;
     }
 
     @Transactional(readOnly = true)
@@ -132,10 +173,11 @@ public class PromotionFeedService {
      * <p>Impressions this renter already has today are filtered out BEFORE the
      * insert: the partial unique index only fires at commit, where the
      * transaction is already rollback-only and no catch could save the batch's
-     * clicks. Clicks are capped at {@link #MAX_CLICKS_PER_AD_PER_DAY}. Both
-     * numbers come from one grouped query. Two simultaneous batches can still
-     * race past the check; that lone failed request is accepted — the client
-     * fires and forgets.
+     * clicks. Clicks take the opposite route — each one claims a slot from the
+     * counter row up front (see {@link #MAX_CLICKS_PER_AD_PER_DAY}), where a
+     * refusal is zero rows updated rather than an error — so the cap is decided
+     * by the database without ever putting the batch at risk. Two simultaneous
+     * batches serialize on that counter row instead of racing past a read.
      */
     public void recordEvents(UUID tenantId, UUID renterUserId, PromoEventBatchRequest batch) {
         if (batch == null || batch.events() == null || batch.events().isEmpty()) {
@@ -161,20 +203,15 @@ public class PromotionFeedService {
             return;
         }
 
+        // Only impressions are read back. The click count that used to be taken
+        // from this query is now the counter row's business — reading it here as
+        // well would put a second, staler answer next to the authoritative one,
+        // and the first thing a future reader would ask is which one wins.
         Map<UUID, Long> impressionsToday = new HashMap<>();
-        Map<UUID, Long> clicksToday = new HashMap<>();
         for (Object[] row : eventRepository.countTodaysEventsByAd(
                 tenantId, touched, renterUserId, day)) {
-            UUID adId = (UUID) row[0];
-            PromoEventType type = (PromoEventType) row[1];
-            long count = (Long) row[2];
-            if (type == PromoEventType.IMPRESSION) {
-                impressionsToday.put(adId, count);
-            } else if (type == PromoEventType.CLICK) {
-                // Explicitly CLICK, not `else`: a future event type booked here
-                // would inflate `already` below and start silently dropping real
-                // clicks. Same reasoning as PromotionStatsService.
-                clicksToday.put(adId, count);
+            if ((PromoEventType) row[1] == PromoEventType.IMPRESSION) {
+                impressionsToday.put((UUID) row[0], (Long) row[2]);
             }
         }
 
@@ -183,7 +220,7 @@ public class PromotionFeedService {
         // clever that hides an off-by-one.
         List<PromoAdEvent> rows = new ArrayList<>();
         Set<UUID> impressionsInBatch = new HashSet<>();
-        Map<UUID, Long> clicksInBatch = new HashMap<>();
+        Set<UUID> exhausted = new HashSet<>();
 
         for (PromoEventBatchRequest.Event e : batch.events()) {
             if (e == null || e.adId() == null || e.type() == null
@@ -197,12 +234,19 @@ public class PromotionFeedService {
                     continue;
                 }
             } else {
-                long already = clicksToday.getOrDefault(e.adId(), 0L)
-                        + clicksInBatch.getOrDefault(e.adId(), 0L);
-                if (already >= MAX_CLICKS_PER_AD_PER_DAY) {
+                // One statement per click, and `exhausted` is what keeps that
+                // honest: the counter only ever climbs inside this transaction,
+                // so once an ad is refused every later click for it in the same
+                // batch is refused too. A 50-event batch (the DTO's @Size cap)
+                // aimed at one ad therefore costs at most eleven round trips,
+                // not fifty — ten grants and the refusal that ends them.
+                if (exhausted.contains(e.adId())) {
                     continue;
                 }
-                clicksInBatch.merge(e.adId(), 1L, Long::sum);
+                if (!reserveClick(tenantId, e.adId(), renterUserId, day)) {
+                    exhausted.add(e.adId());
+                    continue;
+                }
             }
             PromoAdEvent row = new PromoAdEvent();
             row.setTenantId(tenantId);
@@ -217,6 +261,26 @@ public class PromotionFeedService {
         if (!rows.isEmpty()) {
             eventRepository.saveAll(rows);
         }
+    }
+
+    /**
+     * Spends one of today's click slots for this ad and renter, and reports
+     * whether the database granted it. See {@link #RESERVE_CLICK_SQL}.
+     *
+     * <p>{@code day} is passed in rather than read from the clock so the counter
+     * key and {@code PromoAdEvent.day} are stamped from the same instant — a
+     * batch straddling Dubai midnight must not spend one day's budget and be
+     * filed under the next, which is the same hazard {@code ck_promo_ad_event_day}
+     * exists to catch.
+     */
+    private boolean reserveClick(UUID tenantId, UUID adId, UUID renterUserId, LocalDate day) {
+        return entityManager.createNativeQuery(RESERVE_CLICK_SQL)
+                .setParameter("tenantId", tenantId)
+                .setParameter("adId", adId)
+                .setParameter("renterUserId", renterUserId)
+                .setParameter("day", day)
+                .setParameter("cap", MAX_CLICKS_PER_AD_PER_DAY)
+                .executeUpdate() > 0;
     }
 
     private List<PromoAd> eligible(UUID tenantId, UUID renterUserId, List<PromoPlacement> placements) {
