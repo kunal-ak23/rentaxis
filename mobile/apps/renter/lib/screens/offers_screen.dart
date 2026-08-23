@@ -42,14 +42,16 @@ class _OffersScreenState extends ConsumerState<OffersScreen> {
       appBar: AppBar(title: Text(l.title)),
       body: Column(
         children: [
-          SizedBox(
-            height: 52,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(
-                horizontal: MiftahSpacing.page,
-                vertical: 8,
-              ),
+          // Sized by its chips, not pinned to a height. A fixed 52 squashed
+          // every chip to 36 — below Material's 48dp tap target — and at 2.0
+          // text scale the label outgrew the pill and painted below it.
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(
+              horizontal: MiftahSpacing.page,
+              vertical: 8,
+            ),
+            child: Row(
               children: [
                 for (final category in _categories) ...[
                   ChoiceChip(
