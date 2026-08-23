@@ -89,7 +89,10 @@ class HomeScreen extends ConsumerWidget {
                 ],
                 const SizedBox(height: MiftahSpacing.gap),
                 const _QuickActions(),
-                const SizedBox(height: MiftahSpacing.gap),
+                // No leading gap here on purpose: the strip is conditional and
+                // owns its own, exactly like the penalty strip above. Putting
+                // one on each side left 22px of dead air between quick actions
+                // and facilities whenever the tenant has no promotions.
                 const HomeAdsStrip(),
                 const SizedBox(height: MiftahSpacing.gap),
                 const _FacilitiesCard(),
