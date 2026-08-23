@@ -1543,9 +1543,22 @@ Widget host(
     );
 
 double? currentPage(WidgetTester tester) =>
-    tester.widget<PageView>(find.byType(PageView)).controller.page;
+    tester.widget<PageView>(find.byType(PageView)).controller!.page;
 
 void main() {
+  // The MediaQuery in `host` declares a 400x800 canvas but a MediaQuery
+  // override does not resize the surface the widget actually lays out in —
+  // without this the strip renders at the default 800x600, where a page is
+  // 800*0.88 = 704px and the swipe tests' 300px drag is under the half-page
+  // PageView snaps on. This makes the declared canvas real.
+  setUp(() {
+    final view =
+        TestWidgetsFlutterBinding.ensureInitialized().platformDispatcher.views.first;
+    view.devicePixelRatio = 1.0;
+    view.physicalSize = const Size(400, 800);
+    addTearDown(view.reset);
+  });
+
   testWidgets('an empty list renders nothing', (tester) async {
     await tester.pumpWidget(host(AdsCarousel(ads: const [], onTapAd: (_) {})));
 
@@ -1705,8 +1718,19 @@ void main() {
       )));
       await tester.pump();
 
-      expect(find.byKey(const Key('promo-see-all')), findsOneWidget);
       expect(find.byKey(const Key('promo-dot-3')), findsOneWidget);
+
+      // A PageView builds lazily — it mounts its viewport plus one viewport of
+      // cache either side, so a 4th page of 0.88 viewports each is not in the
+      // element tree at page 0 at any surface size. Scroll to it before
+      // asserting it is there.
+      for (var i = 0; i < 3; i++) {
+        await tester.drag(find.byType(PageView), const Offset(-300, 0));
+        await tester.pumpAndSettle();
+      }
+
+      expect(currentPage(tester), 3);
+      expect(find.byKey(const Key('promo-see-all')), findsOneWidget);
     });
 
     testWidgets('is omitted when onSeeAll is null', (tester) async {
@@ -1911,19 +1935,26 @@ class _AdsCarouselState extends State<AdsCarousel> {
               }
               return false;
             },
+            // padEnds stays at its default `true`. A fractional-viewport
+            // PageView with padEnds: false tops out at `count - 1 /
+            // viewportFraction` pages — at 0.88 that is 1.14 pages short of
+            // the end, so the last ad can never become the current page: it
+            // sits clamped against the trailing edge, never on stage, and the
+            // auto-advance animates to an index the controller then refuses.
+            // Padded ends cost a wider outer margin and a smaller peek; a
+            // reachable last banner is worth both.
             child: PageView.builder(
               controller: _pageController,
-              padEnds: false,
               itemCount: pageCount,
               onPageChanged: (i) {
                 setState(() => _page = i);
                 _reportImpression(i);
               },
               itemBuilder: (context, i) {
-                final padding = EdgeInsetsDirectional.only(
-                  start: i == 0 ? 14 : 6,
-                  end: i == pageCount - 1 ? 14 : 6,
-                );
+                // Uniform: padded ends already inset the first and last page
+                // by half the off-viewport fraction, so a wider edge padding
+                // would only make the outer cards narrower than the rest.
+                const padding = EdgeInsets.symmetric(horizontal: 6);
                 if (i >= widget.ads.length) {
                   return Padding(
                     padding: padding,
@@ -2038,6 +2069,38 @@ git commit -m "feat(renter): auto-advancing ads carousel with pause-on-touch"
 ```
 
 ---
+
+### Why `padEnds: true`, and what it costs
+
+The plan originally specified `padEnds: false` for a flush 14px screen margin
+with a 42px peek. That cannot work. A `PageView` with `viewportFraction` f and
+unpadded ends has a `maxScrollExtent` that puts the top page value at
+`count - 1/f`. At f = 0.88 with four pages that is **2.864** -- verified by
+probe, `jumpToPage(3)` lands on 2.864 and stays there. The last ad can never
+become the current page: it sits clamped against the trailing edge, never on
+stage, its impression never counted, and auto-advance animates to an index the
+controller quietly refuses.
+
+`padEnds: true` is the only fix that keeps a peek at all -- `viewportFraction:
+1.0` would remove it. The cost is that margin and peek become locked together:
+
+```
+margin = (1 - f) * W / 2 + itemPadding
+peek   = (1 - f) * W / 2 - itemPadding
+```
+
+so `margin - peek = 2 * itemPadding` and the margin can never be smaller than
+the peek. At f = 0.88, W = 400 and itemPadding = 6 that is a 30px margin with an
+18px peek, replacing the specced 14px and 42px.
+
+Item padding is uniform (`EdgeInsets.symmetric(horizontal: 6)`) rather than the
+plan's `i == 0 ? 14 : 6`, because padded ends already inset the outer pages and
+the original asymmetry would now just make the first and last cards narrower
+than the rest.
+
+Note that `HomeAdsStrip` escapes the home `ListView`'s 20px gutter to span the
+full width, so a 30px margin insets these cards 10px deeper than every sibling
+card on the home screen. That is a live design question, not a settled one.
 
 ## Task 7: `PromoActions` — what a tap does
 
