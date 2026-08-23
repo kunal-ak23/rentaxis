@@ -5289,6 +5289,8 @@ Create `web/src/app/[locale]/dashboard/promotions/_components/AdCardPreview.tsx`
 ```tsx
 "use client";
 
+import type { CSSProperties } from "react";
+
 import type { PromoCtaType } from "@/types/promotion";
 
 /** Miftah mobile tokens — see mobile/packages/rentaxis_core/lib/ui/miftah_tokens.dart. */
@@ -5330,7 +5332,10 @@ export function AdCardPreview({
     const fg = hasImage ? "#FFFFFF" : INK;
     const label = (ctaLabel?.trim() || defaultCtaLabel(ctaType, rtl));
 
-    const clamp2: React.CSSProperties = {
+    // CSSProperties imported explicitly: this repo uses jsx: "react-jsx", which
+    // does not put a `React` namespace in module scope, so `React.CSSProperties`
+    // is a compile error here.
+    const clamp2: CSSProperties = {
         display: "-webkit-box",
         WebkitLineClamp: 2,
         WebkitBoxOrient: "vertical",
