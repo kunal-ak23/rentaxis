@@ -5712,12 +5712,19 @@ function hostIsAllowed(url: string, domains: string[]): boolean {
         return false;
     }
     if (parsed.username !== "" || parsed.password !== "") return false;
-    const host = parsed.hostname.toLowerCase();
+    let host = parsed.hostname.toLowerCase();
+    if (host.endsWith(".")) host = host.slice(0, -1);
     return domains.some(d => {
         const clean = d.trim().toLowerCase();
         return clean !== "" && (host === clean || host.endsWith(`.${clean}`));
     });
 }
+
+/** Asia/Dubai is a fixed +04 with no DST. */
+const DUBAI_OFFSET = "+04:00";
+
+/** Mirrors PromoAdRequest's @Pattern and the column's varchar(9). */
+const HEX_COLOUR = /^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 
 const trimOrNull = (s: string): string | null => (s.trim() === "" ? null : s.trim());
 
@@ -5755,10 +5762,12 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel }: AdEdi
     function validate(): Record<string, string> {
         const next: Record<string, string> = {};
         if (trimOrNull(titleEn) === null && trimOrNull(titleAr) === null) {
-            next.title = t("saveError");
+            next.title = t("titleRequired");
         }
-        if (startsAt && endsAt && new Date(endsAt) <= new Date(startsAt)) {
-            next.endsAt = t("saveError");
+        if (startsAt && endsAt
+            && new Date(`${endsAt}T23:59:59${DUBAI_OFFSET}`)
+               <= new Date(`${startsAt}T00:00:00${DUBAI_OFFSET}`)) {
+            next.endsAt = t("windowOrder");
         }
         if (ctaType === "WEBSITE") {
             const url = ctaUrl.trim();
@@ -5769,7 +5778,7 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel }: AdEdi
             }
         }
         if (ctaType === "COUPON" && trimOrNull(couponCode) === null) {
-            next.couponCode = t("saveError");
+            next.couponCode = t("couponRequired");
         }
         if (ctaType === "CALL" && !business?.phoneE164) {
             next.ctaType = t("saveError");
@@ -5802,8 +5811,8 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel }: AdEdi
             couponCode: ctaType === "COUPON" ? trimOrNull(couponCode) : null,
             couponTermsEn: ctaType === "COUPON" ? trimOrNull(couponTermsEn) : null,
             couponTermsAr: ctaType === "COUPON" ? trimOrNull(couponTermsAr) : null,
-            startsAt: startsAt ? new Date(`${startsAt}T00:00:00Z`).toISOString() : null,
-            endsAt: endsAt ? new Date(`${endsAt}T23:59:59Z`).toISOString() : null,
+            startsAt: startsAt ? new Date(`${startsAt}T00:00:00${DUBAI_OFFSET}`).toISOString() : null,
+            endsAt: endsAt ? new Date(`${endsAt}T23:59:59${DUBAI_OFFSET}`).toISOString() : null,
             priority,
             placement,
             propertyIds,
@@ -6109,6 +6118,12 @@ function toHost(value: string): string {
         .reduce((min, i) => Math.min(min, i), s.length);
     return s.slice(0, cut);
 }
+
+/** Asia/Dubai is a fixed +04 with no DST. */
+const DUBAI_OFFSET = "+04:00";
+
+/** Mirrors PromoAdRequest's @Pattern and the column's varchar(9). */
+const HEX_COLOUR = /^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 
 const trimOrNull = (s: string): string | null => (s.trim() === "" ? null : s.trim());
 

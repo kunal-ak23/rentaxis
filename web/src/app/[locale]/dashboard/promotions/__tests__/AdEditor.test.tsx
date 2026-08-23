@@ -157,6 +157,118 @@ describe('AdEditor', () => {
         expect(onSave).not.toHaveBeenCalled()
     })
 
+    it('anchors the campaign window to Dubai time, not UTC', () => {
+        // The window is compared against absolute instants server-side. With a
+        // UTC anchor, "ends 30 September" actually stopped at 04:00 on 1 October
+        // in Dubai -- a weekend offer outliving its own stated end date.
+        const { onSave } = renderEditor()
+        fireEvent.change(screen.getByLabelText('Title (English)'), {
+            target: { value: 'Brunch' },
+        })
+        fireEvent.change(screen.getByLabelText('Starts'), {
+            target: { value: '2026-09-01' },
+        })
+        fireEvent.change(screen.getByLabelText('Ends'), {
+            target: { value: '2026-09-30' },
+        })
+        fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+        const body = onSave.mock.calls[0][0]
+        expect(body.startsAt).toBe('2026-08-31T20:00:00.000Z')
+        expect(body.endsAt).toBe('2026-09-30T19:59:59.000Z')
+    })
+
+    it('allows a single-day campaign', () => {
+        // start === end compared two date-only strings as equal and blocked
+        // Save, for a body the backend accepts (00:00:00 to 23:59:59).
+        const { onSave } = renderEditor()
+        fireEvent.change(screen.getByLabelText('Title (English)'), {
+            target: { value: 'One day only' },
+        })
+        fireEvent.change(screen.getByLabelText('Starts'), {
+            target: { value: '2026-09-30' },
+        })
+        fireEvent.change(screen.getByLabelText('Ends'), {
+            target: { value: '2026-09-30' },
+        })
+        fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+        expect(onSave).toHaveBeenCalledTimes(1)
+    })
+
+    it('accepts the FQDN form of an allowed host', () => {
+        // PromotionUrlValidator strips one trailing dot on both sides, so the
+        // server stores this. Rejecting it told the admin, untruthfully, that
+        // the link was off the allowlist.
+        const { onSave } = renderEditor()
+        fireEvent.change(screen.getByLabelText('Title (English)'), {
+            target: { value: 'Brunch' },
+        })
+        fireEvent.change(screen.getByLabelText('What happens on tap'), {
+            target: { value: 'WEBSITE' },
+        })
+        fireEvent.change(screen.getByLabelText('Link'), {
+            target: { value: 'https://spice-bazaar.ae./friday' },
+        })
+        fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+        expect(onSave).toHaveBeenCalledTimes(1)
+    })
+
+    it('rejects empty userinfo, which the backend also refuses', () => {
+        const { onSave } = renderEditor()
+        fireEvent.change(screen.getByLabelText('Title (English)'), {
+            target: { value: 'Brunch' },
+        })
+        fireEvent.change(screen.getByLabelText('What happens on tap'), {
+            target: { value: 'WEBSITE' },
+        })
+        fireEvent.change(screen.getByLabelText('Link'), {
+            target: { value: 'https://@spice-bazaar.ae/friday' },
+        })
+        fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+        expect(onSave).not.toHaveBeenCalled()
+    })
+
+    it('rejects a malformed accent colour before the round trip', () => {
+        const { onSave } = renderEditor()
+        fireEvent.change(screen.getByLabelText('Title (English)'), {
+            target: { value: 'Brunch' },
+        })
+        fireEvent.change(screen.getByLabelText('Card colour'), {
+            target: { value: 'FBF3E2' },
+        })
+        fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+        expect(screen.getByText(/hex colour/i)).toBeInTheDocument()
+        expect(onSave).not.toHaveBeenCalled()
+    })
+
+    it('names the actual problem instead of a generic message', () => {
+        // The CALL branch previously rendered "Check the highlighted fields"
+        // with no highlighted field, while the backend knew exactly what was
+        // wrong: the business has no phone number.
+        const noPhone = { ...business, phoneE164: null }
+        const onSave = vi.fn()
+        render(
+            <NextIntlClientProvider locale="en" messages={messages}>
+                <AdEditor businesses={[noPhone]} properties={[]} ad={null}
+                    onSave={onSave} onCancel={vi.fn()} />
+            </NextIntlClientProvider>,
+        )
+        fireEvent.change(screen.getByLabelText('Title (English)'), {
+            target: { value: 'Call us' },
+        })
+        fireEvent.change(screen.getByLabelText('What happens on tap'), {
+            target: { value: 'CALL' },
+        })
+        fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+        expect(screen.getByText(/no phone number/i)).toBeInTheDocument()
+        expect(onSave).not.toHaveBeenCalled()
+    })
+
     it('renders the live preview with the typed title', () => {
         renderEditor()
         fireEvent.change(screen.getByLabelText('Title (English)'), {

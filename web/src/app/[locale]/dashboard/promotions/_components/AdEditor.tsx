@@ -40,6 +40,13 @@ interface AdEditorProps {
  * here — matching the raw string the admin typed is not this function's job.
  */
 function hostIsAllowed(url: string, domains: string[]): boolean {
+    // Any '@' in the authority, not just a non-empty username. WHATWG parses
+    // "https://@host/" to username === "", which slipped past the old check,
+    // while the backend rejects on the raw authority and 400s it.
+    if (/^[a-z]+:\/\/[^/?#]*@/i.test(url.trim())) return false;
+    // java.net.URI refuses a raw space where WHATWG percent-encodes it, so the
+    // server would 400 a URL this function had called valid.
+    if (/\s/.test(url.trim())) return false;
     let parsed: URL;
     try {
         parsed = new URL(url);
@@ -47,12 +54,22 @@ function hostIsAllowed(url: string, domains: string[]): boolean {
         return false;
     }
     if (parsed.username !== "" || parsed.password !== "") return false;
-    const host = parsed.hostname.toLowerCase();
+    let host = parsed.hostname.toLowerCase();
+    // "host." is the FQDN form of "host". PromotionUrlValidator strips it on
+    // both sides; without this the client refuses a URL the server stores, and
+    // tells the admin it is off the allowlist, which is untrue.
+    if (host.endsWith(".")) host = host.slice(0, -1);
     return domains.some(d => {
         const clean = d.trim().toLowerCase();
         return clean !== "" && (host === clean || host.endsWith(`.${clean}`));
     });
 }
+
+/** Asia/Dubai is a fixed +04 with no DST. */
+const DUBAI_OFFSET = "+04:00";
+
+/** Mirrors PromoAdRequest's @Pattern and the column's varchar(9). */
+const HEX_COLOUR = /^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 
 const trimOrNull = (s: string): string | null => (s.trim() === "" ? null : s.trim());
 
@@ -82,6 +99,11 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel }: AdEdi
     const [previewAr, setPreviewAr] = useState(false);
     const [errors, setErrors] = useState<Record<string, string>>({});
 
+    // The page can render before businesses load. AdsTab disables "Add ad" in
+    // that state, but this component should not post businessId: "" if it is
+    // ever mounted without one — Jackson fails the UUID bind before @NotNull runs.
+    const hasBusinesses = businesses.length > 0;
+
     const business = useMemo(
         () => businesses.find(b => b.id === businessId) ?? null,
         [businesses, businessId],
@@ -90,10 +112,16 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel }: AdEdi
     function validate(): Record<string, string> {
         const next: Record<string, string> = {};
         if (trimOrNull(titleEn) === null && trimOrNull(titleAr) === null) {
-            next.title = t("saveError");
+            next.title = t("titleRequired");
         }
-        if (startsAt && endsAt && new Date(endsAt) <= new Date(startsAt)) {
-            next.endsAt = t("saveError");
+        // Compare the instants actually submitted, not the raw date strings.
+        // Comparing "2026-09-30" to itself made a single-day campaign compare
+        // equal and blocked Save, for a body the backend accepts (00:00:00 to
+        // 23:59:59 is a valid window).
+        if (startsAt && endsAt
+            && new Date(`${endsAt}T23:59:59${DUBAI_OFFSET}`)
+               <= new Date(`${startsAt}T00:00:00${DUBAI_OFFSET}`)) {
+            next.endsAt = t("windowOrder");
         }
         if (ctaType === "WEBSITE") {
             const url = ctaUrl.trim();
@@ -104,18 +132,24 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel }: AdEdi
             }
         }
         if (ctaType === "COUPON" && trimOrNull(couponCode) === null) {
-            next.couponCode = t("saveError");
+            next.couponCode = t("couponRequired");
         }
         if (ctaType === "CALL" && !business?.phoneE164) {
-            next.ctaType = t("saveError");
+            next.ctaType = t("businessHasNoPhone");
         }
         if (ctaType === "WHATSAPP" && !business?.whatsappE164) {
-            next.ctaType = t("saveError");
+            next.ctaType = t("businessHasNoWhatsapp");
+        }
+        // Checked here so a typo is a field error rather than a round trip:
+        // the backend validates this twice, at @Pattern and again in applyAd.
+        if (accentColor.trim() !== "" && !HEX_COLOUR.test(accentColor.trim())) {
+            next.accentColor = t("accentColorInvalid");
         }
         return next;
     }
 
     function submit() {
+        if (!hasBusinesses) return;
         const found = validate();
         setErrors(found);
         if (Object.keys(found).length > 0) return;
@@ -137,8 +171,15 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel }: AdEdi
             couponCode: ctaType === "COUPON" ? trimOrNull(couponCode) : null,
             couponTermsEn: ctaType === "COUPON" ? trimOrNull(couponTermsEn) : null,
             couponTermsAr: ctaType === "COUPON" ? trimOrNull(couponTermsAr) : null,
-            startsAt: startsAt ? new Date(`${startsAt}T00:00:00Z`).toISOString() : null,
-            endsAt: endsAt ? new Date(`${endsAt}T23:59:59Z`).toISOString() : null,
+            // Anchored to +04, not Z. The window is compared against absolute
+            // instants server-side, so a UTC anchor makes "ends 30 September"
+            // actually stop at 04:00 on 1 October Dubai time — a Ramadan or
+            // weekend offer visibly outliving its stated end date — and makes
+            // "starts 1 September" dark for the first four hours of its own
+            // start day. Asia/Dubai is a fixed +04 with no DST, so a literal
+            // offset is correct and needs no tz library.
+            startsAt: startsAt ? new Date(`${startsAt}T00:00:00${DUBAI_OFFSET}`).toISOString() : null,
+            endsAt: endsAt ? new Date(`${endsAt}T23:59:59${DUBAI_OFFSET}`).toISOString() : null,
             priority,
             placement,
             propertyIds,
@@ -146,8 +187,14 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel }: AdEdi
         });
     }
 
+    // role="alert" so a screen reader announces a failed save instead of the
+    // user clicking Save and hearing nothing.
     const err = (key: string) =>
-        errors[key] ? <p className="mt-1 text-sm text-red-600">{errors[key]}</p> : null;
+        errors[key]
+            ? <p role="alert" id={`err-${key}`} className="mt-1 text-sm text-red-600">{errors[key]}</p>
+            : null;
+    const invalid = (key: string) =>
+        errors[key] ? { "aria-invalid": true, "aria-describedby": `err-${key}` } as const : {};
 
     return (
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
@@ -169,22 +216,22 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel }: AdEdi
                 <div className="grid gap-4 sm:grid-cols-2">
                     <label className="block">
                         <span className="mb-1 block text-sm font-medium">{t("adTitleEn")}</span>
-                        <input aria-label={t("adTitleEn")} className="w-full rounded-lg border px-3 py-2"
+                        <input aria-label={t("adTitleEn")} maxLength={120} className="w-full rounded-lg border px-3 py-2"
                             value={titleEn} onChange={e => setTitleEn(e.target.value)} />
                     </label>
                     <label className="block">
                         <span className="mb-1 block text-sm font-medium">{t("adTitleAr")}</span>
-                        <input aria-label={t("adTitleAr")} dir="rtl" className="w-full rounded-lg border px-3 py-2"
+                        <input aria-label={t("adTitleAr")} maxLength={120} dir="rtl" className="w-full rounded-lg border px-3 py-2"
                             value={titleAr} onChange={e => setTitleAr(e.target.value)} />
                     </label>
                     <label className="block">
                         <span className="mb-1 block text-sm font-medium">{t("subtitleEn")}</span>
-                        <input aria-label={t("subtitleEn")} className="w-full rounded-lg border px-3 py-2"
+                        <input aria-label={t("subtitleEn")} maxLength={160} className="w-full rounded-lg border px-3 py-2"
                             value={subtitleEn} onChange={e => setSubtitleEn(e.target.value)} />
                     </label>
                     <label className="block">
                         <span className="mb-1 block text-sm font-medium">{t("subtitleAr")}</span>
-                        <input aria-label={t("subtitleAr")} dir="rtl" className="w-full rounded-lg border px-3 py-2"
+                        <input aria-label={t("subtitleAr")} maxLength={160} dir="rtl" className="w-full rounded-lg border px-3 py-2"
                             value={subtitleAr} onChange={e => setSubtitleAr(e.target.value)} />
                     </label>
                 </div>
@@ -199,9 +246,11 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel }: AdEdi
                     </label>
                     <label className="block">
                         <span className="mb-1 block text-sm font-medium">{t("accentColor")}</span>
-                        <input aria-label={t("accentColor")} placeholder="#FBF3E2"
+                        <input aria-label={t("accentColor")} placeholder="#FBF3E2" maxLength={9}
+                            {...invalid("accentColor")}
                             className="w-full rounded-lg border px-3 py-2"
                             value={accentColor} onChange={e => setAccentColor(e.target.value)} />
+                        {err("accentColor")}
                     </label>
                 </div>
 
@@ -223,7 +272,8 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel }: AdEdi
                 {ctaType === "WEBSITE" && (
                     <label className="block">
                         <span className="mb-1 block text-sm font-medium">{t("ctaUrl")}</span>
-                        <input aria-label={t("ctaUrl")} className="w-full rounded-lg border px-3 py-2"
+                        <input aria-label={t("ctaUrl")} maxLength={1024} {...invalid("ctaUrl")}
+                            className="w-full rounded-lg border px-3 py-2"
                             value={ctaUrl} onChange={e => setCtaUrl(e.target.value)} />
                         <span className="mt-1 block text-xs text-gray-500">
                             {(business?.allowedDomains ?? []).join(", ")}
@@ -236,7 +286,8 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel }: AdEdi
                     <div className="space-y-4">
                         <label className="block">
                             <span className="mb-1 block text-sm font-medium">{t("couponCode")}</span>
-                            <input aria-label={t("couponCode")} className="w-full rounded-lg border px-3 py-2"
+                            <input aria-label={t("couponCode")} maxLength={64} {...invalid("couponCode")}
+                                className="w-full rounded-lg border px-3 py-2"
                                 value={couponCode} onChange={e => setCouponCode(e.target.value)} />
                             {err("couponCode")}
                         </label>
@@ -326,8 +377,8 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel }: AdEdi
                 </label>
 
                 <div className="flex gap-2 pt-2">
-                    <button type="button" onClick={submit}
-                        className="rounded-lg bg-gray-900 px-4 py-2 text-white">
+                    <button type="button" onClick={submit} disabled={!hasBusinesses}
+                        className="rounded-lg bg-gray-900 px-4 py-2 text-white disabled:opacity-40">
                         {t("save")}
                     </button>
                     <button type="button" onClick={onCancel}
@@ -340,11 +391,11 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel }: AdEdi
             <aside className="space-y-3">
                 <div className="flex items-center gap-2">
                     <span className="text-sm font-medium">{t("preview")}</span>
-                    <button type="button" onClick={() => setPreviewAr(false)}
+                    <button type="button" aria-pressed={!previewAr} onClick={() => setPreviewAr(false)}
                         className={`rounded-md border px-2 py-1 text-xs ${previewAr ? "" : "bg-gray-900 text-white"}`}>
                         {t("previewEn")}
                     </button>
-                    <button type="button" onClick={() => setPreviewAr(true)}
+                    <button type="button" aria-pressed={previewAr} onClick={() => setPreviewAr(true)}
                         className={`rounded-md border px-2 py-1 text-xs ${previewAr ? "bg-gray-900 text-white" : ""}`}>
                         {t("previewAr")}
                     </button>
@@ -364,12 +415,12 @@ export function AdEditor({ businesses, properties, ad, onSave, onCancel }: AdEdi
                 <div className="grid gap-4 sm:grid-cols-2">
                     <label className="block">
                         <span className="mb-1 block text-sm font-medium">{t("ctaLabelEn")}</span>
-                        <input aria-label={t("ctaLabelEn")} className="w-full rounded-lg border px-3 py-2"
+                        <input aria-label={t("ctaLabelEn")} maxLength={40} className="w-full rounded-lg border px-3 py-2"
                             value={ctaLabelEn} onChange={e => setCtaLabelEn(e.target.value)} />
                     </label>
                     <label className="block">
                         <span className="mb-1 block text-sm font-medium">{t("ctaLabelAr")}</span>
-                        <input aria-label={t("ctaLabelAr")} dir="rtl" className="w-full rounded-lg border px-3 py-2"
+                        <input aria-label={t("ctaLabelAr")} maxLength={40} dir="rtl" className="w-full rounded-lg border px-3 py-2"
                             value={ctaLabelAr} onChange={e => setCtaLabelAr(e.target.value)} />
                     </label>
                 </div>
