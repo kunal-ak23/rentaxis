@@ -1282,6 +1282,69 @@ export const api = {
     putJson<{ id: string; status: string }>(pctx, `/v1/payments/${paymentScheduleId}/clear`, dto),
   bouncePayment: (pctx: ProdContext, paymentScheduleId: string, dto: { notes?: string } = {}) =>
     putJson<{ id: string; status: string }>(pctx, `/v1/payments/${paymentScheduleId}/bounce`, dto),
+  markPaymentFailed: (
+    pctx: ProdContext,
+    paymentScheduleId: string,
+    failureReason: 'BOUNCE' | 'SIGNATURE_MISMATCH' | 'ACCOUNT_CLOSED',
+    notes: string,
+  ) =>
+    postJson<{
+      schedule: { id: string; status: string };
+      penalty: {
+        id: string;
+        penaltyType: string;
+        penaltyAmount: number;
+        fineGraceDays: number;
+        finePerDayRate: number;
+      };
+    }>(pctx, `/v1/payments/${paymentScheduleId}/mark-failed`, {
+      failureReason,
+      notes,
+      effectiveDate: new Date().toISOString().slice(0, 10),
+    }),
+  listPenalties: (pctx: ProdContext, leaseId: string, status = 'all') =>
+    getJson<{
+      content: Array<{
+        id: string;
+        paymentScheduleId: string;
+        leaseId: string;
+        penaltyType: string;
+        failureReason: string;
+        penaltyAmount: number;
+        currentTotal: number;
+        outstanding: number;
+        waived: boolean;
+        waivedReason: string | null;
+        status: string;
+        payments: Array<{ id: string; amount: number; paymentMethod: string }>;
+      }>;
+    }>(pctx, `/v1/penalties?leaseId=${leaseId}&status=${status}&size=100`),
+  recordPenaltyPayment: (
+    pctx: ProdContext,
+    penaltyId: string,
+    amount: number,
+    reference: string,
+  ) =>
+    postJson<{
+      id: string;
+      amount: number;
+      paymentMethod: string;
+      paymentReference: string;
+    }>(pctx, `/v1/penalties/${penaltyId}/payments`, {
+      amount,
+      paymentMethod: 'BANK_TRANSFER',
+      paymentReference: reference,
+      receivedAt: new Date().toISOString().slice(0, 10),
+      notes: 'TEST-E2E penalty receipt',
+    }),
+  waivePenalty: (pctx: ProdContext, penaltyId: string, reason: string) =>
+    postJson<{
+      id: string;
+      waived: boolean;
+      waivedReason: string;
+      outstanding: number;
+      status: string;
+    }>(pctx, `/v1/penalties/${penaltyId}/waive`, { reason }),
 
   // Vendor — payload matches the finance/vendors page (handleSubmit). The
   // entity does NOT have `category`, `contactEmail`, or `contactPhone`
