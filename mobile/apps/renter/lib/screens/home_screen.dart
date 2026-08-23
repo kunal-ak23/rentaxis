@@ -4,6 +4,9 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
+import '../providers/promotion_provider.dart';
+import '../widgets/home_ads_strip.dart';
+
 final _leaseServiceProvider = Provider<LeaseService>((ref) {
   final client = ref.watch(apiClientProvider);
   return LeaseService(client.dio);
@@ -41,8 +44,9 @@ final _openPenaltyCountProvider = FutureProvider.autoDispose<int>((ref) async {
 ///   2. Gold hero: next cheque, progress, View cheques / Set reminder
 ///   3. Penalty strip (only when there are open penalties)
 ///   4. Quick actions: 4-col grid
-///   5. Amenity promo
-///   6. Recent activity list
+///   5. Promotions carousel (renders nothing when there are no ads)
+///   6. Amenity promo
+///   7. Recent activity list
 ///
 /// The shell owns the Scaffold and the bottom bar, so this is a plain Column.
 class HomeScreen extends ConsumerWidget {
@@ -59,6 +63,8 @@ class HomeScreen extends ConsumerWidget {
       ref.invalidate(_myLeasesProvider);
       ref.invalidate(_myPaymentsProvider);
       ref.invalidate(_openPenaltyCountProvider);
+      // Pull-to-refresh re-reads the day's promo slate too.
+      ref.invalidate(homePromoFeedProvider);
       ref.read(notificationProvider.notifier).fetchUnreadCount();
       await ref.read(_myLeasesProvider.future);
     }
@@ -83,6 +89,8 @@ class HomeScreen extends ConsumerWidget {
                 ],
                 const SizedBox(height: MiftahSpacing.gap),
                 const _QuickActions(),
+                const SizedBox(height: MiftahSpacing.gap),
+                const HomeAdsStrip(),
                 const SizedBox(height: MiftahSpacing.gap),
                 const _FacilitiesCard(),
                 const SizedBox(height: 18),
