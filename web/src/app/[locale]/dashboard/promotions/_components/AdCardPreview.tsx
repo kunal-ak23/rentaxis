@@ -12,6 +12,22 @@ const TEXT_SECONDARY = "#4A4358";
 
 const HEX_COLOUR = /^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 
+/**
+ * The stored contract is `#AARRGGBB` — Flutter's `Color` channel order, which
+ * is what `parseHexColor` and the backend's `@Pattern` both mean. CSS reads an
+ * 8-digit hex as `#RRGGBBAA`, so handing the stored value straight to the
+ * browser renders a different colour entirely: `#80FBF3E2` is rgb(FB,F3,E2) at
+ * 50% alpha on the phone, and rgb(80,FB,F3) at 89% in CSS. Six-digit values are
+ * unambiguous and pass through untouched.
+ *
+ * This is the whole job of this component — showing the admin what the renter
+ * will actually see — so getting it wrong here is worse than not previewing.
+ */
+export function toCssColour(hex: string): string {
+    if (hex.length !== 9) return hex;
+    return `#${hex.slice(3)}${hex.slice(1, 3)}`;
+}
+
 export interface AdCardPreviewProps {
     title: string;
     subtitle?: string | null;
@@ -39,12 +55,12 @@ export function AdCardPreview({
     ctaType, ctaLabel, rtl = false,
 }: AdCardPreviewProps) {
     const hasImage = Boolean(backgroundImageUrl);
-    // Matches Flutter's parseHexColor: only #RRGGBB / #AARRGGBB is a colour,
-    // anything else falls back to the neutral surface tint. This component
+    // Accepts what Flutter's parseHexColor accepts — only #RRGGBB / #AARRGGBB —
+    // and falls back to the neutral surface tint otherwise. This component
     // renders unsaved draft values straight from the editor, so an admin
     // half-way through typing "#FF" must see what the phone would show, not a
     // colour CSS happens to accept or a transparent card from invalid CSS.
-    const fill = HEX_COLOUR.test(accentColor ?? "") ? accentColor! : SURFACE_ALT;
+    const fill = HEX_COLOUR.test(accentColor ?? "") ? toCssColour(accentColor!) : SURFACE_ALT;
     const fg = hasImage ? "#FFFFFF" : INK;
     const label = (ctaLabel?.trim() || defaultCtaLabel(ctaType, rtl));
 

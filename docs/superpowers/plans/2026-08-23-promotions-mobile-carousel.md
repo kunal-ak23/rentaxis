@@ -579,7 +579,10 @@ Run:
 cd mobile/packages/rentaxis_core && flutter analyze
 ```
 
-Expected: `No issues found!`
+Expected: **53 issues** — the package's pre-existing baseline, unchanged. "No
+issues found" is not achievable here and chasing the existing 53 is out of
+scope; what matters is not adding to the count. Use
+`flutter test -r failures-only`; the default reporter is unusably verbose.
 
 - [ ] **Step 5: Commit**
 
