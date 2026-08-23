@@ -50,9 +50,36 @@ public class PublicRateLimitFilter extends OncePerRequestFilter {
      */
     private static final PathPattern SCAN_PATH = PARSER.parse("/api/v1/gatepass/scan");
 
+    /**
+     * Promotion impression/click ingest. Authenticated (RENTER only), throttled for
+     * two reasons the per-request logic cannot cover.
+     *
+     * <p>First, the per-renter-per-day click cap in {@code PromotionFeedService} is
+     * check-then-act: it reads today's count, compares, then inserts, inside a READ
+     * COMMITTED transaction. Impressions have a real backstop — the partial unique
+     * index {@code uq_promo_impression_per_day} — but clicks deliberately have none,
+     * because a second tap is a genuine second tap. So concurrent requests all read
+     * the same count and all pass the check, and the cap is multiplied by
+     * parallelism. Clicks are the number a client is shown to justify an ad slot,
+     * so that matters.
+     *
+     * <p>Second, {@code recordEvents} resolves full ad eligibility — a lease join
+     * plus a scan with three correlated subqueries — before it can know whether any
+     * ad id in the batch is real. A body of 50 random UUIDs therefore costs the
+     * whole resolution and returns 202 having done nothing.
+     *
+     * <p>IP-keyed like the buckets above. The authenticated principal would be the
+     * better key, but it comes from a client-supplied {@code X-User-Id} header that
+     * is itself the subject of an open trust issue — an attacker who can forge it
+     * can rotate it for a fresh bucket, so keying on it would weaken this rather
+     * than strengthen it. Revisit once that is closed.
+     */
+    private static final PathPattern PROMO_EVENTS_PATH = PARSER.parse("/api/v1/promotions/events");
+
     private final ConcurrentHashMap<String, Bucket> publicBuckets = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Bucket> firebaseAuthBuckets = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Bucket> scanBuckets = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Bucket> promoEventBuckets = new ConcurrentHashMap<>();
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
@@ -68,8 +95,10 @@ public class PublicRateLimitFilter extends OncePerRequestFilter {
                         && (FIREBASE_AUTH_PATH.matches(path) || LEGACY_FIREBASE_AUTH_PATH.matches(path));
         boolean isPublic = PUBLIC_PATH.matches(path);
         boolean isScan = "POST".equals(request.getMethod()) && SCAN_PATH.matches(path);
+        boolean isPromoEvents =
+                "POST".equals(request.getMethod()) && PROMO_EVENTS_PATH.matches(path);
 
-        if (!isFirebaseAuth && !isPublic && !isScan) {
+        if (!isFirebaseAuth && !isPublic && !isScan && !isPromoEvents) {
             filterChain.doFilter(request, response);
             return;
         }
@@ -82,6 +111,8 @@ public class PublicRateLimitFilter extends OncePerRequestFilter {
             bucket = firebaseAuthBuckets.computeIfAbsent(ip, k -> createFirebaseAuthBucket());
         } else if (isScan) {
             bucket = scanBuckets.computeIfAbsent(ip, k -> createScanBucket());
+        } else if (isPromoEvents) {
+            bucket = promoEventBuckets.computeIfAbsent(ip, k -> createPromoEventsBucket());
         } else {
             bucket = publicBuckets.computeIfAbsent(ip, k -> createBucket());
         }
@@ -93,6 +124,28 @@ public class PublicRateLimitFilter extends OncePerRequestFilter {
             response.setContentType("text/plain");
             response.getWriter().write("Rate limit exceeded");
         }
+    }
+
+    /**
+     * 20/min for promotion event flushes.
+     *
+     * <p><b>Why it cannot impede a real renter.</b> The app flushes on carousel
+     * dispose and on app background, so a busy session is a handful of requests a
+     * minute. 20 leaves several times that headroom, and absorbs a few renters
+     * sharing a building's NAT.
+     *
+     * <p><b>What it bounds.</b> Without it, the click cap is defeated outright by
+     * parallelism — 200 concurrent requests each carrying 10 clicks for one ad all
+     * read a count of zero and all insert. This does not make the cap exact; it
+     * makes the residual small and slow enough to detect. The exact fix is a DB
+     * backstop for clicks, which is tracked separately.
+     */
+    private Bucket createPromoEventsBucket() {
+        Bandwidth limit = Bandwidth.builder()
+                .capacity(20)
+                .refillGreedy(20, Duration.ofMinutes(1))
+                .build();
+        return Bucket.builder().addLimit(limit).build();
     }
 
     private Bucket createBucket() {

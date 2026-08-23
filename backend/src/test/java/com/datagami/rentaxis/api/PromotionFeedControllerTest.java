@@ -1,6 +1,7 @@
 package com.datagami.rentaxis.api;
 
 import com.datagami.rentaxis.api.dto.PromoEventBatchRequest;
+import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.core.service.PromotionFeedService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.enums.PromoCategory;
@@ -22,7 +23,9 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -65,6 +68,25 @@ class PromotionFeedControllerTest {
         controller.offers(PromoCategory.DINING);
 
         verify(feedService).offers(tenantId, renterId, PromoCategory.DINING);
+    }
+
+    @Test
+    void everyEndpointRefusesWhenNoTenantIsInContext() {
+        // Reachable: ApiSecurityFilter sets the authentication but not the tenant
+        // when a request carries X-User-Id and X-User-Role but neither tenant
+        // header, because its 403 is gated on requestedTenantId != null. Without
+        // this guard the renter gets an empty carousel and no explanation.
+        TenantContextHolder.clear();
+
+        assertThatThrownBy(() -> controller.feed())
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("X-Tenant-Id");
+        assertThatThrownBy(() -> controller.offers(null))
+                .isInstanceOf(BusinessRuleViolationException.class);
+        assertThatThrownBy(() -> controller.events(new PromoEventBatchRequest(List.of(
+                new PromoEventBatchRequest.Event(UUID.randomUUID(), PromoEventType.CLICK)))))
+                .isInstanceOf(BusinessRuleViolationException.class);
+        verifyNoInteractions(feedService);
     }
 
     @Test
