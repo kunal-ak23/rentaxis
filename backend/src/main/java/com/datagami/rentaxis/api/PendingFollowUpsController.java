@@ -22,7 +22,7 @@ public class PendingFollowUpsController {
     private final UserRepository userRepo;
 
     @GetMapping
-    @PreAuthorize("hasAnyAuthority('ROLE_TENANT_ADMIN','ROLE_PROPERTY_MANAGER')")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_TENANT_ADMIN','ROLE_PROPERTY_MANAGER')")
     public List<InteractionDTO> list(@RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
         LocalDate cutoff = date != null ? date : LocalDate.now();
         return repo.findPendingFollowUps(TenantContextHolder.getTenantId(), cutoff)
