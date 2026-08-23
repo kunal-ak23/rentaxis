@@ -46,6 +46,7 @@ test('SUPER_ADMIN receives TENANT_PROVISIONED in-app notification for the test t
     message: string;
     referenceType?: string;
     referenceId?: string;
+    isRead: boolean;
   }> = await res.json();
 
   // Find the TENANT_PROVISIONED notification for our specific test tenant.
@@ -63,6 +64,7 @@ test('SUPER_ADMIN receives TENANT_PROVISIONED in-app notification for the test t
 
   // Message should mention the tenant name (humans read these).
   expect(provisioned!.message).toContain(ctx.tenant.name);
+  expect(provisioned!.isRead).toBe(false);
 
   // Unread-count endpoint should also reflect at least one unread.
   const unreadRes = await request.get('/api/proxy/v1/notifications/unread-count');
@@ -70,6 +72,26 @@ test('SUPER_ADMIN receives TENANT_PROVISIONED in-app notification for the test t
   const { count } = await unreadRes.json();
   expect(typeof count).toBe('number');
   expect(count).toBeGreaterThanOrEqual(1);
+
+  // Mark only the notification created by this E2E run, then verify both the
+  // all-items and unread-only views. Never use read-all on the shared SUPER_ADMIN.
+  const markReadRes = await request.put(`/api/proxy/v1/notifications/${provisioned!.id}/read`, {
+    failOnStatusCode: false,
+  });
+  expect(markReadRes.ok(), `mark notification read returned ${markReadRes.status()}`).toBeTruthy();
+
+  const refreshedRes = await request.get('/api/proxy/v1/notifications?page=0&size=50');
+  expect(refreshedRes.ok()).toBeTruthy();
+  const refreshed: Array<{ id: string; isRead: boolean }> = await refreshedRes.json();
+  expect(refreshed.find((item) => item.id === provisioned!.id)?.isRead).toBe(true);
+
+  const unreadOnlyRes = await request.get(
+    '/api/proxy/v1/notifications?page=0&size=50&unreadOnly=true',
+  );
+  expect(unreadOnlyRes.ok()).toBeTruthy();
+  const unreadOnly: Array<{ id: string; isRead: boolean }> = await unreadOnlyRes.json();
+  expect(unreadOnly.some((item) => item.id === provisioned!.id)).toBe(false);
+  expect(unreadOnly.every((item) => item.isRead === false)).toBe(true);
 
   // Document the email-side expectation for the operator running this suite.
   test.info().annotations.push({
