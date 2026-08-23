@@ -44,12 +44,16 @@ public class PromotionFeedService {
 
     /**
      * Per ad, per renter, per day. Impressions are deduped by a unique index;
-     * clicks deliberately are not, because a second tap is a real second tap —
-     * which leaves nothing bounding them. The endpoint is authenticated but
-     * unthrottled (PublicRateLimitFilter does not cover /api/v1/promotions),
-     * so without a ceiling one renter could write clicks in a loop and set the
-     * tap count the client is shown to justify an ad slot. Ten is far above
-     * any honest number of taps on one carousel card in a day.
+     * clicks deliberately are not, because a second tap is a real second tap.
+     * Ten is far above any honest number of taps on one carousel card in a day.
+     *
+     * <p>This cap is <b>advisory</b>, and knowing why matters. It is
+     * check-then-act under READ COMMITTED: concurrent requests all read the same
+     * count, all pass, and all insert, so parallelism multiplies it. What bounds
+     * the residual is the 20/min bucket for {@code POST /api/v1/promotions/events}
+     * in {@code PublicRateLimitFilter} — do not remove that believing this cap
+     * stands alone. Making the cap exact needs a DB constraint for clicks, the
+     * way {@code uq_promo_impression_per_day} does it for impressions.
      */
     static final int MAX_CLICKS_PER_AD_PER_DAY = 10;
 
@@ -57,9 +61,13 @@ public class PromotionFeedService {
     static final ZoneId DUBAI = ZoneId.of("Asia/Dubai");
 
     /**
-     * Stand-in property id for a renter with no active lease. An empty
-     * {@code IN} list is invalid JPQL on PostgreSQL, and the untargeted arm of
-     * the eligibility query still has to run for these renters.
+     * Stand-in property id for a renter with no active lease.
+     *
+     * <p>Not a workaround for a provider limitation: Hibernate 6+ renders an
+     * empty {@code IN} as {@code 1=0}, which would behave correctly here. It is
+     * for readability at the call site — the untargeted {@code NOT EXISTS} arm
+     * still has to evaluate for these renters, and a named sentinel says so
+     * where an empty list would just look like a missing guard.
      */
     private static final UUID NO_PROPERTY = new UUID(0L, 0L);
 
@@ -101,14 +109,14 @@ public class PromotionFeedService {
                 .map(id -> java.util.Objects.requireNonNull(
                         byId.get(id), "slate returned an unknown ad id"))
                 .toList();
-        return toCards(ordered);
+        return toCards(tenantId, ordered);
     }
 
     /** Every eligible ad, newest business content last, optionally category-filtered. */
     @Transactional(readOnly = true)
     public List<PromoAdCardDTO> offers(UUID tenantId, UUID renterUserId, PromoCategory category) {
         List<PromoAd> eligible = eligible(tenantId, renterUserId, ALL_PLACEMENTS);
-        List<PromoAdCardDTO> cards = toCards(eligible);
+        List<PromoAdCardDTO> cards = toCards(tenantId, eligible);
         if (category == null) {
             return cards;
         }
@@ -162,7 +170,10 @@ public class PromotionFeedService {
             long count = (Long) row[2];
             if (type == PromoEventType.IMPRESSION) {
                 impressionsToday.put(adId, count);
-            } else {
+            } else if (type == PromoEventType.CLICK) {
+                // Explicitly CLICK, not `else`: a future event type booked here
+                // would inflate `already` below and start silently dropping real
+                // clicks. Same reasoning as PromotionStatsService.
                 clicksToday.put(adId, count);
             }
         }
@@ -217,14 +228,21 @@ public class PromotionFeedService {
         return adRepository.findEligible(tenantId, Instant.now(), placements, propertyIds);
     }
 
-    private List<PromoAdCardDTO> toCards(List<PromoAd> ads) {
+    /**
+     * Scoped by the CALLER's tenant, not by the tenant on the rows. Reading it
+     * off {@code ads.get(0)} would scope the lookup to whatever tenant the data
+     * claims, which is precisely the property
+     * {@code findByTenantIdAndIdIn} exists to prevent — the boundary belongs in
+     * the signature, answerable to who is asking.
+     */
+    private List<PromoAdCardDTO> toCards(UUID tenantId, List<PromoAd> ads) {
         if (ads.isEmpty()) {
             return List.of();
         }
         List<UUID> businessIds = ads.stream().map(PromoAd::getBusinessId).distinct().toList();
         Map<UUID, PromoBusiness> businesses = new LinkedHashMap<>();
         for (PromoBusiness b : businessRepository.findByTenantIdAndIdIn(
-                ads.get(0).getTenantId(), businessIds)) {
+                tenantId, businessIds)) {
             businesses.put(b.getId(), b);
         }
         return ads.stream()

@@ -128,7 +128,7 @@ public class PromotionAdminController {
         Map<UUID, List<UUID>> targeting = batchTargeting(tenantId, adIds);
         Map<UUID, PromotionStatsService.Totals> totals =
                 adIds.isEmpty() ? Map.of() : statsService.totals(tenantId, adIds);
-        Map<UUID, String> businessNames = batchBusinessNames(page.getContent());
+        Map<UUID, String> businessNames = batchBusinessNames(tenantId, page.getContent());
 
         return ResponseEntity.ok(page.map(a -> toDTO(a,
                 businessNames.getOrDefault(a.getBusinessId(), ""),
@@ -171,11 +171,10 @@ public class PromotionAdminController {
 
     // ----------------------------------------------------------------- mapping
 
-    private Map<UUID, String> batchBusinessNames(List<PromoAd> ads) {
+    private Map<UUID, String> batchBusinessNames(UUID tenantId, List<PromoAd> ads) {
         if (ads.isEmpty()) {
             return Map.of();
         }
-        UUID tenantId = TenantContextHolder.getTenantId();
         List<UUID> businessIds = ads.stream().map(PromoAd::getBusinessId).distinct().toList();
         return businessRepository.findByTenantIdAndIdIn(tenantId, businessIds).stream()
                 .collect(Collectors.toMap(PromoBusiness::getId, PromoBusiness::getNameEn));

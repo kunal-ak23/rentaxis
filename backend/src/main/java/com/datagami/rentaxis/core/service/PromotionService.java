@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 /**
  * Business and ad CRUD. No role logic — RBAC and any property-manager checks
@@ -53,6 +54,10 @@ public class PromotionService {
 
     /** Migration 71's unique index name — kept in sync with the translation below. */
     static final String UQ_PROMO_BUSINESS_NAME = "uq_promo_business_name";
+
+    /** Mirrors PromoAdRequest's @Pattern; the column is varchar(9). */
+    private static final Pattern ACCENT_COLOR =
+            Pattern.compile("^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$");
 
     private final PromoBusinessRepository businessRepository;
     private final PromoAdRepository adRepository;
@@ -350,6 +355,14 @@ public class PromotionService {
         }
         String backgroundImageUrl =
                 requireHttpsOrNull(trimToNull(req.backgroundImageUrl()), "backgroundImageUrl");
+        // Re-checked here for the same reason as priority above: accent_color is
+        // varchar(9), so an unvalidated value is a DataIntegrityViolationException
+        // at commit — a 500 with a raw JDBC message rather than a field error.
+        String accentColor = trimToNull(req.accentColor());
+        if (accentColor != null && !ACCENT_COLOR.matcher(accentColor).matches()) {
+            throw new BusinessRuleViolationException(
+                    "accentColor must be #RRGGBB or #AARRGGBB");
+        }
 
         String ctaUrl = null;
         String couponCode = null;
@@ -394,7 +407,7 @@ public class PromotionService {
         a.setSubtitleEn(trimToNull(req.subtitleEn()));
         a.setSubtitleAr(trimToNull(req.subtitleAr()));
         a.setBackgroundImageUrl(backgroundImageUrl);
-        a.setAccentColor(trimToNull(req.accentColor()));
+        a.setAccentColor(accentColor);
         a.setCtaType(ctaType);
         a.setCtaLabelEn(trimToNull(req.ctaLabelEn()));
         a.setCtaLabelAr(trimToNull(req.ctaLabelAr()));

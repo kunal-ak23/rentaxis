@@ -56,6 +56,12 @@ public class PromotionStatsService {
         }
     }
 
+    /**
+     * Days of daily series returned, counting back from the most recent event.
+     * The headline totals are lifetime; this bounds only the chart.
+     */
+    static final int SERIES_WINDOW_DAYS = 90;
+
     private final PromoAdEventRepository eventRepository;
     private final PromoAdRepository adRepository;
 
@@ -143,7 +149,16 @@ public class PromotionStatsService {
             return series;
         }
         TreeMap<LocalDate, long[]> sorted = new TreeMap<>(byDay);
-        for (LocalDate d = sorted.firstKey(); !d.isAfter(sorted.lastKey()); d = d.plusDays(1)) {
+        LocalDate last = sorted.lastKey();
+        // Bounded, because zero-filling makes the series scale with the ad's AGE
+        // rather than its activity: an ad that ran for a week and then took one
+        // impression a year later would otherwise return ~370 points, nearly all
+        // zeros, on every load of its detail view. The headline totals above stay
+        // lifetime; only the chart is windowed.
+        LocalDate first = sorted.firstKey();
+        LocalDate windowStart = last.minusDays(SERIES_WINDOW_DAYS - 1L);
+        LocalDate from = first.isAfter(windowStart) ? first : windowStart;
+        for (LocalDate d = from; !d.isAfter(last); d = d.plusDays(1)) {
             long[] pair = sorted.getOrDefault(d, new long[2]);
             series.add(new PromoAdStatsDTO.DayPoint(d, pair[0], pair[1]));
         }

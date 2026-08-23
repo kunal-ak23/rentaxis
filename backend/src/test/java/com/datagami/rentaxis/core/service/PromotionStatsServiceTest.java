@@ -193,6 +193,27 @@ class PromotionStatsServiceTest {
     }
 
     @Test
+    void stats_boundsTheSeriesRatherThanScalingWithAdAge() {
+        // Zero-filling from the first event to the last would make an ad that
+        // ran for a week and then took one impression a year later return ~370
+        // points, nearly all zeros, on every load of its detail view.
+        LocalDate old = LocalDate.of(2025, 1, 1);
+        LocalDate recent = old.plusDays(400);
+        when(adRepository.findById(adId)).thenReturn(Optional.of(ad(adId)));
+        when(eventRepository.countByAdIdIn(tenantId, List.of(adId))).thenReturn(List.of());
+        when(eventRepository.dailySeries(tenantId, adId)).thenReturn(List.of(
+                new Object[]{old, PromoEventType.IMPRESSION, 5L},
+                new Object[]{recent, PromoEventType.IMPRESSION, 1L}));
+
+        List<PromoAdStatsDTO.DayPoint> series = service.stats(tenantId, adId).series();
+
+        assertThat(series).hasSize(PromotionStatsService.SERIES_WINDOW_DAYS);
+        assertThat(series.get(series.size() - 1).day()).isEqualTo(recent);
+        assertThat(series.get(0).day())
+                .isEqualTo(recent.minusDays(PromotionStatsService.SERIES_WINDOW_DAYS - 1L));
+    }
+
+    @Test
     void stats_zeroFillsDaysWithNoEvents() {
         // A gap would make a line chart interpolate straight across a dead
         // week, visually inflating a period where the ad served nothing.
