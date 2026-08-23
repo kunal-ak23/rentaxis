@@ -80,7 +80,15 @@ class AdCard extends StatelessWidget {
       child: Container(
         key: const Key('ad-card-surface'),
         decoration: BoxDecoration(
-          color: hasImage ? null : fill,
+          // A photo card paints `ink` underneath its artwork rather than
+          // nothing. `hasImage` is decided from the URL being non-blank, not
+          // from the image having arrived, and a DecorationImage draws nothing
+          // while it loads and nothing at all if the blob was deleted or its
+          // SAS token expired -- so this card used to be a completely invisible
+          // rectangle on a slow connection and permanently invisible on a dead
+          // URL. `ink` is the right placeholder rather than `fill`: a photo
+          // card's copy is white, and white on brassTint cannot be read.
+          color: hasImage ? MiftahColors.ink : fill,
           border: hasImage
               ? null
               : Border.all(color: MiftahColors.brassTintBorder),

@@ -70,12 +70,21 @@ export function AdCardPreview({
     const fg = hasImage ? "#FFFFFF" : INK;
     const label = (ctaLabel?.trim() || defaultCtaLabel(ctaType, rtl));
 
-    const clamp2: CSSProperties = {
+    const clampTo = (lines: number): CSSProperties => ({
         display: "-webkit-box",
-        WebkitLineClamp: 2,
+        WebkitLineClamp: lines,
         WebkitBoxOrient: "vertical",
         overflow: "hidden",
-    };
+    });
+    // The eyebrow gets ONE line, matching AdCard's `maxLines: 1`. It used to
+    // share the title's two-line clamp, and when the phone's eyebrow was
+    // narrowed to a single line the preview was not narrowed with it -- so an
+    // admin typing a 55-character subtitle saw all of it here and the renter
+    // saw 35 characters and an ellipsis. The preview cannot promise identical
+    // break points (different font, different width) but it must promise the
+    // same line budget, because that is what decides whether copy survives.
+    const clampEyebrow = clampTo(1);
+    const clampTitle = clampTo(2);
 
     return (
         <div
@@ -109,7 +118,7 @@ export function AdCardPreview({
                 {(subtitle || businessName) && (
                     <p
                         style={{
-                            ...clamp2,
+                            ...clampEyebrow,
                             color: hasImage ? "#E7C883" : WARNING,
                             fontSize: 11,
                             fontWeight: 800,
@@ -123,7 +132,7 @@ export function AdCardPreview({
                 )}
                 <p
                     style={{
-                        ...clamp2,
+                        ...clampTitle,
                         color: fg,
                         fontSize: 18,
                         fontWeight: 800,

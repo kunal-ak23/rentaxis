@@ -42,9 +42,13 @@ describe('AdCardPreview fallback surface', () => {
     })
 
     it('does not claim the colour is unset when the admin typed the brass tint', () => {
-        // The fallback used to be inferred by comparing the resolved fill to the
-        // fallback constant, so this exact accent colour reported itself missing.
-        render(<AdCardPreview {...base} accentColor="#FFFBF3E2" />)
+        // Six digits, not eight, and this matters: the bug was a
+        // `fill === BRASS_TINT` comparison, and toCssColour reorders the
+        // 8-digit #FFFBF3E2 to #FBF3E2FF, which never equalled BRASS_TINT. The
+        // old buggy code passed that input too, so the version of this test
+        // that used it proved nothing. #FBF3E2 passes through unchanged and is
+        // the one input that actually reproduces.
+        render(<AdCardPreview {...base} accentColor="#FBF3E2" />)
 
         expect(screen.queryByText(/No card colour set/)).toBeNull()
     })
@@ -54,4 +58,20 @@ describe('AdCardPreview fallback surface', () => {
 
         expect(screen.getByText(/No card colour set/)).toBeTruthy()
     })
+    it('gives the eyebrow one line and the title two, matching AdCard', () => {
+        // The preview cannot promise identical break points -- different font,
+        // different width -- but it must promise the same LINE BUDGET, because
+        // that is what decides whether an admin's copy survives to the renter.
+        // AdCard is eyebrow maxLines:1, title maxLines:2.
+        const { container } = render(
+            <AdCardPreview {...base} subtitle="Two for one all weekend long, dine-in only" />,
+        )
+        const paras = Array.from(container.querySelectorAll('p'))
+        const eyebrow = paras.find(p => p.textContent?.includes('Two for one'))!
+        const title = paras.find(p => p.textContent === base.title)!
+
+        expect(eyebrow.style.webkitLineClamp).toBe('1')
+        expect(title.style.webkitLineClamp).toBe('2')
+    })
+
 })
