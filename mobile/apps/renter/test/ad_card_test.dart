@@ -59,17 +59,6 @@ void main() {
     expect(decoration.image, isNull);
   });
 
-  testWidgets('falls back to a theme colour when accentColor is absent',
-      (tester) async {
-    await tester.pumpWidget(host(AdCard(ad: testAd(), onTap: () {})));
-
-    final container = tester.widget<Container>(
-      find.byKey(const Key('ad-card-surface')),
-    );
-    expect((container.decoration! as BoxDecoration).color,
-        MiftahColors.surfaceAlt);
-  });
-
   testWidgets('shows the CTA pill for an ad with a call to action',
       (tester) async {
     await tester.pumpWidget(host(AdCard(
@@ -93,6 +82,41 @@ void main() {
 
     await tester.tap(find.byKey(const Key('ad-card-surface')));
     expect(taps, 1);
+  });
+
+  testWidgets('a card with no artwork is visible against the home canvas',
+      (tester) async {
+    // surfaceAlt differs from the canvas by six across all channels combined,
+    // so the old fallback rendered an invisible rectangle on the home screen.
+    await tester.pumpWidget(host(AdCard(ad: testAd(), onTap: () {})));
+
+    final container = tester.widget<Container>(
+      find.byKey(const Key('ad-card-surface')),
+    );
+    final decoration = container.decoration! as BoxDecoration;
+    expect(decoration.color, MiftahColors.brassTint);
+    expect(decoration.border, isNotNull);
+  });
+
+  testWidgets('shows the business name when the eyebrow is taken by a subtitle',
+      (tester) async {
+    // Otherwise a renter looking at an artwork-less card has no clue who is
+    // offering it. The admin preview already rendered this line.
+    await tester.pumpWidget(host(AdCard(
+      ad: testAd(subtitleEn: 'Marina walk'),
+      onTap: () {},
+    )));
+
+    expect(find.text('MARINA WALK'), findsOneWidget);
+    expect(find.text('Spice Bazaar'), findsOneWidget);
+  });
+
+  testWidgets('does not repeat the business name when it IS the eyebrow',
+      (tester) async {
+    await tester.pumpWidget(host(AdCard(ad: testAd(), onTap: () {})));
+
+    expect(find.text('SPICE BAZAAR'), findsOneWidget);
+    expect(find.text('Spice Bazaar'), findsNothing);
   });
 
   testWidgets('does not overflow at 2.0 text scale', (tester) async {

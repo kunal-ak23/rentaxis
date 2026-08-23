@@ -6,7 +6,8 @@ import type { PromoCtaType } from "@/types/promotion";
 /** Miftah mobile tokens — see mobile/packages/rentaxis_core/lib/ui/miftah_tokens.dart. */
 const INK = "#12101A";
 const SURFACE = "#FFFFFF";
-const SURFACE_ALT = "#F4F2F9";
+const BRASS_TINT = "#FBF3E2";
+const BRASS_TINT_BORDER = "#EBD7A8";
 const WARNING = "#8A6412";
 const TEXT_SECONDARY = "#4A4358";
 
@@ -56,11 +57,16 @@ export function AdCardPreview({
 }: AdCardPreviewProps) {
     const hasImage = Boolean(backgroundImageUrl);
     // Accepts what Flutter's parseHexColor accepts — only #RRGGBB / #AARRGGBB —
-    // and falls back to the neutral surface tint otherwise. This component
-    // renders unsaved draft values straight from the editor, so an admin
-    // half-way through typing "#FF" must see what the phone would show, not a
-    // colour CSS happens to accept or a transparent card from invalid CSS.
-    const fill = HEX_COLOUR.test(accentColor ?? "") ? toCssColour(accentColor!) : SURFACE_ALT;
+    // and falls back to the brass tint otherwise. This component renders
+    // unsaved draft values straight from the editor, so an admin half-way
+    // through typing "#FF" must see what the phone would show, not a colour CSS
+    // happens to accept or a transparent card from invalid CSS.
+    //
+    // The fallback is a tracked flag rather than a `fill === BRASS_TINT`
+    // comparison, so an admin who deliberately types the brass tint as their
+    // accent colour is not told they left the field empty.
+    const usesFallback = !HEX_COLOUR.test(accentColor ?? "");
+    const fill = usesFallback ? BRASS_TINT : toCssColour(accentColor!);
     const fg = hasImage ? "#FFFFFF" : INK;
     const label = (ctaLabel?.trim() || defaultCtaLabel(ctaType, rtl));
 
@@ -79,7 +85,12 @@ export function AdCardPreview({
             style={{
                 borderRadius: 20,
                 background: hasImage ? undefined : fill,
-                border: hasImage ? undefined : `1px solid ${SURFACE_ALT}`,
+                // A real edge, not the old `1px solid ${SURFACE_ALT}` on a
+                // SURFACE_ALT fill — that border was invisible by construction,
+                // and it only looked fine here because the admin panel's page
+                // is white. On the phone's #F6F5FA home canvas the same card
+                // was a six-channel-total difference from its background.
+                border: hasImage ? undefined : `1px solid ${BRASS_TINT_BORDER}`,
             }}
         >
             {hasImage && (
@@ -148,7 +159,7 @@ export function AdCardPreview({
                 </div>
             )}
 
-            {!hasImage && fill === SURFACE_ALT && (
+            {!hasImage && usesFallback && (
                 <span className="sr-only">No card colour set; using the default</span>
             )}
         </div>

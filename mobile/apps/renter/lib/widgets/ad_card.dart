@@ -24,7 +24,13 @@ class AdCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isAr = context.isAr;
     final hasImage = ad.hasImage;
-    final fill = ad.accentColor ?? MiftahColors.surfaceAlt;
+    // brassTint, not surfaceAlt. surfaceAlt (#F4F2F9) differs from the home
+    // canvas (#F6F5FA) by six across all three channels combined, so a card
+    // with neither artwork nor an accent colour was an invisible rectangle on
+    // the home screen. brassTint is the token's documented chip/badge fill and
+    // reads as deliberate. The border gives it an edge either way, including
+    // when a client picks an accent close to the canvas.
+    final fill = ad.accentColor ?? MiftahColors.brassTint;
     final onFill = hasImage ? Colors.white : MiftahColors.textPrimary;
     final eyebrow = ad.subtitle(isAr) ?? ad.business.name(isAr);
     final ctaLabel = ad.ctaLabel(isAr);
@@ -36,6 +42,9 @@ class AdCard extends StatelessWidget {
         key: const Key('ad-card-surface'),
         decoration: BoxDecoration(
           color: hasImage ? null : fill,
+          border: hasImage
+              ? null
+              : Border.all(color: MiftahColors.brassTintBorder),
           borderRadius: BorderRadius.circular(MiftahRadii.card),
           image: hasImage
               ? DecorationImage(
@@ -89,6 +98,23 @@ class AdCard extends StatelessWidget {
                         style: MiftahType.cardTitle(color: onFill)
                             .copyWith(fontSize: 18, height: 1.1),
                       ),
+                      // When the eyebrow is showing the subtitle, the business
+                      // name has nowhere else to appear — and on a card with no
+                      // artwork the renter has no other clue who is offering
+                      // this. The admin panel's preview already renders this
+                      // line; the widget was the side that was missing it.
+                      if (!hasImage
+                          && ad.subtitle(isAr) != null
+                          && ad.business.name(isAr).isNotEmpty) ...[
+                        const SizedBox(height: 3),
+                        Text(
+                          ad.business.name(isAr),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: MiftahType.body(
+                              size: 12, color: MiftahColors.textSecondary),
+                        ),
+                      ],
                     ],
                   ),
                 ),
