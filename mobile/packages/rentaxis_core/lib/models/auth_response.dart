@@ -6,6 +6,12 @@ class AuthResponse {
   final String? tenantId;
   final List<String> tenantIds;
 
+  /// Signed JWT issued by the backend (phase 1 of the auth hardening).
+  /// Null when talking to an old backend that has not started issuing
+  /// tokens yet — the app then keeps authenticating with the legacy
+  /// X-User-* headers alone.
+  final String? token;
+
   AuthResponse({
     required this.id,
     required this.email,
@@ -13,6 +19,7 @@ class AuthResponse {
     required this.role,
     this.tenantId,
     this.tenantIds = const [],
+    this.token,
   });
 
   factory AuthResponse.fromJson(Map<String, dynamic> json) {
@@ -25,6 +32,7 @@ class AuthResponse {
       tenantIds: json['tenantIds'] != null
           ? List<String>.from(json['tenantIds'])
           : [],
+      token: json['token'],
     );
   }
 }

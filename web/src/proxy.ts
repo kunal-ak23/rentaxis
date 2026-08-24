@@ -38,6 +38,7 @@ export default async function middleware(req: NextRequest) {
             requestHeaders.delete('X-User-Role');
             requestHeaders.delete('X-User-Tenant-Id');
             requestHeaders.delete('X-Tenant-Id');
+            requestHeaders.delete('X-Internal-Auth');
 
             return addSecurityHeaders(NextResponse.next({
                 request: {
@@ -53,6 +54,18 @@ export default async function middleware(req: NextRequest) {
         }
 
         const requestHeaders = new Headers(req.headers);
+
+        // X-Internal-Auth is a server-to-server secret: only this middleware may
+        // assert it, so any inbound value is forged — drop it before deciding
+        // whether to attach the real one.
+        requestHeaders.delete('X-Internal-Auth');
+        const internalProxySecret = process.env.INTERNAL_PROXY_SECRET;
+        if (internalProxySecret) {
+            // Proves to the backend that SUPER_ADMIN (and other identity headers)
+            // were asserted by this trusted proxy, not replayed by a client.
+            // Unset/empty env keeps the gate off (pre-rollout compatibility).
+            requestHeaders.set('X-Internal-Auth', internalProxySecret);
+        }
 
         if (token.id) requestHeaders.set('X-User-Id', token.id as string);
         if (token.role) requestHeaders.set('X-User-Role', token.role as string);

@@ -1,18 +1,35 @@
 {$DOMAIN} {
+    # SECURITY: X-Internal-Auth is a server-to-server secret asserted only by the
+    # Next.js server (which reaches the backend via BACKEND_URL on the Docker
+    # network and never transits Caddy). Any X-Internal-Auth arriving at this
+    # edge is forged, so it is stripped on every route that proxies to the
+    # backend.
+    #
+    # X-User-Id / X-User-Role / X-User-Tenant-Id / X-Tenant-Id are deliberately
+    # NOT stripped here yet: installed mobile builds still authenticate with
+    # these legacy headers. Phase 2: once all mobile apps send Bearer tokens and
+    # the backend runs with APP_AUTH_LEGACY_HEADERS=deny, strip X-User-* and
+    # X-Tenant-Id on these backend routes too.
+
     # Backend auth endpoints (mobile apps + Next.js credentials provider)
     handle /api/auth/login {
+        request_header -X-Internal-Auth
         reverse_proxy backend:8080
     }
     handle /api/auth/register {
+        request_header -X-Internal-Auth
         reverse_proxy backend:8080
     }
     handle /api/auth/me* {
+        request_header -X-Internal-Auth
         reverse_proxy backend:8080
     }
     handle /api/auth/set-password {
+        request_header -X-Internal-Auth
         reverse_proxy backend:8080
     }
     handle /api/auth/set-password/* {
+        request_header -X-Internal-Auth
         reverse_proxy backend:8080
     }
 
@@ -29,30 +46,36 @@
 
     # Admin endpoints (mobile apps)
     handle /api/admin/* {
+        request_header -X-Internal-Auth
         reverse_proxy backend:8080
     }
 
     # API v1 endpoints (mobile apps + webhooks + external)
     handle /api/v1/* {
+        request_header -X-Internal-Auth
         reverse_proxy backend:8080
     }
 
     # Webhook endpoints
     handle /api/webhooks/* {
+        request_header -X-Internal-Auth
         reverse_proxy backend:8080
     }
 
     # Listings management + renter marketplace (mobile apps call these
     # directly; without these routes they fall through to Next.js and 404)
     handle /api/listings* {
+        request_header -X-Internal-Auth
         reverse_proxy backend:8080
     }
     handle /api/marketplace/* {
+        request_header -X-Internal-Auth
         reverse_proxy backend:8080
     }
 
     # Health check
     handle /actuator/* {
+        request_header -X-Internal-Auth
         reverse_proxy backend:8080
     }
 
