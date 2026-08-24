@@ -9,7 +9,7 @@ import { api, loginAsNextAuth, setActiveTenant } from '../helpers/prod-client';
 
 const CONTEXT_FILE = path.join(__dirname, '..', '.test-context.json');
 
-test('manager publishes a listing and renter manages marketplace interest', async () => {
+test('manager publishes a listing that public and renter journeys can use', async ({ browser }) => {
   const ctx = JSON.parse(fs.readFileSync(CONTEXT_FILE, 'utf8'));
   expect(ctx.unit?.id, '01-provision must run first').toBeTruthy();
 
@@ -40,6 +40,22 @@ test('manager publishes a listing and renter manages marketplace interest', asyn
   expect(updated.annualRent).toBe(610000);
 
   await api.publishListing(pmCtx, listing.id);
+
+  const publicContext = await browser.newContext({ baseURL: ctx.baseURL });
+  const publicPage = await publicContext.newPage();
+  await publicPage.goto(`/l/${listing.tenantSlug}`);
+  const publicListingLink = publicPage.locator(`a[href="/l/${listing.tenantSlug}/${listing.slug}"]`);
+  await expect(publicListingLink).toContainText(`TEST-Marina Home Updated ${ctx.runSuffix}`);
+  await publicListingLink.click();
+  await expect(publicPage).toHaveURL(new RegExp(`/l/${listing.tenantSlug}/${listing.slug}$`));
+  await expect(
+    publicPage.getByRole('heading', {
+      level: 1,
+      name: `TEST-Marina Home Updated ${ctx.runSuffix}`,
+    }),
+  ).toBeVisible();
+  await expect(publicPage.getByRole('link', { name: /sign in to save/i })).toBeVisible();
+
   const marketplace = await api.getMarketplaceListings(renterCtx, listing.tenantSlug);
   expect(marketplace.content.some((item) => item.id === listing.id)).toBeTruthy();
 
@@ -56,6 +72,7 @@ test('manager publishes a listing and renter manages marketplace interest', asyn
   await api.unlistListing(pmCtx, listing.id);
   await api.deleteListing(pmCtx, listing.id);
 
+  await publicContext.close();
   await pmCtx.request.dispose();
   await renterCtx.request.dispose();
 });
