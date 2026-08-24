@@ -103,6 +103,12 @@ test('tenant admin configures and browses finance, staffing, banking, and vendor
   await page.getByRole('button', { name: /sign in|log in/i }).click();
   await page.waitForURL(/\/dashboard(?!\/renter-portal)/, { timeout: 15_000 });
 
+  await page.goto('/en/dashboard/finance/accounts');
+  await expect(page.getByText(accounts[0].code, { exact: true }).first()).toBeVisible();
+
+  await page.goto('/en/dashboard/settings/account-mappings');
+  await expect(page.getByRole('heading', { level: 3, name: 'SALARY_PAYMENT' })).toBeVisible();
+
   await page.goto('/en/dashboard/staff');
   await expect(page.getByText(`TEST-Senior Coordinator ${ctx.runSuffix}`, { exact: true })).toBeVisible();
 
