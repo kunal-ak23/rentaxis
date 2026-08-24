@@ -28,6 +28,8 @@ import org.springframework.core.io.ClassPathResource;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.util.HtmlUtils;
 
 import java.io.*;
@@ -129,16 +131,16 @@ public class ContractGenerationService {
         // draft-time generation, so Section 4 is never empty on the contract.
         ensureScheduleExists(lease);
 
-        // Remove old documents if regenerating — delete both the DB rows and
-        // the underlying blob/file so the storage backend doesn't accumulate
-        // stale PDFs forever.
-        if (lease.getStatus() == LeaseStatus.PENDING_SIGNATURE) {
-            List<LeaseDocument> oldDocs = leaseDocumentRepository.findByLeaseId(leaseId);
-            for (LeaseDocument oldDoc : oldDocs) {
-                deleteStoredFile(lease.getTenantId(), oldDoc.getDocumentUrl());
-            }
+        // A rejected contract returns the lease to DRAFT but its document row
+        // still exists. Replace documents based on what is actually persisted,
+        // not on status, so reject -> regenerate cannot accumulate stale PDFs.
+        List<LeaseDocument> oldDocs = leaseDocumentRepository.findByLeaseId(leaseId);
+        List<String> oldDocumentUrls = oldDocs.stream()
+                .map(LeaseDocument::getDocumentUrl)
+                .toList();
+        if (!oldDocs.isEmpty()) {
             leaseDocumentRepository.deleteAll(oldDocs);
-            log.info("Removed {} old documents (DB + storage) for lease {} before regeneration",
+            log.info("Removed {} old document rows for lease {} before regeneration",
                     oldDocs.size(), leaseId);
         }
 
@@ -172,6 +174,8 @@ public class ContractGenerationService {
         } else {
             documentUrl = saveToLocalDisk(fileName, pdfBytes);
         }
+        boolean replacementCleanupScheduled = scheduleReplacementCleanup(
+                lease.getTenantId(), oldDocumentUrls, documentUrl);
 
         // Save document record
         LeaseDocument doc = new LeaseDocument();
@@ -201,7 +205,37 @@ public class ContractGenerationService {
                 leasePayload,
                 "LEASE_SIGNATURE_REQUESTED:" + leaseId + ":" + System.currentTimeMillis()));
 
+        if (!replacementCleanupScheduled) {
+            // Defensive fallback for a direct call outside Spring's
+            // transactional proxy (principally narrow unit tests).
+            cleanupTenantDocuments(lease.getTenantId(), oldDocumentUrls);
+        }
+
         return mapToDTO(savedDoc);
+    }
+
+    private boolean scheduleReplacementCleanup(
+            UUID tenantId,
+            List<String> oldDocumentUrls,
+            String newDocumentUrl) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            return false;
+        }
+
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                cleanupTenantDocuments(tenantId, oldDocumentUrls);
+            }
+
+            @Override
+            public void afterCompletion(int status) {
+                if (status == TransactionSynchronization.STATUS_ROLLED_BACK) {
+                    deleteStoredFile(tenantId, newDocumentUrl);
+                }
+            }
+        });
+        return true;
     }
 
     @Transactional
