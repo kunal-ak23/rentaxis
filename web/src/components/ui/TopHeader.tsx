@@ -72,20 +72,22 @@ export function TopHeader() {
     // Fetch unread count on mount + poll every 30s
     useEffect(() => {
         if (!session?.user) return;
-        fetchUnreadCount();
+        const initialFetch = window.setTimeout(() => {
+            void fetchUnreadCount();
+        }, 0);
         const interval = setInterval(fetchUnreadCount, 30000);
-        return () => clearInterval(interval);
+        return () => {
+            window.clearTimeout(initialFetch);
+            clearInterval(interval);
+        };
     }, [session?.user, fetchUnreadCount]);
 
-    // Fetch recent notifications when dropdown opens
-    useEffect(() => {
-        if (showDropdown) {
-            fetchRecentNotifications();
-        }
-    }, [showDropdown, fetchRecentNotifications]);
-
     const toggleDropdown = () => {
-        setShowDropdown((prev) => !prev);
+        const willOpen = !showDropdown;
+        setShowDropdown(willOpen);
+        if (willOpen) {
+            void fetchRecentNotifications();
+        }
     };
 
     const markAllRead = async () => {
