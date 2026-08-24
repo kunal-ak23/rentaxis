@@ -9,6 +9,7 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:e2e": "npx playwright test",
+    "test:e2e:prod:coverage": "node e2e-prod/verify-tutorial-coverage.mjs",
     "test:e2e:ui": "npx playwright test --ui",
     "test:e2e:report": "npx playwright show-report"
   },

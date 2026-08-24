@@ -66,6 +66,18 @@ Report:
 npx playwright show-report e2e-prod/playwright-report
 ```
 
+Verify that every web tutorial remains mapped to existing functional specs and
+that the README inventory has neither missing nor stale spec files:
+
+```bash
+npm run test:e2e:prod:coverage
+```
+
+The machine-readable mapping is `e2e-prod/tutorial-coverage.json`. A structural
+pass proves inventory integrity only; the command deliberately reports how many
+tutorials still lack an exact-current production pass or retain artifact/manual
+gates.
+
 ## What's covered
 
 | Spec | Surface |
