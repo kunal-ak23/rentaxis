@@ -26,7 +26,7 @@ import * as path from 'path';
 
 const CONTEXT_FILE = path.join(__dirname, '..', '.test-context.json');
 
-test('SUPER_ADMIN receives TENANT_PROVISIONED in-app notification for the test tenant', async () => {
+test('SUPER_ADMIN receives TENANT_PROVISIONED in-app notification for the test tenant', async ({ browser }) => {
   const ctx = JSON.parse(fs.readFileSync(CONTEXT_FILE, 'utf8'));
   expect(ctx.tenant?.id).toBeTruthy();
 
@@ -73,12 +73,27 @@ test('SUPER_ADMIN receives TENANT_PROVISIONED in-app notification for the test t
   expect(typeof count).toBe('number');
   expect(count).toBeGreaterThanOrEqual(1);
 
-  // Mark only the notification created by this E2E run, then verify both the
-  // all-items and unread-only views. Never use read-all on the shared SUPER_ADMIN.
-  const markReadRes = await request.put(`/api/proxy/v1/notifications/${provisioned!.id}/read`, {
-    failOnStatusCode: false,
+  // Use the real notification center to mark only this E2E notification as
+  // read. Never use read-all on the shared SUPER_ADMIN.
+  const browserContext = await browser.newContext({
+    baseURL: ctx.baseURL,
+    storageState: path.join(__dirname, '..', '.auth', 'superadmin.json'),
   });
-  expect(markReadRes.ok(), `mark notification read returned ${markReadRes.status()}`).toBeTruthy();
+  const page = await browserContext.newPage();
+  await page.goto('/en/dashboard/notifications');
+  await expect(page.getByRole('heading', { level: 1, name: 'Notifications' })).toBeVisible();
+  await expect(page.getByText(provisioned!.message, { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Unread' }).click();
+  await expect(page.getByText(provisioned!.message, { exact: true })).toBeVisible();
+
+  const [markReadRes] = await Promise.all([
+    page.waitForResponse((response) =>
+      response.url().endsWith(`/notifications/${provisioned!.id}/read`),
+    ),
+    page.getByText(provisioned!.message, { exact: true }).click(),
+  ]);
+  expect(markReadRes.ok()).toBeTruthy();
+  await expect(page.getByText(provisioned!.message, { exact: true })).toHaveCount(0);
 
   const refreshedRes = await request.get('/api/proxy/v1/notifications?page=0&size=50');
   expect(refreshedRes.ok()).toBeTruthy();
@@ -105,5 +120,6 @@ test('SUPER_ADMIN receives TENANT_PROVISIONED in-app notification for the test t
       ctx.runSuffix,
   });
 
+  await browserContext.close();
   await request.dispose();
 });
