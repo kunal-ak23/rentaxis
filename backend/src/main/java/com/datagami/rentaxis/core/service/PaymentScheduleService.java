@@ -386,6 +386,16 @@ public class PaymentScheduleService {
      */
     @Transactional(readOnly = true)
     public Page<PaymentScheduleDTO> searchPayments(String search, Pageable pageable) {
+        // TenantAspect only enables Hibernate's tenantFilter when a tenant id is
+        // actually set (see TenantAspect.enableTenantFilter). With no active
+        // tenant the scan below would return EVERY tenant's payments — and a
+        // SUPER_ADMIN who has not picked a tenant yet is exactly that state, and
+        // is exactly who the palette renders for. Payment search is inherently
+        // tenant-scoped, so refuse rather than answering across tenants.
+        if (TenantContextHolder.getTenantId() == null) {
+            return new PageImpl<>(List.of(), pageable, 0);
+        }
+
         String token = (search == null || search.trim().isEmpty())
                 ? null
                 : search.trim().toLowerCase(Locale.ROOT);
@@ -393,15 +403,20 @@ public class PaymentScheduleService {
             return new PageImpl<>(List.of(), pageable, 0);
         }
 
-        List<PaymentScheduleDTO> filtered = paymentScheduleRepository.findForRenterSearch(null, null).stream()
+        List<PaymentScheduleDTO> filtered = paymentScheduleRepository.findAllForPaletteSearch().stream()
                 .map(this::mapToDTO)
                 .filter(dto -> matchesSearchToken(dto, token))
                 .collect(Collectors.toList());
 
-        int start = (int) pageable.getOffset();
+        // getOffset() is a long; a large page index would wrap negative on a bare
+        // int cast and blow up in subList.
+        long offset = pageable.getOffset();
+        if (offset >= filtered.size()) {
+            return new PageImpl<>(List.of(), pageable, filtered.size());
+        }
+        int start = (int) offset;
         int end = Math.min(start + pageable.getPageSize(), filtered.size());
-        List<PaymentScheduleDTO> pageContent = start >= filtered.size() ? List.of() : filtered.subList(start, end);
-        return new PageImpl<>(pageContent, pageable, filtered.size());
+        return new PageImpl<>(filtered.subList(start, end), pageable, filtered.size());
     }
 
     private static boolean matchesSearchToken(PaymentScheduleDTO dto, String token) {

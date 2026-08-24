@@ -148,8 +148,13 @@ export default function GlobalSearch({ role, locale }: { role?: UserRole; locale
             }
 
             setResults(next);
-            setFailed(leasePayload == null && paymentPayload == null
-                && (role !== "SUPER_ADMIN" || tenantPayload == null));
+            // Only claim "no matches" when every source actually answered. If a
+            // source errored and we found nothing, saying "no results" is the
+            // same silent wrong answer this component was fixed to stop telling:
+            // the user cannot tell "it isn't there" from "we couldn't look".
+            const anySourceFailed = leasePayload == null || paymentPayload == null
+                || (role === "SUPER_ADMIN" && tenantPayload == null);
+            setFailed(anySourceFailed && next.length === 0);
             setLoading(false);
         }, 250);
 

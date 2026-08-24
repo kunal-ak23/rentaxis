@@ -69,7 +69,10 @@ public class PaymentScheduleController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
     public ResponseEntity<Page<PaymentScheduleDTO>> searchPayments(
             @RequestParam String q,
-            @PageableDefault(size = 6, sort = {"dueDate", "id"}, direction = Sort.Direction.DESC) Pageable pageable) {
+            // No sort attribute: ordering is fixed by the query (newest dueDate
+            // first) and filtering happens in memory, so a caller-supplied sort
+            // would be accepted and silently ignored.
+            @PageableDefault(size = 6) Pageable pageable) {
         return ResponseEntity.ok(paymentScheduleService.searchPayments(q, pageable));
     }
 

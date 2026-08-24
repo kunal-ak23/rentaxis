@@ -116,7 +116,7 @@ class PaymentScheduleServiceSearchTest {
                         LocalDate.of(2026, 1, 1).plusDays(i)))
                 .toList());
         rows.add(row("CHQ-7788", "Ali Hassan", "U-101", "Marina Heights", LocalDate.of(2024, 6, 1)));
-        when(paymentScheduleRepository.findForRenterSearch(isNull(), isNull())).thenReturn(rows);
+        when(paymentScheduleRepository.findAllForPaletteSearch()).thenReturn(rows);
 
         Page<PaymentScheduleDTO> page = service.searchPayments("CHQ-7788", pageable);
 
@@ -124,7 +124,7 @@ class PaymentScheduleServiceSearchTest {
         assertThat(page.getContent()).singleElement()
                 .extracting(PaymentScheduleDTO::getChequeNumber).isEqualTo("CHQ-7788");
         // The search base is the whole tenant, not a page window.
-        verify(paymentScheduleRepository).findForRenterSearch(isNull(), isNull());
+        verify(paymentScheduleRepository).findAllForPaletteSearch();
     }
 
     @Test
@@ -132,7 +132,7 @@ class PaymentScheduleServiceSearchTest {
         List<PaymentSchedule> rows = List.of(
                 row("CHQ-1", "Ali Hassan", "U-101", "Marina Heights", LocalDate.of(2025, 1, 1)),
                 row("CHQ-2", "Sara Khan", "U-202", "Palm Residences", LocalDate.of(2025, 2, 1)));
-        when(paymentScheduleRepository.findForRenterSearch(isNull(), isNull())).thenReturn(rows);
+        when(paymentScheduleRepository.findAllForPaletteSearch()).thenReturn(rows);
 
         assertThat(service.searchPayments("ali hassan", pageable).getTotalElements()).isEqualTo(1);
         assertThat(service.searchPayments("U-202", pageable).getTotalElements()).isEqualTo(1);
@@ -144,7 +144,7 @@ class PaymentScheduleServiceSearchTest {
     void blankQueryReturnsEmptyWithoutTouchingTheRepository() {
         assertThat(service.searchPayments("   ", pageable).getTotalElements()).isZero();
         assertThat(service.searchPayments(null, pageable).getTotalElements()).isZero();
-        verify(paymentScheduleRepository, org.mockito.Mockito.never()).findForRenterSearch(isNull(), isNull());
+        verify(paymentScheduleRepository, org.mockito.Mockito.never()).findAllForPaletteSearch();
     }
 
     @Test
@@ -152,7 +152,7 @@ class PaymentScheduleServiceSearchTest {
         // Cash installments carry no cheque number; a null must be skipped, not NPE.
         List<PaymentSchedule> rows = List.of(
                 row(null, "Ali Hassan", "U-101", "Marina Heights", LocalDate.of(2025, 1, 1)));
-        when(paymentScheduleRepository.findForRenterSearch(isNull(), isNull())).thenReturn(rows);
+        when(paymentScheduleRepository.findAllForPaletteSearch()).thenReturn(rows);
 
         assertThat(service.searchPayments("ali", pageable).getTotalElements()).isEqualTo(1);
         assertThat(service.searchPayments("CHQ", pageable).getTotalElements()).isZero();
@@ -164,11 +164,27 @@ class PaymentScheduleServiceSearchTest {
                 .mapToObj(i -> row("CHQ-" + i, "Ali Hassan", "U-" + i, "Marina Heights",
                         LocalDate.of(2025, 1, 1).plusDays(i)))
                 .toList();
-        when(paymentScheduleRepository.findForRenterSearch(isNull(), isNull())).thenReturn(rows);
+        when(paymentScheduleRepository.findAllForPaletteSearch()).thenReturn(rows);
 
         Page<PaymentScheduleDTO> page = service.searchPayments("ali", pageable);
 
         assertThat(page.getTotalElements()).isEqualTo(20);
         assertThat(page.getContent()).hasSize(6);
+    }
+    /**
+     * TenantAspect only enables Hibernate's tenantFilter when a tenant id is set,
+     * so a scan run with no active tenant would cross tenant boundaries. A
+     * SUPER_ADMIN who has not selected a tenant is exactly that state, and the
+     * palette renders for SUPER_ADMIN.
+     */
+    @Test
+    void withoutAnActiveTenantReturnsNothingAndNeverScans() {
+        TenantContextHolder.clear();
+
+        Page<PaymentScheduleDTO> page = service.searchPayments("ali", pageable);
+
+        assertThat(page.getTotalElements()).isZero();
+        assertThat(page.getContent()).isEmpty();
+        verify(paymentScheduleRepository, org.mockito.Mockito.never()).findAllForPaletteSearch();
     }
 }

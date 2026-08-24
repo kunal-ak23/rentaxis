@@ -235,4 +235,25 @@ public interface PaymentScheduleRepository extends JpaRepository<PaymentSchedule
         WHERE ps.id = :id
         """)
     void clearChequeImage(@Param("id") UUID id);
+
+    /**
+     * Search base for the command palette. JOIN FETCH the associations mapToDTO
+     * dereferences (lease -> renter, unit, property): without them a scan of N
+     * rows fires N lazy selects apiece, which on a large tenant is thousands of
+     * round trips to return at most six hits.
+     *
+     * <p>Plain JPQL on a {@code BaseTenantEntity}, so Hibernate's tenantFilter
+     * applies -- but TenantAspect only enables that filter when a tenant is
+     * actually set, so callers MUST refuse to run this without an active tenant.
+     */
+    @Query("""
+        SELECT ps
+        FROM PaymentSchedule ps
+        JOIN FETCH ps.lease l
+        JOIN FETCH l.renter
+        JOIN FETCH ps.unit
+        JOIN FETCH ps.property
+        ORDER BY ps.dueDate DESC, ps.id DESC
+        """)
+    List<PaymentSchedule> findAllForPaletteSearch();
 }
