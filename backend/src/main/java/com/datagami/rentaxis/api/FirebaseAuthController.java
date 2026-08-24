@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.api;
 
+import com.datagami.rentaxis.core.security.AuthTokenService;
 import com.datagami.rentaxis.core.service.UserService;
 import com.datagami.rentaxis.core.service.auth.FirebaseGuardAuthService;
 import com.datagami.rentaxis.domain.entity.User;
@@ -19,11 +20,14 @@ public class FirebaseAuthController {
 
     private final UserService userService;
     private final FirebaseGuardAuthService firebaseGuardAuthService;
+    private final AuthTokenService authTokenService;
 
     public FirebaseAuthController(UserService userService,
-            FirebaseGuardAuthService firebaseGuardAuthService) {
+            FirebaseGuardAuthService firebaseGuardAuthService,
+            AuthTokenService authTokenService) {
         this.userService = userService;
         this.firebaseGuardAuthService = firebaseGuardAuthService;
+        this.authTokenService = authTokenService;
     }
 
     public record FirebaseLoginRequest(String idToken) {
@@ -33,14 +37,16 @@ public class FirebaseAuthController {
     public ResponseEntity<AuthController.AuthResponse> firebaseLogin(
             @RequestBody FirebaseLoginRequest request) {
         User guard = firebaseGuardAuthService.authenticate(request.idToken());
-        List<String> tenantIds = userService.getUserTenantIds(guard.getId())
-                .stream().map(UUID::toString).toList();
+        List<UUID> memberTenantIds = userService.getUserTenantIds(guard.getId());
+        String token = authTokenService.issue(
+                guard.getId(), guard.getRole(), guard.getTenantId(), memberTenantIds);
         return ResponseEntity.ok(new AuthController.AuthResponse(
                 guard.getId().toString(),
                 guard.getEmail(),
                 guard.getName(),
                 guard.getRole().name(),
                 guard.getTenantId() != null ? guard.getTenantId().toString() : null,
-                tenantIds));
+                memberTenantIds.stream().map(UUID::toString).toList(),
+                token));
     }
 }

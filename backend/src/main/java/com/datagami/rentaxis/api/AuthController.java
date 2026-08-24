@@ -2,6 +2,7 @@ package com.datagami.rentaxis.api;
 
 import com.datagami.rentaxis.api.dto.InviteTokenInfoResponse;
 import com.datagami.rentaxis.api.dto.SetPasswordRequest;
+import com.datagami.rentaxis.core.security.AuthTokenService;
 import com.datagami.rentaxis.core.service.auth.FirebaseGuardAuthService;
 import com.datagami.rentaxis.core.service.LandlordOrgService;
 import com.datagami.rentaxis.core.service.UserService;
@@ -26,13 +27,15 @@ public class AuthController {
     private final LandlordOrgService orgService;
     private final PasswordEncoder passwordEncoder;
     private final FirebaseGuardAuthService firebaseGuardAuthService;
+    private final AuthTokenService authTokenService;
 
     public AuthController(UserService userService, LandlordOrgService orgService, PasswordEncoder passwordEncoder,
-            FirebaseGuardAuthService firebaseGuardAuthService) {
+            FirebaseGuardAuthService firebaseGuardAuthService, AuthTokenService authTokenService) {
         this.userService = userService;
         this.orgService = orgService;
         this.passwordEncoder = passwordEncoder;
         this.firebaseGuardAuthService = firebaseGuardAuthService;
+        this.authTokenService = authTokenService;
     }
 
     /**
@@ -47,8 +50,15 @@ public class AuthController {
     public record RegisterRequest(String fullName, String companyName, String email, String password) {
     }
 
+    /**
+     * {@code token} is the signed bearer token clients must replay as
+     * {@code Authorization: Bearer <token>}. It is {@code null} until
+     * {@code APP_AUTH_TOKEN_SECRET} is configured — clients treat a null
+     * token as "keep using legacy headers", which keeps old and new builds
+     * interoperable during the phased rollout.
+     */
     public record AuthResponse(String id, String email, String name, String role, String tenantId,
-            List<String> tenantIds) {
+            List<String> tenantIds, String token) {
     }
 
     /**
@@ -185,18 +195,21 @@ public class AuthController {
      * Builds the login identity payload for an already-authenticated user.
      * Shared by password login and Firebase guard login so both issue an identical
      * shape — in particular the {@code tenantIds} membership list, which the
-     * clients store as their tenant-switcher source.
+     * clients store as their tenant-switcher source, and the bearer
+     * {@code token} (null while token auth is unconfigured).
      */
     private AuthResponse toAuthResponse(User user) {
-        List<String> tenantIds = userService.getUserTenantIds(user.getId())
-                .stream().map(UUID::toString).toList();
+        List<UUID> memberTenantIds = userService.getUserTenantIds(user.getId());
+        String token = authTokenService.issue(
+                user.getId(), user.getRole(), user.getTenantId(), memberTenantIds);
         return new AuthResponse(
                 user.getId().toString(),
                 user.getEmail(),
                 user.getName(),
                 user.getRole().name(),
                 user.getTenantId() != null ? user.getTenantId().toString() : null,
-                tenantIds);
+                memberTenantIds.stream().map(UUID::toString).toList(),
+                token);
     }
 
     @PostMapping("/register")
@@ -222,7 +235,9 @@ public class AuthController {
                 user.getName(),
                 user.getRole().name(),
                 user.getTenantId() != null ? user.getTenantId().toString() : null,
-                List.of(org.getId().toString())));
+                List.of(org.getId().toString()),
+                authTokenService.issue(user.getId(), user.getRole(), user.getTenantId(),
+                        List.of(org.getId()))));
     }
 
     // --- Security guard Firebase Phone Authentication login ---

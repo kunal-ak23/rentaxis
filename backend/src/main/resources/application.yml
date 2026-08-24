@@ -79,6 +79,21 @@ resilience4j:
         automatic-transition-from-open-to-half-open-enabled: true
 
 app:
+  auth:
+    # HS256 secret for bearer-token issuance/verification (>= 32 bytes when set).
+    # The EMPTY default is deliberate: blank => token auth disabled, login
+    # returns no token, the filter keeps trusting the legacy X-User-* headers —
+    # byte-identical to pre-token behaviour until the secret is configured.
+    # NO dev fallback here (unlike app.renewal.token-secret): a baked-in
+    # secret reaching prod IS the header-spoofing vulnerability this fixes.
+    token-secret: ${APP_AUTH_TOKEN_SECRET:}
+    # Shared secret the web proxy attaches as X-Internal-Auth when asserting
+    # SUPER_ADMIN via legacy headers. Empty => gate off (compat); set => any
+    # legacy SUPER_ADMIN request without the matching header gets 403.
+    internal-proxy-secret: ${INTERNAL_PROXY_SECRET:}
+    # Phase-2 kill switch. "allow" (default) keeps the legacy header path;
+    # "deny" rejects any non-public request lacking a valid bearer token.
+    legacy-headers: ${APP_AUTH_LEGACY_HEADERS:allow}
   renewal:
     scheduler:
       enabled: ${APP_RENEWAL_SCHEDULER_ENABLED:false}
