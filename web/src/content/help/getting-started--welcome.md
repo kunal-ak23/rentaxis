@@ -2,7 +2,7 @@
 title: Welcome to RentAxis
 description: Get started with your property management portal
 category: getting-started
-roles: [SUPER_ADMIN, TENANT_ADMIN, PROPERTY_MANAGER, TENANT_USER, RENTER]
+roles: [SUPER_ADMIN, TENANT_ADMIN, PROPERTY_MANAGER, SECURITY_GUARD, TENANT_USER, RENTER]
 order: 1
 relatedTour: admin-onboarding
 ---
@@ -17,6 +17,7 @@ Depending on your role, you'll have access to different features:
 
 - **Tenant Admins** — Full control over properties, leases, finance, staff, and settings
 - **Property Managers** — Manage properties, units, handle maintenance tickets, and view leases
+- **Security Guards** — Manage gate access, expected visitors, pass scans, and walk-ins for assigned properties
 - **Tenant Users** — View your assigned unit details
 - **Renters** — Access your lease, track rent payments, and submit maintenance tickets
 
