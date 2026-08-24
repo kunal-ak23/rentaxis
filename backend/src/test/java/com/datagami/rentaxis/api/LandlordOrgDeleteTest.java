@@ -1,6 +1,7 @@
 package com.datagami.rentaxis.api;
 
 import com.datagami.rentaxis.core.service.LandlordOrgService;
+import com.datagami.rentaxis.core.service.ContractGenerationService;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
 import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
@@ -12,6 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -21,6 +23,10 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 /**
  * Covers {@link LandlordOrgService#deleteTenant} end-to-end. The critical
@@ -45,6 +51,7 @@ class LandlordOrgDeleteTest {
     @Autowired LandlordOrgRepository orgRepo;
     @Autowired UserRepository userRepo;
     @Autowired JdbcTemplate jdbc;
+    @MockitoBean ContractGenerationService contractGenerationService;
 
     private LandlordOrg seedTenantWithOnboardingArtifacts(String label) {
         // provisionTenant goes through the real service so any default-row
@@ -76,6 +83,8 @@ class LandlordOrgDeleteTest {
 
         service.deleteTenant(tenantId, org.getName());
 
+        verify(contractGenerationService).cleanupTenantDocuments(eq(tenantId), eq(java.util.List.of()));
+
         // Org gone.
         assertThat(orgRepo.findById(tenantId)).isEmpty();
 
@@ -100,6 +109,9 @@ class LandlordOrgDeleteTest {
         assertThatThrownBy(() -> service.deleteTenant(tenantId, "wrong-name"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("confirmName");
+
+        verify(contractGenerationService, never())
+                .cleanupTenantDocuments(eq(tenantId), anyList());
 
         // Org must still exist.
         assertThat(orgRepo.findById(tenantId)).isPresent();

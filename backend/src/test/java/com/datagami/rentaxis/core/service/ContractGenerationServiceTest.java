@@ -603,6 +603,27 @@ class ContractGenerationServiceTest {
         assertThat(html).doesNotContain("<script>alert(1)</script>");
     }
 
+    @Test
+    void cleanupTenantDocuments_deletesOnlyFilesInsideConfiguredContractRoot() throws Exception {
+        Path contractRoot = Files.createTempDirectory("contract-cleanup-root-");
+        Path inside = Files.writeString(contractRoot.resolve("inside.pdf"), "contract");
+        Path outside = Files.writeString(
+                Files.createTempDirectory("contract-cleanup-outside-").resolve("outside.pdf"),
+                "keep");
+
+        Field storagePathField = ContractGenerationService.class.getDeclaredField("storagePath");
+        storagePathField.setAccessible(true);
+        storagePathField.set(service, contractRoot.toString());
+        Field azureField = ContractGenerationService.class.getDeclaredField("azureConnectionString");
+        azureField.setAccessible(true);
+        azureField.set(service, "");
+
+        service.cleanupTenantDocuments(UUID.randomUUID(), List.of(inside.toString(), outside.toString()));
+
+        assertThat(inside).doesNotExist();
+        assertThat(outside).exists();
+    }
+
     /** Reflectively read the LeaseDocumentRepository mock out of the spied service. */
     private LeaseDocumentRepository extractDocRepo(ContractGenerationService svc) throws Exception {
         Field f = ContractGenerationService.class.getDeclaredField("leaseDocumentRepository");
