@@ -16,7 +16,7 @@
       },
       {
         "tutorials": [3, 5, 9],
-        "evidence": ["PR96:01a-feature-and-user-admin.spec.ts", "PR96:06-renter-create-ui.spec.ts", "PR96:12-property-operations.spec.ts", "PR96:17-public-account-and-legal-pages.spec.ts", "PR111:web/src/app/[locale]/auth/register/__tests__/page.test.tsx"],
+        "evidence": ["PR96:01a-feature-and-user-admin.spec.ts", "PR96:06-renter-create-ui.spec.ts", "PR96:12-property-operations.spec.ts", "PR96:17-public-account-and-legal-pages.spec.ts", "PR111:backend/src/test/java/com/datagami/rentaxis/api/AuthControllerRegistrationTest.java", "PR111:backend/src/test/java/com/datagami/rentaxis/security/PublicRateLimitFilterTest.java", "PR111:web/src/app/[locale]/auth/register/__tests__/page.test.tsx", "PR111:web/src/app/[locale]/auth/login/__tests__/registered-banner.test.tsx"],
         "routes": [
           "/[locale]/auth/register",
           "/[locale]/dashboard/renters",
