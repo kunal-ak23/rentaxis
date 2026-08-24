@@ -149,3 +149,5 @@ databaseChangeLog:
       file: db/changelog/changesets/71-promotions.yaml
   - include:
       file: db/changelog/changesets/72-promo-click-budget.yaml
+  - include:
+      file: db/changelog/changesets/73-app-versions.yaml
