@@ -137,7 +137,10 @@ test('provision tenant + property + unit + renter + active lease', async () => {
       {
         ...ctx,
         tenant: { id: tenant.id, name: tenant.name },
-        property: { id: property.id },
+        // nameEn is asserted on by 13f-lease-renewals. Omitting it made that
+        // spec build `new RegExp(undefined, 'i')` and hunt for the literal
+        // string "undefined" on a page that was rendering correctly.
+        property: { id: property.id, nameEn: `TEST-Tower ${suffix}` },
         unit: { id: unit.id },
         renter: {
           id: renter.id,

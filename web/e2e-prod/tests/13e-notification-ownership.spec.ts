@@ -29,11 +29,12 @@ test('one authenticated user cannot mark another user notification as read', asy
 
   // Ticket, meeting, booking, gate-pass, and listing specs all create renter
   // notifications. Select one tied to this disposable tenant's own entities.
+  // Compare only against ids that actually exist: a notification with no
+  // referenceId would otherwise match an absent ctx value via undefined ===
+  // undefined and silently pick a row from another tenant.
+  const ownIds = [ctx.ticketId, ctx.lease.id, ctx.property.id].filter(Boolean);
   const target = renterNotifications.find(
-    (item) =>
-      item.referenceId === ctx.ticketId ||
-      item.referenceId === ctx.lease.id ||
-      item.referenceId === ctx.property.id,
+    (item) => item.referenceId != null && ownIds.includes(item.referenceId),
   ) ?? renterNotifications.find((item) => item.type.startsWith('GATE_PASS_'));
   expect(target, 'earlier E2E workflows must create a renter notification').toBeTruthy();
 

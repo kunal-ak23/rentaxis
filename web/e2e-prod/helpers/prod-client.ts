@@ -178,6 +178,20 @@ async function postOk(pctx: ProdContext, path: string, body?: unknown): Promise<
   }
 }
 
+function monthsInclusive(startDate: string, endDate: string): number {
+  const [sy, sm, sd] = startDate.split('-').map(Number);
+  const [ey, em, ed] = endDate.split('-').map(Number);
+  // The end date is the inclusive last day of tenancy, so compare against the
+  // day after it — matching endDate.plusDays(1) on the backend.
+  const endExclusive = new Date(Date.UTC(ey, em - 1, ed + 1));
+  let months =
+    (endExclusive.getUTCFullYear() - sy) * 12 + (endExclusive.getUTCMonth() - (sm - 1));
+  // A partial trailing month does not count, the same way
+  // ChronoUnit.MONTHS.between truncates.
+  if (endExclusive.getUTCDate() < sd) months -= 1;
+  return Math.max(months, 1);
+}
+
 export const api = {
   // Provisioning
   createTenant: (pctx: ProdContext, name: string) =>
@@ -1153,6 +1167,16 @@ export const api = {
   // Note: the same monthsBetween calculation lives in LeaseMetadataEditor.tsx
   // (line ~201). If those two diverge from each other in the future, this
   // helper will silently desync from one of them.
+  // Mirrors backend DateMath.monthsInclusive:
+  //   max(ChronoUnit.MONTHS.between(start, end.plusDays(1)), 1)
+  // i.e. whole months from start to the day after the inclusive last day of
+  // tenancy. Parsed as UTC parts so the result does not shift with the runner's
+  // timezone. The previous calendar-month formula
+  // ((endY-startY)*12 + (endM-startM) + 1) disagreed with the backend on any
+  // lease that is not a whole number of months: a today -> today+60d lease is
+  // 3 by that formula and 2 here, which is what the backend actually charges.
+  monthsInclusive,
+
   createLease: (
     pctx: ProdContext,
     l: {
@@ -1165,13 +1189,17 @@ export const api = {
       depositAmount?: number;
     },
   ) => {
-    const start = new Date(l.startDate);
-    const end = new Date(l.endDate);
-    const months = Math.max(
-      1,
-      (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth()) + 1,
-    );
-    const paymentTerms = l.paymentTerms ?? 4;
+    // Mirror the backend exactly. Diverging here produces a lease the API
+    // rejects, and because 01-provision runs first in a serial suite, that
+    // failure takes every downstream spec with it.
+    const months = monthsInclusive(l.startDate, l.endDate);
+    // PaymentScheduleService clamps the cheque count to the month count
+    // ("if (n > totalMonths) n = (int) totalMonths"), so a 4-cheque request on a
+    // 2-month lease actually issues 2. Sizing the deposit off the *unclamped*
+    // count under-provisions it and the largest cheque then breaches the cap.
+    const paymentTerms = Math.max(1, Math.min(l.paymentTerms ?? 4, months));
+    // The backend prefers monthlyRent x months whenever monthlyRent is set,
+    // which it always is below — so the total we send must agree with it.
     const totalRent = l.rentAmount * months;
     // PaymentScheduleService caps the largest cheque at the deposit amount.
     // Default the fixture deposit to the average installment so the helper

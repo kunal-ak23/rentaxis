@@ -39,6 +39,15 @@ test('renter and property manager complete a ticket end to end', async ({ browse
   expect(ticket.status).toBe('OPEN');
   expect(ticket.reportedBy).toBe(ctx.renter.userId);
 
+  // 13e-notification-ownership selects a notification belonging to this
+  // disposable tenant by referenceId, and the ticket is the notification it
+  // most reliably gets. Without this write-back that selector compared against
+  // undefined.
+  fs.writeFileSync(
+    CONTEXT_FILE,
+    JSON.stringify({ ...ctx, ticketId: ticket.id }, null, 2),
+  );
+
   const renterBrowser = await browser.newContext({ baseURL: ctx.baseURL });
   const renterPage = await renterBrowser.newPage();
   await renterPage.goto('/en/auth/login');
