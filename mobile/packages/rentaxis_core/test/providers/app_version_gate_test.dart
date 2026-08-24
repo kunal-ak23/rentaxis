@@ -32,6 +32,23 @@ void main() {
       );
     });
 
+    test('an unknown build (unparseable) fails open even with a real floor set',
+        () {
+      // This used to default to 0 upstream and BLOCK, the one fail-closed spot.
+      // A build number the app cannot read must never lock a user out.
+      final decision = decideGate(
+        installedBuild: null,
+        info: const AppVersionInfo(
+          minSupportedBuild: 5,
+          latestBuild: 9,
+          latestVersionName: '2.0.0',
+          storeUrl: 'https://store/app',
+        ),
+      );
+
+      expect(decision.status, AppGateStatus.ok);
+    });
+
     test('build below the floor is updateRequired and carries the store url',
         () {
       final decision = decideGate(

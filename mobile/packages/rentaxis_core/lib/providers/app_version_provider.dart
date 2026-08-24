@@ -38,13 +38,16 @@ class AppGateDecision {
 /// Comparison is on the integer BUILD number (`+N` in pubspec, monotonic), not
 /// the semver name. Fail-open is baked in three ways: a null [info] (error,
 /// timeout, non-200) is [AppGateStatus.ok]; a `minSupportedBuild` of 0 (the
-/// seed) can never make `installedBuild < min` true, so it never blocks; and an
-/// unparseable field defaulted to 0 upstream lands here as a permissive value.
+/// seed) can never make `installedBuild < min` true, so it never blocks; and a
+/// null [installedBuild] — the build number would not parse — is [ok] too,
+/// rather than the old default-to-0 that would have BLOCKED an unknown build
+/// the moment a real floor was set. This spot used to be the one fail-CLOSED
+/// path; an unknown build must never be the thing that locks a user out.
 AppGateDecision decideGate({
-  required int installedBuild,
+  required int? installedBuild,
   required AppVersionInfo? info,
 }) {
-  if (info == null) return AppGateDecision.ok;
+  if (info == null || installedBuild == null) return AppGateDecision.ok;
   if (installedBuild < info.minSupportedBuild) {
     return AppGateDecision(AppGateStatus.updateRequired, info.storeUrl);
   }
@@ -61,12 +64,15 @@ final appVersionServiceProvider = Provider<AppVersionService>((ref) {
   return AppVersionService(client.dio);
 });
 
-/// The running build number, parsed to int. Overridden in tests; on device it
-/// reads `package_info_plus`. A build number that won't parse reads as 0, which
-/// (being below any real floor of 0) still fails open.
-final installedBuildProvider = FutureProvider<int>((ref) async {
+/// The running build number, parsed to int, or null when it will not parse.
+/// Overridden in tests; on device it reads `package_info_plus`. null means
+/// "unknown", and [decideGate] treats unknown as ok — a build number we cannot
+/// read must not be able to block the user. In practice buildNumber is always
+/// the integer `+N` (Android versionCode, iOS CFBundleVersion), so null is the
+/// belt-and-suspenders case, not the expected one.
+final installedBuildProvider = FutureProvider<int?>((ref) async {
   final info = await PackageInfo.fromPlatform();
-  return int.tryParse(info.buildNumber) ?? 0;
+  return int.tryParse(info.buildNumber);
 });
 
 /// The platform half of the contract key, derived from `dart:io`. Overridden in
