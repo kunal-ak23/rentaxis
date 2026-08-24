@@ -6,8 +6,9 @@ import { Link } from "@/i18n/routing";
 import { usePathname, useRouter } from "next/navigation";
 import { useLocale } from "next-intl";
 import { cn } from "@/lib/utils";
-import { LogOut, User, ChevronDown, Bell, Search } from "lucide-react";
+import { LogOut, User, ChevronDown, Bell } from "lucide-react";
 import { getRoleLabel, type UserRole } from "@/lib/rbac";
+import GlobalSearch from "./GlobalSearch";
 
 type Notification = {
     id: string;
@@ -71,20 +72,22 @@ export function TopHeader() {
     // Fetch unread count on mount + poll every 30s
     useEffect(() => {
         if (!session?.user) return;
-        fetchUnreadCount();
+        const initialFetch = window.setTimeout(() => {
+            void fetchUnreadCount();
+        }, 0);
         const interval = setInterval(fetchUnreadCount, 30000);
-        return () => clearInterval(interval);
+        return () => {
+            window.clearTimeout(initialFetch);
+            clearInterval(interval);
+        };
     }, [session?.user, fetchUnreadCount]);
 
-    // Fetch recent notifications when dropdown opens
-    useEffect(() => {
-        if (showDropdown) {
-            fetchRecentNotifications();
-        }
-    }, [showDropdown, fetchRecentNotifications]);
-
     const toggleDropdown = () => {
-        setShowDropdown((prev) => !prev);
+        const willOpen = !showDropdown;
+        setShowDropdown(willOpen);
+        if (willOpen) {
+            void fetchRecentNotifications();
+        }
     };
 
     const markAllRead = async () => {
@@ -123,14 +126,7 @@ export function TopHeader() {
     return (
         <header className="h-[60px] px-7 flex items-center gap-4 border-b border-border bg-surface shrink-0 z-30">
             <div className="flex items-center relative w-full justify-between gap-4">
-                {/* Search */}
-                <div className="flex-1 max-w-[420px]" data-tour="topbar-search">
-                    <div className="hidden lg:flex items-center gap-2 px-3 h-9 bg-[var(--sand-100)] border border-border rounded-[var(--radius)]">
-                        <Search size={14} className="text-[var(--ink-500)] shrink-0" />
-                        <span className="text-[13px] text-[var(--ink-500)] flex-1">Search leases, tenants, cheques…</span>
-                        <kbd className="text-[11px] text-[var(--ink-500)] px-1.5 py-0.5 border border-border rounded font-mono">⌘K</kbd>
-                    </div>
-                </div>
+                <GlobalSearch role={userRole} locale={locale} />
 
                 {/* Right Side */}
                 <div className="flex items-center gap-3">{/* (locale, bell, profile) */}

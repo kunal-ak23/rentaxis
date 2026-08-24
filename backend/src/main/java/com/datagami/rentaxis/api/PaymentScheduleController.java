@@ -58,6 +58,24 @@ public class PaymentScheduleController {
         return ResponseEntity.ok(paymentScheduleService.getPaymentsForProperty(propertyId, status, renterName, overdue, pageable));
     }
 
+    /**
+     * Free-text payment lookup for the global command palette. Distinct from the
+     * {@code renterName} filter on {@link #getPayments}, which matches renter
+     * names only: this matches every field the palette actually displays
+     * (cheque number, renter, unit, property) and evaluates them across the
+     * whole tenant rather than whatever happens to fall in the newest page.
+     */
+    @GetMapping("/search")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
+    public ResponseEntity<Page<PaymentScheduleDTO>> searchPayments(
+            @RequestParam String q,
+            // No sort attribute: ordering is fixed by the query (newest dueDate
+            // first) and filtering happens in memory, so a caller-supplied sort
+            // would be accepted and silently ignored.
+            @PageableDefault(size = 6) Pageable pageable) {
+        return ResponseEntity.ok(paymentScheduleService.searchPayments(q, pageable));
+    }
+
     @GetMapping("/lease/{leaseId}")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN', 'PROPERTY_MANAGER')")
     public ResponseEntity<List<PaymentScheduleDTO>> getPaymentsForLease(@PathVariable UUID leaseId) {

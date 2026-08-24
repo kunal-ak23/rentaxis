@@ -107,8 +107,9 @@ export default function PaymentsPage() {
 
     const [selectedProperty, setSelectedProperty] = useState("");
     const [selectedStatus, setSelectedStatus] = useState(initialStatus);
-    const [searchRenterName, setSearchRenterName] = useState("");
-    const [debouncedSearchRenterName, setDebouncedSearchRenterName] = useState("");
+    const initialRenterName = searchParams.get("renterName") ?? "";
+    const [searchRenterName, setSearchRenterName] = useState(initialRenterName);
+    const [debouncedSearchRenterName, setDebouncedSearchRenterName] = useState(initialRenterName);
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(25);
     const [totalItems, setTotalItems] = useState(0);

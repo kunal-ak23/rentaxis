@@ -56,6 +56,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Slf4j
 @Service
@@ -366,6 +367,61 @@ public class PaymentScheduleService {
         int end = Math.min(start + pageable.getPageSize(), filtered.size());
         List<PaymentScheduleDTO> pageContent = start >= filtered.size() ? List.of() : filtered.subList(start, end);
         return new PageImpl<>(pageContent, pageable, filtered.size());
+    }
+
+    /**
+     * Free-text payment lookup backing the global command palette.
+     *
+     * <p>Matches the same fields the palette renders — cheque number, renter,
+     * unit, property — over every payment row in the tenant. The palette used
+     * to fetch the newest 100 rows and filter them in the browser, which meant
+     * an older cheque simply rendered "No results": a silent wrong answer,
+     * indistinguishable from the cheque not existing.
+     *
+     * <p>Filtering runs in memory for the same reason the {@code renterName}
+     * filter does (see {@link #getPaymentsForProperty}): some prod datasets
+     * store these values in binary-compatible columns that DB text operations
+     * choke on. The search base is a tenant-filtered JPQL query, so it stays
+     * scoped to the caller's tenant.
+     */
+    @Transactional(readOnly = true)
+    public Page<PaymentScheduleDTO> searchPayments(String search, Pageable pageable) {
+        // TenantAspect only enables Hibernate's tenantFilter when a tenant id is
+        // actually set (see TenantAspect.enableTenantFilter). With no active
+        // tenant the scan below would return EVERY tenant's payments — and a
+        // SUPER_ADMIN who has not picked a tenant yet is exactly that state, and
+        // is exactly who the palette renders for. Payment search is inherently
+        // tenant-scoped, so refuse rather than answering across tenants.
+        if (TenantContextHolder.getTenantId() == null) {
+            return new PageImpl<>(List.of(), pageable, 0);
+        }
+
+        String token = (search == null || search.trim().isEmpty())
+                ? null
+                : search.trim().toLowerCase(Locale.ROOT);
+        if (token == null) {
+            return new PageImpl<>(List.of(), pageable, 0);
+        }
+
+        List<PaymentScheduleDTO> filtered = paymentScheduleRepository.findAllForPaletteSearch().stream()
+                .map(this::mapToDTO)
+                .filter(dto -> matchesSearchToken(dto, token))
+                .collect(Collectors.toList());
+
+        // getOffset() is a long; a large page index would wrap negative on a bare
+        // int cast and blow up in subList.
+        long offset = pageable.getOffset();
+        if (offset >= filtered.size()) {
+            return new PageImpl<>(List.of(), pageable, filtered.size());
+        }
+        int start = (int) offset;
+        int end = Math.min(start + pageable.getPageSize(), filtered.size());
+        return new PageImpl<>(filtered.subList(start, end), pageable, filtered.size());
+    }
+
+    private static boolean matchesSearchToken(PaymentScheduleDTO dto, String token) {
+        return Stream.of(dto.getChequeNumber(), dto.getRenterName(), dto.getUnitIdentifier(), dto.getPropertyName())
+                .anyMatch(value -> value != null && value.toLowerCase(Locale.ROOT).contains(token));
     }
 
     /**
