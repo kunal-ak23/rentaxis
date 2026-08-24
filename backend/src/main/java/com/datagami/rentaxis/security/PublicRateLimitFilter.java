@@ -34,6 +34,7 @@ public class PublicRateLimitFilter extends OncePerRequestFilter {
      */
     private static final PathPattern FIREBASE_AUTH_PATH = PARSER.parse("/api/v1/auth/firebase");
     private static final PathPattern LEGACY_FIREBASE_AUTH_PATH = PARSER.parse("/api/auth/firebase");
+    private static final PathPattern REGISTRATION_PATH = PARSER.parse("/api/auth/register");
 
     private static final PathPattern PUBLIC_PATH = PARSER.parse("/public/**");
 
@@ -78,6 +79,7 @@ public class PublicRateLimitFilter extends OncePerRequestFilter {
 
     private final ConcurrentHashMap<String, Bucket> publicBuckets = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Bucket> firebaseAuthBuckets = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Bucket> registrationBuckets = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Bucket> scanBuckets = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Bucket> promoEventBuckets = new ConcurrentHashMap<>();
 
@@ -93,12 +95,14 @@ public class PublicRateLimitFilter extends OncePerRequestFilter {
         boolean isFirebaseAuth =
                 "POST".equals(request.getMethod())
                         && (FIREBASE_AUTH_PATH.matches(path) || LEGACY_FIREBASE_AUTH_PATH.matches(path));
+        boolean isRegistration =
+                "POST".equals(request.getMethod()) && REGISTRATION_PATH.matches(path);
         boolean isPublic = PUBLIC_PATH.matches(path);
         boolean isScan = "POST".equals(request.getMethod()) && SCAN_PATH.matches(path);
         boolean isPromoEvents =
                 "POST".equals(request.getMethod()) && PROMO_EVENTS_PATH.matches(path);
 
-        if (!isFirebaseAuth && !isPublic && !isScan && !isPromoEvents) {
+        if (!isFirebaseAuth && !isRegistration && !isPublic && !isScan && !isPromoEvents) {
             filterChain.doFilter(request, response);
             return;
         }
@@ -107,7 +111,9 @@ public class PublicRateLimitFilter extends OncePerRequestFilter {
         // Separate maps, so auth traffic gets its own tighter budget and cannot be
         // starved by (or starve) unrelated /public/ traffic from the same IP.
         Bucket bucket;
-        if (isFirebaseAuth) {
+        if (isRegistration) {
+            bucket = registrationBuckets.computeIfAbsent(ip, k -> createRegistrationBucket());
+        } else if (isFirebaseAuth) {
             bucket = firebaseAuthBuckets.computeIfAbsent(ip, k -> createFirebaseAuthBucket());
         } else if (isScan) {
             bucket = scanBuckets.computeIfAbsent(ip, k -> createScanBucket());
@@ -152,6 +158,20 @@ public class PublicRateLimitFilter extends OncePerRequestFilter {
         Bandwidth limit = Bandwidth.builder()
                 .capacity(60)
                 .refillGreedy(60, Duration.ofMinutes(1))
+                .build();
+        return Bucket.builder().addLimit(limit).build();
+    }
+
+    /**
+     * Self-registration creates both a tenant and its first administrator, so
+     * it needs a much tighter budget than ordinary public reads. Five attempts
+     * per hour still allows corrections and small-office NAT sharing while
+     * bounding anonymous tenant/database growth.
+     */
+    private Bucket createRegistrationBucket() {
+        Bandwidth limit = Bandwidth.builder()
+                .capacity(5)
+                .refillGreedy(5, Duration.ofHours(1))
                 .build();
         return Bucket.builder().addLimit(limit).build();
     }

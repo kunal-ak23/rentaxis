@@ -9,6 +9,9 @@ const intlMiddleware = createIntlMiddleware(routing);
 // Every entry must correspond to a backend route Spring SecurityConfig marks permitAll;
 // keep entries exact-match — never prefixes — so nothing else is opened up.
 const PUBLIC_PROXY_PATHS = new Set<string>([
+    // -> POST /api/auth/register (permitAll via /api/auth/**): creates the
+    //    caller's first organisation and tenant-admin account.
+    '/api/proxy/auth/register',
     // -> POST /api/auth/set-password (permitAll via /api/auth/**): invite activation —
     //    the invitee is setting their first password, so they cannot have a session yet.
     '/api/proxy/auth/set-password',

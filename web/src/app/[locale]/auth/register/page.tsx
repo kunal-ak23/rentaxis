@@ -5,10 +5,8 @@ import { Link, useRouter } from "@/i18n/routing";
 import { motion } from "framer-motion";
 import { User, Mail, Lock, Building, ArrowRight, Loader2, Eye, EyeOff } from "lucide-react";
 import Image from "next/image";
-import { useTranslations } from "next-intl";
 
 export default function RegisterPage() {
-    const t = useTranslations("Index");
     const router = useRouter();
     const [formData, setFormData] = useState({
         fullName: "",
@@ -38,14 +36,19 @@ export default function RegisterPage() {
             return;
         }
 
-        // For Phase 3, we'll just simulate registration for now
-        // or call an actual /api/auth/register if it exists in Spring Boot
         try {
-            // Simulated 1s delay
-            await new Promise(r => setTimeout(r, 1000));
+            const res = await fetch("/api/proxy/auth/register", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(formData),
+            });
+            const body = await res.json().catch(() => null) as { message?: string } | null;
+            if (!res.ok) {
+                throw new Error(body?.message || "Registration failed. Please try again.");
+            }
             router.push("/auth/login?registered=true");
         } catch (err) {
-            setError("Registration failed. Please try again.");
+            setError(err instanceof Error ? err.message : "Registration failed. Please try again.");
             setLoading(false);
         }
     };
@@ -85,6 +88,7 @@ export default function RegisterPage() {
                                 <input
                                     id="register-fullname"
                                     required
+                                    maxLength={200}
                                     type="text"
                                     value={formData.fullName}
                                     onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
@@ -103,6 +107,7 @@ export default function RegisterPage() {
                                 <input
                                     id="register-company"
                                     required
+                                    maxLength={200}
                                     type="text"
                                     value={formData.companyName}
                                     onChange={(e) => setFormData({ ...formData, companyName: e.target.value })}
@@ -123,6 +128,7 @@ export default function RegisterPage() {
                             <input
                                 id="register-email"
                                 required
+                                maxLength={254}
                                 type="email"
                                 value={formData.email}
                                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
@@ -142,6 +148,7 @@ export default function RegisterPage() {
                             <input
                                 id="register-password"
                                 required
+                                maxLength={72}
                                 type={showPassword ? "text" : "password"}
                                 value={formData.password}
                                 onChange={(e) => setFormData({ ...formData, password: e.target.value })}

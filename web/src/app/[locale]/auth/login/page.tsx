@@ -6,11 +6,11 @@ import { Link, useRouter } from "@/i18n/routing";
 import { motion } from "framer-motion";
 import { Mail, Lock, ArrowRight, Loader2, Eye, EyeOff } from "lucide-react";
 import Image from "next/image";
-import { useTranslations } from "next-intl";
+import { useSearchParams } from "next/navigation";
 
 export default function LoginPage() {
-    const t = useTranslations("Index"); // Reusing for common terms, or create new namespace
     const router = useRouter();
+    const registered = useSearchParams().get("registered") === "true";
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [showPassword, setShowPassword] = useState(false);
@@ -41,7 +41,7 @@ export default function LoginPage() {
         try {
             const res = await attemptSignIn();
             await handleSignInResult(res);
-        } catch (err) {
+        } catch {
             setError("Something went wrong. Please try again later.");
             setLoading(false);
         }
@@ -86,7 +86,7 @@ export default function LoginPage() {
         try {
             const res = await attemptSignIn(tenantId);
             await handleSignInResult(res);
-        } catch (err) {
+        } catch {
             setError("Something went wrong. Please try again later.");
             setLoading(false);
         }
@@ -116,6 +116,15 @@ export default function LoginPage() {
                     />
                     <p className="text-[13px] text-muted font-medium">Property Management Portal</p>
                 </div>
+
+                {registered && (
+                    <div
+                        role="status"
+                        className="mb-5 rounded-xl border border-success/20 bg-success/10 p-3 text-center text-xs font-bold text-success"
+                    >
+                        Organization created successfully. Sign in with your new administrator account.
+                    </div>
+                )}
 
                 <form onSubmit={handleLogin} className="space-y-5">
                     <div>
