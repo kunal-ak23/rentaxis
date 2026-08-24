@@ -1127,6 +1127,87 @@ export const api = {
   // Our helper sends `{}` which is functionally equivalent.
   activateLease: (pctx: ProdContext, leaseId: string) =>
     putJson<{ id: string; status: string }>(pctx, `/v1/leases/${leaseId}/activate`, {}),
+  getLease: (pctx: ProdContext, leaseId: string) =>
+    getJson<{
+      id: string;
+      unitId: string;
+      renterId: string;
+      startDate: string;
+      endDate: string;
+      status: string;
+      rentAmount: number;
+      monthlyRent: number;
+      depositAmount: number;
+      ejariNumber: string | null;
+      paymentTerms: number;
+      installmentDistribution: string;
+      paymentMethod: string;
+      depositPaymentMethod: string;
+      paymentReferenceNumber: string | null;
+      agreementDate: string | null;
+      rentVatApplicable: boolean;
+    }>(pctx, `/v1/leases/${leaseId}`),
+  updateDraftLease: (
+    pctx: ProdContext,
+    leaseId: string,
+    body: {
+      unitId: string;
+      renterId: string;
+      startDate: string;
+      endDate: string;
+      rentAmount: number;
+      monthlyRent: number;
+      depositAmount: number;
+      ejariNumber: string | null;
+      paymentTerms: number;
+      installmentDistribution: string;
+      paymentMethod: string;
+      depositPaymentMethod: string;
+      paymentReferenceNumber: string | null;
+      agreementDate: string | null;
+      rentVatApplicable: boolean;
+    },
+  ) => putJson<{ id: string; status: string; ejariNumber: string; paymentReferenceNumber: string }>(
+    pctx,
+    `/v1/leases/${leaseId}`,
+    body,
+  ),
+  deleteDraftLease: (pctx: ProdContext, leaseId: string) =>
+    deleteOk(pctx, `/v1/leases/${leaseId}`),
+  updateLeasePaymentSchedule: (
+    pctx: ProdContext,
+    leaseId: string,
+    rows: Array<{
+      scheduleId: string;
+      dueDate: string;
+      amount: number;
+      paymentMethod: 'CHEQUE' | 'BANK_TRANSFER' | 'CASH' | 'ONLINE';
+      chequeNumber?: string | null;
+      chequeDate?: string | null;
+      bankName?: string | null;
+    }>,
+  ) => putJson<Array<{
+    id: string;
+    status: string;
+    paymentMethod: string;
+    chequeNumber: string | null;
+  }>>(pctx, `/v1/leases/${leaseId}/payment-schedule`, { rows }),
+  bulkAttachCheques: (
+    pctx: ProdContext,
+    leaseId: string,
+    items: Array<{
+      scheduleId: string;
+      chequeNumber: string;
+      chequeDate: string;
+      bankName: string;
+      payerName: string;
+      imageUrl: string;
+      imageBlobPath: string;
+      imageUploadedAt: string;
+    }>,
+  ) => postJson<{
+    schedules: Array<{ id: string; status: string; chequeNumber: string; chequeImageBlobPath: string }>;
+  }>(pctx, `/v1/leases/${leaseId}/cheques/bulk-attach`, { items }),
   extendLease: (pctx: ProdContext, leaseId: string, newEndDate: string) =>
     postJson<{ id: string; status: string; endDate: string }>(pctx, `/v1/leases/${leaseId}/extend`, {
       newEndDate,
@@ -1266,7 +1347,16 @@ export const api = {
   // IS the cheque (no separate /cheques resource). Lifecycle endpoints are
   // PUT on /v1/payments/{id}/{action} and all take UpdatePaymentStatusDTO.
   getPaymentScheduleForLease: (pctx: ProdContext, leaseId: string) =>
-    getJson<Array<{ id: string; dueDate: string; amount: number; status: string }>>(
+    getJson<Array<{
+      id: string;
+      dueDate: string;
+      amount: number;
+      status: string;
+      paymentMethod: string;
+      isBookingDeposit: boolean;
+      isSecurityDeposit: boolean;
+      isCharge: boolean;
+    }>>(
       pctx,
       `/v1/payments/lease/${leaseId}`,
     ),
