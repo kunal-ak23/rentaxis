@@ -1,0 +1,89 @@
+databaseChangeLog:
+  - changeSet:
+      id: 74-tenant-artifact-cleanup-queue
+      author: codex
+      comment: >-
+        Durable, non-tenanted exact-object cleanup plan for artifacts captured
+        before a tenant is deleted. The ownership column is intentionally named
+        deleted_tenant_id so the dynamic tenant_id purge cannot erase its own
+        post-commit recovery queue.
+      changes:
+        - createTable:
+            tableName: tenant_artifact_cleanup_queue
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: deleted_tenant_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: storage_kind
+                  type: varchar(24)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: container_name
+                  type: varchar(128)
+                  defaultValue: ""
+                  constraints:
+                    nullable: false
+              - column:
+                  name: object_path
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: source_reference
+                  type: text
+              - column:
+                  name: status
+                  type: varchar(32)
+                  defaultValue: PENDING
+                  constraints:
+                    nullable: false
+              - column:
+                  name: attempts
+                  type: integer
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: last_error
+                  type: text
+              - column:
+                  name: created_at
+                  type: timestamptz
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamptz
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+        - addUniqueConstraint:
+            tableName: tenant_artifact_cleanup_queue
+            columnNames: deleted_tenant_id, storage_kind, container_name, object_path
+            constraintName: uq_tenant_artifact_cleanup_exact_object
+        - createIndex:
+            tableName: tenant_artifact_cleanup_queue
+            indexName: idx_tenant_artifact_cleanup_status
+            columns:
+              - column:
+                  name: status
+              - column:
+                  name: deleted_tenant_id
+        - sql:
+            sql: >-
+              ALTER TABLE tenant_artifact_cleanup_queue
+              ADD CONSTRAINT ck_tenant_artifact_cleanup_storage_kind
+              CHECK (storage_kind IN ('AZURE_BLOB', 'LOCAL_ASSET')),
+              ADD CONSTRAINT ck_tenant_artifact_cleanup_status
+              CHECK (status IN ('PENDING', 'DELETED', 'SKIPPED_REFERENCED', 'FAILED'))

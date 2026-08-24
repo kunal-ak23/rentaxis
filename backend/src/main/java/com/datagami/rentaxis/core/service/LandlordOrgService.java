@@ -24,17 +24,20 @@ public class LandlordOrgService {
     private final NotificationService notificationService;
     private final JdbcTemplate jdbcTemplate;
     private final ContractGenerationService contractGenerationService;
+    private final TenantArtifactCleanupService tenantArtifactCleanupService;
 
     public LandlordOrgService(LandlordOrgRepository repository,
                                UserRepository userRepository,
                                NotificationService notificationService,
                                JdbcTemplate jdbcTemplate,
-                               ContractGenerationService contractGenerationService) {
+                               ContractGenerationService contractGenerationService,
+                               TenantArtifactCleanupService tenantArtifactCleanupService) {
         this.repository = repository;
         this.userRepository = userRepository;
         this.notificationService = notificationService;
         this.jdbcTemplate = jdbcTemplate;
         this.contractGenerationService = contractGenerationService;
+        this.tenantArtifactCleanupService = tenantArtifactCleanupService;
     }
 
     @Transactional
@@ -107,6 +110,12 @@ public class LandlordOrgService {
                 "SELECT document_url FROM lease_documents WHERE tenant_id = ?",
                 String.class,
                 tenantId);
+
+        // Persist an exact-object plan in this same transaction while every
+        // artifact reference is still available. If any later part of the
+        // purge rolls back, the plan rolls back with it and afterCommit never
+        // runs, so live rows cannot be left pointing at deleted objects.
+        int queuedArtifacts = tenantArtifactCleanupService.captureAndEnqueue(tenantId);
 
         // IMPORTANT — convention coupling: this discovery query only finds
         // tables whose tenant-scope column is literally named `tenant_id`.
@@ -233,22 +242,46 @@ public class LandlordOrgService {
             return null;
         });
 
-        scheduleContractCleanupAfterCommit(tenantId, contractDocumentUrls);
-        log.info("deleteTenant({}): database purge completed; contract cleanup scheduled after commit", tenantId);
+        scheduleExternalCleanupAfterCommit(tenantId, contractDocumentUrls);
+        log.info("deleteTenant({}): database purge completed; contract cleanup and {} exact artifact cleanups scheduled after commit",
+                tenantId, queuedArtifacts);
     }
 
-    private void scheduleContractCleanupAfterCommit(UUID tenantId, List<String> documentUrls) {
+    private void scheduleExternalCleanupAfterCommit(UUID tenantId, List<String> documentUrls) {
         List<String> capturedUrls = List.copyOf(documentUrls);
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            contractGenerationService.cleanupTenantDocuments(tenantId, capturedUrls);
+            runExternalCleanup(tenantId, capturedUrls);
             return;
         }
 
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                contractGenerationService.cleanupTenantDocuments(tenantId, capturedUrls);
+                runExternalCleanup(tenantId, capturedUrls);
             }
         });
+    }
+
+    private void runExternalCleanup(UUID tenantId, List<String> contractDocumentUrls) {
+        try {
+            contractGenerationService.cleanupTenantDocuments(tenantId, contractDocumentUrls);
+        } catch (Exception e) {
+            // The database commit has already happened. Keep processing the
+            // durable non-contract queue and surface the best-effort contract
+            // cleanup failure in logs.
+            log.error("deleteTenant({}): post-commit contract cleanup failed", tenantId, e);
+        }
+
+        try {
+            TenantArtifactCleanupService.CleanupReport report =
+                    tenantArtifactCleanupService.processPending(tenantId);
+            log.info("deleteTenant({}): post-commit artifact cleanup attempted={} deleted={} skipped={} failed={}",
+                    tenantId, report.attempted(), report.deleted(),
+                    report.skippedReferenced(), report.failed());
+        } catch (Exception e) {
+            // Rows remain PENDING when an unexpected queue-level error occurs,
+            // so processing can be invoked again safely.
+            log.error("deleteTenant({}): post-commit artifact queue processing failed", tenantId, e);
+        }
     }
 }

@@ -1,6 +1,7 @@
 package com.datagami.rentaxis.core.service;
 
 import com.azure.storage.blob.BlobContainerClient;
+import com.azure.storage.blob.BlobClient;
 import com.azure.storage.blob.BlobServiceClient;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
@@ -79,5 +80,62 @@ class BlobStorageServiceTest {
 
         verify(containerClient, never()).create();
         verify(containerClient, never()).getBlobClient("listings/example.jpg");
+    }
+
+    @Test
+    void deleteExact_deletesOnlyTheRequestedObjectFromAnExistingContainer() {
+        BlobServiceClient serviceClient = mock(BlobServiceClient.class);
+        BlobContainerClient containerClient = mock(BlobContainerClient.class);
+        BlobClient blobClient = mock(BlobClient.class);
+        when(serviceClient.getBlobContainerClient("shared")).thenReturn(containerClient);
+        when(containerClient.exists()).thenReturn(true);
+        when(containerClient.getBlobClient("assets/logo.png")).thenReturn(blobClient);
+
+        var service = new BlobStorageService();
+        ReflectionTestUtils.setField(service, "serviceClient", serviceClient);
+
+        service.deleteExact("shared", "assets/logo.png");
+
+        verify(containerClient, never()).create();
+        verify(blobClient).deleteIfExists();
+    }
+
+    @Test
+    void deleteExact_rejectsTraversalAbsolutePathsAndInvalidContainers() {
+        var service = new BlobStorageService();
+
+        assertThatThrownBy(() -> service.deleteExact("shared", "../secret"))
+                .isInstanceOf(BlobStorageService.BlobStorageException.class);
+        assertThatThrownBy(() -> service.deleteExact("shared", "/assets/logo.png"))
+                .isInstanceOf(BlobStorageService.BlobStorageException.class);
+        assertThatThrownBy(() -> service.deleteExact("Shared", "assets/logo.png"))
+                .isInstanceOf(BlobStorageService.BlobStorageException.class);
+    }
+
+    @Test
+    void safeObjectPath_requiresOneNormalizedRelativeObject() {
+        assertThat(BlobStorageService.isSafeObjectPath("assets/org/logo.png")).isTrue();
+        assertThat(BlobStorageService.isSafeObjectPath("assets//logo.png")).isFalse();
+        assertThat(BlobStorageService.isSafeObjectPath("assets/./logo.png")).isFalse();
+        assertThat(BlobStorageService.isSafeObjectPath("assets/../logo.png")).isFalse();
+        assertThat(BlobStorageService.isSafeObjectPath("C:\\assets\\logo.png")).isFalse();
+    }
+
+    @Test
+    void parseOwnedBlobUrl_acceptsOnlyConfiguredAccountAndExactObjectPath() {
+        BlobServiceClient serviceClient = mock(BlobServiceClient.class);
+        when(serviceClient.getAccountUrl()).thenReturn("https://rentaxis.blob.core.windows.net");
+        var service = new BlobStorageService();
+        ReflectionTestUtils.setField(service, "serviceClient", serviceClient);
+
+        assertThat(service.parseOwnedBlobUrl(
+                "https://rentaxis.blob.core.windows.net/shared/assets/logo.png?sv=test"))
+                .contains(new BlobStorageService.BlobLocation("shared", "assets/logo.png"));
+        assertThat(service.parseOwnedBlobUrl(
+                "https://other.blob.core.windows.net/shared/assets/logo.png")).isEmpty();
+        assertThat(service.parseOwnedBlobUrl(
+                "https://rentaxis.blob.core.windows.net/shared/../secret")).isEmpty();
+        assertThat(service.parseOwnedBlobUrl(
+                "https://rentaxis.blob.core.windows.net/shared")).isEmpty();
     }
 }
