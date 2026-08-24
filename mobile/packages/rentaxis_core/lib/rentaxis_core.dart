@@ -32,6 +32,7 @@ export 'api/services/cheque_extraction_service.dart';
 export 'api/services/gate_pass_service.dart';
 export 'api/services/facility_service.dart';
 export 'api/services/promotion_service.dart';
+export 'api/services/app_version_service.dart';
 
 // Models
 export 'models/auth_response.dart';
@@ -43,6 +44,7 @@ export 'providers/notification_provider.dart';
 export 'providers/wishlist_provider.dart';
 export 'providers/theme_provider.dart';
 export 'providers/language_provider.dart';
+export 'providers/app_version_provider.dart';
 
 // Theme
 export 'theme/app_theme.dart';
@@ -71,6 +73,8 @@ export 'widgets/offline_status_banner.dart';
 export 'widgets/empty_state.dart';
 export 'widgets/error_state.dart';
 export 'widgets/video_splash_screen.dart';
+export 'widgets/update_required_screen.dart';
+export 'widgets/update_available_banner.dart';
 export 'widgets/animated_list_item.dart';
 export 'widgets/shimmer_loading.dart';
 export 'widgets/page_transitions.dart';

@@ -22,6 +22,13 @@ dependencies:
   google_fonts: ^6.2.1
   go_router: ^14.8.1
   geolocator: ^13.0.1
+  # Direct deps of core: the app-version gate (widgets/update_required_screen,
+  # providers/app_version_provider) reads the running build with
+  # package_info_plus and opens the store link with url_launcher. Both are used
+  # in code that lives HERE, so core declares them directly rather than leaning
+  # on the host apps' transitive copies (depend_on_referenced_packages).
+  package_info_plus: ^9.0.1
+  url_launcher: ^6.3.1
 
 dev_dependencies:
   flutter_test:
