@@ -10,7 +10,7 @@ import { api, loginAsNextAuth, setActiveTenant } from '../helpers/prod-client';
 
 const CONTEXT_FILE = path.join(__dirname, '..', '.test-context.json');
 
-test('tenant admin configures fines, rent collection, accounts, staff, bank, and a transaction', async () => {
+test('tenant admin configures and browses finance, staffing, banking, and vendors', async ({ browser }) => {
   const ctx = JSON.parse(fs.readFileSync(CONTEXT_FILE, 'utf8'));
   expect(ctx.property?.id, '01-provision must run first').toBeTruthy();
 
@@ -94,6 +94,28 @@ test('tenant admin configures fines, rent collection, accounts, staff, bank, and
   expect(transactionList.ok()).toBeTruthy();
   const transactions: Array<{ id: string }> = await transactionList.json();
   expect(transactions.some((item) => item.id === transaction.id)).toBeTruthy();
+
+  const browserCtx = await browser.newContext({ baseURL: ctx.baseURL });
+  const page = await browserCtx.newPage();
+  await page.goto('/en/auth/login');
+  await page.locator('#login-email').fill(ctx.adminEmail);
+  await page.locator('#login-password').fill(ctx.adminPassword);
+  await page.getByRole('button', { name: /sign in|log in/i }).click();
+  await page.waitForURL(/\/dashboard(?!\/renter-portal)/, { timeout: 15_000 });
+
+  await page.goto('/en/dashboard/staff');
+  await expect(page.getByText(`TEST-Senior Coordinator ${ctx.runSuffix}`, { exact: true })).toBeVisible();
+
+  await page.goto('/en/dashboard/finance/bank-accounts');
+  await expect(page.getByText('TEST-E2E Bank Updated', { exact: true })).toBeVisible();
+
+  await page.goto('/en/dashboard/finance/vendors');
+  await expect(page.getByText(`TEST-Vendor ${ctx.runSuffix}`, { exact: true })).toBeVisible();
+
+  await page.goto('/en/dashboard/finance/transactions');
+  await expect(page.getByText(`TEST-Manual expense ${ctx.runSuffix}`, { exact: true })).toBeVisible();
+
+  await browserCtx.close();
 
   await api.deleteStaff(taCtx, staff.id);
   await api.deleteBankAccount(taCtx, bank.id);
