@@ -34,6 +34,25 @@ test('super admin controls disposable feature access and tenant admin manages us
   const superCtx = await loginAsNextAuth(ctx.baseURL, ctx.user.email, process.env.PROD_SUPERADMIN_PASSWORD!);
   await setActiveTenant(superCtx, ctx.tenant.id);
 
+  const tenantUpdate = await superCtx.request.put(`/api/proxy/admin/tenants/${ctx.tenant.id}`, {
+    data: {
+      // Keep the confirmed cleanup name unchanged while exercising every
+      // non-media organization field used by the provisioning form.
+      name: ctx.tenant.name,
+      address: `TEST-E2E Address ${ctx.runSuffix}`,
+      trn: `TEST-TRN-${ctx.runSuffix}`,
+      status: 'ACTIVE',
+      phone: '+971500000008',
+      ticketOtpRequired: true,
+    },
+    failOnStatusCode: false,
+  });
+  await assertOk(tenantUpdate, 'tenant organization update');
+  const updatedTenant = await tenantUpdate.json();
+  expect(updatedTenant.name).toBe(ctx.tenant.name);
+  expect(updatedTenant.address).toContain('TEST-E2E Address');
+  expect(updatedTenant.ticketOtpRequired).toBe(true);
+
   const featuresResponse = await superCtx.request.get(
     `/api/proxy/admin/tenants/${ctx.tenant.id}/features`,
     { failOnStatusCode: false },
