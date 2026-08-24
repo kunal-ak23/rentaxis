@@ -62,7 +62,7 @@ Status legend:
 
 | Tutorial | Surfaces | Roles | Capabilities | Current evidence |
 |---|---|---|---|---|
-| 26. Publish and manage property listings | Web, Manager | Tenant admin, property manager | Listing creation/editing, media/details, publish/unpublish, interests | Local E2E lifecycle spec prepared; production run pending #95; manager widget coverage |
+| 26. Publish and manage property listings | Web, Manager | Tenant admin, property manager | Listing creation/editing, media/details, publish/unpublish, interests | Production browser journey prepared for manager published-list table, complete editor tabs, and interested-renter drawer plus listing lifecycle API assertions; media upload remains gated on exact artifact cleanup; production run pending safety deployments; manager widget coverage |
 | 27. Browse the marketplace and manage a wishlist | Web, Renter | Renter/public | Browse/filter listings, listing details, wishlist, express interest | Production spec prepared for anonymous catalogue/detail pages plus signed-in renter wishlist/interest/withdrawal; production run pending safety deployments; renter widget/integration coverage |
 | 28. Promotions, offers, and coupons | Web, Manager, Renter | Tenant admin, renter | Promotion CRUD, targeting, image/copy, renter feed, offer details, coupon actions | Production browser journey prepared for admin ad/business tables, live status, engagement counts, and coupon configuration; renter feed/offer/event/statistics API lifecycle prepared; production run pending #95; renter offer UI remains mobile-only and needs widget/device capture |
 
