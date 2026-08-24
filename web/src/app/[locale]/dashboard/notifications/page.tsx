@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef} from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useLocale } from "next-intl";
@@ -67,8 +67,16 @@ export default function NotificationsPage() {
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(25);
     const [markingAll, setMarkingAll] = useState(false);
+    // Monotonic request id. Reads and tab/page switches both fire fetches, and
+    // responses can land out of order — an older unreadOnly payload arriving
+    // last used to resurrect an already-read row, or overwrite the All tab with
+    // unread-only data. Only the newest request is allowed to touch state.
+    const requestSeq = useRef(0);
 
     const fetchNotifications = useCallback(async () => {
+        const seq = ++requestSeq.current;
+        const isStale = () => seq !== requestSeq.current;
+        let stepBack = false;
         try {
             const page = currentPage - 1; // API is 0-indexed
             let url = `/api/proxy/v1/notifications?page=${page}&size=${itemsPerPage}`;
@@ -76,8 +84,10 @@ export default function NotificationsPage() {
                 url += "&unreadOnly=true";
             }
             const res = await fetch(url);
+            if (isStale()) return;
             if (res.ok) {
                 const data = await res.json();
+                if (isStale()) return;
                 if (Array.isArray(data)) {
                     // The API returns a plain page-sized list with no total
                     // count. Infer the total from the current offset, and
@@ -85,7 +95,12 @@ export default function NotificationsPage() {
                     // back full so the next-page control stays reachable.
                     if (data.length === 0 && page > 0) {
                         // Walked past the last page (e.g. it was exactly
-                        // full) — step back to the previous one.
+                        // full) — step back to the previous one. Leave loading
+                        // set: committing notifications=[] with loading=false
+                        // paints "You're all caught up!" and unmounts the
+                        // pagination controls for a frame before the previous
+                        // page arrives.
+                        stepBack = true;
                         setCurrentPage((p) => Math.max(1, p - 1));
                         return;
                     }
@@ -98,7 +113,7 @@ export default function NotificationsPage() {
                 }
             }
         } catch { /* ignore */ } finally {
-            setLoading(false);
+            if (!stepBack && !isStale()) setLoading(false);
         }
     }, [currentPage, itemsPerPage, filter]);
 
@@ -138,7 +153,11 @@ export default function NotificationsPage() {
                     // Refetching also backfills this page from the next one and
                     // steps back when the current page empties.
                     setNotifications((prev) => prev.filter((x) => x.id !== n.id));
-                    await fetchNotifications();
+                    // Not awaited when this click also navigates: the refetch is
+                    // only needed if the user stays on the page, and awaiting it
+                    // stalls the route change behind an extra round trip.
+                    const resync = fetchNotifications();
+                    if (!(n.referenceType && n.referenceId)) await resync;
                 } else {
                     setNotifications((prev) =>
                         prev.map((x) => (x.id === n.id ? { ...x, isRead: true } : x))

@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("next-intl", () => ({
@@ -257,5 +257,110 @@ describe("NotificationsPage pagination", () => {
 
         await waitFor(() => expect(screen.getByText("You're all caught up!")).toBeInTheDocument());
         expect(screen.queryByText("Notification 1")).toBeNull();
+    });
+    // Regression: reads and tab switches both fire GETs, and responses can land
+    // out of order. An older unreadOnly payload arriving last used to overwrite
+    // the newer list, putting an already-read row back on the Unread tab.
+    it("does not resurrect a read notification when refetches land out of order", async () => {
+        const unread = makeNotifications(3);
+        const gates: Array<() => void> = [];
+        global.fetch = vi.fn(async (input: RequestInfo | URL) => {
+            const url = String(input);
+            fetchedUrls.push(url);
+            const readMatch = url.match(/\/v1\/notifications\/([^/]+)\/read$/);
+            if (readMatch) {
+                const idx = unread.findIndex((n) => n.id === readMatch[1]);
+                if (idx >= 0) unread.splice(idx, 1);
+                return { ok: true, json: async () => null } as unknown as Response;
+            }
+            if (url.includes("/v1/notifications?")) {
+                // Snapshot server truth at REQUEST time, the way a real handler
+                // would, then hold the response open so the test controls order.
+                const snapshot = unread.slice();
+                await new Promise<void>((resolve) => gates.push(resolve));
+                return { ok: true, json: async () => snapshot } as unknown as Response;
+            }
+            return { ok: true, json: async () => null } as unknown as Response;
+        }) as unknown as typeof fetch;
+
+        render(<NotificationsPage />);
+        await waitFor(() => expect(gates.length).toBe(1));
+        gates.shift()!();
+        await waitFor(() => expect(screen.getByText("Notification 0")).toBeInTheDocument());
+
+        fireEvent.click(screen.getByRole("button", { name: "Unread" }));
+        await waitFor(() => expect(gates.length).toBe(1));
+        gates.shift()!();
+        await waitFor(() => expect(fetchedUrls.some((u) => u.includes("unreadOnly=true"))).toBe(true));
+
+        // Read n-0 (its GET_A snapshot still contains n-1), then read n-1 before
+        // GET_A has returned (GET_B snapshot contains only n-2).
+        fireEvent.click(screen.getByText("Message 0"));
+        await waitFor(() => expect(gates.length).toBe(1));
+        fireEvent.click(screen.getByText("Message 1"));
+        await waitFor(() => expect(gates.length).toBe(2));
+
+        // Newer response first, then the stale one.
+        gates.pop()!();
+        await waitFor(() => expect(screen.queryByText("Notification 1")).toBeNull());
+        gates.pop()!();
+
+        await waitFor(() => expect(screen.getByText("Notification 2")).toBeInTheDocument());
+        // The stale GET_A payload must not put n-1 back on screen.
+        expect(screen.queryByText("Notification 1")).toBeNull();
+        expect(screen.queryByText("Notification 0")).toBeNull();
+    });
+
+    // Regression: a refetch started on the Unread tab used to resolve against
+    // whatever tab was on screen by then, wiping every read notification off All.
+    it("does not let an in-flight unread refetch clobber the All tab", async () => {
+        // The unread payload carries a marker id that the All payload never
+        // contains, so a clobber is directly observable rather than inferred.
+        const unread = makeNotifications(2, 100);
+        const all = makeNotifications(3);
+        const gates: Array<() => void> = [];
+        global.fetch = vi.fn(async (input: RequestInfo | URL) => {
+            const url = String(input);
+            fetchedUrls.push(url);
+            if (url.match(/\/v1\/notifications\/[^/]+\/read$/)) {
+                return { ok: true, json: async () => null } as unknown as Response;
+            }
+            if (url.includes("/v1/notifications?")) {
+                const snapshot = url.includes("unreadOnly=true") ? unread.slice() : all.slice();
+                await new Promise<void>((resolve) => gates.push(resolve));
+                return { ok: true, json: async () => snapshot } as unknown as Response;
+            }
+            return { ok: true, json: async () => null } as unknown as Response;
+        }) as unknown as typeof fetch;
+
+        render(<NotificationsPage />);
+        await waitFor(() => expect(gates.length).toBe(1));
+        gates.shift()!();
+        await waitFor(() => expect(screen.getByText("Notification 0")).toBeInTheDocument());
+
+        fireEvent.click(screen.getByRole("button", { name: "Unread" }));
+        await waitFor(() => expect(gates.length).toBe(1));
+        gates.shift()!();
+        await waitFor(() => expect(screen.getByText("Notification 100")).toBeInTheDocument());
+
+        // Read a row — the unread refetch is now in flight — then switch to All.
+        fireEvent.click(screen.getByText("Message 100"));
+        await waitFor(() => expect(gates.length).toBe(1));
+        fireEvent.click(screen.getByRole("button", { name: "All" }));
+        await waitFor(() => expect(gates.length).toBe(2));
+
+        // All resolves first and renders its three rows...
+        gates.pop()!();
+        await waitFor(() => expect(screen.getByText("Notification 2")).toBeInTheDocument());
+
+        // ...then the stale unread response lands. Flush it to completion before
+        // asserting, otherwise "still correct" just means "not applied yet".
+        gates.pop()!();
+        await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+        expect(screen.queryByText("Notification 101")).toBeNull();
+        expect(screen.getByText("Notification 0")).toBeInTheDocument();
+        expect(screen.getByText("Notification 1")).toBeInTheDocument();
+        expect(screen.getByText("Notification 2")).toBeInTheDocument();
     });
 });
