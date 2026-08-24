@@ -45,6 +45,7 @@ test('TENANT_ADMIN creates a lease via the wizard UI', async ({ browser }) => {
     nameEn: `TEST-LeaseUI Renter ${uiSuffix}`,
     email: `test-leaseui-renter-${uiSuffix}@e2e.rentaxis.test`,
   });
+  expect(renter.portalPassword, 'portal account password must be issued for contract signing').toBeTruthy();
   await taApi.request.dispose();
 
   // 2. Real browser: login as TA, navigate to leases, open the wizard.
@@ -106,7 +107,7 @@ test('TENANT_ADMIN creates a lease via the wizard UI', async ({ browser }) => {
   await wizardDialog.getByRole('button', { name: /^next$/i }).click();
 
   // Step 5 (finalize): Save draft.
-  await Promise.all([
+  const [createLeaseResponse] = await Promise.all([
     // Match path-with-or-without query string — endsWith('/leases') would
     // break the moment the wizard adds e.g. ?action=draft to the request.
     page.waitForResponse(
@@ -117,6 +118,18 @@ test('TENANT_ADMIN creates a lease via the wizard UI', async ({ browser }) => {
     ),
     wizardDialog.getByRole('button', { name: /save draft/i }).click(),
   ]);
+  expect(createLeaseResponse.ok()).toBeTruthy();
+  const createdLease = await createLeaseResponse.json();
+  expect(createdLease.id).toBeTruthy();
+
+  // Persist the UI-created draft for the next serial spec, which validates
+  // the complete contract generation -> reject -> regenerate -> accept flow.
+  ctx.contractLease = {
+    id: createdLease.id,
+    renterEmail: renter.email,
+    renterPassword: renter.portalPassword,
+  };
+  fs.writeFileSync(CONTEXT_FILE, JSON.stringify(ctx, null, 2));
 
   // After save, the wizard reveals "Open lease detail" and "Generate contract"
   // buttons — that's our success signal.
