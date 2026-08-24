@@ -197,6 +197,11 @@
         "routes": ["/splash", "/login", "/profile", "/more"]
       },
       {
+        "tutorials": [1, 29],
+        "evidence": ["mobile/packages/rentaxis_core/test/providers/app_version_gate_test.dart", "mobile/packages/rentaxis_core/test/widgets/update_required_screen_test.dart"],
+        "routes": ["/update-required"]
+      },
+      {
         "tutorials": [2, 6, 9, 10, 12, 15, 22, 29],
         "evidence": ["mobile/apps/manager/integration_test/client_shots_test.dart", "mobile/apps/manager/integration_test/prod_deep_routes_test.dart"],
         "routes": ["/", "/properties", "/properties/:id", "/renters", "/leases", "/leases/:id", "/payments", "/tickets", "/tickets/create", "/tickets/:id", "/notifications"]
@@ -264,6 +269,11 @@
         "routes": ["/splash", "/login", "/set-password", "/profile"]
       },
       {
+        "tutorials": [1, 31],
+        "evidence": ["mobile/apps/renter/test/version_gate_router_test.dart", "mobile/packages/rentaxis_core/test/widgets/update_required_screen_test.dart"],
+        "routes": ["/update-required"]
+      },
+      {
         "tutorials": [2, 14, 21, 22, 31],
         "evidence": ["mobile/apps/renter/integration_test/client_shots_test.dart", "mobile/apps/renter/integration_test/screens_tour_test.dart", "mobile/apps/renter/integration_test/prod_deep_routes_test.dart"],
         "routes": ["/", "/payments", "/services", "/tickets", "/tickets/create", "/tickets/:id", "/notifications", "/penalties"]
@@ -304,6 +314,11 @@
         "tutorials": [1, 33],
         "evidence": ["mobile/apps/security/integration_test/login_shots_test.dart", "mobile/apps/security/test/otp_screen_test.dart"],
         "routes": ["/splash", "/login", "/otp"]
+      },
+      {
+        "tutorials": [1, 33],
+        "evidence": ["mobile/packages/rentaxis_core/test/providers/app_version_gate_test.dart", "mobile/packages/rentaxis_core/test/widgets/update_required_screen_test.dart"],
+        "routes": ["/update-required"]
       },
       {
         "tutorials": [25, 33],
