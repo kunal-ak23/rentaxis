@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { afterEach, describe, expect, it, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 
 // Mock next-auth session lookup so we control authenticated vs anonymous.
@@ -91,6 +91,67 @@ describe("proxy middleware — /api/proxy auth gate", () => {
       const res = await middleware(makeRequest(path));
 
       expect(res.status).toBe(401);
+    });
+  });
+
+  describe("X-Internal-Auth (internal proxy secret)", () => {
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it("strips a spoofed inbound X-Internal-Auth on the authenticated branch when no secret is configured", async () => {
+      vi.stubEnv("INTERNAL_PROXY_SECRET", "");
+      getTokenMock.mockResolvedValue({ id: "user-1", role: "TENANT_ADMIN", tenantId: "tenant-1" });
+
+      const res = await middleware(
+        makeRequest("/api/proxy/v1/leases", { "X-Internal-Auth": "forged-by-client" })
+      );
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get("x-middleware-request-x-internal-auth")).toBeNull();
+    });
+
+    it("replaces any inbound X-Internal-Auth with the configured secret on the authenticated branch", async () => {
+      vi.stubEnv("INTERNAL_PROXY_SECRET", "real-secret");
+      getTokenMock.mockResolvedValue({ id: "user-1", role: "TENANT_ADMIN", tenantId: "tenant-1" });
+
+      const res = await middleware(
+        makeRequest("/api/proxy/v1/leases", { "X-Internal-Auth": "forged-by-client" })
+      );
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get("x-middleware-request-x-internal-auth")).toBe("real-secret");
+    });
+
+    it("sets X-Internal-Auth from INTERNAL_PROXY_SECRET on authenticated requests", async () => {
+      vi.stubEnv("INTERNAL_PROXY_SECRET", "real-secret");
+      getTokenMock.mockResolvedValue({ id: "user-1", role: "SUPER_ADMIN", tenantId: "tenant-1" });
+
+      const res = await middleware(makeRequest("/api/proxy/v1/leases"));
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get("x-middleware-request-x-internal-auth")).toBe("real-secret");
+    });
+
+    it("does not invent an X-Internal-Auth header when the secret env is empty", async () => {
+      vi.stubEnv("INTERNAL_PROXY_SECRET", "");
+      getTokenMock.mockResolvedValue({ id: "user-1", role: "TENANT_ADMIN", tenantId: "tenant-1" });
+
+      const res = await middleware(makeRequest("/api/proxy/v1/leases"));
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get("x-middleware-request-x-internal-auth")).toBeNull();
+    });
+
+    it("strips inbound X-Internal-Auth on the public pre-auth branch", async () => {
+      vi.stubEnv("INTERNAL_PROXY_SECRET", "real-secret");
+
+      const res = await middleware(
+        makeRequest("/api/proxy/v1/public/renewal-intent", { "X-Internal-Auth": "forged-by-client" })
+      );
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get("x-middleware-request-x-internal-auth")).toBeNull();
     });
   });
 });

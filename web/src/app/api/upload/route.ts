@@ -18,11 +18,20 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Missing path parameter" }, { status: 400 });
     }
 
-    // Build auth headers
+    // Build auth headers (fresh object — client headers are never forwarded)
     const headers: Record<string, string> = {};
     if (token.id) headers["X-User-Id"] = token.id as string;
     if (token.role) headers["X-User-Role"] = token.role as string;
     if (token.tenantId) headers["X-User-Tenant-Id"] = token.tenantId as string;
+
+    // This route asserts X-User-Role from the session (which can be SUPER_ADMIN)
+    // and calls the backend directly over the Docker network, bypassing the
+    // /api/proxy middleware. Attach the internal proxy secret so the backend's
+    // SUPER_ADMIN header gate accepts it. Unset/empty env keeps the gate off.
+    const internalProxySecret = process.env.INTERNAL_PROXY_SECRET;
+    if (internalProxySecret) {
+        headers["X-Internal-Auth"] = internalProxySecret;
+    }
 
     const cookieStore = await cookies();
     const activeTenantId = cookieStore.get("active_tenant_id")?.value;

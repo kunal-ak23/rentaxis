@@ -58,6 +58,11 @@ services:
       - FIREBASE_SERVICE_ACCOUNT_JSON_BASE64=${FIREBASE_SERVICE_ACCOUNT_JSON_BASE64:-}
       - RENTAXIS_ENCRYPTION_KEY=${ENCRYPTION_KEY:-}
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+      # Auth hardening (phase 1). Empty default = feature off: Bearer tokens are
+      # not issued/verified and the SUPER_ADMIN header gate stays open, so the
+      # stack behaves exactly as before until the secrets are configured.
+      - APP_AUTH_TOKEN_SECRET=${APP_AUTH_TOKEN_SECRET:-}
+      - INTERNAL_PROXY_SECRET=${INTERNAL_PROXY_SECRET:-}
     deploy:
       resources:
         limits:
@@ -92,6 +97,10 @@ services:
       - NEXTAUTH_URL=${NEXTAUTH_URL}
       - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
       - BACKEND_URL=http://backend:8080
+      # Attached as X-Internal-Auth by the Next.js proxy so the backend can tell
+      # proxy-asserted SUPER_ADMIN headers from client-forged ones. Empty
+      # default = gate off (pre-rollout behaviour unchanged).
+      - INTERNAL_PROXY_SECRET=${INTERNAL_PROXY_SECRET:-}
     deploy:
       resources:
         limits:

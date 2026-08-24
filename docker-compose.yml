@@ -7,6 +7,9 @@ services:
     ports:
       - "8080:8080" # Dev only - use reverse proxy in production
     env_file:
+      # Passes through every var in the file, including the optional auth
+      # hardening secrets APP_AUTH_TOKEN_SECRET / INTERNAL_PROXY_SECRET
+      # (add them to .env.backend to enable locally; absent = feature off).
       - .env.backend
     environment:
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/rentaxis
@@ -27,6 +30,9 @@ services:
     ports:
       - "3000:3000"
     env_file:
+      # Passes through every var in the file, including the optional
+      # INTERNAL_PROXY_SECRET the proxy attaches as X-Internal-Auth
+      # (add it to .env.web to enable locally; absent = feature off).
       - .env.web
     environment:
       - BACKEND_URL=http://backend:8080
