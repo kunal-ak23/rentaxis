@@ -1,21 +1,31 @@
-# Prod E2E Smoke
+# Production E2E Release Validation
 
-End-to-end smoke suite that exercises every major controller and the renter
-portal UI against **prod**. Lives alongside the local `web/e2e/` suite but is
-intentionally separate — different auth model, different runner config, real
-data created in real DB.
+Serial end-to-end suite that exercises the mapped web capability inventory
+against **production** with one disposable `TEST-E2E` tenant. Real-file
+subflows that are not yet safe are called out explicitly below. The suite lives
+beside the local `web/e2e/` suite but is intentionally separate: it uses
+production authentication, creates real database records, and must finish by
+deleting the exact tenant it created.
+
+This suite currently contains **33 tests across 32 Playwright files** (31 specs
+plus the authentication setup). It is a release/recording gate, not a harmless
+smoke command. Do not run it until all items in [Safety gates](#safety-gates)
+are satisfied.
 
 ## How it works
 
-The backend trusts headers (`X-User-Id` / `X-User-Role` / `X-Tenant-Id`)
-injected by the Next.js middleware after NextAuth validates the session
-cookie. There is **no JWT validation in the backend**. Therefore:
+The web application authenticates with NextAuth. Its proxy strips forged
+identity headers, derives identity and tenant context from the validated
+session, and forwards the request to the backend. When configured, the proxy
+also adds the server-only `X-Internal-Auth` proof. Bearer-token authentication
+exists for the mobile rollout, but this browser suite deliberately exercises
+the same session/proxy path as web users. Therefore:
 
 1. The suite logs in via NextAuth's credentials callback at `/api/auth/callback/credentials`.
 2. Playwright saves the `__Secure-next-auth.session-token` cookie to
    `.auth/superadmin.json`.
-3. Every API call hits `/api/proxy/*` — the middleware reads the cookie,
-   injects trusted headers, and rewrites to the backend.
+3. Every API call hits `/api/proxy/*` so the suite cannot bypass the web
+   authentication and tenant-switching boundary.
 
 Backend port 8080 is (assumed to be) not externally reachable on prod; all
 traffic goes through Caddy → Next.js → backend.
@@ -61,12 +71,36 @@ npx playwright show-report e2e-prod/playwright-report
 | Spec | Surface |
 | --- | --- |
 | `00-smoke-auth` | Login + `/api/proxy/admin/tenants` (proves cookie + role check) |
-| `01-provision` | Tenant, user, property, unit, renter, lease, lease activation |
-| `02-cheque-lifecycle` | Collect → deposit → clear AND collect → deposit → bounce; FinancialTransaction emission |
-| `03-vendor-and-interactions` | Vendor CRUD; lease interaction log + list |
-| `04-reports` | Finance + payments reports respond non-5xx scoped to the test tenant |
-| `05-renter-portal-ui` | Real browser: renter portal `/payments` widgets (skipped until portal-password capture is solved) |
-| `99-cleanup` | Best-effort tenant deactivate; tolerates missing endpoint |
+| `01-provision` | Tenant, manager, project/property/unit, renter, lease, activation, and feature setup |
+| `01a-feature-and-user-admin` | Feature round-trip restoration; user CRUD, assignments, and role boundaries |
+| `01b-profile-navigation-and-password` | Locale, profile, password, logout, and re-login browser journey |
+| `01c-search-help-and-superadmin-dashboard` | Command-palette navigation, guard help, and super-admin follow-ups |
+| `02-cheque-lifecycle` | Collect/deposit lifecycle and financial-transaction emission |
+| `03-vendor-and-interactions` | Vendor CRUD and lease interaction history |
+| `04-reports` | Dashboard KPIs and finance reports in the browser |
+| `05-renter-portal-ui` | Renter payment widgets through a separate renter session |
+| `06-renter-create-ui` | Renter creation and portal access through the dashboard |
+| `07-bulk-portfolio-import` | Template upload, status polling, and imported-entity verification |
+| `08-cheque-upload` | Real cheque-image upload and extraction response |
+| `09-notifications` | Tenant-provisioned notification delivery and browser rendering |
+| `10-lease-create-ui` | Complete draft-lease wizard and payment-plan preview |
+| `10a-contract-signature-lifecycle` | Rejection, clean regeneration, and renter acceptance |
+| `10b-draft-lease-administration` | Metadata/payment-plan edits, synthetic bulk cheque attachment, and deletion |
+| `11-ticket-lifecycle` | Renter submission through assignment, OTP closure, rating, and reporting |
+| `12-property-operations` | Project/property detail plus building, unit, contact, amenity, and parking lifecycle |
+| `13-finance-and-settings` | Accounts, mappings, transactions, staff, vendors, and bank accounts |
+| `13a-cheques-and-penalties` | Cheque clear/failure plus open, paid, waived, receipt, and history states |
+| `13b-facilities-and-bookings` | Amenity/parking requests, release, approval, and rejection |
+| `13c-gatepass-lifecycle` | Policy, guard, visitor lookup, resident pass, entry/exit, and reports |
+| `13d-promotions` | Business/ad/coupon lifecycle, renter engagement, and analytics |
+| `13e-notification-ownership` | Cross-user mark-read denial |
+| `13f-lease-renewals` | Reminder, renter intent, scan, closure, extension, and captured state |
+| `13g-payment-gateway-config` | Test-mode gateway lifecycle with retained-secret assertions |
+| `14-lease-lifecycle-extended` | Contract preview, extension, settlement, and termination |
+| `15-listings-and-marketplace` | Publish/unpublish, anonymous browsing, wishlist, interest, and withdrawal |
+| `16-meeting-lifecycle` | Renter request, manager approval, calendar, and completion |
+| `17-public-account-and-legal-pages` | Public registration controls plus privacy, terms, and deletion pages |
+| `99-cleanup` | Confirm-name guarded hard deletion and post-delete 404 verification |
 
 ## Test data conventions
 
@@ -87,12 +121,24 @@ exclude the fixture data with `name NOT LIKE 'TEST-%'`. Tenant names look like
   table via information_schema discovery + savepointed multi-pass deletion.
   Used by 99-cleanup.
 
-## Known gaps
+## Safety gates
 
-- **Coverage gaps.** Not yet covered: penalty calculation, renewals end-to-end
-  (renter accepts opportunity), online payments (Razorpay sandbox), portfolio
-  bulk import, dashboard aggregates, marketplace listing publish, settlement
-  finalize. Add specs as needed.
+- **Final deployment gate.** Search PR #102, unread-notification PR #108, and
+  public-registration PR #111 must merge and deploy before this suite runs.
+- **Uploaded-artifact gate.** `08-cheque-upload` creates a real production blob.
+  Exact tenant-owned non-contract artifact cleanup must be explicitly approved,
+  implemented, tested, and deployed before a full run. The same gate currently
+  keeps real lease/ticket/settlement attachments, visitor photos, listing media,
+  and storage-owned organization/promotion assets out of their otherwise
+  complete journeys. Synthetic references never prove a real upload lifecycle.
+- **External/manual boundaries.** Live payment-provider charging, physical-camera
+  QR capture, and live Firebase SMS delivery require controlled sandbox/device
+  checks; the automated suite validates the surrounding application states.
+- **Mobile validation.** Manager, Renter, and Security production-device journeys
+  are tracked separately in `tutorials/mobile-capability-audit-2026-08-24.md`.
+- **Execution status.** The expanded 33-test suite has not yet run against the
+  current production release. Prepared/listed tests are not production-pass
+  evidence.
 - **CI integration.** Not wired into GitHub Actions yet — intentional, since
   running on every PR would spam prod with TEST tenants. Recommend a manual
   workflow_dispatch trigger or a nightly cron with prefixed cleanup.

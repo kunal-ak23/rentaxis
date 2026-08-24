@@ -20,7 +20,7 @@
 import { test, expect } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
-import { api, loginAsNextAuth, setActiveTenant } from '../helpers/prod-client';
+import { loginAsNextAuth, setActiveTenant } from '../helpers/prod-client';
 
 const CONTEXT_FILE = path.join(__dirname, '..', '.test-context.json');
 
