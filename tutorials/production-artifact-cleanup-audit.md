@@ -1,7 +1,7 @@
 # Production tenant artifact-cleanup audit
 
 Date: 2026-08-25
-Source baseline: exact deployed `origin/main` `e422fe9` (production run 32772947816 succeeded)
+Source baseline: exact deployed `origin/main` `cdfe63c` (production run 32781718390 succeeded)
 Scope: read-only source and schema audit; no production storage or tenant state was changed
 
 ## Why this is a recording gate
@@ -10,7 +10,7 @@ The production E2E suite creates a disposable tenant and deletes it at the end. 
 
 Final tutorial recording must wait until exact non-contract cleanup is explicitly approved, implemented, tested, deployed, and exercised by the disposable production run.
 
-## Current deletion behavior
+## Baseline deletion behavior before this cleanup PR
 
 `LandlordOrgService.deleteTenant`:
 
@@ -62,7 +62,7 @@ Approval should authorize only the following behavior:
 - Delete exact captured objects; never enumerate or delete a whole container, prefix, directory, account, or workspace.
 - For Azure paths, accept only the configured storage account and either:
   - container exactly `tenant-{tenantId}`, or
-  - the `shared` container when the exact URL came from a row owned by the deleted tenant and no surviving database row references that same URL.
+  - the `shared` container when the exact URL came from a row owned by the deleted tenant and no surviving database row resolves to that same normalized container/object path (even when SAS/query strings differ).
 - For stored `blob_path` values, reject blank, absolute, traversal (`..`), backslash, or leading-slash paths and allow only the capability prefixes inventoried above.
 - For local URLs, decode only `/api/v1/assets/serve/...`, resolve beneath the normalized configured `rentaxis.assets.storage-path`, and require the resolved file to remain under that root.
 - For local contract files, retain the separate normalized `rentaxis.contracts.storage-path` guard already implemented.

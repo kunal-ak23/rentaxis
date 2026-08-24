@@ -11,6 +11,9 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URI;
+import java.util.Locale;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -42,6 +45,10 @@ public class BlobStorageService {
     }
 
     public record DownloadResult(byte[] bytes, String contentType) {
+    }
+
+    /** Exact Azure object identity resolved against the configured storage account. */
+    public record BlobLocation(String containerName, String blobPath) {
     }
 
     /**
@@ -121,8 +128,19 @@ public class BlobStorageService {
         if (tenantId == null || blobPath == null || blobPath.isBlank()) {
             return;
         }
+        deleteExact(containerPrefix + tenantId, blobPath);
+    }
+
+    /**
+     * Deletes one exact object from one exact existing container without ever
+     * creating or deleting a container. Package-private so only backend storage
+     * services can use the lower-level primitive.
+     */
+    void deleteExact(String containerName, String blobPath) {
+        if (!isSafeContainerName(containerName) || !isSafeObjectPath(blobPath)) {
+            throw new BlobStorageException("Refusing unsafe exact blob reference");
+        }
         try {
-            String containerName = containerPrefix + tenantId;
             BlobContainerClient container = getServiceClient().getBlobContainerClient(containerName);
             // Delete paths must never create an empty container as a side
             // effect, especially during post-tenant cleanup.
@@ -136,6 +154,52 @@ public class BlobStorageService {
             }
         } catch (com.azure.storage.blob.models.BlobStorageException e) {
             throw new BlobStorageException("Failed to delete blob " + blobPath, e);
+        }
+    }
+
+    /**
+     * Parses a stored blob URL only when it belongs to the exact Azure account
+     * configured for this service. External hosts and malformed paths are
+     * ignored by returning {@link Optional#empty()}.
+     */
+    public Optional<BlobLocation> parseOwnedBlobUrl(String value) {
+        if (value == null || value.isBlank()) {
+            return Optional.empty();
+        }
+        if ((connectionString == null || connectionString.isBlank()) && serviceClient == null) {
+            return Optional.empty();
+        }
+        try {
+            URI actual = URI.create(value);
+            URI expected = URI.create(getServiceClient().getAccountUrl());
+            if (!sameIgnoreCase(actual.getScheme(), expected.getScheme())
+                    || !sameIgnoreCase(actual.getRawAuthority(), expected.getRawAuthority())
+                    || actual.getUserInfo() != null) {
+                return Optional.empty();
+            }
+
+            String expectedBasePath = trimSlashes(expected.getPath());
+            String actualPath = trimSlashes(actual.getPath());
+            if (!expectedBasePath.isEmpty()) {
+                String prefix = expectedBasePath + "/";
+                if (!actualPath.startsWith(prefix)) {
+                    return Optional.empty();
+                }
+                actualPath = actualPath.substring(prefix.length());
+            }
+
+            int slash = actualPath.indexOf('/');
+            if (slash <= 0 || slash == actualPath.length() - 1) {
+                return Optional.empty();
+            }
+            String container = actualPath.substring(0, slash).toLowerCase(Locale.ROOT);
+            String blobPath = actualPath.substring(slash + 1);
+            if (!isSafeContainerName(container) || !isSafeObjectPath(blobPath)) {
+                return Optional.empty();
+            }
+            return Optional.of(new BlobLocation(container, blobPath));
+        } catch (IllegalArgumentException | BlobStorageException e) {
+            return Optional.empty();
         }
     }
 
@@ -220,6 +284,38 @@ public class BlobStorageService {
             return ".bin";
         }
         return "." + ext;
+    }
+
+    static boolean isSafeObjectPath(String value) {
+        if (value == null || value.isBlank() || value.startsWith("/")
+                || value.startsWith("\\") || value.contains("\\")) {
+            return false;
+        }
+        for (String segment : value.split("/", -1)) {
+            if (segment.isBlank() || segment.equals(".") || segment.equals("..")) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean isSafeContainerName(String value) {
+        return value != null && value.matches("[a-z0-9](?:[a-z0-9-]{1,61}[a-z0-9])?");
+    }
+
+    private static boolean sameIgnoreCase(String left, String right) {
+        return left != null && right != null && left.equalsIgnoreCase(right);
+    }
+
+    private static String trimSlashes(String value) {
+        if (value == null || value.isBlank() || value.equals("/")) {
+            return "";
+        }
+        int start = 0;
+        int end = value.length();
+        while (start < end && value.charAt(start) == '/') start++;
+        while (end > start && value.charAt(end - 1) == '/') end--;
+        return value.substring(start, end);
     }
 
     /** Thrown when an upload or delete operation against blob storage fails. */
