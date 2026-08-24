@@ -1,0 +1,1 @@
+Online collection requires an approved gateway configuration. Begin in test mode and use provider-issued credentials; secrets are masked after save and are never displayed back to users. Verify the renter payment surface before enabling live mode. Deactivate the configuration immediately if credentials are rotated or the provider is unavailable.

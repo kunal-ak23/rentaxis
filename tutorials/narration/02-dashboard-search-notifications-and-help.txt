@@ -1,0 +1,1 @@
+The dashboard summarizes the work that needs attention. Global search finds leases, renters, cheques, and—when you are a super admin—tenant organizations. Notifications link directly to their related record. The Help Center contains role-aware guides and interactive tours; search here whenever you need the exact steps for a task.

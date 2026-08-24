@@ -1,0 +1,1 @@
+RentAxis uses roles to keep each workflow and tenant isolated. Super admins provision organizations. Tenant admins manage an organization, property managers operate assigned properties, renters use resident services, and security guards handle gate access. Switching organizations changes the active data context; it does not copy or combine customer data.

@@ -1,0 +1,1 @@
+Each installment progresses through a controlled cheque lifecycle. Confirm the cheque number, bank, amount, and due date before collection. Deposit records handoff to the bank; clear confirms settlement. A failure must capture its reason and may create a penalty. Bulk attach accelerates migration, but the result summary must be reconciled before moving on.

@@ -1,0 +1,1 @@
+Meetings keep property conversations connected to the relevant tenant, property, unit, and participants. Choose an accurate time and purpose, then confirm that the renter can see it. Update status when plans change so dashboards and notifications remain reliable. Use Cancelled or Completed rather than silently deleting historical appointments.

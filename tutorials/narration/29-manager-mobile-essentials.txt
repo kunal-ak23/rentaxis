@@ -1,0 +1,1 @@
+The Manager app puts daily operational queues on mobile. The home dashboard highlights urgent work, while each tab opens the same tenant-scoped property, renter, lease, payment and ticket records used on web. Notifications deep-link to the related item. Profile contains language, theme and sign-out.

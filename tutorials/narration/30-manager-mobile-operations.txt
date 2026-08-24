@@ -1,0 +1,1 @@
+Use the Queue and service screens for work that needs a mobile response. Review the record before approving, changing status or recording a financial action. Manager mobile respects property assignments and feature access, so unavailable modules may be intentionally hidden. Complex setup and bulk operations remain easier on web.

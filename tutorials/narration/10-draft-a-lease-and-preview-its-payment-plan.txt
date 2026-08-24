@@ -1,0 +1,1 @@
+Choose a vacant unit and the correct renter first. Enter the lease dates, monthly rent, deposit, tax treatment, and any recurring or one-time charges. Select the number and distribution of installments, then review the generated schedule before saving. A draft can still be corrected and does not occupy the unit until it is accepted or activated.

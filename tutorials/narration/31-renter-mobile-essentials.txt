@@ -1,0 +1,1 @@
+The Renter app home summarizes the active lease and upcoming work. Wallet contains installments, payment status and receipts. Tickets provide the service conversation and closure flow, while penalties explain outstanding charges. Notifications take you to the related screen. Use Profile for account, language, theme and sign-out.

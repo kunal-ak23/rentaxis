@@ -1,0 +1,1 @@
+The chart of accounts organizes every financial transaction. Preserve the parent-child structure and use consistent account codes. Account mappings tell RentAxis where operational events post in the ledger. Review mappings before recording live transactions because changing them affects future postings, not the historical meaning of existing entries.

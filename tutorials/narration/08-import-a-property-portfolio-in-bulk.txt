@@ -1,0 +1,1 @@
+Bulk import is designed for initial migration, not casual edits. Always download a fresh template so the columns match the running version. Validate the workbook before import and correct every reported row. After a successful run, compare the import summary with the source totals and inspect representative leases and cheque schedules.

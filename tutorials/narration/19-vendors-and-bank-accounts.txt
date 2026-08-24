@@ -1,0 +1,1 @@
+Vendor records centralize the companies paid for property work. Keep contact and tax details accurate. Bank accounts are associated with the receiving property and currency; only one appropriate account should be the default for a given workflow. Deactivate obsolete records after confirming no active process still references them.

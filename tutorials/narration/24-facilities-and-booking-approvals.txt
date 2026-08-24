@@ -1,0 +1,1 @@
+Facilities and parking inventory determine what residents can request. The renter selects an available period and submits a booking. Managers review conflicts and policy before approval and add a useful note. Cancellation releases a future reservation, while Release marks allocated parking or a completed booking as available again.

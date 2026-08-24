@@ -1,0 +1,1 @@
+Describe the issue, location, priority, and safe supporting images. The operations team assigns ownership, records estimates and communicates in the ticket thread. Status should reflect the real work stage. When OTP closure is enabled, the renter confirms completion before closure and can rate the outcome. History and reports preserve accountability.

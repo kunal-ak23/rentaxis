@@ -1,0 +1,1 @@
+Dashboard KPIs are operational signals, while reports provide the accounting breakdown. Select the same period and property scope before comparing reports. Use drill-down details to explain unusual totals and reconcile them with transactions and payment schedules. Export or share only through approved customer channels.

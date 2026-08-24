@@ -1,0 +1,1 @@
+A resident pass records the visitor, visit window, unit, vehicle, and purpose. Approval makes it available to the assigned property guard. Scan the QR code or enter the numeric code, verify the displayed visitor details, then record entry and exit. Walk-ins require the same identity and unit checks. Never admit a visitor from a screenshot without validating the live result.

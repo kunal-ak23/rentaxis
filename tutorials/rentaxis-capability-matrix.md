@@ -96,3 +96,4 @@ Status legend:
 - Tutorial plan: 33 narrated videos, with shorter capability chapters where a workflow has multiple independent actions.
 - Narration deliverable: [tutorial-storyboards.md](./tutorial-storyboards.md) contains audience, capture actions, and voiceover copy for all 33 videos plus the recording acceptance checklist.
 - Audio/video toolchain: [render-tutorial.sh](./render-tutorial.sh) synthesizes narration with macOS `say`, normalizes it to -16 LUFS, and produces a 1080p H.264/AAC MP4 with `ffmpeg`; shell syntax validation passes.
+- Audio source tracks: [extract-narrations.mjs](./extract-narrations.mjs) reproducibly generates exactly 33 renderer-ready text tracks from the reviewed storyboard narration blocks.

@@ -1,0 +1,1 @@
+The Payments area shows each installment, its due date, method, and current status. Use the receipt for cleared payments and contact the property team if an amount or status is incorrect. Online payment is available only when the organization has an active gateway; complete the provider flow once and wait for confirmation instead of submitting repeatedly.

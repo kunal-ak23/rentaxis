@@ -1,0 +1,1 @@
+Welcome to RentAxis. Sign in with the account supplied by your administrator. The navigation automatically reflects your role, so you only see the work available to you. Use EN and AR to change language and reading direction. Your profile menu contains account details, password controls, and Logout. Always sign out on a shared device.

@@ -1,0 +1,1 @@
+Properties are the foundation for units, leases, tickets, and reporting. Enter both English and Arabic names when available, then select the correct property type and emirate. Address and Makani data help operating teams identify the site, while fixed expenses support financial reporting. Use card or table view depending on the size of the portfolio.

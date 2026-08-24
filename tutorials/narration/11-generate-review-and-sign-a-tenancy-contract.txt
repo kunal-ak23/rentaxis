@@ -1,0 +1,1 @@
+Preview lets the administrator verify the agreement without creating the final document. Generate moves the lease to Pending Signature and makes the PDF available to the renter. A rejection returns the lease to Draft for correction; regeneration replaces the rejected document. Acceptance activates the lease, occupies the unit, and creates the payment schedule.

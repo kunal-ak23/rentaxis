@@ -1,0 +1,1 @@
+A property can contain buildings, units, contacts, amenities, and parking inventory. Unit status drives availability throughout leasing and resident services. Contacts make operational numbers easy to find. Mark an amenity or parking spot as bookable when residents can request time or access. Deactivate historical inventory instead of erasing records needed for audit.
