@@ -70,6 +70,61 @@ test('admin and assigned manager maintain and browse the complete property detai
   const spots = await api.getParkingSpots(pmCtx, ctx.property.id);
   expect(spots.content.some((item) => item.id === spot.id)).toBeTruthy();
 
+  // Tenant-admin portfolio UI: create a complete bilingual project and prove
+  // it appears in both table and card modes. This covers fields that the API
+  // fixture intentionally keeps minimal (Arabic name, Makani, and expenses).
+  const adminBrowserCtx = await browser.newContext({ baseURL: ctx.baseURL });
+  const adminPage = await adminBrowserCtx.newPage();
+  await adminPage.goto('/en/auth/login');
+  await adminPage.locator('#login-email').fill(ctx.adminEmail);
+  await adminPage.locator('#login-password').fill(ctx.adminPassword);
+  await adminPage.getByRole('button', { name: /sign in|log in/i }).click();
+  await adminPage.waitForURL(/\/dashboard(?!\/renter-portal)/, { timeout: 15_000 });
+  await adminPage.goto('/en/dashboard/properties');
+
+  await expect(adminPage.getByText(`TEST-Tower ${ctx.runSuffix}`, { exact: true })).toBeVisible();
+  await adminPage.getByRole('button', { name: /add project/i }).click();
+  const projectDialog = adminPage.locator('div.fixed').filter({
+    hasText: /Create a new Project \(Portfolio Group\)/i,
+  });
+  await expect(projectDialog).toBeVisible();
+
+  const uiProjectName = `TEST-UI Portfolio ${ctx.runSuffix}`;
+  await projectDialog.getByPlaceholder('Project Name (EN)').fill(uiProjectName);
+  await projectDialog.getByPlaceholder('اسم المشروع (AR)').fill(`محفظة تجريبية ${ctx.runSuffix}`);
+  await projectDialog.locator('select').nth(0).selectOption('ABU_DHABI');
+  await projectDialog.locator('select').nth(1).selectOption('MIXED');
+  await projectDialog.getByPlaceholder('Building name, street, area').fill('TEST-Al Reem Island');
+  await projectDialog.getByPlaceholder('e.g. 12345-67890').fill('12345-67890');
+  await projectDialog.locator('input[type="number"]').fill('12000');
+
+  const [projectResponse] = await Promise.all([
+    adminPage.waitForResponse(
+      (response) =>
+        /\/api\/proxy\/v1\/properties(\?|$)/.test(response.url()) &&
+        response.request().method() === 'POST',
+      { timeout: 20_000 },
+    ),
+    projectDialog.getByRole('button', { name: /^create$/i }).click(),
+  ]);
+  expect(projectResponse.ok()).toBeTruthy();
+  const uiProject = await projectResponse.json();
+  expect(uiProject).toMatchObject({
+    nameEn: uiProjectName,
+    nameAr: `محفظة تجريبية ${ctx.runSuffix}`,
+    emirate: 'ABU_DHABI',
+    type: 'MIXED',
+    address: 'TEST-Al Reem Island',
+    makaniNumber: '12345-67890',
+  });
+  expect(Number(uiProject.fixedExpenses)).toBe(12000);
+  await expect(adminPage.getByText(uiProjectName, { exact: true })).toBeVisible();
+  await adminPage.getByRole('button', { name: /^cards$/i }).click();
+  await expect(adminPage.getByRole('link').filter({ hasText: uiProjectName })).toBeVisible();
+  await adminPage.getByRole('button', { name: /^table$/i }).click();
+  await expect(adminPage.getByText(uiProjectName, { exact: true })).toBeVisible();
+  await adminBrowserCtx.close();
+
   // Exercise the real property detail UI while every fixture is still active.
   // The API assertions above establish the data contract; these checks prove
   // that the portfolio tabs actually render the same records for an assigned
