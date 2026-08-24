@@ -10,7 +10,7 @@ import { api, loginAsNextAuth, setActiveTenant } from '../helpers/prod-client';
 
 const CONTEXT_FILE = path.join(__dirname, '..', '.test-context.json');
 
-test('tenant admin previews contract, extends, and settles the active lease', async () => {
+test('tenant admin previews contract, extends, and settles the active lease', async ({ browser }) => {
   const ctx = JSON.parse(fs.readFileSync(CONTEXT_FILE, 'utf8'));
   expect(ctx.lease?.id, '01-provision must run first').toBeTruthy();
 
@@ -67,12 +67,42 @@ test('tenant admin previews contract, extends, and settles the active lease', as
   expect(saved.id).toBe(draft.id);
   expect(saved.refundAmount).toBe(draft.refundAmount);
 
-  const finalized = await api.finalizeSettlement(taCtx, ctx.lease.id);
-  expect(finalized.status).toBe('TERMINATED');
+  const adminBrowser = await browser.newContext({ baseURL: ctx.baseURL });
+  const adminPage = await adminBrowser.newPage();
+  await adminPage.goto('/en/auth/login');
+  await adminPage.locator('#login-email').fill(ctx.adminEmail);
+  await adminPage.locator('#login-password').fill(ctx.adminPassword);
+  await adminPage.getByRole('button', { name: /sign in|log in/i }).click();
+  await adminPage.waitForURL(/\/dashboard(?!\/renter-portal)/, { timeout: 15_000 });
+  await adminPage.goto(`/en/dashboard/leases/${ctx.lease.id}/settlement`);
+  await expect(adminPage.getByRole('heading', { level: 1, name: 'Settlement' })).toBeVisible();
+  await expect(adminPage.getByText('DRAFT', { exact: true })).toBeVisible();
+  await expect(adminPage.getByPlaceholder('Settlement notes (optional)...')).toHaveValue(
+    `TEST-E2E settlement ${ctx.runSuffix}`,
+  );
+  const descriptions = adminPage.getByPlaceholder('Description (optional)');
+  await expect(descriptions.nth(0)).toHaveValue('TEST-Exit cleaning');
+  await expect(descriptions.nth(1)).toHaveValue('TEST-Prepaid utility credit');
+  await expect(adminPage.getByText('Total Deductions', { exact: true })).toBeVisible();
+  await expect(adminPage.getByText('Total Additions', { exact: true })).toBeVisible();
+
+  await adminPage.getByRole('button', { name: 'Finalize & Terminate' }).click();
+  await expect(adminPage.getByRole('heading', { name: 'Finalize Settlement?' })).toBeVisible();
+  const [finalizeResponse] = await Promise.all([
+    adminPage.waitForResponse((response) =>
+      response.url().endsWith(`/leases/${ctx.lease.id}/settlement/finalize`),
+    ),
+    adminPage.getByRole('button', { name: 'Yes, Finalize & Terminate' }).click(),
+  ]);
+  expect(finalizeResponse.ok()).toBeTruthy();
+  await adminPage.waitForURL(new RegExp(`/dashboard/leases/${ctx.lease.id}$`));
+  await expect(adminPage.getByText('TERMINATED', { exact: true })).toBeVisible();
+  expect((await api.getLease(taCtx, ctx.lease.id)).status).toBe('TERMINATED');
 
   const events = await api.getLeaseEvents(taCtx, ctx.lease.id);
   expect(events.some((event) => event.notes.includes('Lease extended'))).toBeTruthy();
   expect(events.some((event) => event.newState === 'TERMINATED')).toBeTruthy();
 
+  await adminBrowser.close();
   await taCtx.request.dispose();
 });
