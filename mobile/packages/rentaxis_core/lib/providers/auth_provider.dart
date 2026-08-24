@@ -240,6 +240,18 @@ class AuthNotifier extends StateNotifier<AuthState> {
     await _storage.write(key: 'userId', value: response.id);
     await _storage.write(key: 'userRole', value: response.role);
 
+    // The signed JWT shares the identity keys' lifecycle exactly: written
+    // where identity is written, deleted where identity is deleted (see
+    // [_clearStorage]). When the backend issued no token (old deploy), any
+    // stale token from a previous session is removed so storage never pairs
+    // this session's userId with another session's JWT.
+    final token = response.token;
+    if (token != null) {
+      await _storage.write(key: 'authToken', value: token);
+    } else {
+      await _storage.delete(key: 'authToken');
+    }
+
     final tenantId = response.tenantId;
     if (tenantId != null) {
       await _storage.write(key: 'tenantId', value: tenantId);
@@ -276,6 +288,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   Future<void> _clearStorage() async {
+    await _storage.delete(key: 'authToken');
     await _storage.delete(key: 'userId');
     await _storage.delete(key: 'userRole');
     await _storage.delete(key: 'tenantId');
