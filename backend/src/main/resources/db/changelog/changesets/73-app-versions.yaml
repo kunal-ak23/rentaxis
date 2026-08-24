@@ -1,0 +1,128 @@
+databaseChangeLog:
+  # app_versions: global per-app, per-platform version floor for the mobile
+  # apps (NO tenant_id — this is infrastructure config, identical for every
+  # landlord org; a tenant_id would wrongly subject it to the tenant filter and
+  # make the public version check return nothing). One row per (app, platform).
+  - changeSet:
+      id: 73-create-app-versions
+      author: rentaxis
+      changes:
+        - createTable:
+            tableName: app_versions
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: app
+                  type: VARCHAR(20)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: platform
+                  type: VARCHAR(20)
+                  constraints:
+                    nullable: false
+              # Comparison floor. 0 => nothing is ever gated (the safe default
+              # that keeps this feature inert until an admin raises it).
+              - column:
+                  name: min_supported_build
+                  type: INT
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: latest_build
+                  type: INT
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: latest_version_name
+                  type: VARCHAR(40)
+              - column:
+                  name: store_url
+                  type: VARCHAR(512)
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: now()
+        - addUniqueConstraint:
+            tableName: app_versions
+            columnNames: app, platform
+            constraintName: uq_app_versions_app_platform
+
+  # Seed six inert rows: RENTER/MANAGER/SECURITY x ANDROID/IOS.
+  # min_supported_build = 0 everywhere (gates nothing on day one).
+  # latest_build = the current Android build per app (renter 3, manager 2,
+  # security 2); IOS reuses the same build for now. latest_version_name is the
+  # pubspec semver. store_url is '' — the distribution channel is undecided, and
+  # the client treats '' as "no link, just tell them to update".
+  - changeSet:
+      id: 73-seed-app-versions
+      author: rentaxis
+      changes:
+        - insert:
+            tableName: app_versions
+            columns:
+              - column: { name: id, valueComputed: gen_random_uuid() }
+              - column: { name: app, value: RENTER }
+              - column: { name: platform, value: ANDROID }
+              - column: { name: min_supported_build, valueNumeric: 0 }
+              - column: { name: latest_build, valueNumeric: 3 }
+              - column: { name: latest_version_name, value: 1.2.0 }
+              - column: { name: store_url, value: "" }
+        - insert:
+            tableName: app_versions
+            columns:
+              - column: { name: id, valueComputed: gen_random_uuid() }
+              - column: { name: app, value: RENTER }
+              - column: { name: platform, value: IOS }
+              - column: { name: min_supported_build, valueNumeric: 0 }
+              - column: { name: latest_build, valueNumeric: 3 }
+              - column: { name: latest_version_name, value: 1.2.0 }
+              - column: { name: store_url, value: "" }
+        - insert:
+            tableName: app_versions
+            columns:
+              - column: { name: id, valueComputed: gen_random_uuid() }
+              - column: { name: app, value: MANAGER }
+              - column: { name: platform, value: ANDROID }
+              - column: { name: min_supported_build, valueNumeric: 0 }
+              - column: { name: latest_build, valueNumeric: 2 }
+              - column: { name: latest_version_name, value: 1.1.0 }
+              - column: { name: store_url, value: "" }
+        - insert:
+            tableName: app_versions
+            columns:
+              - column: { name: id, valueComputed: gen_random_uuid() }
+              - column: { name: app, value: MANAGER }
+              - column: { name: platform, value: IOS }
+              - column: { name: min_supported_build, valueNumeric: 0 }
+              - column: { name: latest_build, valueNumeric: 2 }
+              - column: { name: latest_version_name, value: 1.1.0 }
+              - column: { name: store_url, value: "" }
+        - insert:
+            tableName: app_versions
+            columns:
+              - column: { name: id, valueComputed: gen_random_uuid() }
+              - column: { name: app, value: SECURITY }
+              - column: { name: platform, value: ANDROID }
+              - column: { name: min_supported_build, valueNumeric: 0 }
+              - column: { name: latest_build, valueNumeric: 2 }
+              - column: { name: latest_version_name, value: 1.1.0 }
+              - column: { name: store_url, value: "" }
+        - insert:
+            tableName: app_versions
+            columns:
+              - column: { name: id, valueComputed: gen_random_uuid() }
+              - column: { name: app, value: SECURITY }
+              - column: { name: platform, value: IOS }
+              - column: { name: min_supported_build, valueNumeric: 0 }
+              - column: { name: latest_build, valueNumeric: 2 }
+              - column: { name: latest_version_name, value: 1.1.0 }
+              - column: { name: store_url, value: "" }

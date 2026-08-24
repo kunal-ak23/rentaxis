@@ -1,5 +1,4 @@
-import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart' show Alignment;
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
@@ -56,6 +55,23 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isLoginRoute = state.matchedLocation == '/login';
       final isOtpRoute = state.matchedLocation == '/otp';
       final isSplashRoute = state.matchedLocation == '/splash';
+      final isUpdateRoute = state.matchedLocation == '/update-required';
+
+      // Hard version gate wins over every other rule. Once the installed build
+      // is below the supported floor, pin the guard on /update-required and let
+      // nothing navigate away. Inert until the gate resolves (fail open) or
+      // when it says ok — `valueOrNull` is null while still loading.
+      final gateRequired = ref
+              .read(appGateProvider(AppId.security))
+              .valueOrNull
+              ?.requiresUpdate ??
+          false;
+      if (gateRequired) {
+        return isUpdateRoute ? null : '/update-required';
+      }
+      if (isUpdateRoute) {
+        return isLoggedIn ? '/' : '/login';
+      }
 
       if (isSplashRoute) return null;
       if (isLoading) return null; // Wait for stored session check to resolve
@@ -68,11 +84,24 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/splash',
         builder: (context, state) => VideoSplashScreen(
           backgroundAlignment: const Alignment(0.3, 0),
-          onComplete: () {
-            if (ref.read(authProvider).isAuthenticated) {
-              GoRouter.of(context).go('/');
-            } else {
-              GoRouter.of(context).go('/login');
+          onComplete: () async {
+            // Consult the version gate before the usual auth routing. The gate
+            // fails open: any error/timeout resolves to `ok`, so this only ever
+            // diverts the guard when the backend explicitly raised the floor.
+            final decision =
+                await ref.read(appGateProvider(AppId.security).future);
+            if (!context.mounted) return;
+            if (decision.requiresUpdate) {
+              GoRouter.of(context).go('/update-required');
+              return;
+            }
+            final messenger = decision.updateAvailable
+                ? ScaffoldMessenger.maybeOf(context)
+                : null;
+            GoRouter.of(context)
+                .go(ref.read(authProvider).isAuthenticated ? '/' : '/login');
+            if (messenger != null) {
+              showUpdateAvailableBanner(messenger, storeUrl: decision.storeUrl);
             }
           },
         ),
@@ -80,6 +109,16 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/login',
         builder: (context, state) => const PhoneLoginScreen(),
+      ),
+      GoRoute(
+        path: '/update-required',
+        builder: (context, state) => UpdateRequiredScreen(
+          storeUrl: ref
+                  .read(appGateProvider(AppId.security))
+                  .valueOrNull
+                  ?.storeUrl ??
+              '',
+        ),
       ),
       GoRoute(
         path: '/otp',

@@ -8,6 +8,7 @@ import 'package:security/app.dart';
 import 'package:security/auth/phone_auth_service.dart';
 import 'package:security/router.dart';
 
+import 'fake_app_version_service.dart';
 import 'fake_auth_service.dart';
 import 'fake_gate_pass_service.dart';
 
@@ -62,6 +63,12 @@ Future<ProviderContainer> pumpSecurityApp(
       gatePassServiceProvider.overrideWithValue(
         gatePassService ?? FakeGatePassService(),
       ),
+      // Booting the real app runs the version gate at splash. Stub it so the
+      // splash never reaches the network here (which would leave the app stuck
+      // on splash) — a null answer is fail-open, so the gate stays inert and
+      // the auth flow these tests exercise is unchanged.
+      installedBuildProvider.overrideWith((ref) async => 2),
+      appVersionServiceProvider.overrideWithValue(FakeAppVersionService()),
     ],
   );
   addTearDown(container.dispose);
