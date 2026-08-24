@@ -173,7 +173,7 @@ export default function TicketDetailPage() {
 
     useEffect(() => {
         Promise.all([fetchTicket(), fetchReplies(), fetchAttachments(), fetchHistory(), fetchStaff()]).finally(() => setLoading(false));
-    }, [fetchTicket, fetchReplies, fetchAttachments, fetchStaff]);
+    }, [fetchTicket, fetchReplies, fetchAttachments, fetchHistory, fetchStaff]);
 
     // ── Send reply ──────────────────────────────────────────────────────
 
@@ -563,13 +563,13 @@ export default function TicketDetailPage() {
                                 </div>
                             )}
                             {(ticket.status === "ASSIGNED" || ticket.status === "REOPENED") && (
-                                <button onClick={handleStartWork} disabled={actionLoading === "start"} className="w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-xs font-semibold hover:bg-primary/90 transition-all cursor-pointer disabled:opacity-50">
-                                    {actionLoading === "start" && <Loader2 size={12} className="animate-spin" />} Start Work
+                                <button onClick={handleStartWork} disabled={actionLoading === "status"} className="w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-xs font-semibold hover:bg-primary/90 transition-all cursor-pointer disabled:opacity-50">
+                                    {actionLoading === "status" && <Loader2 size={12} className="animate-spin" />} Start Work
                                 </button>
                             )}
                             {ticket.status === "IN_PROGRESS" && (
-                                <button onClick={handleResolve} disabled={actionLoading === "resolve"} className="w-full flex items-center justify-center gap-2 bg-success/10 text-success px-4 py-2 rounded-lg text-xs font-semibold hover:bg-success/20 transition-all cursor-pointer disabled:opacity-50">
-                                    {actionLoading === "resolve" && <Loader2 size={12} className="animate-spin" />} <CheckCircle size={12} /> Mark Resolved
+                                <button onClick={handleResolve} disabled={actionLoading === "status"} className="w-full flex items-center justify-center gap-2 bg-success/10 text-success px-4 py-2 rounded-lg text-xs font-semibold hover:bg-success/20 transition-all cursor-pointer disabled:opacity-50">
+                                    {actionLoading === "status" && <Loader2 size={12} className="animate-spin" />} <CheckCircle size={12} /> Mark Resolved
                                 </button>
                             )}
                             {ticket.status === "RESOLVED" && (
@@ -601,9 +601,9 @@ export default function TicketDetailPage() {
                                     <div className="flex items-center gap-2">
                                         <input type="number" value={etaInput} onChange={(e) => setEtaInput(e.target.value)} placeholder="Hours" min={1}
                                             className="flex-1 border border-border rounded-lg bg-surface px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none" />
-                                        <button onClick={handleSetEta} disabled={!etaInput || actionLoading === "eta"}
-                                            className={cn("flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer shrink-0", !etaInput || actionLoading === "eta" ? "bg-input text-muted cursor-not-allowed" : "bg-primary text-primary-foreground hover:bg-primary/90")}>
-                                            {actionLoading === "eta" && <Loader2 size={12} className="animate-spin" />} Set ETA
+                                        <button onClick={handleSetEta} disabled={!etaInput || actionLoading === "estimate"}
+                                            className={cn("flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer shrink-0", !etaInput || actionLoading === "estimate" ? "bg-input text-muted cursor-not-allowed" : "bg-primary text-primary-foreground hover:bg-primary/90")}>
+                                            {actionLoading === "estimate" && <Loader2 size={12} className="animate-spin" />} Set ETA
                                         </button>
                                     </div>
                                 </div>
