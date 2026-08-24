@@ -1,7 +1,7 @@
 # Production tenant artifact-cleanup audit
 
 Date: 2026-08-25
-Source baseline: exact deployed `origin/main` `cdfe63c` (production run 32781718390 succeeded)
+Source baseline: exact deployed `origin/main` `54b03b0` (production run 32783019338 succeeded)
 Scope: read-only source and schema audit; no production storage or tenant state was changed
 
 ## Why this is a recording gate

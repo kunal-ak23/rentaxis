@@ -135,8 +135,9 @@ exclude the fixture data with `name NOT LIKE 'TEST-%'`. Tenant names look like
 
 ## Safety gates
 
-- **Final deployment gate.** Search PR #102, unread-notification PR #108, and
-  public-registration PR #111 must merge and deploy before this suite runs.
+- **Final deployment gate.** Search PR #102 and unread-notification PR #108 are
+  deployed. Public-registration PR #111 must still merge and deploy before this
+  suite runs.
 - **Uploaded-artifact gate.** `08-cheque-upload` creates a real production blob.
   Exact tenant-owned non-contract artifact cleanup must be explicitly approved,
   implemented, tested, and deployed before a full run. The same gate currently
