@@ -78,15 +78,7 @@ public class UserController {
         // the existing user must live in the caller's tenant and sit at or
         // below the caller's privilege level, and the requested new role is
         // subject to the same hierarchy + tenant-scoping rules as creation.
-        UserRole callerRole = currentCallerRole();
-        if (callerRole != UserRole.SUPER_ADMIN) {
-            UUID callerTenant = requireCallerTenant();
-            User existing = userService.findById(id)
-                    .orElseThrow(() -> new NotFoundException("User not found"));
-            if (!callerTenant.equals(existing.getTenantId()) || !canAssignRole(callerRole, existing.getRole())) {
-                throw new AccessDeniedException("You are not allowed to manage this user.");
-            }
-        }
+        authorizeTargetUser(id);
         String effectiveTenantId = authorizeRoleAssignment(request.role(), request.tenantId());
 
         User user = userService.updateUser(
@@ -117,6 +109,7 @@ public class UserController {
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteUser(@PathVariable UUID id) {
+        authorizeTargetUser(id);
         userService.deleteUser(id);
         return ResponseEntity.ok().build();
     }
@@ -124,6 +117,7 @@ public class UserController {
     @PostMapping("/{userId}/properties/{propertyId}")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
     public ResponseEntity<Void> assignProperty(@PathVariable UUID userId, @PathVariable UUID propertyId) {
+        authorizeTargetUser(userId);
         userService.assignPropertyToUser(userId, propertyId);
         return ResponseEntity.ok().build();
     }
@@ -131,12 +125,14 @@ public class UserController {
     @DeleteMapping("/{userId}/properties/{propertyId}")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'TENANT_ADMIN')")
     public ResponseEntity<Void> removePropertyAssignment(@PathVariable UUID userId, @PathVariable UUID propertyId) {
+        authorizeTargetUser(userId);
         userService.removePropertyFromUser(userId, propertyId);
         return ResponseEntity.ok().build();
     }
 
     @GetMapping("/{userId}/properties")
     public ResponseEntity<List<UUID>> getUserProperties(@PathVariable UUID userId) {
+        authorizeTargetUser(userId);
         return ResponseEntity.ok(userService.getAssignedPropertyIds(userId));
     }
 
@@ -161,6 +157,27 @@ public class UserController {
             throw new AccessDeniedException("You are not allowed to assign the role " + targetRole + ".");
         }
         return requireCallerTenant().toString();
+    }
+
+    /**
+     * Applies the same target-user boundary to every mutation/read surface.
+     * The property-assignment repository is not tenant-scoped, so relying on
+     * its user/property UUID pair alone would allow cross-tenant reads or
+     * removals when a caller knows a foreign user id.
+     */
+    private User authorizeTargetUser(UUID targetUserId) {
+        User target = userService.findById(targetUserId)
+                .orElseThrow(() -> new NotFoundException("User not found"));
+        UserRole callerRole = currentCallerRole();
+        if (callerRole == UserRole.SUPER_ADMIN) {
+            return target;
+        }
+
+        UUID callerTenant = requireCallerTenant();
+        if (!callerTenant.equals(target.getTenantId()) || !canAssignRole(callerRole, target.getRole())) {
+            throw new AccessDeniedException("You are not allowed to manage this user.");
+        }
+        return target;
     }
 
     private UserRole currentCallerRole() {

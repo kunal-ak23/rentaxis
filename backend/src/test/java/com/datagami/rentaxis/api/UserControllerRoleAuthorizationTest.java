@@ -9,6 +9,7 @@ import com.datagami.rentaxis.domain.entity.enums.UserStatus;
 import com.datagami.rentaxis.domain.repository.LandlordOrgRepository;
 import com.datagami.rentaxis.domain.repository.PropertyRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
+import com.datagami.rentaxis.core.service.UserService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -51,6 +52,7 @@ class UserControllerRoleAuthorizationTest {
     @Autowired LandlordOrgRepository orgRepo;
     @Autowired PropertyRepository propertyRepo;
     @Autowired PasswordEncoder passwordEncoder;
+    @Autowired UserService userService;
 
     private RestClient client() {
         return RestClient.builder().baseUrl("http://localhost:" + port).build();
@@ -109,6 +111,55 @@ class UserControllerRoleAuthorizationTest {
         p.setEmirate(Emirate.DUBAI);
         p.setTenantId(org.getId());
         return propertyRepo.save(p);
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<String> getUserPropertiesAs(User caller, UUID targetId) {
+        RestClient.RequestHeadersSpec<?> req = client().get()
+                .uri("/api/admin/users/" + targetId + "/properties")
+                .header("X-User-Id", caller.getId().toString())
+                .header("X-User-Role", caller.getRole().name());
+        if (caller.getTenantId() != null) {
+            req = req.header("X-Tenant-Id", caller.getTenantId().toString())
+                    .header("X-User-Tenant-Id", caller.getTenantId().toString());
+        }
+        return (List<String>) req.retrieve().body(List.class);
+    }
+
+    private void assignPropertyAs(User caller, UUID targetId, UUID propertyId) {
+        RestClient.RequestBodySpec req = client().post()
+                .uri("/api/admin/users/" + targetId + "/properties/" + propertyId)
+                .header("X-User-Id", caller.getId().toString())
+                .header("X-User-Role", caller.getRole().name());
+        if (caller.getTenantId() != null) {
+            req = req.header("X-Tenant-Id", caller.getTenantId().toString())
+                    .header("X-User-Tenant-Id", caller.getTenantId().toString());
+        }
+        req.retrieve().toBodilessEntity();
+    }
+
+    private void removePropertyAs(User caller, UUID targetId, UUID propertyId) {
+        RestClient.RequestHeadersSpec<?> req = client().delete()
+                .uri("/api/admin/users/" + targetId + "/properties/" + propertyId)
+                .header("X-User-Id", caller.getId().toString())
+                .header("X-User-Role", caller.getRole().name());
+        if (caller.getTenantId() != null) {
+            req = req.header("X-Tenant-Id", caller.getTenantId().toString())
+                    .header("X-User-Tenant-Id", caller.getTenantId().toString());
+        }
+        req.retrieve().toBodilessEntity();
+    }
+
+    private void deleteUserAs(User caller, UUID targetId) {
+        RestClient.RequestHeadersSpec<?> req = client().delete()
+                .uri("/api/admin/users/" + targetId)
+                .header("X-User-Id", caller.getId().toString())
+                .header("X-User-Role", caller.getRole().name());
+        if (caller.getTenantId() != null) {
+            req = req.header("X-Tenant-Id", caller.getTenantId().toString())
+                    .header("X-User-Tenant-Id", caller.getTenantId().toString());
+        }
+        req.retrieve().toBodilessEntity();
     }
 
     private Map<String, Object> userBody(String role, String tenantId) {
@@ -248,5 +299,67 @@ class UserControllerRoleAuthorizationTest {
         Map<?, ?> resp = createAs(tenantAdmin, body);
         assertThat(resp.get("role")).isEqualTo("PROPERTY_MANAGER");
         assertThat(resp.get("tenantId")).isEqualTo(own.getId().toString());
+    }
+
+    @Test
+    void tenantAdminCannotReadOrRemoveForeignUsersPropertyAssignments() {
+        LandlordOrg own = makeOrg("assignment-own");
+        LandlordOrg other = makeOrg("assignment-other");
+        User tenantAdmin = makeAdmin(own, UserRole.TENANT_ADMIN);
+        User foreignManager = makeUser(other, UserRole.PROPERTY_MANAGER);
+        Property foreignProperty = makeProperty(other);
+        userService.assignPropertyToUser(foreignManager.getId(), foreignProperty.getId());
+
+        try {
+            getUserPropertiesAs(tenantAdmin, foreignManager.getId());
+            throw new AssertionError("expected a 4xx for cross-tenant assignment read");
+        } catch (HttpStatusCodeException e) {
+            assertThat(e.getStatusCode().is4xxClientError()).isTrue();
+        }
+
+        try {
+            removePropertyAs(tenantAdmin, foreignManager.getId(), foreignProperty.getId());
+            throw new AssertionError("expected a 4xx for cross-tenant assignment removal");
+        } catch (HttpStatusCodeException e) {
+            assertThat(e.getStatusCode().is4xxClientError()).isTrue();
+        }
+
+        assertThat(userService.getAssignedPropertyIds(foreignManager.getId()))
+                .containsExactly(foreignProperty.getId());
+    }
+
+    @Test
+    void tenantAdminCanManageOwnPropertyManagerAssignmentsAndDeleteUser() {
+        LandlordOrg own = makeOrg("assignment-lifecycle");
+        User tenantAdmin = makeAdmin(own, UserRole.TENANT_ADMIN);
+        User manager = makeUser(own, UserRole.PROPERTY_MANAGER);
+        Property property = makeProperty(own);
+
+        assignPropertyAs(tenantAdmin, manager.getId(), property.getId());
+        assertThat(getUserPropertiesAs(tenantAdmin, manager.getId()))
+                .containsExactly(property.getId().toString());
+
+        removePropertyAs(tenantAdmin, manager.getId(), property.getId());
+        assertThat(getUserPropertiesAs(tenantAdmin, manager.getId())).isEmpty();
+
+        deleteUserAs(tenantAdmin, manager.getId());
+        assertThat(userRepo.findById(manager.getId())).isEmpty();
+    }
+
+    @Test
+    void tenantAdminCannotDeleteForeignUser() {
+        LandlordOrg own = makeOrg("delete-own");
+        LandlordOrg other = makeOrg("delete-other");
+        User tenantAdmin = makeAdmin(own, UserRole.TENANT_ADMIN);
+        User foreign = makeUser(other, UserRole.TENANT_USER);
+
+        try {
+            deleteUserAs(tenantAdmin, foreign.getId());
+            throw new AssertionError("expected a 4xx for cross-tenant user deletion");
+        } catch (HttpStatusCodeException e) {
+            assertThat(e.getStatusCode().is4xxClientError()).isTrue();
+        }
+
+        assertThat(userRepo.findById(foreign.getId())).isPresent();
     }
 }
