@@ -1,5 +1,6 @@
 package com.datagami.rentaxis.core.service.renewal;
 
+import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.service.TenantFeatureService;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
@@ -54,6 +55,25 @@ public class LeaseRenewalScheduler {
             TenantContextHolder.clear();
         }
         log.info("Lease renewal scheduler finished");
+    }
+
+    /**
+     * Process only one tenant, leaving every other opted-in organization untouched.
+     * Used by scoped support/verification operations where the all-tenant run would
+     * have unrelated reminder side effects.
+     */
+    public void runNowForTenant(UUID tenantId, LocalDate today) {
+        if (!orgRepository.existsById(tenantId)) {
+            throw new NotFoundException("Tenant not found");
+        }
+        log.info("Lease renewal scheduler starting for tenant {} on {}", tenantId, today);
+        TenantContextHolder.clear();
+        try {
+            processTenant(tenantId, today);
+        } finally {
+            TenantContextHolder.clear();
+        }
+        log.info("Lease renewal scheduler finished for tenant {}", tenantId);
     }
 
     private void processTenant(UUID tenantId, LocalDate today) {
