@@ -88,6 +88,7 @@ export default function RegisterPage() {
                                 <input
                                     id="register-fullname"
                                     required
+                                    maxLength={200}
                                     type="text"
                                     value={formData.fullName}
                                     onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
@@ -106,6 +107,7 @@ export default function RegisterPage() {
                                 <input
                                     id="register-company"
                                     required
+                                    maxLength={200}
                                     type="text"
                                     value={formData.companyName}
                                     onChange={(e) => setFormData({ ...formData, companyName: e.target.value })}
@@ -126,6 +128,7 @@ export default function RegisterPage() {
                             <input
                                 id="register-email"
                                 required
+                                maxLength={254}
                                 type="email"
                                 value={formData.email}
                                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
@@ -145,6 +148,7 @@ export default function RegisterPage() {
                             <input
                                 id="register-password"
                                 required
+                                maxLength={72}
                                 type={showPassword ? "text" : "password"}
                                 value={formData.password}
                                 onChange={(e) => setFormData({ ...formData, password: e.target.value })}

@@ -10,11 +10,17 @@ import com.datagami.rentaxis.core.util.PhoneNumbers;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
 import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -22,6 +28,8 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
+
+    private static final int BCRYPT_MAX_PASSWORD_BYTES = 72;
 
     private final UserService userService;
     private final LandlordOrgService orgService;
@@ -47,7 +55,11 @@ public class AuthController {
     public record LoginRequest(String email, String password, String tenantId) {
     }
 
-    public record RegisterRequest(String fullName, String companyName, String email, String password) {
+    public record RegisterRequest(
+            @NotBlank @Size(max = 200) String fullName,
+            @NotBlank @Size(max = 200) String companyName,
+            @NotBlank @Email @Size(max = 254) String email,
+            @NotBlank @Size(min = 6, max = 72) String password) {
     }
 
     /**
@@ -213,7 +225,11 @@ public class AuthController {
     }
 
     @PostMapping("/register")
-    public ResponseEntity<AuthResponse> register(@RequestBody RegisterRequest request) {
+    @Transactional
+    public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest request) {
+        if (request.password().getBytes(StandardCharsets.UTF_8).length > BCRYPT_MAX_PASSWORD_BYTES) {
+            throw new IllegalArgumentException("Password must be at most 72 UTF-8 bytes");
+        }
         // 1. Provision New Organization
         LandlordOrg org = orgService.provisionTenant(request.companyName());
 
