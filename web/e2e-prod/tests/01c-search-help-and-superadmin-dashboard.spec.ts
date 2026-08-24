@@ -25,10 +25,17 @@ test('search opens the lease, help documents guards, and super admin follow-ups 
   await tenantAdminPage.getByRole('button', { name: /sign in|log in/i }).click();
   await tenantAdminPage.waitForURL(/\/en\/dashboard/, { timeout: 15_000 });
 
+  // GlobalSearch only attaches its Cmd/Ctrl+K listener once useSession() has
+  // resolved a role; before that it renders an empty spacer. The keypress is
+  // one-shot and the suite runs with retries: 0, so wait for the trigger button
+  // to exist rather than racing session hydration.
+  const searchTrigger = tenantAdminPage.getByRole('button', { name: /search leases/i });
+  await expect(searchTrigger).toBeVisible({ timeout: 15_000 });
   await tenantAdminPage.keyboard.press('Control+K');
   const searchDialog = tenantAdminPage.getByRole('dialog', { name: /global search/i });
   await expect(searchDialog).toBeVisible();
-  await searchDialog.getByRole('textbox', { name: /search rentaxis/i }).fill(`TEST-${ctx.runSuffix}`);
+  // Matches GlobalSearch.inputLabel in messages/en.json.
+  await searchDialog.getByRole('textbox', { name: /^search$/i }).fill(`TEST-${ctx.runSuffix}`);
   const leaseResult = searchDialog
     .getByRole('button')
     .filter({ hasText: `TEST-${ctx.runSuffix}` })
