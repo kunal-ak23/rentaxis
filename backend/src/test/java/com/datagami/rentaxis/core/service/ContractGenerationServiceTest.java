@@ -603,6 +603,59 @@ class ContractGenerationServiceTest {
         assertThat(html).doesNotContain("<script>alert(1)</script>");
     }
 
+    @Test
+    void cleanupTenantDocuments_deletesOnlyFilesInsideConfiguredContractRoot() throws Exception {
+        Path contractRoot = Files.createTempDirectory("contract-cleanup-root-");
+        Path inside = Files.writeString(contractRoot.resolve("inside.pdf"), "contract");
+        Path outside = Files.writeString(
+                Files.createTempDirectory("contract-cleanup-outside-").resolve("outside.pdf"),
+                "keep");
+
+        Field storagePathField = ContractGenerationService.class.getDeclaredField("storagePath");
+        storagePathField.setAccessible(true);
+        storagePathField.set(service, contractRoot.toString());
+        Field azureField = ContractGenerationService.class.getDeclaredField("azureConnectionString");
+        azureField.setAccessible(true);
+        azureField.set(service, "");
+
+        service.cleanupTenantDocuments(UUID.randomUUID(), List.of(inside.toString(), outside.toString()));
+
+        assertThat(inside).doesNotExist();
+        assertThat(outside).exists();
+    }
+
+    @Test
+    void generateContract_replacesRejectedDraftDocumentWithoutLeavingOldFile() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        LandlordOrg org = buildLandlordOrg(tenantId);
+        Property property = buildProperty(tenantId, PropertyType.RESIDENTIAL);
+        Unit unit = buildUnit(tenantId, property);
+        Renter renter = buildRenter(tenantId);
+        Lease lease = buildLease(tenantId, unit, renter, false);
+        lease.setStatus(LeaseStatus.DRAFT);
+
+        Path contractRoot = Files.createTempDirectory("contract-rejected-regenerate-");
+        Path rejectedPdf = Files.writeString(contractRoot.resolve("rejected.pdf"), "old");
+        LeaseDocument rejectedDocument = new LeaseDocument();
+        rejectedDocument.setId(UUID.randomUUID());
+        rejectedDocument.setLease(lease);
+        rejectedDocument.setType(DocumentType.CONTRACT);
+        rejectedDocument.setDocumentUrl(rejectedPdf.toString());
+
+        ContractGenerationService svc = buildSpyForFullFlow(
+                lease, org, buildSchedules(), buildCharges(false), 1750L, contractRoot);
+        LeaseDocumentRepository docRepo = extractDocRepo(svc);
+        when(docRepo.findByLeaseId(lease.getId())).thenReturn(List.of(rejectedDocument));
+
+        LeaseDocumentDTO replacement = svc.generateContract(lease.getId());
+
+        verify(docRepo).deleteAll(List.of(rejectedDocument));
+        assertThat(rejectedPdf).doesNotExist();
+        assertThat(replacement.getDocumentUrl()).isNotEqualTo(rejectedPdf.toString());
+        assertThat(Path.of(replacement.getDocumentUrl())).exists();
+        assertThat(lease.getStatus()).isEqualTo(LeaseStatus.PENDING_SIGNATURE);
+    }
+
     /** Reflectively read the LeaseDocumentRepository mock out of the spied service. */
     private LeaseDocumentRepository extractDocRepo(ContractGenerationService svc) throws Exception {
         Field f = ContractGenerationService.class.getDeclaredField("leaseDocumentRepository");

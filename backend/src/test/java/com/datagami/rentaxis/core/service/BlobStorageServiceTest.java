@@ -1,12 +1,19 @@
 package com.datagami.rentaxis.core.service;
 
+import com.azure.storage.blob.BlobContainerClient;
+import com.azure.storage.blob.BlobServiceClient;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class BlobStorageServiceTest {
 
@@ -54,5 +61,23 @@ class BlobStorageServiceTest {
         assertThatThrownBy(() -> service.uploadCheque(UUID.randomUUID(), null))
                 .isInstanceOf(BlobStorageService.BlobStorageException.class)
                 .hasMessageContaining("tenantId and file are required");
+    }
+
+    @Test
+    void delete_doesNotCreateMissingTenantContainer() {
+        UUID tenantId = UUID.randomUUID();
+        BlobServiceClient serviceClient = mock(BlobServiceClient.class);
+        BlobContainerClient containerClient = mock(BlobContainerClient.class);
+        when(serviceClient.getBlobContainerClient("tenant-" + tenantId)).thenReturn(containerClient);
+        when(containerClient.exists()).thenReturn(false);
+
+        var service = new BlobStorageService();
+        ReflectionTestUtils.setField(service, "serviceClient", serviceClient);
+        ReflectionTestUtils.setField(service, "containerPrefix", "tenant-");
+
+        service.delete(tenantId, "listings/example.jpg");
+
+        verify(containerClient, never()).create();
+        verify(containerClient, never()).getBlobClient("listings/example.jpg");
     }
 }

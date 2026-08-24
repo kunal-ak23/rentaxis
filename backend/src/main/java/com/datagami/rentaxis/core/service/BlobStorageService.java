@@ -118,11 +118,19 @@ public class BlobStorageService {
      * Idempotent: silently succeeds if the blob does not exist.
      */
     public void delete(UUID tenantId, String blobPath) {
-        if (blobPath == null || blobPath.isBlank()) {
+        if (tenantId == null || blobPath == null || blobPath.isBlank()) {
             return;
         }
         try {
-            boolean deleted = getContainerClient(tenantId).getBlobClient(blobPath).deleteIfExists();
+            String containerName = containerPrefix + tenantId;
+            BlobContainerClient container = getServiceClient().getBlobContainerClient(containerName);
+            // Delete paths must never create an empty container as a side
+            // effect, especially during post-tenant cleanup.
+            if (!container.exists()) {
+                log.debug("Tenant blob container not found, nothing to delete: {}", containerName);
+                return;
+            }
+            boolean deleted = container.getBlobClient(blobPath).deleteIfExists();
             if (!deleted) {
                 log.debug("Blob not found, nothing to delete: {}", blobPath);
             }

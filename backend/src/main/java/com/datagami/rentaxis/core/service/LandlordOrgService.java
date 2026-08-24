@@ -8,6 +8,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.List;
 import java.util.Optional;
@@ -21,15 +23,18 @@ public class LandlordOrgService {
     private final UserRepository userRepository;
     private final NotificationService notificationService;
     private final JdbcTemplate jdbcTemplate;
+    private final ContractGenerationService contractGenerationService;
 
     public LandlordOrgService(LandlordOrgRepository repository,
                                UserRepository userRepository,
                                NotificationService notificationService,
-                               JdbcTemplate jdbcTemplate) {
+                               JdbcTemplate jdbcTemplate,
+                               ContractGenerationService contractGenerationService) {
         this.repository = repository;
         this.userRepository = userRepository;
         this.notificationService = notificationService;
         this.jdbcTemplate = jdbcTemplate;
+        this.contractGenerationService = contractGenerationService;
     }
 
     @Transactional
@@ -95,14 +100,22 @@ public class LandlordOrgService {
                             + " actual=" + org.getName());
         }
 
+        // Capture the exact contract artifacts while their rows still exist.
+        // They are deleted only after the database transaction commits, so a
+        // failed purge never leaves live rows pointing at missing documents.
+        List<String> contractDocumentUrls = jdbcTemplate.queryForList(
+                "SELECT document_url FROM lease_documents WHERE tenant_id = ?",
+                String.class,
+                tenantId);
+
         // IMPORTANT — convention coupling: this discovery query only finds
         // tables whose tenant-scope column is literally named `tenant_id`.
         // If a future feature adds a tenanted table with a different column
         // name (e.g. `owning_tenant_id`), or stores tenant-scoped data
         // outside the DB (blob storage, S3 prefixes, search indexes, etc.),
-        // that data will NOT be deleted by this method. Either rename the
-        // column to match the convention, or extend this method to call
-        // feature-specific cleanup hooks.
+        // that data will NOT be discovered by this query. Contract documents
+        // are handled explicitly below; every other external store must add a
+        // similarly scoped cleanup hook.
         List<String> tenantedTables = jdbcTemplate.queryForList(
                 "SELECT table_name FROM information_schema.columns " +
                         "WHERE column_name = 'tenant_id' AND table_schema = 'public'",
@@ -220,6 +233,22 @@ public class LandlordOrgService {
             return null;
         });
 
-        log.info("deleteTenant({}): completed", tenantId);
+        scheduleContractCleanupAfterCommit(tenantId, contractDocumentUrls);
+        log.info("deleteTenant({}): database purge completed; contract cleanup scheduled after commit", tenantId);
+    }
+
+    private void scheduleContractCleanupAfterCommit(UUID tenantId, List<String> documentUrls) {
+        List<String> capturedUrls = List.copyOf(documentUrls);
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            contractGenerationService.cleanupTenantDocuments(tenantId, capturedUrls);
+            return;
+        }
+
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                contractGenerationService.cleanupTenantDocuments(tenantId, capturedUrls);
+            }
+        });
     }
 }

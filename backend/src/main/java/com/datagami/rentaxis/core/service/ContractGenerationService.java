@@ -28,6 +28,8 @@ import org.springframework.core.io.ClassPathResource;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.util.HtmlUtils;
 
 import java.io.*;
@@ -129,16 +131,16 @@ public class ContractGenerationService {
         // draft-time generation, so Section 4 is never empty on the contract.
         ensureScheduleExists(lease);
 
-        // Remove old documents if regenerating — delete both the DB rows and
-        // the underlying blob/file so the storage backend doesn't accumulate
-        // stale PDFs forever.
-        if (lease.getStatus() == LeaseStatus.PENDING_SIGNATURE) {
-            List<LeaseDocument> oldDocs = leaseDocumentRepository.findByLeaseId(leaseId);
-            for (LeaseDocument oldDoc : oldDocs) {
-                deleteStoredFile(oldDoc.getDocumentUrl());
-            }
+        // A rejected contract returns the lease to DRAFT but its document row
+        // still exists. Replace documents based on what is actually persisted,
+        // not on status, so reject -> regenerate cannot accumulate stale PDFs.
+        List<LeaseDocument> oldDocs = leaseDocumentRepository.findByLeaseId(leaseId);
+        List<String> oldDocumentUrls = oldDocs.stream()
+                .map(LeaseDocument::getDocumentUrl)
+                .toList();
+        if (!oldDocs.isEmpty()) {
             leaseDocumentRepository.deleteAll(oldDocs);
-            log.info("Removed {} old documents (DB + storage) for lease {} before regeneration",
+            log.info("Removed {} old document rows for lease {} before regeneration",
                     oldDocs.size(), leaseId);
         }
 
@@ -172,6 +174,8 @@ public class ContractGenerationService {
         } else {
             documentUrl = saveToLocalDisk(fileName, pdfBytes);
         }
+        boolean replacementCleanupScheduled = scheduleReplacementCleanup(
+                lease.getTenantId(), oldDocumentUrls, documentUrl);
 
         // Save document record
         LeaseDocument doc = new LeaseDocument();
@@ -201,7 +205,37 @@ public class ContractGenerationService {
                 leasePayload,
                 "LEASE_SIGNATURE_REQUESTED:" + leaseId + ":" + System.currentTimeMillis()));
 
+        if (!replacementCleanupScheduled) {
+            // Defensive fallback for a direct call outside Spring's
+            // transactional proxy (principally narrow unit tests).
+            cleanupTenantDocuments(lease.getTenantId(), oldDocumentUrls);
+        }
+
         return mapToDTO(savedDoc);
+    }
+
+    private boolean scheduleReplacementCleanup(
+            UUID tenantId,
+            List<String> oldDocumentUrls,
+            String newDocumentUrl) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            return false;
+        }
+
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                cleanupTenantDocuments(tenantId, oldDocumentUrls);
+            }
+
+            @Override
+            public void afterCompletion(int status) {
+                if (status == TransactionSynchronization.STATUS_ROLLED_BACK) {
+                    deleteStoredFile(tenantId, newDocumentUrl);
+                }
+            }
+        });
+        return true;
     }
 
     @Transactional
@@ -640,7 +674,7 @@ public class ContractGenerationService {
      * Errors are logged and swallowed: if the underlying file is already
      * missing or unreachable, the regeneration should still proceed.
      */
-    private void deleteStoredFile(String documentUrl) {
+    private void deleteStoredFile(UUID tenantId, String documentUrl) {
         if (documentUrl == null || documentUrl.isBlank()) return;
         try {
             if (documentUrl.startsWith("https://") && documentUrl.contains(".blob.core.windows.net")) {
@@ -656,6 +690,12 @@ public class ContractGenerationService {
                     return;
                 }
                 String containerName = segments[0];
+                String expectedContainer = containerPrefix + tenantId;
+                if (!expectedContainer.equals(containerName)) {
+                    log.warn("Skipping contract blob outside tenant container {}: {}",
+                            expectedContainer, documentUrl);
+                    return;
+                }
                 String blobPath = java.net.URLDecoder.decode(segments[1], StandardCharsets.UTF_8);
                 BlobServiceClient client = new BlobServiceClientBuilder()
                         .endpoint(accountUrl)
@@ -666,7 +706,12 @@ public class ContractGenerationService {
                 blob.deleteIfExists();
                 log.info("Deleted Azure blob {}/{}", containerName, blobPath);
             } else {
-                Path p = Path.of(documentUrl);
+                Path root = Path.of(storagePath).toAbsolutePath().normalize();
+                Path p = Path.of(documentUrl).toAbsolutePath().normalize();
+                if (!p.startsWith(root)) {
+                    log.warn("Skipping contract file outside configured storage path {}: {}", root, p);
+                    return;
+                }
                 boolean removed = Files.deleteIfExists(p);
                 if (removed) {
                     log.info("Deleted local contract file {}", p);
@@ -678,6 +723,16 @@ public class ContractGenerationService {
             log.warn("Failed to delete stored contract file {} — continuing regeneration: {}",
                     documentUrl, ex.getMessage());
         }
+    }
+
+    /**
+     * Best-effort removal of the exact contract documents captured before a
+     * tenant is deleted. Every path is tenant/container scoped by
+     * {@link #deleteStoredFile(UUID, String)} before any external mutation.
+     */
+    public void cleanupTenantDocuments(UUID tenantId, List<String> documentUrls) {
+        if (tenantId == null || documentUrls == null) return;
+        documentUrls.forEach(url -> deleteStoredFile(tenantId, url));
     }
 
     @Transactional(readOnly = true)
