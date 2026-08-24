@@ -75,11 +75,7 @@ class GatePassApiService {
 
     final response = await _dio.post(
       '/v1/gatepass/scan',
-      data: {
-        if (qr != null) 'qrToken': qr,
-        if (code != null) 'numericCode': code,
-        'direction': direction,
-      },
+      data: {'qrToken': ?qr, 'numericCode': ?code, 'direction': direction},
     );
     return response.data;
   }
@@ -133,7 +129,7 @@ class GatePassApiService {
       queryParameters: {
         'propertyId': propertyId,
         'phone': phone,
-        if (unitId != null) 'unitId': unitId,
+        'unitId': ?unitId,
       },
     );
     return response.data as Map<String, dynamic>;
@@ -240,7 +236,7 @@ class GatePassApiService {
       queryParameters: {
         'from': instant(from),
         'to': instant(to),
-        if (propertyId != null) 'propertyId': propertyId,
+        'propertyId': ?propertyId,
       },
     );
     return response.data as List<dynamic>;
@@ -275,10 +271,7 @@ class GatePassApiService {
   }) async {
     final response = await _dio.get(
       '/v1/gatepass/policies/effective',
-      queryParameters: {
-        'propertyId': propertyId,
-        if (buildingId != null) 'buildingId': buildingId,
-      },
+      queryParameters: {'propertyId': propertyId, 'buildingId': ?buildingId},
     );
     return response.data as Map<String, dynamic>;
   }
@@ -290,10 +283,7 @@ class GatePassApiService {
   }) async {
     final response = await _dio.put(
       '/v1/gatepass/policies',
-      queryParameters: {
-        'propertyId': propertyId,
-        if (buildingId != null) 'buildingId': buildingId,
-      },
+      queryParameters: {'propertyId': propertyId, 'buildingId': ?buildingId},
       data: policy,
     );
     return response.data as Map<String, dynamic>;

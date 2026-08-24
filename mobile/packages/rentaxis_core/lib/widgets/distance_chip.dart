@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../theme/app_theme.dart';
 
 /// Small pill showing distance from user to listing.
 class DistanceChip extends StatelessWidget {

@@ -22,11 +22,10 @@ class AuthService {
     String password, {
     String? tenantId,
   }) async {
-    final response = await _dio.post('/auth/login', data: {
-      'email': email,
-      'password': password,
-      if (tenantId != null) 'tenantId': tenantId,
-    });
+    final response = await _dio.post(
+      '/auth/login',
+      data: {'email': email, 'password': password, 'tenantId': ?tenantId},
+    );
     return AuthResponse.fromJson(response.data);
   }
 
@@ -35,9 +34,10 @@ class AuthService {
   /// backend independently verifies this signed token before trusting its
   /// phone-number claim.
   Future<AuthResponse> loginWithFirebase(String idToken) async {
-    final response = await _dio.post('/v1/auth/firebase', data: {
-      'idToken': idToken,
-    });
+    final response = await _dio.post(
+      '/v1/auth/firebase',
+      data: {'idToken': idToken},
+    );
     return AuthResponse.fromJson(response.data);
   }
 
@@ -51,18 +51,20 @@ class AuthService {
   /// pass an empty string: PUT /auth/me normalizes blank to null server-side
   /// (PhoneNumbers.compact), which is how the web client clears it too.
   Future<void> updateProfile({String? name, String? phoneNumber}) async {
-    await _dio.put('/auth/me', data: {
-      if (name != null) 'name': name,
-      if (phoneNumber != null) 'phoneNumber': phoneNumber,
-    });
+    await _dio.put(
+      '/auth/me',
+      data: {'name': ?name, 'phoneNumber': ?phoneNumber},
+    );
   }
 
   Future<void> changePassword(
-      String currentPassword, String newPassword) async {
-    await _dio.put('/auth/me/password', data: {
-      'currentPassword': currentPassword,
-      'newPassword': newPassword,
-    });
+    String currentPassword,
+    String newPassword,
+  ) async {
+    await _dio.put(
+      '/auth/me/password',
+      data: {'currentPassword': currentPassword, 'newPassword': newPassword},
+    );
   }
 
   Future<List<dynamic>> getTenants() async {

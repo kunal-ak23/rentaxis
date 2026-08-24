@@ -36,10 +36,10 @@ class PaymentService {
     final response = await _dio.get(
       '/v1/payments',
       queryParameters: {
-        if (propertyId != null) 'propertyId': propertyId,
-        if (status != null) 'status': status,
+        'propertyId': ?propertyId,
+        'status': ?status,
         if (overdue) 'overdue': overdue,
-        if (sort != null) 'sort': sort,
+        'sort': ?sort,
         'page': page,
         'size': size,
       },
@@ -69,7 +69,7 @@ class PaymentService {
   Future<Map<String, dynamic>> getSummary({String? propertyId}) async {
     final response = await _dio.get(
       '/v1/payments/summary',
-      queryParameters: {if (propertyId != null) 'propertyId': propertyId},
+      queryParameters: {'propertyId': ?propertyId},
     );
     return response.data;
   }
@@ -88,7 +88,7 @@ class PaymentService {
   }) async {
     final response = await _dio.put(
       '/v1/payments/$id/deposit',
-      data: {if (notes != null) 'notes': notes},
+      data: {'notes': ?notes},
     );
     return response.data;
   }
@@ -96,7 +96,7 @@ class PaymentService {
   Future<Map<String, dynamic>> clearPayment(String id, {String? notes}) async {
     final response = await _dio.put(
       '/v1/payments/$id/clear',
-      data: {if (notes != null) 'notes': notes},
+      data: {'notes': ?notes},
     );
     return response.data;
   }
@@ -104,7 +104,7 @@ class PaymentService {
   Future<Map<String, dynamic>> bouncePayment(String id, {String? notes}) async {
     final response = await _dio.put(
       '/v1/payments/$id/bounce',
-      data: {if (notes != null) 'notes': notes},
+      data: {'notes': ?notes},
     );
     return response.data;
   }
@@ -135,7 +135,7 @@ class PaymentService {
   Future<Map<String, dynamic>> getAgingReport({String? propertyId}) async {
     final response = await _dio.get(
       '/v1/payments/aging-report',
-      queryParameters: {if (propertyId != null) 'propertyId': propertyId},
+      queryParameters: {'propertyId': ?propertyId},
     );
     return response.data;
   }

@@ -15,33 +15,37 @@ class FinanceService {
     String? startDate,
     String? endDate,
   }) async {
-    final response =
-        await _dio.get('/v1/finance/transactions', queryParameters: {
-      if (propertyId != null) 'propertyId': propertyId,
-      if (accountType != null) 'accountType': accountType,
-      if (startDate != null) 'startDate': startDate,
-      if (endDate != null) 'endDate': endDate,
-    });
+    final response = await _dio.get(
+      '/v1/finance/transactions',
+      queryParameters: {
+        'propertyId': ?propertyId,
+        'accountType': ?accountType,
+        'startDate': ?startDate,
+        'endDate': ?endDate,
+      },
+    );
     return response.data;
   }
 
-  Future<Map<String, dynamic>> getOrganisationReport(
-      {String? startDate, String? endDate}) async {
-    final response = await _dio
-        .get('/v1/finance/reports/organisation', queryParameters: {
-      if (startDate != null) 'startDate': startDate,
-      if (endDate != null) 'endDate': endDate,
-    });
+  Future<Map<String, dynamic>> getOrganisationReport({
+    String? startDate,
+    String? endDate,
+  }) async {
+    final response = await _dio.get(
+      '/v1/finance/reports/organisation',
+      queryParameters: {'startDate': ?startDate, 'endDate': ?endDate},
+    );
     return response.data;
   }
 
-  Future<Map<String, dynamic>> getTrialBalance(
-      {String? startDate, String? endDate}) async {
-    final response = await _dio
-        .get('/v1/finance/reports/trial-balance', queryParameters: {
-      if (startDate != null) 'startDate': startDate,
-      if (endDate != null) 'endDate': endDate,
-    });
+  Future<Map<String, dynamic>> getTrialBalance({
+    String? startDate,
+    String? endDate,
+  }) async {
+    final response = await _dio.get(
+      '/v1/finance/reports/trial-balance',
+      queryParameters: {'startDate': ?startDate, 'endDate': ?endDate},
+    );
     return response.data;
   }
 }

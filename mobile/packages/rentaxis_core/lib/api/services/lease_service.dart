@@ -25,7 +25,9 @@ class LeaseService {
   }
 
   Future<Map<String, dynamic>> updateLease(
-      String id, Map<String, dynamic> data) async {
+    String id,
+    Map<String, dynamic> data,
+  ) async {
     final response = await _dio.put('/v1/leases/$id', data: data);
     return response.data;
   }
@@ -38,9 +40,7 @@ class LeaseService {
     // The backend reads a TerminateWithSettlementDTO request body
     // (fields: notes, deductions) and declares no @RequestParam, so notes
     // must travel as JSON — a query parameter would be silently dropped.
-    await _dio.post('/v1/leases/$id/terminate', data: {
-      if (notes != null) 'notes': notes,
-    });
+    await _dio.post('/v1/leases/$id/terminate', data: {'notes': ?notes});
   }
 
   Future<void> acceptLease(String id) async {
@@ -57,8 +57,10 @@ class LeaseService {
   }
 
   Future<List<int>> downloadDocument(String docId) async {
-    final response = await _dio.get('/v1/leases/documents/$docId/download',
-        options: Options(responseType: ResponseType.bytes));
+    final response = await _dio.get(
+      '/v1/leases/documents/$docId/download',
+      options: Options(responseType: ResponseType.bytes),
+    );
     return response.data;
   }
 
@@ -74,13 +76,18 @@ class LeaseService {
   }
 
   Future<Map<String, dynamic>> uploadAttachment(
-      String leaseId, String filePath, String name) async {
+    String leaseId,
+    String filePath,
+    String name,
+  ) async {
     final formData = FormData.fromMap({
       'file': await MultipartFile.fromFile(filePath),
       'name': name,
     });
-    final response =
-        await _dio.post('/v1/leases/$leaseId/attachments', data: formData);
+    final response = await _dio.post(
+      '/v1/leases/$leaseId/attachments',
+      data: formData,
+    );
     return response.data;
   }
 
@@ -89,9 +96,13 @@ class LeaseService {
   }
 
   Future<Map<String, dynamic>> extendLease(
-      String leaseId, String newEndDate) async {
-    final response = await _dio.post('/v1/leases/$leaseId/extend',
-        data: {'newEndDate': newEndDate});
+    String leaseId,
+    String newEndDate,
+  ) async {
+    final response = await _dio.post(
+      '/v1/leases/$leaseId/extend',
+      data: {'newEndDate': newEndDate},
+    );
     return response.data;
   }
 
@@ -105,8 +116,7 @@ class LeaseService {
   }
 
   Future<Map<String, dynamic>> generateContract(String leaseId) async {
-    final response =
-        await _dio.post('/v1/leases/$leaseId/generate-contract');
+    final response = await _dio.post('/v1/leases/$leaseId/generate-contract');
     return response.data;
   }
 }
