@@ -849,6 +849,82 @@ export const api = {
   cancelGatePass: (pctx: ProdContext, gatePassId: string) =>
     postJson<{ id: string; status: string }>(pctx, `/v1/gatepass/${gatePassId}/cancel`, {}),
 
+  getWalkInDestinations: (pctx: ProdContext, propertyId: string) =>
+    getJson<Array<{
+      unitId: string;
+      unitNumber: string;
+      propertyId: string;
+      buildingId: string | null;
+      buildingName: string | null;
+    }>>(pctx, `/v1/gatepass/walk-in/destinations?propertyId=${propertyId}`),
+  getEffectiveGatePolicy: (pctx: ProdContext, propertyId: string) =>
+    getJson<{
+      id: string | null;
+      propertyId: string;
+      inherited: boolean;
+      requireUnregisteredApproval: boolean;
+      requireRegisteredApproval: boolean;
+      notifyRegisteredEntry: boolean;
+      requireFreshPhoto: boolean;
+      approvalTimeoutMinutes: number;
+    }>(pctx, `/v1/gatepass/policies/effective?propertyId=${propertyId}`),
+  setGatePolicy: (
+    pctx: ProdContext,
+    propertyId: string,
+    body: {
+      requireUnregisteredApproval: boolean;
+      requireRegisteredApproval: boolean;
+      notifyRegisteredEntry: boolean;
+      requireFreshPhoto: boolean;
+      approvalTimeoutMinutes: number;
+    },
+  ) => putJson<{
+    id: string;
+    propertyId: string;
+    inherited: boolean;
+    requireUnregisteredApproval: boolean;
+    requireRegisteredApproval: boolean;
+    notifyRegisteredEntry: boolean;
+    requireFreshPhoto: boolean;
+    approvalTimeoutMinutes: number;
+  }>(pctx, `/v1/gatepass/policies?propertyId=${propertyId}`, body),
+  createManagedVisitorRegistration: (
+    pctx: ProdContext,
+    body: {
+      propertyId: string;
+      unitId: string;
+      name: string;
+      phone: string;
+      visitorType: 'GUEST' | 'VENDOR' | 'STAFF' | 'DELIVERY';
+      validFrom: string;
+      validTo: string;
+      active: boolean;
+    },
+  ) => postJson<{
+    id: string;
+    name: string;
+    phone: string;
+    visitorType: string;
+    lastUnitId: string;
+    registeredForSelectedUnit: boolean;
+  }>(pctx, '/v1/gatepass/visitors/registration', body),
+  lookupWalkInVisitor: (
+    pctx: ProdContext,
+    propertyId: string,
+    unitId: string,
+    phone: string,
+  ) => getJson<{
+    id: string;
+    name: string;
+    phone: string;
+    visitorType: string;
+    lastUnitId: string;
+    registeredForSelectedUnit: boolean;
+  }>(
+    pctx,
+    `/v1/gatepass/walk-in/visitor?propertyId=${propertyId}&unitId=${unitId}&phone=${encodeURIComponent(phone)}`,
+  ),
+
   createPromoBusiness: (
     pctx: ProdContext,
     body: {

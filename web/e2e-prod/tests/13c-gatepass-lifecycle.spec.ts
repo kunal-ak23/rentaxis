@@ -9,7 +9,7 @@ import { api, loginAsNextAuth, setActiveTenant } from '../helpers/prod-client';
 
 const CONTEXT_FILE = path.join(__dirname, '..', '.test-context.json');
 
-test('renter issues a pass, guard approves and scans it, manager sees the report', async () => {
+test('admin configures gate access while renter and guard complete a pass lifecycle', async () => {
   const ctx = JSON.parse(fs.readFileSync(CONTEXT_FILE, 'utf8'));
   expect(ctx.guardUserId, '01-provision must persist the security guard').toBeTruthy();
 
@@ -24,6 +24,59 @@ test('renter issues a pass, guard approves and scans it, manager sees the report
   await setActiveTenant(taCtx, ctx.tenant.id);
 
   expect((await api.getGuardProperties(guardCtx)).some((item) => item.id === ctx.property.id)).toBeTruthy();
+
+  const initialPolicy = await api.getEffectiveGatePolicy(taCtx, ctx.property.id);
+  expect(initialPolicy.propertyId).toBe(ctx.property.id);
+
+  const policy = await api.setGatePolicy(taCtx, ctx.property.id, {
+    requireUnregisteredApproval: true,
+    requireRegisteredApproval: false,
+    notifyRegisteredEntry: true,
+    requireFreshPhoto: true,
+    approvalTimeoutMinutes: 20,
+  });
+  expect(policy).toMatchObject({
+    propertyId: ctx.property.id,
+    inherited: false,
+    requireUnregisteredApproval: true,
+    requireRegisteredApproval: false,
+    notifyRegisteredEntry: true,
+    requireFreshPhoto: true,
+    approvalTimeoutMinutes: 20,
+  });
+  expect(await api.getEffectiveGatePolicy(taCtx, ctx.property.id)).toMatchObject({
+    requireUnregisteredApproval: true,
+    approvalTimeoutMinutes: 20,
+  });
+
+  const destinations = await api.getWalkInDestinations(guardCtx, ctx.property.id);
+  expect(destinations.some((item) => item.unitId === ctx.unit.id)).toBeTruthy();
+
+  const registeredPhone = '+971500009991';
+  const registration = await api.createManagedVisitorRegistration(taCtx, {
+    propertyId: ctx.property.id,
+    unitId: ctx.unit.id,
+    name: `TEST-Registered Vendor ${ctx.runSuffix}`,
+    phone: registeredPhone,
+    visitorType: 'VENDOR',
+    validFrom: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+    validTo: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    active: true,
+  });
+  expect(registration.registeredForSelectedUnit).toBeTruthy();
+  expect(registration.visitorType).toBe('VENDOR');
+
+  const lookup = await api.lookupWalkInVisitor(
+    guardCtx,
+    ctx.property.id,
+    ctx.unit.id,
+    registeredPhone,
+  );
+  expect(lookup).toMatchObject({
+    id: registration.id,
+    visitorType: 'VENDOR',
+    registeredForSelectedUnit: true,
+  });
 
   const validFrom = new Date(Date.now() - 5 * 60 * 1000).toISOString();
   const validTo = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
