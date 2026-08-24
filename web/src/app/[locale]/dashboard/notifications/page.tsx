@@ -130,8 +130,15 @@ export default function NotificationsPage() {
             try {
                 await fetch(`/api/proxy/v1/notifications/${n.id}/read`, { method: "PUT" });
                 if (filter === "UNREAD") {
+                    // Drop the row locally for immediate feedback, then re-sync
+                    // from the server. totalItems is an *inference* (see
+                    // fetchNotifications): a full page adds a synthetic +1 so the
+                    // next-page control stays reachable, and decrementing it here
+                    // would cancel that +1 and hide the remaining unread pages.
+                    // Refetching also backfills this page from the next one and
+                    // steps back when the current page empties.
                     setNotifications((prev) => prev.filter((x) => x.id !== n.id));
-                    setTotalItems((prev) => Math.max(0, prev - 1));
+                    await fetchNotifications();
                 } else {
                     setNotifications((prev) =>
                         prev.map((x) => (x.id === n.id ? { ...x, isRead: true } : x))

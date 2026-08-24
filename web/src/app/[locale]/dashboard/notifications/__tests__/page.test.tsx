@@ -51,6 +51,36 @@ function stubFetch(handler: (url: string) => StubResponse) {
     ) as unknown as typeof fetch;
 }
 
+/**
+ * Stubs a server that actually holds state: a mutable unread set, paged the way
+ * GET /v1/notifications pages (bare list, no total), with PUT .../read removing
+ * an id from the unread set. A fixed-list stub cannot tell a correct refetch
+ * from a stale one — both render the same rows — so pagination regressions on
+ * the Unread tab are invisible to it.
+ */
+function stubNotificationServer(unreadCount: number, pageSize = 25) {
+    const unread = makeNotifications(unreadCount);
+    stubFetch((url) => {
+        const readMatch = url.match(/\/v1\/notifications\/([^/]+)\/read$/);
+        if (readMatch) {
+            const idx = unread.findIndex((n) => n.id === readMatch[1]);
+            if (idx >= 0) unread.splice(idx, 1);
+            return { ok: true, json: async () => null };
+        }
+        if (url.includes("/v1/notifications/read-all")) {
+            unread.length = 0;
+            return { ok: true, json: async () => null };
+        }
+        if (url.includes("/v1/notifications?")) {
+            const page = Number(pageParam(url) ?? 0);
+            const slice = unread.slice(page * pageSize, page * pageSize + pageSize);
+            return { ok: true, json: async () => slice };
+        }
+        return { ok: true, json: async () => null };
+    });
+    return unread;
+}
+
 /** Reads the 0-indexed `page` param off a captured notifications URL. */
 function pageParam(url: string): string | null {
     return new URL(url, "http://localhost").searchParams.get("page");
@@ -155,12 +185,7 @@ describe("NotificationsPage pagination", () => {
     });
 
     it("removes a notification immediately after it is read from the Unread tab", async () => {
-        stubFetch((url) => {
-            if (url.includes("/v1/notifications")) {
-                return { ok: true, json: async () => makeNotifications(2) };
-            }
-            return { ok: true, json: async () => null };
-        });
+        stubNotificationServer(2);
 
         render(<NotificationsPage />);
         await waitFor(() => expect(screen.getByText("Notification 0")).toBeInTheDocument());
@@ -173,13 +198,55 @@ describe("NotificationsPage pagination", () => {
         expect(screen.getByText("Notification 1")).toBeInTheDocument();
     });
 
+    // Regression: reading one item used to decrement the *inferred* total, which
+    // cancelled the synthetic "+1" a full page adds, dropped totalPages 2 -> 1,
+    // and made every remaining unread page unreachable without a reload.
+    it("keeps later unread pages reachable after reading one item", async () => {
+        stubNotificationServer(50);
+
+        render(<NotificationsPage />);
+        await waitFor(() => expect(screen.getByText("Notification 0")).toBeInTheDocument());
+        fireEvent.click(screen.getByRole("button", { name: "Unread" }));
+        await waitFor(() => expect(fetchedUrls.some((u) => u.includes("unreadOnly=true"))).toBe(true));
+        expect(screen.getByRole("button", { name: "2" })).toBeInTheDocument();
+
+        fireEvent.click(screen.getByText("Message 0"));
+
+        // The read row goes away, the page backfills from page 2, and the
+        // next-page control survives.
+        await waitFor(() => expect(screen.queryByText("Notification 0")).toBeNull());
+        expect(screen.getByRole("button", { name: "2" })).toBeInTheDocument();
+        expect(screen.getByText("Notification 25")).toBeInTheDocument();
+
+        // Page 2 is still navigable and shows the remaining unread items.
+        fireEvent.click(screen.getByRole("button", { name: "2" }));
+        await waitFor(() => expect(screen.getByText("Notification 26")).toBeInTheDocument());
+    });
+
+    // Regression: emptying a later page left the list at [] while currentPage
+    // stayed on 2, so the page rendered "You're all caught up!" *and* unmounted
+    // every pagination control, stranding 25 unread items on page 1.
+    it("steps back to the previous page when the last item on a later page is read", async () => {
+        stubNotificationServer(26);
+
+        render(<NotificationsPage />);
+        await waitFor(() => expect(screen.getByText("Notification 0")).toBeInTheDocument());
+        fireEvent.click(screen.getByRole("button", { name: "Unread" }));
+        await waitFor(() => expect(fetchedUrls.some((u) => u.includes("unreadOnly=true"))).toBe(true));
+
+        fireEvent.click(screen.getByRole("button", { name: "2" }));
+        await waitFor(() => expect(screen.getByText("Notification 25")).toBeInTheDocument());
+
+        fireEvent.click(screen.getByText("Message 25"));
+
+        // Back on page 1 with the remaining 25 unread — not an empty
+        // "all caught up" screen with no way back.
+        await waitFor(() => expect(screen.getByText("Notification 0")).toBeInTheDocument());
+        expect(screen.queryByText("You're all caught up!")).toBeNull();
+    });
+
     it("clears the Unread tab after marking all notifications read", async () => {
-        stubFetch((url) => {
-            if (url.includes("/v1/notifications")) {
-                return { ok: true, json: async () => makeNotifications(2) };
-            }
-            return { ok: true, json: async () => null };
-        });
+        stubNotificationServer(2);
 
         render(<NotificationsPage />);
         await waitFor(() => expect(screen.getByText("Notification 0")).toBeInTheDocument());
