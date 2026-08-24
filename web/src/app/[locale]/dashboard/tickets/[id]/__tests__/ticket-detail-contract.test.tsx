@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Covers three audited contract bugs on the ticket detail page:
@@ -8,6 +8,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 //    (MaintenanceTicketDTO), not a non-existent estimatedHours.
 // 3. Failed status actions (400 with a {message} body) must surface the
 //    backend message instead of silently doing nothing.
+// 4. Status and ETA actions must remain disabled while their request is in
+//    flight, preventing duplicate transitions and estimates.
 
 const sessionUser = vi.hoisted(() => ({ role: "TENANT_ADMIN" }));
 
@@ -52,6 +54,8 @@ const baseTicket = {
 
 let ticket: typeof baseTicket;
 let statusActionResponse: { ok: boolean; status: number; body: unknown };
+let statusActionPending: Promise<Response> | null;
+let estimateActionPending: Promise<Response> | null;
 
 const jsonRes = (body: unknown, ok = true, status = 200) =>
     ({
@@ -64,6 +68,8 @@ const jsonRes = (body: unknown, ok = true, status = 200) =>
 beforeEach(() => {
     ticket = { ...baseTicket };
     statusActionResponse = { ok: true, status: 200, body: {} };
+    statusActionPending = null;
+    estimateActionPending = null;
     global.fetch = vi.fn(async (url: unknown) => {
         const u = String(url);
         if (u.includes("/admin/users")) {
@@ -73,7 +79,11 @@ beforeEach(() => {
             return jsonRes([]);
         }
         if (u.endsWith(`/v1/tickets/${TICKET_ID}/status`)) {
+            if (statusActionPending) return statusActionPending;
             return jsonRes(statusActionResponse.body, statusActionResponse.ok, statusActionResponse.status);
+        }
+        if (u.endsWith(`/v1/tickets/${TICKET_ID}/estimate`) && estimateActionPending) {
+            return estimateActionPending;
         }
         if (u.endsWith(`/v1/tickets/${TICKET_ID}`)) {
             return jsonRes(ticket);
@@ -130,5 +140,43 @@ describe("TicketDetailPage API contract", () => {
         expect(
             await screen.findByText("Invalid status transition: CLOSED -> REOPENED")
         ).toBeTruthy();
+    });
+
+    it.each([
+        ["ASSIGNED", "Start Work"],
+        ["IN_PROGRESS", "Mark Resolved"],
+    ])("disables %s status actions while the request is pending", async (status, label) => {
+        sessionUser.role = "TENANT_ADMIN";
+        ticket.status = status;
+        let resolveAction!: (response: Response) => void;
+        statusActionPending = new Promise<Response>((resolve) => { resolveAction = resolve; });
+        render(<TicketDetailPage />);
+
+        const button = await screen.findByText(label);
+        fireEvent.click(button);
+
+        expect((button as HTMLButtonElement).disabled).toBe(true);
+        await act(async () => {
+            resolveAction(jsonRes({ ...ticket, status }));
+            await statusActionPending;
+        });
+    });
+
+    it("disables Set ETA while the estimate request is pending", async () => {
+        sessionUser.role = "TENANT_ADMIN";
+        ticket.status = "ASSIGNED";
+        let resolveAction!: (response: Response) => void;
+        estimateActionPending = new Promise<Response>((resolve) => { resolveAction = resolve; });
+        render(<TicketDetailPage />);
+
+        fireEvent.change(await screen.findByPlaceholderText("Hours"), { target: { value: "4" } });
+        const button = screen.getByText("Set ETA");
+        fireEvent.click(button);
+
+        expect((button as HTMLButtonElement).disabled).toBe(true);
+        await act(async () => {
+            resolveAction(jsonRes({ ...ticket, estimatedResolutionHours: 4 }));
+            await estimateActionPending;
+        });
     });
 });
