@@ -1,0 +1,345 @@
+{
+  "schemaVersion": 1,
+  "surfaces": {
+    "web": [
+      {
+        "tutorials": [1],
+        "evidence": ["PR96:00-smoke-auth.spec.ts", "PR96:01b-profile-navigation-and-password.spec.ts", "PR96:17-public-account-and-legal-pages.spec.ts"],
+        "routes": [
+          "/[locale]/auth/login",
+          "/[locale]/auth/set-password",
+          "/[locale]/dashboard/profile",
+          "/[locale]/data-deletion",
+          "/[locale]/privacy",
+          "/[locale]/terms"
+        ]
+      },
+      {
+        "tutorials": [3, 5, 9],
+        "evidence": ["PR96:01a-feature-and-user-admin.spec.ts", "PR96:06-renter-create-ui.spec.ts", "PR96:12-property-operations.spec.ts", "PR96:17-public-account-and-legal-pages.spec.ts", "PR111:backend/src/test/java/com/datagami/rentaxis/api/AuthControllerRegistrationTest.java", "PR111:backend/src/test/java/com/datagami/rentaxis/security/PublicRateLimitFilterTest.java", "PR111:web/src/app/[locale]/auth/register/__tests__/page.test.tsx", "PR111:web/src/app/[locale]/auth/login/__tests__/registered-banner.test.tsx"],
+        "routes": [
+          "/[locale]/auth/register",
+          "/[locale]/dashboard/renters",
+          "/[locale]/dashboard/staff",
+          "/[locale]/superadmin/users"
+        ]
+      },
+      {
+        "tutorials": [2],
+        "evidence": ["PR96:01c-search-help-and-superadmin-dashboard.spec.ts", "PR96:09-notifications.spec.ts", "PR96:13e-notification-ownership.spec.ts"],
+        "routes": [
+          "/[locale]/dashboard",
+          "/[locale]/dashboard/help",
+          "/[locale]/dashboard/help/[slug]",
+          "/[locale]/dashboard/notifications"
+        ]
+      },
+      {
+        "tutorials": [3, 4],
+        "evidence": ["PR96:01-provision.spec.ts", "PR96:01a-feature-and-user-admin.spec.ts"],
+        "routes": ["/[locale]/superadmin/tenants"]
+      },
+      {
+        "tutorials": [6, 7, 8],
+        "evidence": ["PR96:01-provision.spec.ts", "PR96:07-bulk-portfolio-import.spec.ts", "PR96:12-property-operations.spec.ts"],
+        "routes": [
+          "/[locale]/dashboard/properties",
+          "/[locale]/dashboard/properties/[id]",
+          "/[locale]/dashboard/properties/[id]/units"
+        ]
+      },
+      {
+        "tutorials": [10, 11, 12, 13, 14, 15],
+        "evidence": ["PR96:10-lease-create-ui.spec.ts", "PR96:10a-contract-signature-lifecycle.spec.ts", "PR96:10b-draft-lease-administration.spec.ts", "PR96:13a-cheques-and-penalties.spec.ts", "PR96:14-lease-lifecycle-extended.spec.ts"],
+        "routes": [
+          "/[locale]/dashboard/leases",
+          "/[locale]/dashboard/leases/[id]"
+        ]
+      },
+      {
+        "tutorials": [13],
+        "evidence": ["PR96:14-lease-lifecycle-extended.spec.ts"],
+        "routes": ["/[locale]/dashboard/leases/[id]/settlement"]
+      },
+      {
+        "tutorials": [17],
+        "evidence": ["PR96:13-finance-and-settings.spec.ts"],
+        "routes": ["/[locale]/dashboard/finance/accounts"]
+      },
+      {
+        "tutorials": [19],
+        "evidence": ["PR96:13-finance-and-settings.spec.ts"],
+        "routes": ["/[locale]/dashboard/finance/bank-accounts"]
+      },
+      {
+        "tutorials": [15],
+        "evidence": ["PR96:02-cheque-lifecycle.spec.ts", "PR96:08-cheque-upload.spec.ts", "PR96:13a-cheques-and-penalties.spec.ts"],
+        "routes": ["/[locale]/dashboard/finance/payments"]
+      },
+      {
+        "tutorials": [20],
+        "evidence": ["PR96:04-reports.spec.ts", "PR96:13-finance-and-settings.spec.ts"],
+        "routes": ["/[locale]/dashboard/finance/reports"]
+      },
+      {
+        "tutorials": [18],
+        "evidence": ["PR96:13-finance-and-settings.spec.ts"],
+        "routes": ["/[locale]/dashboard/finance/transactions"]
+      },
+      {
+        "tutorials": [19],
+        "evidence": ["PR96:03-vendor-and-interactions.spec.ts", "PR96:13-finance-and-settings.spec.ts"],
+        "routes": ["/[locale]/dashboard/finance/vendors"]
+      },
+      {
+        "tutorials": [25],
+        "evidence": ["PR96:13c-gatepass-lifecycle.spec.ts"],
+        "routes": ["/[locale]/dashboard/gatepass"]
+      },
+      {
+        "tutorials": [26],
+        "evidence": ["PR96:15-listings-and-marketplace.spec.ts"],
+        "routes": [
+          "/[locale]/dashboard/listings",
+          "/[locale]/dashboard/listings/[id]"
+        ]
+      },
+      {
+        "tutorials": [23],
+        "evidence": ["PR96:16-meeting-lifecycle.spec.ts"],
+        "routes": [
+          "/[locale]/dashboard/meetings",
+          "/[locale]/dashboard/meetings/[id]"
+        ]
+      },
+      {
+        "tutorials": [28],
+        "evidence": ["PR96:13d-promotions.spec.ts"],
+        "routes": ["/[locale]/dashboard/promotions"]
+      },
+      {
+        "tutorials": [13, 14, 21, 24, 31, 32],
+        "evidence": ["PR96:05-renter-portal-ui.spec.ts", "PR96:13a-cheques-and-penalties.spec.ts", "PR96:13b-facilities-and-bookings.spec.ts", "PR96:13f-lease-renewals.spec.ts"],
+        "routes": [
+          "/[locale]/dashboard/renter-portal",
+          "/[locale]/dashboard/renter-portal/facilities",
+          "/[locale]/dashboard/renter-portal/payments",
+          "/[locale]/dashboard/renter-portal/penalties",
+          "/[locale]/dashboard/renter-portal/renewal-intent",
+          "/[locale]/dashboard/renter-portal/renewals"
+        ]
+      },
+      {
+        "tutorials": [13, 14, 16, 17],
+        "evidence": ["PR96:13-finance-and-settings.spec.ts", "PR96:13a-cheques-and-penalties.spec.ts", "PR96:13f-lease-renewals.spec.ts", "PR96:13g-payment-gateway-config.spec.ts"],
+        "routes": [
+          "/[locale]/dashboard/settings/account-mappings",
+          "/[locale]/dashboard/settings/fines",
+          "/[locale]/dashboard/settings/gateway",
+          "/[locale]/dashboard/settings/rent-settings"
+        ]
+      },
+      {
+        "tutorials": [24],
+        "evidence": ["PR96:13b-facilities-and-bookings.spec.ts"],
+        "routes": ["/[locale]/dashboard/bookings"]
+      },
+      {
+        "tutorials": [22],
+        "evidence": ["PR96:11-ticket-lifecycle.spec.ts"],
+        "routes": [
+          "/[locale]/dashboard/tickets",
+          "/[locale]/dashboard/tickets/[id]",
+          "/[locale]/dashboard/tickets/reports"
+        ]
+      },
+      {
+        "tutorials": [27],
+        "evidence": ["PR96:15-listings-and-marketplace.spec.ts"],
+        "routes": [
+          "/[locale]",
+          "/[locale]/marketplace/[tenantSlug]",
+          "/[locale]/marketplace/[tenantSlug]/[slug]",
+          "/[locale]/marketplace/wishlist",
+          "/l/[tenantSlug]",
+          "/l/[tenantSlug]/[unitSlug]"
+        ]
+      },
+      {
+        "tutorials": [12, 22, 26],
+        "evidence": ["PR96:08-cheque-upload.spec.ts", "PR96:11-ticket-lifecycle.spec.ts", "PR96:15-listings-and-marketplace.spec.ts"],
+        "routes": ["/api/upload"]
+      },
+      {
+        "tutorials": [1],
+        "evidence": ["PR96:00-smoke-auth.spec.ts"],
+        "routes": ["/api/auth/[...nextauth]"]
+      },
+      {
+        "tutorials": [],
+        "classification": "system",
+        "reason": "Deployment health endpoint; monitored operationally rather than recorded as an end-user tutorial.",
+        "evidence": ["PR96:global-setup.ts"],
+        "routes": ["/api/health"]
+      },
+      {
+        "tutorials": [],
+        "classification": "system",
+        "reason": "Search-engine discovery feed for public listings; no interactive user workflow.",
+        "evidence": ["PR96:15-listings-and-marketplace.spec.ts"],
+        "routes": ["/l/[tenantSlug]/sitemap.xml"]
+      }
+    ],
+    "manager": [
+      {
+        "tutorials": [1, 29],
+        "evidence": ["mobile/apps/manager/integration_test/client_shots_test.dart"],
+        "routes": ["/splash", "/login", "/profile", "/more"]
+      },
+      {
+        "tutorials": [1, 29],
+        "evidence": ["mobile/packages/rentaxis_core/test/providers/app_version_gate_test.dart", "mobile/packages/rentaxis_core/test/widgets/update_required_screen_test.dart"],
+        "routes": ["/update-required"]
+      },
+      {
+        "tutorials": [2, 6, 9, 10, 12, 15, 22, 29],
+        "evidence": ["mobile/apps/manager/integration_test/client_shots_test.dart", "mobile/apps/manager/integration_test/prod_deep_routes_test.dart"],
+        "routes": ["/", "/properties", "/properties/:id", "/renters", "/leases", "/leases/:id", "/payments", "/tickets", "/tickets/create", "/tickets/:id", "/notifications"]
+      },
+      {
+        "tutorials": [13, 14, 30],
+        "evidence": ["mobile/apps/manager/integration_test/prod_deep_routes_test.dart"],
+        "routes": ["/leases/:id/penalties", "/leases/:id/settlement"]
+      },
+      {
+        "tutorials": [15, 30],
+        "evidence": ["PR110:mobile/apps/manager/test/cheque_scan_flow_screen_test.dart"],
+        "routes": ["/scan"]
+      },
+      {
+        "tutorials": [23, 30],
+        "evidence": ["mobile/apps/manager/integration_test/client_shots_test.dart", "mobile/apps/manager/integration_test/prod_deep_routes_test.dart"],
+        "routes": ["/meetings", "/meetings/create", "/meetings/:id"]
+      },
+      {
+        "tutorials": [24, 25, 30],
+        "evidence": ["PR110:mobile/apps/manager/test/queue_screen_test.dart"],
+        "routes": ["/queue"]
+      },
+      {
+        "tutorials": [18, 20, 30],
+        "evidence": ["mobile/apps/manager/integration_test/client_shots_test.dart"],
+        "routes": ["/finance", "/finance-reports"]
+      },
+      {
+        "tutorials": [5, 30],
+        "evidence": ["mobile/apps/manager/test/staff_screen_test.dart"],
+        "routes": ["/staff", "/staff/:id"]
+      },
+      {
+        "tutorials": [25, 30],
+        "evidence": ["mobile/apps/manager/integration_test/prod_gatepass_approval_test.dart", "mobile/apps/manager/integration_test/prod_deep_routes_test.dart"],
+        "routes": ["/gate-passes/approvals", "/gate-passes/guards", "/gate-passes/policy", "/gate-passes/vendors"]
+      },
+      {
+        "tutorials": [24, 30],
+        "evidence": ["mobile/apps/manager/integration_test/client_shots_test.dart"],
+        "routes": ["/facilities", "/bookings"]
+      },
+      {
+        "tutorials": [19, 30],
+        "evidence": ["mobile/apps/manager/integration_test/prod_deep_routes_test.dart"],
+        "routes": ["/vendors", "/vendors/:id", "/bank-accounts"]
+      },
+      {
+        "tutorials": [26, 30],
+        "evidence": ["mobile/apps/manager/integration_test/client_shots_test.dart", "mobile/apps/manager/integration_test/prod_deep_routes_test.dart"],
+        "routes": ["/listings", "/listings/:id", "/listings/:id/interests"]
+      },
+      {
+        "tutorials": [16, 17, 30],
+        "evidence": ["mobile/apps/manager/integration_test/prod_deep_routes_test.dart"],
+        "routes": ["/settings", "/settings/rent", "/settings/gateway", "/settings/mappings"]
+      }
+    ],
+    "renter": [
+      {
+        "tutorials": [1, 31],
+        "evidence": ["mobile/apps/renter/integration_test/client_shots_test.dart", "mobile/apps/renter/integration_test/login_focus_shot_test.dart"],
+        "routes": ["/splash", "/login", "/set-password", "/profile"]
+      },
+      {
+        "tutorials": [1, 31],
+        "evidence": ["mobile/apps/renter/test/version_gate_router_test.dart", "mobile/packages/rentaxis_core/test/widgets/update_required_screen_test.dart"],
+        "routes": ["/update-required"]
+      },
+      {
+        "tutorials": [2, 14, 21, 22, 31],
+        "evidence": ["mobile/apps/renter/integration_test/client_shots_test.dart", "mobile/apps/renter/integration_test/screens_tour_test.dart", "mobile/apps/renter/integration_test/prod_deep_routes_test.dart"],
+        "routes": ["/", "/payments", "/services", "/tickets", "/tickets/create", "/tickets/:id", "/notifications", "/penalties"]
+      },
+      {
+        "tutorials": [25, 32],
+        "evidence": ["mobile/apps/renter/integration_test/prod_walkin_approval_test.dart"],
+        "routes": ["/tickets/approvals"]
+      },
+      {
+        "tutorials": [27, 32],
+        "evidence": ["mobile/apps/renter/integration_test/client_shots_test.dart", "mobile/apps/renter/integration_test/prod_deep_routes_test.dart"],
+        "routes": ["/browse", "/browse/:slug", "/wishlist"]
+      },
+      {
+        "tutorials": [23, 32],
+        "evidence": ["mobile/apps/renter/integration_test/client_shots_test.dart", "mobile/apps/renter/integration_test/prod_deep_routes_test.dart"],
+        "routes": ["/meetings", "/meetings/create", "/meetings/:id"]
+      },
+      {
+        "tutorials": [25, 32],
+        "evidence": ["mobile/apps/renter/integration_test/prod_deep_routes_test.dart"],
+        "routes": ["/gatepass", "/gatepass/create", "/gatepass/:id"]
+      },
+      {
+        "tutorials": [24, 32],
+        "evidence": ["mobile/apps/renter/integration_test/screens_tour_test.dart"],
+        "routes": ["/facilities", "/facilities/requests"]
+      },
+      {
+        "tutorials": [28, 32],
+        "evidence": ["mobile/apps/renter/test/offers_screen_test.dart"],
+        "routes": ["/offers"]
+      }
+    ],
+    "security": [
+      {
+        "tutorials": [1, 33],
+        "evidence": ["mobile/apps/security/integration_test/login_shots_test.dart", "mobile/apps/security/test/otp_screen_test.dart"],
+        "routes": ["/splash", "/login", "/otp"]
+      },
+      {
+        "tutorials": [1, 33],
+        "evidence": ["mobile/packages/rentaxis_core/test/providers/app_version_gate_test.dart", "mobile/packages/rentaxis_core/test/widgets/update_required_screen_test.dart"],
+        "routes": ["/update-required"]
+      },
+      {
+        "tutorials": [25, 33],
+        "evidence": ["mobile/apps/security/integration_test/seeded_scan_flow_test.dart"],
+        "routes": ["/"]
+      },
+      {
+        "tutorials": [25, 33],
+        "evidence": ["mobile/apps/security/integration_test/gate_scan_flow_test.dart", "mobile/apps/security/integration_test/seeded_scan_flow_test.dart"],
+        "routes": ["/scan", "/result"]
+      },
+      {
+        "tutorials": [25, 33],
+        "evidence": ["mobile/apps/security/test/approvals_screen_test.dart"],
+        "routes": ["/approvals"]
+      },
+      {
+        "tutorials": [25, 33],
+        "evidence": ["mobile/apps/security/integration_test/prod_walkin_admit_test.dart"],
+        "routes": ["/walk-in", "/walk-in/:id"]
+      }
+    ]
+  }
+}
