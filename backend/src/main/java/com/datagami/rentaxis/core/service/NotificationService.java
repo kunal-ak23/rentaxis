@@ -1,6 +1,7 @@
 package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.dto.NotificationDTO;
+import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.email.EmailEventType;
 import com.datagami.rentaxis.core.email.event.EmailEvent;
 import com.datagami.rentaxis.core.email.event.payload.LegacyNotificationPayload;
@@ -236,11 +237,16 @@ public class NotificationService {
     }
 
     @Transactional
-    public void markAsRead(UUID notificationId) {
-        notificationRepository.findById(notificationId).ifPresent(n -> {
-            n.setIsRead(true);
-            notificationRepository.save(n);
-        });
+    public void markAsRead(UUID notificationId, UUID userId) {
+        // Scope the lookup to the authenticated user. Notification ids are UUIDs,
+        // but they are still object identifiers and must not be treated as authority.
+        // Use the unfiltered query because SUPER_ADMIN notifications can have a null
+        // tenant_id and therefore sit outside Hibernate's tenant filter.
+        Notification notification = notificationRepository
+                .findByIdAndUserIdUnfiltered(notificationId, userId)
+                .orElseThrow(() -> new NotFoundException("Notification not found"));
+        notification.setIsRead(true);
+        notificationRepository.save(notification);
     }
 
     @Transactional
