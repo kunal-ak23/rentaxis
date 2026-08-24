@@ -14,8 +14,7 @@ class TicketService {
     return response.data;
   }
 
-  Future<Map<String, dynamic>> createTicket(
-      Map<String, dynamic> data) async {
+  Future<Map<String, dynamic>> createTicket(Map<String, dynamic> data) async {
     final response = await _dio.post('/v1/tickets', data: data);
     return response.data;
   }
@@ -33,10 +32,10 @@ class TicketService {
   }
 
   Future<void> rateTicket(String id, int rating, {String? comment}) async {
-    await _dio.put('/v1/tickets/$id/rate', data: {
-      'rating': rating,
-      if (comment != null) 'comment': comment,
-    });
+    await _dio.put(
+      '/v1/tickets/$id/rate',
+      data: {'rating': rating, 'comment': ?comment},
+    );
   }
 
   Future<void> setEstimate(String id, int hours) async {
@@ -49,11 +48,11 @@ class TicketService {
     return response.data;
   }
 
-  Future<Map<String, dynamic>> addReply(
-      String ticketId, String message) async {
-    final response = await _dio.post('/v1/tickets/$ticketId/replies', data: {
-      'message': message,
-    });
+  Future<Map<String, dynamic>> addReply(String ticketId, String message) async {
+    final response = await _dio.post(
+      '/v1/tickets/$ticketId/replies',
+      data: {'message': message},
+    );
     return response.data;
   }
 
@@ -64,12 +63,16 @@ class TicketService {
   }
 
   Future<Map<String, dynamic>> uploadAttachment(
-      String ticketId, String filePath) async {
+    String ticketId,
+    String filePath,
+  ) async {
     final formData = FormData.fromMap({
       'file': await MultipartFile.fromFile(filePath),
     });
-    final response = await _dio.post('/v1/tickets/$ticketId/attachments',
-        data: formData);
+    final response = await _dio.post(
+      '/v1/tickets/$ticketId/attachments',
+      data: formData,
+    );
     return response.data;
   }
 
@@ -79,8 +82,9 @@ class TicketService {
 
   Future<List<int>> downloadAttachment(String attachmentId) async {
     final response = await _dio.get(
-        '/v1/tickets/attachments/$attachmentId/download',
-        options: Options(responseType: ResponseType.bytes));
+      '/v1/tickets/attachments/$attachmentId/download',
+      options: Options(responseType: ResponseType.bytes),
+    );
     return response.data;
   }
 
@@ -91,14 +95,19 @@ class TicketService {
   }
 
   // Reports (PM only)
-  Future<Map<String, dynamic>> getReports(
-      {String? propertyId, String? startDate, String? endDate}) async {
-    final response =
-        await _dio.get('/v1/tickets/reports', queryParameters: {
-      if (propertyId != null) 'propertyId': propertyId,
-      if (startDate != null) 'startDate': startDate,
-      if (endDate != null) 'endDate': endDate,
-    });
+  Future<Map<String, dynamic>> getReports({
+    String? propertyId,
+    String? startDate,
+    String? endDate,
+  }) async {
+    final response = await _dio.get(
+      '/v1/tickets/reports',
+      queryParameters: {
+        'propertyId': ?propertyId,
+        'startDate': ?startDate,
+        'endDate': ?endDate,
+      },
+    );
     return response.data;
   }
 }

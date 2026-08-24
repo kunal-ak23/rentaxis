@@ -14,12 +14,15 @@ class PenaltyService {
     int page = 0,
     int size = 50,
   }) async {
-    final response = await _dio.get('/v1/penalties', queryParameters: {
-      'status': status,
-      if (leaseId != null) 'leaseId': leaseId,
-      'page': page,
-      'size': size,
-    });
+    final response = await _dio.get(
+      '/v1/penalties',
+      queryParameters: {
+        'status': status,
+        'leaseId': ?leaseId,
+        'page': page,
+        'size': size,
+      },
+    );
     final data = response.data as Map<String, dynamic>;
     final content = data['content'] as List<dynamic>? ?? [];
     return content.map((e) => Map<String, dynamic>.from(e as Map)).toList();
@@ -37,9 +40,10 @@ class PenaltyService {
     String penaltyId, {
     required String reason,
   }) async {
-    final response = await _dio.post('/v1/penalties/$penaltyId/waive', data: {
-      'reason': reason,
-    });
+    final response = await _dio.post(
+      '/v1/penalties/$penaltyId/waive',
+      data: {'reason': reason},
+    );
     return response.data;
   }
 }

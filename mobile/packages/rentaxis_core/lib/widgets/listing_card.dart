@@ -75,11 +75,11 @@ class ListingCard extends StatelessWidget {
                           height: 180,
                           width: double.infinity,
                           fit: BoxFit.cover,
-                          placeholder: (_, __) => ShimmerLoading(
+                          placeholder: (_, _) => ShimmerLoading(
                             height: 180,
                             width: double.infinity,
                           ),
-                          errorWidget: (_, __, ___) => _PlaceholderImage(),
+                          errorWidget: (_, _, _) => _PlaceholderImage(),
                         )
                       : _PlaceholderImage(),
                 ),

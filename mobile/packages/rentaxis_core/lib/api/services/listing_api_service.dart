@@ -23,14 +23,14 @@ class ListingApiService {
     final response = await _dio.get(
       '/marketplace/$tenantSlug/listings',
       queryParameters: {
-        if (minBedrooms != null) 'minBedrooms': minBedrooms,
-        if (minRent != null) 'minRent': minRent,
-        if (maxRent != null) 'maxRent': maxRent,
-        if (furnishing != null) 'furnishing': furnishing,
-        if (availableNow != null) 'availableNow': availableNow,
-        if (nearLat != null) 'nearLat': nearLat,
-        if (nearLng != null) 'nearLng': nearLng,
-        if (radiusKm != null) 'radiusKm': radiusKm,
+        'minBedrooms': ?minBedrooms,
+        'minRent': ?minRent,
+        'maxRent': ?maxRent,
+        'furnishing': ?furnishing,
+        'availableNow': ?availableNow,
+        'nearLat': ?nearLat,
+        'nearLng': ?nearLng,
+        'radiusKm': ?radiusKm,
         'page': page,
         'size': size,
         'sort': sort,
@@ -43,8 +43,7 @@ class ListingApiService {
     String tenantSlug,
     String slug,
   ) async {
-    final response =
-        await _dio.get('/marketplace/$tenantSlug/listings/$slug');
+    final response = await _dio.get('/marketplace/$tenantSlug/listings/$slug');
     return response.data as Map<String, dynamic>;
   }
 
@@ -83,8 +82,7 @@ class ListingApiService {
     return response.data as Map<String, dynamic>;
   }
 
-  Future<Map<String, dynamic>> createListing(
-      Map<String, dynamic> data) async {
+  Future<Map<String, dynamic>> createListing(Map<String, dynamic> data) async {
     final response = await _dio.post('/listings', data: data);
     return response.data as Map<String, dynamic>;
   }
@@ -118,11 +116,13 @@ class ListingApiService {
   }) async {
     final formData = FormData.fromMap({
       'file': MultipartFile.fromBytes(bytes, filename: filename),
-      if (caption != null) 'caption': caption,
+      'caption': ?caption,
       'isCover': isCover.toString(),
     });
-    final response =
-        await _dio.post('/listings/$listingId/media', data: formData);
+    final response = await _dio.post(
+      '/listings/$listingId/media',
+      data: formData,
+    );
     return response.data as Map<String, dynamic>;
   }
 
@@ -130,8 +130,7 @@ class ListingApiService {
     await _dio.delete('/listings/$listingId/media/$mediaId');
   }
 
-  Future<void> reorderMedia(
-      String listingId, List<String> mediaIds) async {
+  Future<void> reorderMedia(String listingId, List<String> mediaIds) async {
     await _dio.put(
       '/listings/$listingId/media/reorder',
       data: {'mediaIds': mediaIds},

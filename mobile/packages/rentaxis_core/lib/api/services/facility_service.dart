@@ -119,9 +119,9 @@ class FacilityApiService {
     final response = await _dio.get(
       '/v1/bookings',
       queryParameters: {
-        if (propertyId != null) 'propertyId': propertyId,
-        if (status != null) 'status': status,
-        if (resourceType != null) 'resourceType': resourceType,
+        'propertyId': ?propertyId,
+        'status': ?status,
+        'resourceType': ?resourceType,
         'page': page,
         'size': size,
       },
