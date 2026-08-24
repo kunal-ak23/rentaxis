@@ -1334,5 +1334,21 @@
     "allBusinesses": "All businesses",
     "noAccess": "You do not have access to promotions.",
     "tooManyBusinesses": "Showing the first {cap} businesses. Some may be missing from the pickers."
+  },
+  "GlobalSearch": {
+    "placeholder": "Search leases, renters, cheques…",
+    "placeholderSuperAdmin": "Search leases, tenants, cheques…",
+    "dialogLabel": "Global search",
+    "inputLabel": "Search",
+    "close": "Close search",
+    "minChars": "Type at least two characters to search.",
+    "unavailable": "Search is temporarily unavailable.",
+    "noResults": "No matching leases, cheques, or organizations.",
+    "groupLeases": "Leases",
+    "groupPayments": "Cheques and payments",
+    "groupTenants": "Organizations",
+    "leaseFallback": "Lease",
+    "cheque": "Cheque {number}",
+    "installment": "Installment {number}"
   }
 }

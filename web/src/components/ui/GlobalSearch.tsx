@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Building2, FileText, Loader2, ReceiptText, Search, X } from "lucide-react";
+import { useTranslations } from "next-intl";
 import type { UserRole } from "@/lib/rbac";
 
 type SearchResult = {
@@ -44,9 +46,10 @@ export default function GlobalSearch({ role, locale }: { role?: UserRole; locale
     const [loading, setLoading] = useState(false);
     const [failed, setFailed] = useState(false);
     const supported = role != null && SEARCH_ROLES.includes(role);
+    const t = useTranslations("GlobalSearch");
     const placeholder = role === "SUPER_ADMIN"
-        ? "Search leases, tenants, cheques…"
-        : "Search leases, renters, cheques…";
+        ? t("placeholderSuperAdmin")
+        : t("placeholder");
 
     useEffect(() => {
         if (!supported) return;
@@ -66,6 +69,10 @@ export default function GlobalSearch({ role, locale }: { role?: UserRole; locale
         if (!open) return;
         requestAnimationFrame(() => inputRef.current?.focus());
     }, [open]);
+
+    // The overlay is portalled to <body>, which only exists after mount.
+    const [mounted, setMounted] = useState(false);
+    useEffect(() => setMounted(true), []);
 
     useEffect(() => {
         const token = query.trim().toLowerCase();
@@ -89,7 +96,11 @@ export default function GlobalSearch({ role, locale }: { role?: UserRole; locale
             const encoded = encodeURIComponent(query.trim());
             const [leasePayload, paymentPayload, tenantPayload] = await Promise.all([
                 safeJson(`/api/proxy/v1/leases/paged?search=${encoded}&page=0&size=6`),
-                safeJson("/api/proxy/v1/payments?page=0&size=100"),
+                // Server-side search across every payment row. Fetching a fixed
+                // window and filtering here instead would silently miss anything
+                // outside it — payments come back newest-dueDate-first, so an
+                // older cheque would render "No results" rather than an error.
+                safeJson(`/api/proxy/v1/payments/search?q=${encoded}&page=0&size=6`),
                 role === "SUPER_ADMIN" ? safeJson("/api/proxy/admin/tenants") : Promise.resolve(null),
             ]);
             if (controller.signal.aborted) return;
@@ -103,23 +114,21 @@ export default function GlobalSearch({ role, locale }: { role?: UserRole; locale
                 next.push({
                     id: lease.id,
                     kind: "LEASE",
-                    title: [lease.unitIdentifier, lease.renterName].filter(Boolean).join(" · ") || "Lease",
+                    title: [lease.unitIdentifier, lease.renterName].filter(Boolean).join(" · ") || t("leaseFallback"),
                     subtitle: [lease.propertyName, lease.status].filter(Boolean).join(" · "),
                     href: `/${locale}/dashboard/leases/${lease.id}`,
                 });
             }
 
+            // Already filtered and capped server-side.
             const paymentRows = Array.isArray(paymentPage) ? paymentPage : paymentPage?.content ?? [];
-            for (const payment of paymentRows.filter((item) =>
-                [item.chequeNumber, item.renterName, item.unitIdentifier, item.propertyName]
-                    .some((value) => value?.toLowerCase().includes(token)),
-            ).slice(0, 6)) {
+            for (const payment of paymentRows) {
                 next.push({
                     id: payment.id,
                     kind: "PAYMENT",
                     title: payment.chequeNumber
-                        ? `Cheque ${payment.chequeNumber}`
-                        : `Installment ${payment.installmentNumber ?? ""}`.trim(),
+                        ? t("cheque", { number: payment.chequeNumber })
+                        : t("installment", { number: payment.installmentNumber ?? "" }),
                     subtitle: [payment.renterName, payment.unitIdentifier, payment.status]
                         .filter(Boolean).join(" · "),
                     href: `/${locale}/dashboard/finance/payments?renterName=${encodeURIComponent(payment.renterName ?? "")}`,
@@ -209,12 +218,18 @@ export default function GlobalSearch({ role, locale }: { role?: UserRole; locale
                 <kbd className="text-[11px] text-[var(--ink-500)] px-1.5 py-0.5 border border-border rounded font-mono">⌘K</kbd>
             </button>
 
-            {open && (
+            {/*
+              * Portalled to <body> on purpose. TopHeader is a flex child with
+              * z-30, which makes it a stacking context, so a z-[100] overlay
+              * rendered inside it can still only reach 30 against its siblings —
+              * and MvpSidebar sits at z-40, painting straight over the palette.
+              */}
+            {open && mounted && createPortal(
                 <div className="fixed inset-0 z-[100] bg-black/30 flex items-start justify-center pt-[12vh] px-4" onMouseDown={() => setOpen(false)}>
                     <section
                         role="dialog"
                         aria-modal="true"
-                        aria-label="Global search"
+                        aria-label={t("dialogLabel")}
                         onMouseDown={(event) => event.stopPropagation()}
                         className="w-full max-w-2xl bg-surface border border-border rounded-xl shadow-2xl overflow-hidden"
                     >
@@ -224,31 +239,32 @@ export default function GlobalSearch({ role, locale }: { role?: UserRole; locale
                                 ref={inputRef}
                                 value={query}
                                 onChange={(event) => changeQuery(event.target.value)}
-                                aria-label="Search RentAxis"
+                                aria-label={t("inputLabel")}
                                 placeholder={placeholder}
                                 className="flex-1 bg-transparent outline-none text-sm text-foreground placeholder:text-muted"
                             />
-                            <button type="button" aria-label="Close search" onClick={() => setOpen(false)} className="p-1.5 rounded-md hover:bg-input text-muted">
+                            <button type="button" aria-label={t("close")} onClick={() => setOpen(false)} className="p-1.5 rounded-md hover:bg-input text-muted">
                                 <X size={16} />
                             </button>
                         </div>
                         <div className="max-h-[55vh] overflow-y-auto p-2">
                             {query.trim().length < 2 ? (
-                                <p className="px-3 py-8 text-center text-sm text-muted">Type at least two characters to search.</p>
+                                <p className="px-3 py-8 text-center text-sm text-muted">{t("minChars")}</p>
                             ) : failed ? (
-                                <p className="px-3 py-8 text-center text-sm text-error">Search is temporarily unavailable.</p>
+                                <p className="px-3 py-8 text-center text-sm text-error">{t("unavailable")}</p>
                             ) : !loading && results.length === 0 ? (
-                                <p className="px-3 py-8 text-center text-sm text-muted">No matching leases, cheques, or organizations.</p>
+                                <p className="px-3 py-8 text-center text-sm text-muted">{t("noResults")}</p>
                             ) : (
                                 <div className="space-y-2">
-                                    {resultGroup("Leases", grouped.leases, <FileText size={12} />)}
-                                    {resultGroup("Cheques and payments", grouped.payments, <ReceiptText size={12} />)}
-                                    {resultGroup("Organizations", grouped.tenants, <Building2 size={12} />)}
+                                    {resultGroup(t("groupLeases"), grouped.leases, <FileText size={12} />)}
+                                    {resultGroup(t("groupPayments"), grouped.payments, <ReceiptText size={12} />)}
+                                    {resultGroup(t("groupTenants"), grouped.tenants, <Building2 size={12} />)}
                                 </div>
                             )}
                         </div>
                     </section>
-                </div>
+                </div>,
+                document.body,
             )}
         </div>
     );

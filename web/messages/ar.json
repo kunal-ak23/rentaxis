@@ -1334,5 +1334,21 @@
     "allBusinesses": "كل الشركات",
     "noAccess": "ليس لديك صلاحية الوصول إلى العروض.",
     "tooManyBusinesses": "يتم عرض أول {cap} شركة فقط. قد لا تظهر بعض الشركات في القوائم."
+  },
+  "GlobalSearch": {
+    "placeholder": "ابحث في عقود الإيجار والمستأجرين والشيكات…",
+    "placeholderSuperAdmin": "ابحث في عقود الإيجار والمؤسسات والشيكات…",
+    "dialogLabel": "البحث الشامل",
+    "inputLabel": "بحث",
+    "close": "إغلاق البحث",
+    "minChars": "اكتب حرفين على الأقل للبحث.",
+    "unavailable": "البحث غير متاح مؤقتًا.",
+    "noResults": "لا توجد عقود إيجار أو شيكات أو مؤسسات مطابقة.",
+    "groupLeases": "عقود الإيجار",
+    "groupPayments": "الشيكات والمدفوعات",
+    "groupTenants": "المؤسسات",
+    "leaseFallback": "عقد إيجار",
+    "cheque": "شيك {number}",
+    "installment": "قسط {number}"
   }
 }
