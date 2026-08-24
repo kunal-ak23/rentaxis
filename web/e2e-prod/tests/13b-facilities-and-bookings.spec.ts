@@ -9,7 +9,7 @@ import { api, loginAsNextAuth, setActiveTenant } from '../helpers/prod-client';
 
 const CONTEXT_FILE = path.join(__dirname, '..', '.test-context.json');
 
-test('renter requests amenity and parking access and manager decides them', async () => {
+test('renter requests amenity and parking access and manager decides them', async ({ browser }) => {
   const ctx = JSON.parse(fs.readFileSync(CONTEXT_FILE, 'utf8'));
   expect(ctx.lease?.status).toMatch(/ACTIVE/i);
 
@@ -55,22 +55,72 @@ test('renter requests amenity and parking access and manager decides them', asyn
   );
   expect(approvedAmenity.status).toBe('APPROVED');
 
-  const parkingBooking = await api.createBooking(renterCtx, {
-    resourceType: 'PARKING_SPOT',
-    resourceId: parking.id,
-    unitId: ctx.unit.id,
-    preferredDate: date,
-    note: 'TEST-Second vehicle',
-  });
+  const renterBrowser = await browser.newContext({ baseURL: ctx.baseURL });
+  const renterPage = await renterBrowser.newPage();
+  await renterPage.goto('/en/auth/login');
+  await renterPage.locator('#login-email').fill(ctx.renter.email);
+  await renterPage.locator('#login-password').fill(ctx.renter.portalPassword);
+  await renterPage.getByRole('button', { name: /sign in|log in/i }).click();
+  await renterPage.waitForURL(/\/dashboard\/renter-portal/, { timeout: 15_000 });
+  await renterPage.goto('/en/dashboard/renter-portal/facilities');
+  await expect(renterPage.getByRole('heading', { level: 1, name: 'Facilities & Parking' })).toBeVisible();
+  await expect(renterPage.getByText(amenity.nameEn, { exact: true })).toBeVisible();
+  await expect(renterPage.getByText(parking.spotNumber, { exact: true })).toBeVisible();
+
+  const parkingCard = renterPage.getByText(parking.spotNumber, { exact: true }).locator('..').locator('..');
+  await parkingCard.getByRole('button', { name: 'Request' }).click();
+  const requestDialog = renterPage.getByRole('dialog', { name: `Request ${parking.spotNumber}` });
+  await requestDialog.locator('input[type="date"]').fill(date);
+  await requestDialog.getByPlaceholder('Anything the manager should know').fill('TEST-Second vehicle');
+  const [createResponse] = await Promise.all([
+    renterPage.waitForResponse((response) =>
+      response.url().endsWith('/api/proxy/v1/bookings') && response.request().method() === 'POST',
+    ),
+    requestDialog.getByRole('button', { name: 'Submit Request' }).click(),
+  ]);
+  expect(createResponse.ok()).toBeTruthy();
+  const parkingBooking: { id: string; status: string } = await createResponse.json();
   expect(parkingBooking.status).toBe('PENDING');
+  await expect(renterPage.getByText('TEST-Second vehicle', { exact: false })).toBeVisible();
   expect((await api.getMyBookings(renterCtx)).some((item) => item.id === parkingBooking.id)).toBeTruthy();
 
   const detail = await api.getBooking(pmCtx, parkingBooking.id);
   expect(detail.booking.id).toBe(parkingBooking.id);
   expect((await api.getBookings(pmCtx, ctx.property.id)).content.some((item) => item.id === parkingBooking.id)).toBeTruthy();
 
-  expect((await api.approveBooking(pmCtx, parkingBooking.id, 'Approved parking')).status).toBe('APPROVED');
-  expect((await api.releaseBooking(renterCtx, parkingBooking.id)).status).toBe('RELEASED');
+  const managerBrowser = await browser.newContext({ baseURL: ctx.baseURL });
+  const managerPage = await managerBrowser.newPage();
+  await managerPage.goto('/en/auth/login');
+  await managerPage.locator('#login-email').fill(ctx.pmEmail);
+  await managerPage.locator('#login-password').fill(ctx.pmPassword);
+  await managerPage.getByRole('button', { name: /sign in|log in/i }).click();
+  await managerPage.waitForURL(/\/dashboard(?!\/renter-portal)/, { timeout: 15_000 });
+  await managerPage.goto('/en/dashboard/bookings');
+  await expect(managerPage.getByRole('heading', { level: 1, name: 'Booking Requests' })).toBeVisible();
+  await managerPage.locator('select').first().selectOption(ctx.property.id);
+  await managerPage.getByText(parking.spotNumber, { exact: true }).click();
+  const bookingDrawer = managerPage.getByRole('dialog', { name: 'Booking Request' });
+  await expect(bookingDrawer.getByText('TEST-Second vehicle', { exact: false })).toBeVisible();
+  await bookingDrawer.locator('textarea').fill('Approved parking');
+  const [approveResponse] = await Promise.all([
+    managerPage.waitForResponse((response) => response.url().endsWith(`/bookings/${parkingBooking.id}/approve`)),
+    bookingDrawer.getByRole('button', { name: 'Approve' }).click(),
+  ]);
+  expect(approveResponse.ok()).toBeTruthy();
+  await expect(bookingDrawer.getByText('Approved', { exact: true })).toBeVisible();
+  expect((await api.getBooking(pmCtx, parkingBooking.id)).booking.status).toBe('APPROVED');
+
+  await renterPage.reload();
+  const parkingRequestRow = renterPage.getByRole('row').filter({ hasText: parking.spotNumber });
+  await parkingRequestRow.getByRole('button', { name: 'Release Spot' }).click();
+  const releaseDialog = renterPage.getByRole('heading', { name: 'Release Spot' }).locator('..').locator('..');
+  await expect(releaseDialog.getByText('Give up this parking spot?', { exact: false })).toBeVisible();
+  const [releaseResponse] = await Promise.all([
+    renterPage.waitForResponse((response) => response.url().endsWith(`/bookings/${parkingBooking.id}/release`)),
+    releaseDialog.getByRole('button', { name: 'Release Spot' }).click(),
+  ]);
+  expect(releaseResponse.ok()).toBeTruthy();
+  expect((await api.getBooking(pmCtx, parkingBooking.id)).booking.status).toBe('RELEASED');
 
   // Separate pending request exercises renter cancellation.
   const cancelled = await api.createBooking(renterCtx, {
@@ -82,6 +132,8 @@ test('renter requests amenity and parking access and manager decides them', asyn
   });
   expect((await api.cancelBooking(renterCtx, cancelled.id)).status).toBe('CANCELLED');
 
+  await renterBrowser.close();
+  await managerBrowser.close();
   await api.deactivateAmenity(pmCtx, amenity.id);
   await api.deactivateParkingSpot(pmCtx, parking.id);
   await renterCtx.request.dispose();

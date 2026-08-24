@@ -9,7 +9,7 @@ import { api, loginAsNextAuth } from '../helpers/prod-client';
 
 const CONTEXT_FILE = path.join(__dirname, '..', '.test-context.json');
 
-test('admin publishes a targeted coupon and renter engagement reaches analytics', async () => {
+test('admin publishes a targeted coupon and renter engagement reaches analytics', async ({ browser }) => {
   const ctx = JSON.parse(fs.readFileSync(CONTEXT_FILE, 'utf8'));
   const taCtx = await loginAsNextAuth(ctx.baseURL, ctx.adminEmail, ctx.adminPassword);
   const renterCtx = await loginAsNextAuth(
@@ -91,6 +91,29 @@ test('admin publishes a targeted coupon and renter engagement reaches analytics'
   );
   expect(listedAd?.impressions).toBeGreaterThanOrEqual(1);
   expect(listedAd?.clicks).toBeGreaterThanOrEqual(1);
+
+  const adminBrowser = await browser.newContext({ baseURL: ctx.baseURL });
+  const adminPage = await adminBrowser.newPage();
+  await adminPage.goto('/en/auth/login');
+  await adminPage.locator('#login-email').fill(ctx.adminEmail);
+  await adminPage.locator('#login-password').fill(ctx.adminPassword);
+  await adminPage.getByRole('button', { name: /sign in|log in/i }).click();
+  await adminPage.waitForURL(/\/dashboard(?!\/renter-portal)/, { timeout: 15_000 });
+  await adminPage.goto('/en/dashboard/promotions');
+  await expect(adminPage.getByRole('heading', { level: 1, name: 'Promotions' })).toBeVisible();
+
+  const adRow = adminPage.getByRole('row').filter({ hasText: adBody.titleEn });
+  await expect(adRow.getByText(`${businessBody.nameEn} Updated`, { exact: true })).toBeVisible();
+  await expect(adRow.getByText('Show coupon code', { exact: true })).toBeVisible();
+  await expect(adRow.getByText('Live', { exact: true })).toBeVisible();
+  await expect(adRow.getByText(String(listedAd!.impressions), { exact: true })).toBeVisible();
+  await expect(adRow.getByText(String(listedAd!.clicks), { exact: true })).toBeVisible();
+
+  await adminPage.getByRole('tab', { name: 'Businesses' }).click();
+  const businessRow = adminPage.getByRole('row').filter({ hasText: `${businessBody.nameEn} Updated` });
+  await expect(businessRow.getByText('Dining', { exact: true })).toBeVisible();
+  await expect(businessRow.getByText('+971500000006', { exact: true })).toBeVisible();
+  await adminBrowser.close();
 
   // Engagement history is deliberately retained, so used ads cannot be hard-deleted.
   // Deactivate this test content; 99-cleanup removes the disposable tenant and its history.
