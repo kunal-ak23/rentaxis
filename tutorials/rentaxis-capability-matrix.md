@@ -13,7 +13,7 @@ Status legend:
 | Tutorial | Surfaces | Roles | Capabilities | Current evidence |
 |---|---|---|---|---|
 | 01. Sign in and navigate RentAxis | Web, Manager, Renter, Security | All | Sign in, sign out, password setup/change, sidebar/bottom navigation, profile, English/Arabic switching | Prod E2E (auth); production UI journey prepared for locale/profile/password/logout/re-login; Local E2E; Mobile integration |
-| 02. Dashboard, search, notifications, and help | Web, Manager, Renter | All | KPI dashboard, global search, alerts, notification center, help articles, guided tours | Prod E2E (notifications); read-only production UI spec prepared for command-palette lease navigation, Security Guard help detail, and Super Admin follow-ups; pending #100/#101/#102 deployment; Local E2E (dashboard) |
+| 02. Dashboard, search, notifications, and help | Web, Manager, Renter | All | KPI dashboard, global search, alerts, notification center, help articles, guided tours | Prod E2E (notifications); production browser specs prepared for KPI dashboard, command-palette lease navigation, Security Guard help detail, and Super Admin follow-ups; pending #100/#101/#102 deployment; Local E2E |
 | 03. Roles, permissions, and organization switching | Web | Super admin, tenant admin, property manager, renter | Role boundaries, tenant switcher, role-specific navigation | Production E2E spec prepared (feature-admin and role-escalation boundaries); production run pending safety deployments; Local E2E (RBAC) |
 
 ## Administration and portfolio
@@ -46,7 +46,7 @@ Status legend:
 | 17. Chart of accounts and account mappings | Web, Manager | Super admin, tenant admin | Accounts CRUD, hierarchy, mapping operational events to ledger accounts | Production spec prepared for seed/list/mapping plus account and configured-mapping browser rendering; production run pending safety deployments; manager widget tests |
 | 18. Record and review financial transactions | Web, Manager | Super admin, tenant admin | Income/expense entries, property/unit scoping, references, transaction list | Production spec prepared for transaction creation/list and dashboard rendering; production run pending safety deployments |
 | 19. Vendors and bank accounts | Web, Manager | Super admin, tenant admin | Vendor CRUD/details, bank accounts, property association | Prod E2E (vendor API); production spec prepared for bank lifecycle and vendor/bank browser rendering; manager widget tests |
-| 20. Dashboards and financial reports | Web, Manager | Super admin, tenant admin | Collection KPIs, occupancy, income statement, balance sheet, NOI and report details | Prod E2E (report APIs); Local E2E; manager widget tests |
+| 20. Dashboards and financial reports | Web, Manager | Super admin, tenant admin | Collection KPIs, occupancy, income statement, balance sheet, NOI and report details | Prod E2E (report APIs); production browser spec prepared for dashboard KPIs, P&L/NOI, balance sheet, trial balance, and aging report generation; Local E2E; manager widget tests |
 | 21. Renter payments | Web, Renter | Renter | Payment schedule, online payment widgets, payment history and receipts | Prod E2E; Local E2E; renter integration coverage |
 
 ## Service operations
