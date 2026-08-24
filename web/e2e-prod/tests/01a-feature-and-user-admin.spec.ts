@@ -111,10 +111,12 @@ test('super admin controls disposable feature access and tenant admin manages us
   expect(foreignTargetRead.status()).toBeLessThan(500);
 
   const managedEmail = `test-managed-pm-${ctx.runSuffix}@e2e.rentaxis.test`;
+  const managedPassword = 'TestManaged!23';
+  const managedNewPassword = 'TestManagedNew!24';
   const managed = await api.createUser(tenantAdminCtx, ctx.tenant.id, {
     name: `TEST-Managed PM ${ctx.runSuffix}`,
     email: managedEmail,
-    password: 'TestManaged!23',
+    password: managedPassword,
     role: 'PROPERTY_MANAGER',
   });
   await api.assignUserToProperty(tenantAdminCtx, managed.id, ctx.property.id);
@@ -151,24 +153,13 @@ test('super admin controls disposable feature access and tenant admin manages us
   const users = (await usersResponse.json()) as Array<{ id: string; tenantId: string }>;
   expect(users.find((user) => user.id === managed.id)?.tenantId).toBe(ctx.tenant.id);
 
-  const removeAssignment = await tenantAdminCtx.request.delete(
-    `/api/proxy/admin/users/${managed.id}/properties/${ctx.property.id}`,
-    { failOnStatusCode: false },
-  );
-  await assertOk(removeAssignment, 'managed user property removal');
-
-  const deleteManaged = await tenantAdminCtx.request.delete(
-    `/api/proxy/admin/users/${managed.id}`,
-    { failOnStatusCode: false },
-  );
-  await assertOk(deleteManaged, 'managed user deletion');
-
-  const usersAfterDelete = await tenantAdminCtx.request.get('/api/proxy/admin/users', {
-    failOnStatusCode: false,
-  });
-  await assertOk(usersAfterDelete, 'tenant user listing after delete');
-  expect(((await usersAfterDelete.json()) as Array<{ id: string }>).some((user) => user.id === managed.id))
-    .toBe(false);
+  ctx.managedUser = {
+    id: managed.id,
+    email: managedEmail,
+    password: managedPassword,
+    newPassword: managedNewPassword,
+  };
+  fs.writeFileSync(CONTEXT_FILE, JSON.stringify(ctx, null, 2));
 
   await tenantAdminCtx.request.dispose();
   await superCtx.request.dispose();
