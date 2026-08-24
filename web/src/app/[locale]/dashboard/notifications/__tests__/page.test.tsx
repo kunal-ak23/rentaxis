@@ -153,4 +153,42 @@ describe("NotificationsPage pagination", () => {
             expect(pageParam(unreadUrl!)).toBe("0");
         });
     });
+
+    it("removes a notification immediately after it is read from the Unread tab", async () => {
+        stubFetch((url) => {
+            if (url.includes("/v1/notifications")) {
+                return { ok: true, json: async () => makeNotifications(2) };
+            }
+            return { ok: true, json: async () => null };
+        });
+
+        render(<NotificationsPage />);
+        await waitFor(() => expect(screen.getByText("Notification 0")).toBeInTheDocument());
+        fireEvent.click(screen.getByRole("button", { name: "Unread" }));
+        await waitFor(() => expect(fetchedUrls.some((u) => u.includes("unreadOnly=true"))).toBe(true));
+
+        fireEvent.click(screen.getByText("Message 0"));
+
+        await waitFor(() => expect(screen.queryByText("Notification 0")).toBeNull());
+        expect(screen.getByText("Notification 1")).toBeInTheDocument();
+    });
+
+    it("clears the Unread tab after marking all notifications read", async () => {
+        stubFetch((url) => {
+            if (url.includes("/v1/notifications")) {
+                return { ok: true, json: async () => makeNotifications(2) };
+            }
+            return { ok: true, json: async () => null };
+        });
+
+        render(<NotificationsPage />);
+        await waitFor(() => expect(screen.getByText("Notification 0")).toBeInTheDocument());
+        fireEvent.click(screen.getByRole("button", { name: "Unread" }));
+        await waitFor(() => expect(fetchedUrls.some((u) => u.includes("unreadOnly=true"))).toBe(true));
+
+        fireEvent.click(screen.getByRole("button", { name: "Mark All as Read" }));
+
+        await waitFor(() => expect(screen.getByText("You're all caught up!")).toBeInTheDocument());
+        expect(screen.queryByText("Notification 1")).toBeNull();
+    });
 });

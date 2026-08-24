@@ -112,7 +112,13 @@ export default function NotificationsPage() {
         setMarkingAll(true);
         try {
             await fetch("/api/proxy/v1/notifications/read-all", { method: "PUT" });
-            setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+            if (filter === "UNREAD") {
+                setNotifications([]);
+                setTotalItems(0);
+                setCurrentPage(1);
+            } else {
+                setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+            }
         } catch { /* ignore */ } finally {
             setMarkingAll(false);
         }
@@ -123,9 +129,14 @@ export default function NotificationsPage() {
         if (!n.isRead) {
             try {
                 await fetch(`/api/proxy/v1/notifications/${n.id}/read`, { method: "PUT" });
-                setNotifications((prev) =>
-                    prev.map((x) => (x.id === n.id ? { ...x, isRead: true } : x))
-                );
+                if (filter === "UNREAD") {
+                    setNotifications((prev) => prev.filter((x) => x.id !== n.id));
+                    setTotalItems((prev) => Math.max(0, prev - 1));
+                } else {
+                    setNotifications((prev) =>
+                        prev.map((x) => (x.id === n.id ? { ...x, isRead: true } : x))
+                    );
+                }
             } catch { /* ignore */ }
         }
 
