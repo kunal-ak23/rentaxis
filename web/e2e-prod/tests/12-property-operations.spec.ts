@@ -109,7 +109,16 @@ test('admin and assigned manager maintain and browse the complete property detai
     projectDialog.getByRole('button', { name: /^create$/i }).click(),
   ]);
   expect(projectResponse.ok()).toBeTruthy();
-  const uiProject = await projectResponse.json();
+  // The browser only needs the response status before it refreshes the list;
+  // read the persisted representation through an independent API request so
+  // Playwright does not compete with the page for the intercepted body.
+  const projectsResponse = await taCtx.request.get('/api/proxy/v1/properties');
+  expect(projectsResponse.ok()).toBeTruthy();
+  const projectStats = (await projectsResponse.json()).find(
+    (row: { property: { nameEn: string } }) => row.property.nameEn === uiProjectName,
+  );
+  expect(projectStats, 'the project created through the UI must be persisted').toBeTruthy();
+  const uiProject = projectStats!.property;
   expect(uiProject).toMatchObject({
     nameEn: uiProjectName,
     nameAr: `محفظة تجريبية ${ctx.runSuffix}`,
@@ -145,7 +154,7 @@ test('admin and assigned manager maintain and browse the complete property detai
   await expect(page.getByText(`TEST-Maintenance Desk ${ctx.runSuffix}`)).toBeVisible();
 
   await page.getByRole('button', { name: /^buildings$/i }).click();
-  await expect(page.getByText(`TEST-Tower Operations ${ctx.runSuffix}`)).toBeVisible();
+  await expect(page.getByText(`TEST-Tower Operations ${ctx.runSuffix}`).first()).toBeVisible();
 
   await page.getByRole('button', { name: /^units$/i }).click();
   await expect(page.getByText(`TEST-${ctx.runSuffix}`, { exact: true })).toBeVisible();

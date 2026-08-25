@@ -3,7 +3,7 @@
     "tutorial": 1,
     "title": "Sign in and navigate RentAxis",
     "specs": ["00-smoke-auth", "01b-profile-navigation-and-password", "17-public-account-and-legal-pages"],
-    "status": "prepared",
+    "status": "production-passed",
     "artifactGaps": [],
     "manualChecks": []
   },
@@ -11,7 +11,7 @@
     "tutorial": 2,
     "title": "Dashboard, search, notifications, and help",
     "specs": ["01c-search-help-and-superadmin-dashboard", "04-reports", "09-notifications", "13e-notification-ownership"],
-    "status": "prepared",
+    "status": "production-passed",
     "artifactGaps": [],
     "manualChecks": []
   },
@@ -19,7 +19,7 @@
     "tutorial": 3,
     "title": "Roles, permissions, and organization switching",
     "specs": ["01a-feature-and-user-admin"],
-    "status": "prepared",
+    "status": "production-passed",
     "artifactGaps": [],
     "manualChecks": []
   },
@@ -27,7 +27,7 @@
     "tutorial": 4,
     "title": "Provision organizations and manage feature access",
     "specs": ["01-provision", "01a-feature-and-user-admin"],
-    "status": "prepared",
+    "status": "production-passed",
     "artifactGaps": ["real organization logo and stamp upload/download lifecycle"],
     "manualChecks": []
   },
@@ -35,7 +35,7 @@
     "tutorial": 5,
     "title": "Create users and staff",
     "specs": ["01-provision", "01a-feature-and-user-admin", "13-finance-and-settings"],
-    "status": "prepared",
+    "status": "production-passed",
     "artifactGaps": [],
     "manualChecks": []
   },
@@ -43,7 +43,7 @@
     "tutorial": 6,
     "title": "Create a project and property portfolio",
     "specs": ["01-provision", "12-property-operations"],
-    "status": "prepared",
+    "status": "production-passed",
     "artifactGaps": [],
     "manualChecks": []
   },
@@ -51,7 +51,7 @@
     "tutorial": 7,
     "title": "Buildings, units, contacts, amenities, and parking",
     "specs": ["01-provision", "12-property-operations"],
-    "status": "prepared",
+    "status": "production-passed",
     "artifactGaps": [],
     "manualChecks": []
   },
@@ -59,7 +59,7 @@
     "tutorial": 8,
     "title": "Import a property portfolio in bulk",
     "specs": ["07-bulk-portfolio-import"],
-    "status": "prepared",
+    "status": "production-passed",
     "artifactGaps": [],
     "manualChecks": []
   },
@@ -67,7 +67,7 @@
     "tutorial": 9,
     "title": "Manage renters and portal access",
     "specs": ["01-provision", "06-renter-create-ui"],
-    "status": "prepared",
+    "status": "production-passed",
     "artifactGaps": [],
     "manualChecks": []
   },
@@ -75,7 +75,7 @@
     "tutorial": 10,
     "title": "Draft a lease and preview its payment plan",
     "specs": ["10-lease-create-ui"],
-    "status": "prepared",
+    "status": "production-passed",
     "artifactGaps": [],
     "manualChecks": []
   },
@@ -83,7 +83,7 @@
     "tutorial": 11,
     "title": "Generate, review, and sign a tenancy contract",
     "specs": ["10a-contract-signature-lifecycle", "14-lease-lifecycle-extended"],
-    "status": "prepared",
+    "status": "production-passed",
     "artifactGaps": [],
     "manualChecks": []
   },
@@ -91,7 +91,7 @@
     "tutorial": 12,
     "title": "Activate and administer a lease",
     "specs": ["01-provision", "03-vendor-and-interactions", "10b-draft-lease-administration"],
-    "status": "prepared",
+    "status": "production-passed",
     "artifactGaps": ["real lease attachment upload/download lifecycle"],
     "manualChecks": []
   },
@@ -99,7 +99,7 @@
     "tutorial": 13,
     "title": "Renew, extend, terminate, and settle a lease",
     "specs": ["13f-lease-renewals", "14-lease-lifecycle-extended"],
-    "status": "prepared",
+    "status": "production-passed",
     "artifactGaps": ["real settlement deduction attachment upload/download lifecycle"],
     "manualChecks": []
   },
@@ -107,7 +107,7 @@
     "tutorial": 14,
     "title": "Penalties and cheque-failure fines",
     "specs": ["13a-cheques-and-penalties"],
-    "status": "prepared",
+    "status": "production-passed",
     "artifactGaps": [],
     "manualChecks": []
   },
@@ -115,7 +115,7 @@
     "tutorial": 15,
     "title": "Manage rent cheques end to end",
     "specs": ["02-cheque-lifecycle", "08-cheque-upload", "10b-draft-lease-administration", "13a-cheques-and-penalties"],
-    "status": "prepared",
+    "status": "production-passed",
     "artifactGaps": ["real bulk cheque attachment upload/download lifecycle"],
     "manualChecks": []
   },
@@ -123,7 +123,7 @@
     "tutorial": 16,
     "title": "Configure online rent collection",
     "specs": ["13g-payment-gateway-config"],
-    "status": "prepared",
+    "status": "production-passed",
     "artifactGaps": [],
     "manualChecks": ["controlled payment-provider sandbox charge without real funds"]
   },
@@ -131,7 +131,7 @@
     "tutorial": 17,
     "title": "Chart of accounts and account mappings",
     "specs": ["13-finance-and-settings"],
-    "status": "prepared",
+    "status": "production-passed",
     "artifactGaps": [],
     "manualChecks": []
   },
@@ -139,7 +139,7 @@
     "tutorial": 18,
     "title": "Record and review financial transactions",
     "specs": ["02-cheque-lifecycle", "13-finance-and-settings"],
-    "status": "prepared",
+    "status": "production-passed",
     "artifactGaps": [],
     "manualChecks": []
   },
@@ -147,7 +147,7 @@
     "tutorial": 19,
     "title": "Vendors and bank accounts",
     "specs": ["03-vendor-and-interactions", "13-finance-and-settings"],
-    "status": "prepared",
+    "status": "production-passed",
     "artifactGaps": [],
     "manualChecks": []
   },
@@ -155,7 +155,7 @@
     "tutorial": 20,
     "title": "Dashboards and financial reports",
     "specs": ["04-reports"],
-    "status": "prepared",
+    "status": "production-passed",
     "artifactGaps": [],
     "manualChecks": []
   },
@@ -163,7 +163,7 @@
     "tutorial": 21,
     "title": "Renter payments",
     "specs": ["05-renter-portal-ui", "13a-cheques-and-penalties", "13g-payment-gateway-config"],
-    "status": "prepared",
+    "status": "production-passed",
     "artifactGaps": [],
     "manualChecks": ["controlled payment-provider sandbox charge without real funds"]
   },
@@ -171,7 +171,7 @@
     "tutorial": 22,
     "title": "Submit and manage maintenance tickets",
     "specs": ["11-ticket-lifecycle"],
-    "status": "prepared",
+    "status": "production-passed",
     "artifactGaps": ["real ticket attachment upload/download lifecycle"],
     "manualChecks": []
   },
@@ -179,7 +179,7 @@
     "tutorial": 23,
     "title": "Schedule and manage meetings",
     "specs": ["16-meeting-lifecycle"],
-    "status": "prepared",
+    "status": "production-passed",
     "artifactGaps": [],
     "manualChecks": []
   },
@@ -187,7 +187,7 @@
     "tutorial": 24,
     "title": "Facilities and booking approvals",
     "specs": ["13b-facilities-and-bookings"],
-    "status": "prepared",
+    "status": "production-passed",
     "artifactGaps": [],
     "manualChecks": []
   },
@@ -195,7 +195,7 @@
     "tutorial": 25,
     "title": "Gate passes and walk-in visitors",
     "specs": ["13c-gatepass-lifecycle"],
-    "status": "prepared",
+    "status": "production-passed",
     "artifactGaps": ["real visitor profile and pass photo upload/download lifecycle"],
     "manualChecks": ["physical-camera QR capture", "live Firebase SMS delivery", "guard entry and exit scans"]
   },
@@ -203,7 +203,7 @@
     "tutorial": 26,
     "title": "Publish and manage property listings",
     "specs": ["15-listings-and-marketplace"],
-    "status": "prepared",
+    "status": "production-passed",
     "artifactGaps": ["real listing media and storage-owned social image upload/download lifecycle"],
     "manualChecks": []
   },
@@ -211,7 +211,7 @@
     "tutorial": 27,
     "title": "Browse the marketplace and manage a wishlist",
     "specs": ["15-listings-and-marketplace"],
-    "status": "prepared",
+    "status": "production-passed",
     "artifactGaps": [],
     "manualChecks": []
   },
@@ -219,7 +219,7 @@
     "tutorial": 28,
     "title": "Promotions, offers, and coupons",
     "specs": ["13d-promotions"],
-    "status": "prepared",
+    "status": "production-passed",
     "artifactGaps": ["real business logo and ad background upload/download lifecycle"],
     "manualChecks": ["renter promotion feed and coupon capture on a production device"]
   }

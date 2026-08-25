@@ -69,11 +69,19 @@ test('renter and property manager complete a ticket end to end', async ({ browse
     renterPage.getByRole('button', { name: 'Send' }).click(),
   ]);
   expect(replyResponse.ok()).toBeTruthy();
-  const renterReply: { id: string; userId: string } = await replyResponse.json();
-  expect(renterReply.userId).toBe(ctx.renter.userId);
   await expect(renterPage.getByText('Access is available after 10:00 AM.', { exact: true })).toBeVisible();
+  const renterReply = (await api.getTicketReplies(renterCtx, ticket.id)).find(
+    (reply) => reply.message === 'Access is available after 10:00 AM.',
+  );
+  expect(renterReply, 'the UI reply must be persisted and readable through the API').toBeTruthy();
+  expect(renterReply!.userId).toBe(ctx.renter.userId);
 
   const managerBrowser = await browser.newContext({ baseURL: ctx.baseURL });
+  // This spec validates tickets, not first-login onboarding. Prevent the
+  // delayed admin tour from appearing over the OTP close button mid-flow.
+  await managerBrowser.addInitScript(() => {
+    localStorage.setItem('rentaxis_tours_completed', JSON.stringify(['admin-onboarding']));
+  });
   const managerPage = await managerBrowser.newPage();
   await managerPage.goto('/en/auth/login');
   await managerPage.locator('#login-email').fill(ctx.pmEmail);
@@ -88,7 +96,7 @@ test('renter and property manager complete a ticket end to end', async ({ browse
     managerPage.getByRole('button', { name: 'Assign to Me' }).click(),
   ]);
   expect(assignResponse.ok()).toBeTruthy();
-  await expect(managerPage.getByText('ASSIGNED', { exact: true })).toBeVisible();
+  await expect(managerPage.getByText('ASSIGNED', { exact: true }).first()).toBeVisible();
   expect((await api.getTicket(pmCtx, ticket.id)).assignedTo).toBe(ctx.pmUserId);
 
   await managerPage.getByPlaceholder('Hours').fill('4');
@@ -104,14 +112,14 @@ test('renter and property manager complete a ticket end to end', async ({ browse
     managerPage.getByRole('button', { name: 'Start Work' }).click(),
   ]);
   expect(startResponse.ok()).toBeTruthy();
-  await expect(managerPage.getByText('IN PROGRESS', { exact: true })).toBeVisible();
+  await expect(managerPage.getByText('IN PROGRESS', { exact: true }).first()).toBeVisible();
 
   const [resolveResponse] = await Promise.all([
     managerPage.waitForResponse((response) => response.url().endsWith(`/tickets/${ticket.id}/status`)),
     managerPage.getByRole('button', { name: 'Mark Resolved' }).click(),
   ]);
   expect(resolveResponse.ok()).toBeTruthy();
-  await expect(managerPage.getByText('RESOLVED', { exact: true })).toBeVisible();
+  await expect(managerPage.getByText('RESOLVED', { exact: true }).first()).toBeVisible();
   expect((await api.getTicket(pmCtx, ticket.id)).closureOtp).toBeNull();
 
   // The OTP is intentionally redacted from manager responses and exposed only
@@ -124,10 +132,10 @@ test('renter and property manager complete a ticket end to end', async ({ browse
   await managerPage.getByPlaceholder('6-digit OTP').fill(renterView.closureOtp!);
   const [closeResponse] = await Promise.all([
     managerPage.waitForResponse((response) => response.url().endsWith(`/tickets/${ticket.id}/close`)),
-    managerPage.getByRole('button', { name: 'Close' }).click(),
+    managerPage.getByRole('button', { name: 'Close', exact: true }).click(),
   ]);
   expect(closeResponse.ok()).toBeTruthy();
-  await expect(managerPage.getByText('CLOSED', { exact: true })).toBeVisible();
+  await expect(managerPage.getByText('CLOSED', { exact: true }).first()).toBeVisible();
 
   await renterPage.reload();
   const ratingCard = renterPage.getByRole('heading', { name: 'Rate this service' }).locator('..');
@@ -142,7 +150,7 @@ test('renter and property manager complete a ticket end to end', async ({ browse
   expect((await api.getTicket(renterCtx, ticket.id)).satisfactionRating).toBe(5);
 
   const replies = await api.getTicketReplies(renterCtx, ticket.id);
-  expect(replies.some((reply) => reply.id === renterReply.id)).toBeTruthy();
+  expect(replies.some((reply) => reply.id === renterReply!.id)).toBeTruthy();
 
   const history = await api.getTicketHistory(pmCtx, ticket.id);
   expect(history.some((event) => event.action === 'ASSIGNED')).toBeTruthy();

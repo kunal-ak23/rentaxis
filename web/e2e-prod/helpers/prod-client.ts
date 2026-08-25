@@ -257,7 +257,10 @@ export const api = {
       `/api/proxy/admin/tenants/${tenantId}?confirmName=${encodeURIComponent(confirmName)}`,
       { failOnStatusCode: false },
     );
-    if (res.status() !== 204) {
+    // A prior cleanup attempt or an operator may already have removed the
+    // disposable fixture. The desired postcondition is still satisfied; the
+    // cleanup spec verifies absence immediately after this call.
+    if (res.status() !== 204 && res.status() !== 404) {
       const txt = await res.text().catch(() => '');
       throw new Error(`DELETE /admin/tenants/${tenantId} → ${res.status()}: ${txt.slice(0, 400)}`);
     }
@@ -789,7 +792,7 @@ export const api = {
     ),
   getBooking: (pctx: ProdContext, bookingId: string) =>
     getJson<{
-      booking: { id: string; resourceType: string; status: string };
+      request: { id: string; resourceType: string; status: string };
       otherRequests: Array<{ id: string; status: string }>;
     }>(pctx, `/v1/bookings/${bookingId}`),
   approveBooking: (pctx: ProdContext, bookingId: string, adminNote: string) =>
@@ -911,7 +914,14 @@ export const api = {
       unitId: string;
       name: string;
       phone: string;
-      visitorType: 'GUEST' | 'VENDOR' | 'STAFF' | 'DELIVERY';
+      visitorType:
+        | 'GUEST'
+        | 'DELIVERY'
+        | 'MAID'
+        | 'MILK_VENDOR'
+        | 'LAUNDRY_VENDOR'
+        | 'SERVICE_VENDOR'
+        | 'OTHER';
       validFrom: string;
       validTo: string;
       active: boolean;
@@ -1584,7 +1594,7 @@ export const api = {
       },
     ),
   listInteractions: (pctx: ProdContext, leaseId: string) =>
-    getJson<Array<{ id: string; type: string; summary: string }>>(
+    getJson<{ content: Array<{ id: string; type: string; summary: string }> }>(
       pctx,
       `/v1/leases/${leaseId}/interactions`,
     ),

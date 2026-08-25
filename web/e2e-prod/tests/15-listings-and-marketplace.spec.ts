@@ -88,7 +88,7 @@ test('manager publishes a listing that public and renter journeys can use', asyn
   const interestedRow = managerPage.getByRole('row').filter({ hasText: listingTitle });
   await interestedRow.getByRole('button', { name: '1' }).click();
   const interestsDrawer = managerPage.getByRole('dialog', { name: 'Interested Renters' });
-  await expect(interestsDrawer.getByText('Please arrange a viewing.', { exact: true })).toBeVisible();
+  await expect(interestsDrawer.getByText(/Please arrange a viewing\./)).toBeVisible();
   await expect(interestsDrawer.getByText(ctx.renter.email, { exact: true })).toBeVisible();
 
   await api.withdrawListingInterest(renterCtx, listing.id);

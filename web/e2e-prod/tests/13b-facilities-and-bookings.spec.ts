@@ -81,11 +81,15 @@ test('renter requests amenity and parking access and manager decides them', asyn
   expect(createResponse.ok()).toBeTruthy();
   const parkingBooking: { id: string; status: string } = await createResponse.json();
   expect(parkingBooking.status).toBe('PENDING');
-  await expect(renterPage.getByText('TEST-Second vehicle', { exact: false })).toBeVisible();
+  // The renter table shows the resource/status while the submitted note is
+  // intentionally exposed in the manager detail drawer below.
+  await expect(
+    renterPage.getByRole('row').filter({ hasText: parking.spotNumber }),
+  ).toBeVisible();
   expect((await api.getMyBookings(renterCtx)).some((item) => item.id === parkingBooking.id)).toBeTruthy();
 
   const detail = await api.getBooking(pmCtx, parkingBooking.id);
-  expect(detail.booking.id).toBe(parkingBooking.id);
+  expect(detail.request.id).toBe(parkingBooking.id);
   expect((await api.getBookings(pmCtx, ctx.property.id)).content.some((item) => item.id === parkingBooking.id)).toBeTruthy();
 
   const managerBrowser = await browser.newContext({ baseURL: ctx.baseURL });
@@ -108,7 +112,7 @@ test('renter requests amenity and parking access and manager decides them', asyn
   ]);
   expect(approveResponse.ok()).toBeTruthy();
   await expect(bookingDrawer.getByText('Approved', { exact: true })).toBeVisible();
-  expect((await api.getBooking(pmCtx, parkingBooking.id)).booking.status).toBe('APPROVED');
+  expect((await api.getBooking(pmCtx, parkingBooking.id)).request.status).toBe('APPROVED');
 
   await renterPage.reload();
   const parkingRequestRow = renterPage.getByRole('row').filter({ hasText: parking.spotNumber });
@@ -120,7 +124,7 @@ test('renter requests amenity and parking access and manager decides them', asyn
     releaseDialog.getByRole('button', { name: 'Release Spot' }).click(),
   ]);
   expect(releaseResponse.ok()).toBeTruthy();
-  expect((await api.getBooking(pmCtx, parkingBooking.id)).booking.status).toBe('RELEASED');
+  expect((await api.getBooking(pmCtx, parkingBooking.id)).request.status).toBe('RELEASED');
 
   // Separate pending request exercises renter cancellation.
   const cancelled = await api.createBooking(renterCtx, {

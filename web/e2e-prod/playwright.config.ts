@@ -14,6 +14,10 @@ if (fs.existsSync(envFile)) {
 const baseURL = process.env.PROD_BASE_URL || 'https://rentaxis.uaenorth.cloudapp.azure.com';
 
 export default defineConfig({
+  // Prevent two local production suites from sharing the cumulative tenant
+  // context. The hook returns its own teardown so the lock is released even
+  // when a test fails.
+  globalSetup: path.join(__dirname, 'suite-lock.ts'),
   // Root scan dir — covers both global-setup.ts (project: auth-setup) and tests/*.spec.ts.
   testDir: '.',
   // Sequential — the suite builds cumulative state inside a single test tenant.

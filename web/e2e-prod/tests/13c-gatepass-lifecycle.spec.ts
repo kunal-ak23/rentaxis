@@ -53,13 +53,13 @@ test('admin configures gate access while renter and manager approve a pass', asy
     unitId: ctx.unit.id,
     name: `TEST-Registered Vendor ${ctx.runSuffix}`,
     phone: registeredPhone,
-    visitorType: 'VENDOR',
+    visitorType: 'SERVICE_VENDOR',
     validFrom: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
     validTo: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
     active: true,
   });
   expect(registration.registeredForSelectedUnit).toBeTruthy();
-  expect(registration.visitorType).toBe('VENDOR');
+  expect(registration.visitorType).toBe('SERVICE_VENDOR');
 
   const validFrom = new Date(Date.now() - 5 * 60 * 1000).toISOString();
   const validTo = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();

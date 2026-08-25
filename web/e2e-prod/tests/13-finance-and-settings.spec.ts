@@ -119,6 +119,10 @@ test('tenant admin configures and browses finance, staffing, banking, and vendor
   await expect(page.getByText(`TEST-Vendor ${ctx.runSuffix}`, { exact: true })).toBeVisible();
 
   await page.goto('/en/dashboard/finance/transactions');
+  // The default Simple view intentionally keeps only INCOME/EXPENSE rows;
+  // this fixture uses the first seeded account and must be checked in the
+  // complete Accounting ledger instead.
+  await page.getByRole('button', { name: 'Accounting', exact: true }).click();
   await expect(page.getByText(`TEST-Manual expense ${ctx.runSuffix}`, { exact: true })).toBeVisible();
 
   await browserCtx.close();
