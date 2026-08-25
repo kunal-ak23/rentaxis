@@ -11,7 +11,7 @@ task_voice=${2:-Samantha}
 task_rate=${3:-115}
 task_root=$(cd "$(dirname "$0")/.." && pwd)
 task_web="$task_root/web"
-task_output_dir="$task_root/tutorials/output"
+task_output_dir=${TUTORIAL_OUTPUT_DIR:-"$task_root/tutorials/output"}
 task_narration=$(find "$task_root/tutorials/narration" -maxdepth 1 -type f -name "${task_id}-*.txt" -print -quit)
 
 if [[ -z "$task_narration" ]]; then
