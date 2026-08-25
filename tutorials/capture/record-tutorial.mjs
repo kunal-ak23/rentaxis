@@ -303,7 +303,7 @@ async function openPreparedParkingRequest(page) {
   const dialog = page.getByRole('dialog', { name: `Request ${parkingSpotNumber}` });
   await dialog.waitFor({ state: 'visible' });
   await dialog.locator('input[type="date"]').fill(bookingPreferredDate);
-  await dialog.getByRole('textbox').fill('Tutorial parking request for a second family vehicle.');
+  await dialog.locator('textarea').fill('Tutorial parking request for a second family vehicle.');
   return dialog;
 }
 
@@ -748,18 +748,18 @@ const scenarios = {
       weight: 38,
       verifyTenantContext: false,
       afterNavigation: async (page) => {
-        await page.getByRole('row').filter({ hasText: parkingSpotNumber }).filter({ hasText: 'Approved' }).waitFor({ state: 'visible' });
+        await page.getByRole('row').filter({ hasText: parkingSpotNumber }).filter({ has: page.getByText('Approved', { exact: true }) }).waitFor({ state: 'visible' });
       },
     }),
     roleRouteScene('renter', '/en/dashboard/renter-portal/facilities', 'Release the parking spot', 'When the allocation is no longer needed, release it deliberately. History remains visible while availability is restored.', {
       weight: 47,
       verifyTenantContext: false,
       afterNavigation: async (page) => {
-        const row = page.getByRole('row').filter({ hasText: parkingSpotNumber }).filter({ hasText: 'Approved' });
+        const row = page.getByRole('row').filter({ hasText: parkingSpotNumber }).filter({ has: page.getByText('Approved', { exact: true }) });
         await row.getByRole('button', { name: 'Release Spot', exact: true }).click();
         await page.getByText('Give up this parking spot? It becomes available to others.', { exact: true }).waitFor({ state: 'visible' });
         await page.getByRole('button', { name: 'Release Spot', exact: true }).last().click();
-        await page.getByRole('row').filter({ hasText: parkingSpotNumber }).filter({ hasText: 'Released' }).waitFor({ state: 'visible', timeout: 30_000 });
+        await page.getByRole('row').filter({ hasText: parkingSpotNumber }).filter({ has: page.getByText('Released', { exact: true }) }).last().waitFor({ state: 'visible', timeout: 30_000 });
       },
     }),
     roleRouteScene('tenantAdmin', `/en/dashboard/properties/${towerId}`, 'Verify restored availability', 'Return to the property inventory and confirm that the spot is Available, active, and ready for another request.', {
