@@ -6,10 +6,13 @@ Use only `Tutorial Demo` names and synthetic contact details. Pause briefly
 after every saved state so the viewer can confirm the result.
 
 Audio production: record the silent Playwright/browser capture first, generate
-the narration as an AIFF track with macOS `say`, then normalize and mux it with
-`ffmpeg`. The renderer uses a deliberate tutorial voice rate by default and
-rejects a source clip that would cut the narration short. Keep narration around
--16 LUFS integrated and leave UI audio muted.
+an expressive AI narration track from the reviewed script, then normalize and
+mux it with `ffmpeg`. The preferred automated provider is OpenAI
+`gpt-4o-mini-tts` with the `marin` voice. Reviewed WAV/MP3 files generated with
+Gemini TTS are also accepted. Include the spoken disclosure that the voice is
+AI-generated. The renderer uses a deliberate tutorial rate, holds the final
+video frame if the voice track runs longer, and keeps narration around -16 LUFS
+integrated with UI audio muted. macOS `say` remains a draft-only fallback.
 Arabic-localization segments remain narrated in English unless an Arabic voice
 track is commissioned separately.
 

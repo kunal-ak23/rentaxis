@@ -17,7 +17,7 @@ function usage() {
   process.exit(2);
 }
 
-const [, , tutorialId, narrationPathArg, outputPathArg, speechRateArg = '115'] = process.argv;
+const [, , tutorialId, narrationPathArg, outputPathArg, speechRateArg = '125'] = process.argv;
 if (!tutorialId || !narrationPathArg || !outputPathArg) usage();
 
 const repoRoot = path.resolve(import.meta.dirname, '..', '..');
@@ -43,6 +43,13 @@ if (!Number.isInteger(speechRate) || speechRate < 80 || speechRate > 220) {
 }
 
 function narrationDurationSeconds() {
+  if ((process.env.TUTORIAL_TTS_PROVIDER || 'openai') !== 'mac') {
+    const disclosure =
+      process.env.TUTORIAL_AI_VOICE_DISCLOSURE || 'This tutorial uses an AI-generated voice.';
+    const narration = fs.readFileSync(narrationPath, 'utf8').trim();
+    const wordCount = `${disclosure} ${narration}`.trim().split(/\s+/).length;
+    return (wordCount / speechRate) * 60 * 1.08 + 4;
+  }
   const taskDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rentaxis-tutorial-audio-'));
   const audioPath = path.join(taskDir, 'narration.aiff');
   try {

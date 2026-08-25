@@ -17,8 +17,8 @@ const narrationDir = join(tutorialDir, 'narration');
 
 const failures = [];
 const details = [];
-// Measured from the Samantha voice on the supported macOS renderer. The `say`
-// rate flag is not a literal words-per-minute guarantee for enhanced voices.
+// Used only to check that each reviewed script fits its storyboard duration.
+// Final runtime comes from the selected AI voice and is validated after muxing.
 const calibratedSpeechRate = 135;
 const expectedNumbers = Array.from({ length: 33 }, (_, index) =>
   String(index + 1).padStart(2, '0'),

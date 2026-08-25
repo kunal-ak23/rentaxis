@@ -7,8 +7,9 @@ if [[ $# -lt 1 || $# -gt 3 ]]; then
 fi
 
 task_id=$(printf '%02d' "$((10#$1))")
-task_voice=${2:-Samantha}
-task_rate=${3:-115}
+task_voice=${2:-${TUTORIAL_VOICE:-marin}}
+task_rate=${3:-${TUTORIAL_SPEECH_RATE:-125}}
+task_tts_provider=${TUTORIAL_TTS_PROVIDER:-openai}
 task_root=$(cd "$(dirname "$0")/.." && pwd)
 task_web="$task_root/web"
 task_output_dir=${TUTORIAL_OUTPUT_DIR:-"$task_root/tutorials/output"}
@@ -26,11 +27,12 @@ task_final="$task_output_dir/${task_slug}.mp4"
 
 (
   cd "$task_web"
-  TUTORIAL_VOICE="$task_voice" node ../tutorials/capture/record-tutorial.mjs \
+  TUTORIAL_VOICE="$task_voice" TUTORIAL_TTS_PROVIDER="$task_tts_provider" \
+    node ../tutorials/capture/record-tutorial.mjs \
     "$task_id" "$task_narration" "$task_silent" "$task_rate"
 )
 
-"$task_root/tutorials/render-tutorial.sh" \
+TUTORIAL_TTS_PROVIDER="$task_tts_provider" "$task_root/tutorials/render-tutorial.sh" \
   "$task_silent" "$task_narration" "$task_final" "$task_voice" "$task_rate"
 
 echo "tutorial=$task_id"

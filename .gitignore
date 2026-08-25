@@ -42,3 +42,6 @@ scripts/seed_tutorial_tenant.out.json
 scripts/__pycache__/
 # Generated narrated tutorial media (kept as local deliverables, not Git blobs).
 tutorials/output/
+tutorials/.env.local
+tutorials/audio-generated/*
+!tutorials/audio-generated/README.md
