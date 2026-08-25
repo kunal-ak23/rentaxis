@@ -768,9 +768,16 @@ const scenarios = {
     }),
   ],
   '25': [
-    routeScene('/en/dashboard/gatepass', 'Gate-pass operations', 'Review resident passes, approvals, guard assignments, visitor policy, and walk-in registrations.'),
-    routeScene('/en/dashboard/gatepass', 'Approval boundary', 'Tenant operators approve passes while guards see only their assigned properties and scanning tools.'),
-    routeScene('/en/dashboard/gatepass', 'Entry and exit audit', 'Every successful or rejected scan contributes to the controlled security trail.'),
+    routeScene('/en/dashboard/gatepass', 'Gate-pass operations', 'Review the Gate Pass Report filters, scan count, empty state, and audit columns before investigating an entry or exit.'),
+    routeScene('/en/dashboard/gatepass', 'Scope by property', 'Use the property selector to narrow the gate audit to one building and verify the resulting scan count.', async (page) => {
+      await page.locator('#gatepass-property').selectOption({ label: 'RentAxis Academy Residence Tower' });
+      await page.waitForTimeout(450);
+    }),
+    routeScene('/en/dashboard/gatepass', 'Entry and exit audit', 'Adjust the date range when investigating a period, then export the filtered report when records are available.', async (page) => {
+      await page.locator('#gatepass-from').fill('2026-01-01');
+      await page.locator('#gatepass-to').fill('2026-12-31');
+      await page.waitForTimeout(450);
+    }),
   ],
   '26': [
     routeScene('/en/dashboard/listings', 'Listing management', 'Draft, review, publish, unpublish, and archive marketplace listings from tenant administration.'),
