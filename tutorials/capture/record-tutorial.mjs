@@ -561,6 +561,8 @@ const scenarios = {
     }),
     routeScene(`/en/dashboard/leases/${ahmedLeaseId}`, 'Interactions', 'Record relevant renter communication without storing passwords or unrelated personal notes.', async (page) => {
       await page.getByRole('button', { name: 'Interactions', exact: true }).click();
+      await page.getByText(/Loading/).waitFor({ state: 'detached', timeout: 10000 });
+      await page.getByRole('button', { name: /Log interaction/i }).click();
     }),
   ],
   '13': [
