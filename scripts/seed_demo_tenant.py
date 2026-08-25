@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Seed the "Al Ashram Demo Account" tenant with full demo data.
+"""Seed a named demo tenant with full demo data.
 
 Repeatable, API-driven (no SQL). Exercises the same endpoints the web and
 mobile apps use, so it doubles as a smoke test of the prod API.
 
 What it creates:
-  - Tenant "Al Ashram Demo Account" + TENANT_ADMIN login
+  - Named demo tenant + TENANT_ADMIN login
   - Features enabled: LISTINGS, MEETINGS, LEASE_RENEWALS
   - 2 properties with rent-collection settings, 8 units
   - 4 renters with portal (RENTER) logins
@@ -35,14 +35,22 @@ from pathlib import Path
 import requests
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-TENANT_NAME = "Al Ashram Demo Account"
+TENANT_NAME = os.environ.get("DEMO_TENANT_NAME", "Al Ashram Demo Account")
+DEMO_BRAND = os.environ.get("DEMO_BRAND", "Al Ashram")
+DEMO_EMAIL_DOMAIN = os.environ.get("DEMO_EMAIL_DOMAIN", "alashramdemo.com")
 # One easy password everywhere — this is throwaway demo data.
-DEMO_PASSWORD = "Demo@1234"
-ADMIN_EMAIL = "admin@alashramdemo.com"
+DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD", "Demo@1234")
+ADMIN_EMAIL = os.environ.get("DEMO_ADMIN_EMAIL", f"admin@{DEMO_EMAIL_DOMAIN}")
 ADMIN_PASSWORD = DEMO_PASSWORD
-OUT_FILE = REPO_ROOT / "scripts" / "seed_demo_tenant.out.json"
+OUT_FILE = Path(
+    os.environ.get(
+        "DEMO_OUTPUT_FILE",
+        str(REPO_ROOT / "scripts" / "seed_demo_tenant.out.json"),
+    )
+)
 
 TODAY = dt.date.today()
+REDACT_CREDENTIALS = "--redact-credentials" in sys.argv
 
 
 def load_env():
@@ -256,7 +264,7 @@ def _listing_images(title, listing_id):
         d.rectangle([0, h - band_h, w, h], fill=(12, 28, 56))
         d.text((30, h - band_h + 16), title[:48], font=font(34, bold=True),
                fill=(255, 255, 255))
-        d.text((30, h - band_h + 58), "Al Ashram Properties · Dubai",
+        d.text((30, h - band_h + 58), f"{DEMO_BRAND} Properties · Dubai",
                font=font(22), fill=(220, 190, 120))
         p = out_dir / f"{listing_id}-{idx}.jpg"
         img.save(p, "JPEG", quality=88)
@@ -320,12 +328,19 @@ def main():
         },
     )
 
-    for feature in ("LISTINGS", "MEETINGS", "LEASE_RENEWALS"):
+    for feature in (
+        "LISTINGS",
+        "MEETINGS",
+        "EMAIL_NOTIFICATIONS",
+        "LEASE_RENEWALS",
+        "GATEPASS",
+    ):
         sa.put(
             f"/api/admin/tenants/{tenant_id}/features/{feature}",
             json={"enabled": True},
         )
-    log("features enabled: LISTINGS, MEETINGS, LEASE_RENEWALS")
+    log("features enabled: LISTINGS, MEETINGS, EMAIL_NOTIFICATIONS, "
+        "LEASE_RENEWALS, GATEPASS")
 
     try:
         sa.post(
@@ -333,7 +348,7 @@ def main():
             json={
                 "email": ADMIN_EMAIL,
                 "password": ADMIN_PASSWORD,
-                "name": "Al Ashram Demo Admin",
+                "name": f"{DEMO_BRAND} Demo Admin",
                 "role": "TENANT_ADMIN",
                 "tenantId": tenant_id,
                 "phoneNumber": "+971501110000",
@@ -389,10 +404,10 @@ def main():
         return p
 
     tower = make_property(
-        "Al Ashram Residence Tower", "برج الأشرم السكني", "Al Barsha 1, Dubai"
+        f"{DEMO_BRAND} Residence Tower", "برج رنت أكسيس السكني", "Al Barsha 1, Dubai"
     )
     marina = make_property(
-        "Al Ashram Marina Heights", "أبراج الأشرم مارينا", "Dubai Marina, Dubai"
+        f"{DEMO_BRAND} Marina Heights", "أبراج رنت أكسيس مارينا", "Dubai Marina, Dubai"
     )
     log(f"properties: {tower['nameEn']}, {marina['nameEn']}")
 
@@ -455,22 +470,25 @@ def main():
                     "phoneNumber": phone,
                 },
             )
-        log(f"renter {name_en}: portal {email} / {DEMO_PASSWORD}")
+        if REDACT_CREDENTIALS:
+            log(f"renter {name_en}: portal account ready")
+        else:
+            log(f"renter {name_en}: portal {email} / {DEMO_PASSWORD}")
         return r
 
     ahmed = make_renter(
-        "Ahmed Hassan", "أحمد حسن", "ahmed@alashramdemo.com", "+971501234001"
+        "Ahmed Hassan", "أحمد حسن", f"ahmed@{DEMO_EMAIL_DOMAIN}", "+971501234001"
     )
     fatima = make_renter(
-        "Fatima Al Zaabi", "فاطمة الزعابي", "fatima@alashramdemo.com",
+        "Fatima Al Zaabi", "فاطمة الزعابي", f"fatima@{DEMO_EMAIL_DOMAIN}",
         "+971501234002",
     )
     rajesh = make_renter(
-        "Rajesh Kumar", "راجيش كومار", "rajesh@alashramdemo.com",
+        "Rajesh Kumar", "راجيش كومار", f"rajesh@{DEMO_EMAIL_DOMAIN}",
         "+971501234003",
     )
     sara = make_renter(
-        "Sara Mansour", "سارة منصور", "sara@alashramdemo.com",
+        "Sara Mansour", "سارة منصور", f"sara@{DEMO_EMAIL_DOMAIN}",
         "+971501234004",
     )
     out["renterLogins"] = [
@@ -674,7 +692,7 @@ def main():
                 "titleEn": title,
                 "descriptionEn": description or
                 f"{title} — well-maintained unit in a prime Dubai location, "
-                "managed by Al Ashram Properties.",
+                f"managed by {DEMO_BRAND} Properties.",
                 "bedrooms": beds,
                 "bathrooms": baths,
                 "sizeSqft": unit.get("sizeSqft"),
@@ -717,17 +735,17 @@ def main():
             beds = detail.get("bedrooms")
             beds_label = "Studio" if beds in (0, None) else f"{beds}BR"
             api.put(f"{LISTINGS}/{lid}", headers={}, json={
-                "seoTitle": f"{title} | Al Ashram Properties Dubai",
+                "seoTitle": f"{title} | {DEMO_BRAND} Properties Dubai",
                 "seoDescription": (
                     f"{beds_label} for rent in Dubai — {title}. "
                     f"Annual rent AED {detail.get('annualRent') or ''}. "
-                    "Managed by Al Ashram Properties; flexible cheques, "
+                    f"Managed by {DEMO_BRAND} Properties; flexible cheques, "
                     "well-maintained building, quick move-in."
                 )[:300],
                 "seoKeywords": ", ".join(filter(None, [
                     "dubai apartment for rent", beds_label.lower(),
                     (detail.get("furnishing") or "").replace("_", " ").lower(),
-                    "al ashram properties",
+                    f"{DEMO_BRAND.lower()} properties",
                 ])),
             })
             log(f"SEO set: {title}")
@@ -885,12 +903,276 @@ def main():
         )
     log("2 meetings ensured (cheque replacement approved, viewing requested)")
 
+    # ── 8. Operational tutorial fixtures ───────────────────────────────────
+    # These records keep the property, staff, ticket, booking, promotions, and
+    # gate-pass tutorial screens useful without requiring a live customer.
+    def page_items(payload):
+        if isinstance(payload, list):
+            return payload
+        if isinstance(payload, dict) and isinstance(payload.get("content"), list):
+            return payload["content"]
+        return []
+
+    buildings = api.get(f"/api/v1/buildings/property/{tower['id']}") or []
+    building = next(
+        (b for b in buildings if b.get("nameEn") == "Tutorial Operations Tower"),
+        None,
+    )
+    if not building:
+        building = api.post("/api/v1/buildings", json={
+            "property": {"id": tower["id"]},
+            "nameEn": "Tutorial Operations Tower",
+            "nameAr": "برج العمليات التجريبي",
+            "floors": 12,
+        })
+
+    contacts = api.get(f"/api/v1/properties/{tower['id']}/contacts") or []
+    if not any(c.get("name") == "Tutorial Maintenance Desk" for c in contacts):
+        api.post(f"/api/v1/properties/{tower['id']}/contacts", json={
+            "category": "BUILDING_MAINTENANCE",
+            "name": "Tutorial Maintenance Desk",
+            "phone": "+971500000003",
+            "email": "maintenance@tutorial.example.com",
+            "notes": "Available around the clock",
+            "sortOrder": 0,
+        })
+
+    amenities = page_items(api.get(f"/api/v1/amenities?propertyId={tower['id']}"))
+    amenity = next(
+        (a for a in amenities if a.get("nameEn") == "Residents Fitness Centre"),
+        None,
+    )
+    if not amenity:
+        amenity = api.post("/api/v1/amenities", json={
+            "propertyId": tower["id"],
+            "nameEn": "Residents Fitness Centre",
+            "nameAr": "مركز لياقة السكان",
+            "description": "Bookable resident gym for tutorial demonstrations.",
+            "bookable": True,
+            "buildingIds": [],
+        })
+    else:
+        amenity = api.put(
+            f"/api/v1/amenities/{amenity['id']}",
+            json={"buildingIds": [], "active": True, "bookable": True},
+        )
+
+    parking_spots = page_items(
+        api.get(f"/api/v1/parking-spots?propertyId={tower['id']}")
+    )
+    parking = next(
+        (p for p in parking_spots if p.get("spotNumber") == "TUTORIAL-B2-18"),
+        None,
+    )
+    if not parking:
+        parking = api.post("/api/v1/parking-spots", json={
+            "propertyId": tower["id"],
+            "spotNumber": "TUTORIAL-B2-18",
+            "level": "B2",
+            "covered": True,
+            "buildingIds": [],
+        })
+    else:
+        parking = api.put(
+            f"/api/v1/parking-spots/{parking['id']}",
+            json={"buildingIds": [], "active": True},
+        )
+
+    staff = api.get(f"/api/v1/staff/by-property/{tower['id']}") or []
+    if not any(s.get("employeeId") == "TUTORIAL-OPS-001" for s in staff):
+        api.post("/api/v1/staff", json={
+            "nameEn": "Omar Tutorial",
+            "nameAr": "عمر التجريبي",
+            "employeeId": "TUTORIAL-OPS-001",
+            "designation": "Facilities Coordinator",
+            "department": "Operations",
+            "monthlySalary": 7500,
+            "joinDate": iso(TODAY - dt.timedelta(days=120)),
+            "phone": "+971500000004",
+            "emiratesId": "",
+            "passportNumber": "",
+            "active": True,
+            "property": {"id": tower["id"]},
+        })
+    log("property operations ready: building, contact, amenity, parking, staff")
+
+    existing_users = api.get("/api/admin/users") or []
+
+    def ensure_operator(email, name, role):
+        user = next((u for u in existing_users if u.get("email") == email), None)
+        if not user:
+            user = api.post("/api/admin/users", json={
+                "email": email,
+                "password": DEMO_PASSWORD,
+                "name": name,
+                "role": role,
+                "tenantId": tenant_id,
+                "phoneNumber": "+971500000007",
+            })
+            existing_users.append(user)
+        try:
+            api.post(f"/api/admin/users/{user['id']}/properties/{tower['id']}")
+        except RuntimeError as exc:
+            if "409" not in str(exc):
+                raise
+        return user
+
+    manager = ensure_operator(
+        f"manager@{DEMO_EMAIL_DOMAIN}", "Maya Tutorial Manager", "PROPERTY_MANAGER"
+    )
+    guard = ensure_operator(
+        f"guard@{DEMO_EMAIL_DOMAIN}", "Samir Tutorial Guard", "SECURITY_GUARD"
+    )
+    api.put(
+        f"/api/v1/gatepass/guards/{guard['id']}/properties",
+        json=[tower["id"]],
+    )
+    out["operatorLogins"] = [
+        {"role": "PROPERTY_MANAGER", "email": manager["email"], "password": DEMO_PASSWORD},
+        {"role": "SECURITY_GUARD", "email": guard["email"], "password": DEMO_PASSWORD},
+    ]
+    log("property manager and security guard accounts ready")
+
+    resident_api = Api(base)
+    resident_api.login(ahmed["email"], DEMO_PASSWORD)
+
+    my_bookings = resident_api.get("/api/v1/bookings/my") or []
+    amenity_booking = next(
+        (b for b in my_bookings if b.get("amenityId") == amenity["id"]),
+        None,
+    )
+    if not amenity_booking:
+        amenity_booking = resident_api.post("/api/v1/bookings", json={
+            "resourceType": "AMENITY",
+            "resourceId": amenity["id"],
+            "unitId": a101["id"],
+            "preferredDate": iso(TODAY + dt.timedelta(days=7)),
+            "note": "Tutorial family fitness session",
+        })
+        api.post(
+            f"/api/v1/bookings/{amenity_booking['id']}/approve",
+            json={"adminNote": "Approved tutorial booking"},
+        )
+    out["amenityBookingId"] = amenity_booking["id"]
+    log("approved resident amenity booking ready")
+
+    ticket_payload = resident_api.get("/api/v1/tickets") or []
+    tickets = page_items(ticket_payload)
+    ticket = next(
+        (t for t in tickets if t.get("title") == "Tutorial: Leaking kitchen tap"),
+        None,
+    )
+    if not ticket:
+        ticket = resident_api.post("/api/v1/tickets", json={
+            "propertyId": tower["id"],
+            "unitId": a101["id"],
+            "leaseId": lease_ahmed["id"],
+            "title": "Tutorial: Leaking kitchen tap",
+            "description": "The kitchen tap is leaking continuously. Synthetic tutorial request.",
+            "category": "PLUMBING",
+            "priority": "HIGH",
+        })
+        resident_api.post(
+            f"/api/v1/tickets/{ticket['id']}/replies",
+            json={"message": "Access is available after 10:00 AM."},
+        )
+    out["ticketId"] = ticket["id"]
+    log("open maintenance ticket and renter reply ready")
+
+    businesses = page_items(api.get("/api/v1/promotions/businesses?size=100"))
+    business = next(
+        (b for b in businesses if b.get("nameEn") == "Tutorial Community Cafe"),
+        None,
+    )
+    if not business:
+        business = api.post("/api/v1/promotions/businesses", json={
+            "nameEn": "Tutorial Community Cafe",
+            "nameAr": "مقهى المجتمع التجريبي",
+            "category": "DINING",
+            "phoneE164": "+971500000006",
+            "whatsappE164": "+971500000006",
+            "allowedDomains": ["example.com"],
+            "active": True,
+        })
+    ads = page_items(
+        api.get(f"/api/v1/promotions/ads?businessId={business['id']}&size=100")
+    )
+    if not any(a.get("titleEn") == "20% off for Tutorial Residents" for a in ads):
+        api.post("/api/v1/promotions/ads", json={
+            "businessId": business["id"],
+            "titleEn": "20% off for Tutorial Residents",
+            "titleAr": "خصم 20٪ لسكان العرض التجريبي",
+            "subtitleEn": "A synthetic resident offer for platform tutorials.",
+            "accentColor": "#2563EB",
+            "ctaType": "COUPON",
+            "ctaLabelEn": "Copy code",
+            "couponCode": "TUTORIAL20",
+            "couponTermsEn": "Tutorial use only",
+            "startsAt": (dt.datetime.now(dt.UTC) - dt.timedelta(hours=1)).isoformat(),
+            "endsAt": (dt.datetime.now(dt.UTC) + dt.timedelta(days=30)).isoformat(),
+            "priority": 8,
+            "placement": "HOME_AND_OFFERS",
+            "propertyIds": [tower["id"]],
+            "active": True,
+        })
+    log("tutorial business and active resident coupon ready")
+
+    api.put(f"/api/v1/gatepass/policies?propertyId={tower['id']}", json={
+        "requireUnregisteredApproval": True,
+        "requireRegisteredApproval": False,
+        "notifyRegisteredEntry": True,
+        "requireFreshPhoto": True,
+        "approvalTimeoutMinutes": 20,
+    })
+    visitor_phone = "+971500009991"
+    try:
+        api.post("/api/v1/gatepass/visitors/registration", json={
+            "propertyId": tower["id"],
+            "unitId": a101["id"],
+            "name": "Tutorial Service Vendor",
+            "phone": visitor_phone,
+            "visitorType": "SERVICE_VENDOR",
+            "validFrom": (dt.datetime.now(dt.UTC) - dt.timedelta(hours=1)).isoformat(),
+            "validTo": (dt.datetime.now(dt.UTC) + dt.timedelta(days=30)).isoformat(),
+            "active": True,
+        })
+    except RuntimeError as exc:
+        if "409" not in str(exc):
+            raise
+
+    my_passes = resident_api.get("/api/v1/gatepass/mine") or []
+    gate_pass = next(
+        (p for p in my_passes if p.get("status") in ("ACTIVE", "PENDING_APPROVAL")),
+        None,
+    )
+    if not gate_pass:
+        gate_pass = resident_api.post("/api/v1/gatepass", json={
+            "unitId": a101["id"],
+            "guestName": "Tutorial Guest",
+            "guestPhone": "+971500000005",
+            "purpose": "Tutorial visitor access",
+            "vehicleNumber": "TUTORIAL-01",
+            "passType": "RECURRING",
+            "validFrom": (dt.datetime.now(dt.UTC) - dt.timedelta(minutes=5)).isoformat(),
+            "validTo": (dt.datetime.now(dt.UTC) + dt.timedelta(days=1)).isoformat(),
+        })
+    if gate_pass.get("status") == "PENDING_APPROVAL":
+        gate_pass = api.post(
+            f"/api/v1/gatepass/{gate_pass['id']}/approval",
+            json={"approved": True},
+        )
+    out["gatePassId"] = gate_pass["id"]
+    log("gate policy, registered visitor, and active resident pass ready")
+
     # ── Done ─────────────────────────────────────────────────────────────────
     OUT_FILE.write_text(json.dumps(out, indent=2))
     print(f"\nDone. Credentials and IDs written to {OUT_FILE}")
-    print(f"  Tenant admin : {ADMIN_EMAIL} / {ADMIN_PASSWORD}")
-    for r in out["renterLogins"]:
-        print(f"  Renter       : {r['email']} / {r['password']}")
+    if REDACT_CREDENTIALS:
+        print("  Credentials redacted from console output.")
+    else:
+        print(f"  Tenant admin : {ADMIN_EMAIL} / {ADMIN_PASSWORD}")
+        for r in out["renterLogins"]:
+            print(f"  Renter       : {r['email']} / {r['password']}")
 
 
 if __name__ == "__main__":
