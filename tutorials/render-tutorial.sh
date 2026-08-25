@@ -111,6 +111,7 @@ ffmpeg -hide_banner -loglevel error -y \
   -af "loudnorm=I=-16:LRA=11:TP=-1.5" \
   -c:a aac \
   -b:a 192k \
+  -t "$task_audio_duration" \
   -shortest \
   -movflags +faststart \
   "$task_rendered"

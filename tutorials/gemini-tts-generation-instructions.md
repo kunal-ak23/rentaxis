@@ -14,8 +14,8 @@ file's complete text:
 > sections. Keep the delivery professional and calm, never theatrical or
 > salesy. Aim for approximately 125 words per minute. Pronounce RentAxis as
 > “Rent Axis” and AED as “UAE dirhams.” Do not summarize, paraphrase, add, or
-> omit any words. Begin with: “This tutorial uses an AI-generated voice.” Then
-> read the supplied script exactly.
+> omit any words. Do not add an introduction, disclosure, outro, or commentary.
+> Read only the supplied script exactly.
 
 Download the result as WAV when possible. Preserve the narration filename,
 changing only the extension. For example:

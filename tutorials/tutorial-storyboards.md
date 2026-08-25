@@ -9,8 +9,9 @@ Audio production: record the silent Playwright/browser capture first, generate
 an expressive AI narration track from the reviewed script, then normalize and
 mux it with `ffmpeg`. The preferred production provider is Azure
 `MAI-Voice-2` with a consistent prebuilt voice; OpenAI `gpt-4o-mini-tts` and
-reviewed WAV/MP3 files generated with Gemini TTS are also accepted. Include the spoken disclosure that the voice is
-AI-generated. The renderer uses a deliberate tutorial rate, holds the final
+reviewed WAV/MP3 files generated with Gemini TTS are also accepted. Do not add
+an automated spoken introduction or disclosure before the reviewed narration.
+The renderer uses a deliberate tutorial rate, holds the final
 video frame if the voice track runs longer, and keeps narration around -16 LUFS
 integrated with UI audio muted. macOS `say` remains a draft-only fallback.
 Arabic-localization segments remain narrated in English unless an Arabic voice

@@ -57,10 +57,9 @@ if (!Number.isInteger(speechRate) || speechRate < 80 || speechRate > 220) {
   throw new Error('Speech rate must be a whole number from 80 to 220 words per minute.');
 }
 
-const disclosure =
-  process.env.TUTORIAL_AI_VOICE_DISCLOSURE || 'This tutorial uses an AI-generated voice.';
 const narration = fs.readFileSync(narrationPath, 'utf8').trim();
-const input = `${disclosure}\n\n${narration}`;
+const spokenIntro = process.env.TUTORIAL_SPOKEN_INTRO?.trim();
+const input = [spokenIntro, narration].filter(Boolean).join('\n\n');
 const instructions =
   process.env.TUTORIAL_TTS_INSTRUCTIONS ||
   `Speak as a polished, confident property-management software educator at about ${speechRate} words per minute. ` +

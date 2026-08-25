@@ -30,6 +30,7 @@ const seedManifestPath = path.join(repoRoot, 'scripts', 'seed_tutorial_tenant.ou
 const baseURL = process.env.PROD_BASE_URL || DEFAULT_BASE_URL;
 const tenantId = process.env.TUTORIAL_TENANT_ID || TUTORIAL_TENANT_ID;
 const speechRate = Number(speechRateArg);
+const validateOnly = process.env.TUTORIAL_CAPTURE_VALIDATE_ONLY === '1';
 
 if (!fs.existsSync(narrationPath)) throw new Error(`Narration not found: ${narrationPath}`);
 if (!fs.existsSync(authStatePath)) {
@@ -44,10 +45,30 @@ if (!Number.isInteger(speechRate) || speechRate < 80 || speechRate > 220) {
 
 function narrationDurationSeconds() {
   if ((process.env.TUTORIAL_TTS_PROVIDER || 'openai') !== 'mac') {
-    const disclosure =
-      process.env.TUTORIAL_AI_VOICE_DISCLOSURE || 'This tutorial uses an AI-generated voice.';
+    const suppliedAudio = process.env.TUTORIAL_AUDIO_FILE;
+    if (suppliedAudio && fs.existsSync(suppliedAudio)) {
+      const rawDuration = execFileSync(
+        'ffprobe',
+        [
+          '-v',
+          'error',
+          '-show_entries',
+          'format=duration',
+          '-of',
+          'default=noprint_wrappers=1:nokey=1',
+          suppliedAudio,
+        ],
+        { encoding: 'utf8' },
+      ).trim();
+      const duration = Number(rawDuration);
+      if (!Number.isFinite(duration) || duration <= 0) {
+        throw new Error(`The supplied narration audio has no usable duration: ${suppliedAudio}`);
+      }
+      return duration;
+    }
     const narration = fs.readFileSync(narrationPath, 'utf8').trim();
-    const wordCount = `${disclosure} ${narration}`.trim().split(/\s+/).length;
+    const spokenIntro = process.env.TUTORIAL_SPOKEN_INTRO?.trim();
+    const wordCount = [spokenIntro, narration].filter(Boolean).join(' ').trim().split(/\s+/).length;
     return (wordCount / speechRate) * 60 * 1.08 + 4;
   }
   const taskDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rentaxis-tutorial-audio-'));
@@ -137,14 +158,33 @@ async function goto(page, pathname) {
   await waitForApp(page);
 }
 
-function routeScene(pathname, title, body, afterNavigation) {
+function routeScene(pathname, title, body, afterNavigation, verifyTenantContext = true) {
   return {
     title,
     body,
+    verifyTenantContext,
     run: async (page) => {
       await goto(page, pathname);
       if (afterNavigation) await afterNavigation(page);
     },
+  };
+}
+
+function publicRouteScene(pathname, title, body, afterNavigation) {
+  return routeScene(pathname, title, body, afterNavigation, false);
+}
+
+function roleRouteScene(role, pathname, title, body, options = {}) {
+  return {
+    ...routeScene(
+      pathname,
+      title,
+      body,
+      options.afterNavigation,
+      options.verifyTenantContext ?? role !== 'anonymous',
+    ),
+    role,
+    weight: options.weight,
   };
 }
 
@@ -154,8 +194,21 @@ const saraLeaseId = seed.leases?.sara;
 const ticketId = seed.ticketId;
 const meetingId = seed.meetings?.['Replacement cheque — Fatima Al Zaabi (A-102)'];
 const listingId = seed.listings?.['Bright 2BR in Al Barsha'];
+const tenantSlug = seed.tenant?.slug || 'rentaxis-tutorial-demo';
 
 const scenarios = {
+  '02': [
+    routeScene('/en/dashboard', 'Operational dashboard', 'Read tenant-scoped KPIs as signals, then open the underlying workflow for detail.'),
+    routeScene('/en/dashboard/notifications', 'Notifications', 'Review unread events, follow their related records, and acknowledge them without losing history.'),
+    routeScene('/en/dashboard/help', 'Help Center', 'Search role-aware guidance whenever a workflow or safety rule needs clarification.'),
+    routeScene('/en/dashboard/help/getting-started--roles-and-permissions', 'Role guidance', 'Help articles explain the approved responsibilities and boundaries for each RentAxis role.'),
+  ],
+  '03': [
+    routeScene('/en/superadmin/users', 'Users and roles', 'Super administrators can review cross-organisation users and confirm each assigned role.'),
+    routeScene('/en/superadmin/tenants', 'Organisation boundary', 'Switch organisations deliberately and confirm the selected customer before administering records.'),
+    routeScene('/en/dashboard', 'Tenant-scoped navigation', 'The sidebar and actions change with the signed-in role and active organisation.'),
+    routeScene('/en/dashboard/help/getting-started--roles-and-permissions', 'Permission reference', 'Use the role guide to compare Super Admin, Tenant Admin, Property Manager, Tenant User, Renter, and Security Guard access.'),
+  ],
   '04': [
     routeScene('/en/superadmin/tenants', 'Organisation administration', 'Search, provision, and review isolated customer organisations from one controlled list.'),
     routeScene('/en/superadmin/tenants', 'Tutorial Demo tenant', 'The recording tenant uses synthetic legal and contact data and remains separate from customer records.', async (page) => {
@@ -166,6 +219,12 @@ const scenarios = {
       await row.getByRole('button', { name: 'Feature Toggles' }).click();
     }),
     routeScene('/en/dashboard', 'Verify the tenant context', 'After switching, confirm the organisation name before creating or editing records.'),
+  ],
+  '05': [
+    routeScene('/en/superadmin/users', 'User administration', 'Create and edit organisation users with the minimum role needed for their work.'),
+    routeScene('/en/dashboard/staff', 'Staff directory', 'Staff records hold employment context separately from application login access.'),
+    routeScene(`/en/dashboard/properties/${towerId}`, 'Property assignment', 'Property managers should be assigned only to the properties they are responsible for.'),
+    routeScene('/en/superadmin/users', 'Access review', 'Review role and assignment changes after saving, and remove obsolete access promptly.'),
   ],
   '06': [
     routeScene('/en/dashboard/properties', 'Property portfolio', 'Projects and properties provide the foundation for units, leases, operations, and reporting.'),
@@ -179,6 +238,15 @@ const scenarios = {
     routeScene(`/en/dashboard/properties/${towerId}`, 'Amenities', 'Bookable amenities can be property-wide or restricted to selected buildings.', async (page) => page.getByRole('button', { name: /^amenities$/i }).click()),
     routeScene(`/en/dashboard/properties/${towerId}`, 'Parking', 'Parking spots retain level, coverage, availability, and booking state.', async (page) => page.getByRole('button', { name: /^parking$/i }).click()),
   ],
+  '08': [
+    routeScene('/en/dashboard/properties', 'Portfolio import', 'Use the current workbook template for controlled onboarding and migration.', async (page) => {
+      await page.getByRole('button', { name: 'Import Portfolio', exact: true }).click();
+    }),
+    routeScene('/en/dashboard/properties', 'Validate before import', 'Review required sheets, reference values, and row-level validation errors before creating records.', async (page) => {
+      await page.getByRole('button', { name: 'Import Portfolio', exact: true }).click();
+    }),
+    routeScene('/en/dashboard/properties', 'Verify imported records', 'After a successful job, reconcile counts and inspect representative properties, units, renters, leases, and installments.'),
+  ],
   '09': [
     routeScene('/en/dashboard/renters', 'Renter directory', 'Search renter profiles and confirm portal-account status before leasing.'),
     routeScene(`/en/dashboard/leases/${ahmedLeaseId}`, 'Linked tenancy', 'Renter, unit, payment schedule, and active lease status remain connected.'),
@@ -189,10 +257,54 @@ const scenarios = {
     routeScene(`/en/dashboard/leases/${saraLeaseId}`, 'Pending-signature lease', 'Review rent, deposit, dates, payment method, and installment distribution before activation.'),
     routeScene(`/en/dashboard/leases/${saraLeaseId}`, 'Payment-plan preview', 'Confirm every schedule row before generating or signing the tenancy contract.'),
   ],
+  '11': [
+    routeScene(`/en/dashboard/leases/${saraLeaseId}`, 'Contract-ready lease', 'Confirm the renter, unit, dates, rent, deposit, and payment plan before generating a contract.'),
+    routeScene(`/en/dashboard/leases/${saraLeaseId}`, 'Contract workspace', 'Preview and regenerate the current PDF from the reviewed lease terms.', async (page) => {
+      await page.getByRole('button', { name: 'Contract', exact: true }).click();
+    }),
+    routeScene(`/en/dashboard/leases/${saraLeaseId}`, 'Signature state', 'A rejection returns the lease for correction; only the current regenerated contract should be accepted.', async (page) => {
+      await page.getByRole('button', { name: 'Contract', exact: true }).click();
+    }),
+  ],
+  '12': [
+    routeScene(`/en/dashboard/leases/${ahmedLeaseId}`, 'Active lease overview', 'Review status, parties, unit, dates, rent, and deposit before administering an active tenancy.'),
+    routeScene(`/en/dashboard/leases/${ahmedLeaseId}`, 'Payment schedule', 'Use the schedule as the authoritative installment and cheque timeline.', async (page) => {
+      await page.getByRole('button', { name: 'Payment schedule', exact: true }).click();
+    }),
+    routeScene(`/en/dashboard/leases/${ahmedLeaseId}`, 'Documents', 'Keep approved tenancy attachments with the lease audit trail.', async (page) => {
+      await page.getByRole('button', { name: 'Documents', exact: true }).click();
+    }),
+    routeScene(`/en/dashboard/leases/${ahmedLeaseId}`, 'Interactions', 'Record relevant renter communication without storing passwords or unrelated personal notes.', async (page) => {
+      await page.getByRole('button', { name: 'Interactions', exact: true }).click();
+    }),
+  ],
+  '13': [
+    routeScene('/en/dashboard/leases', 'Lease lifecycle queue', 'Use status and date filters to identify renewal, extension, termination, and settlement work.'),
+    routeScene(`/en/dashboard/leases/${ahmedLeaseId}`, 'Renew or extend', 'Review current terms and renter intent before changing the lease end date or renewal state.'),
+    routeScene(`/en/dashboard/leases/${seed.leases?.rajesh}`, 'Terminate and settle', 'Preview outstanding balances, deductions, deposit application, and the final settlement before closing.'),
+    routeScene('/en/dashboard/renter-portal/renewals', 'Renter renewal response', 'The resident renewal view records intent while the property team retains approval and closure control.', undefined, false),
+  ],
+  '14': [
+    routeScene('/en/dashboard/settings/fines', 'Fine configuration', 'Configure supported cheque-failure reasons and penalty amounts before processing failures.'),
+    routeScene('/en/dashboard/finance/payments', 'Cheque failure workflow', 'Choose the exact failure reason so the correct auditable penalty is generated.'),
+    routeScene(`/en/dashboard/leases/${ahmedLeaseId}`, 'Lease penalties', 'Review assessed penalties, payment state, receipts, and related installment history.', async (page) => {
+      await page.getByRole('button', { name: 'Penalties', exact: true }).click();
+    }),
+  ],
   '15': [
     routeScene('/en/dashboard/finance/payments', 'Rent cheque operations', 'Use the payment workspace to follow pending, collected, deposited, cleared, and bounced cheques.'),
     routeScene(`/en/dashboard/leases/${ahmedLeaseId}`, 'Lease payment schedule', 'Each installment retains its amount, due date, method, cheque metadata, and state.'),
     routeScene('/en/dashboard/finance/payments', 'Operational follow-up', 'Filter by the current cheque state before collecting, depositing, clearing, or marking a failure.'),
+  ],
+  '16': [
+    routeScene('/en/dashboard/settings/gateway', 'Payment gateway configuration', 'Select the approved provider and test mode before entering credentials.'),
+    routeScene('/en/dashboard/settings/gateway', 'Credential safety', 'Saved secrets remain masked; use the connection test without revealing credentials in recordings.'),
+    routeScene('/en/dashboard/settings/rent-settings', 'Online rent settings', 'Property-level settings control readiness, payment instructions, and permitted collection behavior.'),
+  ],
+  '17': [
+    routeScene('/en/dashboard/finance/accounts', 'Chart of Accounts', 'Review the seeded hierarchy before adding or editing a ledger account.'),
+    routeScene('/en/dashboard/settings/account-mappings', 'Account mappings', 'Map rent, deposits, penalties, expenses, and other events to the intended ledger codes.'),
+    routeScene('/en/dashboard/finance/transactions', 'Downstream ledger effect', 'Verify that operational events post through the configured accounts with traceable descriptions.'),
   ],
   '18': [
     routeScene('/en/dashboard/finance/transactions', 'Financial transactions', 'Review journal activity generated by rent, deposits, charges, expenses, and corrections.'),
@@ -256,6 +368,11 @@ const scenarios = {
       },
     },
   ],
+  '21': [
+    publicRouteScene('/en/dashboard/renter-portal/payments', 'My payments', 'Residents review installment due dates, methods, status, and payment history from one schedule.'),
+    publicRouteScene('/en/dashboard/renter-portal/payments', 'Receipts and history', 'Open completed items for receipts and retain failed or pending states for follow-up.'),
+    publicRouteScene('/en/dashboard/renter-portal', 'Renter dashboard', 'Online payment appears only when the organisation and property have an active supported gateway.'),
+  ],
   '22': [
     routeScene('/en/dashboard/tickets', 'Maintenance tickets', 'Prioritise work using status, category, property, unit, and requester context.'),
     routeScene(`/en/dashboard/tickets/${ticketId}`, 'Ticket collaboration', 'The renter and property team share replies, assignment, ETA, and status history on one record.'),
@@ -267,9 +384,25 @@ const scenarios = {
     routeScene('/en/dashboard/meetings', 'Calendar follow-up', 'Use status and date filters to find meetings that need approval or completion.'),
   ],
   '24': [
-    routeScene('/en/dashboard/bookings', 'Booking requests', 'Property teams review resident amenity and parking requests from one queue.'),
-    routeScene(`/en/dashboard/properties/${towerId}`, 'Bookable resources', 'Amenities and parking spots are configured at the property before residents can request them.', async (page) => page.getByRole('button', { name: /^amenities$/i }).click()),
-    routeScene('/en/dashboard/bookings', 'Approve or reject', 'Check resource availability, preferred date, unit, and resident note before deciding.'),
+    roleRouteScene('tenantAdmin', `/en/dashboard/properties/${towerId}`, 'Bookable inventory', 'Confirm that amenity and parking inventory is active, available, and correctly scoped before residents request it.', {
+      weight: 57,
+      afterNavigation: async (page) => page.getByRole('button', { name: /^amenities$/i }).click(),
+    }),
+    roleRouteScene('renter', '/en/dashboard/renter-portal/facilities', 'Submit facility requests', 'Residents review availability and instructions, then create separate amenity and parking requests.', {
+      weight: 56,
+      verifyTenantContext: false,
+    }),
+    roleRouteScene('tenantAdmin', '/en/dashboard/bookings', 'Review and approve', 'Managers check the renter, unit, requested period, capacity, conflicts, and notes before deciding.', {
+      weight: 54,
+    }),
+    roleRouteScene('renter', '/en/dashboard/renter-portal/facilities', 'Track, cancel, or release', 'Residents can confirm approval, cancel a future booking, or release an allocation without deleting history.', {
+      weight: 55,
+      verifyTenantContext: false,
+    }),
+    roleRouteScene('tenantAdmin', `/en/dashboard/properties/${towerId}`, 'Restored availability', 'After cancellation or release, return to inventory and confirm that the resource is available again.', {
+      weight: 45,
+      afterNavigation: async (page) => page.getByRole('button', { name: /^parking$/i }).click(),
+    }),
   ],
   '25': [
     routeScene('/en/dashboard/gatepass', 'Gate-pass operations', 'Review resident passes, approvals, guard assignments, visitor policy, and walk-in registrations.'),
@@ -281,6 +414,13 @@ const scenarios = {
     routeScene(`/en/dashboard/listings/${listingId}`, 'Listing detail', 'Review media, description, rent, availability, amenities, coordinates, and SEO before publishing.'),
     routeScene('/en/dashboard/listings', 'Publication state', 'Use clear state labels to separate private drafts from public marketplace inventory.'),
   ],
+  '27': [
+    publicRouteScene(`/en/marketplace/${tenantSlug}`, 'Public marketplace', 'Browse published inventory without exposing private drafts or tenant administration.'),
+    publicRouteScene(`/en/marketplace/${tenantSlug}`, 'Search and filters', 'Narrow listings by location, property type, rent, bedrooms, and availability.'),
+    publicRouteScene('/en/marketplace/wishlist', 'Wishlist', 'Signed-in visitors can retain selected listings and remove them when no longer relevant.'),
+    publicRouteScene('/en/auth/register', 'Visitor registration', 'Create an account before expressing interest or synchronising a wishlist across devices.'),
+    publicRouteScene('/en/privacy', 'Privacy and legal information', 'Review privacy, terms, and data-deletion guidance before submitting personal information.'),
+  ],
   '28': [
     routeScene('/en/dashboard/promotions', 'Promotions and offers', 'Manage participating businesses and targeted resident ads from one workspace.'),
     routeScene('/en/dashboard/promotions', 'Coupon configuration', 'Set bilingual copy, placement, dates, property targeting, CTA, code, and terms.'),
@@ -289,20 +429,32 @@ const scenarios = {
 };
 
 const roleByTutorial = {
+  '02': 'superadmin',
+  '03': 'superadmin',
   '04': 'superadmin',
+  '05': 'superadmin',
   '06': 'tenantAdmin',
   '07': 'tenantAdmin',
+  '08': 'tenantAdmin',
   '09': 'tenantAdmin',
   '10': 'tenantAdmin',
+  '11': 'tenantAdmin',
+  '12': 'tenantAdmin',
+  '13': 'tenantAdmin',
+  '14': 'tenantAdmin',
   '15': 'tenantAdmin',
+  '16': 'tenantAdmin',
+  '17': 'tenantAdmin',
   '18': 'tenantAdmin',
   '19': 'tenantAdmin',
   '20': 'superadmin',
+  '21': 'renter',
   '22': 'tenantAdmin',
   '23': 'tenantAdmin',
   '24': 'tenantAdmin',
   '25': 'tenantAdmin',
   '26': 'tenantAdmin',
+  '27': 'anonymous',
   '28': 'tenantAdmin',
 };
 
@@ -312,13 +464,30 @@ if (!scenes) throw new Error(`Tutorial ${tutorialId} does not have an automated 
 fs.mkdirSync(path.dirname(outputPath), { recursive: true });
 const videoDir = fs.mkdtempSync(path.join(os.tmpdir(), `rentaxis-tutorial-${tutorialId}-`));
 const targetDuration = narrationDurationSeconds() + 2;
-const holdPerScene = Math.max(2, targetDuration / scenes.length);
+const sceneWeights = scenes.map((scene) => {
+  const weight = Number(scene.weight ?? 1);
+  return Number.isFinite(weight) && weight > 0 ? weight : 1;
+});
+const totalSceneWeight = sceneWeights.reduce((total, weight) => total + weight, 0);
 const browser = await chromium.launch({ headless: true });
-let recordedVideoPath;
+const recordedVideoPaths = [];
+const storageStateByRole = new Map();
 
 async function authenticatedStorageState(role) {
-  if (role === 'superadmin') return authStatePath;
-  const credentials = role === 'tenantAdmin' ? seed.adminLogin : null;
+  if (storageStateByRole.has(role)) return storageStateByRole.get(role);
+  if (role === 'superadmin') {
+    storageStateByRole.set(role, authStatePath);
+    return authStatePath;
+  }
+  if (role === 'anonymous') {
+    storageStateByRole.set(role, undefined);
+    return undefined;
+  }
+  const credentials = role === 'tenantAdmin'
+    ? seed.adminLogin
+    : role === 'renter'
+      ? seed.renterLogins?.find((login) => login.name === 'Ahmed Hassan') || seed.renterLogins?.[0]
+      : null;
   if (!credentials?.email || !credentials?.password) {
     throw new Error(`The seed manifest does not include credentials for ${role}.`);
   }
@@ -331,62 +500,105 @@ async function authenticatedStorageState(role) {
   await loginPage.waitForURL(/\/en\/dashboard/, { timeout: 30_000 });
   const state = await loginContext.storageState();
   await loginContext.close();
+  storageStateByRole.set(role, state);
   return state;
 }
 
 try {
-  const role = roleByTutorial[tutorialId] || 'superadmin';
-  const storageState = await authenticatedStorageState(role);
-  const context = await browser.newContext({
-    baseURL,
-    storageState,
-    viewport: { width: 1920, height: 1080 },
-    recordVideo: { dir: videoDir, size: { width: 1920, height: 1080 } },
-    colorScheme: 'light',
-    locale: 'en-AE',
-  });
+  const defaultRole = roleByTutorial[tutorialId] || 'superadmin';
   const host = new URL(baseURL).hostname;
-  await context.addCookies([
-    {
-      name: 'active_tenant_id',
-      value: tenantId,
-      domain: host,
-      path: '/',
-      httpOnly: false,
-      secure: baseURL.startsWith('https:'),
-      sameSite: 'Lax',
-    },
-  ]);
-  const page = await context.newPage();
-  const video = page.video();
 
-  for (const scene of scenes) {
-    const startedAt = Date.now();
-    await scene.run(page);
-    const activeTenantVisible = await page.getByText(TUTORIAL_TENANT_NAME, { exact: true }).first().isVisible();
-    if (!activeTenantVisible) {
-      throw new Error(`The active organisation is not ${TUTORIAL_TENANT_NAME}; recording stopped.`);
+  for (const [sceneIndex, scene] of scenes.entries()) {
+    const role = scene.role || defaultRole;
+    const storageState = await authenticatedStorageState(role);
+    const contextOptions = {
+      baseURL,
+      storageState,
+      viewport: { width: 1920, height: 1080 },
+      colorScheme: 'light',
+      locale: 'en-AE',
+    };
+    if (!validateOnly) {
+      contextOptions.recordVideo = { dir: videoDir, size: { width: 1920, height: 1080 } };
     }
-    await addCallout(page, scene.title, scene.body);
-    const elapsedSeconds = (Date.now() - startedAt) / 1000;
-    await page.waitForTimeout(Math.max(500, (holdPerScene - elapsedSeconds) * 1000));
-    await clearCallout(page);
-  }
+    const context = await browser.newContext(contextOptions);
+    await context.addCookies([
+      {
+        name: 'active_tenant_id',
+        value: tenantId,
+        domain: host,
+        path: '/',
+        httpOnly: false,
+        secure: baseURL.startsWith('https:'),
+        sameSite: 'Lax',
+      },
+    ]);
+    const page = await context.newPage();
+    const video = validateOnly ? null : page.video();
 
-  await page.waitForTimeout(1200);
-  await page.close();
-  recordedVideoPath = await video.path();
-  await context.close();
+    try {
+      const startedAt = Date.now();
+      await scene.run(page);
+      if (scene.verifyTenantContext !== false) {
+        const activeTenantVisible = await page.getByText(TUTORIAL_TENANT_NAME, { exact: true }).first().isVisible();
+        if (!activeTenantVisible) {
+          throw new Error(`The active organisation is not ${TUTORIAL_TENANT_NAME}; recording stopped.`);
+        }
+      }
+      await addCallout(page, scene.title, scene.body);
+      const sceneDuration = validateOnly
+        ? 0.5
+        : targetDuration * (sceneWeights[sceneIndex] / totalSceneWeight);
+      const elapsedSeconds = (Date.now() - startedAt) / 1000;
+      await page.waitForTimeout(Math.max(500, (sceneDuration - elapsedSeconds) * 1000));
+      await clearCallout(page);
+      await page.waitForTimeout(validateOnly ? 100 : 400);
+    } finally {
+      await page.close();
+      if (video) recordedVideoPaths.push(await video.path());
+      await context.close();
+    }
+  }
 } finally {
   await browser.close();
 }
 
-if (!recordedVideoPath || !fs.existsSync(recordedVideoPath)) {
-  throw new Error('Playwright did not produce a tutorial video.');
+if (validateOnly) {
+  fs.rmSync(videoDir, { recursive: true, force: true });
+  console.log(`tutorial=${tutorialId}`);
+  console.log(`tenant=${TUTORIAL_TENANT_NAME}`);
+  console.log('scenario_validation=passed');
+} else {
+  if (recordedVideoPaths.length !== scenes.length || recordedVideoPaths.some((videoPath) => !fs.existsSync(videoPath))) {
+    throw new Error(`Playwright produced ${recordedVideoPaths.length} clips for ${scenes.length} tutorial scenes.`);
+  }
+  if (recordedVideoPaths.length === 1) {
+    fs.copyFileSync(recordedVideoPaths[0], outputPath);
+  } else {
+    const concatPath = path.join(videoDir, 'concat.txt');
+    fs.writeFileSync(
+      concatPath,
+      recordedVideoPaths.map((videoPath) => `file '${videoPath.replaceAll("'", "'\\''")}'`).join('\n'),
+    );
+    execFileSync('ffmpeg', [
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-y',
+      '-f',
+      'concat',
+      '-safe',
+      '0',
+      '-i',
+      concatPath,
+      '-c',
+      'copy',
+      outputPath,
+    ]);
+  }
+  fs.rmSync(videoDir, { recursive: true, force: true });
+  console.log(`tutorial=${tutorialId}`);
+  console.log(`tenant=${TUTORIAL_TENANT_NAME}`);
+  console.log(`target_duration=${targetDuration.toFixed(2)}`);
+  console.log(`silent_video=${outputPath}`);
 }
-fs.copyFileSync(recordedVideoPath, outputPath);
-fs.rmSync(videoDir, { recursive: true, force: true });
-console.log(`tutorial=${tutorialId}`);
-console.log(`tenant=${TUTORIAL_TENANT_NAME}`);
-console.log(`target_duration=${targetDuration.toFixed(2)}`);
-console.log(`silent_video=${outputPath}`);

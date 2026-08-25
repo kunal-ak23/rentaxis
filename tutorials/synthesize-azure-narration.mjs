@@ -51,12 +51,11 @@ if (!Number.isInteger(speechRate) || speechRate < 80 || speechRate > 220) {
 
 const voice = voiceArg || process.env.AZURE_SPEECH_VOICE || 'en-US-Harper:MAI-Voice-2';
 const style = process.env.AZURE_SPEECH_STYLE || 'hopeful';
-const disclosure =
-  process.env.TUTORIAL_AI_VOICE_DISCLOSURE || 'This tutorial uses an AI-generated voice.';
 const narration = fs.readFileSync(narrationPath, 'utf8').trim();
+const spokenIntro = process.env.TUTORIAL_SPOKEN_INTRO?.trim();
 const ratePercent = Math.round((speechRate / 135 - 1) * 100);
 const rate = `${ratePercent >= 0 ? '+' : ''}${ratePercent}%`;
-const spokenText = escapeXml(`${disclosure}\n\n${narration}`);
+const spokenText = escapeXml([spokenIntro, narration].filter(Boolean).join('\n\n'));
 const styledText = style
   ? `<mstts:express-as style="${escapeXml(style)}"><prosody rate="${rate}">${spokenText}</prosody></mstts:express-as>`
   : `<prosody rate="${rate}">${spokenText}</prosody>`;
