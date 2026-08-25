@@ -34,14 +34,17 @@ test('provision tenant + property + unit + renter + active lease', async () => {
     JSON.stringify({ ...ctx, tenant: { id: tenant.id, name: tenant.name } }, null, 2),
   );
 
-  // 2. Enable EMAIL_NOTIFICATIONS on the new tenant. Defaults to false per
-  //    TenantFeature.EMAIL_NOTIFICATIONS (phased-rollout pattern), which
-  //    would otherwise cause EmailDispatcher to skip every event with
-  //    `email.dispatch.skipped reason=feature_disabled`. Without this,
-  //    no USER_INVITED / USER_WELCOMED / etc. emails are dispatched to
-  //    the renter's gmail +alias and the operator can't manually verify
-  //    the SMTP pipeline end-to-end.
-  await api.setTenantFeature(pctx, tenant.id, 'EMAIL_NOTIFICATIONS', true);
+  // 2. Enable every gated capability on this disposable tenant so later specs
+  //    validate the complete product without changing a real customer's flags.
+  for (const feature of [
+    'EMAIL_NOTIFICATIONS',
+    'LISTINGS',
+    'MEETINGS',
+    'LEASE_RENEWALS',
+    'GATEPASS',
+  ] as const) {
+    await api.setTenantFeature(pctx, tenant.id, feature, true);
+  }
 
   // 3. Pivot SUPER_ADMIN's effective tenant for subsequent scoped calls.
   await setActiveTenant(pctx, tenant.id);
@@ -62,11 +65,22 @@ test('provision tenant + property + unit + renter + active lease', async () => {
 
   const pmEmail = `test-pm-${suffix}@e2e.rentaxis.test`;
   const pmPassword = 'TestPM!23';
-  await api.createUser(pctx, tenant.id, {
+  const pm = await api.createUser(pctx, tenant.id, {
     name: `TEST-PM ${suffix}`,
     email: pmEmail,
     password: pmPassword,
     role: 'PROPERTY_MANAGER',
+  });
+
+  const guardEmail = `test-guard-${suffix}@e2e.rentaxis.test`;
+  const guardPassword = 'TestGuard!23';
+  const guardPhone = `+97150${Date.now().toString().slice(-7)}`;
+  const guard = await api.createUser(pctx, tenant.id, {
+    name: `TEST-Guard ${suffix}`,
+    email: guardEmail,
+    password: guardPassword,
+    role: 'SECURITY_GUARD',
+    phoneNumber: guardPhone,
   });
 
   // 4. Switch session to TENANT_ADMIN for the rest of provisioning — that's
@@ -77,6 +91,8 @@ test('provision tenant + property + unit + renter + active lease', async () => {
 
   // 5. Property + unit (TA).
   const property = await api.createProperty(taCtx, { nameEn: `TEST-Tower ${suffix}` });
+  await api.assignUserToProperty(taCtx, pm.id, property.id);
+  await api.setGuardProperties(taCtx, guard.id, [property.id]);
   const unit = await api.createUnit(taCtx, {
     propertyId: property.id,
     unitNumber: `TEST-${suffix}`,
@@ -98,12 +114,12 @@ test('provision tenant + property + unit + renter + active lease', async () => {
   expect(renter.userId, 'renter creation must auto-create a portal User').toBeTruthy();
   expect(renter.portalPassword, 'response must include the generated portal password').toBeTruthy();
 
-  // 7. Lease (TA) — 1-year, quarterly (paymentTerms=4) for cheque lifecycle.
+  // 7. Lease (TA) — ends inside the 90-day renewal window while retaining four
+  //    installments for the cheque lifecycle. A tenant-scoped renewal scan later
+  //    opens the opportunity without processing any real customer tenant.
   const today = new Date();
   const startDate = today.toISOString().slice(0, 10);
-  const endDate = new Date(today.getFullYear() + 1, today.getMonth(), today.getDate())
-    .toISOString()
-    .slice(0, 10);
+  const endDate = new Date(today.getTime() + 60 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const lease = await api.createLease(taCtx, {
     unitId: unit.id,
     renterId: renter.id,
@@ -123,14 +139,26 @@ test('provision tenant + property + unit + renter + active lease', async () => {
       {
         ...ctx,
         tenant: { id: tenant.id, name: tenant.name },
-        property: { id: property.id },
+        // nameEn is asserted on by 13f-lease-renewals. Omitting it made that
+        // spec build `new RegExp(undefined, 'i')` and hunt for the literal
+        // string "undefined" on a page that was rendering correctly.
+        property: { id: property.id, nameEn: `TEST-Tower ${suffix}` },
         unit: { id: unit.id },
-        renter: { id: renter.id, email: renterEmail, portalPassword: renter.portalPassword },
+        renter: {
+          id: renter.id,
+          userId: renter.userId,
+          email: renterEmail,
+          portalPassword: renter.portalPassword,
+        },
         lease: { id: lease.id, status: activated.status },
         adminEmail,
         adminPassword,
         pmEmail,
         pmPassword,
+        pmUserId: pm.id,
+        guardEmail,
+        guardPhone,
+        guardUserId: guard.id,
       },
       null,
       2,

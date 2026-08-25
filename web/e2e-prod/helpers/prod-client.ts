@@ -159,6 +159,39 @@ async function getJson<T>(pctx: ProdContext, path: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+async function deleteOk(pctx: ProdContext, path: string): Promise<void> {
+  const res = await pctx.request.delete(`/api/proxy${path}`, { failOnStatusCode: false });
+  if (!res.ok()) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`DELETE /api/proxy${path} → ${res.status()}: ${txt.slice(0, 400)}`);
+  }
+}
+
+async function postOk(pctx: ProdContext, path: string, body?: unknown): Promise<void> {
+  const res = await pctx.request.post(`/api/proxy${path}`, {
+    ...(body === undefined ? {} : { data: body, headers: { 'Content-Type': 'application/json' } }),
+    failOnStatusCode: false,
+  });
+  if (!res.ok()) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`POST /api/proxy${path} → ${res.status()}: ${txt.slice(0, 400)}`);
+  }
+}
+
+function monthsInclusive(startDate: string, endDate: string): number {
+  const [sy, sm, sd] = startDate.split('-').map(Number);
+  const [ey, em, ed] = endDate.split('-').map(Number);
+  // The end date is the inclusive last day of tenancy, so compare against the
+  // day after it — matching endDate.plusDays(1) on the backend.
+  const endExclusive = new Date(Date.UTC(ey, em - 1, ed + 1));
+  let months =
+    (endExclusive.getUTCFullYear() - sy) * 12 + (endExclusive.getUTCMonth() - (sm - 1));
+  // A partial trailing month does not count, the same way
+  // ChronoUnit.MONTHS.between truncates.
+  if (endExclusive.getUTCDate() < sd) months -= 1;
+  return Math.max(months, 1);
+}
+
 export const api = {
   // Provisioning
   createTenant: (pctx: ProdContext, name: string) =>
@@ -166,8 +199,25 @@ export const api = {
   createUser: (
     pctx: ProdContext,
     tenantId: string,
-    u: { name: string; email: string; password: string; role: string },
+    u: { name: string; email: string; password: string; role: string; phoneNumber?: string },
   ) => postJson<{ id: string; email: string; role: string }>(pctx, '/admin/users', { ...u, tenantId }),
+  assignUserToProperty: async (
+    pctx: ProdContext,
+    userId: string,
+    propertyId: string,
+  ): Promise<void> => {
+    const res = await pctx.request.post(
+      `/api/proxy/admin/users/${userId}/properties/${propertyId}`,
+      { failOnStatusCode: false },
+    );
+    if (!res.ok()) {
+      throw new Error(
+        `POST property assignment ${userId}/${propertyId} → ${res.status()}: ${(
+          await res.text().catch(() => '')
+        ).slice(0, 400)}`,
+      );
+    }
+  },
   /**
    * Enable a per-tenant feature toggle. SUPER_ADMIN only.
    * Used by 01-provision to flip EMAIL_NOTIFICATIONS on for the test tenant —
@@ -178,7 +228,12 @@ export const api = {
   setTenantFeature: async (
     pctx: ProdContext,
     tenantId: string,
-    feature: 'EMAIL_NOTIFICATIONS' | 'LISTINGS' | 'MEETINGS',
+    feature:
+      | 'EMAIL_NOTIFICATIONS'
+      | 'LISTINGS'
+      | 'MEETINGS'
+      | 'LEASE_RENEWALS'
+      | 'GATEPASS',
     enabled: boolean,
   ): Promise<void> => {
     const res = await pctx.request.put(
@@ -202,7 +257,10 @@ export const api = {
       `/api/proxy/admin/tenants/${tenantId}?confirmName=${encodeURIComponent(confirmName)}`,
       { failOnStatusCode: false },
     );
-    if (res.status() !== 204) {
+    // A prior cleanup attempt or an operator may already have removed the
+    // disposable fixture. The desired postcondition is still satisfied; the
+    // cleanup spec verifies absence immediately after this call.
+    if (res.status() !== 204 && res.status() !== 404) {
       const txt = await res.text().catch(() => '');
       throw new Error(`DELETE /admin/tenants/${tenantId} → ${res.status()}: ${txt.slice(0, 400)}`);
     }
@@ -236,6 +294,865 @@ export const api = {
       status: 'VACANT',
       currentTenantName: '',
     }),
+  createBuilding: (
+    pctx: ProdContext,
+    b: { propertyId: string; nameEn: string; floors: number },
+  ) =>
+    postJson<{ id: string; nameEn: string; floors: number }>(pctx, '/v1/buildings', {
+      property: { id: b.propertyId },
+      nameEn: b.nameEn,
+      nameAr: b.nameEn,
+      floors: b.floors,
+    }),
+  getBuildingsForProperty: (pctx: ProdContext, propertyId: string) =>
+    getJson<Array<{ id: string; nameEn: string; floors: number }>>(
+      pctx,
+      `/v1/buildings/property/${propertyId}`,
+    ),
+  deleteBuilding: (pctx: ProdContext, buildingId: string) =>
+    deleteOk(pctx, `/v1/buildings/${buildingId}`),
+
+  createPropertyContact: (
+    pctx: ProdContext,
+    propertyId: string,
+    c: { category: string; name: string; phone: string; email?: string; notes?: string },
+  ) =>
+    postJson<{ id: string; category: string; name: string; phone: string }>(
+      pctx,
+      `/v1/properties/${propertyId}/contacts`,
+      { ...c, sortOrder: 0 },
+    ),
+  updatePropertyContact: (
+    pctx: ProdContext,
+    propertyId: string,
+    contactId: string,
+    c: { category: string; name: string; phone: string; email?: string; notes?: string },
+  ) =>
+    putJson<{ id: string; category: string; name: string; phone: string }>(
+      pctx,
+      `/v1/properties/${propertyId}/contacts/${contactId}`,
+      { ...c, sortOrder: 0 },
+    ),
+  getPropertyContacts: (pctx: ProdContext, propertyId: string) =>
+    getJson<Array<{ id: string; category: string; name: string; phone: string }>>(
+      pctx,
+      `/v1/properties/${propertyId}/contacts`,
+    ),
+  deletePropertyContact: (pctx: ProdContext, propertyId: string, contactId: string) =>
+    deleteOk(pctx, `/v1/properties/${propertyId}/contacts/${contactId}`),
+
+  createAmenity: (
+    pctx: ProdContext,
+    a: { propertyId: string; nameEn: string; buildingIds?: string[]; bookable?: boolean },
+  ) =>
+    postJson<{
+      id: string;
+      nameEn: string;
+      active: boolean;
+      bookable: boolean;
+      buildingIds: string[];
+    }>(pctx, '/v1/amenities', {
+      propertyId: a.propertyId,
+      nameEn: a.nameEn,
+      nameAr: a.nameEn,
+      description: 'Production E2E fixture',
+      bookable: a.bookable ?? true,
+      buildingIds: a.buildingIds ?? [],
+    }),
+  updateAmenity: (
+    pctx: ProdContext,
+    amenityId: string,
+    a: { nameEn?: string; active?: boolean; buildingIds?: string[] },
+  ) =>
+    putJson<{ id: string; nameEn: string; active: boolean; buildingIds: string[] }>(
+      pctx,
+      `/v1/amenities/${amenityId}`,
+      a,
+    ),
+  getAmenities: (pctx: ProdContext, propertyId: string) =>
+    getJson<{ content: Array<{ id: string; nameEn: string; active: boolean }> }>(
+      pctx,
+      `/v1/amenities?propertyId=${propertyId}`,
+    ),
+  deactivateAmenity: (pctx: ProdContext, amenityId: string) =>
+    deleteOk(pctx, `/v1/amenities/${amenityId}`),
+
+  createParkingSpot: (
+    pctx: ProdContext,
+    s: { propertyId: string; spotNumber: string; level?: string; buildingIds?: string[] },
+  ) =>
+    postJson<{
+      id: string;
+      spotNumber: string;
+      level: string;
+      active: boolean;
+      buildingIds: string[];
+    }>(pctx, '/v1/parking-spots', {
+      propertyId: s.propertyId,
+      spotNumber: s.spotNumber,
+      level: s.level ?? 'B1',
+      covered: true,
+      buildingIds: s.buildingIds ?? [],
+    }),
+  updateParkingSpot: (
+    pctx: ProdContext,
+    spotId: string,
+    s: { spotNumber?: string; level?: string; active?: boolean; buildingIds?: string[] },
+  ) =>
+    putJson<{ id: string; spotNumber: string; level: string; active: boolean }>(
+      pctx,
+      `/v1/parking-spots/${spotId}`,
+      s,
+    ),
+  getParkingSpots: (pctx: ProdContext, propertyId: string) =>
+    getJson<{ content: Array<{ id: string; spotNumber: string; active: boolean }> }>(
+      pctx,
+      `/v1/parking-spots?propertyId=${propertyId}`,
+    ),
+  deactivateParkingSpot: (pctx: ProdContext, spotId: string) =>
+    deleteOk(pctx, `/v1/parking-spots/${spotId}`),
+
+  createStaff: (
+    pctx: ProdContext,
+    s: { propertyId: string; nameEn: string; employeeId: string },
+  ) =>
+    postJson<{ id: string; nameEn: string; designation: string; active: boolean }>(
+      pctx,
+      '/v1/staff',
+      {
+        nameEn: s.nameEn,
+        nameAr: s.nameEn,
+        employeeId: s.employeeId,
+        designation: 'Facilities Coordinator',
+        department: 'Operations',
+        monthlySalary: 7500,
+        joinDate: new Date().toISOString().slice(0, 10),
+        phone: '+971500000004',
+        emiratesId: '',
+        passportNumber: '',
+        active: true,
+        property: { id: s.propertyId },
+      },
+    ),
+  updateStaff: (
+    pctx: ProdContext,
+    staffId: string,
+    s: { nameEn: string; propertyId: string; active: boolean },
+  ) =>
+    putJson<{ id: string; nameEn: string; active: boolean }>(pctx, `/v1/staff/${staffId}`, {
+      nameEn: s.nameEn,
+      nameAr: s.nameEn,
+      employeeId: `UPDATED-${staffId.slice(0, 6)}`,
+      designation: 'Senior Facilities Coordinator',
+      department: 'Operations',
+      monthlySalary: 8000,
+      joinDate: new Date().toISOString().slice(0, 10),
+      phone: '+971500000004',
+      active: s.active,
+      property: { id: s.propertyId },
+    }),
+  getStaffByProperty: (pctx: ProdContext, propertyId: string) =>
+    getJson<Array<{ id: string; nameEn: string; active: boolean }>>(
+      pctx,
+      `/v1/staff/by-property/${propertyId}`,
+    ),
+  deleteStaff: (pctx: ProdContext, staffId: string) => deleteOk(pctx, `/v1/staff/${staffId}`),
+
+  createBankAccount: (
+    pctx: ProdContext,
+    b: { propertyId: string; bankName: string; accountNumber: string },
+  ) =>
+    postJson<{
+      id: string;
+      bankName: string;
+      branchName: string;
+      isDefault: boolean;
+      active: boolean;
+    }>(pctx, '/v1/bank-accounts', {
+      bankName: b.bankName,
+      accountNumber: b.accountNumber,
+      iban: 'AE070331234567890123456',
+      branchName: 'Dubai Main',
+      currency: 'AED',
+      isDefault: true,
+      active: true,
+      property: { id: b.propertyId },
+    }),
+  updateBankAccount: (
+    pctx: ProdContext,
+    bankAccountId: string,
+    b: { propertyId: string; bankName: string; accountNumber: string },
+  ) =>
+    putJson<{ id: string; bankName: string; branchName: string; isDefault: boolean }>(
+      pctx,
+      `/v1/bank-accounts/${bankAccountId}`,
+      {
+        bankName: b.bankName,
+        accountNumber: b.accountNumber,
+        iban: 'AE070331234567890123456',
+        branchName: 'Marina Branch',
+        currency: 'AED',
+        isDefault: true,
+        active: true,
+        property: { id: b.propertyId },
+      },
+    ),
+  getBankAccountsByProperty: (pctx: ProdContext, propertyId: string) =>
+    getJson<Array<{ id: string; bankName: string; isDefault: boolean }>>(
+      pctx,
+      `/v1/bank-accounts/by-property/${propertyId}`,
+    ),
+  deleteBankAccount: (pctx: ProdContext, bankAccountId: string) =>
+    deleteOk(pctx, `/v1/bank-accounts/${bankAccountId}`),
+
+  getFineSettings: (pctx: ProdContext) =>
+    getJson<{
+      bounceAmount: number;
+      signatureMismatchAmount: number;
+      accountClosedAmount: number;
+      graceDays: number;
+      perDayRate: number;
+    }>(pctx, '/v1/settings/fines'),
+  updateFineSettings: (
+    pctx: ProdContext,
+    f: {
+      bounceAmount: number;
+      signatureMismatchAmount: number;
+      accountClosedAmount: number;
+      graceDays: number;
+      perDayRate: number;
+    },
+  ) =>
+    putJson<{
+      bounceAmount: number;
+      signatureMismatchAmount: number;
+      accountClosedAmount: number;
+      graceDays: number;
+      perDayRate: number;
+    }>(pctx, '/v1/settings/fines', f),
+  saveRentSettings: (
+    pctx: ProdContext,
+    propertyId: string,
+    s: {
+      dueDayOfMonth: number;
+      gracePeriodDays: number;
+      penaltyType: string;
+      penaltyAmount: number;
+      onlinePaymentEnabled: boolean;
+    },
+  ) =>
+    postJson<{
+      propertyId: string;
+      dueDayOfMonth: number;
+      gracePeriodDays: number;
+      penaltyType: string;
+      penaltyAmount: number;
+      onlinePaymentEnabled: boolean;
+    }>(pctx, `/v1/rent-settings/${propertyId}`, s),
+  getRentSettings: (pctx: ProdContext, propertyId: string) =>
+    getJson<{
+      propertyId: string;
+      dueDayOfMonth: number;
+      gracePeriodDays: number;
+      penaltyType: string;
+      penaltyAmount: number;
+      onlinePaymentEnabled: boolean;
+    }>(pctx, `/v1/rent-settings/${propertyId}`),
+
+  seedAccounts: (pctx: ProdContext) =>
+    postJson<Array<{ id: string; code: string; nameEn: string; accountType: string }>>(
+      pctx,
+      '/v1/finance/accounts/seed',
+      {},
+    ),
+  getAccounts: (pctx: ProdContext) =>
+    getJson<Array<{ id: string; code: string; nameEn: string; accountType: string }>>(
+      pctx,
+      '/v1/finance/accounts',
+    ),
+  saveAccountMapping: (
+    pctx: ProdContext,
+    m: { transactionNature: string; debitAccountId: string; creditAccountId: string },
+  ) =>
+    postJson<{
+      id: string;
+      transactionNature: string;
+      debitAccountId: string;
+      creditAccountId: string;
+    }>(pctx, '/v1/finance/account-mappings', m),
+  getAccountMappings: (pctx: ProdContext) =>
+    getJson<Array<{ id: string; transactionNature: string }>>(
+      pctx,
+      '/v1/finance/account-mappings',
+    ),
+  createFinancialTransaction: (
+    pctx: ProdContext,
+    t: { accountId: string; propertyId: string; description: string; debit: number; credit: number },
+  ) =>
+    postJson<{ id: string; description: string; accountCode: string; debit: number; credit: number }>(
+      pctx,
+      '/v1/finance/transactions',
+      {
+        date: new Date().toISOString().slice(0, 10),
+        description: t.description,
+        account: { id: t.accountId },
+        property: { id: t.propertyId },
+        debit: t.debit,
+        credit: t.credit,
+        vatApplicable: false,
+        vatAmount: 0,
+        vatRate: 0,
+        grossAmount: Math.max(t.debit, t.credit),
+        netAmount: Math.max(t.debit, t.credit),
+        notes: 'Production E2E fixture',
+      },
+    ),
+
+  createListing: (
+    pctx: ProdContext,
+    l: { unitId: string; titleEn: string; annualRent: number; availableFrom: string },
+  ) =>
+    postJson<{
+      id: string;
+      unitId: string;
+      status: string;
+      titleEn: string;
+      annualRent: number;
+      tenantSlug: string;
+      slug: string;
+    }>(pctx, '/listings', {
+      unitId: l.unitId,
+      titleEn: l.titleEn,
+      titleAr: l.titleEn,
+      descriptionEn: 'Production E2E marketplace fixture',
+      descriptionAr: 'Production E2E marketplace fixture',
+      bedrooms: 1,
+      bathrooms: 1,
+      sizeSqft: 600,
+      floor: 12,
+      parkingSpaces: 1,
+      furnishing: 'UNFURNISHED',
+      viewType: 'CITY',
+      annualRent: l.annualRent,
+      securityDeposit: 5000,
+      minLeaseMonths: 12,
+      chequesAccepted: 4,
+      dewaIncluded: false,
+      chillerIncluded: false,
+      utilitiesEstimate: 500,
+      availableFrom: l.availableFrom,
+      seoTitle: l.titleEn,
+      seoDescription: 'TEST-E2E listing',
+      seoKeywords: 'test,e2e,rental',
+      lat: 25.2048,
+      lng: 55.2708,
+      amenities: [
+        { amenity: 'GYM', customLabel: null },
+        { amenity: 'COVERED_PARKING', customLabel: null },
+      ],
+    }),
+  updateListing: (
+    pctx: ProdContext,
+    listingId: string,
+    l: { titleEn: string; annualRent: number; availableFrom: string },
+  ) =>
+    putJson<{ id: string; titleEn: string; annualRent: number; status: string }>(
+      pctx,
+      `/listings/${listingId}`,
+      {
+        titleEn: l.titleEn,
+        titleAr: l.titleEn,
+        descriptionEn: 'Updated production E2E marketplace fixture',
+        descriptionAr: 'Updated production E2E marketplace fixture',
+        bedrooms: 1,
+        bathrooms: 1,
+        sizeSqft: 600,
+        floor: 12,
+        parkingSpaces: 1,
+        furnishing: 'SEMI_FURNISHED',
+        viewType: 'CITY',
+        annualRent: l.annualRent,
+        securityDeposit: 5000,
+        minLeaseMonths: 12,
+        chequesAccepted: 4,
+        dewaIncluded: false,
+        chillerIncluded: false,
+        utilitiesEstimate: 500,
+        availableFrom: l.availableFrom,
+        amenities: [{ amenity: 'GYM', customLabel: null }],
+      },
+    ),
+  publishListing: (pctx: ProdContext, listingId: string) =>
+    postOk(pctx, `/listings/${listingId}/publish`),
+  unlistListing: (pctx: ProdContext, listingId: string) =>
+    postOk(pctx, `/listings/${listingId}/unlist`),
+  deleteListing: (pctx: ProdContext, listingId: string) =>
+    deleteOk(pctx, `/listings/${listingId}`),
+  getMarketplaceListings: (pctx: ProdContext, tenantSlug: string) =>
+    getJson<{ content: Array<{ id: string; titleEn: string; status: string; slug: string }> }>(
+      pctx,
+      `/marketplace/${tenantSlug}/listings`,
+    ),
+  getMarketplaceListing: (pctx: ProdContext, tenantSlug: string, listingSlug: string) =>
+    getJson<{ id: string; titleEn: string; tenantSlug: string; slug: string }>(
+      pctx,
+      `/marketplace/${tenantSlug}/listings/${listingSlug}`,
+    ),
+  addListingInterest: (pctx: ProdContext, listingId: string, note: string) =>
+    postOk(pctx, `/marketplace/listings/${listingId}/interest`, { note }),
+  withdrawListingInterest: (pctx: ProdContext, listingId: string) =>
+    deleteOk(pctx, `/marketplace/listings/${listingId}/interest`),
+  getWishlist: (pctx: ProdContext) =>
+    getJson<Array<{ id: string; titleEn: string }>>(pctx, '/marketplace/me/wishlist'),
+  getListingInterests: (pctx: ProdContext, listingId: string) =>
+    getJson<{ content: Array<{ id: string; renterUserId: string; note: string }> }>(
+      pctx,
+      `/listings/${listingId}/interests`,
+    ),
+
+  getMeetingSlots: (pctx: ProdContext, hostUserId: string, date: string) =>
+    getJson<Array<{ start: string; end: string; available: boolean }>>(
+      pctx,
+      `/v1/meetings/slots?hostUserId=${hostUserId}&date=${date}`,
+    ),
+  createMeeting: (
+    pctx: ProdContext,
+    m: {
+      hostUserId: string;
+      slotStart: string;
+      propertyId: string;
+      unitId: string;
+      title: string;
+    },
+  ) =>
+    postJson<{
+      id: string;
+      status: string;
+      requesterUserId: string;
+      hostUserId: string;
+      slotStart: string;
+    }>(pctx, '/v1/meetings', {
+      type: 'PROPERTY_VISIT',
+      purpose: 'PROPERTY_VIEWING',
+      title: m.title,
+      notes: 'Production E2E fixture',
+      slotStart: m.slotStart,
+      hostUserId: m.hostUserId,
+      propertyId: m.propertyId,
+      unitId: m.unitId,
+    }),
+  approveMeeting: (pctx: ProdContext, meetingId: string) =>
+    putJson<{ id: string; status: string }>(pctx, `/v1/meetings/${meetingId}/approve`, {}),
+  completeMeeting: (pctx: ProdContext, meetingId: string) =>
+    putJson<{ id: string; status: string }>(pctx, `/v1/meetings/${meetingId}/complete`, {}),
+  getMeeting: (pctx: ProdContext, meetingId: string) =>
+    getJson<{ id: string; status: string; title: string }>(pctx, `/v1/meetings/${meetingId}`),
+  getMyMeetings: (pctx: ProdContext, perspective = 'requester') =>
+    getJson<{ content: Array<{ id: string; status: string }> }>(
+      pctx,
+      `/v1/meetings/my?perspective=${perspective}`,
+    ),
+  getMeetings: (pctx: ProdContext) =>
+    getJson<{ content: Array<{ id: string; status: string }> }>(pctx, '/v1/meetings'),
+  getMeetingCalendar: (pctx: ProdContext, start: string, end: string) =>
+    getJson<{ content: Array<{ id: string; status: string }> }>(
+      pctx,
+      `/v1/meetings/calendar?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`,
+    ),
+
+  getMyFacilities: (pctx: ProdContext) =>
+    getJson<{
+      amenities: Array<{ id: string; nameEn: string; bookable: boolean; pendingCount: number }>;
+      parkingSpots: Array<{ id: string; spotNumber: string; held: boolean; pendingCount: number }>;
+    }>(pctx, '/v1/facilities/my'),
+  createBooking: (
+    pctx: ProdContext,
+    b: {
+      resourceType: 'AMENITY' | 'PARKING_SPOT';
+      resourceId: string;
+      unitId: string;
+      preferredDate: string;
+      note: string;
+    },
+  ) =>
+    postJson<{
+      id: string;
+      resourceType: string;
+      amenityId: string | null;
+      parkingSpotId: string | null;
+      unitId: string;
+      status: string;
+    }>(pctx, '/v1/bookings', b),
+  getMyBookings: (pctx: ProdContext) =>
+    getJson<Array<{ id: string; resourceType: string; status: string }>>(pctx, '/v1/bookings/my'),
+  getBookings: (pctx: ProdContext, propertyId: string) =>
+    getJson<{ content: Array<{ id: string; resourceType: string; status: string }> }>(
+      pctx,
+      `/v1/bookings?propertyId=${propertyId}`,
+    ),
+  getBooking: (pctx: ProdContext, bookingId: string) =>
+    getJson<{
+      request: { id: string; resourceType: string; status: string };
+      otherRequests: Array<{ id: string; status: string }>;
+    }>(pctx, `/v1/bookings/${bookingId}`),
+  approveBooking: (pctx: ProdContext, bookingId: string, adminNote: string) =>
+    postJson<{ id: string; status: string; adminNote: string }>(
+      pctx,
+      `/v1/bookings/${bookingId}/approve`,
+      { adminNote },
+    ),
+  cancelBooking: (pctx: ProdContext, bookingId: string) =>
+    postJson<{ id: string; status: string }>(pctx, `/v1/bookings/${bookingId}/cancel`, {}),
+  releaseBooking: (pctx: ProdContext, bookingId: string) =>
+    postJson<{ id: string; status: string }>(pctx, `/v1/bookings/${bookingId}/release`, {}),
+
+  setGuardProperties: (pctx: ProdContext, guardUserId: string, propertyIds: string[]) =>
+    putJson<string[]>(pctx, `/v1/gatepass/guards/${guardUserId}/properties`, propertyIds),
+  getAssignedGuardPropertyIds: (pctx: ProdContext, guardUserId: string) =>
+    getJson<string[]>(pctx, `/v1/gatepass/guards/${guardUserId}/properties`),
+  getGuardProperties: (pctx: ProdContext) =>
+    getJson<Array<{ id: string; name: string }>>(pctx, '/v1/gatepass/my-properties'),
+  createGatePass: (
+    pctx: ProdContext,
+    p: { unitId: string; validFrom: string; validTo: string; guestName: string },
+  ) =>
+    postJson<{
+      id: string;
+      propertyId: string;
+      unitId: string;
+      status: string;
+      qrToken: string;
+      numericCode: string;
+    }>(pctx, '/v1/gatepass', {
+      unitId: p.unitId,
+      guestName: p.guestName,
+      guestPhone: '+971500000005',
+      purpose: 'TEST-Visitor access',
+      vehicleNumber: 'TEST-E2E',
+      passType: 'RECURRING',
+      validFrom: p.validFrom,
+      validTo: p.validTo,
+    }),
+  getMyGatePasses: (pctx: ProdContext) =>
+    getJson<Array<{ id: string; status: string; qrToken: string; numericCode: string }>>(
+      pctx,
+      '/v1/gatepass/mine',
+    ),
+  getGatePassApprovals: (pctx: ProdContext) =>
+    getJson<Array<{ id: string; propertyId: string; status: string }>>(pctx, '/v1/gatepass/approvals'),
+  approveGatePass: (pctx: ProdContext, gatePassId: string, approved: boolean) =>
+    postJson<{ id: string; propertyId: string; status: string }>(
+      pctx,
+      `/v1/gatepass/${gatePassId}/approval`,
+      { approved },
+    ),
+  getExpectedGatePasses: (pctx: ProdContext) =>
+    getJson<Array<{ id: string; propertyId: string; status: string }>>(
+      pctx,
+      '/v1/gatepass/expected-today',
+    ),
+  scanGatePass: (
+    pctx: ProdContext,
+    body: { qrToken?: string; numericCode?: string; direction: 'ENTRY' | 'EXIT' },
+  ) =>
+    postJson<{ result: string; reason: string | null; guestName: string; unitNumber: string }>(
+      pctx,
+      '/v1/gatepass/scan',
+      body,
+    ),
+  getGatePassReport: (pctx: ProdContext, from: string, to: string, propertyId: string) =>
+    getJson<Array<{ scanId: string; gatePassId: string; result: string; propertyId: string }>>(
+      pctx,
+      `/v1/gatepass/report?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&propertyId=${propertyId}`,
+    ),
+  cancelGatePass: (pctx: ProdContext, gatePassId: string) =>
+    postJson<{ id: string; status: string }>(pctx, `/v1/gatepass/${gatePassId}/cancel`, {}),
+
+  getWalkInDestinations: (pctx: ProdContext, propertyId: string) =>
+    getJson<Array<{
+      unitId: string;
+      unitNumber: string;
+      propertyId: string;
+      buildingId: string | null;
+      buildingName: string | null;
+    }>>(pctx, `/v1/gatepass/walk-in/destinations?propertyId=${propertyId}`),
+  getEffectiveGatePolicy: (pctx: ProdContext, propertyId: string) =>
+    getJson<{
+      id: string | null;
+      propertyId: string;
+      inherited: boolean;
+      requireUnregisteredApproval: boolean;
+      requireRegisteredApproval: boolean;
+      notifyRegisteredEntry: boolean;
+      requireFreshPhoto: boolean;
+      approvalTimeoutMinutes: number;
+    }>(pctx, `/v1/gatepass/policies/effective?propertyId=${propertyId}`),
+  setGatePolicy: (
+    pctx: ProdContext,
+    propertyId: string,
+    body: {
+      requireUnregisteredApproval: boolean;
+      requireRegisteredApproval: boolean;
+      notifyRegisteredEntry: boolean;
+      requireFreshPhoto: boolean;
+      approvalTimeoutMinutes: number;
+    },
+  ) => putJson<{
+    id: string;
+    propertyId: string;
+    inherited: boolean;
+    requireUnregisteredApproval: boolean;
+    requireRegisteredApproval: boolean;
+    notifyRegisteredEntry: boolean;
+    requireFreshPhoto: boolean;
+    approvalTimeoutMinutes: number;
+  }>(pctx, `/v1/gatepass/policies?propertyId=${propertyId}`, body),
+  createManagedVisitorRegistration: (
+    pctx: ProdContext,
+    body: {
+      propertyId: string;
+      unitId: string;
+      name: string;
+      phone: string;
+      visitorType:
+        | 'GUEST'
+        | 'DELIVERY'
+        | 'MAID'
+        | 'MILK_VENDOR'
+        | 'LAUNDRY_VENDOR'
+        | 'SERVICE_VENDOR'
+        | 'OTHER';
+      validFrom: string;
+      validTo: string;
+      active: boolean;
+    },
+  ) => postJson<{
+    id: string;
+    name: string;
+    phone: string;
+    visitorType: string;
+    lastUnitId: string;
+    registeredForSelectedUnit: boolean;
+  }>(pctx, '/v1/gatepass/visitors/registration', body),
+  lookupWalkInVisitor: (
+    pctx: ProdContext,
+    propertyId: string,
+    unitId: string,
+    phone: string,
+  ) => getJson<{
+    id: string;
+    name: string;
+    phone: string;
+    visitorType: string;
+    lastUnitId: string;
+    registeredForSelectedUnit: boolean;
+  }>(
+    pctx,
+    `/v1/gatepass/walk-in/visitor?propertyId=${propertyId}&unitId=${unitId}&phone=${encodeURIComponent(phone)}`,
+  ),
+
+  createPromoBusiness: (
+    pctx: ProdContext,
+    body: {
+      nameEn: string;
+      nameAr?: string;
+      category: string;
+      phoneE164?: string;
+      whatsappE164?: string;
+      allowedDomains?: string[];
+      active: boolean;
+    },
+  ) =>
+    postJson<{ id: string; nameEn: string; category: string; active: boolean }>(
+      pctx,
+      '/v1/promotions/businesses',
+      body,
+    ),
+  updatePromoBusiness: (
+    pctx: ProdContext,
+    businessId: string,
+    body: {
+      nameEn: string;
+      nameAr?: string;
+      category: string;
+      phoneE164?: string;
+      whatsappE164?: string;
+      allowedDomains?: string[];
+      active: boolean;
+    },
+  ) =>
+    putJson<{ id: string; nameEn: string; category: string; active: boolean }>(
+      pctx,
+      `/v1/promotions/businesses/${businessId}`,
+      body,
+    ),
+  listPromoBusinesses: (pctx: ProdContext) =>
+    getJson<{ content: Array<{ id: string; nameEn: string; active: boolean; adCount: number }> }>(
+      pctx,
+      '/v1/promotions/businesses?size=100',
+    ),
+  deletePromoBusiness: (pctx: ProdContext, businessId: string) =>
+    deleteOk(pctx, `/v1/promotions/businesses/${businessId}`),
+  createPromoAd: (
+    pctx: ProdContext,
+    body: {
+      businessId: string;
+      titleEn: string;
+      titleAr?: string;
+      subtitleEn?: string;
+      accentColor?: string;
+      ctaType: string;
+      ctaLabelEn?: string;
+      couponCode?: string;
+      couponTermsEn?: string;
+      startsAt: string;
+      endsAt: string;
+      priority: number;
+      placement: string;
+      propertyIds: string[];
+      active: boolean;
+    },
+  ) =>
+    postJson<{
+      id: string;
+      businessId: string;
+      titleEn: string;
+      couponCode: string | null;
+      priority: number;
+      placement: string;
+      active: boolean;
+      propertyIds: string[];
+    }>(pctx, '/v1/promotions/ads', body),
+  updatePromoAd: (
+    pctx: ProdContext,
+    adId: string,
+    body: {
+      businessId: string;
+      titleEn: string;
+      titleAr?: string;
+      subtitleEn?: string;
+      accentColor?: string;
+      ctaType: string;
+      ctaLabelEn?: string;
+      couponCode?: string;
+      couponTermsEn?: string;
+      startsAt: string;
+      endsAt: string;
+      priority: number;
+      placement: string;
+      propertyIds: string[];
+      active: boolean;
+    },
+  ) =>
+    putJson<{
+      id: string;
+      titleEn: string;
+      priority: number;
+      placement: string;
+      active: boolean;
+      propertyIds: string[];
+    }>(pctx, `/v1/promotions/ads/${adId}`, body),
+  listPromoAds: (pctx: ProdContext, businessId: string) =>
+    getJson<{
+      content: Array<{
+        id: string;
+        titleEn: string;
+        impressions: number;
+        clicks: number;
+        active: boolean;
+      }>;
+    }>(pctx, `/v1/promotions/ads?businessId=${businessId}&size=100`),
+  getPromotionFeed: (pctx: ProdContext) =>
+    getJson<
+      Array<{
+        id: string;
+        titleEn: string;
+        ctaType: string;
+        couponCode: string | null;
+        business: { id: string; nameEn: string; category: string };
+      }>
+    >(pctx, '/v1/promotions/feed'),
+  getPromotionOffers: (pctx: ProdContext, category?: string) =>
+    getJson<
+      Array<{
+        id: string;
+        titleEn: string;
+        ctaType: string;
+        couponCode: string | null;
+        business: { id: string; nameEn: string; category: string };
+      }>
+    >(pctx, `/v1/promotions/offers${category ? `?category=${category}` : ''}`),
+  recordPromotionEvents: (
+    pctx: ProdContext,
+    events: Array<{ adId: string; type: 'IMPRESSION' | 'CLICK' }>,
+  ) => postOk(pctx, '/v1/promotions/events', { events }),
+  getPromoAdStats: (pctx: ProdContext, adId: string) =>
+    getJson<{
+      adId: string;
+      impressions: number;
+      clicks: number;
+      tapThroughRate: number;
+    }>(pctx, `/v1/promotions/ads/${adId}/stats`),
+
+  getAvailablePaymentGateways: (pctx: ProdContext) =>
+    getJson<
+      Array<{
+        id: string;
+        code: string;
+        name: string;
+        isActive: boolean;
+        supportedCurrencies: string;
+      }>
+    >(pctx, '/v1/gateway-config/gateways'),
+  savePaymentGatewayConfig: (
+    pctx: ProdContext,
+    body: {
+      gatewayId: string;
+      apiKey?: string | null;
+      apiSecret?: string | null;
+      webhookSecret?: string | null;
+      isActive: boolean;
+      isTestMode: boolean;
+    },
+  ) =>
+    postJson<{
+      id: string;
+      gatewayId: string;
+      gatewayCode: string;
+      gatewayName: string;
+      apiKey: null;
+      apiSecret: null;
+      webhookSecret: null;
+      apiKeyMasked: string;
+      hasWebhookSecret: boolean;
+      isActive: boolean;
+      isTestMode: boolean;
+    }>(pctx, '/v1/gateway-config', body),
+  getActivePaymentGatewayConfig: async (pctx: ProdContext) => {
+    const res = await pctx.request.get('/api/proxy/v1/gateway-config', {
+      failOnStatusCode: false,
+    });
+    if (res.status() === 204) {
+      return null;
+    }
+    if (!res.ok()) {
+      const txt = await res.text().catch(() => '');
+      throw new Error(`GET /api/proxy/v1/gateway-config → ${res.status()}: ${txt.slice(0, 400)}`);
+    }
+    return res.json() as Promise<{
+      id: string;
+      gatewayId: string;
+      gatewayCode: string;
+      gatewayName: string;
+      apiKey: null;
+      apiSecret: null;
+      webhookSecret: null;
+      apiKeyMasked: string;
+      hasWebhookSecret: boolean;
+      isActive: boolean;
+      isTestMode: boolean;
+    }>;
+  },
 
   // Renter + Lease
   // Backend defaults createPortalAccount=true and returns portalPassword on
@@ -262,6 +1179,16 @@ export const api = {
   // Note: the same monthsBetween calculation lives in LeaseMetadataEditor.tsx
   // (line ~201). If those two diverge from each other in the future, this
   // helper will silently desync from one of them.
+  // Mirrors backend DateMath.monthsInclusive:
+  //   max(ChronoUnit.MONTHS.between(start, end.plusDays(1)), 1)
+  // i.e. whole months from start to the day after the inclusive last day of
+  // tenancy. Parsed as UTC parts so the result does not shift with the runner's
+  // timezone. The previous calendar-month formula
+  // ((endY-startY)*12 + (endM-startM) + 1) disagreed with the backend on any
+  // lease that is not a whole number of months: a today -> today+60d lease is
+  // 3 by that formula and 2 here, which is what the backend actually charges.
+  monthsInclusive,
+
   createLease: (
     pctx: ProdContext,
     l: {
@@ -274,13 +1201,17 @@ export const api = {
       depositAmount?: number;
     },
   ) => {
-    const start = new Date(l.startDate);
-    const end = new Date(l.endDate);
-    const months = Math.max(
-      1,
-      (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth()) + 1,
-    );
-    const paymentTerms = l.paymentTerms ?? 4;
+    // Mirror the backend exactly. Diverging here produces a lease the API
+    // rejects, and because 01-provision runs first in a serial suite, that
+    // failure takes every downstream spec with it.
+    const months = monthsInclusive(l.startDate, l.endDate);
+    // PaymentScheduleService clamps the cheque count to the month count
+    // ("if (n > totalMonths) n = (int) totalMonths"), so a 4-cheque request on a
+    // 2-month lease actually issues 2. Sizing the deposit off the *unclamped*
+    // count under-provisions it and the largest cheque then breaches the cap.
+    const paymentTerms = Math.max(1, Math.min(l.paymentTerms ?? 4, months));
+    // The backend prefers monthlyRent x months whenever monthlyRent is set,
+    // which it always is below — so the total we send must agree with it.
     const totalRent = l.rentAmount * months;
     // PaymentScheduleService caps the largest cheque at the deposit amount.
     // Default the fixture deposit to the average installment so the helper
@@ -312,12 +1243,236 @@ export const api = {
   // Our helper sends `{}` which is functionally equivalent.
   activateLease: (pctx: ProdContext, leaseId: string) =>
     putJson<{ id: string; status: string }>(pctx, `/v1/leases/${leaseId}/activate`, {}),
+  getLease: (pctx: ProdContext, leaseId: string) =>
+    getJson<{
+      id: string;
+      unitId: string;
+      renterId: string;
+      startDate: string;
+      endDate: string;
+      status: string;
+      rentAmount: number;
+      monthlyRent: number;
+      depositAmount: number;
+      ejariNumber: string | null;
+      paymentTerms: number;
+      installmentDistribution: string;
+      paymentMethod: string;
+      depositPaymentMethod: string;
+      paymentReferenceNumber: string | null;
+      agreementDate: string | null;
+      rentVatApplicable: boolean;
+    }>(pctx, `/v1/leases/${leaseId}`),
+  updateDraftLease: (
+    pctx: ProdContext,
+    leaseId: string,
+    body: {
+      unitId: string;
+      renterId: string;
+      startDate: string;
+      endDate: string;
+      rentAmount: number;
+      monthlyRent: number;
+      depositAmount: number;
+      ejariNumber: string | null;
+      paymentTerms: number;
+      installmentDistribution: string;
+      paymentMethod: string;
+      depositPaymentMethod: string;
+      paymentReferenceNumber: string | null;
+      agreementDate: string | null;
+      rentVatApplicable: boolean;
+    },
+  ) => putJson<{ id: string; status: string; ejariNumber: string; paymentReferenceNumber: string }>(
+    pctx,
+    `/v1/leases/${leaseId}`,
+    body,
+  ),
+  deleteDraftLease: (pctx: ProdContext, leaseId: string) =>
+    deleteOk(pctx, `/v1/leases/${leaseId}`),
+  updateLeasePaymentSchedule: (
+    pctx: ProdContext,
+    leaseId: string,
+    rows: Array<{
+      scheduleId: string;
+      dueDate: string;
+      amount: number;
+      paymentMethod: 'CHEQUE' | 'BANK_TRANSFER' | 'CASH' | 'ONLINE';
+      chequeNumber?: string | null;
+      chequeDate?: string | null;
+      bankName?: string | null;
+    }>,
+  ) => putJson<Array<{
+    id: string;
+    status: string;
+    paymentMethod: string;
+    chequeNumber: string | null;
+  }>>(pctx, `/v1/leases/${leaseId}/payment-schedule`, { rows }),
+  bulkAttachCheques: (
+    pctx: ProdContext,
+    leaseId: string,
+    items: Array<{
+      scheduleId: string;
+      chequeNumber: string;
+      chequeDate: string;
+      bankName: string;
+      payerName: string;
+      imageUrl: string;
+      imageBlobPath: string;
+      imageUploadedAt: string;
+    }>,
+  ) => postJson<{
+    schedules: Array<{ id: string; status: string; chequeNumber: string; chequeImageBlobPath: string }>;
+  }>(pctx, `/v1/leases/${leaseId}/cheques/bulk-attach`, { items }),
+  extendLease: (pctx: ProdContext, leaseId: string, newEndDate: string) =>
+    postJson<{ id: string; status: string; endDate: string }>(pctx, `/v1/leases/${leaseId}/extend`, {
+      newEndDate,
+    }),
+  getSettlementPreview: (pctx: ProdContext, leaseId: string) =>
+    getJson<{
+      depositAmount: number;
+      unpaidRentTotal: number;
+      penaltyTotal: number;
+      suggestedRefund: number;
+    }>(pctx, `/v1/leases/${leaseId}/settlement/preview`),
+  saveSettlementDraft: (
+    pctx: ProdContext,
+    leaseId: string,
+    body: {
+      notes: string;
+      deductions: Array<{
+        category?: string;
+        description: string;
+        amount: number;
+        autoCalculated: boolean;
+        type: 'DEDUCTION' | 'ADDITION';
+        additionCategory?: string;
+      }>;
+    },
+  ) =>
+    postJson<{
+      id: string;
+      leaseId: string;
+      status: string;
+      totalDeductions: number;
+      totalAdditions: number;
+      refundAmount: number;
+      deductions: Array<{ id: string; type: string; amount: number }>;
+    }>(pctx, `/v1/leases/${leaseId}/settlement/draft`, body),
+  getSettlement: (pctx: ProdContext, leaseId: string) =>
+    getJson<{
+      id: string;
+      leaseId: string;
+      status: string;
+      totalDeductions: number;
+      totalAdditions: number;
+      refundAmount: number;
+    }>(pctx, `/v1/leases/${leaseId}/settlement`),
+  finalizeSettlement: (pctx: ProdContext, leaseId: string) =>
+    postJson<{ id: string; status: string }>(pctx, `/v1/leases/${leaseId}/settlement/finalize`, {}),
+  getLeaseEvents: (pctx: ProdContext, leaseId: string) =>
+    getJson<
+      Array<{
+        id: string;
+        previousState: string;
+        newState: string;
+        notes: string;
+      }>
+    >(pctx, `/v1/leases/${leaseId}/events`),
+
+  // Maintenance tickets. This models the cross-role journey used by the UI:
+  // renter reports/replies/shares OTP/rates; manager progresses and closes.
+  createTicket: (
+    pctx: ProdContext,
+    t: {
+      propertyId: string;
+      unitId?: string;
+      leaseId?: string;
+      title: string;
+      description: string;
+      category: string;
+      priority: string;
+    },
+  ) =>
+    postJson<{
+      id: string;
+      status: string;
+      reportedBy: string;
+      closureOtp: string | null;
+    }>(pctx, '/v1/tickets', t),
+  assignTicket: (pctx: ProdContext, ticketId: string, assignTo: string) =>
+    putJson<{ id: string; status: string; assignedTo: string }>(
+      pctx,
+      `/v1/tickets/${ticketId}/assign`,
+      { assignTo },
+    ),
+  estimateTicket: (pctx: ProdContext, ticketId: string, hours: number) =>
+    putJson<{ id: string; estimatedResolutionHours: number }>(
+      pctx,
+      `/v1/tickets/${ticketId}/estimate`,
+      { hours },
+    ),
+  updateTicketStatus: (pctx: ProdContext, ticketId: string, status: string) =>
+    putJson<{ id: string; status: string; closureOtp: string | null }>(
+      pctx,
+      `/v1/tickets/${ticketId}/status`,
+      { status },
+    ),
+  getTicket: (pctx: ProdContext, ticketId: string) =>
+    getJson<{
+      id: string;
+      status: string;
+      assignedTo: string | null;
+      closureOtp: string | null;
+      satisfactionRating: number | null;
+    }>(pctx, `/v1/tickets/${ticketId}`),
+  addTicketReply: (pctx: ProdContext, ticketId: string, message: string) =>
+    postJson<{ id: string; userId: string; message: string }>(
+      pctx,
+      `/v1/tickets/${ticketId}/replies`,
+      { message },
+    ),
+  getTicketReplies: (pctx: ProdContext, ticketId: string) =>
+    getJson<Array<{ id: string; userId: string; message: string }>>(
+      pctx,
+      `/v1/tickets/${ticketId}/replies`,
+    ),
+  getTicketHistory: (pctx: ProdContext, ticketId: string) =>
+    getJson<Array<{ id: string; action: string; fromStatus: string; toStatus: string }>>(
+      pctx,
+      `/v1/tickets/${ticketId}/history`,
+    ),
+  closeTicket: (pctx: ProdContext, ticketId: string, otp: string) =>
+    putJson<{ id: string; status: string }>(pctx, `/v1/tickets/${ticketId}/close`, { otp }),
+  rateTicket: (pctx: ProdContext, ticketId: string, rating: number, comment: string) =>
+    putJson<{ id: string; satisfactionRating: number; satisfactionComment: string }>(
+      pctx,
+      `/v1/tickets/${ticketId}/rate`,
+      { rating, comment },
+    ),
+  getTicketReport: (pctx: ProdContext, propertyId: string) =>
+    getJson<{
+      totalTickets: number;
+      openCount: number;
+      resolvedCount: number;
+      closedCount: number;
+      avgSatisfaction: number;
+    }>(pctx, `/v1/tickets/reports?propertyId=${propertyId}`),
 
   // Payment schedule + cheque lifecycle. Important: each payment-schedule row
   // IS the cheque (no separate /cheques resource). Lifecycle endpoints are
   // PUT on /v1/payments/{id}/{action} and all take UpdatePaymentStatusDTO.
   getPaymentScheduleForLease: (pctx: ProdContext, leaseId: string) =>
-    getJson<Array<{ id: string; dueDate: string; amount: number; status: string }>>(
+    getJson<Array<{
+      id: string;
+      dueDate: string;
+      amount: number;
+      status: string;
+      paymentMethod: string;
+      isBookingDeposit: boolean;
+      isSecurityDeposit: boolean;
+      isCharge: boolean;
+    }>>(
       pctx,
       `/v1/payments/lease/${leaseId}`,
     ),
@@ -333,6 +1488,69 @@ export const api = {
     putJson<{ id: string; status: string }>(pctx, `/v1/payments/${paymentScheduleId}/clear`, dto),
   bouncePayment: (pctx: ProdContext, paymentScheduleId: string, dto: { notes?: string } = {}) =>
     putJson<{ id: string; status: string }>(pctx, `/v1/payments/${paymentScheduleId}/bounce`, dto),
+  markPaymentFailed: (
+    pctx: ProdContext,
+    paymentScheduleId: string,
+    failureReason: 'BOUNCE' | 'SIGNATURE_MISMATCH' | 'ACCOUNT_CLOSED',
+    notes: string,
+  ) =>
+    postJson<{
+      schedule: { id: string; status: string };
+      penalty: {
+        id: string;
+        penaltyType: string;
+        penaltyAmount: number;
+        fineGraceDays: number;
+        finePerDayRate: number;
+      };
+    }>(pctx, `/v1/payments/${paymentScheduleId}/mark-failed`, {
+      failureReason,
+      notes,
+      effectiveDate: new Date().toISOString().slice(0, 10),
+    }),
+  listPenalties: (pctx: ProdContext, leaseId: string, status = 'all') =>
+    getJson<{
+      content: Array<{
+        id: string;
+        paymentScheduleId: string;
+        leaseId: string;
+        penaltyType: string;
+        failureReason: string;
+        penaltyAmount: number;
+        currentTotal: number;
+        outstanding: number;
+        waived: boolean;
+        waivedReason: string | null;
+        status: string;
+        payments: Array<{ id: string; amount: number; paymentMethod: string }>;
+      }>;
+    }>(pctx, `/v1/penalties?leaseId=${leaseId}&status=${status}&size=100`),
+  recordPenaltyPayment: (
+    pctx: ProdContext,
+    penaltyId: string,
+    amount: number,
+    reference: string,
+  ) =>
+    postJson<{
+      id: string;
+      amount: number;
+      paymentMethod: string;
+      paymentReference: string;
+    }>(pctx, `/v1/penalties/${penaltyId}/payments`, {
+      amount,
+      paymentMethod: 'BANK_TRANSFER',
+      paymentReference: reference,
+      receivedAt: new Date().toISOString().slice(0, 10),
+      notes: 'TEST-E2E penalty receipt',
+    }),
+  waivePenalty: (pctx: ProdContext, penaltyId: string, reason: string) =>
+    postJson<{
+      id: string;
+      waived: boolean;
+      waivedReason: string;
+      outstanding: number;
+      status: string;
+    }>(pctx, `/v1/penalties/${penaltyId}/waive`, { reason }),
 
   // Vendor — payload matches the finance/vendors page (handleSubmit). The
   // entity does NOT have `category`, `contactEmail`, or `contactPhone`
@@ -376,7 +1594,7 @@ export const api = {
       },
     ),
   listInteractions: (pctx: ProdContext, leaseId: string) =>
-    getJson<Array<{ id: string; type: string; summary: string }>>(
+    getJson<{ content: Array<{ id: string; type: string; summary: string }> }>(
       pctx,
       `/v1/leases/${leaseId}/interactions`,
     ),
@@ -390,9 +1608,38 @@ export const api = {
   getTrialBalance: (pctx: ProdContext) =>
     getJson<unknown>(pctx, '/v1/finance/reports/trial-balance'),
 
-  // Ops renewal — triggers the renewal scanner manually for the test tenant.
-  triggerRenewalScan: (pctx: ProdContext) =>
-    postJson<unknown>(pctx, '/v1/admin/renewals/run-now', {}),
+  // Ops renewal — PR #99's tenant-scoped operation avoids processing unrelated
+  // opted-in organizations while the disposable production fixture is tested.
+  triggerRenewalScan: (pctx: ProdContext, tenantId: string) =>
+    postOk(pctx, `/v1/admin/renewals/run-now/${tenantId}`),
+  getMyRenewals: (pctx: ProdContext) =>
+    getJson<{
+      leases: Array<{
+        leaseId: string;
+        endDate: string;
+        daysRemaining: number;
+        opportunityId: string | null;
+        stage: string | null;
+        intent: string | null;
+        reminders: Array<{ slot: number; status: string; sentAt: string | null }>;
+      }>;
+    }>(pctx, '/v1/me/renewals'),
+  setRenewalIntent: (
+    pctx: ProdContext,
+    opportunityId: string,
+    intent: 'RENEW' | 'MOVE_OUT' | 'DISCUSS',
+  ) =>
+    postJson<{ intent: string; stage: string }>(
+      pctx,
+      `/v1/me/renewals/${opportunityId}/intent`,
+      { intent },
+    ),
+  markLeaseRenewed: (pctx: ProdContext, leaseId: string, note: string) =>
+    postJson<{ id: string; stage: string; outcome: string; closedAt: string }>(
+      pctx,
+      `/v1/leases/${leaseId}/renewal/mark-renewed`,
+      { note },
+    ),
 
   // Sanity / identity (used by smoke).
   listTenants: (pctx: ProdContext) =>

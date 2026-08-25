@@ -2,7 +2,7 @@
  * Smoke 00 — proves the auth + proxy chain works end-to-end before any
  * downstream test wastes time. If this fails, everything else will too.
  */
-import { test, expect, request as playwrightRequest } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
 
