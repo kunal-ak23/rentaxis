@@ -6,6 +6,7 @@ import com.datagami.rentaxis.api.dto.UnitListingMediaDTO;
 import com.datagami.rentaxis.api.dto.UnitListingSummaryDTO;
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.service.InterestService;
+import com.datagami.rentaxis.core.service.BlobStorageService;
 import com.datagami.rentaxis.core.service.TenantFeatureService;
 import com.datagami.rentaxis.domain.entity.enums.TenantFeature;
 import com.datagami.rentaxis.core.service.MarketplaceService;
@@ -178,6 +179,7 @@ public class MarketplaceController {
                 .findFirst()
                 .or(() -> media.stream().findFirst())
                 .map(UnitListingMedia::getUrl)
+                .map(BlobStorageService::normalizePublicUrl)
                 .orElse(null);
 
         String propertyName = unitRepository.findById(l.getUnitId())
@@ -211,7 +213,7 @@ public class MarketplaceController {
                 .toList();
 
         List<UnitListingMediaDTO> mediaDtos = media.stream()
-                .map(m -> new UnitListingMediaDTO(m.getId(), m.getMediaType(), m.getUrl(),
+                .map(m -> new UnitListingMediaDTO(m.getId(), m.getMediaType(), BlobStorageService.normalizePublicUrl(m.getUrl()),
                         m.getCaption(), m.getSortOrder(), m.getIsCover()))
                 .toList();
 

@@ -28,6 +28,15 @@ import java.util.UUID;
 @Slf4j
 public class BlobStorageService {
 
+    /**
+     * Azure can percent-encode path separators in blob URLs. Listing media uses
+     * slash-delimited folders, so restore those separators for browser requests.
+     * This also repairs URLs persisted by older uploads without a data migration.
+     */
+    public static String normalizePublicUrl(String value) {
+        return value == null ? null : value.replaceAll("(?i)%2f", "/");
+    }
+
     @Value("${azure.storage.connection-string:}")
     private String connectionString;
 

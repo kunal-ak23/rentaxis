@@ -219,7 +219,7 @@ class UnitListingServiceTest {
         first.setIsCover(false);
         UnitListingMedia cover = new UnitListingMedia();
         cover.setListingId(listingId);
-        cover.setUrl("https://cdn/cover.jpg");
+        cover.setUrl("https://acct.blob.core.windows.net/tenant-id/listings%2Flisting-id%2Fcover.jpg");
         cover.setIsCover(true);
 
         UnitListingInterestRepository.ListingInterestCount count =
@@ -235,7 +235,8 @@ class UnitListingServiceTest {
         Map<UUID, UnitListingService.ListingSummaryData> result = service.getSummaryData(List.of(listing));
 
         assertThat(result.get(listingId).propertyName()).isEqualTo("Marina Heights");
-        assertThat(result.get(listingId).coverPhotoUrl()).isEqualTo("https://cdn/cover.jpg");
+        assertThat(result.get(listingId).coverPhotoUrl())
+                .isEqualTo("https://acct.blob.core.windows.net/tenant-id/listings/listing-id/cover.jpg");
         assertThat(result.get(listingId).interestsCount()).isEqualTo(3L);
         verify(unitRepository).findByIdIn(List.of(unitId));
         verify(mediaRepository).findByListingIdInOrderByListingIdAscSortOrderAsc(List.of(listingId));

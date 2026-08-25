@@ -46,6 +46,17 @@ class BlobStorageServiceTest {
     }
 
     @Test
+    void normalizePublicUrl_restoresEncodedBlobPathSeparators() {
+        assertThat(BlobStorageService.normalizePublicUrl(
+                "https://acct.blob.core.windows.net/tenant-id/listings%2Flisting-id%2Fphoto.jpg?sv=test"))
+                .isEqualTo("https://acct.blob.core.windows.net/tenant-id/listings/listing-id/photo.jpg?sv=test");
+        assertThat(BlobStorageService.normalizePublicUrl(
+                "https://acct.blob.core.windows.net/tenant-id/listings%2flisting-id%2fphoto.jpg"))
+                .isEqualTo("https://acct.blob.core.windows.net/tenant-id/listings/listing-id/photo.jpg");
+        assertThat(BlobStorageService.normalizePublicUrl(null)).isNull();
+    }
+
+    @Test
     void uploadCheque_throwsWhenTenantMissing() {
         var service = new BlobStorageService();
         var file = new MockMultipartFile("file", "cheque.jpg", "image/jpeg", new byte[]{1, 2, 3});

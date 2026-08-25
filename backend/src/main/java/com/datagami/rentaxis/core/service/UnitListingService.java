@@ -293,7 +293,7 @@ public class UnitListingService {
         mediaRepository.findByListingIdInOrderByListingIdAscSortOrderAsc(listingIds)
                 .forEach(media -> coverUrlsByListingId.merge(
                         media.getListingId(),
-                        media.getUrl(),
+                        BlobStorageService.normalizePublicUrl(media.getUrl()),
                         (current, candidate) -> Boolean.TRUE.equals(media.getIsCover()) ? candidate : current));
 
         Map<UUID, Long> interestCountsByListingId = new HashMap<>();
@@ -504,7 +504,7 @@ public class UnitListingService {
 
     private UnitListingMediaDTO toMediaDto(UnitListingMedia m) {
         return new UnitListingMediaDTO(
-                m.getId(), m.getMediaType(), m.getUrl(),
+                m.getId(), m.getMediaType(), BlobStorageService.normalizePublicUrl(m.getUrl()),
                 m.getCaption(), m.getSortOrder(), m.getIsCover());
     }
 }
