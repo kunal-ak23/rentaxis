@@ -435,6 +435,12 @@ def main():
     m1501 = make_unit(marina, "M-1501", "BHK2", 1300, 110000)
     m1502 = make_unit(marina, "M-1502", "PENTHOUSE", 3200, 320000)
     m803 = make_unit(marina, "M-803", "BHK1", 850, 78000)
+    out["properties"] = {"tower": tower["id"], "marina": marina["id"]}
+    out["units"] = {
+        "a101": a101["id"], "a102": a102["id"], "a103": a103["id"],
+        "a201": a201["id"], "a202": a202["id"],
+        "m1501": m1501["id"], "m1502": m1502["id"], "m803": m803["id"],
+    }
     log("8 units created (3 will stay vacant for listings + 1 draft listing)")
 
     # ── 3. Renters with portal accounts ─────────────────────────────────────
@@ -726,6 +732,10 @@ def main():
 
     # SEO metadata + placeholder photos for every listing that lacks them.
     page = api.get(f"{LISTINGS}?page=0&size=100", headers={}) or {}
+    out["listings"] = {
+        (listing.get("titleEn") or listing.get("title")): listing["id"]
+        for listing in page.get("content", [])
+    }
     for summary in page.get("content", []):
         lid = summary["id"]
         detail = api.get(f"{LISTINGS}/{lid}", headers={}) or {}
@@ -901,6 +911,17 @@ def main():
                 "unitId": m1502["id"],
             },
         )
+    meetings_payload = api.get("/api/v1/meetings?page=0&size=100") or {}
+    meetings_final = (
+        meetings_payload.get("content", [])
+        if isinstance(meetings_payload, dict)
+        else meetings_payload
+    )
+    out["meetings"] = {
+        meeting.get("title"): meeting["id"]
+        for meeting in meetings_final
+        if meeting.get("title") and meeting.get("id")
+    }
     log("2 meetings ensured (cheque replacement approved, viewing requested)")
 
     # ── 8. Operational tutorial fixtures ───────────────────────────────────
@@ -1054,6 +1075,8 @@ def main():
             json={"adminNote": "Approved tutorial booking"},
         )
     out["amenityBookingId"] = amenity_booking["id"]
+    out["amenityId"] = amenity["id"]
+    out["parkingSpotId"] = parking["id"]
     log("approved resident amenity booking ready")
 
     ticket_payload = resident_api.get("/api/v1/tickets") or []
@@ -1097,8 +1120,12 @@ def main():
     ads = page_items(
         api.get(f"/api/v1/promotions/ads?businessId={business['id']}&size=100")
     )
-    if not any(a.get("titleEn") == "20% off for Tutorial Residents" for a in ads):
-        api.post("/api/v1/promotions/ads", json={
+    promotion_ad = next(
+        (a for a in ads if a.get("titleEn") == "20% off for Tutorial Residents"),
+        None,
+    )
+    if not promotion_ad:
+        promotion_ad = api.post("/api/v1/promotions/ads", json={
             "businessId": business["id"],
             "titleEn": "20% off for Tutorial Residents",
             "titleAr": "خصم 20٪ لسكان العرض التجريبي",
@@ -1115,6 +1142,8 @@ def main():
             "propertyIds": [tower["id"]],
             "active": True,
         })
+    out["promotionBusinessId"] = business["id"]
+    out["promotionAdId"] = promotion_ad["id"]
     log("tutorial business and active resident coupon ready")
 
     api.put(f"/api/v1/gatepass/policies?propertyId={tower['id']}", json={

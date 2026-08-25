@@ -26,6 +26,7 @@ const { chromium } = requireFromWeb('@playwright/test');
 const narrationPath = path.resolve(narrationPathArg);
 const outputPath = path.resolve(outputPathArg);
 const authStatePath = path.join(repoRoot, 'web', 'e2e-prod', '.auth', 'superadmin.json');
+const seedManifestPath = path.join(repoRoot, 'scripts', 'seed_tutorial_tenant.out.json');
 const baseURL = process.env.PROD_BASE_URL || DEFAULT_BASE_URL;
 const tenantId = process.env.TUTORIAL_TENANT_ID || TUTORIAL_TENANT_ID;
 const speechRate = Number(speechRateArg);
@@ -34,6 +35,9 @@ if (!fs.existsSync(narrationPath)) throw new Error(`Narration not found: ${narra
 if (!fs.existsSync(authStatePath)) {
   throw new Error('Production auth state is missing. Run the production auth setup before recording.');
 }
+const seed = fs.existsSync(seedManifestPath)
+  ? JSON.parse(fs.readFileSync(seedManifestPath, 'utf8'))
+  : {};
 if (!Number.isInteger(speechRate) || speechRate < 80 || speechRate > 220) {
   throw new Error('Speech rate must be a whole number from 80 to 220 words per minute.');
 }
@@ -126,7 +130,73 @@ async function goto(page, pathname) {
   await waitForApp(page);
 }
 
+function routeScene(pathname, title, body, afterNavigation) {
+  return {
+    title,
+    body,
+    run: async (page) => {
+      await goto(page, pathname);
+      if (afterNavigation) await afterNavigation(page);
+    },
+  };
+}
+
+const towerId = seed.properties?.tower;
+const ahmedLeaseId = seed.leases?.ahmed;
+const saraLeaseId = seed.leases?.sara;
+const ticketId = seed.ticketId;
+const meetingId = seed.meetings?.['Replacement cheque — Fatima Al Zaabi (A-102)'];
+const listingId = seed.listings?.['Bright 2BR in Al Barsha'];
+
 const scenarios = {
+  '04': [
+    routeScene('/en/superadmin/tenants', 'Organisation administration', 'Search, provision, and review isolated customer organisations from one controlled list.'),
+    routeScene('/en/superadmin/tenants', 'Tutorial Demo tenant', 'The recording tenant uses synthetic legal and contact data and remains separate from customer records.', async (page) => {
+      await page.getByPlaceholder('Search...').fill(TUTORIAL_TENANT_NAME);
+    }),
+    routeScene('/en/superadmin/tenants', 'Feature access', 'Listings, Meetings, Email Notifications, Lease Renewals, and Gate Pass are enabled per organisation.', async (page) => {
+      const row = page.getByRole('row').filter({ hasText: TUTORIAL_TENANT_NAME });
+      await row.getByRole('button', { name: 'Feature Toggles' }).click();
+    }),
+    routeScene('/en/dashboard', 'Verify the tenant context', 'After switching, confirm the organisation name before creating or editing records.'),
+  ],
+  '06': [
+    routeScene('/en/dashboard/properties', 'Property portfolio', 'Projects and properties provide the foundation for units, leases, operations, and reporting.'),
+    routeScene(`/en/dashboard/properties/${towerId}`, 'Prepared residential tower', 'Review bilingual identity, address, emirate, portfolio type, and operational summary.'),
+    routeScene('/en/dashboard/properties', 'Card and table views', 'Use cards for visual scanning and tables for compact portfolio comparison.'),
+  ],
+  '07': [
+    routeScene(`/en/dashboard/properties/${towerId}`, 'Property operations', 'A property can contain buildings, units, contacts, amenities, and parking inventory.'),
+    routeScene(`/en/dashboard/properties/${towerId}`, 'Buildings', 'Buildings organise floors and provide an optional scope for resident facilities.', async (page) => page.getByRole('button', { name: /^buildings$/i }).click()),
+    routeScene(`/en/dashboard/properties/${towerId}`, 'Units', 'Unit status and rent expectations connect portfolio data to leasing.', async (page) => page.getByRole('button', { name: /^units$/i }).click()),
+    routeScene(`/en/dashboard/properties/${towerId}`, 'Amenities', 'Bookable amenities can be property-wide or restricted to selected buildings.', async (page) => page.getByRole('button', { name: /^amenities$/i }).click()),
+    routeScene(`/en/dashboard/properties/${towerId}`, 'Parking', 'Parking spots retain level, coverage, availability, and booking state.', async (page) => page.getByRole('button', { name: /^parking$/i }).click()),
+  ],
+  '09': [
+    routeScene('/en/dashboard/renters', 'Renter directory', 'Search renter profiles and confirm portal-account status before leasing.'),
+    routeScene(`/en/dashboard/leases/${ahmedLeaseId}`, 'Linked tenancy', 'Renter, unit, payment schedule, and active lease status remain connected.'),
+    routeScene('/en/dashboard/renters', 'Portal access', 'Create or reset access through authorised administration without exposing credentials in recordings.'),
+  ],
+  '10': [
+    routeScene('/en/dashboard/leases', 'Lease workspace', 'Start from a vacant unit and a verified renter, then draft the commercial terms.'),
+    routeScene(`/en/dashboard/leases/${saraLeaseId}`, 'Pending-signature lease', 'Review rent, deposit, dates, payment method, and installment distribution before activation.'),
+    routeScene(`/en/dashboard/leases/${saraLeaseId}`, 'Payment-plan preview', 'Confirm every schedule row before generating or signing the tenancy contract.'),
+  ],
+  '15': [
+    routeScene('/en/dashboard/finance/payments', 'Rent cheque operations', 'Use the payment workspace to follow pending, collected, deposited, cleared, and bounced cheques.'),
+    routeScene(`/en/dashboard/leases/${ahmedLeaseId}`, 'Lease payment schedule', 'Each installment retains its amount, due date, method, cheque metadata, and state.'),
+    routeScene('/en/dashboard/finance/payments', 'Operational follow-up', 'Filter by the current cheque state before collecting, depositing, clearing, or marking a failure.'),
+  ],
+  '18': [
+    routeScene('/en/dashboard/finance/transactions', 'Financial transactions', 'Review journal activity generated by rent, deposits, charges, expenses, and corrections.'),
+    routeScene('/en/dashboard/finance/transactions', 'Transaction scope', 'Use dates, account filters, property scope, and description search to find an entry.'),
+    routeScene('/en/dashboard/finance/reports', 'Reconcile through reports', 'Move from individual postings to trial balance and other period reports.'),
+  ],
+  '19': [
+    routeScene('/en/dashboard/finance/vendors', 'Vendor directory', 'Keep supplier identity and contact records separate from financial transactions.'),
+    routeScene('/en/dashboard/finance/transactions', 'Vendor-linked expenses', 'Split a single supplier invoice across properties or units when allocation is required.'),
+    routeScene('/en/dashboard/finance/bank-accounts', 'Bank accounts', 'Maintain approved property bank accounts and identify the default account clearly.'),
+  ],
   '20': [
     {
       title: 'Start with the operational dashboard',
@@ -179,6 +249,54 @@ const scenarios = {
       },
     },
   ],
+  '22': [
+    routeScene('/en/dashboard/tickets', 'Maintenance tickets', 'Prioritise work using status, category, property, unit, and requester context.'),
+    routeScene(`/en/dashboard/tickets/${ticketId}`, 'Ticket collaboration', 'The renter and property team share replies, assignment, ETA, and status history on one record.'),
+    routeScene('/en/dashboard/tickets/reports', 'Ticket reporting', 'Review workload, closure counts, response performance, and satisfaction trends.'),
+  ],
+  '23': [
+    routeScene('/en/dashboard/meetings', 'Meetings and visits', 'Schedule office visits, property viewings, and cheque-replacement appointments.'),
+    routeScene(`/en/dashboard/meetings/${meetingId}`, 'Meeting detail', 'Confirm purpose, host, requester, property, unit, time slot, and current decision.'),
+    routeScene('/en/dashboard/meetings', 'Calendar follow-up', 'Use status and date filters to find meetings that need approval or completion.'),
+  ],
+  '24': [
+    routeScene('/en/dashboard/bookings', 'Booking requests', 'Property teams review resident amenity and parking requests from one queue.'),
+    routeScene(`/en/dashboard/properties/${towerId}`, 'Bookable resources', 'Amenities and parking spots are configured at the property before residents can request them.', async (page) => page.getByRole('button', { name: /^amenities$/i }).click()),
+    routeScene('/en/dashboard/bookings', 'Approve or reject', 'Check resource availability, preferred date, unit, and resident note before deciding.'),
+  ],
+  '25': [
+    routeScene('/en/dashboard/gatepass', 'Gate-pass operations', 'Review resident passes, approvals, guard assignments, visitor policy, and walk-in registrations.'),
+    routeScene('/en/dashboard/gatepass', 'Approval boundary', 'Tenant operators approve passes while guards see only their assigned properties and scanning tools.'),
+    routeScene('/en/dashboard/gatepass', 'Entry and exit audit', 'Every successful or rejected scan contributes to the controlled security trail.'),
+  ],
+  '26': [
+    routeScene('/en/dashboard/listings', 'Listing management', 'Draft, review, publish, unpublish, and archive marketplace listings from tenant administration.'),
+    routeScene(`/en/dashboard/listings/${listingId}`, 'Listing detail', 'Review media, description, rent, availability, amenities, coordinates, and SEO before publishing.'),
+    routeScene('/en/dashboard/listings', 'Publication state', 'Use clear state labels to separate private drafts from public marketplace inventory.'),
+  ],
+  '28': [
+    routeScene('/en/dashboard/promotions', 'Promotions and offers', 'Manage participating businesses and targeted resident ads from one workspace.'),
+    routeScene('/en/dashboard/promotions', 'Coupon configuration', 'Set bilingual copy, placement, dates, property targeting, CTA, code, and terms.'),
+    routeScene('/en/dashboard/promotions', 'Engagement analytics', 'Impressions, clicks, and tap-through rate show whether a live promotion is being used.'),
+  ],
+};
+
+const roleByTutorial = {
+  '04': 'superadmin',
+  '06': 'tenantAdmin',
+  '07': 'tenantAdmin',
+  '09': 'tenantAdmin',
+  '10': 'tenantAdmin',
+  '15': 'tenantAdmin',
+  '18': 'tenantAdmin',
+  '19': 'tenantAdmin',
+  '20': 'superadmin',
+  '22': 'tenantAdmin',
+  '23': 'tenantAdmin',
+  '24': 'tenantAdmin',
+  '25': 'tenantAdmin',
+  '26': 'tenantAdmin',
+  '28': 'tenantAdmin',
 };
 
 const scenes = scenarios[tutorialId];
@@ -191,10 +309,30 @@ const holdPerScene = Math.max(2, targetDuration / scenes.length);
 const browser = await chromium.launch({ headless: true });
 let recordedVideoPath;
 
+async function authenticatedStorageState(role) {
+  if (role === 'superadmin') return authStatePath;
+  const credentials = role === 'tenantAdmin' ? seed.adminLogin : null;
+  if (!credentials?.email || !credentials?.password) {
+    throw new Error(`The seed manifest does not include credentials for ${role}.`);
+  }
+  const loginContext = await browser.newContext({ baseURL });
+  const loginPage = await loginContext.newPage();
+  await loginPage.goto('/en/auth/login');
+  await loginPage.locator('#login-email').fill(credentials.email);
+  await loginPage.locator('#login-password').fill(credentials.password);
+  await loginPage.getByRole('button', { name: /sign in|log in/i }).click();
+  await loginPage.waitForURL(/\/en\/dashboard/, { timeout: 30_000 });
+  const state = await loginContext.storageState();
+  await loginContext.close();
+  return state;
+}
+
 try {
+  const role = roleByTutorial[tutorialId] || 'superadmin';
+  const storageState = await authenticatedStorageState(role);
   const context = await browser.newContext({
     baseURL,
-    storageState: authStatePath,
+    storageState,
     viewport: { width: 1920, height: 1080 },
     recordVideo: { dir: videoDir, size: { width: 1920, height: 1080 } },
     colorScheme: 'light',
