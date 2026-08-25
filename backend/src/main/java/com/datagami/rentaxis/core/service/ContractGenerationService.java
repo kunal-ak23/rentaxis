@@ -748,14 +748,16 @@ public class ContractGenerationService {
                 .orElseThrow(() -> new NotFoundException("Document not found"));
 
         String url = doc.getDocumentUrl();
-        log.info("Downloading document {} with URL: {}", docId, url);
+        // documentUrl can contain a bearer-style SAS signature. Never write it
+        // to application logs; the document id is enough to correlate failures.
+        log.info("Downloading document {}", docId);
 
         // Azure Blob URL
         if (url.startsWith("https://") && url.contains(".blob.core.windows.net")) {
             try {
                 return downloadFromAzure(url);
             } catch (Exception e) {
-                log.error("Azure download failed for document {} (URL: {}): {}", docId, url, e.getMessage(), e);
+                log.error("Azure download failed for document {}: {}", docId, e.getMessage(), e);
                 throw new RuntimeException("Failed to download document from storage: " + e.getMessage(), e);
             }
         }
@@ -818,31 +820,47 @@ public class ContractGenerationService {
         return baos.toByteArray();
     }
 
-    private String extractContainerName(String blobUrl) {
-        // URL format: https://<account>.blob.core.windows.net/<container>/<path>
-        String marker = ".blob.core.windows.net/";
-        int idx = blobUrl.indexOf(marker);
-        if (idx < 0) {
-            throw new RuntimeException("Invalid Azure Blob URL (missing host): " + blobUrl);
+    String extractContainerName(String blobUrl) {
+        String rawPath = azureBlobRawPath(blobUrl);
+        int slash = rawPath.indexOf('/', 1);
+        String container = slash > 1 ? rawPath.substring(1, slash) : rawPath.substring(1);
+        if (container.isBlank()) {
+            throw new RuntimeException("Invalid Azure Blob URL (missing container)");
         }
-        String path = blobUrl.substring(idx + marker.length());
-        int slash = path.indexOf('/');
-        return URLDecoder.decode(slash > 0 ? path.substring(0, slash) : path, StandardCharsets.UTF_8);
+        return URLDecoder.decode(container, StandardCharsets.UTF_8);
     }
 
-    private String extractBlobPath(String blobUrl) {
-        String marker = ".blob.core.windows.net/";
-        int idx = blobUrl.indexOf(marker);
-        if (idx < 0) {
-            throw new RuntimeException("Invalid Azure Blob URL (missing host): " + blobUrl);
+    String extractBlobPath(String blobUrl) {
+        String rawPath = azureBlobRawPath(blobUrl);
+        int firstSlash = rawPath.indexOf('/', 1);
+        if (firstSlash < 0 || firstSlash == rawPath.length() - 1) {
+            throw new RuntimeException("Invalid Azure Blob URL (missing blob path)");
         }
-        String path = blobUrl.substring(idx + marker.length());
-        int firstSlash = path.indexOf('/');
-        if (firstSlash < 0) {
-            throw new RuntimeException("Invalid Azure Blob URL (missing blob path): " + blobUrl);
+        // URI#getRawPath deliberately excludes the SAS query string. The old
+        // substring parser included ?sv=...&sig=... in the blob name, which
+        // made every backend-authenticated download return BlobNotFound.
+        // Decode the encoded slash emitted by BlobClient#getBlobUrl().
+        return URLDecoder.decode(rawPath.substring(firstSlash + 1), StandardCharsets.UTF_8);
+    }
+
+    private String azureBlobRawPath(String blobUrl) {
+        java.net.URI uri;
+        try {
+            uri = java.net.URI.create(blobUrl);
+        } catch (IllegalArgumentException ex) {
+            throw new RuntimeException("Invalid Azure Blob URL", ex);
         }
-        // Decode URL-encoded path (getBlobUrl() may return %2F for slashes)
-        return URLDecoder.decode(path.substring(firstSlash + 1), StandardCharsets.UTF_8);
+        String host = uri.getHost();
+        String rawPath = uri.getRawPath();
+        if (!"https".equalsIgnoreCase(uri.getScheme())
+                || host == null
+                || !host.toLowerCase(java.util.Locale.ROOT).endsWith(".blob.core.windows.net")
+                || rawPath == null
+                || !rawPath.startsWith("/")
+                || rawPath.length() == 1) {
+            throw new RuntimeException("Invalid Azure Blob URL");
+        }
+        return rawPath;
     }
 
     private LeasePayload buildLeasePayload(Lease lease, String contractUrl) {
