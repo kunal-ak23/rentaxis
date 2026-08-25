@@ -26,6 +26,9 @@ the same session/proxy path as web users. Therefore:
    `.auth/superadmin.json`.
 3. Every API call hits `/api/proxy/*` so the suite cannot bypass the web
    authentication and tenant-switching boundary.
+4. A production-target lock prevents concurrent local/worktree runs from
+   overwriting the cumulative context and deleting each other's tenant. Stale
+   locks are recovered only after their owning process no longer exists.
 
 Backend port 8080 is (assumed to be) not externally reachable on prod; all
 traffic goes through Caddy → Next.js → backend.
@@ -135,10 +138,11 @@ exclude the fixture data with `name NOT LIKE 'TEST-%'`. Tenant names look like
 
 ## Safety gates
 
-- **Deployment gate.** Public registration #111 and exact tenant artifact cleanup
-  #116 are deployed on production commit `54b03b0` (run 32783019338).
+- **Deployment gate.** Public registration #111, exact tenant artifact cleanup
+  #116, and authenticated contract download #117 are deployed on production
+  commit `d666d3be` (run 32855388356).
 - **Uploaded-artifact status.** `08-cheque-upload` created a real production blob
-  in the 2026-08-25 run, and `99-cleanup` removed the disposable tenant and its
+  in the final 2026-08-25 run, and `99-cleanup` removed the disposable tenant and its
   captured artifact successfully. Other upload families remain explicit coverage
   gaps in `tutorial-coverage.json`; they are no longer blocked by missing cleanup
   implementation, but still need their own real upload/download production pass.
@@ -149,12 +153,11 @@ exclude the fixture data with `name NOT LIKE 'TEST-%'`. Tenant names look like
   and the surrounding resident/manager states without weakening that boundary.
 - **Mobile validation.** Manager, Renter, and Security production-device journeys
   are tracked separately in `tutorials/mobile-capability-audit-2026-08-24.md`.
-- **Execution status.** The expanded suite ran against exact production commit
-  `54b03b0` on 2026-08-25: 20/33 passed and the cleanup test passed. Ten direct
-  failures were confirmed as suite drift and corrected on this branch; two were
-  downstream cascades; contract download exposed the production SAS-path defect
-  fixed in #117. A green rerun after that fix deploys is still required before
-  any tutorial is marked production-passed.
+- **Execution status.** The corrected expanded suite ran against exact production
+  commit `d666d3be` on 2026-08-25: **33/33 passed in 1.7 minutes**, including
+  confirm-name hard deletion and post-delete verification. All 28 mapped web
+  tutorials are marked production-passed; retained artifact and controlled
+  manual-device gaps remain explicit in `tutorial-coverage.json`.
 - **CI integration.** Not wired into GitHub Actions yet — intentional, since
   running on every PR would spam prod with TEST tenants. Recommend a manual
   workflow_dispatch trigger or a nightly cron with prefixed cleanup.

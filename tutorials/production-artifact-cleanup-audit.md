@@ -104,4 +104,9 @@ Completed on 2026-08-25 against exact production commit `54b03b0`:
 4. `99-cleanup` deleted the exact tenant and completed successfully.
 5. The post-delete feature endpoint returned 404.
 
-The full workflow suite was not green, so tutorial recording remains blocked by functional verification rather than artifact-cleanup safety.
+The corrected full workflow suite subsequently passed 33/33 against exact
+production commit `d666d3be`, including another real cheque-image upload,
+confirm-name tenant deletion, and post-delete verification. Artifact-cleanup
+safety and the mapped web functional gate are therefore green; upload families
+and controlled manual-device checks not exercised by the suite remain explicit
+coverage gaps.

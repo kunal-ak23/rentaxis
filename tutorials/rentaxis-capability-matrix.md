@@ -8,6 +8,12 @@ Status legend:
 - **Unit/widget** — covered below the end-to-end level.
 - **Audit required** — present in the product but still needs an end-to-end production pass.
 
+Tutorials 01–28 passed the exact-current production suite on deployed commit
+`d666d3be`: 33/33 tests passed, including disposable-tenant hard deletion and
+post-delete verification. Artifact and controlled manual-device gaps called out
+below are not implied to have passed. Tutorials 29–33 retain their separate
+mobile evidence classifications.
+
 ## Shared foundation
 
 | Tutorial | Surfaces | Roles | Capabilities | Current evidence |
@@ -85,7 +91,7 @@ Status legend:
 - Mobile audit detail: [mobile-capability-audit-2026-08-24.md](./mobile-capability-audit-2026-08-24.md) separates current local verification, prior production-device evidence, and the approval-gated rerun plan for tutorials 29–33.
 - Artifact cleanup: [production-artifact-cleanup-audit.md](./production-artifact-cleanup-audit.md) records the complete persisted-reference inventory and deployed #116 guarantees. Exact production commit `54b03b0` accepted a real cheque upload and then passed disposable-tenant cleanup and post-delete verification.
 - The persistent `RentAxis Tutorial Demo` tenant currently has all five feature flags disabled; enabling them is required before recording tutorials 13, 23, 25, 26, 27, and notification-delivery portions of tutorial 02.
-- Production functional baseline: the expanded 33-test run against exact deployed `54b03b0` completed 20 passes and 13 failures; `99-cleanup` passed and removed the exact tenant. Ten failures were direct suite drift now corrected in #96, two were downstream cascades, and contract download exposed the SAS-path production defect fixed in #117. No tutorial is marked exact-current production-passed until the post-deploy rerun is green.
+- Production functional baseline: the corrected expanded suite passed 33/33 against exact deployed `d666d3be` on 2026-08-25, including a real cheque-image upload, confirm-name hard deletion of the exact disposable tenant, and post-delete verification. Tutorials 01–28 are exact-current production-passed; their retained artifact/manual checks remain separately tracked.
 - Bug fix PR: [#95](https://github.com/kunal-ak23/rentaxis/pull/95) prevents Azure email delivery calls from holding database transactions and blocking tenant cleanup.
 - Coverage PR: [#96](https://github.com/kunal-ak23/rentaxis/pull/96) prepares serial production coverage for finance/settings, cheque failures and penalties, draft metadata/payment-plan editing, synthetic bulk cheque attachment, browser-driven facilities/bookings, browser-driven meeting approval/completion, browser-visible promotion analytics, gate policy and managed visitors, resident gate passes, notification ownership, renewals, payment-gateway configuration, contract rejection/regeneration/acceptance, extended lease lifecycle, listings/marketplace, tickets, property operations, and anonymous registration/legal routes.
 - Security fix PR: [#98](https://github.com/kunal-ak23/rentaxis/pull/98) scopes mark-notification-read to the authenticated owner; focused Gradle tests pass.
@@ -100,8 +106,8 @@ Status legend:
 - Manager route PR: [#110](https://github.com/kunal-ak23/rentaxis/pull/110) adds five focused queue and cheque-scan tests; the rebased Manager suite passes 105/105 with a clean analyzer.
 - Public registration PR: [#111](https://github.com/kunal-ak23/rentaxis/pull/111) replaces the simulated-success page with real atomic tenant/admin creation, validated bcrypt-safe input, an exact anonymous rate limit, backend error surfacing, and an accessible sign-in confirmation. The complete backend suite passes 1,068 tests, the complete web suite passes 210 tests, and the Webpack production build succeeds.
 - Mobile core analysis PR: [#114](https://github.com/kunal-ak23/rentaxis/pull/114) is deployed; it adopts Dart 3.10 null-aware collection entries, removes one unused import, and modernizes wildcard callback parameters. All 123 core tests pass and `flutter analyze` reports no issues.
-- Current `origin/main` baseline `54b03b0` includes public registration #111 and durable exact artifact cleanup #116. GitHub Actions deployment run 32783019338 completed successfully for that exact commit. Coverage PR #96 is rebased onto this baseline; focused product-fix PR #117 repairs authenticated Azure contract downloads and removes SAS-bearing URLs from logs.
-- Safe full production rerun order: merge and deploy #117, then execute the corrected #96 suite against one new disposable TEST-E2E tenant and require all 33 tests plus cleanup to pass. No gated feature was changed on the persistent tutorial tenant.
+- Current `origin/main` baseline `d666d3be` includes public registration #111, durable exact artifact cleanup #116, and authenticated Azure contract downloads #117. GitHub Actions deployment run 32855388356 completed successfully for that exact commit. Coverage PR #96 is rebased onto this baseline.
+- Safe full production rerun completed: the corrected #96 suite used one new disposable TEST-E2E tenant and all 33 tests, cleanup, and post-delete verification passed. No gated feature was changed on the persistent tutorial tenant.
 - Tutorial plan: 33 narrated videos, with shorter capability chapters where a workflow has multiple independent actions.
 - Narration deliverable: [tutorial-storyboards.md](./tutorial-storyboards.md) contains audience, capture actions, and focused step-aligned voiceover copy for all 33 videos plus the recording acceptance checklist.
 - Audio/video toolchain: [render-tutorial.sh](./render-tutorial.sh) synthesizes deliberate-rate narration with macOS `say`, rejects empty speech or a source clip shorter than its audio, normalizes to -16 LUFS, renders a 1080p H.264/AAC MP4, and verifies codecs, streams, dimensions, and output duration.
