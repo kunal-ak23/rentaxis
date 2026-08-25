@@ -117,6 +117,9 @@ async function waitForApp(page) {
   await Promise.race([
     page.locator('main').waitFor({ state: 'visible', timeout: 30_000 }),
     page.locator('#login-email').waitFor({ state: 'visible', timeout: 30_000 }),
+    page.getByText('Create Account', { exact: true }).waitFor({ state: 'visible', timeout: 30_000 }),
+    page.getByText('Browse Properties', { exact: true }).waitFor({ state: 'visible', timeout: 30_000 }),
+    page.getByText('My Wishlist', { exact: true }).waitFor({ state: 'visible', timeout: 30_000 }),
   ]);
   // Dashboard data can arrive a moment after the shell. Never freeze a
   // transient error state into a tutorial frame; wait for the retrying page to
@@ -785,9 +788,9 @@ const scenarios = {
     routeScene('/en/dashboard/listings', 'Publication state', 'Use clear state labels to separate private drafts from public marketplace inventory.'),
   ],
   '27': [
-    publicRouteScene(`/en/marketplace/${tenantSlug}`, 'Public marketplace', 'Browse published inventory without exposing private drafts or tenant administration.'),
-    publicRouteScene(`/en/marketplace/${tenantSlug}`, 'Search and filters', 'Narrow listings by location, property type, rent, bedrooms, and availability.'),
-    publicRouteScene('/en/marketplace/wishlist', 'Wishlist', 'Signed-in visitors can retain selected listings and remove them when no longer relevant.'),
+    roleRouteScene('renter', `/en/marketplace/${tenantSlug}`, 'Renter marketplace', 'Browse published inventory without exposing tenant administration.', { verifyTenantContext: false }),
+    roleRouteScene('renter', `/en/marketplace/${tenantSlug}`, 'Search and filters', 'Narrow listings by location, property type, rent, bedrooms, and availability.', { verifyTenantContext: false }),
+    roleRouteScene('renter', '/en/marketplace/wishlist', 'Wishlist', 'Retain selected listings privately and remove them when they are no longer relevant.', { verifyTenantContext: false }),
     publicRouteScene('/en/auth/register', 'Visitor registration', 'Create an account before expressing interest or synchronising a wishlist across devices.'),
     publicRouteScene('/en/privacy', 'Privacy and legal information', 'Review privacy, terms, and data-deletion guidance before submitting personal information.'),
   ],
