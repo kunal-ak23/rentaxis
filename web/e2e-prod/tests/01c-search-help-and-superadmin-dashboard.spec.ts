@@ -47,10 +47,10 @@ test('search opens the lease, help documents guards, and super admin follow-ups 
   await tenantAdminPage.goto('/en/dashboard/help');
   await expect(tenantAdminPage.getByRole('heading', { name: /help center/i })).toBeVisible();
   await tenantAdminPage.getByPlaceholder(/search help articles/i).fill('roles');
-  const rolesArticle = tenantAdminPage.getByRole('link', { name: /roles and permissions/i });
+  const rolesArticle = tenantAdminPage.getByRole('link', { name: /roles (?:and|&) permissions/i });
   await expect(rolesArticle).toBeVisible();
   await rolesArticle.click();
-  await expect(tenantAdminPage.getByRole('heading', { name: /roles and permissions/i })).toBeVisible();
+  await expect(tenantAdminPage.getByRole('heading', { name: /roles (?:and|&) permissions/i })).toBeVisible();
   await expect(tenantAdminPage.getByText('Security Guard', { exact: true }).first()).toBeVisible();
   await tenantAdminBrowser.close();
 

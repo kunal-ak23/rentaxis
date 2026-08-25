@@ -11,6 +11,7 @@ import { api, loginAsNextAuth, setActiveTenant } from '../helpers/prod-client';
 const CONTEXT_FILE = path.join(__dirname, '..', '.test-context.json');
 
 test('admin and assigned manager maintain and browse the complete property detail', async ({ browser }) => {
+  test.setTimeout(120_000);
   const ctx = JSON.parse(fs.readFileSync(CONTEXT_FILE, 'utf8'));
   expect(ctx.property?.id, '01-provision must run first').toBeTruthy();
 

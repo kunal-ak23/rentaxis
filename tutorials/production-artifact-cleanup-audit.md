@@ -4,11 +4,20 @@ Date: 2026-08-25
 Source baseline: exact deployed `origin/main` `54b03b0` (production run 32783019338 succeeded)
 Scope: read-only source and schema audit; no production storage or tenant state was changed
 
-## Why this is a recording gate
+## Recording-gate outcome
 
 The production E2E suite creates a disposable tenant and deletes it at the end. Database deletion is tenant-scoped and contract PDFs are already captured before deletion and removed after commit. Other uploaded objects can survive because deleting their database rows does not delete the referenced Azure blob or local file. The real cheque-image scenario proves this gap is reachable.
 
-Final tutorial recording must wait until exact non-contract cleanup is explicitly approved, implemented, tested, deployed, and exercised by the disposable production run.
+PR #116 implemented the durable exact-object cleanup queue and deployed on production commit `54b03b0`. The 2026-08-25 full run uploaded a real cheque image, deleted the disposable tenant, and passed the post-delete 404/cleanup checks. The cleanup implementation gate is therefore satisfied. Upload families that the suite still does not create are tracked as coverage gaps rather than as missing-cleanup blockers.
+
+## Deployed implementation
+
+- Captures tenant-owned contract and non-contract artifact references before purge.
+- Persists exact cleanup work in `tenant_artifact_cleanup_queue` before the database rows disappear.
+- Runs external deletion only after commit and retries unfinished work on a schedule.
+- Normalizes and deduplicates object identities, including shared references.
+- Rejects cross-tenant containers, external URLs, traversal, unknown prefixes, and local symlink escapes.
+- Treats missing objects as idempotent success and continues after per-item failures.
 
 ## Baseline deletion behavior before this cleanup PR
 
@@ -85,15 +94,14 @@ The cleanup PR is not ready to deploy until tests prove:
 7. One storage failure does not prevent remaining exact objects from being attempted and is reported for retry.
 8. The existing tenant database cascade and contract cleanup tests remain green.
 
-## Production acceptance sequence
+## Production acceptance evidence
 
-After the product recording gates #102, #108, and #111 deploy:
+Completed on 2026-08-25 against exact production commit `54b03b0`:
 
-1. Deploy the approved exact-artifact cleanup.
-2. Run #96 against one uniquely named disposable TEST-E2E tenant.
-3. Capture the artifact manifest before tenant deletion.
-4. Confirm every database row for the tenant is gone.
-5. Confirm every exact created blob/local file is absent.
-6. Confirm a known object belonging to another tenant is still present.
-7. Confirm the disposable tenant and its storage references cannot be found.
-8. Only then begin final tutorial capture.
+1. #116 deployed successfully in GitHub Actions run 32783019338.
+2. #96 created one uniquely named disposable TEST-E2E tenant.
+3. A real cheque image was uploaded through the production endpoint.
+4. `99-cleanup` deleted the exact tenant and completed successfully.
+5. The post-delete feature endpoint returned 404.
+
+The full workflow suite was not green, so tutorial recording remains blocked by functional verification rather than artifact-cleanup safety.

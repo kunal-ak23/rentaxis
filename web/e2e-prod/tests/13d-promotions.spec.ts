@@ -106,8 +106,8 @@ test('admin publishes a targeted coupon and renter engagement reaches analytics'
   await expect(adRow.getByText(`${businessBody.nameEn} Updated`, { exact: true })).toBeVisible();
   await expect(adRow.getByText('Show coupon code', { exact: true })).toBeVisible();
   await expect(adRow.getByText('Live', { exact: true })).toBeVisible();
-  await expect(adRow.getByText(String(listedAd!.impressions), { exact: true })).toBeVisible();
-  await expect(adRow.getByText(String(listedAd!.clicks), { exact: true })).toBeVisible();
+  await expect(adRow.getByRole('cell').nth(5)).toHaveText(String(listedAd!.impressions));
+  await expect(adRow.getByRole('cell').nth(6)).toHaveText(String(listedAd!.clicks));
 
   await adminPage.getByRole('tab', { name: 'Businesses' }).click();
   const businessRow = adminPage.getByRole('row').filter({ hasText: `${businessBody.nameEn} Updated` });

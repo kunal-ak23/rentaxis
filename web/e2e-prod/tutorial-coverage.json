@@ -28,7 +28,7 @@
     "title": "Provision organizations and manage feature access",
     "specs": ["01-provision", "01a-feature-and-user-admin"],
     "status": "prepared",
-    "artifactGaps": ["organization logo and stamp uploads"],
+    "artifactGaps": ["real organization logo and stamp upload/download lifecycle"],
     "manualChecks": []
   },
   {
@@ -92,7 +92,7 @@
     "title": "Activate and administer a lease",
     "specs": ["01-provision", "03-vendor-and-interactions", "10b-draft-lease-administration"],
     "status": "prepared",
-    "artifactGaps": ["lease attachment upload and exact cleanup"],
+    "artifactGaps": ["real lease attachment upload/download lifecycle"],
     "manualChecks": []
   },
   {
@@ -100,7 +100,7 @@
     "title": "Renew, extend, terminate, and settle a lease",
     "specs": ["13f-lease-renewals", "14-lease-lifecycle-extended"],
     "status": "prepared",
-    "artifactGaps": ["settlement deduction attachment upload and exact cleanup"],
+    "artifactGaps": ["real settlement deduction attachment upload/download lifecycle"],
     "manualChecks": []
   },
   {
@@ -116,7 +116,7 @@
     "title": "Manage rent cheques end to end",
     "specs": ["02-cheque-lifecycle", "08-cheque-upload", "10b-draft-lease-administration", "13a-cheques-and-penalties"],
     "status": "prepared",
-    "artifactGaps": ["real cheque image exact cleanup", "real bulk cheque attachment upload and exact cleanup"],
+    "artifactGaps": ["real bulk cheque attachment upload/download lifecycle"],
     "manualChecks": []
   },
   {
@@ -172,7 +172,7 @@
     "title": "Submit and manage maintenance tickets",
     "specs": ["11-ticket-lifecycle"],
     "status": "prepared",
-    "artifactGaps": ["ticket attachment upload and exact cleanup"],
+    "artifactGaps": ["real ticket attachment upload/download lifecycle"],
     "manualChecks": []
   },
   {
@@ -196,15 +196,15 @@
     "title": "Gate passes and walk-in visitors",
     "specs": ["13c-gatepass-lifecycle"],
     "status": "prepared",
-    "artifactGaps": ["visitor profile and pass photo uploads with deduplicated exact cleanup"],
-    "manualChecks": ["physical-camera QR capture", "live Firebase SMS delivery"]
+    "artifactGaps": ["real visitor profile and pass photo upload/download lifecycle"],
+    "manualChecks": ["physical-camera QR capture", "live Firebase SMS delivery", "guard entry and exit scans"]
   },
   {
     "tutorial": 26,
     "title": "Publish and manage property listings",
     "specs": ["15-listings-and-marketplace"],
     "status": "prepared",
-    "artifactGaps": ["listing media and storage-owned social image uploads with exact cleanup"],
+    "artifactGaps": ["real listing media and storage-owned social image upload/download lifecycle"],
     "manualChecks": []
   },
   {
@@ -220,7 +220,7 @@
     "title": "Promotions, offers, and coupons",
     "specs": ["13d-promotions"],
     "status": "prepared",
-    "artifactGaps": ["business logo and ad background uploads with storage-ownership validation and exact cleanup"],
+    "artifactGaps": ["real business logo and ad background upload/download lifecycle"],
     "manualChecks": ["renter promotion feed and coupon capture on a production device"]
   }
 ]

@@ -64,7 +64,7 @@ test('renter requests amenity and parking access and manager decides them', asyn
   await renterPage.waitForURL(/\/dashboard\/renter-portal/, { timeout: 15_000 });
   await renterPage.goto('/en/dashboard/renter-portal/facilities');
   await expect(renterPage.getByRole('heading', { level: 1, name: 'Facilities & Parking' })).toBeVisible();
-  await expect(renterPage.getByText(amenity.nameEn, { exact: true })).toBeVisible();
+  await expect(renterPage.getByText(amenity.nameEn, { exact: true }).first()).toBeVisible();
   await expect(renterPage.getByText(parking.spotNumber, { exact: true })).toBeVisible();
 
   const parkingCard = renterPage.getByText(parking.spotNumber, { exact: true }).locator('..').locator('..');

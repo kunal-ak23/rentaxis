@@ -72,7 +72,7 @@ test('manager publishes a listing that public and renter journeys can use', asyn
       name: `TEST-Marina Home Updated ${ctx.runSuffix}`,
     }),
   ).toBeVisible();
-  await expect(publicPage.getByRole('link', { name: /sign in to save/i })).toBeVisible();
+  await expect(publicPage.getByRole('link', { name: /login to continue/i })).toBeVisible();
 
   const marketplace = await api.getMarketplaceListings(renterCtx, listing.tenantSlug);
   expect(marketplace.content.some((item) => item.id === listing.id)).toBeTruthy();

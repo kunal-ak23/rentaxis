@@ -103,7 +103,7 @@ gates.
 | `13-finance-and-settings` | Accounts, mappings, transactions, staff, vendors, and bank accounts |
 | `13a-cheques-and-penalties` | Cheque clear/failure plus open, paid, waived, receipt, and history states |
 | `13b-facilities-and-bookings` | Amenity/parking requests, release, approval, and rejection |
-| `13c-gatepass-lifecycle` | Policy, guard, visitor lookup, resident pass, entry/exit, and reports |
+| `13c-gatepass-lifecycle` | Policy, guard assignment, visitor registration, resident pass, manager approval, report access, and cancellation |
 | `13d-promotions` | Business/ad/coupon lifecycle, renter engagement, and analytics |
 | `13e-notification-ownership` | Cross-user mark-read denial |
 | `13f-lease-renewals` | Reminder, renter intent, scan, closure, extension, and captured state |
@@ -135,23 +135,26 @@ exclude the fixture data with `name NOT LIKE 'TEST-%'`. Tenant names look like
 
 ## Safety gates
 
-- **Final deployment gate.** Search PR #102 and unread-notification PR #108 are
-  deployed. Public-registration PR #111 must still merge and deploy before this
-  suite runs.
-- **Uploaded-artifact gate.** `08-cheque-upload` creates a real production blob.
-  Exact tenant-owned non-contract artifact cleanup must be explicitly approved,
-  implemented, tested, and deployed before a full run. The same gate currently
-  keeps real lease/ticket/settlement attachments, visitor photos, listing media,
-  and storage-owned organization/promotion assets out of their otherwise
-  complete journeys. Synthetic references never prove a real upload lifecycle.
+- **Deployment gate.** Public registration #111 and exact tenant artifact cleanup
+  #116 are deployed on production commit `54b03b0` (run 32783019338).
+- **Uploaded-artifact status.** `08-cheque-upload` created a real production blob
+  in the 2026-08-25 run, and `99-cleanup` removed the disposable tenant and its
+  captured artifact successfully. Other upload families remain explicit coverage
+  gaps in `tutorial-coverage.json`; they are no longer blocked by missing cleanup
+  implementation, but still need their own real upload/download production pass.
 - **External/manual boundaries.** Live payment-provider charging, physical-camera
-  QR capture, and live Firebase SMS delivery require controlled sandbox/device
-  checks; the automated suite validates the surrounding application states.
+  QR capture, Firebase guard authentication, and guard entry/exit scans require
+  controlled sandbox/device checks. Guards intentionally cannot use the web
+  password login; the automated suite validates guard provisioning/assignment
+  and the surrounding resident/manager states without weakening that boundary.
 - **Mobile validation.** Manager, Renter, and Security production-device journeys
   are tracked separately in `tutorials/mobile-capability-audit-2026-08-24.md`.
-- **Execution status.** The expanded 33-test suite has not yet run against the
-  current production release. Prepared/listed tests are not production-pass
-  evidence.
+- **Execution status.** The expanded suite ran against exact production commit
+  `54b03b0` on 2026-08-25: 20/33 passed and the cleanup test passed. Ten direct
+  failures were confirmed as suite drift and corrected on this branch; two were
+  downstream cascades; contract download exposed the production SAS-path defect
+  fixed in #117. A green rerun after that fix deploys is still required before
+  any tutorial is marked production-passed.
 - **CI integration.** Not wired into GitHub Actions yet — intentional, since
   running on every PR would spam prod with TEST tenants. Recommend a manual
   workflow_dispatch trigger or a nightly cron with prefixed cleanup.

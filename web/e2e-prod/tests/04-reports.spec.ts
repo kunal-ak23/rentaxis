@@ -50,7 +50,7 @@ test('tenant admin loads dashboard KPIs and generates finance reports', async ({
     generate.click(),
   ]);
   expect(profitResponse.status()).toBeLessThan(500);
-  await expect(page.getByText('Total Income', { exact: true })).toBeVisible();
+  await expect(page.getByText('Total Income', { exact: true }).first()).toBeVisible();
   await expect(page.getByText('Net Operating Income', { exact: true })).toBeVisible();
 
   await page.getByRole('button', { name: /^balance sheet$/i }).click();

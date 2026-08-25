@@ -30,7 +30,7 @@ test('tenant admin configures and browses finance, staffing, banking, and vendor
   const rentSettings = await api.saveRentSettings(taCtx, ctx.property.id, {
     dueDayOfMonth: 5,
     gracePeriodDays: 3,
-    penaltyType: 'FIXED',
+    penaltyType: 'FIXED_PER_DAY',
     penaltyAmount: 200,
     onlinePaymentEnabled: false,
   });

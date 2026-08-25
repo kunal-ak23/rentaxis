@@ -199,7 +199,7 @@ export const api = {
   createUser: (
     pctx: ProdContext,
     tenantId: string,
-    u: { name: string; email: string; password: string; role: string },
+    u: { name: string; email: string; password: string; role: string; phoneNumber?: string },
   ) => postJson<{ id: string; email: string; role: string }>(pctx, '/admin/users', { ...u, tenantId }),
   assignUserToProperty: async (
     pctx: ProdContext,
@@ -805,6 +805,8 @@ export const api = {
 
   setGuardProperties: (pctx: ProdContext, guardUserId: string, propertyIds: string[]) =>
     putJson<string[]>(pctx, `/v1/gatepass/guards/${guardUserId}/properties`, propertyIds),
+  getAssignedGuardPropertyIds: (pctx: ProdContext, guardUserId: string) =>
+    getJson<string[]>(pctx, `/v1/gatepass/guards/${guardUserId}/properties`),
   getGuardProperties: (pctx: ProdContext) =>
     getJson<Array<{ id: string; name: string }>>(pctx, '/v1/gatepass/my-properties'),
   createGatePass: (

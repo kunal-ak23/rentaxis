@@ -74,11 +74,13 @@ test('provision tenant + property + unit + renter + active lease', async () => {
 
   const guardEmail = `test-guard-${suffix}@e2e.rentaxis.test`;
   const guardPassword = 'TestGuard!23';
+  const guardPhone = `+97150${Date.now().toString().slice(-7)}`;
   const guard = await api.createUser(pctx, tenant.id, {
     name: `TEST-Guard ${suffix}`,
     email: guardEmail,
     password: guardPassword,
     role: 'SECURITY_GUARD',
+    phoneNumber: guardPhone,
   });
 
   // 4. Switch session to TENANT_ADMIN for the rest of provisioning — that's
@@ -155,7 +157,7 @@ test('provision tenant + property + unit + renter + active lease', async () => {
         pmPassword,
         pmUserId: pm.id,
         guardEmail,
-        guardPassword,
+        guardPhone,
         guardUserId: guard.id,
       },
       null,

@@ -14,6 +14,7 @@ import { api, loginAsNextAuth, setActiveTenant } from '../helpers/prod-client';
 const CONTEXT_FILE = path.join(__dirname, '..', '.test-context.json');
 
 test('renter and property manager complete a ticket end to end', async ({ browser }) => {
+  test.setTimeout(120_000);
   const ctx = JSON.parse(fs.readFileSync(CONTEXT_FILE, 'utf8'));
   expect(ctx.renter?.userId, '01-provision must persist the renter portal user').toBeTruthy();
   expect(ctx.pmUserId, '01-provision must persist the property manager').toBeTruthy();

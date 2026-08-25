@@ -48,7 +48,7 @@ test('renter responds to a renewal reminder and admin closes the opportunity', a
   await renterPage.locator('#login-password').fill(ctx.renter.portalPassword);
   await renterPage.getByRole('button', { name: /sign in|log in/i }).click();
   await renterPage.waitForURL(/\/dashboard\/renter-portal/, { timeout: 15_000 });
-  await expect(renterPage.getByText(/lease is up for renewal/i)).toBeVisible();
+  await expect(renterPage.getByText(/one of your leases is up for renewal/i)).toBeVisible();
   await renterPage.goto('/en/dashboard/renter-portal/renewals');
   await expect(renterPage.getByRole('heading', { level: 1, name: 'Renewals' })).toBeVisible();
   await expect(renterPage.getByText(new RegExp(ctx.property.nameEn, 'i'))).toBeVisible();
