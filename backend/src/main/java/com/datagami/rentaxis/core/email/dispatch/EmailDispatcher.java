@@ -21,13 +21,20 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @Component
 @RequiredArgsConstructor
 @Slf4j
 public class EmailDispatcher {
+
+    private static final int DEDUP_KEY_MAX_LENGTH = 200;
 
     private final RecipientResolver recipientResolver;
     private final EmailPreferenceService preferenceService;
@@ -104,7 +111,7 @@ public class EmailDispatcher {
                 row.setSubject(rendered.subject());
                 row.setBodyHtml(rendered.html());
                 row.setBodyText(rendered.text());
-                row.setDedupKey(event.getDedupKey());
+                row.setDedupKey(recipientScopedDedupKey(event.getDedupKey(), recipient.userId()));
 
                 if (event.getPayload() instanceof RentReceiptPayload rr && rr.pdfBase64() != null) {
                     String filename = rr.pdfFileName() != null ? rr.pdfFileName() : "rent-receipt.pdf";
@@ -136,6 +143,37 @@ public class EmailDispatcher {
             outboxRepository.save(row);
         } catch (DataIntegrityViolationException e) {
             log.info("email.dispatch.dedup_collision dedup_key={}", row.getDedupKey());
+        }
+    }
+
+    /**
+     * The outbox uniqueness boundary is one delivery, not one domain event.
+     * A single event can legitimately resolve to multiple recipients, and
+     * legacy notification calls can publish the same event/reference once per
+     * user. Scope the producer key by recipient so those deliveries coexist
+     * while a replay for the same recipient remains idempotent.
+     */
+    static String recipientScopedDedupKey(String eventKey, UUID recipientUserId) {
+        if (eventKey == null || eventKey.isBlank() || recipientUserId == null) {
+            return eventKey;
+        }
+        String suffix = ":user=" + recipientUserId;
+        String scoped = eventKey + suffix;
+        if (scoped.length() <= DEDUP_KEY_MAX_LENGTH) {
+            return scoped;
+        }
+
+        String digest = sha256(eventKey);
+        int prefixLength = DEDUP_KEY_MAX_LENGTH - suffix.length() - digest.length() - 1;
+        return eventKey.substring(0, prefixLength) + ":" + digest + suffix;
+    }
+
+    private static String sha256(String value) {
+        try {
+            return HexFormat.of().formatHex(
+                    MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException("SHA-256 is unavailable", impossible);
         }
     }
 }
