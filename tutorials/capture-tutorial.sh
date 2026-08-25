@@ -7,9 +7,17 @@ if [[ $# -lt 1 || $# -gt 3 ]]; then
 fi
 
 task_id=$(printf '%02d' "$((10#$1))")
-task_voice=${2:-${TUTORIAL_VOICE:-marin}}
-task_rate=${3:-${TUTORIAL_SPEECH_RATE:-125}}
 task_tts_provider=${TUTORIAL_TTS_PROVIDER:-openai}
+task_voice=${2:-${TUTORIAL_VOICE:-}}
+task_rate=${3:-${TUTORIAL_SPEECH_RATE:-125}}
+
+if [[ -z "$task_voice" ]]; then
+  case "$task_tts_provider" in
+    azure) task_voice=${AZURE_SPEECH_VOICE:-en-US-Harper:MAI-Voice-2} ;;
+    mac) task_voice=Samantha ;;
+    *) task_voice=marin ;;
+  esac
+fi
 task_root=$(cd "$(dirname "$0")/.." && pwd)
 task_web="$task_root/web"
 task_output_dir=${TUTORIAL_OUTPUT_DIR:-"$task_root/tutorials/output"}

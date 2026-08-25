@@ -7,9 +7,9 @@ after every saved state so the viewer can confirm the result.
 
 Audio production: record the silent Playwright/browser capture first, generate
 an expressive AI narration track from the reviewed script, then normalize and
-mux it with `ffmpeg`. The preferred automated provider is OpenAI
-`gpt-4o-mini-tts` with the `marin` voice. Reviewed WAV/MP3 files generated with
-Gemini TTS are also accepted. Include the spoken disclosure that the voice is
+mux it with `ffmpeg`. The preferred production provider is Azure
+`MAI-Voice-2` with a consistent prebuilt voice; OpenAI `gpt-4o-mini-tts` and
+reviewed WAV/MP3 files generated with Gemini TTS are also accepted. Include the spoken disclosure that the voice is
 AI-generated. The renderer uses a deliberate tutorial rate, holds the final
 video frame if the voice track runs longer, and keeps narration around -16 LUFS
 integrated with UI audio muted. macOS `say` remains a draft-only fallback.

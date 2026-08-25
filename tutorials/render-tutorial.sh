@@ -9,9 +9,17 @@ fi
 task_video=$1
 task_narration=$2
 task_output=$3
-task_voice=${4:-marin}
+task_voice=${4:-${TUTORIAL_VOICE:-}}
 task_speech_rate=${5:-125}
 task_tts_provider=${TUTORIAL_TTS_PROVIDER:-openai}
+
+if [[ -z "$task_voice" ]]; then
+  case "$task_tts_provider" in
+    azure) task_voice=${AZURE_SPEECH_VOICE:-en-US-Harper:MAI-Voice-2} ;;
+    mac) task_voice=Samantha ;;
+    *) task_voice=marin ;;
+  esac
+fi
 
 if ! [[ "$task_speech_rate" =~ ^[0-9]+$ ]] || (( task_speech_rate < 80 || task_speech_rate > 220 )); then
   echo "Speech rate must be a whole number from 80 to 220 words per minute." >&2
@@ -40,6 +48,11 @@ case "$task_tts_provider" in
     node "$(dirname "$0")/synthesize-openai-narration.mjs" \
       "$task_narration" "$task_audio" "$task_voice" "$task_speech_rate"
     ;;
+  azure)
+    task_audio="$task_tmp/narration.mp3"
+    node "$(dirname "$0")/synthesize-azure-narration.mjs" \
+      "$task_narration" "$task_audio" "$task_voice" "$task_speech_rate"
+    ;;
   external)
     task_audio=${TUTORIAL_AUDIO_FILE:-}
     if [[ -z "$task_audio" || ! -f "$task_audio" ]]; then
@@ -56,7 +69,7 @@ case "$task_tts_provider" in
     say -v "$task_voice" -r "$task_speech_rate" -f "$task_narration" -o "$task_audio"
     ;;
   *)
-    echo "Unsupported TTS provider: $task_tts_provider (expected openai, external, or mac)." >&2
+    echo "Unsupported TTS provider: $task_tts_provider (expected azure, openai, external, or mac)." >&2
     exit 2
     ;;
 esac
