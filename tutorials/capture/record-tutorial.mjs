@@ -531,9 +531,16 @@ const scenarios = {
     routeScene('/en/dashboard/renters', 'Portal access', 'Use the renter directory as the starting point for authorised portal access, while keeping credentials out of recordings.'),
   ],
   '10': [
-    routeScene('/en/dashboard/leases', 'Lease workspace', 'Start from a vacant unit and a verified renter, then draft the commercial terms.'),
-    routeScene(`/en/dashboard/leases/${saraLeaseId}`, 'Pending-signature lease', 'Review rent, deposit, dates, payment method, and installment distribution before activation.'),
-    routeScene(`/en/dashboard/leases/${saraLeaseId}`, 'Payment-plan preview', 'Confirm every schedule row before generating or signing the tenancy contract.'),
+    routeScene('/en/dashboard/leases', 'Lease workspace', 'Start from a vacant unit and a verified renter, then preview the draft-lease wizard without saving a new record.', async (page) => {
+      await page.getByRole('button', { name: 'Draft Lease', exact: true }).click();
+    }),
+    routeScene(`/en/dashboard/leases/${saraLeaseId}`, 'Pending-signature lease', 'Review rent, deposit, dates, payment method, and installment distribution before activation.', async (page) => {
+      await page.evaluate(() => { document.body.style.zoom = '85%'; });
+    }),
+    routeScene(`/en/dashboard/leases/${saraLeaseId}`, 'Payment-plan preview', 'Confirm every schedule row before generating or signing the tenancy contract.', async (page) => {
+      await page.evaluate(() => { document.body.style.zoom = '85%'; });
+      await page.waitForTimeout(250);
+    }),
   ],
   '11': [
     routeScene(`/en/dashboard/leases/${saraLeaseId}`, 'Contract-ready lease', 'Confirm the renter, unit, dates, rent, deposit, and payment plan before generating a contract.'),
