@@ -543,11 +543,11 @@ const scenarios = {
     }),
   ],
   '11': [
-    routeScene(`/en/dashboard/leases/${saraLeaseId}`, 'Contract-ready lease', 'Confirm the renter, unit, dates, rent, deposit, and payment plan before generating a contract.'),
-    routeScene(`/en/dashboard/leases/${saraLeaseId}`, 'Contract workspace', 'Preview and regenerate the current PDF from the reviewed lease terms.', async (page) => {
+    routeScene(`/en/dashboard/leases/${saraLeaseId}`, 'Contract-ready lease', 'Confirm the renter, unit, dates, rent, deposit, and payment plan before reviewing the contract.'),
+    routeScene(`/en/dashboard/leases/${saraLeaseId}`, 'Contract workspace', 'Use the authenticated Preview Contract control or its new-tab fallback to inspect the current agreement without changing the lease state.', async (page) => {
       await page.getByRole('button', { name: 'Contract', exact: true }).click();
     }),
-    routeScene(`/en/dashboard/leases/${saraLeaseId}`, 'Signature state', 'A rejection returns the lease for correction; only the current regenerated contract should be accepted.', async (page) => {
+    routeScene(`/en/dashboard/leases/${saraLeaseId}`, 'Signature state', 'Pending Signature keeps the agreement awaiting renter action; review the current document before any acceptance or rejection.', async (page) => {
       await page.getByRole('button', { name: 'Contract', exact: true }).click();
     }),
   ],
