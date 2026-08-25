@@ -472,9 +472,17 @@ const scenarios = {
     }),
   ],
   '06': [
-    routeScene('/en/dashboard/properties', 'Property portfolio', 'Projects and properties provide the foundation for units, leases, operations, and reporting.'),
+    routeScene('/en/dashboard/properties', 'Property portfolio', 'Projects and properties provide the foundation for units, leases, operations, and reporting.', async (page) => {
+      await page.getByRole('button', { name: 'Add Project', exact: true }).click();
+      await page.getByText('Create a new Project (Portfolio Group).', { exact: true }).waitFor({ state: 'visible' });
+    }),
     routeScene(`/en/dashboard/properties/${towerId}`, 'Prepared residential tower', 'Review bilingual identity, address, emirate, portfolio type, and operational summary.'),
-    routeScene('/en/dashboard/properties', 'Card and table views', 'Use cards for visual scanning and tables for compact portfolio comparison.'),
+    routeScene('/en/dashboard/properties', 'Card view', 'Use cards for visual scanning of property names, occupancy, and summary information.', async (page) => {
+      await page.getByRole('button', { name: 'Cards', exact: true }).click();
+    }),
+    routeScene('/en/dashboard/properties', 'Table view', 'Use the table for compact comparison across a larger portfolio.', async (page) => {
+      await page.getByRole('button', { name: 'Table', exact: true }).click();
+    }),
   ],
   '07': [
     routeScene(`/en/dashboard/properties/${towerId}`, 'Property operations', 'A property can contain buildings, units, contacts, amenities, and parking inventory.'),
