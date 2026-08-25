@@ -625,6 +625,23 @@ class ContractGenerationServiceTest {
     }
 
     @Test
+    void azureBlobLocation_excludesSasQueryFromEncodedBlobPath() {
+        String url = "https://files.blob.core.windows.net/tenant-123/"
+                + "contracts%2FRA-1.pdf?sv=2025-01-05&se=2026-09-24T00%3A00%3A00Z&sp=r&sig=secret";
+
+        assertThat(service.extractContainerName(url)).isEqualTo("tenant-123");
+        assertThat(service.extractBlobPath(url)).isEqualTo("contracts/RA-1.pdf");
+    }
+
+    @Test
+    void azureBlobLocation_rejectsNonAzureHosts() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> service.extractBlobPath("https://example.com/tenant/contracts%2FRA-1.pdf?sig=secret"))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage("Invalid Azure Blob URL");
+    }
+
+    @Test
     void generateContract_replacesRejectedDraftDocumentWithoutLeavingOldFile() throws Exception {
         UUID tenantId = UUID.randomUUID();
         LandlordOrg org = buildLandlordOrg(tenantId);
