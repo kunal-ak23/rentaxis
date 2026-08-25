@@ -458,10 +458,18 @@ const scenarios = {
     routeScene('/en/dashboard', 'Verify the tenant context', 'After switching, confirm the organisation name before creating or editing records.'),
   ],
   '05': [
-    routeScene('/en/superadmin/users', 'User administration', 'Create and edit organisation users with the minimum role needed for their work.'),
-    routeScene('/en/dashboard/staff', 'Staff directory', 'Staff records hold employment context separately from application login access.'),
+    routeScene('/en/superadmin/users', 'User administration', 'Create and edit organisation users with the minimum role needed for their work.', async (page) => {
+      await page.getByRole('button', { name: 'New User', exact: true }).click();
+      await page.getByText('Provision New User', { exact: true }).last().waitFor({ state: 'visible' });
+    }),
+    routeScene('/en/dashboard/staff', 'Staff directory', 'Staff records hold employment context separately from application login access.', async (page) => {
+      await page.getByRole('button', { name: 'Add Staff', exact: true }).click();
+      await page.getByText('Add Staff', { exact: true }).last().waitFor({ state: 'visible' });
+    }),
     routeScene(`/en/dashboard/properties/${towerId}`, 'Property assignment', 'Property managers should be assigned only to the properties they are responsible for.'),
-    routeScene('/en/superadmin/users', 'Access review', 'Review role and assignment changes after saving, and remove obsolete access promptly.'),
+    routeScene('/en/superadmin/users', 'Access review', 'Review role and assignment changes after saving, and remove obsolete access promptly.', async (page) => {
+      await page.getByPlaceholder('Search users...').fill('manager@tutorial-studio.example.com');
+    }),
   ],
   '06': [
     routeScene('/en/dashboard/properties', 'Property portfolio', 'Projects and properties provide the foundation for units, leases, operations, and reporting.'),
