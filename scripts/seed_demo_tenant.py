@@ -301,6 +301,23 @@ def main():
     existing = [
         t for t in (sa.get("/api/admin/tenants") or []) if t["name"] == TENANT_NAME
     ]
+    if "--delete-only" in sys.argv:
+        if not existing:
+            log(f"tenant does not exist: {TENANT_NAME}")
+            return
+        if len(existing) != 1:
+            raise RuntimeError(
+                f"Refusing to delete {len(existing)} tenants named {TENANT_NAME!r}"
+            )
+        old_id = existing[0]["id"]
+        sa.s.delete(
+            f"{sa.base}/api/admin/tenants/{old_id}",
+            params={"confirmName": TENANT_NAME},
+            headers=sa.headers,
+            timeout=120,
+        ).raise_for_status()
+        log(f"tenant deleted: {old_id}")
+        return
     if existing and "--reset" in sys.argv:
         old_id = existing[0]["id"]
         sa.s.delete(
@@ -1019,7 +1036,7 @@ def main():
 
     existing_users = api.get("/api/admin/users") or []
 
-    def ensure_operator(email, name, role):
+    def ensure_operator(email, name, role, phone_number):
         user = next((u for u in existing_users if u.get("email") == email), None)
         if not user:
             user = api.post("/api/admin/users", json={
@@ -1028,7 +1045,7 @@ def main():
                 "name": name,
                 "role": role,
                 "tenantId": tenant_id,
-                "phoneNumber": "+971500000007",
+                "phoneNumber": phone_number,
             })
             existing_users.append(user)
         try:
@@ -1039,10 +1056,16 @@ def main():
         return user
 
     manager = ensure_operator(
-        f"manager@{DEMO_EMAIL_DOMAIN}", "Maya Tutorial Manager", "PROPERTY_MANAGER"
+        f"manager@{DEMO_EMAIL_DOMAIN}",
+        "Maya Tutorial Manager",
+        "PROPERTY_MANAGER",
+        os.environ.get("DEMO_MANAGER_PHONE", "+971500000006"),
     )
     guard = ensure_operator(
-        f"guard@{DEMO_EMAIL_DOMAIN}", "Samir Tutorial Guard", "SECURITY_GUARD"
+        f"guard@{DEMO_EMAIL_DOMAIN}",
+        "Samir Tutorial Guard",
+        "SECURITY_GUARD",
+        os.environ.get("DEMO_GUARD_PHONE", "+971500000007"),
     )
     api.put(
         f"/api/v1/gatepass/guards/{guard['id']}/properties",

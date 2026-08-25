@@ -6,8 +6,6 @@ import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 
-const TUTORIAL_TENANT_ID = 'a5c3ad23-9abe-4435-a0b5-929559d516e7';
-const TUTORIAL_TENANT_NAME = 'RentAxis Tutorial Demo';
 const DEFAULT_BASE_URL = 'https://rentaxis.uaenorth.cloudapp.azure.com';
 
 function usage() {
@@ -26,11 +24,13 @@ const { chromium } = requireFromWeb('@playwright/test');
 const narrationPath = path.resolve(narrationPathArg);
 const outputPath = path.resolve(outputPathArg);
 const authStatePath = path.join(repoRoot, 'web', 'e2e-prod', '.auth', 'superadmin.json');
-const seedManifestPath = path.join(repoRoot, 'scripts', 'seed_tutorial_tenant.out.json');
+const seedManifestPath = process.env.TUTORIAL_SEED_MANIFEST
+  ? path.resolve(process.env.TUTORIAL_SEED_MANIFEST)
+  : path.join(repoRoot, 'scripts', 'seed_tutorial_tenant.out.json');
 const baseURL = process.env.PROD_BASE_URL || DEFAULT_BASE_URL;
-const tenantId = process.env.TUTORIAL_TENANT_ID || TUTORIAL_TENANT_ID;
 const speechRate = Number(speechRateArg);
 const validateOnly = process.env.TUTORIAL_CAPTURE_VALIDATE_ONLY === '1';
+const qaDir = process.env.TUTORIAL_QA_DIR ? path.resolve(process.env.TUTORIAL_QA_DIR) : null;
 
 if (!fs.existsSync(narrationPath)) throw new Error(`Narration not found: ${narrationPath}`);
 if (!fs.existsSync(authStatePath)) {
@@ -39,6 +39,11 @@ if (!fs.existsSync(authStatePath)) {
 const seed = fs.existsSync(seedManifestPath)
   ? JSON.parse(fs.readFileSync(seedManifestPath, 'utf8'))
   : {};
+const tenantId = process.env.TUTORIAL_TENANT_ID || seed.tenant?.id;
+const tenantName = process.env.TUTORIAL_TENANT_NAME || seed.tenant?.name;
+if (!tenantId || !tenantName) {
+  throw new Error(`The tutorial tenant ID and name are missing from ${seedManifestPath}.`);
+}
 if (!Number.isInteger(speechRate) || speechRate < 80 || speechRate > 220) {
   throw new Error('Speech rate must be a whole number from 80 to 220 words per minute.');
 }
@@ -109,7 +114,10 @@ function narrationDurationSeconds() {
 
 async function waitForApp(page) {
   await page.waitForLoadState('domcontentloaded');
-  await page.locator('main').waitFor({ state: 'visible', timeout: 30_000 });
+  await Promise.race([
+    page.locator('main').waitFor({ state: 'visible', timeout: 30_000 }),
+    page.locator('#login-email').waitFor({ state: 'visible', timeout: 30_000 }),
+  ]);
   await page.waitForTimeout(800);
 }
 
@@ -185,6 +193,7 @@ function roleRouteScene(role, pathname, title, body, options = {}) {
     ),
     role,
     weight: options.weight,
+    allowTour: options.allowTour === true,
   };
 }
 
@@ -194,28 +203,243 @@ const saraLeaseId = seed.leases?.sara;
 const ticketId = seed.ticketId;
 const meetingId = seed.meetings?.['Replacement cheque — Fatima Al Zaabi (A-102)'];
 const listingId = seed.listings?.['Bright 2BR in Al Barsha'];
-const tenantSlug = seed.tenant?.slug || 'rentaxis-tutorial-demo';
+const tenantSlug = seed.tenant?.slug;
+const parkingSpotNumber = 'TUTORIAL-B2-18';
+const bookingPreferredDate = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+if (!tenantSlug) throw new Error(`The tutorial tenant slug is missing from ${seedManifestPath}.`);
+
+async function suppressAutomaticOnboarding(context) {
+  await context.addInitScript(() => {
+    const key = 'rentaxis_tours_completed';
+    let completed = [];
+    try {
+      completed = JSON.parse(localStorage.getItem(key) || '[]');
+    } catch {
+      completed = [];
+    }
+    if (!completed.includes('admin-onboarding')) completed.push('admin-onboarding');
+    localStorage.setItem(key, JSON.stringify(completed));
+  });
+}
+
+async function auditVisibleDialogContrast(page) {
+  const failures = await page.evaluate(() => {
+    const parseRgb = (value) => {
+      const match = value.match(/rgba?\((\d+(?:\.\d+)?)[, ]+(\d+(?:\.\d+)?)[, ]+(\d+(?:\.\d+)?)(?:[, /]+(\d+(?:\.\d+)?))?\)/);
+      if (!match) return null;
+      return [Number(match[1]), Number(match[2]), Number(match[3]), match[4] == null ? 1 : Number(match[4])];
+    };
+    const luminance = ([red, green, blue]) => {
+      const channels = [red, green, blue].map((channel) => {
+        const value = channel / 255;
+        return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+    };
+    const contrast = (foreground, background) => {
+      const light = Math.max(luminance(foreground), luminance(background));
+      const dark = Math.min(luminance(foreground), luminance(background));
+      return (light + 0.05) / (dark + 0.05);
+    };
+    const visible = (element) => {
+      const style = getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+    };
+    const effectiveBackground = (element) => {
+      for (let current = element; current; current = current.parentElement) {
+        const color = parseRgb(getComputedStyle(current).backgroundColor);
+        if (color && color[3] >= 0.95) return color;
+      }
+      return [255, 255, 255, 1];
+    };
+
+    const issues = [];
+    for (const dialog of document.querySelectorAll('dialog[open], [role="dialog"]')) {
+      if (!visible(dialog)) continue;
+      const heading = dialog.querySelector('h1, h2, h3, [class*="title" i]');
+      if (!heading || !visible(heading)) continue;
+      const foreground = parseRgb(getComputedStyle(heading).color);
+      const background = effectiveBackground(heading);
+      if (!foreground || !background) continue;
+      const ratio = contrast(foreground, background);
+      if (ratio < 4.5) {
+        issues.push(`${heading.textContent?.trim() || 'Untitled dialog'} (${ratio.toFixed(2)}:1)`);
+      }
+    }
+    return issues;
+  });
+  if (failures.length > 0) {
+    throw new Error(`Dialog contrast preflight failed: ${failures.join(', ')}`);
+  }
+}
+
+async function signInWithCredentials(page, credentials) {
+  await page.locator('#login-email').fill(credentials.email);
+  await page.locator('#login-password').fill(credentials.password);
+  await page.getByRole('button', { name: /sign in|log in/i }).click();
+  await page.waitForURL(/\/(en|ar)\/dashboard/, { timeout: 30_000 });
+  await waitForApp(page);
+}
+
+async function openGlobalSearch(page, query) {
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+K' : 'Control+K');
+  const dialog = page.getByRole('dialog', { name: /search/i });
+  await dialog.waitFor({ state: 'visible' });
+  await dialog.getByRole('textbox').fill(query);
+  await dialog.getByRole('button').filter({ hasText: query }).first().waitFor({ state: 'visible', timeout: 30_000 });
+}
+
+async function openPreparedParkingRequest(page) {
+  const card = page.getByText(parkingSpotNumber, { exact: true }).locator('../..');
+  await card.getByRole('button', { name: 'Request', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: `Request ${parkingSpotNumber}` });
+  await dialog.waitFor({ state: 'visible' });
+  await dialog.locator('input[type="date"]').fill(bookingPreferredDate);
+  await dialog.getByRole('textbox').fill('Tutorial parking request for a second family vehicle.');
+  return dialog;
+}
+
+async function openPreparedBookingApproval(page) {
+  const row = page.getByRole('row').filter({ hasText: parkingSpotNumber }).filter({ hasText: 'Ahmed Hassan' });
+  await row.waitFor({ state: 'visible', timeout: 30_000 });
+  await row.click();
+  const drawer = page.getByRole('dialog', { name: 'Booking Request' });
+  await drawer.waitFor({ state: 'visible' });
+  await drawer.getByRole('textbox').fill('Approved for the tutorial resident after checking unit and availability.');
+  return drawer;
+}
 
 const scenarios = {
+  '01': [
+    roleRouteScene('anonymous', '/en/auth/login', 'Sign in securely', 'Use only the account supplied by your administrator. On shared devices, do not save the password.', {
+      weight: 48,
+      verifyTenantContext: false,
+    }),
+    roleRouteScene('anonymous', '/en/auth/login', 'Authenticate', 'Enter the prepared account email and password, then select Sign In to open the role-appropriate landing page.', {
+      weight: 42,
+      verifyTenantContext: false,
+      afterNavigation: async (page) => signInWithCredentials(page, seed.adminLogin),
+    }),
+    roleRouteScene('tenantAdmin', '/en/dashboard', 'Role-aware navigation', 'Confirm the current organisation and review the menu RentAxis has made available for this account.', {
+      weight: 57,
+    }),
+    roleRouteScene('tenantAdmin', '/en/dashboard', 'Switch to Arabic', 'Use AR in the header. Labels change and the interface moves to a right-to-left layout.', {
+      weight: 48,
+      afterNavigation: async (page) => {
+        await page.getByRole('link', { name: 'AR', exact: true }).click();
+        await page.waitForURL(/\/ar\/dashboard/);
+        await waitForApp(page);
+      },
+    }),
+    roleRouteScene('tenantAdmin', '/en/dashboard', 'Open the account menu', 'Switch back to English, then use the profile menu for account settings and secure sign-out.', {
+      weight: 38,
+      afterNavigation: async (page) => {
+        await page.locator('header button').filter({ hasText: 'Tenant Admin' }).last().click();
+        await page.getByText('Update Profile', { exact: true }).waitFor({ state: 'visible' });
+      },
+    }),
+    roleRouteScene('tenantAdmin', '/en/dashboard/profile', 'Review your profile', 'Check your name, email, role, and phone. Save only intentional changes and never expose passwords in recordings.', {
+      weight: 62,
+    }),
+    roleRouteScene('tenantAdmin', '/en/dashboard', 'Log out safely', 'On a shared device, finish every session by opening the account menu and selecting Logout.', {
+      weight: 41,
+      verifyTenantContext: false,
+      afterNavigation: async (page) => {
+        await page.locator('header button').filter({ hasText: 'Tenant Admin' }).last().click();
+        await page.getByRole('button', { name: 'Logout', exact: true }).click();
+        await page.waitForURL(/\/auth\/login/, { timeout: 30_000 });
+        await waitForApp(page);
+      },
+    }),
+    roleRouteScene('anonymous', '/en/auth/login', 'Verify access', 'Sign in again when needed. The same secure navigation pattern applies throughout RentAxis.', {
+      weight: 37,
+      verifyTenantContext: false,
+      afterNavigation: async (page) => signInWithCredentials(page, seed.adminLogin),
+    }),
+  ],
   '02': [
-    routeScene('/en/dashboard', 'Operational dashboard', 'Read tenant-scoped KPIs as signals, then open the underlying workflow for detail.'),
-    routeScene('/en/dashboard/notifications', 'Notifications', 'Review unread events, follow their related records, and acknowledge them without losing history.'),
-    routeScene('/en/dashboard/help', 'Help Center', 'Search role-aware guidance whenever a workflow or safety rule needs clarification.'),
-    routeScene('/en/dashboard/help/getting-started--roles-and-permissions', 'Role guidance', 'Help articles explain the approved responsibilities and boundaries for each RentAxis role.'),
+    roleRouteScene('superadmin', '/en/dashboard', 'Operational dashboard', 'Read tenant-scoped KPIs as signals, then open the underlying workflow or report for detail.', {
+      weight: 75,
+    }),
+    roleRouteScene('superadmin', '/en/dashboard', 'Global search', 'Press Command K on macOS or Control K on Windows, then search for a known renter, lease, cheque, payment, or organisation.', {
+      weight: 82,
+      afterNavigation: async (page) => openGlobalSearch(page, 'Ahmed Hassan'),
+    }),
+    roleRouteScene('superadmin', '/en/dashboard', 'Open the prepared lease', 'Choose the tenant-scoped result and confirm RentAxis opens the correct lease rather than a generic results page.', {
+      weight: 44,
+      afterNavigation: async (page) => {
+        await openGlobalSearch(page, 'Ahmed Hassan');
+        await page.getByRole('dialog', { name: /search/i }).getByRole('button').filter({ hasText: 'Ahmed Hassan' }).first().click();
+        await page.waitForURL(new RegExp(`/en/dashboard/leases/${ahmedLeaseId}`), { timeout: 30_000 });
+        await waitForApp(page);
+      },
+    }),
+    roleRouteScene('superadmin', '/en/dashboard', 'Notification preview', 'Use the unread indicator to review recent event details and follow a related record when one is available.', {
+      weight: 72,
+      afterNavigation: async (page) => {
+        await page.locator('header button').filter({ has: page.locator('svg.lucide-bell') }).click();
+        await page.getByText('Notifications', { exact: true }).waitFor({ state: 'visible' });
+      },
+    }),
+    roleRouteScene('superadmin', '/en/dashboard/notifications', 'Notification history', 'Acknowledging an item removes it from the unread view while preserving it in full history.', {
+      weight: 52,
+    }),
+    roleRouteScene('superadmin', '/en/dashboard/help', 'Search the Help Center', 'Find role-aware workflow and safety guidance without leaving the application.', {
+      weight: 67,
+      afterNavigation: async (page) => {
+        await page.getByPlaceholder('Search help articles...').fill('Security Guard');
+        await page.getByText('Roles & Permissions', { exact: true }).waitFor({ state: 'visible' });
+      },
+    }),
+    roleRouteScene('superadmin', '/en/dashboard/help/getting-started--roles-and-permissions', 'Role guidance', 'Compare each role’s responsibilities with its available navigation and enabled features.', {
+      weight: 58,
+    }),
+    roleRouteScene('superadmin', '/en/dashboard', 'Use the four-tool pattern', 'Dashboard totals identify work, search reaches records, notifications surface events, and Help explains the approved process.', {
+      weight: 38,
+      afterNavigation: async (page) => openGlobalSearch(page, tenantName),
+    }),
   ],
   '03': [
-    routeScene('/en/superadmin/users', 'Users and roles', 'Super administrators can review cross-organisation users and confirm each assigned role.'),
-    routeScene('/en/superadmin/tenants', 'Organisation boundary', 'Switch organisations deliberately and confirm the selected customer before administering records.'),
-    routeScene('/en/dashboard', 'Tenant-scoped navigation', 'The sidebar and actions change with the signed-in role and active organisation.'),
-    routeScene('/en/dashboard/help/getting-started--roles-and-permissions', 'Permission reference', 'Use the role guide to compare Super Admin, Tenant Admin, Property Manager, Tenant User, Renter, and Security Guard access.'),
+    roleRouteScene('superadmin', '/en/dashboard', 'Super Admin organisation context', 'Open the organisation switcher and verify the customer context before administering any tenant record.', {
+      weight: 72,
+      afterNavigation: async (page) => {
+        await page.getByRole('button', { name: 'Switch organization' }).click();
+        await page.getByRole('button', { name: tenantName }).waitFor({ state: 'visible' });
+      },
+    }),
+    roleRouteScene('tenantAdmin', '/en/dashboard', 'Tenant Admin', 'Tenant administrators manage the enabled portfolio, leasing, finance, users, and settings for their own organisation.', {
+      weight: 53,
+    }),
+    roleRouteScene('propertyManager', '/en/dashboard/properties', 'Property Manager', 'Property managers work only with their assigned properties; direct navigation must not bypass that boundary.', {
+      weight: 58,
+    }),
+    roleRouteScene('tenantAdmin', '/en/dashboard/help/getting-started--roles-and-permissions', 'Tenant User', 'Use this more limited staff role for a defined operational surface without tenant-wide administration.', {
+      weight: 34,
+    }),
+    roleRouteScene('renter', '/en/dashboard/renter-portal', 'Renter', 'Residents see their tenancy, payments, maintenance, meetings, services, and marketplace features—not internal administration.', {
+      weight: 48,
+      verifyTenantContext: false,
+    }),
+    roleRouteScene('securityGuard', '/en/dashboard/gatepass', 'Security Guard', 'Guards use assigned-property visitor queues, scans, admissions, and exits without lease, finance, or tenant settings access.', {
+      weight: 52,
+      verifyTenantContext: false,
+    }),
+    roleRouteScene('superadmin', '/en/dashboard', 'Return to the controlled context', 'Finish by checking the tenant, role, property assignment, and feature access before every sensitive action.', {
+      weight: 49,
+      afterNavigation: async (page) => {
+        await page.getByRole('button', { name: 'Switch organization' }).click();
+        await page.getByRole('button', { name: tenantName }).waitFor({ state: 'visible' });
+      },
+    }),
   ],
   '04': [
     routeScene('/en/superadmin/tenants', 'Organisation administration', 'Search, provision, and review isolated customer organisations from one controlled list.'),
     routeScene('/en/superadmin/tenants', 'Tutorial Demo tenant', 'The recording tenant uses synthetic legal and contact data and remains separate from customer records.', async (page) => {
-      await page.getByPlaceholder('Search...').fill(TUTORIAL_TENANT_NAME);
+      await page.getByPlaceholder('Search...').fill(tenantName);
     }),
     routeScene('/en/superadmin/tenants', 'Feature access', 'Listings, Meetings, Email Notifications, Lease Renewals, and Gate Pass are enabled per organisation.', async (page) => {
-      const row = page.getByRole('row').filter({ hasText: TUTORIAL_TENANT_NAME });
+      const row = page.getByRole('row').filter({ hasText: tenantName });
       await row.getByRole('button', { name: 'Feature Toggles' }).click();
     }),
     routeScene('/en/dashboard', 'Verify the tenant context', 'After switching, confirm the organisation name before creating or editing records.'),
@@ -384,23 +608,57 @@ const scenarios = {
     routeScene('/en/dashboard/meetings', 'Calendar follow-up', 'Use status and date filters to find meetings that need approval or completion.'),
   ],
   '24': [
-    roleRouteScene('tenantAdmin', `/en/dashboard/properties/${towerId}`, 'Bookable inventory', 'Confirm that amenity and parking inventory is active, available, and correctly scoped before residents request it.', {
-      weight: 57,
-      afterNavigation: async (page) => page.getByRole('button', { name: /^amenities$/i }).click(),
+    roleRouteScene('tenantAdmin', `/en/dashboard/properties/${towerId}`, 'Confirm bookable inventory', 'Before a resident requests anything, verify that the facility is active, bookable, available, and scoped to the correct property.', {
+      weight: 43,
+      afterNavigation: async (page) => page.getByRole('button', { name: /^parking$/i }).click(),
     }),
-    roleRouteScene('renter', '/en/dashboard/renter-portal/facilities', 'Submit facility requests', 'Residents review availability and instructions, then create separate amenity and parking requests.', {
-      weight: 56,
-      verifyTenantContext: false,
-    }),
-    roleRouteScene('tenantAdmin', '/en/dashboard/bookings', 'Review and approve', 'Managers check the renter, unit, requested period, capacity, conflicts, and notes before deciding.', {
-      weight: 54,
-    }),
-    roleRouteScene('renter', '/en/dashboard/renter-portal/facilities', 'Track, cancel, or release', 'Residents can confirm approval, cancel a future booking, or release an allocation without deleting history.', {
+    roleRouteScene('renter', '/en/dashboard/renter-portal/facilities', 'Prepare a parking request', 'The resident checks the property, availability, unit, preferred date, and note before submitting the request.', {
       weight: 55,
       verifyTenantContext: false,
+      afterNavigation: openPreparedParkingRequest,
     }),
-    roleRouteScene('tenantAdmin', `/en/dashboard/properties/${towerId}`, 'Restored availability', 'After cancellation or release, return to inventory and confirm that the resource is available again.', {
-      weight: 45,
+    roleRouteScene('renter', '/en/dashboard/renter-portal/facilities', 'Submit once', 'After submission, the new request appears as Pending in My Requests and the parking spot remains unallocated until approval.', {
+      weight: 42,
+      verifyTenantContext: false,
+      afterNavigation: async (page) => {
+        const dialog = await openPreparedParkingRequest(page);
+        await dialog.getByRole('button', { name: 'Submit Request', exact: true }).click();
+        await dialog.waitFor({ state: 'hidden', timeout: 30_000 });
+        await page.getByRole('row').filter({ hasText: parkingSpotNumber }).filter({ hasText: 'Pending' }).waitFor({ state: 'visible' });
+      },
+    }),
+    roleRouteScene('tenantAdmin', '/en/dashboard/bookings', 'Review the request', 'The manager opens the Pending request and verifies the renter, unit, resource, preferred date, conflicts, and note.', {
+      weight: 52,
+      afterNavigation: openPreparedBookingApproval,
+    }),
+    roleRouteScene('tenantAdmin', '/en/dashboard/bookings', 'Approve with an auditable note', 'Approve only after the checks are complete. The request changes to Approved and records the manager’s decision note.', {
+      weight: 48,
+      afterNavigation: async (page) => {
+        const drawer = await openPreparedBookingApproval(page);
+        await drawer.getByRole('button', { name: 'Approve', exact: true }).click();
+        await drawer.getByText('Approved', { exact: true }).waitFor({ state: 'visible', timeout: 30_000 });
+      },
+    }),
+    roleRouteScene('renter', '/en/dashboard/renter-portal/facilities', 'Confirm the allocation', 'Back in the renter account, the same request is Approved and the parking card is held for this resident.', {
+      weight: 38,
+      verifyTenantContext: false,
+      afterNavigation: async (page) => {
+        await page.getByRole('row').filter({ hasText: parkingSpotNumber }).filter({ hasText: 'Approved' }).waitFor({ state: 'visible' });
+      },
+    }),
+    roleRouteScene('renter', '/en/dashboard/renter-portal/facilities', 'Release the parking spot', 'When the allocation is no longer needed, release it deliberately. History remains visible while availability is restored.', {
+      weight: 47,
+      verifyTenantContext: false,
+      afterNavigation: async (page) => {
+        const row = page.getByRole('row').filter({ hasText: parkingSpotNumber }).filter({ hasText: 'Approved' });
+        await row.getByRole('button', { name: 'Release Spot', exact: true }).click();
+        await page.getByText('Give up this parking spot? It becomes available to others.', { exact: true }).waitFor({ state: 'visible' });
+        await page.getByRole('button', { name: 'Release Spot', exact: true }).last().click();
+        await page.getByRole('row').filter({ hasText: parkingSpotNumber }).filter({ hasText: 'Released' }).waitFor({ state: 'visible', timeout: 30_000 });
+      },
+    }),
+    roleRouteScene('tenantAdmin', `/en/dashboard/properties/${towerId}`, 'Verify restored availability', 'Return to the property inventory and confirm that the spot is Available, active, and ready for another request.', {
+      weight: 39,
       afterNavigation: async (page) => page.getByRole('button', { name: /^parking$/i }).click(),
     }),
   ],
@@ -429,6 +687,7 @@ const scenarios = {
 };
 
 const roleByTutorial = {
+  '01': 'anonymous',
   '02': 'superadmin',
   '03': 'superadmin',
   '04': 'superadmin',
@@ -464,6 +723,11 @@ if (!scenes) throw new Error(`Tutorial ${tutorialId} does not have an automated 
 fs.mkdirSync(path.dirname(outputPath), { recursive: true });
 const videoDir = fs.mkdtempSync(path.join(os.tmpdir(), `rentaxis-tutorial-${tutorialId}-`));
 const targetDuration = narrationDurationSeconds() + 2;
+// Playwright starts each clip when the page is created, before scene timing
+// begins, and keeps a short trailer while the page closes. Reserve that
+// measured per-clip overhead so early scenes cannot push the closing workflow
+// beyond the narration and get trimmed from the final MP4.
+const clipOverheadSeconds = Number(process.env.TUTORIAL_CLIP_OVERHEAD_SECONDS || 1);
 const sceneWeights = scenes.map((scene) => {
   const weight = Number(scene.weight ?? 1);
   return Number.isFinite(weight) && weight > 0 ? weight : 1;
@@ -487,11 +751,16 @@ async function authenticatedStorageState(role) {
     ? seed.adminLogin
     : role === 'renter'
       ? seed.renterLogins?.find((login) => login.name === 'Ahmed Hassan') || seed.renterLogins?.[0]
+      : role === 'propertyManager'
+        ? seed.operatorLogins?.find((login) => login.role === 'PROPERTY_MANAGER')
+        : role === 'securityGuard'
+          ? seed.operatorLogins?.find((login) => login.role === 'SECURITY_GUARD')
       : null;
   if (!credentials?.email || !credentials?.password) {
     throw new Error(`The seed manifest does not include credentials for ${role}.`);
   }
   const loginContext = await browser.newContext({ baseURL });
+  await suppressAutomaticOnboarding(loginContext);
   const loginPage = await loginContext.newPage();
   await loginPage.goto('/en/auth/login');
   await loginPage.locator('#login-email').fill(credentials.email);
@@ -522,6 +791,7 @@ try {
       contextOptions.recordVideo = { dir: videoDir, size: { width: 1920, height: 1080 } };
     }
     const context = await browser.newContext(contextOptions);
+    await suppressAutomaticOnboarding(context);
     await context.addCookies([
       {
         name: 'active_tenant_id',
@@ -539,16 +809,26 @@ try {
     try {
       const startedAt = Date.now();
       await scene.run(page);
+      const activeTourCount = await page.locator('.shepherd-element:visible').count();
+      if (activeTourCount > 0 && !scene.allowTour) {
+        throw new Error(`An onboarding tour opened unexpectedly in scene ${sceneIndex + 1}; recording stopped.`);
+      }
+      await auditVisibleDialogContrast(page);
       if (scene.verifyTenantContext !== false) {
-        const activeTenantVisible = await page.getByText(TUTORIAL_TENANT_NAME, { exact: true }).first().isVisible();
+        const activeTenantVisible = await page.getByText(tenantName, { exact: true }).first().isVisible();
         if (!activeTenantVisible) {
-          throw new Error(`The active organisation is not ${TUTORIAL_TENANT_NAME}; recording stopped.`);
+          throw new Error(`The active organisation is not ${tenantName}; recording stopped.`);
         }
+      }
+      if (qaDir) {
+        fs.mkdirSync(qaDir, { recursive: true });
+        const qaName = `${tutorialId}-${String(sceneIndex + 1).padStart(2, '0')}-${scene.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}.png`;
+        await page.screenshot({ path: path.join(qaDir, qaName), fullPage: false });
       }
       await addCallout(page, scene.title, scene.body);
       const sceneDuration = validateOnly
         ? 0.5
-        : targetDuration * (sceneWeights[sceneIndex] / totalSceneWeight);
+        : Math.max(1, targetDuration * (sceneWeights[sceneIndex] / totalSceneWeight) - clipOverheadSeconds);
       const elapsedSeconds = (Date.now() - startedAt) / 1000;
       await page.waitForTimeout(Math.max(500, (sceneDuration - elapsedSeconds) * 1000));
       await clearCallout(page);
@@ -566,7 +846,7 @@ try {
 if (validateOnly) {
   fs.rmSync(videoDir, { recursive: true, force: true });
   console.log(`tutorial=${tutorialId}`);
-  console.log(`tenant=${TUTORIAL_TENANT_NAME}`);
+  console.log(`tenant=${tenantName}`);
   console.log('scenario_validation=passed');
 } else {
   if (recordedVideoPaths.length !== scenes.length || recordedVideoPaths.some((videoPath) => !fs.existsSync(videoPath))) {
@@ -598,7 +878,7 @@ if (validateOnly) {
   }
   fs.rmSync(videoDir, { recursive: true, force: true });
   console.log(`tutorial=${tutorialId}`);
-  console.log(`tenant=${TUTORIAL_TENANT_NAME}`);
+  console.log(`tenant=${tenantName}`);
   console.log(`target_duration=${targetDuration.toFixed(2)}`);
   console.log(`silent_video=${outputPath}`);
 }

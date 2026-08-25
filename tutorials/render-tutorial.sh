@@ -12,6 +12,7 @@ task_output=$3
 task_voice=${4:-${TUTORIAL_VOICE:-}}
 task_speech_rate=${5:-125}
 task_tts_provider=${TUTORIAL_TTS_PROVIDER:-openai}
+task_subtitle=${TUTORIAL_SUBTITLE_FILE:-}
 
 if [[ -z "$task_voice" ]]; then
   case "$task_tts_provider" in
@@ -98,11 +99,25 @@ fi
 # Re-encode Playwright WebM or any other source to a platform-friendly MP4,
 # normalize speech, and hold the final video frame if narration runs longer.
 task_rendered="$task_tmp/rendered.mp4"
+task_subtitle_input=()
+task_subtitle_map=()
+task_subtitle_codec=()
+if [[ -n "$task_subtitle" ]]; then
+  if [[ ! -f "$task_subtitle" ]]; then
+    echo "Subtitle file not found: $task_subtitle" >&2
+    exit 1
+  fi
+  task_subtitle_input=(-i "$task_subtitle")
+  task_subtitle_map=(-map 2:0)
+  task_subtitle_codec=(-c:s mov_text -metadata:s:s:0 language=eng)
+fi
 ffmpeg -hide_banner -loglevel error -y \
   -i "$task_video" \
   -i "$task_audio" \
+  "${task_subtitle_input[@]}" \
   -map 0:v:0 \
   -map 1:a:0 \
+  "${task_subtitle_map[@]}" \
   -c:v libx264 \
   -preset medium \
   -crf 20 \
@@ -111,6 +126,7 @@ ffmpeg -hide_banner -loglevel error -y \
   -af "loudnorm=I=-16:LRA=11:TP=-1.5" \
   -c:a aac \
   -b:a 192k \
+  "${task_subtitle_codec[@]}" \
   -t "$task_audio_duration" \
   -shortest \
   -movflags +faststart \
@@ -132,9 +148,20 @@ task_output_duration=$(ffprobe -v error \
   -show_entries format=duration \
   -of default=noprint_wrappers=1:nokey=1 \
   "$task_rendered")
+task_subtitle_codec_name=""
+if [[ -n "$task_subtitle" ]]; then
+  task_subtitle_codec_name=$(ffprobe -v error -select_streams s:0 \
+    -show_entries stream=codec_name \
+    -of default=noprint_wrappers=1:nokey=1 \
+    "$task_rendered")
+fi
 
 if [[ "$task_video_codec" != "h264" || "$task_audio_codec" != "aac" || "$task_dimensions" != "1920x1080" ]]; then
   echo "Rendered file failed stream validation: video=$task_video_codec audio=$task_audio_codec dimensions=$task_dimensions" >&2
+  exit 1
+fi
+if [[ -n "$task_subtitle" && "$task_subtitle_codec_name" != "mov_text" ]]; then
+  echo "Rendered file failed subtitle validation: subtitle=$task_subtitle_codec_name" >&2
   exit 1
 fi
 if ! awk -v output="$task_output_duration" -v audio="$task_audio_duration" 'BEGIN {
@@ -154,3 +181,7 @@ echo "video_codec=$task_video_codec"
 echo "audio_codec=$task_audio_codec"
 echo "dimensions=$task_dimensions"
 echo "duration=$task_output_duration"
+if [[ -n "$task_subtitle" ]]; then
+  echo "subtitle_codec=$task_subtitle_codec_name"
+  echo "subtitle_file=$task_subtitle"
+fi
