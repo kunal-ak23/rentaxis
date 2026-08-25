@@ -814,7 +814,7 @@ export default function LeaseDetailPage() {
 
                 {/* Right Column: Payment Schedule — visible on Overview + Payment schedule tabs */}
                 {(activeTab === "Overview" || activeTab === "Payment schedule") && (
-                <div className={cn(activeTab === "Overview" && "lg:col-span-2")}>
+                <div className={cn("min-w-0", activeTab === "Overview" && "lg:col-span-2")}>
                     {/* Penalty Summary */}
                     {(() => {
                         // Only OPEN penalties (clearedAt == null, not waived) still owe
@@ -871,7 +871,7 @@ export default function LeaseDetailPage() {
                                     </button>
                                 )}
                             </div>
-                            <div className="px-5 py-4">
+                            <div className="px-5 py-4 min-w-0">
                                 <PaymentScheduleEditor
                                     leaseId={lease.id}
                                     leaseStatus={lease.status}
