@@ -795,9 +795,18 @@ const scenarios = {
     publicRouteScene('/en/privacy', 'Privacy and legal information', 'Review privacy, terms, and data-deletion guidance before submitting personal information.'),
   ],
   '28': [
-    routeScene('/en/dashboard/promotions', 'Promotions and offers', 'Manage participating businesses and targeted resident ads from one workspace.'),
-    routeScene('/en/dashboard/promotions', 'Coupon configuration', 'Set bilingual copy, placement, dates, property targeting, CTA, code, and terms.'),
-    routeScene('/en/dashboard/promotions', 'Engagement analytics', 'Impressions, clicks, and tap-through rate show whether a live promotion is being used.'),
+    routeScene('/en/dashboard/promotions', 'Promotions and offers', 'Manage participating businesses and targeted resident ads from one workspace.', async (page) => {
+      await page.getByRole('tab', { name: 'Businesses', exact: true }).click();
+      await page.waitForTimeout(350);
+    }),
+    routeScene('/en/dashboard/promotions', 'Coupon configuration', 'Set bilingual copy, placement, dates, property targeting, CTA, code, and terms.', async (page) => {
+      await page.getByRole('tab', { name: 'Ads', exact: true }).click();
+      await page.getByRole('button', { name: 'Edit', exact: true }).click();
+    }),
+    routeScene('/en/dashboard/promotions', 'Engagement analytics', 'Impressions, clicks, and tap-through rate show whether a live promotion is being used.', async (page) => {
+      await page.locator('select[aria-label="Business"]').selectOption({ label: 'Tutorial Community Cafe' });
+      await page.waitForTimeout(350);
+    }),
   ],
 };
 
