@@ -118,6 +118,13 @@ async function waitForApp(page) {
     page.locator('main').waitFor({ state: 'visible', timeout: 30_000 }),
     page.locator('#login-email').waitFor({ state: 'visible', timeout: 30_000 }),
   ]);
+  // Dashboard data can arrive a moment after the shell. Never freeze a
+  // transient error state into a tutorial frame; wait for the retrying page to
+  // recover, and fail the preflight if it remains genuinely unavailable.
+  const dashboardError = page.getByText('Unable to load dashboard data', { exact: true });
+  if (await dashboardError.isVisible().catch(() => false)) {
+    await dashboardError.waitFor({ state: 'hidden', timeout: 30_000 });
+  }
   await page.waitForTimeout(800);
 }
 
@@ -413,6 +420,10 @@ const scenarios = {
     }),
     roleRouteScene('propertyManager', '/en/dashboard/properties', 'Property Manager', 'Property managers work only with their assigned properties; direct navigation must not bypass that boundary.', {
       weight: 58,
+      verifyTenantContext: false,
+      afterNavigation: async (page) => {
+        await page.getByText(seed.properties?.towerName || 'RentAxis Academy Residence Tower', { exact: true }).waitFor({ state: 'visible', timeout: 30_000 });
+      },
     }),
     roleRouteScene('tenantAdmin', '/en/dashboard/help/getting-started--roles-and-permissions', 'Tenant User', 'Use this more limited staff role for a defined operational surface without tenant-wide administration.', {
       weight: 34,
@@ -421,9 +432,11 @@ const scenarios = {
       weight: 48,
       verifyTenantContext: false,
     }),
-    roleRouteScene('securityGuard', '/en/dashboard/gatepass', 'Security Guard', 'Guards use assigned-property visitor queues, scans, admissions, and exits without lease, finance, or tenant settings access.', {
+    // Security Guards authenticate with phone OTP through the guard/mobile
+    // surface, not the web email/password form. Show the documented role
+    // boundary here instead of attempting an invalid web login.
+    roleRouteScene('tenantAdmin', '/en/dashboard/help/getting-started--roles-and-permissions', 'Security Guard', 'Guards use assigned-property visitor queues, scans, admissions, and exits without lease, finance, or tenant settings access.', {
       weight: 52,
-      verifyTenantContext: false,
     }),
     roleRouteScene('superadmin', '/en/dashboard', 'Return to the controlled context', 'Finish by checking the tenant, role, property assignment, and feature access before every sensitive action.', {
       weight: 49,
@@ -766,7 +779,10 @@ async function authenticatedStorageState(role) {
   await loginPage.locator('#login-email').fill(credentials.email);
   await loginPage.locator('#login-password').fill(credentials.password);
   await loginPage.getByRole('button', { name: /sign in|log in/i }).click();
-  await loginPage.waitForURL(/\/en\/dashboard/, { timeout: 30_000 });
+  // The production dashboard keeps a few long-lived resources open, so the
+  // default `load` wait can time out after navigation has already succeeded.
+  // DOM readiness is enough to establish the authenticated storage state.
+  await loginPage.waitForURL(/\/en\/dashboard/, { timeout: 30_000, waitUntil: 'domcontentloaded' });
   const state = await loginContext.storageState();
   await loginContext.close();
   storageStateByRole.set(role, state);
