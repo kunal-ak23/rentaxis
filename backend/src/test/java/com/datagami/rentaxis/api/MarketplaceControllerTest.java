@@ -2,6 +2,7 @@ package com.datagami.rentaxis.api;
 
 import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.service.InterestService;
+import com.datagami.rentaxis.core.service.BlobStorageService;
 import com.datagami.rentaxis.core.service.MarketplaceService;
 import com.datagami.rentaxis.core.service.TenantFeatureService;
 import com.datagami.rentaxis.domain.entity.enums.TenantFeature;
@@ -61,6 +62,8 @@ class MarketplaceControllerTest {
     TenantFeatureService tenantFeatureService;
     @Mock
     UnitRepository unitRepository;
+    @Mock
+    BlobStorageService blobStorageService;
 
     @InjectMocks
     MarketplaceController controller;

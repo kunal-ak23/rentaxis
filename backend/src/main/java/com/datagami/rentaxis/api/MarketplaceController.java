@@ -50,6 +50,7 @@ public class MarketplaceController {
     private final UnitListingRepository listingRepository;
     private final TenantFeatureService tenantFeatureService;
     private final UnitRepository unitRepository;
+    private final BlobStorageService blobStorageService;
 
     public MarketplaceController(MarketplaceService marketplaceService,
                                   InterestService interestService,
@@ -57,7 +58,8 @@ public class MarketplaceController {
                                   UnitListingAmenityRepository amenityRepository,
                                   UnitListingRepository listingRepository,
                                   TenantFeatureService tenantFeatureService,
-                                  UnitRepository unitRepository) {
+                                  UnitRepository unitRepository,
+                                  BlobStorageService blobStorageService) {
         this.marketplaceService = marketplaceService;
         this.interestService = interestService;
         this.mediaRepository = mediaRepository;
@@ -65,6 +67,7 @@ public class MarketplaceController {
         this.listingRepository = listingRepository;
         this.tenantFeatureService = tenantFeatureService;
         this.unitRepository = unitRepository;
+        this.blobStorageService = blobStorageService;
     }
 
     @GetMapping("/{tenantSlug}/listings")
@@ -179,7 +182,7 @@ public class MarketplaceController {
                 .findFirst()
                 .or(() -> media.stream().findFirst())
                 .map(UnitListingMedia::getUrl)
-                .map(BlobStorageService::normalizePublicUrl)
+                .map(url -> blobStorageService.publicReadUrl(l.getTenantId(), url))
                 .orElse(null);
 
         String propertyName = unitRepository.findById(l.getUnitId())
@@ -213,7 +216,7 @@ public class MarketplaceController {
                 .toList();
 
         List<UnitListingMediaDTO> mediaDtos = media.stream()
-                .map(m -> new UnitListingMediaDTO(m.getId(), m.getMediaType(), BlobStorageService.normalizePublicUrl(m.getUrl()),
+                .map(m -> new UnitListingMediaDTO(m.getId(), m.getMediaType(), blobStorageService.publicReadUrl(l.getTenantId(), m.getUrl()),
                         m.getCaption(), m.getSortOrder(), m.getIsCover()))
                 .toList();
 

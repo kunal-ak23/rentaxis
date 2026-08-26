@@ -68,6 +68,8 @@ class UnitListingServiceTest {
                 listingRepository, amenityRepository, mediaRepository,
                 interestRepository, userRepository, leaseRepository, unitRepository, notificationService,
                 slugService, eventPublisher, blobStorageService);
+        when(blobStorageService.publicReadUrl(any(), any(String.class)))
+                .thenAnswer(invocation -> BlobStorageService.normalizePublicUrl(invocation.getArgument(1)));
 
         when(listingRepository.save(any(UnitListing.class))).thenAnswer(inv -> {
             UnitListing l = inv.getArgument(0);
@@ -205,6 +207,7 @@ class UnitListingServiceTest {
         UUID unitId = UUID.randomUUID();
         UnitListing listing = new UnitListing();
         listing.setId(listingId);
+        listing.setTenantId(UUID.randomUUID());
         listing.setUnitId(unitId);
 
         Property property = new Property();

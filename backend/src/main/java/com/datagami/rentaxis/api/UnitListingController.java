@@ -217,7 +217,7 @@ public class UnitListingController {
                 .map(a -> new UnitListingDTO.AmenityEntry(a.getAmenity(), a.getCustomLabel()))
                 .toList();
 
-        List<UnitListingMediaDTO> media = service.listMedia(l.getId());
+        List<UnitListingMediaDTO> media = service.listMedia(TenantContextHolder.getTenantId(), l.getId());
 
         return new UnitListingDTO(
                 l.getId(), l.getUnitId(), l.getStatus(),

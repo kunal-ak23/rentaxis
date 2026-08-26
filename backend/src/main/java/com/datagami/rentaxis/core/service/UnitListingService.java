@@ -265,9 +265,9 @@ public class UnitListingService {
     }
 
     @Transactional(readOnly = true)
-    public List<UnitListingMediaDTO> listMedia(UUID listingId) {
+    public List<UnitListingMediaDTO> listMedia(UUID tenantId, UUID listingId) {
         return mediaRepository.findByListingIdOrderBySortOrderAsc(listingId).stream()
-                .map(this::toMediaDto)
+                .map(media -> toMediaDto(tenantId, media))
                 .toList();
     }
 
@@ -290,10 +290,12 @@ public class UnitListingService {
                         unit.getProperty() == null ? null : unit.getProperty().getNameEn()));
 
         Map<UUID, String> coverUrlsByListingId = new HashMap<>();
+        Map<UUID, UUID> tenantIdsByListingId = listings.stream()
+                .collect(java.util.stream.Collectors.toMap(UnitListing::getId, UnitListing::getTenantId));
         mediaRepository.findByListingIdInOrderByListingIdAscSortOrderAsc(listingIds)
                 .forEach(media -> coverUrlsByListingId.merge(
                         media.getListingId(),
-                        BlobStorageService.normalizePublicUrl(media.getUrl()),
+                        blobStorageService.publicReadUrl(tenantIdsByListingId.get(media.getListingId()), media.getUrl()),
                         (current, candidate) -> Boolean.TRUE.equals(media.getIsCover()) ? candidate : current));
 
         Map<UUID, Long> interestCountsByListingId = new HashMap<>();
@@ -354,7 +356,7 @@ public class UnitListingService {
         media.setIsCover(Boolean.TRUE.equals(isCover));
         media.setBlobPath(blobPath);
         UnitListingMedia saved = mediaRepository.save(media);
-        return toMediaDto(saved);
+        return toMediaDto(tenantId, saved);
     }
 
     public void removeMedia(UUID tenantId, UUID listingId, UUID mediaId) {
@@ -502,9 +504,9 @@ public class UnitListingService {
         return url.substring(idx + 1);
     }
 
-    private UnitListingMediaDTO toMediaDto(UnitListingMedia m) {
+    private UnitListingMediaDTO toMediaDto(UUID tenantId, UnitListingMedia m) {
         return new UnitListingMediaDTO(
-                m.getId(), m.getMediaType(), BlobStorageService.normalizePublicUrl(m.getUrl()),
+                m.getId(), m.getMediaType(), blobStorageService.publicReadUrl(tenantId, m.getUrl()),
                 m.getCaption(), m.getSortOrder(), m.getIsCover());
     }
 }

@@ -4,6 +4,8 @@ import com.azure.storage.blob.BlobClient;
 import com.azure.storage.blob.BlobContainerClient;
 import com.azure.storage.blob.BlobServiceClient;
 import com.azure.storage.blob.BlobServiceClientBuilder;
+import com.azure.storage.blob.sas.BlobSasPermission;
+import com.azure.storage.blob.sas.BlobServiceSasSignatureValues;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -12,6 +14,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
+import java.time.OffsetDateTime;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
@@ -35,6 +38,45 @@ public class BlobStorageService {
      */
     public static String normalizePublicUrl(String value) {
         return value == null ? null : value.replaceAll("(?i)%2f", "/");
+    }
+
+    /**
+     * Resolves a stored URL to a short-lived browser-readable URL for the exact
+     * tenant container. Existing rows may contain a raw private URL, so this is
+     * applied when DTOs are read as well as when media is uploaded.
+     */
+    public String publicReadUrl(UUID tenantId, String value) {
+        String normalized = normalizePublicUrl(value);
+        if (tenantId == null || normalized == null || normalized.isBlank()) {
+            return normalized;
+        }
+        try {
+            Optional<BlobLocation> location = parseOwnedBlobUrl(normalized);
+            String expectedContainer = (containerPrefix + tenantId).toLowerCase(Locale.ROOT);
+            if (location.isEmpty() || !location.get().containerName().equals(expectedContainer)) {
+                return normalized;
+            }
+            BlobClient client = getServiceClient()
+                    .getBlobContainerClient(location.get().containerName())
+                    .getBlobClient(location.get().blobPath());
+            return generateReadUrl(client);
+        } catch (BlobStorageException e) {
+            // Local development and unit tests may not configure Azure storage.
+            return normalized;
+        }
+    }
+
+    private String generateReadUrl(BlobClient blobClient) {
+        String blobUrl = normalizePublicUrl(blobClient.getBlobUrl());
+        try {
+            BlobSasPermission permission = new BlobSasPermission().setReadPermission(true);
+            BlobServiceSasSignatureValues values = new BlobServiceSasSignatureValues(
+                    OffsetDateTime.now().plusDays(1), permission);
+            return blobUrl + "?" + blobClient.generateSas(values);
+        } catch (Exception e) {
+            log.warn("SAS URL generation failed for listing media; returning raw URL: {}", blobUrl);
+            return blobUrl;
+        }
     }
 
     @Value("${azure.storage.connection-string:}")
@@ -75,7 +117,7 @@ public class BlobStorageService {
             BlobContainerClient containerClient = getContainerClient(tenantId);
             BlobClient blobClient = containerClient.getBlobClient(blobPath);
             blobClient.upload(in, file.getSize(), true);
-            return new UploadResult(blobClient.getBlobUrl(), blobPath);
+            return new UploadResult(generateReadUrl(blobClient), blobPath);
         } catch (IOException e) {
             throw new BlobStorageException("Failed to read upload stream for " + blobPath, e);
         } catch (com.azure.storage.blob.models.BlobStorageException e) {
