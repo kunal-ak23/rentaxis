@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:manager/main.dart' as app;
+import 'package:manager/screens/dashboard_screen.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 
 const _email = String.fromEnvironment('TOUR_EMAIL');
@@ -46,6 +47,10 @@ Future<void> main() async {
       expect(await container.read(authProvider.notifier).login(_email, _password), isTrue);
       await _settle(tester, duration: const Duration(seconds: 5));
     }
+    expect(container.read(authProvider).isAuthenticated, isTrue,
+        reason: 'manager login did not establish an authenticated session');
+    expect(find.byType(DashboardScreen), findsOneWidget,
+        reason: 'manager app did not leave the login screen after authentication');
     await container.read(themeModeProvider.notifier).setMode(ThemeMode.light);
     await container.read(appLanguageProvider.notifier).setLanguage(AppLanguage.en);
     await _settle(tester);
