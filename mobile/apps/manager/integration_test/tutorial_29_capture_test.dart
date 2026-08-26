@@ -33,6 +33,10 @@ Future<void> main() async {
     }
 
     app.main();
+    // Leave a short foreground window so the external screen recorder can be
+    // started after Flutter has launched the activity (rather than capturing
+    // the launcher while the APK is being installed).
+    await _settle(tester, duration: const Duration(seconds: 20));
     await _settle(tester, duration: const Duration(seconds: 5));
     await binding.convertFlutterSurfaceToImage();
 
