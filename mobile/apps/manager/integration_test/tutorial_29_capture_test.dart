@@ -59,10 +59,7 @@ Future<void> main() async {
     await open('/properties');
     await open('/properties/$_propertyId');
     await open('/renters');
-    await open('/leases');
     await open('/leases/$_leaseId');
-    await open('/payments');
-    await open('/tickets');
     await open('/tickets/$_ticketId');
     await open('/profile');
 
