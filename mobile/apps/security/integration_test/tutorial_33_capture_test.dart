@@ -56,8 +56,15 @@ void main() {
     await storage.write(key: 'userTenantId', value: _tenantId);
 
     app.main();
+    // The board's primary hero uses sentence case ("Scan a pass"); the
+    // bottom navigation label is only "Scan". Waiting for the hero avoids a
+    // false negative from the old all-caps label used by the earlier shell.
     expect(
-      await _waitFor(tester, find.text('SCAN')),
+      await _waitFor(
+        tester,
+        find.text('Scan a pass'),
+        timeout: const Duration(seconds: 60),
+      ),
       isTrue,
       reason: 'guard board did not render',
     );
