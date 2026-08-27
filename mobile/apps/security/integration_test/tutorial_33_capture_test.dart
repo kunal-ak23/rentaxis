@@ -50,6 +50,11 @@ void main() {
     expect(_passId, isNotEmpty, reason: 'PASS_ID is required');
 
     const storage = FlutterSecureStorage();
+    // flutter drive reinstalls the APK but Android secure storage can retain a
+    // token from an earlier run. A stale bearer token takes precedence over
+    // the seeded legacy identity and makes the board redirect to /login after
+    // it has briefly rendered, so explicitly remove it for this fixture.
+    await storage.delete(key: 'authToken');
     await storage.write(key: 'userId', value: _userId);
     await storage.write(key: 'userRole', value: 'SECURITY_GUARD');
     await storage.write(key: 'tenantId', value: _tenantId);
@@ -76,6 +81,12 @@ void main() {
 
     // Hold the authenticated board for the external recorder to attach.
     await _settle(tester, duration: const Duration(seconds: 12));
+    debugPrint(
+      'security board finders: text=${find.text('Scan a pass').evaluate().length}, '
+      'hero=${find.byKey(const Key('scanPassHero')).evaluate().length}, '
+      'login=${find.textContaining('Sign').evaluate().length}, '
+      'location=${router.routerDelegate.currentConfiguration.uri}',
+    );
 
     // Use the visible hero a guard would use instead of jumping directly to the
     // route. A key keeps this capture seam stable across localization and
