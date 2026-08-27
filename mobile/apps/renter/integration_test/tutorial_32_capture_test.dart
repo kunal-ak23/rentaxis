@@ -65,7 +65,7 @@ void main() {
     // Leave a stable authenticated home surface long enough for the external
     // recorder to attach after Flutter Drive has installed and launched the
     // profile APK. This prevents the first route from racing past the capture.
-    await _settle(tester, duration: const Duration(seconds: 90));
+    await _settle(tester, duration: const Duration(seconds: 60));
 
     await container.read(themeModeProvider.notifier).setMode(ThemeMode.light);
     await container
@@ -75,7 +75,7 @@ void main() {
 
     Future<void> open(
       String route, {
-      Duration wait = const Duration(seconds: 10),
+      Duration wait = const Duration(seconds: 6),
     }) async {
       GoRouter.of(tester.element(shell.first)).go(route);
       FocusManager.instance.primaryFocus?.unfocus();
