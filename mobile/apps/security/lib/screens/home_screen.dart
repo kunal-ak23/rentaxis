@@ -208,6 +208,7 @@ class _HomeHeader extends ConsumerWidget {
           // Scan is the whole hero — it is the only thing a guard does at a
           // gate, so it gets the gradient and the shadow.
           GestureDetector(
+            key: const Key('scanPassHero'),
             onTap: () => context.push('/scan'),
             child: Container(
               height: 74,

@@ -77,17 +77,16 @@ void main() {
     // Hold the authenticated board for the external recorder to attach.
     await _settle(tester, duration: const Duration(seconds: 12));
 
-    // Use the visible bottom-nav destination a guard would use instead of
-    // jumping directly to the route. The hero is intentionally allowed to
-    // remain a plain product label, while the nav label is a stable exact
-    // finder across responsive layouts.
-    final scanNav = find.text('Scan');
+    // Use the visible hero a guard would use instead of jumping directly to the
+    // route. A key keeps this capture seam stable across localization and
+    // typography changes while preserving the real tap interaction.
+    final scanHero = find.byKey(const Key('scanPassHero'));
     expect(
-      await _waitFor(tester, scanNav, timeout: const Duration(seconds: 15)),
+      await _waitFor(tester, scanHero, timeout: const Duration(seconds: 15)),
       isTrue,
       reason: 'security navigation did not render',
     );
-    await tester.tap(scanNav.last);
+    await tester.tap(scanHero);
     expect(
       await _waitFor(
         tester,
