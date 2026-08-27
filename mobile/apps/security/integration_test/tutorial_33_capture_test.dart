@@ -77,9 +77,19 @@ void main() {
     // Hold the authenticated board for the external recorder to attach.
     await _settle(tester, duration: const Duration(seconds: 12));
 
-    router.go('/scan');
-    await _settle(tester, duration: const Duration(seconds: 3));
-    await tester.tap(find.byKey(const Key('enterCodeButton')));
+    // Use the same visible hero a guard would use instead of jumping directly
+    // to the route. This keeps the capture representative and avoids racing a
+    // route transition while the board is still settling.
+    await tester.tap(find.text('Scan a pass').first);
+    expect(
+      await _waitFor(
+        tester,
+        find.byKey(const Key('enterCodeButton')),
+        timeout: const Duration(seconds: 15),
+      ),
+      isTrue,
+      reason: 'scan screen did not render',
+    );
     await _settle(tester, duration: const Duration(seconds: 2));
     await tester.enterText(find.byKey(const Key('numericCodeField')), _code);
     await tester.tap(find.byKey(const Key('submitCodeButton')));
