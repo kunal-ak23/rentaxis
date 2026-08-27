@@ -81,12 +81,6 @@ void main() {
 
     // Hold the authenticated board for the external recorder to attach.
     await _settle(tester, duration: const Duration(seconds: 12));
-    debugPrint(
-      'security board finders: text=${find.text('Scan a pass').evaluate().length}, '
-      'hero=${find.byKey(const Key('scanPassHero')).evaluate().length}, '
-      'login=${find.textContaining('Sign').evaluate().length}, '
-      'location=${router.routerDelegate.currentConfiguration.uri}',
-    );
 
     // Use the visible hero a guard would use instead of jumping directly to the
     // route. A key keeps this capture seam stable across localization and
@@ -107,6 +101,7 @@ void main() {
       isTrue,
       reason: 'scan screen did not render',
     );
+    await tester.tap(find.byKey(const Key('enterCodeButton')));
     await _settle(tester, duration: const Duration(seconds: 2));
     await tester.enterText(find.byKey(const Key('numericCodeField')), _code);
     await tester.tap(find.byKey(const Key('submitCodeButton')));
