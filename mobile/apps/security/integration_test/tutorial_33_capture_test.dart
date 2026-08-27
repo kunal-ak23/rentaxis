@@ -5,6 +5,7 @@
 // the already-authorized guard identity into secure storage and exercises the
 // post-login production surfaces. The login/OTP screens remain covered by the
 // dedicated login-shots integration test.
+import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
