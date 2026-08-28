@@ -13,7 +13,12 @@
   padding: 0;
 }
 
-.shepherd-element .shepherd-header {
+/* Shepherd's bundled theme targets
+ * `.shepherd-has-title .shepherd-content .shepherd-header`, so this override
+ * must be at least as specific or the light default wins while the title
+ * remains white. */
+.shepherd-element.shepherd-has-title .shepherd-content .shepherd-header,
+.shepherd-element .shepherd-content .shepherd-header {
   background: #0F766E;
   padding: 12px 16px;
   border-radius: 12px 12px 0 0;
@@ -68,7 +73,7 @@
 
 .shepherd-element .shepherd-button-primary {
   background: #C8A951;
-  color: white;
+  color: #0F172A;
   border: none;
 }
 
