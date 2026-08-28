@@ -266,6 +266,20 @@ public class BookingService {
     }
 
     @Transactional(readOnly = true)
+    public Page<BookingRequest> searchAssignedProperties(
+            UUID tenantId,
+            List<UUID> propertyIds,
+            BookingRequestStatus status,
+            BookingResourceType resourceType,
+            Pageable pageable) {
+        if (propertyIds.isEmpty()) {
+            return Page.empty(pageable);
+        }
+        return bookingRepository.searchAssignedProperties(
+                tenantId, propertyIds, status, resourceType, pageable);
+    }
+
+    @Transactional(readOnly = true)
     public List<BookingRequest> listMine(UUID tenantId, UUID renterUserId) {
         return bookingRepository.findByTenantIdAndRenterUserIdOrderByCreatedAtAsc(tenantId, renterUserId);
     }

@@ -19,6 +19,7 @@ import com.datagami.rentaxis.domain.entity.PropertyAmenity;
 import com.datagami.rentaxis.domain.entity.Renter;
 import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.User;
+import com.datagami.rentaxis.domain.entity.UserPropertyAssignment;
 import com.datagami.rentaxis.domain.entity.enums.BookingRequestStatus;
 import com.datagami.rentaxis.domain.entity.enums.BookingResourceType;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
@@ -310,13 +311,41 @@ class BookingControllerTest {
     }
 
     @Test
-    void adminList_pmWithoutPropertyId_throwsAccessDenied() {
+    void adminList_pmWithoutPropertyId_searchesEveryAssignedProperty() {
         UUID pmId = UUID.randomUUID();
         authenticateAs(pmId, "ROLE_PROPERTY_MANAGER");
         Pageable pageable = PageRequest.of(0, 20, Sort.by(Sort.Direction.ASC, "createdAt"));
+        UUID secondPropertyId = UUID.randomUUID();
+        UserPropertyAssignment first = new UserPropertyAssignment();
+        first.setUserId(pmId);
+        first.setPropertyId(propertyId);
+        UserPropertyAssignment duplicate = new UserPropertyAssignment();
+        duplicate.setUserId(pmId);
+        duplicate.setPropertyId(propertyId);
+        UserPropertyAssignment second = new UserPropertyAssignment();
+        second.setUserId(pmId);
+        second.setPropertyId(secondPropertyId);
+        when(assignmentRepository.findByUserId(pmId))
+                .thenReturn(List.of(first, duplicate, second));
+        when(bookingService.searchAssignedProperties(
+                tenantId,
+                List.of(propertyId, secondPropertyId),
+                BookingRequestStatus.PENDING,
+                null,
+                pageable))
+                .thenReturn(Page.empty(pageable));
 
-        assertThatThrownBy(() -> controller.list(null, null, null, pageable))
-                .isInstanceOf(AccessDeniedException.class);
+        ResponseEntity<Page<BookingRequestDTO>> response = controller.list(
+                null, BookingRequestStatus.PENDING, null, pageable);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().getContent()).isEmpty();
+        verify(bookingService).searchAssignedProperties(
+                tenantId,
+                List.of(propertyId, secondPropertyId),
+                BookingRequestStatus.PENDING,
+                null,
+                pageable);
     }
 
     @Test
