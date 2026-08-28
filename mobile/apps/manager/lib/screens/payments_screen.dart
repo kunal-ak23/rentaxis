@@ -173,14 +173,16 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
   Widget build(BuildContext context) {
     final m = context.miftah;
     final l = _L(context.isAr);
-    final summaryAsync = ref.watch(_paymentSummaryProvider(_selectedPropertyId));
+    final summaryAsync = ref.watch(
+      _paymentSummaryProvider(_selectedPropertyId),
+    );
     final propertiesAsync = ref.watch(_propertiesForFilterProvider);
 
     return Scaffold(
       backgroundColor: m.background,
       body: RefreshIndicator(
         onRefresh: _refresh,
-        color: AppColors.primary,
+        color: m.isDark ? AppColors.gold400 : AppColors.primary,
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.only(bottom: 24),
@@ -196,6 +198,8 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
                     error: (_, _) => _TopCells(l: l, summary: const {}),
                     data: (summary) => _TopCells(l: l, summary: summary),
                   ),
+                  const SizedBox(height: 10),
+                  _PortfolioPnlEntry(l: l),
                   const SizedBox(height: 16),
                   propertiesAsync.when(
                     loading: () => const SizedBox.shrink(),
@@ -311,12 +315,14 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 12),
               child: _loadingMore
-                  ? const SizedBox(
+                  ? SizedBox(
                       width: 28,
                       height: 28,
                       child: CircularProgressIndicator(
                         strokeWidth: 3,
-                        color: AppColors.accentDark,
+                        color: context.miftah.isDark
+                            ? AppColors.gold400
+                            : AppColors.accentDark,
                       ),
                     )
                   : GoldButton.outlined(
@@ -455,6 +461,80 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen>
 
 // ─── Chrome header ──────────────────────────────────────────────────────────
 
+class _PortfolioPnlEntry extends StatelessWidget {
+  const _PortfolioPnlEntry({required this.l});
+
+  final _L l;
+
+  @override
+  Widget build(BuildContext context) {
+    final m = context.miftah;
+    return Material(
+      color: m.surface,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        key: const Key('portfolio-pnl-entry'),
+        borderRadius: BorderRadius.circular(14),
+        onTap: () => context.push('/portfolio-pnl'),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppColors.accent.withValues(alpha: 0.35)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: AppColors.accent.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  Icons.stacked_line_chart_rounded,
+                  color: m.isDark ? AppColors.gold400 : AppColors.accentDark,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      l.portfolioPL,
+                      style: l.ar
+                          ? GoogleFonts.notoNaskhArabic(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: m.textPrimary,
+                            )
+                          : GoogleFonts.plusJakartaSans(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: m.textPrimary,
+                            ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      l.portfolioPLSubtitle,
+                      style: TextStyle(fontSize: 11, color: m.textMuted),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                context.isAr ? Icons.chevron_left : Icons.chevron_right,
+                color: m.textMuted,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ChromeHeader extends StatelessWidget {
   final _L l;
   const _ChromeHeader({required this.l});
@@ -469,37 +549,52 @@ class _ChromeHeader extends StatelessWidget {
         ),
       ),
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Text(
-            l.ar ? l.overline : l.overline.toUpperCase(),
-            style: l.ar
-                ? GoogleFonts.notoNaskhArabic(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.accent.withValues(alpha: 0.7),
-                  )
-                : GoogleFonts.plusJakartaSans(
-                    fontSize: 11,
-                    letterSpacing: 2.0,
-                    color: AppColors.accent.withValues(alpha: 0.7),
-                  ),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  l.ar ? l.overline : l.overline.toUpperCase(),
+                  style: l.ar
+                      ? GoogleFonts.notoNaskhArabic(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.accent.withValues(alpha: 0.7),
+                        )
+                      : GoogleFonts.plusJakartaSans(
+                          fontSize: 11,
+                          letterSpacing: 2.0,
+                          color: AppColors.accent.withValues(alpha: 0.7),
+                        ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  l.title,
+                  style: l.ar
+                      ? GoogleFonts.notoNaskhArabic(
+                          fontSize: 24,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        )
+                      : GoogleFonts.plusJakartaSans(
+                          fontSize: 24,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.white,
+                        ),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 6),
-          Text(
-            l.title,
-            style: l.ar
-                ? GoogleFonts.notoNaskhArabic(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
-                  )
-                : GoogleFonts.plusJakartaSans(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.white,
-                  ),
+          IconButton(
+            key: const Key('portfolio-pnl-action'),
+            tooltip: l.portfolioPL,
+            onPressed: () => context.push('/portfolio-pnl'),
+            icon: const Icon(
+              Icons.stacked_line_chart_rounded,
+              color: AppColors.accent,
+            ),
           ),
         ],
       ),
@@ -544,7 +639,9 @@ class _TopCells extends StatelessWidget {
                   children: [
                     Icon(
                       Icons.document_scanner_outlined,
-                      color: AppColors.accentDark,
+                      color: m.isDark
+                          ? AppColors.gold400
+                          : AppColors.accentDark,
                       size: 22,
                     ),
                     const SizedBox(height: 8),
@@ -613,7 +710,9 @@ class _TopCells extends StatelessWidget {
                       ? GoogleFonts.notoNaskhArabic
                       : GoogleFonts.plusJakartaSans)(
                         fontSize: 11,
-                        color: AppColors.accentDark,
+                        color: m.isDark
+                            ? AppColors.gold400
+                            : AppColors.accentDark,
                       ),
                 ),
               ],
@@ -716,10 +815,10 @@ class _PropertyFilter extends StatelessWidget {
             border: InputBorder.none,
             contentPadding: EdgeInsets.symmetric(vertical: 10),
           ),
-          style: (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.plusJakartaSans)(
-            fontSize: 13,
-            color: m.textPrimary,
-          ),
+          style: (l.ar
+              ? GoogleFonts.notoNaskhArabic
+              : GoogleFonts
+                    .plusJakartaSans)(fontSize: 13, color: m.textPrimary),
           dropdownColor: m.surface,
           icon: Icon(Icons.expand_more, color: m.textMuted),
           items: [
@@ -982,7 +1081,10 @@ class _PaymentCard extends StatelessWidget {
     required this.onTap,
   });
 
-  ({Color color, IconData icon}) _statusMeta(LegacyMiftahColors m, String status) {
+  ({Color color, IconData icon}) _statusMeta(
+    LegacyMiftahColors m,
+    String status,
+  ) {
     switch (status) {
       case 'PENDING':
       case 'ONLINE_PENDING':
@@ -1317,6 +1419,9 @@ class _L {
 
   String get overline => ar ? 'عمليات الشيكات' : 'CHEQUE OPERATIONS';
   String get title => ar ? 'المدفوعات' : 'Payments';
+  String get portfolioPL => ar ? 'أرباح وخسائر المحفظة' : 'Portfolio P&L';
+  String get portfolioPLSubtitle =>
+      ar ? 'الإجمالي وتفاصيل كل عقار' : 'Overall and per-property breakdown';
 
   String get scanCheque => ar ? 'مسح شيك' : 'Scan cheque';
   String get inHand => ar ? 'في الحوزة' : 'In hand';

@@ -335,12 +335,12 @@ void main() {
       });
     }
 
-    testWidgets('the business name yields instead of being sliced once the '
+    testWidgets('the business name yields before readable offer copy once the '
         'copy outgrows the clamped card', (tester) async {
       // Past 1.5x the card stops growing but the copy does not, and the
-      // business name is the first line to give way. At 3x the CTA label wraps
-      // as well and takes most of the card with it, so the eyebrow follows and
-      // the headline drops to one line — but every line left is whole.
+      // business name is the first line to give way. The larger default card
+      // now retains the short eyebrow at 3x as well; every rendered line must
+      // still be whole.
       await tester.pumpWidget(host(
         AdCard(
           ad: testAd(
@@ -356,12 +356,12 @@ void main() {
         textScale: 3.0,
       ));
 
-      // The headline is the offer, so it is the line still standing after the
-      // business name and then the eyebrow have given up their room.
+      // The business name is optional when the subtitle already identifies the
+      // offer; the headline and eyebrow remain readable rather than truncated.
       expect(find.text('Twenty five percent off every Friday brunch at the '
           'marina'), findsOneWidget);
       expect(find.text('Spice Bazaar'), findsNothing);
-      expect(find.text('MARINA WALK'), findsNothing);
+      expect(find.text('MARINA WALK'), findsOneWidget);
       _expectNoSlicedLine(tester);
     });
 

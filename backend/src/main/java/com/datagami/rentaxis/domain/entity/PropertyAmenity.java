@@ -29,6 +29,10 @@ public class PropertyAmenity extends BaseTenantEntity {
     @Column(columnDefinition = "text")
     private String description;
 
+    /** Newline-delimited HTTPS image URLs, exposed as a gallery to renters. */
+    @Column(name = "photo_urls", columnDefinition = "text")
+    private String photoUrls;
+
     @Column(nullable = false)
     private boolean bookable = true;
 

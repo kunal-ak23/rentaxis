@@ -22,6 +22,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 
 import java.time.LocalDate;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
@@ -69,6 +70,8 @@ class PaymentScheduleServiceOverdueFilterTest {
         Page<PaymentSchedule> empty = new PageImpl<>(List.of());
         when(paymentScheduleRepository.findFiltered(any(), any(), any())).thenReturn(empty);
         when(paymentScheduleRepository.findOverdueFiltered(any(), any(), any())).thenReturn(empty);
+        when(paymentScheduleRepository.findFilteredWithSearch(any(), any(), any(), any(), any(), any())).thenReturn(empty);
+        when(paymentScheduleRepository.findOverdueFilteredWithSearch(any(), any(), any(), any(), any(), any())).thenReturn(empty);
     }
 
     @AfterEach
@@ -97,12 +100,22 @@ class PaymentScheduleServiceOverdueFilterTest {
     }
 
     @Test
-    void overdueTrue_withRenterName_routesToOverdueRenterSearch() {
-        when(paymentScheduleRepository.findOverdueForRenterSearch(any(), any())).thenReturn(List.of());
-
+    void overdueTrue_withSearch_routesToPagedOverdueSearch() {
         service.getPaymentsForProperty(propertyId, null, "ali", true, pageable);
 
-        verify(paymentScheduleRepository).findOverdueForRenterSearch(eq(propertyId), any(LocalDate.class));
-        verify(paymentScheduleRepository, never()).findForRenterSearch(any(), any());
+        verify(paymentScheduleRepository).findOverdueFilteredWithSearch(
+                eq(propertyId), any(LocalDate.class), eq("%ali%"), eq(null), eq(null), eq(pageable));
+        verify(paymentScheduleRepository, never()).findFilteredWithSearch(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void normalSearch_routesToPagedSearch_andParsesNumericAmountAndInstallment() {
+        service.getPaymentsForProperty(propertyId, PaymentStatus.PENDING, "5,000", false, pageable);
+
+        verify(paymentScheduleRepository).findFilteredWithSearch(
+                eq(propertyId), eq(PaymentStatus.PENDING), eq("%5,000%"),
+                eq(5000), eq(new BigDecimal("5000")), eq(pageable));
+        verify(paymentScheduleRepository, never())
+                .findOverdueFilteredWithSearch(any(), any(), any(), any(), any(), any());
     }
 }

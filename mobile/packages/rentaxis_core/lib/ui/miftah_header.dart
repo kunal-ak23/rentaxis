@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../theme/app_theme.dart';
 import 'miftah_tokens.dart';
 
 /// Header furniture shared by the app-root screens.
@@ -39,9 +40,20 @@ class MiftahCircleButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final iconColor = onDark ? Colors.white : scheme.onSurface;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    // A white outline/icon technically meets contrast on dark surfaces, but
+    // disappears into the surrounding chrome at normal phone brightness.
+    // Use the brand brass for regular dark-mode headers; `onDark` remains the
+    // white-on-ink variant for deliberately dark hero chrome.
+    final iconColor = onDark
+        ? Colors.white
+        : isDark
+        ? MiftahColors.brassLight
+        : scheme.onSurface;
     final outline = onDark
         ? Colors.white.withValues(alpha: 0.22)
+        : isDark
+        ? MiftahColors.brass.withValues(alpha: 0.5)
         : MiftahColors.borderStrong;
     final badgeRing = onDark ? MiftahColors.ink : scheme.surface;
     final count = badgeCount ?? 0;
@@ -77,10 +89,9 @@ class MiftahCircleButton extends StatelessWidget {
                 ),
                 child: Text(
                   count > 99 ? '99+' : '$count',
-                  style: MiftahType.badge(color: Colors.white).copyWith(
-                    fontSize: 10.5,
-                    letterSpacing: 0,
-                  ),
+                  style: MiftahType.badge(
+                    color: Colors.white,
+                  ).copyWith(fontSize: 10.5, letterSpacing: 0),
                 ),
               ),
             )
@@ -101,9 +112,7 @@ class MiftahCircleButton extends StatelessWidget {
         ],
       ),
     );
-    return tooltip == null
-        ? button
-        : Tooltip(message: tooltip!, child: button);
+    return tooltip == null ? button : Tooltip(message: tooltip!, child: button);
   }
 }
 
@@ -143,6 +152,7 @@ class MiftahAvatarButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
     final button = GestureDetector(
       onTap: onTap,
       child: Container(
@@ -153,6 +163,9 @@ class MiftahAvatarButton extends StatelessWidget {
           shape: BoxShape.circle,
           color: gradient ? null : MiftahColors.ink,
           gradient: gradient ? MiftahGradients.goldCompact : null,
+          border: !gradient && m.isDark
+              ? Border.all(color: m.borderStrong)
+              : null,
         ),
         child: Text(
           initialsFor(name),
@@ -163,9 +176,7 @@ class MiftahAvatarButton extends StatelessWidget {
         ),
       ),
     );
-    return tooltip == null
-        ? button
-        : Tooltip(message: tooltip!, child: button);
+    return tooltip == null ? button : Tooltip(message: tooltip!, child: button);
   }
 }
 
@@ -192,6 +203,12 @@ class MiftahScreenHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Header titles need to follow the active color scheme. The typography
+    // helpers default to the light-theme ink color, which is unreadable on
+    // the dark dashboard surface.
+    final m = context.miftah;
+    final titleColor = Theme.of(context).colorScheme.onSurface;
+
     return Container(
       color: Theme.of(context).colorScheme.surface,
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
@@ -209,7 +226,9 @@ class MiftahScreenHeader extends StatelessWidget {
                         eyebrow!,
                         style: MiftahType.mono(
                           size: 11,
-                          color: MiftahColors.brassDeep,
+                          color: m.isDark
+                              ? MiftahColors.brassLight
+                              : MiftahColors.brassDeep,
                         ).copyWith(letterSpacing: isAr ? 0 : 0.88),
                       ),
                       const SizedBox(height: 6),
@@ -220,8 +239,12 @@ class MiftahScreenHeader extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: isAr
-                            ? MiftahType.ar(size: 24, weight: FontWeight.w700)
-                            : MiftahType.amount(size: 26),
+                            ? MiftahType.ar(
+                                size: 24,
+                                weight: FontWeight.w700,
+                                color: titleColor,
+                              )
+                            : MiftahType.amount(size: 26, color: titleColor),
                       ),
                   ],
                 ),

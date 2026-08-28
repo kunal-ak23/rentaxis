@@ -4,15 +4,11 @@ import 'package:rentaxis_core/rentaxis_core.dart';
 
 /// The card's height before text scaling.
 ///
-/// 160, not the 140 this shipped with. A card carrying the business-name line
-/// needs 146pt in Latin and 155pt in Arabic at default text scale — measured
-/// against the real faces, with a two-line headline and the CTA pill showing —
-/// and Arabic is the taller script by a wide margin: its fallback face runs
-/// about 1.9em a line against Plus Jakarta's 1.55em. At 140 the last line was
-/// cut through its glyphs on every phone, which reads as a rendering fault
-/// rather than as truncation. 160 leaves the Arabic card whole with headroom
-/// for a system Arabic face taller than the one measured.
-const _cardHeight = 160.0;
+/// A promotion card needs room for a real offer headline, not just a slogan.
+/// 184pt carries the business/subtitle line, a three-line English or Arabic
+/// headline, and the CTA at the default scale; the former 160pt height made
+/// otherwise useful demo offers visibly end in an ellipsis.
+const _cardHeight = 184.0;
 
 /// Past this the card stops growing and the copy yields a line instead — see
 /// [_CopyFit]. Letting it grow with the scaler would hand half the home screen
@@ -261,7 +257,10 @@ class _CopyFit {
         businessName == null ? 0.0 : lineBox(businessName, businessStyle, 1);
 
     var showEyebrow = eyebrow != null;
-    var titleMaxLines = 2;
+    // Three lines keep offer text meaningful on ordinary phone widths. The
+    // fit pass still yields lines progressively at accessibility text scales,
+    // where growing the home carousel without bound would be worse.
+    var titleMaxLines = 3;
     var showBusinessName = businessName != null;
     var titleHeight = lineBox(title, titleStyle, titleMaxLines);
 

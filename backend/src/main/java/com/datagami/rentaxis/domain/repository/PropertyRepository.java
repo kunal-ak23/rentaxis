@@ -45,4 +45,7 @@ public interface PropertyRepository extends JpaRepository<Property, UUID> {
      * path: a cross-tenant id passed to that one is caught only by the filter.
      */
     List<Property> findByTenantIdAndIdIn(UUID tenantId, Collection<UUID> ids);
+
+    /** Explicitly tenant-scoped portfolio ordering for finance summaries. */
+    List<Property> findByTenantIdOrderByNameEnAsc(UUID tenantId);
 }

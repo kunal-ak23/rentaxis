@@ -231,20 +231,23 @@ class _TopBar extends ConsumerWidget {
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 14),
       child: Row(
         children: [
-          // The Arabic wordmark fronts the dashboard in both locales — the
-          // brand is Arabic-first. Tinted to onSurface (ink on the light
-          // header, white in dark mode); the source asset is gold, and the
-          // mockup itself darkens it on light surfaces.
+          // `logo_mark` is a square export with generous transparent padding,
+          // so at header height the visible wordmark was only a few pixels
+          // wide. The horizontal lockup has the right crop and its native gold
+          // is legible on both the paper and dark-surface headers.
           Image.asset(
-            'assets/logo_mark.png',
-            height: 44,
+            'assets/logo_horizontal.png',
+            height: 28,
             fit: BoxFit.contain,
-            color: Theme.of(context).colorScheme.onSurface,
+            errorBuilder: (_, _, _) => Text(
+              'MIFTAH',
+              style: MiftahType.sectionLabel(color: MiftahColors.brass),
+            ),
           ),
           const Spacer(),
-          _CircleButton(
+          MiftahCircleButton(
             icon: Icons.notifications_outlined,
-            dot: unread > 0,
+            showDot: unread > 0,
             onTap: () => context.push('/notifications'),
           ),
           const SizedBox(width: 9),
@@ -267,55 +270,6 @@ class _TopBar extends ConsumerWidget {
               ),
             ),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _CircleButton extends StatelessWidget {
-  const _CircleButton({
-    required this.icon,
-    required this.onTap,
-    this.dot = false,
-  });
-
-  final IconData icon;
-  final VoidCallback onTap;
-  final bool dot;
-
-  @override
-  Widget build(BuildContext context) {
-    final surface = Theme.of(context).colorScheme.surface;
-    return GestureDetector(
-      onTap: onTap,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Container(
-            width: 38,
-            height: 38,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: MiftahColors.borderStrong),
-            ),
-            child: Icon(icon, size: 19, color: MiftahColors.ink),
-          ),
-          if (dot)
-            PositionedDirectional(
-              top: 7,
-              end: 8,
-              child: Container(
-                width: 8,
-                height: 8,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: MiftahColors.dangerBright,
-                  border: Border.all(color: surface, width: 2),
-                ),
-              ),
-            ),
         ],
       ),
     );

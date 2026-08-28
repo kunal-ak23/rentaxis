@@ -110,16 +110,34 @@ public interface PaymentScheduleRepository extends JpaRepository<PaymentSchedule
             @Param("status") PaymentStatus status,
             Pageable pageable);
 
+    /**
+     * Paged portfolio search used by both the finance list and cheque picker.
+     * Text fields are bilingual; numeric values use exact matching after the
+     * service has parsed a possible installment number / amount. Sorting is
+     * supplied by Pageable so the same query supports each caller's ordering.
+     */
     @Query("""
         SELECT ps
         FROM PaymentSchedule ps
         WHERE (:propertyId IS NULL OR ps.property.id = :propertyId)
           AND (:status IS NULL OR ps.status = :status)
-        ORDER BY ps.dueDate DESC, ps.id DESC
+          AND (
+              LOWER(COALESCE(ps.lease.renter.nameEn, '')) LIKE :searchPattern
+              OR LOWER(COALESCE(ps.lease.renter.nameAr, '')) LIKE :searchPattern
+              OR LOWER(COALESCE(ps.property.nameEn, '')) LIKE :searchPattern
+              OR LOWER(COALESCE(ps.property.nameAr, '')) LIKE :searchPattern
+              OR LOWER(COALESCE(ps.unit.unitNumber, '')) LIKE :searchPattern
+              OR (:installmentNumber IS NOT NULL AND ps.installmentNumber = :installmentNumber)
+              OR (:amount IS NOT NULL AND ps.amount = :amount)
+          )
         """)
-    List<PaymentSchedule> findForRenterSearch(
+    Page<PaymentSchedule> findFilteredWithSearch(
             @Param("propertyId") UUID propertyId,
-            @Param("status") PaymentStatus status);
+            @Param("status") PaymentStatus status,
+            @Param("searchPattern") String searchPattern,
+            @Param("installmentNumber") Integer installmentNumber,
+            @Param("amount") BigDecimal amount,
+            Pageable pageable);
 
     /**
      * Paged "overdue" listing. Mirrors the overdue predicate used by the
@@ -142,7 +160,7 @@ public interface PaymentScheduleRepository extends JpaRepository<PaymentSchedule
             @Param("today") LocalDate today,
             Pageable pageable);
 
-    /** Unpaged overdue variant for the in-memory renter-name search path. */
+    /** Paged overdue variant with the same portfolio search fields. */
     @Query("""
         SELECT ps
         FROM PaymentSchedule ps
@@ -150,11 +168,23 @@ public interface PaymentScheduleRepository extends JpaRepository<PaymentSchedule
           AND ps.status IN ('PENDING', 'COLLECTED', 'OVERDUE')
           AND ps.dueDate < :today
           AND ps.lease.status NOT IN ('DRAFT', 'PENDING_SIGNATURE')
-        ORDER BY ps.dueDate DESC, ps.id DESC
+          AND (
+              LOWER(COALESCE(ps.lease.renter.nameEn, '')) LIKE :searchPattern
+              OR LOWER(COALESCE(ps.lease.renter.nameAr, '')) LIKE :searchPattern
+              OR LOWER(COALESCE(ps.property.nameEn, '')) LIKE :searchPattern
+              OR LOWER(COALESCE(ps.property.nameAr, '')) LIKE :searchPattern
+              OR LOWER(COALESCE(ps.unit.unitNumber, '')) LIKE :searchPattern
+              OR (:installmentNumber IS NOT NULL AND ps.installmentNumber = :installmentNumber)
+              OR (:amount IS NOT NULL AND ps.amount = :amount)
+          )
         """)
-    List<PaymentSchedule> findOverdueForRenterSearch(
+    Page<PaymentSchedule> findOverdueFilteredWithSearch(
             @Param("propertyId") UUID propertyId,
-            @Param("today") LocalDate today);
+            @Param("today") LocalDate today,
+            @Param("searchPattern") String searchPattern,
+            @Param("installmentNumber") Integer installmentNumber,
+            @Param("amount") BigDecimal amount,
+            Pageable pageable);
 
     /**
      * Cheques in hand that are due (or overdue) for bank deposit: status is

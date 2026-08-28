@@ -27,6 +27,7 @@ import com.datagami.rentaxis.domain.repository.BookingRequestRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.ParkingSpotRepository;
 import com.datagami.rentaxis.domain.repository.PropertyAmenityRepository;
+import com.datagami.rentaxis.domain.repository.PropertyRepository;
 import com.datagami.rentaxis.domain.repository.RenterRepository;
 import com.datagami.rentaxis.domain.repository.UnitRepository;
 import com.datagami.rentaxis.domain.repository.UserPropertyAssignmentRepository;
@@ -74,6 +75,7 @@ class BookingControllerTest {
     @Mock UserRepository userRepository;
     @Mock UserPropertyAssignmentRepository assignmentRepository;
     @Mock PropertyAmenityRepository amenityRepository;
+    @Mock PropertyRepository propertyRepository;
     @Mock ParkingSpotRepository parkingSpotRepository;
     @Mock BookingRequestRepository bookingRequestRepository;
 
@@ -95,6 +97,7 @@ class BookingControllerTest {
         Property property = new Property();
         property.setId(propertyId);
         property.setNameEn("Marina Heights");
+        property.setNameAr("مارينا هايتس");
         unit = new Unit();
         unit.setId(UUID.randomUUID());
         unit.setUnitNumber("1204");
@@ -108,6 +111,8 @@ class BookingControllerTest {
         lenient().when(userRepository.findByTenantIdAndIdIn(eq(tenantId), any()))
                 .thenReturn(List.of());
         lenient().when(unitRepository.findAllById(any())).thenReturn(List.of(unit));
+        lenient().when(propertyRepository.findByTenantIdAndIdIn(eq(tenantId), any()))
+                .thenReturn(List.of());
     }
 
     @AfterEach
@@ -205,12 +210,16 @@ class BookingControllerTest {
         BookingRequest saved = booking(BookingResourceType.AMENITY);
         when(bookingService.create(eq(tenantId), eq(renterUserId), eq(unit), any())).thenReturn(saved);
         when(amenityRepository.findAllById(List.of(saved.getAmenityId()))).thenReturn(List.of());
+        when(propertyRepository.findByTenantIdAndIdIn(tenantId, List.of(propertyId)))
+                .thenReturn(List.of(unit.getProperty()));
 
         ResponseEntity<BookingRequestDTO> response = controller.create(new BookingCreateRequest(
                 BookingResourceType.AMENITY, saved.getAmenityId(), unit.getId(), null, null));
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(response.getBody().unitNumber()).isEqualTo("1204");
+        assertThat(response.getBody().propertyNameEn()).isEqualTo("Marina Heights");
+        assertThat(response.getBody().propertyNameAr()).isEqualTo("مارينا هايتس");
     }
 
     @Test

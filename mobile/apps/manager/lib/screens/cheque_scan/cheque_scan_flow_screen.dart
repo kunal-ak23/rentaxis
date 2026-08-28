@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -132,7 +133,7 @@ class _ChequeScanFlowScreenState extends ConsumerState<ChequeScanFlowScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (sheetCtx) =>
-          _PaymentPickerSheet(service: ref.read(_paymentServiceProvider)),
+          PaymentPickerSheet(service: ref.read(_paymentServiceProvider)),
     );
     if (picked != null && mounted) {
       setState(() {
@@ -283,21 +284,51 @@ class _ChequeScanFlowScreenState extends ConsumerState<ChequeScanFlowScreen> {
 /// Bottom sheet listing PENDING payments so the user can pick which one
 /// the scanned cheque settles. Manual until backend gets an auto-match
 /// endpoint.
-class _PaymentPickerSheet extends StatefulWidget {
+class PaymentPickerSheet extends StatefulWidget {
   final PaymentService service;
-  const _PaymentPickerSheet({required this.service});
+  const PaymentPickerSheet({super.key, required this.service});
 
   @override
-  State<_PaymentPickerSheet> createState() => _PaymentPickerSheetState();
+  State<PaymentPickerSheet> createState() => _PaymentPickerSheetState();
 }
 
-class _PaymentPickerSheetState extends State<_PaymentPickerSheet> {
+class _PaymentPickerSheetState extends State<PaymentPickerSheet> {
+  final _searchController = TextEditingController();
+  Timer? _searchDebounce;
+  String _query = '';
   late Future<({List<Map<String, dynamic>> rows, int hidden})> _future;
 
   @override
   void initState() {
     super.initState();
-    _future = _load();
+    _future = _load('');
+  }
+
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _onSearchChanged(String value) {
+    _searchDebounce?.cancel();
+    setState(() => _query = value);
+    _searchDebounce = Timer(const Duration(milliseconds: 350), () {
+      if (!mounted) return;
+      setState(() {
+        _future = _load(value);
+      });
+    });
+  }
+
+  void _clearSearch() {
+    _searchDebounce?.cancel();
+    _searchController.clear();
+    setState(() {
+      _query = '';
+      _future = _load('');
+    });
   }
 
   /// Collectable rows — PENDING and OVERDUE, matching the payments screen
@@ -305,12 +336,25 @@ class _PaymentPickerSheetState extends State<_PaymentPickerSheet> {
   /// per status) instead of filtering a truncated tenant-wide list
   /// client-side. `hidden` counts collectable rows the server still holds
   /// beyond what was fetched, so truncation is visible instead of silent.
-  Future<({List<Map<String, dynamic>> rows, int hidden})> _load() async {
-    const size = 100;
+  Future<({List<Map<String, dynamic>> rows, int hidden})> _load(
+    String query,
+  ) async {
+    const size = 50;
     const sort = ['dueDate,asc', 'id,asc'];
+    final search = query.trim();
     final pages = await Future.wait([
-      widget.service.getPaymentsPage(status: 'PENDING', sort: sort, size: size),
-      widget.service.getPaymentsPage(status: 'OVERDUE', sort: sort, size: size),
+      widget.service.getPaymentsPage(
+        status: 'PENDING',
+        search: search,
+        sort: sort,
+        size: size,
+      ),
+      widget.service.getPaymentsPage(
+        status: 'OVERDUE',
+        search: search,
+        sort: sort,
+        size: size,
+      ),
     ]);
     final rows = <Map<String, dynamic>>[];
     var hidden = 0;
@@ -339,8 +383,11 @@ class _PaymentPickerSheetState extends State<_PaymentPickerSheet> {
     final bodyFont = l.ar
         ? GoogleFonts.notoNaskhArabic
         : GoogleFonts.plusJakartaSans;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+    final keyboardHeight = MediaQuery.viewInsetsOf(context).bottom;
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOut,
+      padding: EdgeInsets.fromLTRB(20, 16, 20, 24 + keyboardHeight),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -376,8 +423,46 @@ class _PaymentPickerSheetState extends State<_PaymentPickerSheet> {
             style: bodyFont(fontSize: 12, color: m.textMuted),
           ),
           const SizedBox(height: 14),
+          TextField(
+            key: const ValueKey('paymentPickerSearch'),
+            controller: _searchController,
+            onChanged: _onSearchChanged,
+            textInputAction: TextInputAction.search,
+            style: bodyFont(fontSize: 13, color: m.textPrimary),
+            decoration: InputDecoration(
+              hintText: l.searchHint,
+              hintStyle: bodyFont(fontSize: 12, color: m.textMuted),
+              prefixIcon: Icon(Icons.search, size: 20, color: m.textMuted),
+              suffixIcon: _query.isEmpty
+                  ? null
+                  : IconButton(
+                      key: const ValueKey('paymentPickerClearSearch'),
+                      tooltip: l.clearSearch,
+                      onPressed: _clearSearch,
+                      icon: Icon(Icons.close, size: 18, color: m.textMuted),
+                    ),
+              filled: true,
+              fillColor: m.surface,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 12,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: m.border),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(
+                  color: Theme.of(context).colorScheme.primary,
+                  width: 1.5,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
           SizedBox(
-            height: 360,
+            height: keyboardHeight > 0 ? 220 : 360,
             child: FutureBuilder<({List<Map<String, dynamic>> rows, int hidden})>(
               future: _future,
               builder: (context, snap) {
@@ -398,7 +483,7 @@ class _PaymentPickerSheetState extends State<_PaymentPickerSheet> {
                 if (pending.isEmpty) {
                   return Center(
                     child: Text(
-                      l.noPending,
+                      _query.trim().isEmpty ? l.noPending : l.noMatches,
                       style: bodyFont(fontSize: 13, color: m.textMuted),
                     ),
                   );
@@ -508,11 +593,24 @@ class _PickerL {
   String get pickPaymentHint => ar
       ? 'سيتم ربط الشيك الممسوح بالقسط المختار.'
       : 'The scanned cheque will be linked to the selected installment.';
+  String get searchHint => ar
+      ? 'ابحث بالمستأجر أو العقار أو الوحدة أو القسط أو المبلغ'
+      : 'Search renter, property, unit, installment, or amount';
+  String get clearSearch => ar ? 'مسح البحث' : 'Clear search';
   String get noPending =>
       ar ? 'لا توجد دفعات معلّقة للتحصيل.' : 'No pending payments to collect.';
-  String moreNotShown(int count) => ar
-      ? '$count دفعة أخرى غير معروضة — الأقرب استحقاقًا تظهر أولًا.'
-      : '$count more not shown — soonest due are listed first.';
+  String get noMatches => ar
+      ? 'لا توجد دفعات معلّقة تطابق بحثك.'
+      : 'No pending payments match your search.';
+  String moreNotShown(int count) {
+    final formatted = NumberFormat.decimalPattern(
+      ar ? 'ar' : 'en',
+    ).format(count);
+    return ar
+        ? '$formatted دفعة مطابقة أخرى — حدّد البحث لعرضها.'
+        : '$formatted more matches — refine the search to narrow them down.';
+  }
+
   String failedToLoad(String error) =>
       ar ? 'تعذّر تحميل المدفوعات: $error' : 'Failed to load payments: $error';
   String rowMeta(String renter, dynamic installment, String due) => ar

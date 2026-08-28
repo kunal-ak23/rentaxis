@@ -17,6 +17,7 @@ import 'screens/create_ticket_screen.dart';
 import 'screens/ticket_detail_screen.dart';
 import 'screens/renters_screen.dart';
 import 'screens/finance_screen.dart';
+import 'screens/portfolio_pnl_screen.dart';
 import 'screens/more_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/staff_screen.dart';
@@ -87,6 +88,18 @@ final routerProvider = Provider<GoRouter>((ref) {
       }
       if (isLoggedIn && isLoginRoute) {
         return '/';
+      }
+
+      // PROPERTY_MANAGER accounts operate payments and cheques, but the
+      // accounts/transactions/reports endpoints are TENANT_ADMIN-only. Keep a
+      // stale deep link or restored /finance location from dead-ending on 403.
+      final canAccessFullFinance =
+          authState.role == 'TENANT_ADMIN' || authState.role == 'SUPER_ADMIN';
+      final isAdminFinanceRoute =
+          state.matchedLocation == '/finance' ||
+          state.matchedLocation == '/finance-reports';
+      if (isLoggedIn && !canAccessFullFinance && isAdminFinanceRoute) {
+        return '/payments';
       }
       return null;
     },
@@ -251,6 +264,11 @@ final routerProvider = Provider<GoRouter>((ref) {
                 fadeTransition(const FinanceScreen(), state),
           ),
           GoRoute(
+            path: '/portfolio-pnl',
+            pageBuilder: (context, state) =>
+                fadeTransition(const PortfolioPnlScreen(), state),
+          ),
+          GoRoute(
             path: '/more',
             pageBuilder: (context, state) =>
                 fadeTransition(const MoreScreen(), state),
@@ -308,8 +326,13 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: '/bookings',
-            pageBuilder: (context, state) =>
-                fadeTransition(const BookingApprovalsScreen(), state),
+            pageBuilder: (context, state) => fadeTransition(
+              BookingApprovalsScreen(
+                initialPropertyId: state.uri.queryParameters['propertyId'],
+                initialBookingId: state.uri.queryParameters['bookingId'],
+              ),
+              state,
+            ),
           ),
           GoRoute(
             path: '/vendors',

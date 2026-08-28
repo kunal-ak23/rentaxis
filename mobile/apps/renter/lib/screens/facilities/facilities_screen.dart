@@ -24,12 +24,37 @@ class _L {
       : 'When your landlord adds amenities or parking for your unit, '
             'they appear here.';
   String get request => ar ? 'طلب حجز' : 'Request';
+  String get viewPhotos => ar ? 'عرض الصور' : 'View photos';
+  String get photos => ar ? 'صور المرفق' : 'Facility photos';
   String get held => ar ? 'محجوز' : 'Held';
   String get notBookable => ar ? 'غير قابل للحجز' : 'Not bookable';
   String get unit => ar ? 'الوحدة' : 'Unit';
   String get preferredDate =>
       ar ? 'التاريخ المفضل (اختياري)' : 'Preferred date (optional)';
   String get pickADate => ar ? 'اختر تاريخًا' : 'Pick a date';
+  String get parkingPeriod => ar ? 'فترة الموقف' : 'Parking period';
+  String get startDate => ar ? 'تاريخ البدء' : 'Start date';
+  String get endDate => ar ? 'تاريخ الانتهاء' : 'End date';
+  String get parkingDatesRequired => ar
+      ? 'اختر تاريخ البدء والانتهاء للموقف.'
+      : 'Choose a start and end date for parking.';
+  String get endDateAfterStart => ar
+      ? 'يجب أن يكون تاريخ الانتهاء في تاريخ البدء أو بعده.'
+      : 'End date must be on or after the start date.';
+  String get preferredTime => ar
+      ? 'الفترة الزمنية المفضلة (اختياري)'
+      : 'Preferred time slot (optional)';
+  String get startTime => ar ? 'وقت البدء' : 'Start time';
+  String get endTime => ar ? 'وقت الانتهاء' : 'End time';
+  String get pickTime => ar ? 'اختر الوقت' : 'Pick time';
+  String get timeNeedsDate => ar
+      ? 'اختر تاريخًا للفترة الزمنية المطلوبة.'
+      : 'Choose a date for the requested time slot.';
+  String get timeNeedsBothEnds =>
+      ar ? 'اختر وقت البدء والانتهاء.' : 'Choose both a start and end time.';
+  String get endAfterStart => ar
+      ? 'يجب أن يكون وقت الانتهاء بعد وقت البدء.'
+      : 'End time must be after start time.';
   String get noteOptional => ar ? 'ملاحظة (اختياري)' : 'Note (optional)';
   String get noteHint =>
       ar ? 'مثال: حفلة عائلية يوم الجمعة' : 'e.g. family gathering on Friday';
@@ -91,6 +116,12 @@ List<Map<String, dynamic>> _rows(dynamic value) => (value as List? ?? const [])
     .map((r) => Map<String, dynamic>.from(r))
     .toList();
 
+List<String> _photoUrls(Map<String, dynamic> row) =>
+    (row['photoUrls'] as List? ?? const [])
+        .map((url) => url?.toString().trim() ?? '')
+        .where((url) => url.isNotEmpty)
+        .toList();
+
 /// The renter's own open request per resource id. PENDING/APPROVED only —
 /// terminal statuses do not block a new request. `/v1/bookings/my` is
 /// createdAt ASC, so the last write wins (the newest open request).
@@ -113,6 +144,10 @@ String _localDate(DateTime d) =>
     '${d.year.toString().padLeft(4, '0')}-'
     '${d.month.toString().padLeft(2, '0')}-'
     '${d.day.toString().padLeft(2, '0')}';
+
+String _localTime(TimeOfDay time) =>
+    '${time.hour.toString().padLeft(2, '0')}:'
+    '${time.minute.toString().padLeft(2, '0')}:00';
 
 /// Browse the amenities and parking spots visible to my unit(s), and raise
 /// booking requests. Parameterless and self-fetching (router discards `extra`
@@ -355,6 +390,7 @@ class _AmenityCard extends ConsumerWidget {
     final pendingCount = (row['pendingCount'] as num?)?.toInt() ?? 0;
     final property = row['propertyName']?.toString();
     final description = row['description']?.toString();
+    final photos = _photoUrls(row);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -387,6 +423,18 @@ class _AmenityCard extends ConsumerWidget {
                         ),
                 ),
               ),
+              if (photos.isNotEmpty)
+                IconButton(
+                  tooltip: l.viewPhotos,
+                  icon: const Icon(Icons.photo_library_outlined),
+                  color: AppColors.accentDark,
+                  onPressed: () => _showFacilityPhotos(
+                    context,
+                    title: _displayName(row, l.ar),
+                    photos: photos,
+                    l: l,
+                  ),
+                ),
               if (myOpen != null)
                 StatusBadge(
                   label: l.status(myOpen!['status']?.toString() ?? ''),
@@ -428,7 +476,8 @@ class _AmenityCard extends ConsumerWidget {
               l.pendingHint(pendingCount),
               style: (l.ar
                   ? GoogleFonts.notoNaskhArabic
-                  : GoogleFonts.plusJakartaSans)(fontSize: 12, color: m.warning),
+                  : GoogleFonts
+                        .plusJakartaSans)(fontSize: 12, color: m.warning),
             ),
           ],
           if (bookable && !blocking) ...[
@@ -464,6 +513,7 @@ class _SpotCard extends ConsumerWidget {
     final pendingCount = (row['pendingCount'] as num?)?.toInt() ?? 0;
     final level = row['level']?.toString();
     final property = row['propertyName']?.toString();
+    final photos = _photoUrls(row);
     final meta = [
       ?property,
       if (level != null && level.isNotEmpty) l.levelLabel(level),
@@ -502,6 +552,18 @@ class _SpotCard extends ConsumerWidget {
                   ),
                 ),
               ),
+              if (photos.isNotEmpty)
+                IconButton(
+                  tooltip: l.viewPhotos,
+                  icon: const Icon(Icons.photo_library_outlined),
+                  color: AppColors.accentDark,
+                  onPressed: () => _showFacilityPhotos(
+                    context,
+                    title: row['spotNumber']?.toString() ?? '—',
+                    photos: photos,
+                    l: l,
+                  ),
+                ),
               if (myOpen != null)
                 StatusBadge(
                   label: l.status(myOpen!['status']?.toString() ?? ''),
@@ -527,7 +589,8 @@ class _SpotCard extends ConsumerWidget {
               l.pendingHint(pendingCount),
               style: (l.ar
                   ? GoogleFonts.notoNaskhArabic
-                  : GoogleFonts.plusJakartaSans)(fontSize: 12, color: m.warning),
+                  : GoogleFonts
+                        .plusJakartaSans)(fontSize: 12, color: m.warning),
             ),
           ],
           if (!held && myOpen == null) ...[
@@ -545,6 +608,109 @@ class _SpotCard extends ConsumerWidget {
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+void _showFacilityPhotos(
+  BuildContext context, {
+  required String title,
+  required List<String> photos,
+  required _L l,
+}) {
+  showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: context.miftah.surface,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (_) => _FacilityPhotoSheet(title: title, photos: photos, l: l),
+  );
+}
+
+class _FacilityPhotoSheet extends StatefulWidget {
+  const _FacilityPhotoSheet({
+    required this.title,
+    required this.photos,
+    required this.l,
+  });
+
+  final String title;
+  final List<String> photos;
+  final _L l;
+
+  @override
+  State<_FacilityPhotoSheet> createState() => _FacilityPhotoSheetState();
+}
+
+class _FacilityPhotoSheetState extends State<_FacilityPhotoSheet> {
+  var _index = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    final m = context.miftah;
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 38,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: m.border,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              widget.title,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+                color: m.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 260,
+              child: PageView.builder(
+                itemCount: widget.photos.length,
+                onPageChanged: (index) => setState(() => _index = index),
+                itemBuilder: (_, index) => ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: Image.network(
+                    widget.photos[index],
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => Center(
+                      child: Icon(
+                        Icons.broken_image_outlined,
+                        size: 36,
+                        color: m.textMuted,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            if (widget.photos.length > 1) ...[
+              const SizedBox(height: 12),
+              Center(
+                child: Text(
+                  '${_index + 1} / ${widget.photos.length}',
+                  style: TextStyle(fontSize: 12, color: m.textMuted),
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -641,6 +807,9 @@ class _RequestSheet extends ConsumerStatefulWidget {
 class _RequestSheetState extends ConsumerState<_RequestSheet> {
   final _noteCtrl = TextEditingController();
   DateTime? _preferredDate;
+  DateTime? _preferredEndDate;
+  TimeOfDay? _preferredStartTime;
+  TimeOfDay? _preferredEndTime;
   String? _selectedUnitId;
   bool _submitting = false;
 
@@ -654,6 +823,33 @@ class _RequestSheetState extends ConsumerState<_RequestSheet> {
     final l = _L(context.isAr);
     final unitId = _selectedUnitId;
     if (unitId == null) return;
+    final isParking = widget.resourceType == 'PARKING_SPOT';
+    final start = _preferredStartTime;
+    final end = _preferredEndTime;
+    if (isParking) {
+      if (_preferredDate == null || _preferredEndDate == null) {
+        _toast(l.parkingDatesRequired);
+        return;
+      }
+      if (_preferredEndDate!.isBefore(_preferredDate!)) {
+        _toast(l.endDateAfterStart);
+        return;
+      }
+    }
+    if (!isParking && (start == null) != (end == null)) {
+      _toast(l.timeNeedsBothEnds);
+      return;
+    }
+    if (!isParking && start != null && _preferredDate == null) {
+      _toast(l.timeNeedsDate);
+      return;
+    }
+    if (!isParking &&
+        start != null &&
+        !start.replacing(hour: end!.hour, minute: end.minute).isAfter(start)) {
+      _toast(l.endAfterStart);
+      return;
+    }
     setState(() => _submitting = true);
     try {
       await ref.read(facilityServiceProvider).createBooking({
@@ -662,6 +858,11 @@ class _RequestSheetState extends ConsumerState<_RequestSheet> {
         'unitId': unitId,
         if (_preferredDate != null)
           'preferredDate': _localDate(_preferredDate!),
+        if (isParking && _preferredEndDate != null)
+          'preferredEndDate': _localDate(_preferredEndDate!),
+        if (!isParking && start != null)
+          'preferredStartTime': _localTime(start),
+        if (!isParking && end != null) 'preferredEndTime': _localTime(end),
         if (_noteCtrl.text.trim().isNotEmpty) 'note': _noteCtrl.text.trim(),
       });
       if (!mounted) return;
@@ -695,10 +896,38 @@ class _RequestSheetState extends ConsumerState<_RequestSheet> {
     );
   }
 
+  Future<void> _pickDate({required bool isEnd}) async {
+    final now = DateTime.now();
+    final start = DateTime(now.year, now.month, now.day);
+    final initial = isEnd
+        ? _preferredEndDate ?? _preferredDate ?? start
+        : _preferredDate ?? start;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial.isBefore(start) ? start : initial,
+      firstDate: start,
+      lastDate: start.add(const Duration(days: 365)),
+    );
+    if (picked != null && mounted) {
+      setState(() {
+        if (isEnd) {
+          _preferredEndDate = picked;
+        } else {
+          _preferredDate = picked;
+          if (_preferredEndDate != null &&
+              _preferredEndDate!.isBefore(picked)) {
+            _preferredEndDate = null;
+          }
+        }
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final m = context.miftah;
     final l = _L(context.isAr);
+    final isParking = widget.resourceType == 'PARKING_SPOT';
     final leases = ref.watch(activeLeasesProvider);
 
     // A drag-to-dismiss or barrier tap must not pop the sheet mid-submit —
@@ -827,7 +1056,7 @@ class _RequestSheetState extends ConsumerState<_RequestSheet> {
                         ),
                       const SizedBox(height: 12),
                       Text(
-                        l.preferredDate,
+                        isParking ? l.parkingPeriod : l.preferredDate,
                         style: TextStyle(
                           fontSize: 12.5,
                           fontWeight: FontWeight.w700,
@@ -835,58 +1064,89 @@ class _RequestSheetState extends ConsumerState<_RequestSheet> {
                         ),
                       ),
                       const SizedBox(height: 6),
-                      InkWell(
-                        borderRadius: BorderRadius.circular(12),
-                        onTap: () async {
-                          final now = DateTime.now();
-                          final picked = await showDatePicker(
-                            context: context,
-                            initialDate: _preferredDate ?? now,
-                            firstDate: DateTime(now.year, now.month, now.day),
-                            lastDate: now.add(const Duration(days: 365)),
-                          );
-                          if (picked != null) {
-                            setState(() => _preferredDate = picked);
-                          }
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 15,
-                          ),
-                          decoration: BoxDecoration(
-                            color: m.surface,
-                            border: Border.all(color: m.border),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.calendar_today_outlined,
-                                size: 17,
-                                color: m.textMuted,
+                      if (isParking)
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _DateSlotField(
+                                label: l.startDate,
+                                value: _preferredDate,
+                                placeholder: l.pickADate,
+                                onTap: () => _pickDate(isEnd: false),
                               ),
-                              const SizedBox(width: 10),
-                              Text(
-                                _preferredDate == null
-                                    ? l.pickADate
-                                    : '${_preferredDate!.day.toString().padLeft(2, '0')}/'
-                                          '${_preferredDate!.month.toString().padLeft(2, '0')}/'
-                                          '${_preferredDate!.year}',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: _preferredDate == null
-                                      ? m.textMuted
-                                      : m.textPrimary,
-                                  fontWeight: _preferredDate == null
-                                      ? FontWeight.w400
-                                      : FontWeight.w600,
-                                ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: _DateSlotField(
+                                label: l.endDate,
+                                value: _preferredEndDate,
+                                placeholder: l.pickADate,
+                                onTap: () => _pickDate(isEnd: true),
                               ),
-                            ],
+                            ),
+                          ],
+                        )
+                      else ...[
+                        _DateSlotField(
+                          label: l.preferredDate,
+                          value: _preferredDate,
+                          placeholder: l.pickADate,
+                          onTap: () => _pickDate(isEnd: false),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          l.preferredTime,
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                            color: m.textSecondary,
                           ),
                         ),
-                      ),
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _TimeSlotField(
+                                label: l.startTime,
+                                value: _preferredStartTime,
+                                placeholder: l.pickTime,
+                                onTap: () async {
+                                  final picked = await showTimePicker(
+                                    context: context,
+                                    initialTime:
+                                        _preferredStartTime ?? TimeOfDay.now(),
+                                  );
+                                  if (picked != null) {
+                                    setState(
+                                      () => _preferredStartTime = picked,
+                                    );
+                                  }
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: _TimeSlotField(
+                                label: l.endTime,
+                                value: _preferredEndTime,
+                                placeholder: l.pickTime,
+                                onTap: () async {
+                                  final picked = await showTimePicker(
+                                    context: context,
+                                    initialTime:
+                                        _preferredEndTime ??
+                                        _preferredStartTime ??
+                                        TimeOfDay.now(),
+                                  );
+                                  if (picked != null) {
+                                    setState(() => _preferredEndTime = picked);
+                                  }
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                       const SizedBox(height: 12),
                       TextField(
                         key: const Key('booking-note'),
@@ -914,6 +1174,102 @@ class _RequestSheetState extends ConsumerState<_RequestSheet> {
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DateSlotField extends StatelessWidget {
+  const _DateSlotField({
+    required this.label,
+    required this.value,
+    required this.placeholder,
+    required this.onTap,
+  });
+
+  final String label;
+  final DateTime? value;
+  final String placeholder;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final m = context.miftah;
+    final date = value;
+    final text = date == null
+        ? placeholder
+        : '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        decoration: BoxDecoration(
+          color: m.surface,
+          border: Border.all(color: m.border),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: TextStyle(fontSize: 11, color: m.textMuted)),
+            const SizedBox(height: 3),
+            Text(
+              text,
+              style: TextStyle(
+                fontSize: 13,
+                color: date == null ? m.textMuted : m.textPrimary,
+                fontWeight: date == null ? FontWeight.w400 : FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TimeSlotField extends StatelessWidget {
+  const _TimeSlotField({
+    required this.label,
+    required this.value,
+    required this.placeholder,
+    required this.onTap,
+  });
+
+  final String label;
+  final TimeOfDay? value;
+  final String placeholder;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final m = context.miftah;
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        decoration: BoxDecoration(
+          color: m.surface,
+          border: Border.all(color: m.border),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: TextStyle(fontSize: 11, color: m.textMuted)),
+            const SizedBox(height: 3),
+            Text(
+              value?.format(context) ?? placeholder,
+              style: TextStyle(
+                fontSize: 13,
+                color: value == null ? m.textMuted : m.textPrimary,
+                fontWeight: value == null ? FontWeight.w400 : FontWeight.w600,
+              ),
+            ),
+          ],
         ),
       ),
     );

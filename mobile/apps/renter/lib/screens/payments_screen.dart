@@ -489,12 +489,13 @@ class _ChequeCard extends StatelessWidget {
 
     // Ink inversion for the live cheque; everything else is a flat white card.
     final onInk = isActive;
-    final titleColor = onInk ? Colors.white : MiftahColors.textPrimary;
+    final m = context.miftah;
+    final titleColor = onInk ? Colors.white : m.textPrimary;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
       decoration: BoxDecoration(
-        color: onInk ? MiftahColors.ink : Theme.of(context).colorScheme.surface,
+        color: onInk ? MiftahColors.ink : m.surface,
         borderRadius: BorderRadius.circular(MiftahRadii.card),
         border: onInk ? null : Border.all(color: MiftahColors.border),
       ),
@@ -510,7 +511,7 @@ class _ChequeCard extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: onInk
                       ? MiftahColors.brass.withValues(alpha: 0.18)
-                      : MiftahBadge.colorsFor(spec.tone).bg,
+                      : MiftahBadge.colorsFor(spec.tone, isDark: m.isDark).bg,
                   borderRadius: BorderRadius.circular(11),
                 ),
                 child: Icon(
@@ -518,7 +519,7 @@ class _ChequeCard extends StatelessWidget {
                   size: 18,
                   color: onInk
                       ? MiftahColors.brassLight
-                      : MiftahBadge.colorsFor(spec.tone).fg,
+                      : MiftahBadge.colorsFor(spec.tone, isDark: m.isDark).fg,
                 ),
               ),
               const SizedBox(width: 11),
@@ -657,6 +658,7 @@ class _L {
 
   // Timeline card
   String get chequeWord => ar ? 'شيك' : 'Cheque';
+
   /// Sentence case, unpadded — the redesign drops the tracked-caps treatment.
   String chequeOfTotal(dynamic n, int total) =>
       ar ? 'شيك $n من $total' : 'Cheque $n of $total';

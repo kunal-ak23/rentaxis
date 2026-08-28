@@ -12,6 +12,11 @@
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en</string>
+		<string>ar</string>
+	</array>
 	<key>CFBundleName</key>
 	<string>Miftah Resident</string>
 	<key>CFBundlePackageType</key>
@@ -24,6 +29,14 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>NSCameraUsageDescription</key>
+	<string>Miftah Resident uses the camera to add photos to maintenance requests.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Miftah Resident optionally uses your location to show nearby rental listings.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Miftah Resident uses selected photos as attachments for maintenance requests.</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>

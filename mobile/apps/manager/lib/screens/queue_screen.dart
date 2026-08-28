@@ -90,13 +90,24 @@ class QueueScreen extends ConsumerWidget {
               in bookings.valueOrNull?.rows ?? const <Map<String, dynamic>>[])
             _QueueItem(
               kind: _QueueKind.booking,
-              title: (b['amenityName'] ?? b['facilityName'] ?? l.aBooking)
-                  .toString(),
+              title: (b['resourceName'] ?? l.aBooking).toString(),
               subtitle: l.bookingSub(
                 b['renterName']?.toString(),
-                b['slotStart']?.toString() ?? b['startTime']?.toString(),
+                l.propertyName(b),
+                b['unitNumber']?.toString(),
+                b['preferredDate']?.toString(),
+                b['preferredEndDate']?.toString(),
+                b['preferredStartTime']?.toString(),
+                b['preferredEndTime']?.toString(),
               ),
-              route: '/bookings',
+              route: Uri(
+                path: '/bookings',
+                queryParameters: {
+                  if (b['propertyId'] != null)
+                    'propertyId': '${b['propertyId']}',
+                  if (b['id'] != null) 'bookingId': '${b['id']}',
+                },
+              ).toString(),
               when: DateTime.tryParse(b['createdAt']?.toString() ?? ''),
             ),
           for (final lease
@@ -202,8 +213,9 @@ class _QueueHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
     return Container(
-      color: Theme.of(context).colorScheme.surface,
+      color: m.surface,
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.baseline,
@@ -213,11 +225,18 @@ class _QueueHeader extends StatelessWidget {
             child: Text(
               l.title,
               style: l.ar
-                  ? MiftahType.ar(size: 21, weight: FontWeight.w700)
-                  : MiftahType.title(),
+                  ? MiftahType.ar(
+                      size: 21,
+                      weight: FontWeight.w700,
+                      color: m.textPrimary,
+                    )
+                  : MiftahType.title(color: m.textPrimary),
             ),
           ),
-          Text(l.waitingCount(count), style: MiftahType.mono(size: 12.5)),
+          Text(
+            l.waitingCount(count),
+            style: MiftahType.mono(size: 12.5, color: m.textMuted),
+          ),
         ],
       ),
     );
@@ -232,28 +251,25 @@ class _PartialFailure extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
-        color: MiftahColors.dangerTint,
-        border: Border.all(color: MiftahColors.dangerTintBorder),
+        color: m.dangerBg,
+        border: Border.all(color: m.danger),
         borderRadius: BorderRadius.circular(MiftahRadii.tile),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(
-            Icons.error_outline_rounded,
-            size: 19,
-            color: MiftahColors.danger,
-          ),
+          Icon(Icons.error_outline_rounded, size: 19, color: m.danger),
           const SizedBox(width: 11),
           Expanded(
             child: Text(
               l.partialFailure(sources),
               style: l.ar
-                  ? MiftahType.ar(size: 13, color: MiftahColors.danger)
-                  : MiftahType.body(size: 13, color: MiftahColors.danger),
+                  ? MiftahType.ar(size: 13, color: m.danger)
+                  : MiftahType.body(size: 13, color: m.danger),
             ),
           ),
         ],
@@ -275,6 +291,7 @@ class _QueueCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
     final ({IconData icon, MiftahTone tone, String label}) spec =
         switch (item.kind) {
           _QueueKind.gatePass => (
@@ -313,8 +330,12 @@ class _QueueCard extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: l.ar
-                            ? MiftahType.ar(size: 15, weight: FontWeight.w700)
-                            : MiftahType.cardTitle(),
+                            ? MiftahType.ar(
+                                size: 15,
+                                weight: FontWeight.w700,
+                                color: m.textPrimary,
+                              )
+                            : MiftahType.cardTitle(color: m.textPrimary),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -326,13 +347,15 @@ class _QueueCard extends StatelessWidget {
                   item.subtitle,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: l.ar ? MiftahType.ar(size: 11.5) : MiftahType.meta(),
+                  style: l.ar
+                      ? MiftahType.ar(size: 11.5, color: m.textSecondary)
+                      : MiftahType.meta(color: m.textSecondary),
                 ),
                 if (item.when != null) ...[
                   const SizedBox(height: 5),
                   Text(
                     l.waitingSince(item.when!),
-                    style: MiftahType.mono(size: 11),
+                    style: MiftahType.mono(size: 11, color: m.textMuted),
                   ),
                 ],
               ],
@@ -378,11 +401,33 @@ class _L {
     return parts.join(' · ');
   }
 
-  String bookingSub(String? renter, String? startIso) {
-    final when = _fmt(startIso);
+  String propertyName(Map<String, dynamic> booking) {
+    final name =
+        (ar ? booking['propertyNameAr'] : booking['propertyNameEn'])
+            ?.toString() ??
+        booking['propertyNameEn']?.toString() ??
+        booking['propertyNameAr']?.toString();
+    return name?.trim() ?? '';
+  }
+
+  String bookingSub(
+    String? renter,
+    String property,
+    String? unit,
+    String? preferredDate,
+    String? preferredEndDate,
+    String? preferredStartTime,
+    String? preferredEndTime,
+  ) {
+    final when = _fmt(preferredDate);
     final parts = [
+      if (property.isNotEmpty) property,
+      if (unit != null && unit.isNotEmpty) ar ? 'وحدة $unit' : 'Unit $unit',
       if (renter != null && renter.isNotEmpty) renter,
-      ?when,
+      if (when != null)
+        preferredEndDate == null ? when : '$when–${_fmt(preferredEndDate)}',
+      if (preferredStartTime != null && preferredEndTime != null)
+        '${preferredStartTime.substring(0, 5)}–${preferredEndTime.substring(0, 5)}',
     ];
     if (parts.isEmpty) return ar ? 'طلب حجز' : 'Booking request';
     return parts.join(' · ');

@@ -25,9 +25,13 @@ class PaymentService {
   /// [sort] entries use Spring's "field,direction" form (e.g. 'dueDate,asc');
   /// omitted, the backend default (dueDate DESC) applies. When [overdue] is
   /// true the backend ignores [status] and returns its computed overdue view.
+  /// [search] is applied server-side across renter, property, unit,
+  /// installment number, and amount so callers do not have to download an
+  /// entire portfolio before filtering it.
   Future<Map<String, dynamic>> getPaymentsPage({
     String? propertyId,
     String? status,
+    String? search,
     bool overdue = false,
     List<String>? sort,
     int page = 0,
@@ -38,6 +42,7 @@ class PaymentService {
       queryParameters: {
         'propertyId': ?propertyId,
         'status': ?status,
+        if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
         if (overdue) 'overdue': overdue,
         'sort': ?sort,
         'page': page,

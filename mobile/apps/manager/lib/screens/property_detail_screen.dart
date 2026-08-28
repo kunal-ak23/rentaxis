@@ -342,9 +342,12 @@ class _PropertyDetailScreenState extends ConsumerState<PropertyDetailScreen> {
       ),
       floatingActionButton: canCreate
           ? FloatingActionButton(
-              backgroundColor: AppColors.primary,
+              backgroundColor: m.isDark ? AppColors.accent : AppColors.primary,
               onPressed: () => _showCreateUnitSheet(context, l),
-              child: const Icon(Icons.add, color: Colors.white),
+              child: Icon(
+                Icons.add,
+                color: m.isDark ? AppColors.primary : Colors.white,
+              ),
             )
           : null,
     );
@@ -719,7 +722,10 @@ class _HeroHeader extends StatelessWidget {
                           fontWeight: FontWeight.w600,
                           color: Colors.white,
                         )
-                      : GoogleFonts.plusJakartaSans(fontSize: 24, color: Colors.white),
+                      : GoogleFonts.plusJakartaSans(
+                          fontSize: 24,
+                          color: Colors.white,
+                        ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -1115,9 +1121,7 @@ class _ContactRow extends StatelessWidget {
                 if (contact['category'] != null)
                   Text(
                     contact['category'] == 'OTHER' &&
-                            (contact['customLabel'] ?? '')
-                                .toString()
-                                .isNotEmpty
+                            (contact['customLabel'] ?? '').toString().isNotEmpty
                         ? contact['customLabel']
                         : l.contactCategoryLabel(contact['category']),
                     style: l.ar

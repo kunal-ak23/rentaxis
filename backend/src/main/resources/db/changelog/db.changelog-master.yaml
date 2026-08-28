@@ -153,3 +153,9 @@ databaseChangeLog:
       file: db/changelog/changesets/73-app-versions.yaml
   - include:
       file: db/changelog/changesets/74-tenant-artifact-cleanup-queue.yaml
+  - include:
+      file: db/changelog/changesets/74-booking-time-slots.yaml
+  - include:
+      file: db/changelog/changesets/75-facility-photo-urls.yaml
+  - include:
+      file: db/changelog/changesets/76-booking-parking-date-range.yaml

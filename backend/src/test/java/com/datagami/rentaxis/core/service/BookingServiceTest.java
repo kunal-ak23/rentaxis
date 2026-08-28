@@ -21,6 +21,8 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.PessimisticLockingFailureException;
 
+import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -186,6 +188,39 @@ class BookingServiceTest {
         assertThatThrownBy(() -> service.create(tenantId, renterUserId, unit,
                 new BookingCreateRequest(BookingResourceType.AMENITY, null, unit.getId(), null, null)))
                 .isInstanceOf(BusinessRuleViolationException.class);
+    }
+
+    @Test
+    void create_timeSlot_requiresDateAndOrderedEndpoints() {
+        assertThatThrownBy(() -> service.create(tenantId, renterUserId, unit,
+                new BookingCreateRequest(BookingResourceType.AMENITY, UUID.randomUUID(), unit.getId(),
+                        null, LocalTime.of(10, 0), LocalTime.of(11, 0), null)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("preferredDate");
+
+        assertThatThrownBy(() -> service.create(tenantId, renterUserId, unit,
+                new BookingCreateRequest(BookingResourceType.AMENITY, UUID.randomUUID(), unit.getId(),
+                        LocalDate.now(), LocalTime.of(11, 0), LocalTime.of(10, 0), null)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("after");
+    }
+
+    @Test
+    void create_amenity_persistsRequestedTimeSlot() {
+        PropertyAmenity a = amenity(true, true);
+        when(facilityService.getAmenity(tenantId, a.getId())).thenReturn(a);
+        when(facilityService.amenityVisibleToUnit(a, unit)).thenReturn(true);
+        when(bookingRepository.findFirstByTenantIdAndRenterUserIdAndAmenityIdAndStatus(
+                tenantId, renterUserId, a.getId(), BookingRequestStatus.PENDING))
+                .thenReturn(Optional.empty());
+
+        BookingRequest created = service.create(tenantId, renterUserId, unit,
+                new BookingCreateRequest(BookingResourceType.AMENITY, a.getId(), unit.getId(),
+                        LocalDate.of(2026, 8, 29), LocalTime.of(10, 0), LocalTime.of(11, 0), null));
+
+        assertThat(created.getPreferredDate()).isEqualTo(LocalDate.of(2026, 8, 29));
+        assertThat(created.getPreferredStartTime()).isEqualTo(LocalTime.of(10, 0));
+        assertThat(created.getPreferredEndTime()).isEqualTo(LocalTime.of(11, 0));
     }
 
     @Test

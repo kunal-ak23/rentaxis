@@ -156,7 +156,13 @@ public class AmenityController {
 
     private AmenityDTO toDTO(PropertyAmenity a, List<UUID> buildingIds, long pendingCount) {
         return new AmenityDTO(a.getId(), a.getPropertyId(), a.getNameEn(), a.getNameAr(),
-                a.getDescription(), a.isBookable(), a.isActive(),
+                a.getDescription(), photoUrls(a.getPhotoUrls()), a.isBookable(), a.isActive(),
                 buildingIds, pendingCount, a.getCreatedAt(), a.getUpdatedAt());
+    }
+
+    private List<String> photoUrls(String raw) {
+        if (raw == null || raw.isBlank()) return List.of();
+        return java.util.Arrays.stream(raw.split("\\R"))
+                .map(String::trim).filter(s -> !s.isEmpty()).toList();
     }
 }

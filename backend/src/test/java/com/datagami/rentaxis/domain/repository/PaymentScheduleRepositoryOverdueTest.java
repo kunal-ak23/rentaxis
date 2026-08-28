@@ -111,15 +111,35 @@ class PaymentScheduleRepositoryOverdueTest {
     }
 
     @Test
-    void findOverdueForRenterSearch_appliesSamePredicateOrderedByDueDateDesc() {
+    void findOverdueFilteredWithSearch_appliesSamePredicateAndSearchesUnit() {
         PaymentSchedule older = schedule(property, lease, unit, PaymentStatus.PENDING, today.minusDays(10));
         PaymentSchedule newer = schedule(property, lease, unit, PaymentStatus.COLLECTED, today.minusDays(1));
         schedule(property, lease, unit, PaymentStatus.CLEARED, today.minusDays(3)); // excluded
 
-        List<PaymentSchedule> result = repo.findOverdueForRenterSearch(null, today);
+        List<PaymentSchedule> result = repo.findOverdueFilteredWithSearch(
+                null, today, "%a-1%", null, null,
+                PageRequest.of(0, 50, org.springframework.data.domain.Sort.by(
+                        org.springframework.data.domain.Sort.Direction.DESC, "dueDate", "id")))
+                .getContent();
 
         assertThat(result).extracting(PaymentSchedule::getId)
                 .containsExactly(newer.getId(), older.getId()); // DESC by dueDate
+    }
+
+    @Test
+    void findFilteredWithSearch_matchesPropertyAndNumericFieldsWithoutLoadingAllRows() {
+        PaymentSchedule match = schedule(property, lease, unit, PaymentStatus.PENDING, today.plusDays(5));
+        Pageable firstPage = PageRequest.of(0, 1);
+
+        assertThat(repo.findFilteredWithSearch(
+                null, PaymentStatus.PENDING, "%overdue-prop-a%", null, null, firstPage).getContent())
+                .extracting(PaymentSchedule::getId).contains(match.getId());
+        assertThat(repo.findFilteredWithSearch(
+                null, PaymentStatus.PENDING, "%1%", 1, null, firstPage).getContent())
+                .extracting(PaymentSchedule::getId).contains(match.getId());
+        assertThat(repo.findFilteredWithSearch(
+                null, PaymentStatus.PENDING, "%5000%", 5000, new BigDecimal("5000"), firstPage).getContent())
+                .extracting(PaymentSchedule::getId).contains(match.getId());
     }
 
     // ---- fixture helpers ----

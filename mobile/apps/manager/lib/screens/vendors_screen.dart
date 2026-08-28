@@ -82,12 +82,7 @@ class _VendorsScreenState extends ConsumerState<VendorsScreen> {
                   color: m.isDark ? AppColors.accent : AppColors.primary,
                   child: ListView.builder(
                     physics: const AlwaysScrollableScrollPhysics(),
-                    padding: EdgeInsets.fromLTRB(
-                      16,
-                      8,
-                      16,
-                      24,
-                    ),
+                    padding: EdgeInsets.fromLTRB(16, 8, 16, 24),
                     itemCount: filtered.length,
                     itemBuilder: (context, index) {
                       final vendor = filtered[index];
@@ -105,9 +100,12 @@ class _VendorsScreenState extends ConsumerState<VendorsScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        backgroundColor: AppColors.primary,
+        backgroundColor: m.isDark ? AppColors.accent : AppColors.primary,
         onPressed: () => _showCreateVendorSheet(context),
-        child: const Icon(Icons.add, color: Colors.white),
+        child: Icon(
+          Icons.add,
+          color: m.isDark ? AppColors.primary : Colors.white,
+        ),
       ),
     );
   }
@@ -294,14 +292,18 @@ class _ChromeHeader extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                     color: AppColors.gold400,
                   )
-                : GoogleFonts.plusJakartaSans(fontSize: 22, color: AppColors.gold400),
+                : GoogleFonts.plusJakartaSans(
+                    fontSize: 22,
+                    color: AppColors.gold400,
+                  ),
           ),
           const SizedBox(height: 12),
           TextField(
             onChanged: onSearchChanged,
             style: (l.ar
                 ? GoogleFonts.notoNaskhArabic
-                : GoogleFonts.plusJakartaSans)(fontSize: 13, color: Colors.white),
+                : GoogleFonts
+                      .plusJakartaSans)(fontSize: 13, color: Colors.white),
             decoration: InputDecoration(
               isDense: true,
               hintText: l.searchHint,

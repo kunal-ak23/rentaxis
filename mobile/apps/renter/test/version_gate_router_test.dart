@@ -28,7 +28,9 @@ void main() {
         child: const RenterApp(),
       ),
     );
-    // Advances past the splash's 2.5s timer and lets the gate future resolve.
+    // `pumpAndSettle` advances frames but not fake-clock time. Advance beyond
+    // the splash's 2.5s completion timer first so it cannot outlive the test.
+    await tester.pump(const Duration(milliseconds: 2600));
     await tester.pumpAndSettle();
     return container;
   }

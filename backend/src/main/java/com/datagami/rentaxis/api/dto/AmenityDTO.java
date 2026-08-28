@@ -10,6 +10,7 @@ public record AmenityDTO(
         String nameEn,
         String nameAr,
         String description,
+        List<String> photoUrls,
         boolean bookable,
         boolean active,
         List<UUID> buildingIds,

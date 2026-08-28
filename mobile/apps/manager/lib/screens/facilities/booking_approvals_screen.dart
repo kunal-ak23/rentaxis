@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -37,9 +38,21 @@ class _L {
       : 'Facility and parking requests raised by renters appear here.';
   String get renter => ar ? 'مستأجر' : 'Renter';
   String get unit => ar ? 'وحدة' : 'Unit';
+  String propertyName(Map<String, dynamic> booking) {
+    final name =
+        (ar ? booking['propertyNameAr'] : booking['propertyNameEn'])
+            ?.toString() ??
+        booking['propertyNameEn']?.toString() ??
+        booking['propertyNameAr']?.toString();
+    return name?.trim() ?? '';
+  }
+
   String get preferred => ar ? 'التاريخ المفضل:' : 'Preferred:';
   String get call => ar ? 'اتصال' : 'Call';
   String get email => ar ? 'بريد' : 'Email';
+  String get emailCopied => ar
+      ? 'تم نسخ بريد المستأجر الإلكتروني'
+      : 'Renter email copied to clipboard';
   String get otherRequests =>
       ar ? 'طلبات أخرى لهذا العنصر' : 'Other requests for this resource';
   String get noOtherRequests => ar ? 'لا توجد طلبات أخرى' : 'No other requests';
@@ -92,23 +105,27 @@ Color _statusColor(String? status, LegacyMiftahColors m) => switch (status) {
   _ => m.textMuted,
 };
 
-Future<void> _launch(String url) async {
+Future<bool> _launch(String url) async {
   final uri = Uri.parse(url);
-  if (await canLaunchUrl(uri)) await launchUrl(uri);
+  if (!await canLaunchUrl(uri)) return false;
+  return launchUrl(uri);
 }
 
 /// The tenant's booking-request inbox, pending first.
 ///
-/// Scope is *not* purely server-side the way the gate-pass approvals queue
-/// is: the backend 403s a PROPERTY_MANAGER's `/v1/bookings` call that omits
-/// `propertyId` (`BookingController.checkPropertyManagerAccess`), so this
-/// screen must never fire that request for a PM until one is picked — mirrors
-/// web's `dashboard/bookings/page.tsx` `needsPropertySelection` gate exactly.
-/// SUPER_ADMIN/TENANT_ADMIN aren't scoped to a property at all and default to
-/// the tenant-wide view (no `propertyId`), with the same dropdown available
-/// as an optional filter rather than a requirement.
+/// The server scopes a PROPERTY_MANAGER's unfiltered inbox to their assigned
+/// properties. That lets a manager work through the queue without first
+/// guessing which property a request belongs to. The property field remains
+/// an optional filter for focused work.
 class BookingApprovalsScreen extends ConsumerStatefulWidget {
-  const BookingApprovalsScreen({super.key});
+  const BookingApprovalsScreen({
+    super.key,
+    this.initialPropertyId,
+    this.initialBookingId,
+  });
+
+  final String? initialPropertyId;
+  final String? initialBookingId;
 
   @override
   ConsumerState<BookingApprovalsScreen> createState() =>
@@ -119,14 +136,20 @@ class _BookingApprovalsScreenState
     extends ConsumerState<BookingApprovalsScreen> {
   String? _status = 'PENDING';
   String? _propertyId;
+  bool _initialDetailOpened = false;
 
   BookingFilter get _filter => (propertyId: _propertyId, status: _status);
+
+  @override
+  void initState() {
+    super.initState();
+    _propertyId = widget.initialPropertyId;
+  }
 
   @override
   Widget build(BuildContext context) {
     final m = context.miftah;
     final l = _L(context.isAr);
-    final isPM = ref.watch(authProvider).role == 'PROPERTY_MANAGER';
     final properties = ref.watch(propertiesProvider);
 
     return Scaffold(
@@ -154,7 +177,12 @@ class _BookingApprovalsScreenState
           ),
         ),
         data: (propertyRows) {
-          final needsPropertySelection = isPM && _propertyId == null;
+          if (widget.initialBookingId != null && !_initialDetailOpened) {
+            _initialDetailOpened = true;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _openDetailById(widget.initialBookingId!);
+            });
+          }
 
           return Column(
             children: [
@@ -163,16 +191,10 @@ class _BookingApprovalsScreenState
                 child: DropdownButtonFormField<String?>(
                   key: const Key('booking-property'),
                   initialValue: _propertyId,
+                  isExpanded: true,
                   decoration: InputDecoration(labelText: l.property),
-                  hint: isPM ? Text(l.selectPropertyPrompt) : null,
                   items: [
-                    // Not a valid choice for a PM — the backend 403s a null
-                    // propertyId for that role.
-                    if (!isPM)
-                      DropdownMenuItem(
-                        value: null,
-                        child: Text(l.allProperties),
-                      ),
+                    DropdownMenuItem(value: null, child: Text(l.allProperties)),
                     for (final p in propertyRows)
                       DropdownMenuItem(
                         value: p['id']?.toString(),
@@ -187,20 +209,20 @@ class _BookingApprovalsScreenState
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                child: Row(
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
                   children: [
                     _FilterChip(
                       label: l.pendingFilter,
                       selected: _status == 'PENDING',
                       onTap: () => setState(() => _status = 'PENDING'),
                     ),
-                    const SizedBox(width: 8),
                     _FilterChip(
                       label: l.approvedFilter,
                       selected: _status == 'APPROVED',
                       onTap: () => setState(() => _status = 'APPROVED'),
                     ),
-                    const SizedBox(width: 8),
                     _FilterChip(
                       label: l.allFilter,
                       selected: _status == null,
@@ -210,14 +232,7 @@ class _BookingApprovalsScreenState
                 ),
               ),
               Expanded(
-                child: needsPropertySelection
-                    ? FacilityScrollable(
-                        child: EmptyState(
-                          icon: Icons.apartment_outlined,
-                          title: l.selectPropertyPrompt,
-                        ),
-                      )
-                    : _BookingList(filter: _filter, l: l, onOpen: _openDetail),
+                child: _BookingList(filter: _filter, l: l, onOpen: _openDetail),
               ),
             ],
           );
@@ -229,6 +244,10 @@ class _BookingApprovalsScreenState
   Future<void> _openDetail(Map<String, dynamic> booking) async {
     final id = booking['id']?.toString();
     if (id == null) return;
+    await _openDetailById(id);
+  }
+
+  Future<void> _openDetailById(String id) async {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -295,12 +314,7 @@ class _BookingList extends ConsumerWidget {
           final truncated = rows.length < page.total;
           return ListView.builder(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: EdgeInsets.fromLTRB(
-              16,
-              8,
-              16,
-              24,
-            ),
+            padding: EdgeInsets.fromLTRB(16, 8, 16, 24),
             itemCount: rows.length + (truncated ? 1 : 0),
             itemBuilder: (context, i) {
               if (i == rows.length) {
@@ -349,10 +363,9 @@ class _TruncationFooter extends StatelessWidget {
       child: Center(
         child: Text(
           l.showingCount(shown, total),
-          style: (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.plusJakartaSans)(
-            fontSize: 12,
-            color: m.textMuted,
-          ),
+          style: (l.ar
+              ? GoogleFonts.notoNaskhArabic
+              : GoogleFonts.plusJakartaSans)(fontSize: 12, color: m.textMuted),
         ),
       ),
     );
@@ -470,6 +483,8 @@ class _BookingCard extends StatelessWidget {
               const SizedBox(height: 8),
               Text(
                 [
+                  if (l.propertyName(booking).isNotEmpty)
+                    l.propertyName(booking),
                   booking['renterName']?.toString() ?? l.renter,
                   if (booking['unitNumber'] != null)
                     '${l.unit} ${booking['unitNumber']}',
@@ -670,6 +685,12 @@ class _BookingDetailSheetState extends ConsumerState<_BookingDetailSheet> {
                       ),
                     ),
                     const SizedBox(height: 12),
+                    if (l.propertyName(request).isNotEmpty)
+                      _DetailRow(
+                        icon: Icons.apartment_outlined,
+                        value: l.propertyName(request),
+                        m: m,
+                      ),
                     _DetailRow(
                       icon: Icons.person_outline,
                       value: request['renterName']?.toString() ?? l.renter,
@@ -684,8 +705,17 @@ class _BookingDetailSheetState extends ConsumerState<_BookingDetailSheet> {
                     if (request['preferredDate'] != null)
                       _DetailRow(
                         icon: Icons.event_outlined,
+                        value: request['preferredEndDate'] != null
+                            ? '${Formatters.date(request['preferredDate']?.toString(), ar: l.ar)}–${Formatters.date(request['preferredEndDate']?.toString(), ar: l.ar)}'
+                            : '${l.preferred} ${Formatters.date(request['preferredDate']?.toString(), ar: l.ar)}',
+                        m: m,
+                      ),
+                    if (request['preferredStartTime'] != null &&
+                        request['preferredEndTime'] != null)
+                      _DetailRow(
+                        icon: Icons.schedule_outlined,
                         value:
-                            '${l.preferred} ${Formatters.date(request['preferredDate']?.toString(), ar: l.ar)}',
+                            '${request['preferredStartTime'].toString().substring(0, 5)}–${request['preferredEndTime'].toString().substring(0, 5)}',
                         m: m,
                       ),
                     if (request['createdAt'] != null)
@@ -786,7 +816,17 @@ class _BookingDetailSheetState extends ConsumerState<_BookingDetailSheet> {
                                 icon: Icons.email_outlined,
                                 label: l.email,
                                 ar: l.ar,
-                                onTap: () => _launch('mailto:$email'),
+                                onTap: () async {
+                                  final opened = await _launch('mailto:$email');
+                                  if (opened || !context.mounted) return;
+                                  await Clipboard.setData(
+                                    ClipboardData(text: email),
+                                  );
+                                  if (!context.mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text(l.emailCopied)),
+                                  );
+                                },
                               ),
                             ),
                         ],
@@ -999,7 +1039,9 @@ class _ContactBtn extends StatelessWidget {
             Text(
               label,
               style:
-                  (ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.plusJakartaSans)(
+                  (ar
+                  ? GoogleFonts.notoNaskhArabic
+                  : GoogleFonts.plusJakartaSans)(
                     fontSize: 12,
                     color: m.isDark ? AppColors.accent : AppColors.accentDark,
                     fontWeight: FontWeight.w600,

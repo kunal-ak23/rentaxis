@@ -77,8 +77,6 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('TRANSACTIONS'));
-    await tester.pumpAndSettle();
   }
 
   final rows = <Map<String, dynamic>>[
@@ -99,6 +97,17 @@ void main() {
       'account': {'id': 'acc-2', 'code': '4000', 'name': 'Rental Income'},
     },
   ];
+
+  testWidgets('opens Transactions as the first Finance tab', (tester) async {
+    await pumpTransactionsTab(tester, rows);
+
+    final tabBar = tester.widget<TabBar>(find.byType(TabBar));
+    expect(
+      tabBar.tabs.map((tab) => (tab as Tab).text),
+      containsAllInOrder(['TRANSACTIONS', 'ACCOUNTS', 'REPORTS', 'TOOLS']),
+    );
+    expect(find.text('Maintenance Expense'), findsOneWidget);
+  });
 
   testWidgets('renders amounts from the entity debit/credit fields', (
     tester,

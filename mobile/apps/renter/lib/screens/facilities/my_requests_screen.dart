@@ -119,12 +119,7 @@ class MyRequestsScreen extends ConsumerWidget {
             }
             return ListView.builder(
               physics: const AlwaysScrollableScrollPhysics(),
-              padding: EdgeInsets.fromLTRB(
-                16,
-                12,
-                16,
-                24,
-              ),
+              padding: EdgeInsets.fromLTRB(16, 12, 16, 24),
               // `rows` is createdAt ASC as returned by the server — never
               // re-sorted client-side (the project's created-ascending
               // standard).
@@ -166,19 +161,18 @@ class _RequestCardState extends ConsumerState<_RequestCard> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         content: Text(
           release ? l.releaseConfirm : l.cancelConfirm,
-          style: (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.plusJakartaSans)(
-            fontSize: 14,
-          ),
+          style: (l.ar
+              ? GoogleFonts.notoNaskhArabic
+              : GoogleFonts.plusJakartaSans)(fontSize: 14),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: Text(
               l.keep,
-              style:
-                  (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.plusJakartaSans)(
-                    fontWeight: FontWeight.w600,
-                  ),
+              style: (l.ar
+                  ? GoogleFonts.notoNaskhArabic
+                  : GoogleFonts.plusJakartaSans)(fontWeight: FontWeight.w600),
             ),
           ),
           TextButton(
@@ -186,10 +180,9 @@ class _RequestCardState extends ConsumerState<_RequestCard> {
             style: TextButton.styleFrom(foregroundColor: AppColors.danger),
             child: Text(
               l.confirm,
-              style:
-                  (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.plusJakartaSans)(
-                    fontWeight: FontWeight.w600,
-                  ),
+              style: (l.ar
+                  ? GoogleFonts.notoNaskhArabic
+                  : GoogleFonts.plusJakartaSans)(fontWeight: FontWeight.w600),
             ),
           ),
         ],
@@ -223,7 +216,9 @@ class _RequestCardState extends ConsumerState<_RequestCard> {
         _toast(errorMessage(error, l.actionFailed), AppColors.danger);
       }
     } catch (error) {
-      if (mounted) _toast(errorMessage(error, l.actionFailed), AppColors.danger);
+      if (mounted) {
+        _toast(errorMessage(error, l.actionFailed), AppColors.danger);
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -308,7 +303,12 @@ class _RequestCardState extends ConsumerState<_RequestCard> {
               if (request['unitNumber'] != null)
                 '${l.unit} ${request['unitNumber']}',
               if (request['preferredDate'] != null)
-                '${l.preferred} ${Formatters.date(request['preferredDate']?.toString(), ar: l.ar)}',
+                request['preferredEndDate'] != null
+                    ? '${Formatters.date(request['preferredDate']?.toString(), ar: l.ar)}–${Formatters.date(request['preferredEndDate']?.toString(), ar: l.ar)}'
+                    : '${l.preferred} ${Formatters.date(request['preferredDate']?.toString(), ar: l.ar)}',
+              if (request['preferredStartTime'] != null &&
+                  request['preferredEndTime'] != null)
+                '${request['preferredStartTime'].toString().substring(0, 5)}–${request['preferredEndTime'].toString().substring(0, 5)}',
               if (request['createdAt'] != null)
                 Formatters.timeAgo(request['createdAt']?.toString(), ar: l.ar),
               if (decidedAt != null)
@@ -316,10 +316,8 @@ class _RequestCardState extends ConsumerState<_RequestCard> {
             ].join(' · '),
             style: (l.ar
                 ? GoogleFonts.notoNaskhArabic
-                : GoogleFonts.plusJakartaSans)(
-              fontSize: 12,
-              color: m.textSecondary,
-            ),
+                : GoogleFonts
+                      .plusJakartaSans)(fontSize: 12, color: m.textSecondary),
           ),
           if (note != null && note.isNotEmpty) ...[
             const SizedBox(height: 8),
@@ -332,13 +330,14 @@ class _RequestCardState extends ConsumerState<_RequestCard> {
               ),
               child: Text(
                 note,
-                style: (l.ar
+                style:
+                    (l.ar
                     ? GoogleFonts.notoNaskhArabic
                     : GoogleFonts.plusJakartaSans)(
-                  fontSize: 12.5,
-                  color: m.textSecondary,
-                  height: 1.4,
-                ),
+                      fontSize: 12.5,
+                      color: m.textSecondary,
+                      height: 1.4,
+                    ),
               ),
             ),
           ],
@@ -375,13 +374,14 @@ class _RequestCardState extends ConsumerState<_RequestCard> {
                   const SizedBox(height: 3),
                   Text(
                     adminNote,
-                    style: (l.ar
+                    style:
+                        (l.ar
                         ? GoogleFonts.notoNaskhArabic
                         : GoogleFonts.plusJakartaSans)(
-                      fontSize: 12.5,
-                      color: m.textSecondary,
-                      height: 1.4,
-                    ),
+                          fontSize: 12.5,
+                          color: m.textSecondary,
+                          height: 1.4,
+                        ),
                   ),
                 ],
               ),

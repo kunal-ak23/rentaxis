@@ -120,7 +120,13 @@ class AuthState {
 
 class AuthNotifier extends StateNotifier<AuthState> {
   final AuthService _authService;
-  final FlutterSecureStorage _storage = const FlutterSecureStorage();
+  // Android can retain an encrypted preferences blob after an app is rebuilt
+  // with a different signing key (common on demo devices).  Let the storage
+  // plugin reset that blob instead of leaving auth permanently stuck in the
+  // loading state before the login screen can render.
+  final FlutterSecureStorage _storage = const FlutterSecureStorage(
+    aOptions: AndroidOptions(resetOnError: true),
+  );
 
   AuthNotifier(this._authService) : super(const AuthState()) {
     _init();

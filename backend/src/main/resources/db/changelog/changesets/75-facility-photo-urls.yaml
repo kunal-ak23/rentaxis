@@ -1,0 +1,14 @@
+databaseChangeLog:
+  - changeSet:
+      id: 75-facility-photo-urls
+      author: datagami
+      comment: Optional renter-visible image galleries for amenities and parking spaces.
+      changes:
+        - addColumn:
+            tableName: property_amenities
+            columns:
+              - column: { name: photo_urls, type: text }
+        - addColumn:
+            tableName: parking_spots
+            columns:
+              - column: { name: photo_urls, type: text }

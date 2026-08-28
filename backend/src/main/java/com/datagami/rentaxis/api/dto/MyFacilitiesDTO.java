@@ -18,6 +18,7 @@ public record MyFacilitiesDTO(
             String nameEn,
             String nameAr,
             String description,
+            List<String> photoUrls,
             boolean bookable,
             long pendingCount) {
     }
@@ -28,6 +29,7 @@ public record MyFacilitiesDTO(
             String propertyName,
             String spotNumber,
             String level,
+            List<String> photoUrls,
             boolean covered,
             boolean held,
             long pendingCount) {
