@@ -71,13 +71,17 @@ class ErrorState extends StatelessWidget {
                   ? GoogleFonts.notoNaskhArabic(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
-                      color: AppColors.accentDark,
+                      color: m.isDark
+                          ? AppColors.gold400
+                          : AppColors.accentDark,
                     )
                   : GoogleFonts.josefinSans(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                       letterSpacing: 0.4,
-                      color: AppColors.accentDark,
+                      color: m.isDark
+                          ? AppColors.gold400
+                          : AppColors.accentDark,
                     ),
             ),
           ),

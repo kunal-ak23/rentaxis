@@ -26,13 +26,14 @@ class CouponSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isAr = context.isAr;
+    final m = context.miftah;
     final code = ad.couponCode?.trim();
     final terms = ad.couponTerms(isAr);
     final l = _L(isAr);
 
     return Container(
-      decoration: const BoxDecoration(
-        color: MiftahColors.surface,
+      decoration: BoxDecoration(
+        color: m.surface,
         borderRadius: BorderRadius.vertical(
           top: Radius.circular(MiftahRadii.sheet),
         ),
@@ -52,23 +53,32 @@ class CouponSheet extends StatelessWidget {
               width: 38,
               height: 4,
               decoration: BoxDecoration(
-                color: MiftahColors.borderStrong,
+                color: m.borderStrong,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
           ),
           const SizedBox(height: 18),
-          Text(ad.business.name(isAr), style: MiftahType.meta()),
+          Text(
+            ad.business.name(isAr),
+            style: MiftahType.meta(color: m.textMuted),
+          ),
           const SizedBox(height: 4),
-          Text(ad.title(isAr), style: MiftahType.title()),
+          Text(ad.title(isAr), style: MiftahType.title(color: m.textPrimary)),
           const SizedBox(height: 18),
           if (code != null && code.isNotEmpty) ...[
             Container(
               padding: const EdgeInsets.all(MiftahSpacing.cardPad),
               decoration: BoxDecoration(
-                color: MiftahColors.brassTint,
+                color: m.isDark
+                    ? MiftahColors.brass.withValues(alpha: 0.16)
+                    : MiftahColors.brassTint,
                 borderRadius: BorderRadius.circular(MiftahRadii.tile),
-                border: Border.all(color: MiftahColors.brassTintBorder),
+                border: Border.all(
+                  color: m.isDark
+                      ? MiftahColors.brass.withValues(alpha: 0.48)
+                      : MiftahColors.brassTintBorder,
+                ),
               ),
               child: Row(
                 children: [
@@ -87,7 +97,7 @@ class CouponSheet extends StatelessWidget {
                       code,
                       textDirection: TextDirection.ltr,
                       textAlign: isAr ? TextAlign.right : TextAlign.left,
-                      style: MiftahType.mono(size: 18),
+                      style: MiftahType.mono(size: 18, color: m.textPrimary),
                     ),
                   ),
                   TextButton.icon(
@@ -95,9 +105,9 @@ class CouponSheet extends StatelessWidget {
                     onPressed: () async {
                       await Clipboard.setData(ClipboardData(text: code));
                       if (!context.mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(l.copied)),
-                      );
+                      ScaffoldMessenger.of(
+                        context,
+                      ).showSnackBar(SnackBar(content: Text(l.copied)));
                     },
                     icon: const Icon(Icons.copy_rounded, size: 18),
                     label: Text(l.copy),
@@ -108,13 +118,20 @@ class CouponSheet extends StatelessWidget {
             const SizedBox(height: 14),
           ],
           if (terms != null) ...[
-            Text(l.terms, style: MiftahType.sectionLabel()),
+            Text(l.terms, style: MiftahType.sectionLabel(color: m.textPrimary)),
             const SizedBox(height: 5),
-            Text(terms, key: const Key('coupon-terms'), style: MiftahType.body()),
+            Text(
+              terms,
+              key: const Key('coupon-terms'),
+              style: MiftahType.body(color: m.textPrimary),
+            ),
             const SizedBox(height: 14),
           ],
           if (ad.endsAt != null)
-            Text(l.validUntilLine(ad.endsAt!), style: MiftahType.meta()),
+            Text(
+              l.validUntilLine(ad.endsAt!),
+              style: MiftahType.meta(color: m.textMuted),
+            ),
         ],
       ),
     );

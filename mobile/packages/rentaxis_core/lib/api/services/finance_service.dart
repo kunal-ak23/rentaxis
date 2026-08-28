@@ -15,33 +15,60 @@ class FinanceService {
     String? startDate,
     String? endDate,
   }) async {
-    final response =
-        await _dio.get('/v1/finance/transactions', queryParameters: {
-      if (propertyId != null) 'propertyId': propertyId,
-      if (accountType != null) 'accountType': accountType,
-      if (startDate != null) 'startDate': startDate,
-      if (endDate != null) 'endDate': endDate,
-    });
+    final response = await _dio.get(
+      '/v1/finance/transactions',
+      queryParameters: {
+        if (propertyId != null) 'propertyId': propertyId,
+        if (accountType != null) 'accountType': accountType,
+        if (startDate != null) 'startDate': startDate,
+        if (endDate != null) 'endDate': endDate,
+      },
+    );
     return response.data;
   }
 
-  Future<Map<String, dynamic>> getOrganisationReport(
-      {String? startDate, String? endDate}) async {
-    final response = await _dio
-        .get('/v1/finance/reports/organisation', queryParameters: {
-      if (startDate != null) 'startDate': startDate,
-      if (endDate != null) 'endDate': endDate,
-    });
+  Future<Map<String, dynamic>> getOrganisationReport({
+    String? startDate,
+    String? endDate,
+  }) async {
+    final response = await _dio.get(
+      '/v1/finance/reports/organisation',
+      queryParameters: {
+        if (startDate != null) 'startDate': startDate,
+        if (endDate != null) 'endDate': endDate,
+      },
+    );
     return response.data;
   }
 
-  Future<Map<String, dynamic>> getTrialBalance(
-      {String? startDate, String? endDate}) async {
-    final response = await _dio
-        .get('/v1/finance/reports/trial-balance', queryParameters: {
-      if (startDate != null) 'startDate': startDate,
-      if (endDate != null) 'endDate': endDate,
-    });
+  /// Portfolio-wide P&L plus one summary row per property. The backend scopes
+  /// PROPERTY_MANAGER callers to their assignments and includes zero-activity
+  /// properties so this list is a complete portfolio, not just an activity log.
+  Future<Map<String, dynamic>> getPortfolioProfitLoss({
+    String? startDate,
+    String? endDate,
+  }) async {
+    final response = await _dio.get(
+      '/v1/finance/reports/portfolio-profit-loss',
+      queryParameters: {
+        if (startDate != null) 'startDate': startDate,
+        if (endDate != null) 'endDate': endDate,
+      },
+    );
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
+  Future<Map<String, dynamic>> getTrialBalance({
+    String? startDate,
+    String? endDate,
+  }) async {
+    final response = await _dio.get(
+      '/v1/finance/reports/trial-balance',
+      queryParameters: {
+        if (startDate != null) 'startDate': startDate,
+        if (endDate != null) 'endDate': endDate,
+      },
+    );
     return response.data;
   }
 }

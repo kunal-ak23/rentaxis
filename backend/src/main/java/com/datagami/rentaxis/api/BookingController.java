@@ -14,6 +14,7 @@ import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.BookingRequest;
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.ParkingSpot;
+import com.datagami.rentaxis.domain.entity.Property;
 import com.datagami.rentaxis.domain.entity.PropertyAmenity;
 import com.datagami.rentaxis.domain.entity.Renter;
 import com.datagami.rentaxis.domain.entity.Unit;
@@ -25,6 +26,7 @@ import com.datagami.rentaxis.domain.repository.BookingRequestRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.ParkingSpotRepository;
 import com.datagami.rentaxis.domain.repository.PropertyAmenityRepository;
+import com.datagami.rentaxis.domain.repository.PropertyRepository;
 import com.datagami.rentaxis.domain.repository.RenterRepository;
 import com.datagami.rentaxis.domain.repository.UnitRepository;
 import com.datagami.rentaxis.domain.repository.UserPropertyAssignmentRepository;
@@ -79,6 +81,7 @@ public class BookingController {
     private final UserRepository userRepository;
     private final UserPropertyAssignmentRepository assignmentRepository;
     private final PropertyAmenityRepository amenityRepository;
+    private final PropertyRepository propertyRepository;
     private final ParkingSpotRepository parkingSpotRepository;
     private final BookingRequestRepository bookingRequestRepository;
 
@@ -90,6 +93,7 @@ public class BookingController {
                              UserRepository userRepository,
                              UserPropertyAssignmentRepository assignmentRepository,
                              PropertyAmenityRepository amenityRepository,
+                             PropertyRepository propertyRepository,
                              ParkingSpotRepository parkingSpotRepository,
                              BookingRequestRepository bookingRequestRepository) {
         this.bookingService = bookingService;
@@ -100,6 +104,7 @@ public class BookingController {
         this.userRepository = userRepository;
         this.assignmentRepository = assignmentRepository;
         this.amenityRepository = amenityRepository;
+        this.propertyRepository = propertyRepository;
         this.parkingSpotRepository = parkingSpotRepository;
         this.bookingRequestRepository = bookingRequestRepository;
     }
@@ -113,12 +118,26 @@ public class BookingController {
             @RequestParam(required = false) BookingRequestStatus status,
             @RequestParam(required = false) BookingResourceType resourceType,
             @PageableDefault(sort = "createdAt", direction = Sort.Direction.ASC) Pageable pageable) {
-        checkPropertyManagerAccess(propertyId);
-        Page<BookingRequest> page = bookingService.search(tenantId(), propertyId, status, resourceType, pageable);
+        Page<BookingRequest> page;
+        if (isPropertyManager() && propertyId == null) {
+            List<UUID> assignedPropertyIds = assignmentRepository
+                    .findByUserId(currentUserId())
+                    .stream()
+                    .map(a -> a.getPropertyId())
+                    .distinct()
+                    .toList();
+            page = bookingService.searchAssignedProperties(
+                    tenantId(), assignedPropertyIds, status, resourceType, pageable);
+        } else {
+            checkPropertyManagerAccess(propertyId);
+            page = bookingService.search(tenantId(), propertyId, status, resourceType, pageable);
+        }
         Map<UUID, String> unitNumbers = unitNumbers(page.getContent());
         Map<UUID, User> renters = renterUsers(page.getContent());
         Map<UUID, String> resourceNames = resourceNames(page.getContent());
-        return ResponseEntity.ok(page.map(b -> toDTO(b, unitNumbers, renters, resourceNames)));
+        Map<UUID, Property> properties = properties(page.getContent());
+        return ResponseEntity.ok(page.map(b -> toDTO(
+                b, unitNumbers, renters, resourceNames, properties)));
     }
 
     @GetMapping("/bookings/{id}")
@@ -224,12 +243,13 @@ public class BookingController {
         List<MyFacilitiesDTO.RenterAmenityDTO> amenityDTOs = amenitiesById.values().stream()
                 .map(a -> new MyFacilitiesDTO.RenterAmenityDTO(a.getId(), a.getPropertyId(),
                         propertyNameByAmenity.get(a.getId()), a.getNameEn(), a.getNameAr(),
-                        a.getDescription(), a.isBookable(), amenityPending.getOrDefault(a.getId(), 0L)))
+                        a.getDescription(), photoUrls(a.getPhotoUrls()), a.isBookable(), amenityPending.getOrDefault(a.getId(), 0L)))
                 .toList();
         List<MyFacilitiesDTO.RenterParkingSpotDTO> spotDTOs = spotsById.values().stream()
                 .map(s -> new MyFacilitiesDTO.RenterParkingSpotDTO(s.getId(), s.getPropertyId(),
-                        propertyNameBySpot.get(s.getId()), s.getSpotNumber(), s.getLevel(), s.isCovered(),
-                        spotHeld.getOrDefault(s.getId(), 0L) > 0, spotPending.getOrDefault(s.getId(), 0L)))
+                        propertyNameBySpot.get(s.getId()), s.getSpotNumber(), s.getLevel(),
+                        photoUrls(s.getPhotoUrls()), s.isCovered(), spotHeld.getOrDefault(s.getId(), 0L) > 0,
+                        spotPending.getOrDefault(s.getId(), 0L)))
                 .toList();
 
         return ResponseEntity.ok(new MyFacilitiesDTO(amenityDTOs, spotDTOs));
@@ -283,18 +303,21 @@ public class BookingController {
 
     /** UnitListingController.checkPropertyManagerAccess / AmenityController pattern, keyed on propertyId. */
     private void checkPropertyManagerAccess(UUID propertyId) {
-        var auth = SecurityContextHolder.getContext().getAuthentication();
-        boolean isPm = auth.getAuthorities().stream()
-                .anyMatch(a -> a.getAuthority().equals("ROLE_PROPERTY_MANAGER"));
-        if (!isPm) return;
+        if (!isPropertyManager()) return;
 
         if (propertyId == null) {
             throw new AccessDeniedException("propertyId is required for property managers");
         }
-        UUID userId = UUID.fromString(auth.getName());
+        UUID userId = currentUserId();
         if (!assignmentRepository.existsByUserIdAndPropertyId(userId, propertyId)) {
             throw new AccessDeniedException("You are not assigned to this property");
         }
+    }
+
+    private boolean isPropertyManager() {
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        return auth.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_PROPERTY_MANAGER"));
     }
 
     private boolean isRenter() {
@@ -323,13 +346,22 @@ public class BookingController {
         return rows.stream().collect(Collectors.toMap(row -> (UUID) row[0], row -> (Long) row[1]));
     }
 
+    private static List<String> photoUrls(String raw) {
+        if (raw == null || raw.isBlank()) return List.of();
+        return java.util.Arrays.stream(raw.split("\\R"))
+                .map(String::trim).filter(s -> !s.isEmpty()).toList();
+    }
+
     // ---- mapping: batched joins, GatePassController.toSummaries style ----
 
     private List<BookingRequestDTO> toDTOs(List<BookingRequest> bookings) {
         Map<UUID, String> unitNumbers = unitNumbers(bookings);
         Map<UUID, User> renters = renterUsers(bookings);
         Map<UUID, String> resourceNames = resourceNames(bookings);
-        return bookings.stream().map(b -> toDTO(b, unitNumbers, renters, resourceNames)).toList();
+        Map<UUID, Property> properties = properties(bookings);
+        return bookings.stream()
+                .map(b -> toDTO(b, unitNumbers, renters, resourceNames, properties))
+                .toList();
     }
 
     private BookingRequestDTO toDTO(BookingRequest b) {
@@ -337,17 +369,22 @@ public class BookingController {
     }
 
     private BookingRequestDTO toDTO(BookingRequest b, Map<UUID, String> unitNumbers,
-                                    Map<UUID, User> renters, Map<UUID, String> resourceNames) {
+                                    Map<UUID, User> renters, Map<UUID, String> resourceNames,
+                                    Map<UUID, Property> properties) {
         User renter = renters.get(b.getRenterUserId());
+        Property property = properties.get(b.getPropertyId());
         UUID resourceId = b.getResourceType() == BookingResourceType.AMENITY
                 ? b.getAmenityId() : b.getParkingSpotId();
         return new BookingRequestDTO(b.getId(), b.getResourceType(), b.getAmenityId(),
                 b.getParkingSpotId(), resourceNames.get(resourceId), b.getPropertyId(),
+                property == null ? null : property.getNameEn(),
+                property == null ? null : property.getNameAr(),
                 b.getUnitId(), unitNumbers.get(b.getUnitId()), b.getRenterUserId(),
                 renter == null ? null : renter.getName(),
                 renter == null ? null : renter.getEmail(),
                 renter == null ? null : renter.getPhoneNumber(),
-                b.getNote(), b.getPreferredDate(), b.getStatus(), b.getAdminNote(),
+                b.getNote(), b.getPreferredDate(), b.getPreferredEndDate(), b.getPreferredStartTime(),
+                b.getPreferredEndTime(), b.getStatus(), b.getAdminNote(),
                 b.getDecidedByUserId(), b.getDecidedAt(), b.getCreatedAt());
     }
 
@@ -359,6 +396,19 @@ public class BookingController {
         Map<UUID, String> byId = new HashMap<>();
         for (Unit unit : unitRepository.findAllById(distinct)) {
             byId.put(unit.getId(), unit.getUnitNumber());
+        }
+        return byId;
+    }
+
+    /** Tenant-scoped lookup so queue cards can identify their property without N+1 queries. */
+    private Map<UUID, Property> properties(List<BookingRequest> bookings) {
+        List<UUID> distinct = bookings.stream().map(BookingRequest::getPropertyId).distinct().toList();
+        if (distinct.isEmpty()) {
+            return Map.of();
+        }
+        Map<UUID, Property> byId = new HashMap<>();
+        for (Property property : propertyRepository.findByTenantIdAndIdIn(tenantId(), distinct)) {
+            byId.put(property.getId(), property);
         }
         return byId;
     }

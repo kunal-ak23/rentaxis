@@ -1,0 +1,23 @@
+databaseChangeLog:
+  - changeSet:
+      id: 74-booking-time-slots
+      author: datagami
+      comment: Store an optional renter-selected time window with booking requests.
+      changes:
+        - addColumn:
+            tableName: booking_requests
+            columns:
+              - column:
+                  name: preferred_start_time
+                  type: time
+              - column:
+                  name: preferred_end_time
+                  type: time
+        - sql:
+            splitStatements: false
+            sql: |
+              ALTER TABLE booking_requests
+                ADD CONSTRAINT chk_booking_time_window
+                CHECK ((preferred_start_time IS NULL AND preferred_end_time IS NULL)
+                    OR (preferred_start_time IS NOT NULL AND preferred_end_time IS NOT NULL
+                        AND preferred_start_time < preferred_end_time));

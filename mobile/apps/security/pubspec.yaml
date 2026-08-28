@@ -1,7 +1,7 @@
 name: security
 description: "RentAxis Security Guard App"
 publish_to: 'none'
-version: 1.2.0+3
+version: 1.2.0+4
 
 environment:
   sdk: ^3.10.8

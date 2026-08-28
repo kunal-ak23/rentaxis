@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
 import 'miftah_tokens.dart';
 
 /// The widget set behind the redesigned screens. Every mockup element has a
@@ -34,12 +35,12 @@ class MiftahCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final border = borderColor ??
-        (emphasised ? MiftahColors.brass : MiftahColors.border);
+    final m = context.miftah;
+    final border = borderColor ?? (emphasised ? MiftahColors.brass : m.border);
     final content = Container(
       padding: padding,
       decoration: BoxDecoration(
-        color: color ?? MiftahColors.surface,
+        color: color ?? m.surface,
         borderRadius: BorderRadius.circular(radius),
         border: Border.all(color: border, width: emphasised ? 1.5 : 1),
       ),
@@ -112,37 +113,42 @@ class MiftahBadge extends StatelessWidget {
   final String label;
   final MiftahTone tone;
 
-  static ({Color bg, Color fg}) colorsFor(MiftahTone tone) => switch (tone) {
-        MiftahTone.brass => (
-            bg: MiftahColors.brassTint,
-            fg: MiftahColors.brassDeep
-          ),
-        MiftahTone.success => (
-            bg: MiftahColors.successTint,
-            fg: MiftahColors.success
-          ),
-        MiftahTone.danger => (
-            bg: MiftahColors.dangerTint,
-            fg: MiftahColors.danger
-          ),
-        MiftahTone.warning => (
-            bg: MiftahColors.warningTint,
-            fg: MiftahColors.warning
-          ),
-        MiftahTone.info => (bg: MiftahColors.infoTint, fg: MiftahColors.info),
-        MiftahTone.onDark => (
-            bg: Color(0x2DC79A3C),
-            fg: MiftahColors.brassLight
-          ),
-        MiftahTone.neutral => (
-            bg: MiftahColors.surfaceAlt,
-            fg: MiftahColors.textMuted
-          ),
-      };
+  static ({Color bg, Color fg}) colorsFor(
+    MiftahTone tone, {
+    bool isDark = false,
+  }) => switch (tone) {
+    MiftahTone.brass => (
+      bg: isDark ? const Color(0x2DC79A3C) : MiftahColors.brassTint,
+      fg: isDark ? MiftahColors.brassLight : MiftahColors.brassDeep,
+    ),
+    MiftahTone.success => (
+      bg: isDark ? const Color(0x1F5FA97C) : MiftahColors.successTint,
+      fg: isDark ? const Color(0xFF4FC98A) : MiftahColors.success,
+    ),
+    MiftahTone.danger => (
+      bg: isDark ? const Color(0x24E4736A) : MiftahColors.dangerTint,
+      fg: isDark ? const Color(0xFFE4736A) : MiftahColors.danger,
+    ),
+    MiftahTone.warning => (
+      bg: isDark ? const Color(0x1FD9A24A) : MiftahColors.warningTint,
+      fg: isDark ? MiftahColors.brassLight : MiftahColors.warning,
+    ),
+    MiftahTone.info => (
+      bg: isDark ? const Color(0x224A5B72) : MiftahColors.infoTint,
+      fg: isDark ? const Color(0xFFB7C5DC) : MiftahColors.info,
+    ),
+    MiftahTone.onDark => (bg: Color(0x2DC79A3C), fg: MiftahColors.brassLight),
+    MiftahTone.neutral => (
+      bg: isDark
+          ? Colors.white.withValues(alpha: 0.1)
+          : MiftahColors.surfaceAlt,
+      fg: isDark ? Colors.white : MiftahColors.textMuted,
+    ),
+  };
 
   @override
   Widget build(BuildContext context) {
-    final c = colorsFor(tone);
+    final c = colorsFor(tone, isDark: context.miftah.isDark);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
@@ -186,15 +192,18 @@ class MiftahButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
     final button = SizedBox(
       height: height,
       child: FilledButton(
         onPressed: onPressed,
         style: FilledButton.styleFrom(
-          backgroundColor: MiftahColors.ink,
-          foregroundColor: Colors.white,
-          disabledBackgroundColor: MiftahColors.border,
-          disabledForegroundColor: MiftahColors.textFaint,
+          backgroundColor: m.isDark
+              ? MiftahColors.brassLight
+              : MiftahColors.ink,
+          foregroundColor: m.isDark ? MiftahColors.ink : Colors.white,
+          disabledBackgroundColor: m.border,
+          disabledForegroundColor: m.textMuted,
           elevation: 0,
           padding: const EdgeInsets.symmetric(horizontal: 22),
           shape: RoundedRectangleBorder(
@@ -275,6 +284,7 @@ class MiftahOutlineButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
     final danger = tone == MiftahTone.danger;
     return SizedBox(
       width: double.infinity,
@@ -282,14 +292,14 @@ class MiftahOutlineButton extends StatelessWidget {
       child: OutlinedButton(
         onPressed: onPressed,
         style: OutlinedButton.styleFrom(
-          backgroundColor:
-              danger ? MiftahColors.dangerTint : MiftahColors.surface,
-          foregroundColor:
-              danger ? MiftahColors.danger : MiftahColors.textSecondary,
+          backgroundColor: danger
+              ? (m.isDark ? m.dangerBg : MiftahColors.dangerTint)
+              : m.surface,
+          foregroundColor: danger ? m.danger : m.textSecondary,
           side: BorderSide(
             color: danger
-                ? MiftahColors.dangerTintBorder
-                : MiftahColors.borderStrong,
+                ? (m.isDark ? m.danger : MiftahColors.dangerTintBorder)
+                : m.borderStrong,
           ),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(MiftahRadii.tile),
@@ -311,7 +321,10 @@ class _Label extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final text = Text(label, style: MiftahType.button(size: size, color: color));
+    final text = Text(
+      label,
+      style: MiftahType.button(size: size, color: color),
+    );
     if (icon == null) return text;
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -348,17 +361,18 @@ class MiftahFilterChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final dark = onDark || context.miftah.isDark;
     final Color bg;
     final Color fg;
     final Color? border;
     if (selected) {
-      bg = onDark ? MiftahColors.brassLight : MiftahColors.brassTint;
-      fg = onDark ? MiftahColors.ink : MiftahColors.brassDeep;
-      border = onDark ? null : MiftahColors.brassTintBorder;
+      bg = dark ? MiftahColors.brassLight : MiftahColors.brassTint;
+      fg = dark ? MiftahColors.ink : MiftahColors.brassDeep;
+      border = dark ? null : MiftahColors.brassTintBorder;
     } else {
-      bg = onDark ? Colors.white.withValues(alpha: 0.1) : MiftahColors.surface;
-      fg = onDark ? Colors.white : MiftahColors.textSecondary;
-      border = onDark ? null : MiftahColors.borderStrong;
+      bg = dark ? Colors.white.withValues(alpha: 0.1) : MiftahColors.surface;
+      fg = dark ? Colors.white : MiftahColors.textSecondary;
+      border = dark ? null : MiftahColors.borderStrong;
     }
     return GestureDetector(
       onTap: onTap,
@@ -401,7 +415,7 @@ class MiftahIconTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = MiftahBadge.colorsFor(tone);
+    final c = MiftahBadge.colorsFor(tone, isDark: context.miftah.isDark);
     return Container(
       width: size,
       height: size,
@@ -426,10 +440,16 @@ class MiftahSectionLabel extends StatelessWidget {
   final double top;
 
   @override
-  Widget build(BuildContext context) => Padding(
-        padding: EdgeInsets.only(top: top, bottom: 10),
-        child: Text(text.toUpperCase(), style: MiftahType.sectionLabel()),
-      );
+  Widget build(BuildContext context) {
+    final m = context.miftah;
+    return Padding(
+      padding: EdgeInsets.only(top: top, bottom: 10),
+      child: Text(
+        text.toUpperCase(),
+        style: MiftahType.sectionLabel(color: m.textMuted),
+      ),
+    );
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -460,7 +480,7 @@ class MiftahProgress extends StatelessWidget {
             height: height,
             color: onGold
                 ? MiftahColors.ink.withValues(alpha: 0.18)
-                : MiftahColors.border,
+                : context.miftah.border,
           ),
           FractionallySizedBox(
             widthFactor: value.clamp(0.0, 1.0),
@@ -485,11 +505,7 @@ class MiftahProgress extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class MiftahNavItem {
-  const MiftahNavItem({
-    required this.icon,
-    required this.label,
-    this.badge,
-  });
+  const MiftahNavItem({required this.icon, required this.label, this.badge});
 
   final IconData icon;
   final String label;
@@ -522,16 +538,17 @@ class MiftahNavBar extends StatelessWidget {
   Widget build(BuildContext context) {
     assert(items.length == 4, 'MiftahNavBar expects four flanking items');
     final slots = <Widget>[
-      _slot(0),
-      _slot(1),
-      _centre(),
-      _slot(2),
-      _slot(3),
+      _slot(context, 0),
+      _slot(context, 1),
+      _centre(context),
+      _slot(context, 2),
+      _slot(context, 3),
     ];
+    final m = context.miftah;
     return Container(
-      decoration: const BoxDecoration(
-        color: MiftahColors.surface,
-        border: Border(top: BorderSide(color: MiftahColors.border)),
+      decoration: BoxDecoration(
+        color: m.surface,
+        border: Border(top: BorderSide(color: m.border)),
       ),
       child: SafeArea(
         top: false,
@@ -546,10 +563,13 @@ class MiftahNavBar extends StatelessWidget {
     );
   }
 
-  Widget _slot(int index) {
+  Widget _slot(BuildContext context, int index) {
     final item = items[index];
     final active = index == currentIndex;
-    final color = active ? MiftahColors.brassDeep : MiftahColors.textMuted;
+    final m = context.miftah;
+    final color = active
+        ? (m.isDark ? MiftahColors.brassLight : MiftahColors.brassDeep)
+        : m.textMuted;
     return InkWell(
       onTap: () => onTap(index),
       borderRadius: BorderRadius.circular(14),
@@ -578,7 +598,8 @@ class MiftahNavBar extends StatelessWidget {
     );
   }
 
-  Widget _centre() {
+  Widget _centre(BuildContext context) {
+    final m = context.miftah;
     return InkWell(
       onTap: onCentreTap,
       borderRadius: BorderRadius.circular(30),
@@ -603,10 +624,9 @@ class MiftahNavBar extends StatelessWidget {
             offset: const Offset(0, -26),
             child: Text(
               centreLabel,
-              style: MiftahType.meta().copyWith(
-                fontSize: 10.5,
-                fontWeight: FontWeight.w600,
-              ),
+              style: MiftahType.meta(
+                color: m.textMuted,
+              ).copyWith(fontSize: 10.5, fontWeight: FontWeight.w600),
             ),
           ),
         ],
@@ -631,48 +651,54 @@ Future<T?> showMiftahSheet<T>({
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
     barrierColor: MiftahColors.ink.withValues(alpha: 0.5),
-    builder: (context) => Container(
-      decoration: const BoxDecoration(
-        color: MiftahColors.canvas,
-        borderRadius: BorderRadius.vertical(
-          top: Radius.circular(MiftahRadii.sheet),
+    builder: (context) {
+      final m = context.miftah;
+      return Container(
+        decoration: BoxDecoration(
+          color: m.background,
+          borderRadius: BorderRadius.vertical(
+            top: Radius.circular(MiftahRadii.sheet),
+          ),
         ),
-      ),
-      padding: EdgeInsets.fromLTRB(
-        MiftahSpacing.page,
-        14,
-        MiftahSpacing.page,
-        MediaQuery.of(context).viewInsets.bottom + 30,
-      ),
-      child: SafeArea(
-        top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Center(
-              child: Container(
-                width: 44,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFD9D3E6),
-                  borderRadius: BorderRadius.circular(999),
+        padding: EdgeInsets.fromLTRB(
+          MiftahSpacing.page,
+          14,
+          MiftahSpacing.page,
+          MediaQuery.of(context).viewInsets.bottom + 30,
+        ),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 44,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: m.borderStrong,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 16),
-            Text(title, style: MiftahType.title()),
-            if (subtitle != null) ...[
-              const SizedBox(height: 6),
-              Text(subtitle, style: MiftahType.body(size: 12.5)),
+              const SizedBox(height: 16),
+              Text(title, style: MiftahType.title(color: m.textPrimary)),
+              if (subtitle != null) ...[
+                const SizedBox(height: 6),
+                Text(
+                  subtitle,
+                  style: MiftahType.body(size: 12.5, color: m.textSecondary),
+                ),
+              ],
+              const SizedBox(height: 18),
+              Flexible(child: SingleChildScrollView(child: child)),
+              if (action != null) ...[const SizedBox(height: 22), action],
             ],
-            const SizedBox(height: 18),
-            Flexible(child: SingleChildScrollView(child: child)),
-            if (action != null) ...[const SizedBox(height: 22), action],
-          ],
+          ),
         ),
-      ),
-    ),
+      );
+    },
   );
 }
 
@@ -698,25 +724,27 @@ class MiftahEmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final m = context.miftah;
     return Container(
       padding: const EdgeInsets.all(26),
       decoration: BoxDecoration(
-        color: MiftahColors.surface,
+        color: m.surface,
         borderRadius: BorderRadius.circular(MiftahRadii.card),
-        border: Border.all(
-          color: const Color(0xFFD9D3E6),
-          style: BorderStyle.solid,
-        ),
+        border: Border.all(color: m.borderStrong, style: BorderStyle.solid),
       ),
       child: Column(
         children: [
           MiftahIconTile(icon: icon, tone: MiftahTone.neutral, size: 52),
           const SizedBox(height: 14),
-          Text(title, style: MiftahType.cardTitle(), textAlign: TextAlign.center),
+          Text(
+            title,
+            style: MiftahType.cardTitle(color: m.textPrimary),
+            textAlign: TextAlign.center,
+          ),
           const SizedBox(height: 6),
           Text(
             subtitle,
-            style: MiftahType.body(size: 12.5),
+            style: MiftahType.body(size: 12.5, color: m.textSecondary),
             textAlign: TextAlign.center,
           ),
           if (actionLabel != null) ...[

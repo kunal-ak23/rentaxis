@@ -22,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -79,6 +80,7 @@ public class BookingService {
         if (req.resourceId() == null) {
             throw new BusinessRuleViolationException("resourceId is required");
         }
+        validateRequestedTimeWindow(req);
 
         BookingRequest booking = new BookingRequest();
         booking.setTenantId(tenantId);
@@ -87,6 +89,9 @@ public class BookingService {
         booking.setResourceType(req.resourceType());
         booking.setNote(req.note());
         booking.setPreferredDate(req.preferredDate());
+        booking.setPreferredEndDate(req.preferredEndDate());
+        booking.setPreferredStartTime(req.preferredStartTime());
+        booking.setPreferredEndTime(req.preferredEndTime());
         booking.setStatus(BookingRequestStatus.PENDING);
 
         if (req.resourceType() == BookingResourceType.AMENITY) {
@@ -126,6 +131,45 @@ public class BookingService {
         }
 
         return saveNewBooking(tenantId, booking);
+    }
+
+    private void validateRequestedTimeWindow(BookingCreateRequest req) {
+        if (req.resourceType() == BookingResourceType.PARKING_SPOT) {
+            if (req.preferredStartTime() != null || req.preferredEndTime() != null) {
+                throw new BusinessRuleViolationException(
+                        "Parking requests use a start and end date, not hourly time slots");
+            }
+            // Existing API clients can still create legacy date-less parking
+            // requests. The renter app requires both dates; the server only
+            // needs to reject a malformed half-range.
+            if (req.preferredEndDate() != null && req.preferredDate() == null) {
+                throw new BusinessRuleViolationException(
+                        "Parking end date requires a start date");
+            }
+            if (req.preferredDate() != null && req.preferredEndDate() != null
+                    && req.preferredEndDate().isBefore(req.preferredDate())) {
+                throw new BusinessRuleViolationException(
+                        "Parking end date must be on or after the start date");
+            }
+            return;
+        }
+        if (req.preferredEndDate() != null) {
+            throw new BusinessRuleViolationException(
+                    "Amenity requests use a time slot, not a date range");
+        }
+        LocalTime start = req.preferredStartTime();
+        LocalTime end = req.preferredEndTime();
+        if ((start == null) != (end == null)) {
+            throw new BusinessRuleViolationException(
+                    "Both preferredStartTime and preferredEndTime are required for a time slot");
+        }
+        if (start != null && req.preferredDate() == null) {
+            throw new BusinessRuleViolationException("preferredDate is required for a time slot");
+        }
+        if (start != null && !start.isBefore(end)) {
+            throw new BusinessRuleViolationException(
+                    "preferredEndTime must be after preferredStartTime");
+        }
     }
 
     /**
@@ -263,6 +307,20 @@ public class BookingService {
     public Page<BookingRequest> search(UUID tenantId, UUID propertyId, BookingRequestStatus status,
                                        BookingResourceType resourceType, Pageable pageable) {
         return bookingRepository.search(tenantId, propertyId, status, resourceType, pageable);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<BookingRequest> searchAssignedProperties(
+            UUID tenantId,
+            List<UUID> propertyIds,
+            BookingRequestStatus status,
+            BookingResourceType resourceType,
+            Pageable pageable) {
+        if (propertyIds.isEmpty()) {
+            return Page.empty(pageable);
+        }
+        return bookingRepository.searchAssignedProperties(
+                tenantId, propertyIds, status, resourceType, pageable);
     }
 
     @Transactional(readOnly = true)

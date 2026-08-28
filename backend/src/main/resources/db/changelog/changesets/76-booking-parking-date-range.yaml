@@ -1,0 +1,11 @@
+databaseChangeLog:
+  - changeSet:
+      id: 76-booking-parking-date-range
+      author: rentaxis
+      changes:
+        - addColumn:
+            tableName: booking_requests
+            columns:
+              - column:
+                  name: preferred_end_date
+                  type: date

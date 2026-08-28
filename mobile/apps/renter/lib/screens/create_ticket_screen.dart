@@ -408,6 +408,15 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                   itemBuilder: (context, index) {
                     final cat = _categories[index];
                     final isSelected = _selectedCategory == cat['value'];
+                    final selectedFill = m.isDark
+                        ? MiftahColors.brass.withValues(alpha: 0.18)
+                        : MiftahColors.brassTint;
+                    final selectedBorder = m.isDark
+                        ? MiftahColors.brass.withValues(alpha: 0.58)
+                        : MiftahColors.brass;
+                    final selectedForeground = m.isDark
+                        ? MiftahColors.brassLight
+                        : MiftahColors.brassDeep;
                     return InkWell(
                       onTap: () => setState(
                         () => _selectedCategory = cat['value'] as String,
@@ -415,12 +424,10 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                       borderRadius: BorderRadius.circular(10),
                       child: Container(
                         decoration: BoxDecoration(
-                          color: isSelected
-                              ? AppColors.primary.withValues(alpha: 0.1)
-                              : m.surface,
+                          color: isSelected ? selectedFill : m.surface,
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
-                            color: isSelected ? AppColors.primary : m.border,
+                            color: isSelected ? selectedBorder : m.border,
                             width: isSelected ? 1.5 : 1,
                           ),
                         ),
@@ -430,7 +437,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                             Icon(
                               cat['icon'] as IconData,
                               color: isSelected
-                                  ? AppColors.primary
+                                  ? selectedForeground
                                   : m.textSecondary,
                               size: 20,
                             ),
@@ -443,7 +450,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
                                     ? FontWeight.w600
                                     : FontWeight.w400,
                                 color: isSelected
-                                    ? AppColors.primary
+                                    ? selectedForeground
                                     : m.textSecondary,
                               ),
                               textAlign: TextAlign.center,

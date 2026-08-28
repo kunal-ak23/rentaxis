@@ -8,6 +8,7 @@ import lombok.Setter;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.UUID;
 
 /**
@@ -49,6 +50,18 @@ public class BookingRequest extends BaseTenantEntity {
 
     @Column(name = "preferred_date")
     private LocalDate preferredDate;
+
+    /** End of a requested parking period. Amenities use the time window below. */
+    @Column(name = "preferred_end_date")
+    private LocalDate preferredEndDate;
+
+    /** Optional requested time window on {@link #preferredDate}. Both values
+     * are present together, or both absent for legacy / date-only requests. */
+    @Column(name = "preferred_start_time")
+    private LocalTime preferredStartTime;
+
+    @Column(name = "preferred_end_time")
+    private LocalTime preferredEndTime;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)

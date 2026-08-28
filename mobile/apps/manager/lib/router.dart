@@ -17,6 +17,7 @@ import 'screens/create_ticket_screen.dart';
 import 'screens/ticket_detail_screen.dart';
 import 'screens/renters_screen.dart';
 import 'screens/finance_screen.dart';
+import 'screens/portfolio_pnl_screen.dart';
 import 'screens/more_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/staff_screen.dart';
@@ -68,8 +69,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       // nothing navigate away. Inert until the gate resolves (fail open) or
       // when it says ok — `valueOrNull` is null while still loading.
       final gateRequired =
-          ref.read(appGateProvider(AppId.manager)).valueOrNull?.requiresUpdate ??
-              false;
+          ref
+              .read(appGateProvider(AppId.manager))
+              .valueOrNull
+              ?.requiresUpdate ??
+          false;
       if (gateRequired) {
         return isUpdateRoute ? null : '/update-required';
       }
@@ -87,6 +91,18 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (isLoggedIn && isLoginRoute) {
         return '/';
       }
+
+      // PROPERTY_MANAGER accounts operate payments and cheques, but the
+      // accounts/transactions/reports endpoints are TENANT_ADMIN-only. Keep a
+      // stale deep link or restored /finance location from dead-ending on 403.
+      final canAccessFullFinance =
+          authState.role == 'TENANT_ADMIN' || authState.role == 'SUPER_ADMIN';
+      final isAdminFinanceRoute =
+          state.matchedLocation == '/finance' ||
+          state.matchedLocation == '/finance-reports';
+      if (isLoggedIn && !canAccessFullFinance && isAdminFinanceRoute) {
+        return '/payments';
+      }
       return null;
     },
     routes: [
@@ -98,8 +114,9 @@ final routerProvider = Provider<GoRouter>((ref) {
             // Consult the version gate before the usual auth routing. The gate
             // fails open: any error/timeout resolves to `ok`, so this only ever
             // diverts the user when the backend explicitly raised the floor.
-            final decision =
-                await ref.read(appGateProvider(AppId.manager).future);
+            final decision = await ref.read(
+              appGateProvider(AppId.manager).future,
+            );
             if (!context.mounted) return;
             if (decision.requiresUpdate) {
               GoRouter.of(context).go('/update-required');
@@ -119,10 +136,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/update-required',
         builder: (context, state) => UpdateRequiredScreen(
-          storeUrl: ref
-                  .read(appGateProvider(AppId.manager))
-                  .valueOrNull
-                  ?.storeUrl ??
+          storeUrl:
+              ref.read(appGateProvider(AppId.manager)).valueOrNull?.storeUrl ??
               '',
         ),
       ),
@@ -255,6 +270,11 @@ final routerProvider = Provider<GoRouter>((ref) {
                 fadeTransition(const FinanceScreen(), state),
           ),
           GoRoute(
+            path: '/portfolio-pnl',
+            pageBuilder: (context, state) =>
+                fadeTransition(const PortfolioPnlScreen(), state),
+          ),
+          GoRoute(
             path: '/more',
             pageBuilder: (context, state) =>
                 fadeTransition(const MoreScreen(), state),
@@ -312,8 +332,13 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: '/bookings',
-            pageBuilder: (context, state) =>
-                fadeTransition(const BookingApprovalsScreen(), state),
+            pageBuilder: (context, state) => fadeTransition(
+              BookingApprovalsScreen(
+                initialPropertyId: state.uri.queryParameters['propertyId'],
+                initialBookingId: state.uri.queryParameters['bookingId'],
+              ),
+              state,
+            ),
           ),
           GoRoute(
             path: '/vendors',

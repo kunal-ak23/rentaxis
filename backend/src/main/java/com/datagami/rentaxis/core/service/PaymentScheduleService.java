@@ -35,7 +35,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -340,32 +339,39 @@ public class PaymentScheduleService {
     }
 
     @Transactional(readOnly = true)
-    public Page<PaymentScheduleDTO> getPaymentsForProperty(UUID propertyId, PaymentStatus status, String renterName, boolean overdue, Pageable pageable) {
-        String normalizedRenterName = (renterName == null || renterName.trim().isEmpty()) ? null : renterName.trim();
+    public Page<PaymentScheduleDTO> getPaymentsForProperty(UUID propertyId, PaymentStatus status, String search, boolean overdue, Pageable pageable) {
+        String normalizedSearch = (search == null || search.trim().isEmpty()) ? null : search.trim();
         // "overdue" is a computed view (PENDING/COLLECTED + dueDate < today), not a
         // stored status, so it takes precedence over and ignores the status param.
         LocalDate today = LocalDate.now();
-        if (normalizedRenterName == null) {
+        if (normalizedSearch == null) {
             Page<PaymentSchedule> payments = overdue
                     ? paymentScheduleRepository.findOverdueFiltered(propertyId, today, pageable)
                     : paymentScheduleRepository.findFiltered(propertyId, status, pageable);
             return payments.map(this::mapToDTO);
         }
 
-        // Avoid DB text operations on renter names because some prod datasets store this value in binary-compatible columns.
-        String searchToken = normalizedRenterName.toLowerCase(Locale.ROOT);
-        List<PaymentSchedule> searchBase = overdue
-                ? paymentScheduleRepository.findOverdueForRenterSearch(propertyId, today)
-                : paymentScheduleRepository.findForRenterSearch(propertyId, status);
-        List<PaymentScheduleDTO> filtered = searchBase.stream()
-                .map(this::mapToDTO)
-                .filter(dto -> dto.getRenterName() != null && dto.getRenterName().toLowerCase(Locale.ROOT).contains(searchToken))
-                .collect(Collectors.toList());
+        String searchPattern = "%" + normalizedSearch.toLowerCase(Locale.ROOT) + "%";
+        String numericSearch = normalizedSearch.replace(",", "").trim();
+        Integer installmentNumber = null;
+        BigDecimal amount = null;
+        try {
+            installmentNumber = Integer.valueOf(numericSearch);
+        } catch (NumberFormatException ignored) {
+            // A name/property/unit search is expected to be non-numeric.
+        }
+        try {
+            amount = new BigDecimal(numericSearch);
+        } catch (NumberFormatException ignored) {
+            // A name/property/unit search is expected to be non-numeric.
+        }
 
-        int start = (int) pageable.getOffset();
-        int end = Math.min(start + pageable.getPageSize(), filtered.size());
-        List<PaymentScheduleDTO> pageContent = start >= filtered.size() ? List.of() : filtered.subList(start, end);
-        return new PageImpl<>(pageContent, pageable, filtered.size());
+        Page<PaymentSchedule> payments = overdue
+                ? paymentScheduleRepository.findOverdueFilteredWithSearch(
+                        propertyId, today, searchPattern, installmentNumber, amount, pageable)
+                : paymentScheduleRepository.findFilteredWithSearch(
+                        propertyId, status, searchPattern, installmentNumber, amount, pageable);
+        return payments.map(this::mapToDTO);
     }
 
     /**

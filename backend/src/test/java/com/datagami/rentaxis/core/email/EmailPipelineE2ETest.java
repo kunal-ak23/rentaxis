@@ -22,6 +22,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -29,6 +30,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -84,7 +86,12 @@ class EmailPipelineE2ETest {
         // EMAIL_NOTIFICATIONS feature defaults to OFF; opt the test tenant in.
         tenantFeatureService.setEnabled(tenantId, TenantFeature.EMAIL_NOTIFICATIONS, true);
 
-        when(sender.send(any(EmailOutbox.class))).thenReturn(new SendResult("msg-e2e", "Queued"));
+        AtomicBoolean providerCallHadOpenTransaction = new AtomicBoolean(true);
+        when(sender.send(any(EmailOutbox.class))).thenAnswer(invocation -> {
+            providerCallHadOpenTransaction.set(
+                    TransactionSynchronizationManager.isActualTransactionActive());
+            return new SendResult("msg-e2e", "Queued");
+        });
 
         tx.executeWithoutResult(s -> publisher.publishEvent(new EmailEvent(this,
                 EmailEventType.USER_INVITED,
@@ -102,13 +109,16 @@ class EmailPipelineE2ETest {
         // Drive the worker. We invoke processOne directly rather than tick()
         // because tick() carries @SchedulerLock, which silently no-ops when
         // called outside the @Scheduled trigger. processOne is the per-row
-        // unit of work the scheduler invokes for each picked row, and it is
-        // @Transactional, so this still exercises the full
+        // unit of work the scheduler invokes for each picked row, so this
+        // still exercises the full
         // outbox -> EmailSender -> persistence path end-to-end.
         processor.processOne(row);
 
         EmailOutbox after = outboxRepo.findById(row.getId()).orElseThrow();
         assertThat(after.getStatus()).isEqualTo(EmailOutbox.Status.SENT);
         assertThat(after.getAzureMessageId()).isEqualTo("msg-e2e");
+        assertThat(providerCallHadOpenTransaction)
+                .as("external email provider call must not hold database locks")
+                .isFalse();
     }
 }

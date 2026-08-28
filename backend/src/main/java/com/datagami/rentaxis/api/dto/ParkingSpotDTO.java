@@ -9,6 +9,7 @@ public record ParkingSpotDTO(
         UUID propertyId,
         String spotNumber,
         String level,
+        List<String> photoUrls,
         boolean covered,
         boolean active,
         List<UUID> buildingIds,

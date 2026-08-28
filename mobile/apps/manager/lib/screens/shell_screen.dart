@@ -5,6 +5,27 @@ import 'package:rentaxis_core/rentaxis_core.dart';
 
 import 'queue_screen.dart' show managerQueueCountProvider;
 
+/// Full ledger/reporting data is deliberately limited to organisation admins.
+/// Property managers still operate the day-to-day payment and cheque workflow,
+/// so their Finance tab opens that permitted surface instead of a guaranteed
+/// 403 from the chart-of-accounts endpoints.
+bool hasFullFinanceAccess(String? role) =>
+    role == 'TENANT_ADMIN' || role == 'SUPER_ADMIN';
+
+String managerFinanceRouteForRole(String? role) =>
+    hasFullFinanceAccess(role) ? '/finance' : '/payments';
+
+int managerShellIndexForLocation(String location) {
+  if (location.startsWith('/properties')) return 1;
+  if (location.startsWith('/finance') ||
+      location.startsWith('/payments') ||
+      location.startsWith('/portfolio-pnl')) {
+    return 2;
+  }
+  if (location.startsWith('/queue')) return 3;
+  return 0;
+}
+
 class ShellScreen extends ConsumerStatefulWidget {
   final Widget child;
   const ShellScreen({super.key, required this.child});
@@ -33,19 +54,12 @@ class _ShellScreenState extends ConsumerState<ShellScreen> {
     super.dispose();
   }
 
-  static const _routes = ['/', '/properties', '/finance', '/queue'];
-
-  int _calculateIndex(String location) {
-    if (location.startsWith('/properties')) return 1;
-    if (location.startsWith('/finance')) return 2;
-    if (location.startsWith('/queue')) return 3;
-    return 0;
-  }
-
   @override
   Widget build(BuildContext context) {
     final location = GoRouterState.of(context).matchedLocation;
-    final currentIndex = _calculateIndex(location);
+    final currentIndex = managerShellIndexForLocation(location);
+    final authState = ref.watch(authProvider);
+    final financeRoute = managerFinanceRouteForRole(authState.role);
     final isAr = context.isAr;
     final queueCount = ref.watch(managerQueueCountProvider).valueOrNull ?? 0;
 
@@ -61,7 +75,13 @@ class _ShellScreenState extends ConsumerState<ShellScreen> {
         body: SafeArea(bottom: false, child: widget.child),
         bottomNavigationBar: MiftahNavBar(
           currentIndex: currentIndex,
-          onTap: (index) => context.go(_routes[index]),
+          onTap: (index) => context.go(switch (index) {
+            0 => '/',
+            1 => '/properties',
+            2 => financeRoute,
+            3 => '/queue',
+            _ => '/',
+          }),
           centreIcon: Icons.document_scanner_rounded,
           centreLabel: isAr ? 'مسح' : 'Scan',
           onCentreTap: () => context.push('/scan'),

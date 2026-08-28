@@ -281,26 +281,30 @@ class _SeeAllTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isAr = context.isAr;
+    final m = context.miftah;
     return InkWell(
       key: const Key('promo-see-all'),
       borderRadius: BorderRadius.circular(MiftahRadii.card),
       onTap: onTap,
       child: Container(
         decoration: BoxDecoration(
-          color: MiftahColors.surface,
+          color: m.surface,
           borderRadius: BorderRadius.circular(MiftahRadii.card),
-          border: Border.all(color: MiftahColors.border),
+          border: Border.all(color: m.border),
         ),
         alignment: Alignment.center,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.local_offer_outlined,
-                color: MiftahColors.brass, size: 26),
+            const Icon(
+              Icons.local_offer_outlined,
+              color: MiftahColors.brass,
+              size: 26,
+            ),
             const SizedBox(height: 8),
             Text(
               isAr ? 'كل العروض' : 'See all offers',
-              style: MiftahType.cardTitle(),
+              style: MiftahType.cardTitle(color: m.textPrimary),
             ),
           ],
         ),

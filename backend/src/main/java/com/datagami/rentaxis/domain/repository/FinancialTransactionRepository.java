@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -62,4 +63,11 @@ public interface FinancialTransactionRepository
     List<FinancialTransaction> findBySplitParentFalseOrderByDateDesc();
 
     List<FinancialTransaction> findBySplitParentFalseAndDateBetweenOrderByDateDesc(LocalDate startDate, LocalDate endDate);
+
+    /** One bounded portfolio query; avoids one financial query per property. */
+    List<FinancialTransaction> findBySplitParentFalseAndPropertyIdInOrderByDateDesc(Collection<UUID> propertyIds);
+
+    /** Date-scoped form of the bounded portfolio query. */
+    List<FinancialTransaction> findBySplitParentFalseAndPropertyIdInAndDateBetweenOrderByDateDesc(
+            Collection<UUID> propertyIds, LocalDate startDate, LocalDate endDate);
 }

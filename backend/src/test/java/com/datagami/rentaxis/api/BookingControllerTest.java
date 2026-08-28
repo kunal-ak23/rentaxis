@@ -19,6 +19,7 @@ import com.datagami.rentaxis.domain.entity.PropertyAmenity;
 import com.datagami.rentaxis.domain.entity.Renter;
 import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.User;
+import com.datagami.rentaxis.domain.entity.UserPropertyAssignment;
 import com.datagami.rentaxis.domain.entity.enums.BookingRequestStatus;
 import com.datagami.rentaxis.domain.entity.enums.BookingResourceType;
 import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
@@ -26,6 +27,7 @@ import com.datagami.rentaxis.domain.repository.BookingRequestRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.ParkingSpotRepository;
 import com.datagami.rentaxis.domain.repository.PropertyAmenityRepository;
+import com.datagami.rentaxis.domain.repository.PropertyRepository;
 import com.datagami.rentaxis.domain.repository.RenterRepository;
 import com.datagami.rentaxis.domain.repository.UnitRepository;
 import com.datagami.rentaxis.domain.repository.UserPropertyAssignmentRepository;
@@ -73,6 +75,7 @@ class BookingControllerTest {
     @Mock UserRepository userRepository;
     @Mock UserPropertyAssignmentRepository assignmentRepository;
     @Mock PropertyAmenityRepository amenityRepository;
+    @Mock PropertyRepository propertyRepository;
     @Mock ParkingSpotRepository parkingSpotRepository;
     @Mock BookingRequestRepository bookingRequestRepository;
 
@@ -94,6 +97,7 @@ class BookingControllerTest {
         Property property = new Property();
         property.setId(propertyId);
         property.setNameEn("Marina Heights");
+        property.setNameAr("مارينا هايتس");
         unit = new Unit();
         unit.setId(UUID.randomUUID());
         unit.setUnitNumber("1204");
@@ -107,6 +111,8 @@ class BookingControllerTest {
         lenient().when(userRepository.findByTenantIdAndIdIn(eq(tenantId), any()))
                 .thenReturn(List.of());
         lenient().when(unitRepository.findAllById(any())).thenReturn(List.of(unit));
+        lenient().when(propertyRepository.findByTenantIdAndIdIn(eq(tenantId), any()))
+                .thenReturn(List.of());
     }
 
     @AfterEach
@@ -204,12 +210,16 @@ class BookingControllerTest {
         BookingRequest saved = booking(BookingResourceType.AMENITY);
         when(bookingService.create(eq(tenantId), eq(renterUserId), eq(unit), any())).thenReturn(saved);
         when(amenityRepository.findAllById(List.of(saved.getAmenityId()))).thenReturn(List.of());
+        when(propertyRepository.findByTenantIdAndIdIn(tenantId, List.of(propertyId)))
+                .thenReturn(List.of(unit.getProperty()));
 
         ResponseEntity<BookingRequestDTO> response = controller.create(new BookingCreateRequest(
                 BookingResourceType.AMENITY, saved.getAmenityId(), unit.getId(), null, null));
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(response.getBody().unitNumber()).isEqualTo("1204");
+        assertThat(response.getBody().propertyNameEn()).isEqualTo("Marina Heights");
+        assertThat(response.getBody().propertyNameAr()).isEqualTo("مارينا هايتس");
     }
 
     @Test
@@ -310,13 +320,41 @@ class BookingControllerTest {
     }
 
     @Test
-    void adminList_pmWithoutPropertyId_throwsAccessDenied() {
+    void adminList_pmWithoutPropertyId_searchesEveryAssignedProperty() {
         UUID pmId = UUID.randomUUID();
         authenticateAs(pmId, "ROLE_PROPERTY_MANAGER");
         Pageable pageable = PageRequest.of(0, 20, Sort.by(Sort.Direction.ASC, "createdAt"));
+        UUID secondPropertyId = UUID.randomUUID();
+        UserPropertyAssignment first = new UserPropertyAssignment();
+        first.setUserId(pmId);
+        first.setPropertyId(propertyId);
+        UserPropertyAssignment duplicate = new UserPropertyAssignment();
+        duplicate.setUserId(pmId);
+        duplicate.setPropertyId(propertyId);
+        UserPropertyAssignment second = new UserPropertyAssignment();
+        second.setUserId(pmId);
+        second.setPropertyId(secondPropertyId);
+        when(assignmentRepository.findByUserId(pmId))
+                .thenReturn(List.of(first, duplicate, second));
+        when(bookingService.searchAssignedProperties(
+                tenantId,
+                List.of(propertyId, secondPropertyId),
+                BookingRequestStatus.PENDING,
+                null,
+                pageable))
+                .thenReturn(Page.empty(pageable));
 
-        assertThatThrownBy(() -> controller.list(null, null, null, pageable))
-                .isInstanceOf(AccessDeniedException.class);
+        ResponseEntity<Page<BookingRequestDTO>> response = controller.list(
+                null, BookingRequestStatus.PENDING, null, pageable);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().getContent()).isEmpty();
+        verify(bookingService).searchAssignedProperties(
+                tenantId,
+                List.of(propertyId, secondPropertyId),
+                BookingRequestStatus.PENDING,
+                null,
+                pageable);
     }
 
     @Test

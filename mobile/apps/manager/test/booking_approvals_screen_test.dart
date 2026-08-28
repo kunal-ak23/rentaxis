@@ -34,6 +34,8 @@ void main() {
     'parkingSpotId': null,
     'resourceName': 'Community Hall',
     'propertyId': 'prop-1',
+    'propertyNameEn': 'Marina Heights',
+    'propertyNameAr': 'مارينا هايتس',
     'unitId': 'unit-1',
     'unitNumber': '1204',
     'renterUserId': 'user-9',
@@ -60,6 +62,7 @@ void main() {
   Future<FakeFacilityService> pumpScreen(
     WidgetTester tester, {
     required FakeFacilityService fake,
+    BookingApprovalsScreen screen = const BookingApprovalsScreen(),
   }) async {
     await tester.pumpWidget(
       ProviderScope(
@@ -67,10 +70,7 @@ void main() {
           facilityServiceProvider.overrideWithValue(fake),
           propertiesProvider.overrideWith((ref) async => properties),
         ],
-        child: MaterialApp(
-          theme: AppTheme.lightTheme,
-          home: const BookingApprovalsScreen(),
-        ),
+        child: MaterialApp(theme: AppTheme.lightTheme, home: screen),
       ),
     );
     await tester.pumpAndSettle();
@@ -103,6 +103,27 @@ void main() {
     expect(find.byKey(const Key('admin-note')), findsNothing);
     // ...and the queue was re-read after the decision.
     expect(fake.bookingsReads, greaterThanOrEqualTo(2));
+  });
+
+  testWidgets('a Queue deep link opens the exact booking with its property', (
+    tester,
+  ) async {
+    await pumpScreen(
+      tester,
+      fake: FakeFacilityService(
+        bookings: [booking],
+        detail: {'request': booking, 'otherRequests': <dynamic>[]},
+      ),
+      screen: const BookingApprovalsScreen(
+        initialPropertyId: 'prop-1',
+        initialBookingId: 'bk-1',
+      ),
+    );
+
+    expect(find.text('Marina Heights'), findsAtLeastNWidgets(1));
+    expect(find.byKey(const Key('admin-note')), findsOneWidget);
+    expect(find.text('APPROVE'), findsOneWidget);
+    expect(find.text('REJECT'), findsOneWidget);
   });
 
   testWidgets('a 409 (spot already held) keeps the sheet open and shows '

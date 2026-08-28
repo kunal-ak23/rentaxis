@@ -44,7 +44,7 @@ class _FinanceScreenState extends ConsumerState<FinanceScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
   }
 
   @override
@@ -73,9 +73,10 @@ class _FinanceScreenState extends ConsumerState<FinanceScreen>
             child: TabBarView(
               controller: _tabController,
               children: [
-                _AccountsTab(onRefresh: _refresh, l: l),
                 _TransactionsTab(onRefresh: _refresh, l: l),
+                _AccountsTab(onRefresh: _refresh, l: l),
                 _ReportsTab(onRefresh: _refresh, l: l),
+                _FinanceToolsTab(l: l),
               ],
             ),
           ),
@@ -135,6 +136,7 @@ class _ChromeHeader extends StatelessWidget {
             ),
             TabBar(
               controller: tabController,
+              isScrollable: true,
               labelColor: AppColors.accent,
               unselectedLabelColor: Colors.white60,
               indicatorColor: AppColors.accent,
@@ -150,16 +152,154 @@ class _ChromeHeader extends StatelessWidget {
                     ),
               unselectedLabelStyle: l.ar
                   ? GoogleFonts.notoNaskhArabic(fontSize: 13)
-                  : GoogleFonts.plusJakartaSans(fontSize: 11.5, letterSpacing: 1.4),
+                  : GoogleFonts.plusJakartaSans(
+                      fontSize: 11.5,
+                      letterSpacing: 1.4,
+                    ),
               tabs: [
-                Tab(text: l.ar ? l.accounts : l.accounts.toUpperCase()),
                 Tab(text: l.ar ? l.transactions : l.transactions.toUpperCase()),
+                Tab(text: l.ar ? l.accounts : l.accounts.toUpperCase()),
                 Tab(text: l.ar ? l.reports : l.reports.toUpperCase()),
+                Tab(text: l.ar ? l.tools : l.tools.toUpperCase()),
               ],
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+/// The detailed finance surfaces used to live only under More, which made the
+/// Finance tab feel incomplete after Transactions became the default. Keep the
+/// compact operational tabs above, and expose the deeper finance tools here.
+class _FinanceToolsTab extends StatelessWidget {
+  const _FinanceToolsTab({required this.l});
+
+  final _L l;
+
+  @override
+  Widget build(BuildContext context) {
+    final m = context.miftah;
+    final items = [
+      (
+        icon: Icons.account_balance_wallet_outlined,
+        title: l.bankAccounts,
+        subtitle: l.bankAccountsSubtitle,
+        route: '/bank-accounts',
+      ),
+      (
+        icon: Icons.store_outlined,
+        title: l.vendors,
+        subtitle: l.vendorsSubtitle,
+        route: '/vendors',
+      ),
+      (
+        icon: Icons.assessment_outlined,
+        title: l.detailedReports,
+        subtitle: l.detailedReportsSubtitle,
+        route: '/finance-reports',
+      ),
+    ];
+
+    return ListView(
+      key: const Key('finance-tools-tab'),
+      padding: const EdgeInsets.all(16),
+      children: [
+        Text(
+          l.financeToolsHeading,
+          style: l.ar
+              ? GoogleFonts.notoNaskhArabic(
+                  fontSize: 19,
+                  fontWeight: FontWeight.w600,
+                  color: m.textPrimary,
+                )
+              : GoogleFonts.plusJakartaSans(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w600,
+                  color: m.textPrimary,
+                ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          l.financeToolsDescription,
+          style: TextStyle(fontSize: 12, color: m.textMuted),
+        ),
+        const SizedBox(height: 16),
+        for (final item in items)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Material(
+              color: m.surface,
+              borderRadius: BorderRadius.circular(14),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: () => context.push(item.route),
+                child: Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: m.border),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 42,
+                        height: 42,
+                        decoration: BoxDecoration(
+                          color: AppColors.accent.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(11),
+                        ),
+                        child: Icon(
+                          item.icon,
+                          color: m.isDark
+                              ? AppColors.gold400
+                              : AppColors.accentDark,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              item.title,
+                              style: l.ar
+                                  ? GoogleFonts.notoNaskhArabic(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w600,
+                                      color: m.textPrimary,
+                                    )
+                                  : GoogleFonts.plusJakartaSans(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                      color: m.textPrimary,
+                                    ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              item.subtitle,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: m.textMuted,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Icon(
+                        context.isAr
+                            ? Icons.chevron_left_rounded
+                            : Icons.chevron_right_rounded,
+                        color: m.textMuted,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -384,8 +524,7 @@ class _TransactionsTab extends ConsumerWidget {
                               color: m.textMuted,
                             ),
                           ),
-                          if (tx['description'] != null &&
-                              accountName != null)
+                          if (tx['description'] != null && accountName != null)
                             Text(
                               tx['description'],
                               style: l.ar
@@ -494,7 +633,10 @@ class _ReportsTab extends ConsumerWidget {
                           fontWeight: FontWeight.w600,
                           color: m.textPrimary,
                         )
-                      : GoogleFonts.plusJakartaSans(fontSize: 18, color: m.textPrimary),
+                      : GoogleFonts.plusJakartaSans(
+                          fontSize: 18,
+                          color: m.textPrimary,
+                        ),
                 ),
                 const SizedBox(height: 16),
                 Row(
@@ -616,7 +758,9 @@ class _ReportsTab extends ConsumerWidget {
 List<Map<String, dynamic>> _breakdownItems(dynamic breakdown) {
   if (breakdown is! Map) return const [];
   return breakdown.entries
-      .map((e) => <String, dynamic>{'name': e.key.toString(), 'amount': e.value})
+      .map(
+        (e) => <String, dynamic>{'name': e.key.toString(), 'amount': e.value},
+      )
       .toList();
 }
 
@@ -717,7 +861,10 @@ class _ReportLineItem extends StatelessWidget {
                       fontSize: 14.5,
                       color: m.textPrimary,
                     )
-                  : GoogleFonts.plusJakartaSans(fontSize: 14, color: m.textPrimary),
+                  : GoogleFonts.plusJakartaSans(
+                      fontSize: 14,
+                      color: m.textPrimary,
+                    ),
             ),
           ),
           Text(
@@ -773,6 +920,22 @@ class _L {
   String get accounts => ar ? 'الحسابات' : 'Accounts';
   String get transactions => ar ? 'المعاملات' : 'Transactions';
   String get reports => ar ? 'التقارير' : 'Reports';
+  String get tools => ar ? 'أدوات' : 'Tools';
+  String get financeToolsHeading =>
+      ar ? 'أدوات مالية إضافية' : 'More finance tools';
+  String get financeToolsDescription => ar
+      ? 'اصل إلى الحسابات البنكية والموردين والتقارير التفصيلية.'
+      : 'Access bank accounts, vendors, and detailed reports.';
+  String get bankAccounts => ar ? 'الحسابات البنكية' : 'Bank Accounts';
+  String get bankAccountsSubtitle =>
+      ar ? 'أرصدة الحسابات والتفاصيل' : 'Account balances and details';
+  String get vendors => ar ? 'الموردون' : 'Vendors';
+  String get vendorsSubtitle =>
+      ar ? 'إدارة الموردين والمدفوعات' : 'Manage suppliers and payments';
+  String get detailedReports => ar ? 'التقارير التفصيلية' : 'Detailed Reports';
+  String get detailedReportsSubtitle => ar
+      ? 'الميزان والضريبة والتقارير حسب العقار'
+      : 'Trial balance, VAT, and property reports';
   String get failedToLoadAccounts =>
       ar ? 'تعذر تحميل الحسابات' : 'Failed to load accounts';
   String get noAccounts => ar ? 'لا توجد حسابات' : 'No accounts found';

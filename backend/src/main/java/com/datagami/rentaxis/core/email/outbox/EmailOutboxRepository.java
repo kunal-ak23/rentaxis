@@ -3,6 +3,7 @@ package com.datagami.rentaxis.core.email.outbox;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -12,6 +13,16 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface EmailOutboxRepository extends JpaRepository<EmailOutbox, UUID> {
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+        UPDATE EmailOutbox o
+        SET o.status = com.datagami.rentaxis.core.email.outbox.EmailOutbox$Status.SENDING,
+            o.lastAttemptAt = :attemptedAt
+        WHERE o.id = :id
+          AND o.status = com.datagami.rentaxis.core.email.outbox.EmailOutbox$Status.PENDING
+        """)
+    int claimPending(@Param("id") UUID id, @Param("attemptedAt") Instant attemptedAt);
 
     Page<EmailOutbox> findByTenantId(UUID tenantId, Pageable pageable);
 

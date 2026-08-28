@@ -93,12 +93,7 @@ class _RentersScreenState extends ConsumerState<RentersScreen> {
                   color: m.isDark ? AppColors.accent : AppColors.primary,
                   child: ListView.builder(
                     physics: const AlwaysScrollableScrollPhysics(),
-                    padding: EdgeInsets.fromLTRB(
-                      0,
-                      8,
-                      0,
-                      24,
-                    ),
+                    padding: EdgeInsets.fromLTRB(0, 8, 0, 24),
                     itemCount: _rowCount(filtered, l.ar),
                     itemBuilder: (context, index) =>
                         _buildRow(context, filtered, index, l),
@@ -111,9 +106,12 @@ class _RentersScreenState extends ConsumerState<RentersScreen> {
       ),
       floatingActionButton: canCreate
           ? FloatingActionButton(
-              backgroundColor: AppColors.primary,
+              backgroundColor: m.isDark ? AppColors.accent : AppColors.primary,
               onPressed: () => _showCreateRenterSheet(context),
-              child: const Icon(Icons.person_add_outlined, color: Colors.white),
+              child: Icon(
+                Icons.person_add_outlined,
+                color: m.isDark ? AppColors.primary : Colors.white,
+              ),
             )
           : null,
     );
@@ -310,7 +308,9 @@ class _RentersScreenState extends ConsumerState<RentersScreen> {
   /// portalPassword) — surface them so the admin can share them, like web.
   void _showPortalCredentialsDialog(String email, String password) {
     final l = _L(context.isAr);
-    final body = l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.plusJakartaSans;
+    final body = l.ar
+        ? GoogleFonts.notoNaskhArabic
+        : GoogleFonts.plusJakartaSans;
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -322,7 +322,10 @@ class _RentersScreenState extends ConsumerState<RentersScreen> {
                   fontSize: 19,
                   fontWeight: FontWeight.w600,
                 )
-              : GoogleFonts.plusJakartaSans(fontSize: 17, fontWeight: FontWeight.w600),
+              : GoogleFonts.plusJakartaSans(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w600,
+                ),
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -399,14 +402,18 @@ class _ChromeHeader extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                     color: AppColors.gold400,
                   )
-                : GoogleFonts.plusJakartaSans(fontSize: 22, color: AppColors.gold400),
+                : GoogleFonts.plusJakartaSans(
+                    fontSize: 22,
+                    color: AppColors.gold400,
+                  ),
           ),
           const SizedBox(height: 12),
           TextField(
             onChanged: onSearchChanged,
             style: (l.ar
                 ? GoogleFonts.notoNaskhArabic
-                : GoogleFonts.plusJakartaSans)(fontSize: 13, color: Colors.white),
+                : GoogleFonts
+                      .plusJakartaSans)(fontSize: 13, color: Colors.white),
             decoration: InputDecoration(
               isDense: true,
               hintText: l.searchHint,

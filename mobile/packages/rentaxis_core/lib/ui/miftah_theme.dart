@@ -20,10 +20,12 @@ class MiftahTheme {
     final canvas = isDark ? MiftahColors.darkCanvas : MiftahColors.canvas;
     final surface = isDark ? MiftahColors.darkSurface : MiftahColors.surface;
     final border = isDark ? MiftahColors.darkBorder : MiftahColors.border;
-    final textPrimary =
-        isDark ? MiftahColors.darkTextPrimary : MiftahColors.textPrimary;
-    final textMuted =
-        isDark ? MiftahColors.darkTextMuted : MiftahColors.textMuted;
+    final textPrimary = isDark
+        ? MiftahColors.darkTextPrimary
+        : MiftahColors.textPrimary;
+    final textMuted = isDark
+        ? MiftahColors.darkTextMuted
+        : MiftahColors.textMuted;
 
     final base = ThemeData(brightness: brightness, useMaterial3: true);
 
@@ -32,23 +34,23 @@ class MiftahTheme {
       canvasColor: canvas,
       splashFactory: InkSparkle.splashFactory,
 
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: MiftahColors.brass,
-        brightness: brightness,
-      ).copyWith(
-        primary: isDark ? MiftahColors.brassLight : MiftahColors.ink,
-        onPrimary: isDark ? MiftahColors.ink : Colors.white,
-        secondary: MiftahColors.brass,
-        surface: surface,
-        onSurface: textPrimary,
-        error: MiftahColors.danger,
-        outline: border,
-      ),
+      colorScheme:
+          ColorScheme.fromSeed(
+            seedColor: MiftahColors.brass,
+            brightness: brightness,
+          ).copyWith(
+            primary: isDark ? MiftahColors.brassLight : MiftahColors.ink,
+            onPrimary: isDark ? MiftahColors.ink : Colors.white,
+            secondary: MiftahColors.brass,
+            surface: surface,
+            onSurface: textPrimary,
+            error: MiftahColors.danger,
+            outline: border,
+          ),
 
-      textTheme: GoogleFonts.plusJakartaSansTextTheme(base.textTheme).apply(
-        bodyColor: textPrimary,
-        displayColor: textPrimary,
-      ),
+      textTheme: GoogleFonts.plusJakartaSansTextTheme(
+        base.textTheme,
+      ).apply(bodyColor: textPrimary, displayColor: textPrimary),
 
       // App bar is part of the page now — white (or ink), flat, no tint.
       appBarTheme: AppBarTheme(
@@ -86,9 +88,14 @@ class MiftahTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: surface,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
-        hintStyle: MiftahType.body(size: 14, color: MiftahColors.textFaint),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 15,
+        ),
+        hintStyle: MiftahType.body(
+          size: 14,
+          color: isDark ? MiftahColors.darkTextMuted : MiftahColors.textFaint,
+        ),
         labelStyle: MiftahType.sectionLabel(color: textMuted),
         floatingLabelStyle: MiftahType.sectionLabel(color: textMuted),
         border: OutlineInputBorder(
@@ -136,14 +143,18 @@ class MiftahTheme {
 
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
-          foregroundColor: MiftahColors.brassDeep,
+          foregroundColor: isDark
+              ? MiftahColors.brassLight
+              : MiftahColors.brassDeep,
           textStyle: MiftahType.button(size: 12.5),
         ),
       ),
 
       chipTheme: ChipThemeData(
         backgroundColor: surface,
-        selectedColor: MiftahColors.brassTint,
+        selectedColor: isDark
+            ? const Color(0x2DC79A3C)
+            : MiftahColors.brassTint,
         side: BorderSide(color: border),
         labelStyle: MiftahType.meta(color: textPrimary),
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
@@ -157,8 +168,9 @@ class MiftahTheme {
         surfaceTintColor: Colors.transparent,
         modalBarrierColor: MiftahColors.ink.withValues(alpha: 0.5),
         shape: const RoundedRectangleBorder(
-          borderRadius:
-              BorderRadius.vertical(top: Radius.circular(MiftahRadii.sheet)),
+          borderRadius: BorderRadius.vertical(
+            top: Radius.circular(MiftahRadii.sheet),
+          ),
         ),
       ),
 
@@ -171,9 +183,11 @@ class MiftahTheme {
         ),
       ),
 
-      progressIndicatorTheme: const ProgressIndicatorThemeData(
+      progressIndicatorTheme: ProgressIndicatorThemeData(
         color: MiftahColors.brass,
-        linearTrackColor: MiftahColors.border,
+        linearTrackColor: isDark
+            ? MiftahColors.darkBorder
+            : MiftahColors.border,
       ),
 
       switchTheme: SwitchThemeData(
@@ -202,9 +216,7 @@ class MiftahTheme {
       // which resolves this extension. Without it registered the getter falls
       // back to its light constant and those screens stay light in dark mode.
       // Retires once every screen reads from the theme directly.
-      extensions: [
-        isDark ? LegacyMiftahColors.dark : LegacyMiftahColors.light,
-      ],
+      extensions: [isDark ? LegacyMiftahColors.dark : LegacyMiftahColors.light],
     );
   }
 }

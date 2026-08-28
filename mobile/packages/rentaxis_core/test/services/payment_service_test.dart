@@ -55,6 +55,7 @@ void main() {
       await PaymentService(dio).getPaymentsPage(
         propertyId: 'prop-1',
         status: 'PENDING',
+        search: 'Tower A 5000',
         sort: ['dueDate,asc', 'id,asc'],
         page: 2,
         size: 20,
@@ -63,12 +64,23 @@ void main() {
       final params = adapter.lastRequest?.queryParameters;
       expect(params?['propertyId'], 'prop-1');
       expect(params?['status'], 'PENDING');
+      expect(params?['search'], 'Tower A 5000');
       expect(params?['sort'], ['dueDate,asc', 'id,asc']);
       expect(params?['page'], 2);
       expect(params?['size'], 20);
       // overdue defaults to false and must then be omitted entirely — the
       // backend ignores `status` whenever overdue is present and true.
       expect(params, isNot(contains('overdue')));
+    });
+
+    test('omits blank server-side search values', () async {
+      final dio = Dio(BaseOptions(baseUrl: 'https://api.example'));
+      final adapter = _StubAdapter(responseBody: {'content': <dynamic>[]});
+      dio.httpClientAdapter = adapter;
+
+      await PaymentService(dio).getPaymentsPage(search: '   ');
+
+      expect(adapter.lastRequest?.queryParameters, isNot(contains('search')));
     });
 
     test('sends overdue=true for the computed overdue view', () async {

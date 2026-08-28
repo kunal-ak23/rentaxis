@@ -274,11 +274,10 @@ public class FacilityService {
     }
 
     /**
-     * Everything the given unit may see: active facilities of the unit's property
-     * where the facility has no scope rows (all towers) OR the unit's building is
-     * in the scope set. A unit with no building sees only unscoped facilities.
-     * Scopes are batched — two queries regardless of facility count. Client-visible
-     * lists use the createdAt-ordered finders, not the unordered variants.
+     * Everything the given unit may see: amenities honour their optional building
+     * scope, while active parking is available property-wide. Parking is a shared
+     * inventory and the booking workflow prevents a held space being requested.
+     * Client-visible lists use the createdAt-ordered finders.
      */
     @Transactional(readOnly = true)
     public VisibleFacilities visibleFacilities(UUID tenantId, Unit unit) {
@@ -299,17 +298,7 @@ public class FacilityService {
 
         List<ParkingSpot> spots =
                 spotRepository.findByTenantIdAndPropertyIdAndActiveTrueOrderByCreatedAtAsc(tenantId, propertyId);
-        Map<UUID, List<UUID>> spotScopes = spots.isEmpty() ? Map.of()
-                : spotScopeRepository.findByParkingSpotIdIn(
-                        spots.stream().map(ParkingSpot::getId).toList())
-                .stream()
-                .collect(Collectors.groupingBy(ParkingSpotBuildingScope::getParkingSpotId,
-                        Collectors.mapping(ParkingSpotBuildingScope::getBuildingId, Collectors.toList())));
-        List<ParkingSpot> visibleSpots = spots.stream()
-                .filter(s -> visible(spotScopes.getOrDefault(s.getId(), List.of()), unitBuildingId))
-                .toList();
-
-        return new VisibleFacilities(visibleAmenities, visibleSpots);
+        return new VisibleFacilities(visibleAmenities, spots);
     }
 
     /** Single-resource visibility check for the booking path. Includes the property match. */
@@ -322,14 +311,10 @@ public class FacilityService {
         return visible(amenityBuildingIds(amenity.getId()), unitBuildingId);
     }
 
-    /** Single-resource visibility check for the booking path. Includes the property match. */
+    /** Parking is visible and requestable to every active renter of the same property. */
     @Transactional(readOnly = true)
     public boolean parkingSpotVisibleToUnit(ParkingSpot spot, Unit unit) {
-        if (!Objects.equals(spot.getPropertyId(), unit.getProperty().getId())) {
-            return false;
-        }
-        UUID unitBuildingId = unit.getBuilding() == null ? null : unit.getBuilding().getId();
-        return visible(parkingSpotBuildingIds(spot.getId()), unitBuildingId);
+        return Objects.equals(spot.getPropertyId(), unit.getProperty().getId());
     }
 
     private static boolean visible(List<UUID> scopeBuildingIds, UUID unitBuildingId) {

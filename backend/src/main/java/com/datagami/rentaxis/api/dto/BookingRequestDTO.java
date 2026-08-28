@@ -5,6 +5,7 @@ import com.datagami.rentaxis.domain.entity.enums.BookingResourceType;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.UUID;
 
 public record BookingRequestDTO(
@@ -14,6 +15,8 @@ public record BookingRequestDTO(
         UUID parkingSpotId,
         String resourceName,
         UUID propertyId,
+        String propertyNameEn,
+        String propertyNameAr,
         UUID unitId,
         String unitNumber,
         UUID renterUserId,
@@ -22,6 +25,9 @@ public record BookingRequestDTO(
         String renterPhone,
         String note,
         LocalDate preferredDate,
+        LocalDate preferredEndDate,
+        LocalTime preferredStartTime,
+        LocalTime preferredEndTime,
         BookingRequestStatus status,
         String adminNote,
         UUID decidedByUserId,

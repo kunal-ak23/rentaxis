@@ -1,6 +1,7 @@
 package com.datagami.rentaxis.core.service;
 
 import com.datagami.rentaxis.api.dto.CreateSplitTransactionDTO;
+import com.datagami.rentaxis.api.dto.PortfolioProfitLossDTO;
 import com.datagami.rentaxis.api.dto.ReportDTO;
 import com.datagami.rentaxis.api.dto.TrialBalanceDTO;
 import com.datagami.rentaxis.api.dto.VatReturnDTO;
@@ -338,6 +339,53 @@ public class FinancialTransactionService {
         report.setReportName("Organisation Consolidated Report");
         report.setDateRange(formatDateRange(startDate, endDate));
         return report;
+    }
+
+    /**
+     * Consolidated and per-property P&L for an already-authorized property set.
+     * Loads all financial rows in one query and includes properties with no ledger
+     * activity as zero-valued rows, which keeps the manager's portfolio complete.
+     */
+    @Transactional(readOnly = true)
+    public PortfolioProfitLossDTO getPortfolioProfitLoss(
+            UUID tenantId, Collection<UUID> authorizedPropertyIds,
+            LocalDate startDate, LocalDate endDate) {
+        List<Property> properties = authorizedPropertyIds == null
+                ? propertyRepository.findByTenantIdOrderByNameEnAsc(tenantId)
+                : propertyRepository.findByTenantIdAndIdIn(tenantId, authorizedPropertyIds).stream()
+                        .sorted(Comparator.comparing(Property::getNameEn, String.CASE_INSENSITIVE_ORDER))
+                        .toList();
+        List<UUID> propertyIds = properties.stream().map(Property::getId).toList();
+
+        List<FinancialTransaction> transactions;
+        if (propertyIds.isEmpty()) {
+            transactions = List.of();
+        } else if (startDate != null && endDate != null) {
+            transactions = repository
+                    .findBySplitParentFalseAndPropertyIdInAndDateBetweenOrderByDateDesc(
+                            propertyIds, startDate, endDate);
+        } else {
+            transactions = repository.findBySplitParentFalseAndPropertyIdInOrderByDateDesc(propertyIds);
+        }
+
+        ReportDTO overall = buildReport(transactions);
+        overall.setReportType("PORTFOLIO");
+        overall.setReportName("Portfolio Profit & Loss");
+        overall.setDateRange(formatDateRange(startDate, endDate));
+
+        Map<UUID, List<FinancialTransaction>> byProperty = transactions.stream()
+                .filter(t -> t.getProperty() != null)
+                .collect(Collectors.groupingBy(t -> t.getProperty().getId()));
+        List<PortfolioProfitLossDTO.PropertyProfitLossDTO> rows = properties.stream()
+                .map(property -> {
+                    ReportDTO report = buildReport(byProperty.getOrDefault(property.getId(), List.of()));
+                    return new PortfolioProfitLossDTO.PropertyProfitLossDTO(
+                            property.getId(), property.getNameEn(), property.getNameAr(),
+                            report.getTotalIncome(), report.getTotalExpenses(),
+                            report.getNetOperatingIncome(), report.getNetProfit());
+                })
+                .toList();
+        return new PortfolioProfitLossDTO(overall, rows);
     }
 
     @Transactional(readOnly = true)

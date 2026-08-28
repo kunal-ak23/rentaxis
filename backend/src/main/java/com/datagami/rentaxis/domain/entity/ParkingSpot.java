@@ -29,6 +29,10 @@ public class ParkingSpot extends BaseTenantEntity {
     @Column(nullable = false)
     private boolean covered = true;
 
+    /** Newline-delimited HTTPS image URLs, exposed as a gallery to renters. */
+    @Column(name = "photo_urls", columnDefinition = "text")
+    private String photoUrls;
+
     @Column(nullable = false)
     private boolean active = true;
 

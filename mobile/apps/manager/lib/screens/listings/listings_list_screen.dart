@@ -60,12 +60,7 @@ class ListingsListScreen extends ConsumerWidget {
           Expanded(
             child: listingsAsync.when(
               loading: () => ListView.builder(
-                padding: EdgeInsets.fromLTRB(
-                  16,
-                  16,
-                  16,
-                  24,
-                ),
+                padding: EdgeInsets.fromLTRB(16, 16, 16, 24),
                 itemCount: 5,
                 itemBuilder: (_, _) => Padding(
                   padding: const EdgeInsets.only(bottom: 14),
@@ -89,12 +84,7 @@ class ListingsListScreen extends ConsumerWidget {
                   color: AppColors.accent,
                   onRefresh: () async => ref.invalidate(_listingsProvider),
                   child: ListView.builder(
-                    padding: EdgeInsets.fromLTRB(
-                      16,
-                      16,
-                      16,
-                      24,
-                    ),
+                    padding: EdgeInsets.fromLTRB(16, 16, 16, 24),
                     itemCount: items.length + (truncated ? 1 : 0),
                     itemBuilder: (_, i) {
                       if (truncated && i == items.length) {
@@ -140,17 +130,20 @@ class ListingsListScreen extends ConsumerWidget {
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => context.push('/listings/new'),
-        backgroundColor: AppColors.primary,
-        icon: const Icon(Icons.add, color: AppColors.accent),
+        backgroundColor: m.isDark ? AppColors.accent : AppColors.primary,
+        icon: Icon(
+          Icons.add,
+          color: m.isDark ? AppColors.primary : AppColors.accent,
+        ),
         label: Text(
           l.newListing,
           style: l.ar
               ? GoogleFonts.notoNaskhArabic(
-                  color: AppColors.accent,
+                  color: m.isDark ? AppColors.primary : AppColors.accent,
                   fontWeight: FontWeight.w600,
                 )
               : GoogleFonts.plusJakartaSans(
-                  color: AppColors.accent,
+                  color: m.isDark ? AppColors.primary : AppColors.accent,
                   fontWeight: FontWeight.w600,
                   letterSpacing: 0.6,
                 ),

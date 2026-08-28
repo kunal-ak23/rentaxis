@@ -62,7 +62,7 @@ test('provision tenant + property + unit + renter + active lease', async () => {
 
   const pmEmail = `test-pm-${suffix}@e2e.rentaxis.test`;
   const pmPassword = 'TestPM!23';
-  await api.createUser(pctx, tenant.id, {
+  const pm = await api.createUser(pctx, tenant.id, {
     name: `TEST-PM ${suffix}`,
     email: pmEmail,
     password: pmPassword,
@@ -77,6 +77,7 @@ test('provision tenant + property + unit + renter + active lease', async () => {
 
   // 5. Property + unit (TA).
   const property = await api.createProperty(taCtx, { nameEn: `TEST-Tower ${suffix}` });
+  await api.assignUserToProperty(taCtx, pm.id, property.id);
   const unit = await api.createUnit(taCtx, {
     propertyId: property.id,
     unitNumber: `TEST-${suffix}`,
@@ -125,12 +126,18 @@ test('provision tenant + property + unit + renter + active lease', async () => {
         tenant: { id: tenant.id, name: tenant.name },
         property: { id: property.id },
         unit: { id: unit.id },
-        renter: { id: renter.id, email: renterEmail, portalPassword: renter.portalPassword },
+        renter: {
+          id: renter.id,
+          userId: renter.userId,
+          email: renterEmail,
+          portalPassword: renter.portalPassword,
+        },
         lease: { id: lease.id, status: activated.status },
         adminEmail,
         adminPassword,
         pmEmail,
         pmPassword,
+        pmUserId: pm.id,
       },
       null,
       2,

@@ -159,6 +159,14 @@ async function getJson<T>(pctx: ProdContext, path: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+async function deleteOk(pctx: ProdContext, path: string): Promise<void> {
+  const res = await pctx.request.delete(`/api/proxy${path}`, { failOnStatusCode: false });
+  if (!res.ok()) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`DELETE /api/proxy${path} → ${res.status()}: ${txt.slice(0, 400)}`);
+  }
+}
+
 export const api = {
   // Provisioning
   createTenant: (pctx: ProdContext, name: string) =>
@@ -168,6 +176,23 @@ export const api = {
     tenantId: string,
     u: { name: string; email: string; password: string; role: string },
   ) => postJson<{ id: string; email: string; role: string }>(pctx, '/admin/users', { ...u, tenantId }),
+  assignUserToProperty: async (
+    pctx: ProdContext,
+    userId: string,
+    propertyId: string,
+  ): Promise<void> => {
+    const res = await pctx.request.post(
+      `/api/proxy/admin/users/${userId}/properties/${propertyId}`,
+      { failOnStatusCode: false },
+    );
+    if (!res.ok()) {
+      throw new Error(
+        `POST property assignment ${userId}/${propertyId} → ${res.status()}: ${(
+          await res.text().catch(() => '')
+        ).slice(0, 400)}`,
+      );
+    }
+  },
   /**
    * Enable a per-tenant feature toggle. SUPER_ADMIN only.
    * Used by 01-provision to flip EMAIL_NOTIFICATIONS on for the test tenant —
@@ -236,6 +261,123 @@ export const api = {
       status: 'VACANT',
       currentTenantName: '',
     }),
+  createBuilding: (
+    pctx: ProdContext,
+    b: { propertyId: string; nameEn: string; floors: number },
+  ) =>
+    postJson<{ id: string; nameEn: string; floors: number }>(pctx, '/v1/buildings', {
+      property: { id: b.propertyId },
+      nameEn: b.nameEn,
+      nameAr: b.nameEn,
+      floors: b.floors,
+    }),
+  getBuildingsForProperty: (pctx: ProdContext, propertyId: string) =>
+    getJson<Array<{ id: string; nameEn: string; floors: number }>>(
+      pctx,
+      `/v1/buildings/property/${propertyId}`,
+    ),
+  deleteBuilding: (pctx: ProdContext, buildingId: string) =>
+    deleteOk(pctx, `/v1/buildings/${buildingId}`),
+
+  createPropertyContact: (
+    pctx: ProdContext,
+    propertyId: string,
+    c: { category: string; name: string; phone: string; email?: string; notes?: string },
+  ) =>
+    postJson<{ id: string; category: string; name: string; phone: string }>(
+      pctx,
+      `/v1/properties/${propertyId}/contacts`,
+      { ...c, sortOrder: 0 },
+    ),
+  updatePropertyContact: (
+    pctx: ProdContext,
+    propertyId: string,
+    contactId: string,
+    c: { category: string; name: string; phone: string; email?: string; notes?: string },
+  ) =>
+    putJson<{ id: string; category: string; name: string; phone: string }>(
+      pctx,
+      `/v1/properties/${propertyId}/contacts/${contactId}`,
+      { ...c, sortOrder: 0 },
+    ),
+  getPropertyContacts: (pctx: ProdContext, propertyId: string) =>
+    getJson<Array<{ id: string; category: string; name: string; phone: string }>>(
+      pctx,
+      `/v1/properties/${propertyId}/contacts`,
+    ),
+  deletePropertyContact: (pctx: ProdContext, propertyId: string, contactId: string) =>
+    deleteOk(pctx, `/v1/properties/${propertyId}/contacts/${contactId}`),
+
+  createAmenity: (
+    pctx: ProdContext,
+    a: { propertyId: string; nameEn: string; buildingIds?: string[]; bookable?: boolean },
+  ) =>
+    postJson<{
+      id: string;
+      nameEn: string;
+      active: boolean;
+      bookable: boolean;
+      buildingIds: string[];
+    }>(pctx, '/v1/amenities', {
+      propertyId: a.propertyId,
+      nameEn: a.nameEn,
+      nameAr: a.nameEn,
+      description: 'Production E2E fixture',
+      bookable: a.bookable ?? true,
+      buildingIds: a.buildingIds ?? [],
+    }),
+  updateAmenity: (
+    pctx: ProdContext,
+    amenityId: string,
+    a: { nameEn?: string; active?: boolean; buildingIds?: string[] },
+  ) =>
+    putJson<{ id: string; nameEn: string; active: boolean; buildingIds: string[] }>(
+      pctx,
+      `/v1/amenities/${amenityId}`,
+      a,
+    ),
+  getAmenities: (pctx: ProdContext, propertyId: string) =>
+    getJson<{ content: Array<{ id: string; nameEn: string; active: boolean }> }>(
+      pctx,
+      `/v1/amenities?propertyId=${propertyId}`,
+    ),
+  deactivateAmenity: (pctx: ProdContext, amenityId: string) =>
+    deleteOk(pctx, `/v1/amenities/${amenityId}`),
+
+  createParkingSpot: (
+    pctx: ProdContext,
+    s: { propertyId: string; spotNumber: string; level?: string; buildingIds?: string[] },
+  ) =>
+    postJson<{
+      id: string;
+      spotNumber: string;
+      level: string;
+      active: boolean;
+      buildingIds: string[];
+    }>(pctx, '/v1/parking-spots', {
+      propertyId: s.propertyId,
+      spotNumber: s.spotNumber,
+      level: s.level ?? 'B1',
+      covered: true,
+      buildingIds: s.buildingIds ?? [],
+    }),
+  updateParkingSpot: (
+    pctx: ProdContext,
+    spotId: string,
+    s: { spotNumber?: string; level?: string; active?: boolean; buildingIds?: string[] },
+  ) =>
+    putJson<{ id: string; spotNumber: string; level: string; active: boolean }>(
+      pctx,
+      `/v1/parking-spots/${spotId}`,
+      s,
+    ),
+  getParkingSpots: (pctx: ProdContext, propertyId: string) =>
+    getJson<{ content: Array<{ id: string; spotNumber: string; active: boolean }> }>(
+      pctx,
+      `/v1/parking-spots?propertyId=${propertyId}`,
+    ),
+  deactivateParkingSpot: (pctx: ProdContext, spotId: string) =>
+    deleteOk(pctx, `/v1/parking-spots/${spotId}`),
 
   // Renter + Lease
   // Backend defaults createPortalAccount=true and returns portalPassword on
@@ -312,6 +454,85 @@ export const api = {
   // Our helper sends `{}` which is functionally equivalent.
   activateLease: (pctx: ProdContext, leaseId: string) =>
     putJson<{ id: string; status: string }>(pctx, `/v1/leases/${leaseId}/activate`, {}),
+
+  // Maintenance tickets. This models the cross-role journey used by the UI:
+  // renter reports/replies/shares OTP/rates; manager progresses and closes.
+  createTicket: (
+    pctx: ProdContext,
+    t: {
+      propertyId: string;
+      unitId?: string;
+      leaseId?: string;
+      title: string;
+      description: string;
+      category: string;
+      priority: string;
+    },
+  ) =>
+    postJson<{
+      id: string;
+      status: string;
+      reportedBy: string;
+      closureOtp: string | null;
+    }>(pctx, '/v1/tickets', t),
+  assignTicket: (pctx: ProdContext, ticketId: string, assignTo: string) =>
+    putJson<{ id: string; status: string; assignedTo: string }>(
+      pctx,
+      `/v1/tickets/${ticketId}/assign`,
+      { assignTo },
+    ),
+  estimateTicket: (pctx: ProdContext, ticketId: string, hours: number) =>
+    putJson<{ id: string; estimatedResolutionHours: number }>(
+      pctx,
+      `/v1/tickets/${ticketId}/estimate`,
+      { hours },
+    ),
+  updateTicketStatus: (pctx: ProdContext, ticketId: string, status: string) =>
+    putJson<{ id: string; status: string; closureOtp: string | null }>(
+      pctx,
+      `/v1/tickets/${ticketId}/status`,
+      { status },
+    ),
+  getTicket: (pctx: ProdContext, ticketId: string) =>
+    getJson<{
+      id: string;
+      status: string;
+      assignedTo: string | null;
+      closureOtp: string | null;
+      satisfactionRating: number | null;
+    }>(pctx, `/v1/tickets/${ticketId}`),
+  addTicketReply: (pctx: ProdContext, ticketId: string, message: string) =>
+    postJson<{ id: string; userId: string; message: string }>(
+      pctx,
+      `/v1/tickets/${ticketId}/replies`,
+      { message },
+    ),
+  getTicketReplies: (pctx: ProdContext, ticketId: string) =>
+    getJson<Array<{ id: string; userId: string; message: string }>>(
+      pctx,
+      `/v1/tickets/${ticketId}/replies`,
+    ),
+  getTicketHistory: (pctx: ProdContext, ticketId: string) =>
+    getJson<Array<{ id: string; action: string; fromStatus: string; toStatus: string }>>(
+      pctx,
+      `/v1/tickets/${ticketId}/history`,
+    ),
+  closeTicket: (pctx: ProdContext, ticketId: string, otp: string) =>
+    putJson<{ id: string; status: string }>(pctx, `/v1/tickets/${ticketId}/close`, { otp }),
+  rateTicket: (pctx: ProdContext, ticketId: string, rating: number, comment: string) =>
+    putJson<{ id: string; satisfactionRating: number; satisfactionComment: string }>(
+      pctx,
+      `/v1/tickets/${ticketId}/rate`,
+      { rating, comment },
+    ),
+  getTicketReport: (pctx: ProdContext, propertyId: string) =>
+    getJson<{
+      totalTickets: number;
+      openCount: number;
+      resolvedCount: number;
+      closedCount: number;
+      avgSatisfaction: number;
+    }>(pctx, `/v1/tickets/reports?propertyId=${propertyId}`),
 
   // Payment schedule + cheque lifecycle. Important: each payment-schedule row
   // IS the cheque (no separate /cheques resource). Lifecycle endpoints are

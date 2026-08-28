@@ -174,7 +174,13 @@ public class ParkingSpotController {
 
     private ParkingSpotDTO toDTO(ParkingSpot s, List<UUID> buildingIds, boolean held, long pendingCount) {
         return new ParkingSpotDTO(s.getId(), s.getPropertyId(), s.getSpotNumber(), s.getLevel(),
-                s.isCovered(), s.isActive(), buildingIds, held, pendingCount,
+                photoUrls(s.getPhotoUrls()), s.isCovered(), s.isActive(), buildingIds, held, pendingCount,
                 s.getCreatedAt(), s.getUpdatedAt());
+    }
+
+    private List<String> photoUrls(String raw) {
+        if (raw == null || raw.isBlank()) return List.of();
+        return java.util.Arrays.stream(raw.split("\\R"))
+                .map(String::trim).filter(s -> !s.isEmpty()).toList();
     }
 }

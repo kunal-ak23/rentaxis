@@ -89,8 +89,10 @@ scp $SSH_OPTS "$PROJECT_ROOT/docker-compose.prod.yml" "$SSH_TARGET:$REMOTE_DIR/d
 # Caddy reads {$DOMAIN} from its environment (set via docker compose)
 scp $SSH_OPTS "$PROJECT_ROOT/infra/caddy/Caddyfile.template" "$SSH_TARGET:$REMOTE_DIR/Caddyfile"
 
-# Upload env file (renamed to .env for docker compose)
-scp $SSH_OPTS "$ENV_FILE" "$SSH_TARGET:$REMOTE_DIR/.env"
+# Upload the candidate environment separately. The remote merge below preserves
+# an already-configured Firebase Admin credential when the local release env
+# deliberately leaves it blank (credentials must never be committed).
+scp $SSH_OPTS "$ENV_FILE" "$SSH_TARGET:$REMOTE_DIR/.env.upload"
 
 # ---- Step 4: Load images and restart on the VM ----
 echo "==> Loading images and starting services on VM..."
@@ -98,6 +100,27 @@ echo "==> Loading images and starting services on VM..."
 ssh $SSH_OPTS "$SSH_TARGET" bash -s <<REMOTE_DEPLOY
 set -euo pipefail
 cd $REMOTE_DIR
+
+# A service-account JSON key is only shown once by Firebase, so never erase a
+# working remote value merely because a deploy env file intentionally omits it.
+# A supplied non-placeholder value still wins, which supports explicit key
+# rotation through a controlled deployment.
+if [[ -f .env ]]; then
+  is_missing_firebase_value() {
+    [[ -z "\$1" || "\$1" == FILL_* ]]
+  }
+  for key in FIREBASE_PROJECT_ID FIREBASE_SERVICE_ACCOUNT_JSON_BASE64; do
+    uploaded=\$(sed -n "s/^\$key=//p" .env.upload | tail -n 1)
+    existing=\$(sed -n "s/^\$key=//p" .env | tail -n 1)
+    if is_missing_firebase_value "\$uploaded" && ! is_missing_firebase_value "\$existing"; then
+      sed -i.bak "/^\$key=/d" .env.upload
+      printf '%s=%s\\n' "\$key" "\$existing" >> .env.upload
+      echo "    Preserved existing \$key"
+    fi
+  done
+  rm -f .env.upload.bak
+fi
+mv .env.upload .env
 
 echo "    Loading backend image..."
 docker load < backend.tar.gz

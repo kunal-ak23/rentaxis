@@ -170,10 +170,9 @@ class _StaffScreenState extends ConsumerState<StaffScreen> {
                   final matchesSearch =
                       _searchQuery.isEmpty ||
                       haystack.any(
-                        (v) => (v ?? '')
-                            .toString()
-                            .toLowerCase()
-                            .contains(_searchQuery),
+                        (v) => (v ?? '').toString().toLowerCase().contains(
+                          _searchQuery,
+                        ),
                       );
 
                   if (_selectedPropertyId != null &&
@@ -202,12 +201,7 @@ class _StaffScreenState extends ConsumerState<StaffScreen> {
                   color: m.isDark ? AppColors.accent : AppColors.primary,
                   child: ListView.builder(
                     physics: const AlwaysScrollableScrollPhysics(),
-                    padding: EdgeInsets.fromLTRB(
-                      16,
-                      8,
-                      16,
-                      24,
-                    ),
+                    padding: EdgeInsets.fromLTRB(16, 8, 16, 24),
                     itemCount: filtered.length,
                     itemBuilder: (context, index) {
                       final member = filtered[index];
@@ -229,9 +223,12 @@ class _StaffScreenState extends ConsumerState<StaffScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        backgroundColor: AppColors.primary,
+        backgroundColor: m.isDark ? AppColors.accent : AppColors.primary,
         onPressed: () => _showCreateStaffSheet(context),
-        child: const Icon(Icons.person_add_outlined, color: Colors.white),
+        child: Icon(
+          Icons.person_add_outlined,
+          color: m.isDark ? AppColors.primary : Colors.white,
+        ),
       ),
     );
   }
@@ -440,14 +437,18 @@ class _ChromeHeader extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                     color: AppColors.gold400,
                   )
-                : GoogleFonts.plusJakartaSans(fontSize: 22, color: AppColors.gold400),
+                : GoogleFonts.plusJakartaSans(
+                    fontSize: 22,
+                    color: AppColors.gold400,
+                  ),
           ),
           const SizedBox(height: 12),
           TextField(
             onChanged: onSearchChanged,
             style: (l.ar
                 ? GoogleFonts.notoNaskhArabic
-                : GoogleFonts.plusJakartaSans)(fontSize: 13, color: Colors.white),
+                : GoogleFonts
+                      .plusJakartaSans)(fontSize: 13, color: Colors.white),
             decoration: InputDecoration(
               isDense: true,
               hintText: l.searchHint,
@@ -613,9 +614,7 @@ class _StaffCard extends StatelessWidget {
                         ),
                         const SizedBox(width: 8),
                         _StatusPill(
-                          color: active
-                              ? AppColors.success
-                              : m.textSecondary,
+                          color: active ? AppColors.success : m.textSecondary,
                           label: active ? l.active : l.inactive,
                           ar: l.ar,
                         ),

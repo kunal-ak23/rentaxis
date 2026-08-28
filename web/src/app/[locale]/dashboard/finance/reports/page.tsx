@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import {
     BarChart3, Building2, Globe, TrendingUp, TrendingDown,
     DollarSign, ArrowDown, ArrowUp, Wallet, ChevronDown, ChevronUp
@@ -9,7 +9,7 @@ import {
 import { cn } from "@/lib/utils";
 import { formatCurrency, formatCurrencyCompact, formatNumber } from "@/lib/format";
 
-type Property = { id: string; nameEn: string };
+type Property = { id: string; nameEn: string; nameAr?: string };
 type PropertyStats = { property: Property };
 
 type ReportData = {
@@ -35,6 +35,21 @@ type ReportData = {
     pdcReceivable: number;
     pdcPayable: number;
     advanceRentBalance: number;
+};
+
+type PropertyProfitLoss = {
+    propertyId: string;
+    propertyNameEn: string;
+    propertyNameAr?: string;
+    totalIncome: number;
+    totalExpenses: number;
+    netOperatingIncome: number;
+    netProfit: number;
+};
+
+type PortfolioProfitLoss = {
+    overall: ReportData;
+    properties: PropertyProfitLoss[];
 };
 
 type TrialBalanceLine = {
@@ -113,6 +128,7 @@ const typeColor = (type: string) => {
 
 export default function ReportsPage() {
     const t = useTranslations("Finance");
+    const locale = useLocale();
     const [activeTab, setActiveTab] = useState<TabType>("pnl");
     const [reportMode, setReportMode] = useState<"ORGANISATION" | "PROPERTY">("ORGANISATION");
     const [selectedPropertyId, setSelectedPropertyId] = useState("");
@@ -120,6 +136,8 @@ export default function ReportsPage() {
     const [endDate, setEndDate] = useState("");
     const [properties, setProperties] = useState<PropertyStats[]>([]);
     const [report, setReport] = useState<ReportData | null>(null);
+    const [portfolioPnl, setPortfolioPnl] = useState<PortfolioProfitLoss | null>(null);
+    const [propertyPnlSearch, setPropertyPnlSearch] = useState("");
     const [trialBalance, setTrialBalance] = useState<TrialBalanceData | null>(null);
     const [agingData, setAgingData] = useState<AgingData | null>(null);
     const [vatData, setVatData] = useState<VatData | null>(null);
@@ -156,6 +174,16 @@ export default function ReportsPage() {
             if (activeTab === "pnl" || activeTab === "balanceSheet") {
                 let url = "";
                 if (reportMode === "ORGANISATION") {
+                    if (activeTab === "pnl") {
+                        url = `/api/proxy/v1/finance/reports/portfolio-profit-loss?${params.toString()}`;
+                        const res = await fetch(url);
+                        if (res.ok) {
+                            const payload = await res.json() as PortfolioProfitLoss;
+                            setPortfolioPnl(payload);
+                            setReport(payload.overall);
+                        }
+                        return;
+                    }
                     url = `/api/proxy/v1/finance/reports/organisation?${params.toString()}`;
                 } else {
                     if (!selectedPropertyId) {
@@ -166,7 +194,10 @@ export default function ReportsPage() {
                     url = `/api/proxy/v1/finance/reports/property/${selectedPropertyId}?${params.toString()}`;
                 }
                 const res = await fetch(url);
-                if (res.ok) setReport(await res.json());
+                if (res.ok) {
+                    setReport(await res.json());
+                    setPortfolioPnl(null);
+                }
             } else if (activeTab === "trialBalance") {
                 const res = await fetch(`/api/proxy/v1/finance/reports/trial-balance?${params.toString()}`);
                 if (res.ok) setTrialBalance(await res.json());
@@ -221,6 +252,12 @@ export default function ReportsPage() {
 
     const showPropertyFilter = activeTab === "pnl" || activeTab === "balanceSheet" || activeTab === "aging" || activeTab === "tickets";
     const showDateFilters = activeTab !== "aging";
+    const filteredPropertyPnl = (portfolioPnl?.properties ?? []).filter(property => {
+        const query = propertyPnlSearch.trim().toLocaleLowerCase();
+        return !query
+            || property.propertyNameEn.toLocaleLowerCase().includes(query)
+            || (property.propertyNameAr ?? "").toLocaleLowerCase().includes(query);
+    });
 
     return (
         <div>
@@ -438,6 +475,51 @@ export default function ReportsPage() {
                             </div>
                         </div>
                     </div>
+
+                    {reportMode === "ORGANISATION" && portfolioPnl && (
+                        <div className="bg-surface border border-border rounded-xl p-5 shadow-sm">
+                            <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-4">
+                                <div>
+                                    <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+                                        <Building2 size={15} className="text-primary" /> {t("propertyPnl")}
+                                    </h3>
+                                    <p className="text-[11px] text-muted mt-1">
+                                        {t("showingProperties", { shown: filteredPropertyPnl.length, total: portfolioPnl.properties.length })}
+                                    </p>
+                                </div>
+                                <input
+                                    type="search"
+                                    value={propertyPnlSearch}
+                                    onChange={event => setPropertyPnlSearch(event.target.value)}
+                                    placeholder={t("searchProperties")}
+                                    className="w-full md:w-72 border border-border rounded-lg bg-surface px-3 py-2.5 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none"
+                                />
+                            </div>
+                            <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 max-h-[720px] overflow-y-auto pr-1">
+                                {filteredPropertyPnl.map(property => (
+                                    <div key={property.propertyId} className="border border-border rounded-xl p-4 bg-input/20">
+                                        <p className="text-xs font-bold text-foreground truncate">
+                                            {locale === "ar" && property.propertyNameAr ? property.propertyNameAr : property.propertyNameEn}
+                                        </p>
+                                        <div className="grid grid-cols-3 gap-3 mt-3">
+                                            <div>
+                                                <p className="text-[9px] uppercase tracking-wider text-muted">{t("totalIncome")}</p>
+                                                <p className="text-xs font-bold text-success mt-1 tabular-nums">{fmt(property.totalIncome)}</p>
+                                            </div>
+                                            <div>
+                                                <p className="text-[9px] uppercase tracking-wider text-muted">{t("totalExpenses")}</p>
+                                                <p className="text-xs font-bold text-error mt-1 tabular-nums">{fmt(property.totalExpenses)}</p>
+                                            </div>
+                                            <div>
+                                                <p className="text-[9px] uppercase tracking-wider text-muted">{t("netProfit")}</p>
+                                                <p className={cn("text-xs font-bold mt-1 tabular-nums", property.netProfit >= 0 ? "text-success" : "text-error")}>{fmt(property.netProfit)}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
 

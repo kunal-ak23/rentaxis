@@ -47,6 +47,9 @@ public class PaymentScheduleController {
     public ResponseEntity<Page<PaymentScheduleDTO>> getPayments(
             @RequestParam(required = false) UUID propertyId,
             @RequestParam(required = false) PaymentStatus status,
+            @RequestParam(required = false) String search,
+            // Backward compatibility for the existing finance page. This is
+            // now a general payment search rather than a renter-only filter.
             @RequestParam(required = false) String renterName,
             @RequestParam(required = false, defaultValue = "false") boolean overdue,
             // "id" is a tiebreaker, not a meaningful ordering — dueDate alone is not
@@ -55,7 +58,8 @@ public class PaymentScheduleController {
             // position between requests (e.g. right after marking one paid, which
             // triggers a full refetch) even though nothing about their sort key changed.
             @PageableDefault(size = 25, sort = {"dueDate", "id"}, direction = Sort.Direction.DESC) Pageable pageable) {
-        return ResponseEntity.ok(paymentScheduleService.getPaymentsForProperty(propertyId, status, renterName, overdue, pageable));
+        String effectiveSearch = search != null && !search.isBlank() ? search : renterName;
+        return ResponseEntity.ok(paymentScheduleService.getPaymentsForProperty(propertyId, status, effectiveSearch, overdue, pageable));
     }
 
     @GetMapping("/lease/{leaseId}")

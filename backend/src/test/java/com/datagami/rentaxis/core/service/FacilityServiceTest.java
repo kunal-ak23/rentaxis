@@ -553,7 +553,7 @@ class FacilityServiceTest {
     }
 
     @Test
-    void visibleFacilities_parkingSpots_scopedUnscopedAndWrongBuildingFiltering() {
+    void visibleFacilities_parkingSpots_areVisiblePropertyWide() {
         ParkingSpot unscoped = spot("B1-01");
         ParkingSpot scopedToMyBuilding = spot("B1-02");
         ParkingSpot scopedElsewhere = spot("B1-03");
@@ -571,14 +571,11 @@ class FacilityServiceTest {
                 .thenReturn(List.of());
         when(spotRepository.findByTenantIdAndPropertyIdAndActiveTrueOrderByCreatedAtAsc(tenantId, propertyId))
                 .thenReturn(List.of(unscoped, scopedToMyBuilding, scopedElsewhere));
-        when(spotScopeRepository.findByParkingSpotIdIn(
-                List.of(unscoped.getId(), scopedToMyBuilding.getId(), scopedElsewhere.getId())))
-                .thenReturn(List.of(myScope, elsewhereScope));
-
         FacilityService.VisibleFacilities visible =
                 service.visibleFacilities(tenantId, unitInProperty(buildingId));
 
-        assertThat(visible.parkingSpots()).containsExactlyInAnyOrder(unscoped, scopedToMyBuilding);
+        assertThat(visible.parkingSpots())
+                .containsExactlyInAnyOrder(unscoped, scopedToMyBuilding, scopedElsewhere);
     }
 
     @Test
@@ -593,14 +590,12 @@ class FacilityServiceTest {
     }
 
     @Test
-    void parkingSpotVisibleToUnit_scopedElsewhere_isFalse() {
+    void parkingSpotVisibleToUnit_scopedElsewhere_isStillTrue() {
         ParkingSpot s = spot("B1-01");
         ParkingSpotBuildingScope scope = new ParkingSpotBuildingScope();
         scope.setParkingSpotId(s.getId());
         scope.setBuildingId(UUID.randomUUID());
-        when(spotScopeRepository.findByParkingSpotId(s.getId())).thenReturn(List.of(scope));
-
-        assertThat(service.parkingSpotVisibleToUnit(s, unitInProperty(buildingId))).isFalse();
+        assertThat(service.parkingSpotVisibleToUnit(s, unitInProperty(buildingId))).isTrue();
     }
 
     @Test
@@ -612,17 +607,14 @@ class FacilityServiceTest {
     }
 
     @Test
-    void parkingSpotVisibleToUnit_unitWithoutBuilding_onlyUnscopedIsVisible() {
+    void parkingSpotVisibleToUnit_unitWithoutBuilding_canSeeAllPropertyParking() {
         ParkingSpot scoped = spot("B1-02");
         ParkingSpotBuildingScope scope = new ParkingSpotBuildingScope();
         scope.setParkingSpotId(scoped.getId());
         scope.setBuildingId(buildingId);
-        when(spotScopeRepository.findByParkingSpotId(scoped.getId())).thenReturn(List.of(scope));
-
         ParkingSpot unscoped = spot("B1-01");
-        when(spotScopeRepository.findByParkingSpotId(unscoped.getId())).thenReturn(List.of());
 
-        assertThat(service.parkingSpotVisibleToUnit(scoped, unitInProperty(null))).isFalse();
+        assertThat(service.parkingSpotVisibleToUnit(scoped, unitInProperty(null))).isTrue();
         assertThat(service.parkingSpotVisibleToUnit(unscoped, unitInProperty(null))).isTrue();
     }
 }

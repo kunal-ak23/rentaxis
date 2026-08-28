@@ -122,9 +122,9 @@ class _HomeAdsStripState extends ConsumerState<HomeAdsStrip>
   /// with it, or the two gaps around it collapse into a doubled 22px hole on
   /// every home screen with no promotions — which is most of them.
   Widget _leadingGap(Widget child) => Padding(
-        padding: const EdgeInsets.only(top: MiftahSpacing.gap),
-        child: child,
-      );
+    padding: const EdgeInsets.only(top: MiftahSpacing.gap),
+    child: child,
+  );
 }
 
 /// Stand-in entry point for /offers when the home feed has no cards of its own
@@ -139,9 +139,10 @@ class _OffersLink extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isAr = context.isAr;
+    final m = context.miftah;
     final radius = BorderRadius.circular(MiftahRadii.card);
     return Material(
-      color: MiftahColors.surface,
+      color: m.surface,
       borderRadius: radius,
       child: InkWell(
         key: const Key('promo-offers-link'),
@@ -154,12 +155,15 @@ class _OffersLink extends StatelessWidget {
           ),
           decoration: BoxDecoration(
             borderRadius: radius,
-            border: Border.all(color: MiftahColors.border),
+            border: Border.all(color: m.border),
           ),
           child: Row(
             children: [
-              const Icon(Icons.local_offer_outlined,
-                  color: MiftahColors.brass, size: 20),
+              const Icon(
+                Icons.local_offer_outlined,
+                color: MiftahColors.brass,
+                size: 20,
+              ),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
@@ -170,16 +174,16 @@ class _OffersLink extends StatelessWidget {
                       ? MiftahType.ar(
                           size: 14,
                           weight: FontWeight.w700,
-                          color: MiftahColors.textPrimary,
+                          color: m.textPrimary,
                         )
-                      : MiftahType.cardTitle(),
+                      : MiftahType.cardTitle(color: m.textPrimary),
                 ),
               ),
               // Material chevrons do not mirror themselves under RTL, so the
               // forward-pointing one has to be chosen per direction.
               Icon(
                 isAr ? Icons.chevron_left : Icons.chevron_right,
-                color: MiftahColors.textMuted,
+                color: m.textMuted,
                 size: 22,
               ),
             ],
