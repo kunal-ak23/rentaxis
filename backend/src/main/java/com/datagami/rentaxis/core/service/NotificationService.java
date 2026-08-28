@@ -5,6 +5,7 @@ import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.core.email.EmailEventType;
 import com.datagami.rentaxis.core.email.event.EmailEvent;
 import com.datagami.rentaxis.core.email.event.payload.LegacyNotificationPayload;
+import com.datagami.rentaxis.core.notification.PushNotificationEvent;
 import com.datagami.rentaxis.core.tenant.TenantContextHolder;
 import com.datagami.rentaxis.domain.entity.DeviceToken;
 import com.datagami.rentaxis.domain.entity.Notification;
@@ -63,6 +64,8 @@ public class NotificationService {
         n.setIsRead(false);
         notificationRepository.save(n);
         log.info("Notification created: {} for user {}", type, userId);
+        events.publishEvent(new PushNotificationEvent(
+                userId, type, title, message, referenceType, referenceId));
     }
 
     /**

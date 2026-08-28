@@ -3,6 +3,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 import 'router.dart';
+import 'push_registration.dart';
 
 class RenterApp extends ConsumerWidget {
   const RenterApp({super.key});
@@ -28,8 +29,9 @@ class RenterApp extends ConsumerWidget {
         GlobalCupertinoLocalizations.delegate,
       ],
       routerConfig: router,
-      builder: (context, child) =>
-          OfflineStatusBanner(child: child ?? const SizedBox.shrink()),
+      builder: (context, child) => PushRegistration(
+        child: OfflineStatusBanner(child: child ?? const SizedBox.shrink()),
+      ),
       debugShowCheckedModeBanner: false,
     );
   }
