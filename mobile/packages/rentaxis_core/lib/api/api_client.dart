@@ -15,13 +15,20 @@ class ApiClient {
     'API_BASE_URL',
     defaultValue: 'https://rentaxis.uaenorth.cloudapp.azure.com/api',
   );
+  // Capture and cold-start environments can be slower than the normal mobile
+  // budget. Keep the production default at 15 seconds, but allow an explicit
+  // build-time override for deterministic E2E/tutorial runs.
+  static const int _requestTimeoutSeconds = int.fromEnvironment(
+    'API_TIMEOUT_SECONDS',
+    defaultValue: 15,
+  );
 
   ApiClient({String? baseUrl}) {
     dio = Dio(
       BaseOptions(
         baseUrl: baseUrl ?? _defaultBaseUrl,
-        connectTimeout: const Duration(seconds: 15),
-        receiveTimeout: const Duration(seconds: 15),
+        connectTimeout: Duration(seconds: _requestTimeoutSeconds),
+        receiveTimeout: Duration(seconds: _requestTimeoutSeconds),
         headers: {'Content-Type': 'application/json'},
       ),
     );

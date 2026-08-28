@@ -48,6 +48,9 @@ import 'screens/facilities/booking_approvals_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authProvider);
+  final gateProvider = appGateProvider(AppId.manager);
+  final gateState = ref.watch(gateProvider);
+  final gateFuture = ref.read(gateProvider.future);
 
   return GoRouter(
     // Dev affordance: --dart-define=START_ROUTE=/payments boots straight to a
@@ -67,9 +70,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       // is below the supported floor, pin the user on /update-required and let
       // nothing navigate away. Inert until the gate resolves (fail open) or
       // when it says ok — `valueOrNull` is null while still loading.
-      final gateRequired =
-          ref.read(appGateProvider(AppId.manager)).valueOrNull?.requiresUpdate ??
-              false;
+      final gateRequired = gateState.valueOrNull?.requiresUpdate ?? false;
       if (gateRequired) {
         return isUpdateRoute ? null : '/update-required';
       }
@@ -98,8 +99,7 @@ final routerProvider = Provider<GoRouter>((ref) {
             // Consult the version gate before the usual auth routing. The gate
             // fails open: any error/timeout resolves to `ok`, so this only ever
             // diverts the user when the backend explicitly raised the floor.
-            final decision =
-                await ref.read(appGateProvider(AppId.manager).future);
+            final decision = await gateFuture;
             if (!context.mounted) return;
             if (decision.requiresUpdate) {
               GoRouter.of(context).go('/update-required');
@@ -119,11 +119,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/update-required',
         builder: (context, state) => UpdateRequiredScreen(
-          storeUrl: ref
-                  .read(appGateProvider(AppId.manager))
-                  .valueOrNull
-                  ?.storeUrl ??
-              '',
+          storeUrl: gateState.valueOrNull?.storeUrl ?? '',
         ),
       ),
       GoRoute(

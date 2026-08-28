@@ -43,6 +43,9 @@ void main() {
 
     app.main();
     await _settle(tester, duration: const Duration(seconds: 4));
+    // Android renders Flutter through a surface; convert it once before the
+    // first integration screenshot so the capture driver can read the frame.
+    await binding.convertFlutterSurfaceToImage();
 
     ProviderContainer container() => ProviderScope.containerOf(
         tester.element(find.byType(MaterialApp).first));

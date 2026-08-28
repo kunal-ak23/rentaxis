@@ -38,4 +38,11 @@ web/e2e-prod/test-results/
 !web/e2e-prod/.env.local.example
 scripts/seed_demo_tenant.out.json
 scripts/seed_demo_tenant.out.*.bak.json
+scripts/seed_tutorial_tenant.out.json
 scripts/__pycache__/
+# Generated narrated tutorial media (kept as local deliverables, not Git blobs).
+tutorials/output/
+tutorials/.env.local
+!tutorials/.env.local.example
+tutorials/audio-generated/*
+!tutorials/audio-generated/README.md
