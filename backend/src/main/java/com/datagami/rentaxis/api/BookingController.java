@@ -113,8 +113,20 @@ public class BookingController {
             @RequestParam(required = false) BookingRequestStatus status,
             @RequestParam(required = false) BookingResourceType resourceType,
             @PageableDefault(sort = "createdAt", direction = Sort.Direction.ASC) Pageable pageable) {
-        checkPropertyManagerAccess(propertyId);
-        Page<BookingRequest> page = bookingService.search(tenantId(), propertyId, status, resourceType, pageable);
+        Page<BookingRequest> page;
+        if (isPropertyManager() && propertyId == null) {
+            List<UUID> assignedPropertyIds = assignmentRepository
+                    .findByUserId(currentUserId())
+                    .stream()
+                    .map(a -> a.getPropertyId())
+                    .distinct()
+                    .toList();
+            page = bookingService.searchAssignedProperties(
+                    tenantId(), assignedPropertyIds, status, resourceType, pageable);
+        } else {
+            checkPropertyManagerAccess(propertyId);
+            page = bookingService.search(tenantId(), propertyId, status, resourceType, pageable);
+        }
         Map<UUID, String> unitNumbers = unitNumbers(page.getContent());
         Map<UUID, User> renters = renterUsers(page.getContent());
         Map<UUID, String> resourceNames = resourceNames(page.getContent());
@@ -283,18 +295,21 @@ public class BookingController {
 
     /** UnitListingController.checkPropertyManagerAccess / AmenityController pattern, keyed on propertyId. */
     private void checkPropertyManagerAccess(UUID propertyId) {
-        var auth = SecurityContextHolder.getContext().getAuthentication();
-        boolean isPm = auth.getAuthorities().stream()
-                .anyMatch(a -> a.getAuthority().equals("ROLE_PROPERTY_MANAGER"));
-        if (!isPm) return;
+        if (!isPropertyManager()) return;
 
         if (propertyId == null) {
             throw new AccessDeniedException("propertyId is required for property managers");
         }
-        UUID userId = UUID.fromString(auth.getName());
+        UUID userId = currentUserId();
         if (!assignmentRepository.existsByUserIdAndPropertyId(userId, propertyId)) {
             throw new AccessDeniedException("You are not assigned to this property");
         }
+    }
+
+    private boolean isPropertyManager() {
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        return auth.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_PROPERTY_MANAGER"));
     }
 
     private boolean isRenter() {

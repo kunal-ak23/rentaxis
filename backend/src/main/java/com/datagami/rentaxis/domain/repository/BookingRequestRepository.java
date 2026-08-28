@@ -40,6 +40,25 @@ public interface BookingRequestRepository extends JpaRepository<BookingRequest, 
                                 @Param("resourceType") BookingResourceType resourceType,
                                 Pageable pageable);
 
+    /**
+     * Property-manager inbox across every property assigned to that manager.
+     * The controller resolves the assignment ids from the authenticated user;
+     * tenantId remains explicit so a stale/cross-tenant assignment cannot leak.
+     */
+    @Query("""
+        SELECT b FROM BookingRequest b
+        WHERE b.tenantId = :tenantId
+          AND b.propertyId IN :propertyIds
+          AND (:status IS NULL OR b.status = :status)
+          AND (:resourceType IS NULL OR b.resourceType = :resourceType)
+        """)
+    Page<BookingRequest> searchAssignedProperties(
+            @Param("tenantId") UUID tenantId,
+            @Param("propertyIds") Collection<UUID> propertyIds,
+            @Param("status") BookingRequestStatus status,
+            @Param("resourceType") BookingResourceType resourceType,
+            Pageable pageable);
+
     List<BookingRequest> findByTenantIdAndRenterUserIdOrderByCreatedAtAsc(UUID tenantId, UUID renterUserId);
 
     Optional<BookingRequest> findFirstByTenantIdAndRenterUserIdAndAmenityIdAndStatus(
