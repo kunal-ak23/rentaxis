@@ -159,3 +159,5 @@ databaseChangeLog:
       file: db/changelog/changesets/75-facility-photo-urls.yaml
   - include:
       file: db/changelog/changesets/76-booking-parking-date-range.yaml
+  - include:
+      file: db/changelog/changesets/77-apple-sign-in.yaml

@@ -1,7 +1,7 @@
 name: manager
 description: "RentAxis Manager App"
 publish_to: 'none'
-version: 1.2.0+4
+version: 1.2.0+5
 
 environment:
   sdk: ^3.10.8
@@ -28,6 +28,8 @@ dependencies:
   url_launcher: ^6.3.1
   intl: ^0.20.2
   camera: ^0.11.0
+  crypto: ^3.0.7
+  sign_in_with_apple: ^7.0.1
 
 dev_dependencies:
   flutter_test:

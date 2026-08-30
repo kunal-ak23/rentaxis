@@ -29,6 +29,7 @@ class _PushRegistrationState extends ConsumerState<PushRegistration> {
   @override
   void initState() {
     super.initState();
+    if (!Platform.isAndroid) return;
     // Widget tests and desktop previews do not initialise a native Firebase
     // app. Keep those surfaces usable; a real Android/iOS session retries
     // registration as soon as Firebase is available.
@@ -40,6 +41,7 @@ class _PushRegistrationState extends ConsumerState<PushRegistration> {
   }
 
   Future<void> _syncForCurrentUser() async {
+    if (!Platform.isAndroid) return;
     try {
       final auth = ref.read(authProvider);
       if (!auth.isAuthenticated || auth.userId == null) {

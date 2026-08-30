@@ -238,6 +238,49 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
+  Future<bool> loginWithApple(
+    String identityToken,
+    String rawNonce, {
+    String? tenantId,
+  }) async {
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      await _establishSession(
+        await _authService.loginWithApple(
+          identityToken,
+          rawNonce,
+          tenantId: tenantId,
+        ),
+      );
+      return true;
+    } on DioException catch (error) {
+      if (error.response?.statusCode == 409) {
+        state = state.copyWith(
+          isLoading: false,
+          error:
+              'This Apple ID belongs to multiple organizations. Sign in with email once to select one.',
+          tenantChoices: _parseTenantChoices(error.response?.data),
+        );
+      } else {
+        state = state.copyWith(
+          isLoading: false,
+          error: _appleLoginError(error),
+        );
+      }
+      return false;
+    } catch (_) {
+      state = state.copyWith(
+        isLoading: false,
+        error: 'Could not complete Apple sign-in. Please try again.',
+      );
+      return false;
+    }
+  }
+
+  void reportLoginError(String message) {
+    state = state.copyWith(isLoading: false, error: message);
+  }
+
   /// Persists the identity every request is authenticated with and loads the
   /// tenant list. Shared by [login] and [loginWithFirebase]: the identity written
   /// here is exactly what [AuthInterceptor] reads back into the `X-User-*`
@@ -323,6 +366,23 @@ String _firebaseLoginError(Object error) {
     return 'No connection. Check your network and try again.';
   }
   return 'Could not complete login. Please try again.';
+}
+
+String _appleLoginError(DioException error) {
+  final status = error.response?.statusCode;
+  if (status == 401) {
+    return 'No active account matches this Apple ID. Use the same email as your RentAxis account or contact your property administrator.';
+  }
+  if (status == 429) {
+    return 'Too many sign-in attempts. Please wait and try again.';
+  }
+  if (error.type == DioExceptionType.connectionError ||
+      error.type == DioExceptionType.connectionTimeout ||
+      error.type == DioExceptionType.receiveTimeout ||
+      error.type == DioExceptionType.sendTimeout) {
+    return 'No connection. Check your network and try again.';
+  }
+  return 'Could not complete Apple sign-in. Please try again.';
 }
 
 final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {

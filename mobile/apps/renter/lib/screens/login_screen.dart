@@ -1,8 +1,12 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
+
+import '../auth/apple_sign_in.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -64,6 +68,34 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
     if (success) {
       context.go('/');
+    }
+  }
+
+  Future<void> _handleAppleLogin() async {
+    setState(() => _isSubmitting = true);
+    try {
+      final apple = await requestAppleSignIn();
+      final success = await ref
+          .read(authProvider.notifier)
+          .loginWithApple(apple.identityToken, apple.rawNonce);
+      if (!mounted) return;
+      if (success) context.go('/');
+    } on SignInWithAppleAuthorizationException catch (error) {
+      if (error.code != AuthorizationErrorCode.canceled) {
+        ref
+            .read(authProvider.notifier)
+            .reportLoginError(
+              'Apple sign-in could not be completed. Please try again.',
+            );
+      }
+    } catch (_) {
+      ref
+          .read(authProvider.notifier)
+          .reportLoginError(
+            'Apple sign-in could not be completed. Please try again.',
+          );
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
     }
   }
 
@@ -371,6 +403,51 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                           ),
                         ),
 
+                        if (defaultTargetPlatform == TargetPlatform.iOS) ...[
+                          const SizedBox(height: 18),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Divider(
+                                  color: Colors.white.withValues(alpha: 0.18),
+                                ),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                ),
+                                child: Text(
+                                  l.or,
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.45),
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                              Expanded(
+                                child: Divider(
+                                  color: Colors.white.withValues(alpha: 0.18),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          SizedBox(
+                            width: double.infinity,
+                            child: SignInWithAppleButton(
+                              onPressed: _isSubmitting
+                                  ? null
+                                  : _handleAppleLogin,
+                              text: l.signInWithApple,
+                              height: 52,
+                              style: SignInWithAppleButtonStyle.white,
+                              borderRadius: const BorderRadius.all(
+                                Radius.circular(12),
+                              ),
+                            ),
+                          ),
+                        ],
+
                         const SizedBox(height: 32),
 
                         // Footer
@@ -448,9 +525,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
         borderRadius: BorderRadius.circular(14),
         borderSide: BorderSide(color: AppColorsDark.danger, width: 1.5),
       ),
-      errorStyle: (l.ar
-          ? GoogleFonts.notoNaskhArabic
-          : GoogleFonts.plusJakartaSans)(color: AppColorsDark.danger, fontSize: 12),
+      errorStyle:
+          (l.ar ? GoogleFonts.notoNaskhArabic : GoogleFonts.plusJakartaSans)(
+            color: AppColorsDark.danger,
+            fontSize: 12,
+          ),
     );
   }
 }
@@ -546,6 +625,9 @@ class _L {
   String get passwordRequired =>
       ar ? 'كلمة المرور مطلوبة' : 'Password is required';
   String get signIn => ar ? 'تسجيل الدخول' : 'SIGN IN';
+  String get or => ar ? 'أو' : 'OR';
+  String get signInWithApple =>
+      ar ? 'تسجيل الدخول باستخدام Apple' : 'Sign in with Apple';
   String get poweredBy => ar ? 'بدعم من Miftah' : 'Powered by Miftah';
 }
 

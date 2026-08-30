@@ -3,6 +3,7 @@ package com.datagami.rentaxis.api;
 import com.datagami.rentaxis.api.dto.InviteTokenInfoResponse;
 import com.datagami.rentaxis.api.dto.SetPasswordRequest;
 import com.datagami.rentaxis.core.security.AuthTokenService;
+import com.datagami.rentaxis.core.service.auth.AppleAuthService;
 import com.datagami.rentaxis.core.service.auth.FirebaseGuardAuthService;
 import com.datagami.rentaxis.core.service.LandlordOrgService;
 import com.datagami.rentaxis.core.service.UserService;
@@ -35,14 +36,17 @@ public class AuthController {
     private final LandlordOrgService orgService;
     private final PasswordEncoder passwordEncoder;
     private final FirebaseGuardAuthService firebaseGuardAuthService;
+    private final AppleAuthService appleAuthService;
     private final AuthTokenService authTokenService;
 
     public AuthController(UserService userService, LandlordOrgService orgService, PasswordEncoder passwordEncoder,
-            FirebaseGuardAuthService firebaseGuardAuthService, AuthTokenService authTokenService) {
+            FirebaseGuardAuthService firebaseGuardAuthService, AppleAuthService appleAuthService,
+            AuthTokenService authTokenService) {
         this.userService = userService;
         this.orgService = orgService;
         this.passwordEncoder = passwordEncoder;
         this.firebaseGuardAuthService = firebaseGuardAuthService;
+        this.appleAuthService = appleAuthService;
         this.authTokenService = authTokenService;
     }
 
@@ -271,6 +275,32 @@ public class AuthController {
     public ResponseEntity<AuthResponse> firebaseLogin(@RequestBody FirebaseLoginRequest request) {
         User guard = firebaseGuardAuthService.authenticate(request.idToken());
         return ResponseEntity.ok(toAuthResponse(guard));
+    }
+
+    // --- Native Sign in with Apple for Resident and Manager iOS apps ---
+
+    public record AppleLoginRequest(String identityToken, String nonce, String tenantId) {
+    }
+
+    @PostMapping("/apple")
+    public ResponseEntity<?> appleLogin(@RequestBody AppleLoginRequest request) {
+        try {
+            User user = appleAuthService.authenticate(
+                    request.identityToken(), request.nonce(), request.tenantId());
+            if (user.getWelcomedAt() == null) userService.markWelcomed(user.getId());
+            return ResponseEntity.ok(toAuthResponse(user));
+        } catch (AppleAuthService.AmbiguousAppleIdentityException ex) {
+            List<TenantCandidate> tenants = ex.candidates().stream()
+                    .filter(user -> user.getTenantId() != null)
+                    .map(user -> new TenantCandidate(
+                            user.getTenantId().toString(),
+                            orgService.findById(user.getTenantId())
+                                    .map(LandlordOrg::getName)
+                                    .orElse("(unknown)")))
+                    .toList();
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(new LoginAmbiguousResponse(tenants));
+        }
     }
 
     @GetMapping("/set-password/validate")

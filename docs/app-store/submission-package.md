@@ -26,8 +26,8 @@ Prepared from the release binaries and store material in this repository on 27 A
 
 | App | Bundle ID | Apple ID | Version | Build | SKU | Primary category | Secondary category |
 | --- | --- | ---: | ---: | ---: | --- | --- | --- |
-| Miftah Resident | `com.rentaxis.renter` | `6805966836` | 1.3.0 | 5 | `miftah-resident-ios` | Lifestyle | Utilities |
-| Miftah Manager | `com.rentaxis.manager` | `6805966872` | 1.2.0 | 4 | `miftah-manager-ios` | Business | Productivity |
+| Miftah Resident | `com.rentaxis.renter` | `6805966836` | 1.3.0 | 6 | `miftah-resident-ios` | Lifestyle | Utilities |
+| Miftah Manager | `com.rentaxis.manager` | `6805966872` | 1.2.0 | 5 | `miftah-manager-ios` | Business | Productivity |
 | Miftah Security | `com.rentaxis.security` | `6805966969` | 1.2.0 | 4 | `miftah-security-ios` | Business | Productivity |
 
 Bundle IDs and SKUs are permanent after the records are created. Verify the team owns or can register all three bundle IDs before creating the records.
@@ -41,14 +41,14 @@ Bundle IDs and SKUs are permanent after the records are created. Verify the team
 - All 18 prepared 6.9-inch screenshots uploaded in the intended order.
 - All three apps configured as free.
 - All three apps configured as public, UAE-only releases for iPhone/iPad; Apple silicon Mac and Apple Vision Pro availability disabled.
-- Xcode recognises Apple team `AR3Y2NZTTQ`, but signed archiving is currently blocked because the team has no registered device from which Xcode can generate an automatic development provisioning profile.
-- A Datagami iPhone 15 development device is now registered; all three signed IPAs have been built successfully.
+- A Datagami iPhone 15 development device is registered; automatic signing and App Store IPA export now succeed for all three apps.
+- Native Sign in with Apple is implemented for Resident and Manager. Both signed archives carry the `com.apple.developer.applesignin` entitlement, and the backend verifies Apple's signature, audience, expiry and nonce before linking an existing active account.
 - Remaining: upload the IPAs, privacy-label confirmation and publication, review credentials/contact, Security APNs/Firebase setup, and final App Review submission.
 
 ### Built IPAs
 
-- Miftah Resident: `mobile/apps/renter/build/ios/ipa/Miftah Resident.ipa` (1.3.0 build 5)
-- Miftah Manager: `mobile/apps/manager/build/ios/ipa/Miftah Manager.ipa` (1.2.0 build 4)
+- Miftah Resident: `mobile/apps/renter/build/ios/ipa/Miftah Resident.ipa` (1.3.0 build 6)
+- Miftah Manager: `mobile/apps/manager/build/ios/ipa/Miftah Manager.ipa` (1.2.0 build 5)
 - Miftah Security: `mobile/apps/security/build/ios/ipa/Miftah Security.ipa` (1.2.0 build 4)
 
 ## English metadata
@@ -60,6 +60,7 @@ Bundle IDs and SKUs are permanent after the records are created. Verify the team
 - Promotional text: `Rent, maintenance, documents, listings and visitor access—everything residents need for day-to-day property life in one secure, bilingual app.`
 - Keywords: `rent,tenant,property,lease,maintenance,cheques,visitor,home,apartment,payments`
 - Description and release notes: use the English sections in [renter-listing.md](../play-store/renter-listing.md).
+- App Store release notes: `You can now sign in securely with your Apple ID. This release also improves startup reliability and prepares Miftah Resident for production distribution.`
 - Screenshots: [assets/renter/screenshots-6.9](assets/renter/screenshots-6.9)
 
 ### Miftah Manager
@@ -69,6 +70,7 @@ Bundle IDs and SKUs are permanent after the records are created. Verify the team
 - Promotional text: `Run properties, leases, payments, maintenance, listings, finance and gate operations from one clear, bilingual workspace.`
 - Keywords: `property,leases,cheques,payments,maintenance,listings,finance,visitors,operations`
 - Description and release notes: use the English sections in [manager-listing.md](../play-store/manager-listing.md).
+- App Store release notes: `You can now sign in securely with your Apple ID. This release also includes production-readiness and reliability improvements for property operations.`
 - Screenshots: [assets/manager/screenshots-6.9](assets/manager/screenshots-6.9)
 
 ### Miftah Security
@@ -159,6 +161,7 @@ For every data type below, tracking is **No**. Unless explicitly shown as unlink
 1. Confirm the Apple account has Account Holder, Admin, or App Manager access; a Developer can upload builds but cannot complete every submission field.
 2. Resolve any pending agreements, tax, banking, trader-status, or compliance banners.
 3. Register the three explicit App IDs. Enable Push Notifications for `com.rentaxis.security`.
+   Sign in with Apple must remain enabled for `com.rentaxis.renter` and `com.rentaxis.manager`.
 4. Create an APNs authentication key (or reuse an authorised existing key) and upload it with its Key ID and Apple Team ID to Firebase project `rent-axis-493307` under Project settings → Cloud Messaging. This is required for Security's iOS phone authentication.
 5. Create the three App Store Connect records with the exact bundle IDs and SKUs above.
 6. Connect the Apple team in Xcode, allow automatic signing to create/download distribution credentials, and archive each app.

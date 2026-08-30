@@ -3,6 +3,7 @@ package com.datagami.rentaxis.api;
 import com.datagami.rentaxis.core.security.AuthTokenService;
 import com.datagami.rentaxis.core.service.LandlordOrgService;
 import com.datagami.rentaxis.core.service.UserService;
+import com.datagami.rentaxis.core.service.auth.AppleAuthService;
 import com.datagami.rentaxis.core.service.auth.FirebaseGuardAuthService;
 import com.datagami.rentaxis.domain.entity.LandlordOrg;
 import com.datagami.rentaxis.domain.entity.User;
@@ -37,6 +38,7 @@ class AuthControllerTokenTest {
     private LandlordOrgService orgService;
     private PasswordEncoder passwordEncoder;
     private FirebaseGuardAuthService firebaseGuardAuthService;
+    private AppleAuthService appleAuthService;
     private AuthTokenService tokens;
     private AuthController controller;
 
@@ -46,9 +48,10 @@ class AuthControllerTokenTest {
         orgService = mock(LandlordOrgService.class);
         passwordEncoder = mock(PasswordEncoder.class);
         firebaseGuardAuthService = mock(FirebaseGuardAuthService.class);
+        appleAuthService = mock(AppleAuthService.class);
         tokens = new AuthTokenService(SECRET);
         controller = new AuthController(userService, orgService, passwordEncoder,
-                firebaseGuardAuthService, tokens);
+                firebaseGuardAuthService, appleAuthService, tokens);
     }
 
     private User user(UUID id, UUID tenantId, UserRole role) {
@@ -91,7 +94,7 @@ class AuthControllerTokenTest {
     @Test
     void loginWithNoSecretConfiguredStillWorksAndReturnsNullToken() {
         controller = new AuthController(userService, orgService, passwordEncoder,
-                firebaseGuardAuthService, new AuthTokenService(""));
+                firebaseGuardAuthService, appleAuthService, new AuthTokenService(""));
         UUID userId = UUID.randomUUID();
         UUID home = UUID.randomUUID();
         User u = user(userId, home, UserRole.RENTER);
@@ -156,5 +159,25 @@ class AuthControllerTokenTest {
         assertThat(verified.userId()).isEqualTo(guardId);
         assertThat(verified.role()).isEqualTo(UserRole.SECURITY_GUARD);
         assertThat(verified.homeTenantId()).isEqualTo(tenant);
+    }
+
+    @Test
+    void appleLoginFlowsThroughToAuthResponseWithAToken() throws Exception {
+        UUID renterId = UUID.randomUUID();
+        UUID tenant = UUID.randomUUID();
+        User renter = user(renterId, tenant, UserRole.RENTER);
+
+        when(appleAuthService.authenticate("apple-id-token", "raw-nonce", null))
+                .thenReturn(renter);
+        when(userService.getUserTenantIds(renterId)).thenReturn(List.of(tenant));
+
+        ResponseEntity<?> response = controller.appleLogin(
+                new AuthController.AppleLoginRequest("apple-id-token", "raw-nonce", null));
+
+        AuthController.AuthResponse body = (AuthController.AuthResponse) response.getBody();
+        assertThat(body.token()).isNotNull();
+        var verified = tokens.verify(body.token());
+        assertThat(verified.userId()).isEqualTo(renterId);
+        assertThat(verified.role()).isEqualTo(UserRole.RENTER);
     }
 }

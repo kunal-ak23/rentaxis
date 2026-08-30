@@ -55,6 +55,14 @@ public class User extends BaseTenantEntity {
     @Column(name = "invite_token_expires_at")
     private Instant inviteTokenExpiresAt;
 
+    @JsonIgnore
+    @Column(name = "apple_subject", length = 255)
+    private String appleSubject;
+
+    @JsonIgnore
+    @Column(name = "apple_client_id", length = 255)
+    private String appleClientId;
+
     // Optional override of tenantId from BaseTenantEntity
     // If a user is SUPER_ADMIN, tenantId might be null
 }

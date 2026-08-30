@@ -21,6 +21,8 @@ public interface UserRepository extends JpaRepository<User, UUID> {
      */
     List<User> findAllByEmail(String email);
 
+    Optional<User> findByAppleClientIdAndAppleSubject(String appleClientId, String appleSubject);
+
     /**
      * Display-name lookup that bypasses the tenant Hibernate filter (native
      * SQL). Needed for audit/comment attribution: a SUPER_ADMIN acting inside

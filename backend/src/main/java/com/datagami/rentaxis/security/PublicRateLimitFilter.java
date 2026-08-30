@@ -34,6 +34,7 @@ public class PublicRateLimitFilter extends OncePerRequestFilter {
      */
     private static final PathPattern FIREBASE_AUTH_PATH = PARSER.parse("/api/v1/auth/firebase");
     private static final PathPattern LEGACY_FIREBASE_AUTH_PATH = PARSER.parse("/api/auth/firebase");
+    private static final PathPattern APPLE_AUTH_PATH = PARSER.parse("/api/auth/apple");
     private static final PathPattern REGISTRATION_PATH = PARSER.parse("/api/auth/register");
 
     private static final PathPattern PUBLIC_PATH = PARSER.parse("/public/**");
@@ -95,6 +96,7 @@ public class PublicRateLimitFilter extends OncePerRequestFilter {
         boolean isFirebaseAuth =
                 "POST".equals(request.getMethod())
                         && (FIREBASE_AUTH_PATH.matches(path) || LEGACY_FIREBASE_AUTH_PATH.matches(path));
+        boolean isAppleAuth = "POST".equals(request.getMethod()) && APPLE_AUTH_PATH.matches(path);
         boolean isRegistration =
                 "POST".equals(request.getMethod()) && REGISTRATION_PATH.matches(path);
         boolean isPublic = PUBLIC_PATH.matches(path);
@@ -102,7 +104,7 @@ public class PublicRateLimitFilter extends OncePerRequestFilter {
         boolean isPromoEvents =
                 "POST".equals(request.getMethod()) && PROMO_EVENTS_PATH.matches(path);
 
-        if (!isFirebaseAuth && !isRegistration && !isPublic && !isScan && !isPromoEvents) {
+        if (!isFirebaseAuth && !isAppleAuth && !isRegistration && !isPublic && !isScan && !isPromoEvents) {
             filterChain.doFilter(request, response);
             return;
         }
@@ -113,7 +115,7 @@ public class PublicRateLimitFilter extends OncePerRequestFilter {
         Bucket bucket;
         if (isRegistration) {
             bucket = registrationBuckets.computeIfAbsent(ip, k -> createRegistrationBucket());
-        } else if (isFirebaseAuth) {
+        } else if (isFirebaseAuth || isAppleAuth) {
             bucket = firebaseAuthBuckets.computeIfAbsent(ip, k -> createFirebaseAuthBucket());
         } else if (isScan) {
             bucket = scanBuckets.computeIfAbsent(ip, k -> createScanBucket());

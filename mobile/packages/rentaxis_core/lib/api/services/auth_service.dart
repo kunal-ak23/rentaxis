@@ -41,6 +41,25 @@ class AuthService {
     return AuthResponse.fromJson(response.data);
   }
 
+  /// Exchanges a native Sign in with Apple identity token for a RentAxis
+  /// Resident/Manager session. The raw nonce is verified against the signed
+  /// nonce claim by the backend before the Apple identity can be linked.
+  Future<AuthResponse> loginWithApple(
+    String identityToken,
+    String rawNonce, {
+    String? tenantId,
+  }) async {
+    final response = await _dio.post(
+      '/auth/apple',
+      data: {
+        'identityToken': identityToken,
+        'nonce': rawNonce,
+        'tenantId': ?tenantId,
+      },
+    );
+    return AuthResponse.fromJson(response.data);
+  }
+
   Future<Map<String, dynamic>> getProfile() async {
     final response = await _dio.get('/auth/me');
     return response.data;
