@@ -20,6 +20,10 @@
         request_header -X-Internal-Auth
         reverse_proxy backend:8080
     }
+    handle /api/auth/apple {
+        request_header -X-Internal-Auth
+        reverse_proxy backend:8080
+    }
     handle /api/auth/me* {
         request_header -X-Internal-Auth
         reverse_proxy backend:8080
