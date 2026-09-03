@@ -3,7 +3,6 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
-import os from 'node:os';
 import path from 'node:path';
 
 const DEFAULT_BASE_URL = 'https://rentaxis.uaenorth.cloudapp.azure.com';
@@ -31,6 +30,15 @@ const baseURL = process.env.PROD_BASE_URL || DEFAULT_BASE_URL;
 const speechRate = Number(speechRateArg);
 const validateOnly = process.env.TUTORIAL_CAPTURE_VALIDATE_ONLY === '1';
 const qaDir = process.env.TUTORIAL_QA_DIR ? path.resolve(process.env.TUTORIAL_QA_DIR) : null;
+const artifactRoot = process.env.TUTORIAL_ARTIFACTS_DIR
+  ? path.resolve(process.env.TUTORIAL_ARTIFACTS_DIR)
+  : path.join(repoRoot, 'tutorials');
+const rawRoot = process.env.TUTORIAL_RAW_DIR
+  ? path.resolve(process.env.TUTORIAL_RAW_DIR)
+  : path.join(artifactRoot, 'raw');
+const workRoot = process.env.TUTORIAL_WORK_DIR
+  ? path.resolve(process.env.TUTORIAL_WORK_DIR)
+  : path.join(artifactRoot, 'work');
 
 if (!fs.existsSync(narrationPath)) throw new Error(`Narration not found: ${narrationPath}`);
 if (!fs.existsSync(authStatePath)) {
@@ -76,7 +84,10 @@ function narrationDurationSeconds() {
     const wordCount = [spokenIntro, narration].filter(Boolean).join(' ').trim().split(/\s+/).length;
     return (wordCount / speechRate) * 60 * 1.08 + 4;
   }
-  const taskDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rentaxis-tutorial-audio-'));
+  // Keep capture artifacts under tutorials/ so interrupted work is reviewable
+  // and recoverable. System temporary folders are routinely purged.
+  fs.mkdirSync(workRoot, { recursive: true });
+  const taskDir = fs.mkdtempSync(path.join(workRoot, `timing-${tutorialId}-`));
   const audioPath = path.join(taskDir, 'narration.aiff');
   try {
     execFileSync('say', [
@@ -108,7 +119,7 @@ function narrationDurationSeconds() {
     }
     return duration;
   } finally {
-    fs.rmSync(taskDir, { recursive: true, force: true });
+    // Retain timing audio alongside capture artifacts for reproducible review.
   }
 }
 
@@ -208,6 +219,9 @@ function roleRouteScene(role, pathname, title, body, options = {}) {
 }
 
 const towerId = seed.properties?.tower;
+const towerName = seed.properties?.towerName
+  || process.env.TUTORIAL_TOWER_NAME
+  || 'RentAxis Tutorial Residence Tower';
 const ahmedLeaseId = seed.leases?.ahmed;
 const saraLeaseId = seed.leases?.sara;
 const ticketId = seed.ticketId;
@@ -425,7 +439,7 @@ const scenarios = {
       weight: 58,
       verifyTenantContext: false,
       afterNavigation: async (page) => {
-        await page.getByText(seed.properties?.towerName || 'RentAxis Academy Residence Tower', { exact: true }).waitFor({ state: 'visible', timeout: 30_000 });
+        await page.getByText(towerName, { exact: true }).waitFor({ state: 'visible', timeout: 30_000 });
       },
     }),
     roleRouteScene('tenantAdmin', '/en/dashboard/help/getting-started--roles-and-permissions', 'Tenant User', 'Use this more limited staff role for a defined operational surface without tenant-wide administration.', {
@@ -845,7 +859,10 @@ const scenes = scenarios[tutorialId];
 if (!scenes) throw new Error(`Tutorial ${tutorialId} does not have an automated capture scenario yet.`);
 
 fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-const videoDir = fs.mkdtempSync(path.join(os.tmpdir(), `rentaxis-tutorial-${tutorialId}-`));
+fs.mkdirSync(rawRoot, { recursive: true });
+const videoDir = validateOnly
+  ? null
+  : fs.mkdtempSync(path.join(rawRoot, `tutorial-${tutorialId}-`));
 const targetDuration = narrationDurationSeconds() + 2;
 // Playwright starts each clip when the page is created, before scene timing
 // begins, and keeps a short trailer while the page closes. Reserve that
@@ -971,7 +988,6 @@ try {
 }
 
 if (validateOnly) {
-  fs.rmSync(videoDir, { recursive: true, force: true });
   console.log(`tutorial=${tutorialId}`);
   console.log(`tenant=${tenantName}`);
   console.log('scenario_validation=passed');
@@ -1003,9 +1019,9 @@ if (validateOnly) {
       outputPath,
     ]);
   }
-  fs.rmSync(videoDir, { recursive: true, force: true });
   console.log(`tutorial=${tutorialId}`);
   console.log(`tenant=${tenantName}`);
   console.log(`target_duration=${targetDuration.toFixed(2)}`);
   console.log(`silent_video=${outputPath}`);
+  console.log(`raw_video_dir=${videoDir}`);
 }
