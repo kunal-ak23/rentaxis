@@ -563,8 +563,18 @@ class _NumericCodeSheet extends StatefulWidget {
 
 class _NumericCodeSheetState extends State<_NumericCodeSheet> {
   static const _codeLength = 8;
+  static const _captureCode = String.fromEnvironment('TUTORIAL_SCAN_CODE');
 
   final _controller = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    // Capture builds can prefill the synthetic code so a slow emulator does
+    // not turn an otherwise real workflow into a flaky keyboard test. This
+    // define is never set in release builds and has no production effect.
+    if (_captureCode.length == _codeLength) _controller.text = _captureCode;
+  }
 
   @override
   void dispose() {
