@@ -124,7 +124,7 @@ function narrationDurationSeconds() {
 }
 
 async function waitForApp(page) {
-  await page.waitForLoadState('domcontentloaded');
+  await page.waitForLoadState('domcontentloaded', { timeout: 30_000 }).catch(() => {});
   await Promise.race([
     page.locator('main').waitFor({ state: 'visible', timeout: 30_000 }),
     page.locator('#login-email').waitFor({ state: 'visible', timeout: 30_000 }),
@@ -183,7 +183,13 @@ async function clearCallout(page) {
 }
 
 async function goto(page, pathname) {
-  await page.goto(`${baseURL}${pathname}`);
+  // Production keeps a few long-lived resources open, so waiting for the
+  // browser's full `load` event can time out after the usable app shell is
+  // already ready. DOM readiness is sufficient; waitForApp handles the
+  // role-specific content that follows.
+  // Wait only for the document commit. The production shell keeps long-lived
+  // resources open, so DOMContentLoaded can lag even after the app is usable.
+  await page.goto(`${baseURL}${pathname}`, { waitUntil: 'commit', timeout: 30_000 });
   await waitForApp(page);
 }
 
@@ -959,10 +965,11 @@ try {
       }
       await auditVisibleDialogContrast(page);
       if (scene.verifyTenantContext !== false) {
-        const activeTenantVisible = await page.getByText(tenantName, { exact: true }).first().isVisible();
-        if (!activeTenantVisible) {
-          throw new Error(`The active organisation is not ${tenantName}; recording stopped.`);
-        }
+        // Role-specific sessions fetch their tenant membership after the
+        // application shell is visible. Wait for that asynchronous label
+        // before deciding the context is wrong, otherwise a healthy session
+        // can fail the preflight during a slow production response.
+        await page.getByText(tenantName, { exact: true }).first().waitFor({ state: 'visible', timeout: 10_000 });
       }
       if (qaDir) {
         fs.mkdirSync(qaDir, { recursive: true });
