@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "runId": "rentaxis-tutorial-20260903",
+  "product": "rentaxis",
+  "environment": "production",
+  "createdAt": "2026-09-03T14:49:14+05:30",
+  "tenant": {
+    "id": "61b648b7-a380-4e8a-b8e6-e7f4cb4df452",
+    "name": "RentAxis Tutorial Studio 2026-09-03",
+    "slug": "rentaxis-tutorial-studio-2026-09-03",
+    "synthetic": true
+  },
+  "records": {
+    "properties": {
+      "tower": "27ef49e2-2cd7-49b0-ac54-92fbfa987404",
+      "marina": "d5d27d75-8255-4d5b-ba23-70ab3f607f92"
+    },
+    "units": {
+      "a101": "6ac9ad3e-ccf9-49f0-9d39-45a283e77b69",
+      "a102": "3b02e6f5-77f4-41f6-9d78-9c0e8497c166",
+      "a103": "d9998026-3235-43e5-9cb7-3bdf5b6d022f",
+      "a201": "3f4ae2d4-b12f-45d1-9d36-51d7f25b8a7a",
+      "a202": "01452363-0ab7-455d-9d97-ff93f8d2da39",
+      "m1501": "51389d21-a19d-4140-9b70-d8abb7e45f9e",
+      "m1502": "c30a825b-4cca-4eda-a842-24386fea5be9",
+      "m803": "f29c515b-25b0-4ad9-95bd-3d4e794e5928"
+    },
+    "leases": {
+      "ahmed": "f40febcc-f5a6-4e2b-a4d6-d9ca9f3762f0",
+      "fatima": "b3511268-70f7-4c21-b700-ddc1e0676529",
+      "rajesh": "4a17ddac-3580-49ec-be7b-b3424d468623",
+      "sara": "fb414821-f00b-47e8-af3a-88c52ff32779"
+    },
+    "listings": {
+      "Bright 2BR in Al Barsha": "cc222965-9f18-4613-9383-ddadc4ff97d1",
+      "Cozy Studio near Mall of the Emirates": "944ef352-6977-47b9-a2cb-4dda77af0985",
+      "Luxury Marina Penthouse with Sea View": "26634eb9-527d-4404-82dd-8290a19f271d",
+      "Marina 1BR with Partial Sea View": "5f983dc5-9958-4ab8-9d34-ee9617b31ea0"
+    },
+    "meetings": {
+      "Replacement cheque — Fatima Al Zaabi (A-102)": "2b6a7910-630d-4bda-9698-443bcccaa3be",
+      "Penthouse viewing — M-1502": "d1dc54dc-19fa-4a58-baad-a54aa6256302"
+    },
+    "amenityBookingId": "5fb68853-651a-48d5-b6c9-4f51dc8d9a8a",
+    "amenityId": "9ec0c2aa-a773-416e-8801-e83c879b82c2",
+    "parkingSpotId": "f80fd783-a8aa-489a-ab7c-f246189954c1",
+    "ticketId": "53a78871-c14d-4684-9148-2ab9353d81e7",
+    "promotionBusinessId": "b2f3abb2-85c5-4228-8a5c-6759f25ba4ba",
+    "promotionAdId": "81e42735-a0f5-4e67-8c8a-c25b342d85cb",
+    "gatePassId": "80e68e4e-a5fa-45f8-8d56-aea711a06b2e"
+  },
+  "credentials": "stored only in rentaxis-tutorial-20260903-secrets.local.json; never commit or publish"
+}
