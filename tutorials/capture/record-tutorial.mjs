@@ -444,6 +444,7 @@ const scenarios = {
       weight: 72,
       afterNavigation: async (page) => {
         await page.getByRole('button', { name: 'Switch organization' }).click();
+        await page.getByPlaceholder('Search organizations...').fill(tenantName);
         await page.getByRole('button', { name: tenantName }).waitFor({ state: 'visible' });
       },
     }),
@@ -474,6 +475,7 @@ const scenarios = {
       weight: 49,
       afterNavigation: async (page) => {
         await page.getByRole('button', { name: 'Switch organization' }).click();
+        await page.getByPlaceholder('Search organizations...').fill(tenantName);
         await page.getByRole('button', { name: tenantName }).waitFor({ state: 'visible' });
       },
     }),
