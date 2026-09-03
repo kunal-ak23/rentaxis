@@ -9,9 +9,10 @@
 ## Review result
 
 Capture and audio rendering completed, but the tutorial is not approved for
-publication yet. The first few seconds of the rendered candidate show the
-production loading shell before the dashboard settles. The super-admin
-organisation switcher also visibly contains older synthetic/test tenants.
+publication yet. The branded opening card now covers the production startup
+delay, and representative frames at 3s, 80s, and 160s show loaded screens with
+the expected role callouts. The super-admin organisation switcher still
+visibly contains older synthetic/test tenants.
 
 The deployed tenant-label fix is confirmed in the property-manager and renter
 scenes: the footer shows the active tutorial tenant name (truncated to fit) with

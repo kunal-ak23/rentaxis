@@ -139,7 +139,15 @@ async function waitForApp(page) {
   if (await dashboardError.isVisible().catch(() => false)) {
     await dashboardError.waitFor({ state: 'hidden', timeout: 30_000 });
   }
+  const dashboardLoading = page.getByText('Loading dashboard...', { exact: true });
+  if (await dashboardLoading.isVisible().catch(() => false)) {
+    await dashboardLoading.waitFor({ state: 'hidden', timeout: 30_000 });
+  }
   await page.waitForTimeout(800);
+}
+
+async function clearRecordingIntro(page) {
+  await page.evaluate(() => document.querySelector('[data-rentaxis-recording-intro]')?.remove());
 }
 
 async function addCallout(page, title, body) {
@@ -191,6 +199,7 @@ async function goto(page, pathname) {
   // resources open, so DOMContentLoaded can lag even after the app is usable.
   await page.goto(`${baseURL}${pathname}`, { waitUntil: 'commit', timeout: 30_000 });
   await waitForApp(page);
+  await clearRecordingIntro(page);
 }
 
 function routeScene(pathname, title, body, afterNavigation, verifyTenantContext = true) {
@@ -942,6 +951,34 @@ try {
     }
     const context = await browser.newContext(contextOptions);
     await suppressAutomaticOnboarding(context);
+    if (!validateOnly && sceneIndex === 0) {
+      const introTitle = String(scene.title || 'RentAxis tutorial').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+      await context.addInitScript({
+        content: `(() => {
+          try {
+            if (sessionStorage.getItem('rentaxisRecordingIntroShown')) return;
+            sessionStorage.setItem('rentaxisRecordingIntroShown', '1');
+          } catch {}
+          const mount = () => {
+            if (document.querySelector('[data-rentaxis-recording-intro]')) return;
+            const root = document.createElement('div');
+            root.dataset.rentaxisRecordingIntro = 'true';
+            root.innerHTML = '<div style="font-size:18px;letter-spacing:.18em;text-transform:uppercase;color:#f59e0b;margin-bottom:18px">RentAxis tutorial</div><div style="font-size:42px;line-height:1.1;font-weight:700;max-width:900px">${introTitle}</div>';
+            Object.assign(root.style, {
+              position: 'fixed', inset: '0', zIndex: '2147483647', display: 'flex',
+              flexDirection: 'column', justifyContent: 'center', alignItems: 'center',
+              textAlign: 'center', padding: '48px', color: '#f8fafc',
+              background: 'linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%)',
+              fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif',
+            });
+            const mountTarget = document.body;
+            if (mountTarget) mountTarget.append(root);
+          };
+          if (document.body) mount();
+          else document.addEventListener('DOMContentLoaded', mount, { once: true });
+        })();`,
+      });
+    }
     await context.addCookies([
       {
         name: 'active_tenant_id',
