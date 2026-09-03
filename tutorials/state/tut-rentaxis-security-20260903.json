@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "runId": "tut-rentaxis-security-20260903",
+  "product": "rentaxis",
+  "environment": "production",
+  "createdAt": "2026-09-03T09:13:00Z",
+  "expiresAt": "2026-09-04T09:13:00Z",
+  "tenant": {
+    "id": "624fb5bb-902b-415f-9279-20a914eb52c0",
+    "name": "RentAxis Tutorial Studio",
+    "synthetic": true
+  },
+  "roles": [
+    {"role": "SECURITY_GUARD", "userId": "b1c110b2-d084-4a04-831b-e5e4e041ed17", "email": "guard2@tutorial-studio.example.com"}
+  ],
+  "records": {
+    "properties": [{"id": "ed7369f8-ce8e-49cb-b3a8-b5770c77eac2", "name": "RentAxis Academy Residence Tower"}],
+    "units": [{"id": "ee5540ae-5555-4922-ac5c-53aaca60d546", "number": "A-101", "status": "OCCUPIED"}],
+    "passes": [{"id": "cbbb1d47-4909-465e-a84e-17ef0ee23f3d", "status": "ACTIVE", "numericCode": "<redacted-after-capture>"}]
+  },
+  "azure": {
+    "subscriptionId": "5e1eb604-e8be-4ae2-8a84-cc33f41a2b53",
+    "resourceGroup": "datagami-shared-rg",
+    "resourceIds": [],
+    "tags": {
+      "purpose": "tutorial-recording",
+      "owner": "codex",
+      "product": "rentaxis",
+      "run": "tut-rentaxis-security-20260903",
+      "expiresAt": "2026-09-04T09:13:00Z",
+      "managedBy": "datagami-tutorial-recording"
+    }
+  },
+  "artifacts": {
+    "raw": ["tutorials/raw/33-security/"],
+    "approved": [],
+    "rejected": ["tutorials/qa/review/33-security/"],
+    "qa": ["tutorials/qa/review/33-security/README.md"]
+  },
+  "cleanup": {
+    "tenantCleanupAuthorized": false,
+    "azureTeardownAuthorized": false
+  }
+}

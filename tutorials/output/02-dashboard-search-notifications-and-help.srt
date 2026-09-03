@@ -1,0 +1,207 @@
+1
+00:00:00,000 --> 00:00:04,362
+This tutorial introduces four tools you
+will use throughout RentAxis:
+
+2
+00:00:04,362 --> 00:00:08,288
+the dashboard, global search,
+notifications, and the Help Center.
+
+3
+00:00:08,288 --> 00:00:10,033
+Begin on the dashboard.
+
+4
+00:00:10,033 --> 00:00:13,523
+The cards at the top summarize the active
+
+5
+00:00:13,523 --> 00:00:17,013
+organization and the work visible to your
+role.
+
+6
+00:00:17,013 --> 00:00:20,066
+Read each label before interpreting a
+number.
+
+7
+00:00:20,066 --> 00:00:23,556
+A collection total, occupancy figure,
+renewal follow-up, or
+
+8
+00:00:23,556 --> 00:00:27,046
+open ticket count represents a different
+operational question.
+
+9
+00:00:27,046 --> 00:00:29,663
+Filters and the active organization
+determine
+
+10
+00:00:29,663 --> 00:00:32,281
+which records contribute to the result.
+
+11
+00:00:32,281 --> 00:00:36,207
+Use dashboard figures as signals, then
+open the related
+
+12
+00:00:36,207 --> 00:00:40,133
+list or report when you need the
+underlying records.
+
+13
+00:00:40,133 --> 00:00:43,186
+Next, open global search from the header.
+
+14
+00:00:43,186 --> 00:00:46,240
+You can also use Control K on
+
+15
+00:00:46,240 --> 00:00:48,857
+Windows or Command K on macOS.
+
+16
+00:00:48,857 --> 00:00:53,655
+Enter part of a known lease, renter,
+cheque, or payment identifier.
+
+17
+00:00:53,655 --> 00:00:57,581
+Search results are role-aware and
+tenant-scoped, so you will
+
+18
+00:00:57,581 --> 00:01:01,071
+only receive destinations you are allowed
+to open.
+
+19
+00:01:01,071 --> 00:01:04,125
+A super administrator can also find
+organizations.
+
+20
+00:01:04,125 --> 00:01:08,487
+Choose the prepared demo lease and confirm
+that RentAxis opens
+
+21
+00:01:08,487 --> 00:01:12,849
+the correct lease detail instead of a
+general search-results page.
+
+22
+00:01:12,849 --> 00:01:15,903
+Return to the dashboard and open
+Notifications.
+
+23
+00:01:15,903 --> 00:01:20,701
+The unread indicator shows items that have
+not yet been acknowledged.
+
+24
+00:01:20,701 --> 00:01:25,064
+Select one notification, review its title,
+time, and message, then
+
+25
+00:01:25,064 --> 00:01:28,990
+follow the related record when a link is
+available.
+
+26
+00:01:28,990 --> 00:01:33,788
+Return to the notification list and mark
+the item as read.
+
+27
+00:01:33,788 --> 00:01:36,842
+It should leave the Unread view
+immediately
+
+28
+00:01:36,842 --> 00:01:39,895
+while remaining available in the full
+history.
+
+29
+00:01:39,895 --> 00:01:44,694
+Use Mark All Read only after reviewing the
+outstanding items; it
+
+30
+00:01:44,694 --> 00:01:49,056
+is not a substitute for completing the
+work they describe.
+
+31
+00:01:49,056 --> 00:01:51,237
+Now open the Help Center.
+
+32
+00:01:51,237 --> 00:01:54,727
+Help content is organized around roles and
+capabilities.
+
+33
+00:01:54,727 --> 00:01:58,217
+Search for Security Guard, open the
+matching article,
+
+34
+00:01:58,217 --> 00:02:01,706
+and compare its responsibilities with the
+available navigation.
+
+35
+00:02:01,706 --> 00:02:06,069
+Guided tours can point to controls inside
+the running application,
+
+36
+00:02:06,069 --> 00:02:09,995
+while articles explain the wider workflow
+and safety rules.
+
+37
+00:02:09,995 --> 00:02:13,484
+If search returns nothing, check spelling
+and confirm
+
+38
+00:02:13,484 --> 00:02:16,974
+that the feature is enabled for the
+organization.
+
+39
+00:02:16,974 --> 00:02:20,464
+To finish, return to the dashboard and
+open
+
+40
+00:02:20,464 --> 00:02:23,954
+global search once more with the keyboard
+shortcut.
+
+41
+00:02:23,954 --> 00:02:28,316
+Remember the pattern: use dashboard totals
+to identify work, search
+
+42
+00:02:28,316 --> 00:02:32,242
+to reach a record quickly, notifications
+to respond to
+
+43
+00:02:32,242 --> 00:02:36,168
+events, and Help whenever you need the
+approved process.

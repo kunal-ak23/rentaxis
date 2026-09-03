@@ -36,6 +36,7 @@ import 'screens/walk_in_status_screen.dart';
 /// Keep it that way: reintroducing `ref.watch` here would restore a rebuild that
 /// looks harmless and breaks the OTP flow specifically.
 final routerProvider = Provider<GoRouter>((ref) {
+  const tutorialCapture = bool.fromEnvironment('TUTORIAL_CAPTURE');
   final refresh = ValueNotifier<int>(0);
   ref.listen<AuthState>(authProvider, (_, _) => refresh.value++);
   ref.onDispose(refresh.dispose);
@@ -142,7 +143,28 @@ final routerProvider = Provider<GoRouter>((ref) {
         },
       ),
       GoRoute(path: '/', builder: (context, state) => const HomeScreen()),
-      GoRoute(path: '/scan', builder: (context, state) => const ScanScreen()),
+      GoRoute(
+        path: '/scan',
+        builder: (context, state) => tutorialCapture
+            ? ScanScreen(
+                // The software emulator exposes no usable camera lens. Keep
+                // the real scan screen and code fallback, but replace only the
+                // platform viewfinder for deterministic tutorial capture.
+                viewfinderBuilder: (context, onDetect) => DecoratedBox(
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Color(0xFF263238), Color(0xFF080B0D)],
+                    ),
+                  ),
+                  child: const Center(
+                    child: Icon(Icons.qr_code_2, size: 112, color: Colors.white24),
+                  ),
+                ),
+              )
+            : const ScanScreen(),
+      ),
       GoRoute(
         path: '/result',
         // The verdict travels as `extra`, exactly like /otp's phone, and with

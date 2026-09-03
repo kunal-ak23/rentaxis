@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import Cookies from "js-cookie";
 import { useRouter, usePathname } from "next/navigation";
@@ -22,23 +22,7 @@ export function TenantSwitcher({ isCollapsed }: { isCollapsed: boolean }) {
     const userRole = userExt?.role as UserRole | undefined;
     const canSwitch = hasPermission(userRole, 'canSwitchTenants');
 
-    useEffect(() => {
-        if (canSwitch) {
-            fetchTenants();
-        }
-
-        // Initialize from cookie or default
-        const savedTenantId = Cookies.get("active_tenant_id");
-        if (savedTenantId && tenants.length > 0) {
-            const found = tenants.find(t => t.id === savedTenantId);
-            if (found) setActiveTenant(found);
-        } else if (!canSwitch && userExt?.tenantId) {
-            // For non-switching roles, they only have one tenant
-            Cookies.set("active_tenant_id", userExt.tenantId, { path: "/" });
-        }
-    }, [canSwitch, tenants.length, userExt?.tenantId]);
-
-    const fetchTenants = async () => {
+    const fetchTenants = useCallback(async () => {
         try {
             // Use the /me/tenants endpoint which is role-aware
             const res = await fetch("/api/proxy/auth/me/tenants");
@@ -46,28 +30,34 @@ export function TenantSwitcher({ isCollapsed }: { isCollapsed: boolean }) {
                 const data = await res.json();
                 setTenants(data);
 
-                // Set initial active tenant if not set
-                const savedTenantId = Cookies.get("active_tenant_id");
-                if (savedTenantId) {
-                    const found = data.find((t: Tenant) => t.id === savedTenantId);
-                    if (found) {
-                        setActiveTenant(found);
-                    } else if (data.length > 0) {
-                        // Saved tenant not in list, select first available
-                        setActiveTenant(data[0]);
-                        Cookies.set("active_tenant_id", data[0].id, { path: "/" });
+                // Prefer the saved context, then the signed-in user's tenant,
+                // and finally the first role-authorized membership.
+                const preferredTenantId = Cookies.get("active_tenant_id") || userExt?.tenantId;
+                const selected = data.find((t: Tenant) => t.id === preferredTenantId) || data[0];
+                if (selected) {
+                    setActiveTenant(selected);
+                    if (Cookies.get("active_tenant_id") !== selected.id) {
+                        Cookies.set("active_tenant_id", selected.id, { path: "/" });
                         router.refresh();
                     }
-                } else if (data.length > 0) {
-                    setActiveTenant(data[0]);
-                    Cookies.set("active_tenant_id", data[0].id, { path: "/" });
-                    router.refresh();
                 }
             }
         } catch (e) {
             console.error(e);
         }
-    };
+    }, [router, userExt]);
+
+    useEffect(() => {
+        // The tenant endpoint is role-aware: super admins receive the full
+        // switchable list, while managers and renters receive their own
+        // membership. Fetch it for every authenticated role so the footer can
+        // display the active organisation instead of a generic placeholder.
+        if (!userExt) return;
+        const timer = window.setTimeout(() => {
+            void fetchTenants();
+        }, 0);
+        return () => window.clearTimeout(timer);
+    }, [fetchTenants, userExt]);
 
     const handleSelect = (tenant: Tenant | null) => {
         setActiveTenant(tenant);
