@@ -229,7 +229,7 @@
       {
         "tutorials": [18, 20, 30],
         "evidence": ["mobile/apps/manager/integration_test/client_shots_test.dart"],
-        "routes": ["/finance", "/finance-reports"]
+        "routes": ["/finance", "/finance-reports", "/portfolio-pnl"]
       },
       {
         "tutorials": [5, 30],
