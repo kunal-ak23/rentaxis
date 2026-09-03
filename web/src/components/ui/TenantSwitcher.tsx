@@ -17,6 +17,7 @@ export function TenantSwitcher({ isCollapsed }: { isCollapsed: boolean }) {
     const [tenants, setTenants] = useState<Tenant[]>([]);
     const [isOpen, setIsOpen] = useState(false);
     const [activeTenant, setActiveTenant] = useState<Tenant | null>(null);
+    const [tenantQuery, setTenantQuery] = useState("");
 
     const userExt = session?.user;
     const userRole = userExt?.role as UserRole | undefined;
@@ -103,8 +104,13 @@ export function TenantSwitcher({ isCollapsed }: { isCollapsed: boolean }) {
                       }
             );
         }
+        if (isOpen) setTenantQuery("");
         setIsOpen(!isOpen);
     };
+
+    const filteredTenants = tenantQuery.trim()
+        ? tenants.filter((tenant) => tenant.name.toLowerCase().includes(tenantQuery.trim().toLowerCase()))
+        : tenants;
 
     if (!userExt?.tenantId && userRole !== 'SUPER_ADMIN') {
         // No tenant context — render nothing
@@ -175,6 +181,18 @@ export function TenantSwitcher({ isCollapsed }: { isCollapsed: boolean }) {
                             width: dropdownPos.width,
                         }}
                     >
+                        {isSuperAdmin && (
+                            <div className="p-2 border-b border-border">
+                                <input
+                                    aria-label="Search organizations"
+                                    placeholder="Search organizations..."
+                                    value={tenantQuery}
+                                    onChange={(event) => setTenantQuery(event.target.value)}
+                                    onClick={(event) => event.stopPropagation()}
+                                    className="w-full rounded-lg border border-border bg-input px-2.5 py-2 text-xs text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                />
+                            </div>
+                        )}
                         <div className="max-h-[200px] overflow-y-auto p-1">
                             {isSuperAdmin && (
                                 <>
@@ -192,7 +210,7 @@ export function TenantSwitcher({ isCollapsed }: { isCollapsed: boolean }) {
                                 </>
                             )}
 
-                            {tenants.map((t) => (
+                            {filteredTenants.map((t) => (
                                 <button
                                     key={t.id}
                                     onClick={() => handleSelect(t)}
@@ -205,9 +223,9 @@ export function TenantSwitcher({ isCollapsed }: { isCollapsed: boolean }) {
                                     {activeTenant?.id === t.id && <Check size={14} className="text-primary shrink-0" />}
                                 </button>
                             ))}
-                            {tenants.length === 0 && (
+                            {filteredTenants.length === 0 && (
                                 <div className="p-3 text-center text-xs text-muted font-medium">
-                                    No tenants available
+                                    {tenants.length === 0 ? "No tenants available" : "No matching organizations"}
                                 </div>
                             )}
                         </div>
