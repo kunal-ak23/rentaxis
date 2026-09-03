@@ -36,3 +36,7 @@ Legacy synthetic entries observed in the switcher (cleanup allow-list only):
 The fresh recording tenant is `RentAxis Tutorial Studio 2026-09-03`
 (`61b648b7-a380-4e8a-b8e6-e7f4cb4df452`) and must be retained. The separate
 `AI Ashram` entry is not part of this cleanup allow-list.
+
+Media integrity check: H.264/AAC, 1920x1080, 167.24 seconds, embedded English
+`mov_text` subtitles, and matching sidecar SRT passed
+`datagami-tutorial-recording/scripts/verify-media.sh`.
