@@ -1,0 +1,204 @@
+1
+00:00:00,000 --> 00:00:04,376
+RentAxis separates access by organization,
+role, and property assignment.
+
+2
+00:00:04,376 --> 00:00:09,724
+This tutorial shows how those boundaries
+affect the interface and why
+
+3
+00:00:09,724 --> 00:00:15,072
+an unavailable menu is often correct
+behavior rather than an error.
+
+4
+00:00:15,072 --> 00:00:18,476
+Start with the prepared Super Admin
+account.
+
+5
+00:00:18,476 --> 00:00:22,366
+A super administrator can provision
+organizations and move
+
+6
+00:00:22,366 --> 00:00:26,255
+between tenant contexts for authorized
+support and administration.
+
+7
+00:00:26,255 --> 00:00:30,145
+Open the organization switcher and note
+the currently
+
+8
+00:00:30,145 --> 00:00:34,035
+active organization before selecting the
+Tutorial Demo organization.
+
+9
+00:00:34,035 --> 00:00:37,438
+The page reloads inside that tenant
+context.
+
+10
+00:00:37,438 --> 00:00:40,355
+Switching context does not copy, merge,
+
+11
+00:00:40,355 --> 00:00:43,273
+or expose records from another
+organization.
+
+12
+00:00:43,273 --> 00:00:46,190
+Always verify the organization name before
+
+13
+00:00:46,190 --> 00:00:48,621
+creating, editing, or deleting data.
+
+14
+00:00:48,621 --> 00:00:52,997
+Next, sign in with the prepared Tenant
+Admin account.
+
+15
+00:00:52,997 --> 00:00:57,373
+This role manages users, portfolio data,
+leasing, finance, settings,
+
+16
+00:00:57,373 --> 00:01:01,749
+and enabled services for one organization,
+but it cannot
+
+17
+00:01:01,749 --> 00:01:05,638
+provision unrelated tenants or grant
+itself platform-level authority.
+
+18
+00:01:05,638 --> 00:01:09,528
+Compare the sidebar with the Super Admin
+view.
+
+19
+00:01:09,528 --> 00:01:12,445
+Now use the Property Manager account.
+
+20
+00:01:12,445 --> 00:01:16,821
+Property managers operate only the
+properties assigned to them.
+
+21
+00:01:16,821 --> 00:01:20,225
+Open the property list and confirm that
+
+22
+00:01:20,225 --> 00:01:23,142
+an unassigned demo property is absent.
+
+23
+00:01:23,142 --> 00:01:28,490
+Directly navigating to an unassigned
+record must not bypass that restriction.
+
+24
+00:01:28,490 --> 00:01:33,838
+The Tenant User role is more limited and
+should be used
+
+25
+00:01:33,838 --> 00:01:38,700
+for staff who need a defined operational
+surface without tenant-wide
+
+26
+00:01:38,700 --> 00:01:39,187
+administration.
+
+27
+00:01:39,187 --> 00:01:41,618
+Continue with the Renter account.
+
+28
+00:01:41,618 --> 00:01:45,994
+The renter sees their tenancy, payments,
+maintenance, meetings, resident
+
+29
+00:01:45,994 --> 00:01:49,883
+services, and marketplace features rather
+than internal administration.
+
+30
+00:01:49,883 --> 00:01:52,801
+Finally, review the Security Guard role.
+
+31
+00:01:52,801 --> 00:01:55,718
+A guard works with assigned-property
+visitor
+
+32
+00:01:55,718 --> 00:01:58,635
+queues, scans, approvals, admissions, and
+exits.
+
+33
+00:01:58,635 --> 00:02:03,983
+They do not receive access to leases,
+finance, or tenant configuration.
+
+34
+00:02:03,983 --> 00:02:06,414
+Feature access also affects navigation.
+
+35
+00:02:06,414 --> 00:02:10,790
+Listings, Meetings, Email Notifications,
+Lease Renewals, and Gate Pass
+
+36
+00:02:10,790 --> 00:02:15,166
+can be enabled per organization, so a role
+may
+
+37
+00:02:15,166 --> 00:02:19,542
+be valid while its related feature remains
+intentionally hidden.
+
+38
+00:02:19,542 --> 00:02:23,432
+Finish by returning to the Super Admin
+account
+
+39
+00:02:23,432 --> 00:02:27,321
+and switching back to the original
+organization context.
+
+40
+00:02:27,321 --> 00:02:32,670
+The safe operating habit is simple: check
+the tenant, check the
+
+41
+00:02:32,670 --> 00:02:37,532
+role, and check the property assignment
+before every sensitive action.
+
+42
+00:02:37,532 --> 00:02:42,394
+If access appears wrong, do not borrow a
+broader account.
+
+43
+00:02:42,394 --> 00:02:47,256
+Ask an authorized administrator to correct
+the role or assignment.
