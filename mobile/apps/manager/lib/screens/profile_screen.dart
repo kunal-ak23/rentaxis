@@ -292,8 +292,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 const SizedBox(height: 14),
                 _sectionLabel(l.security, l.ar),
                 _buildPasswordCard(l),
+                const SizedBox(height: 14),
+                _sectionLabel(l.legal, l.ar),
+                _buildLegalCard(),
                 const SizedBox(height: 26),
                 _buildSignOut(l),
+                const SizedBox(height: 10),
+                // App Store Review Guideline 5.1.1(v): deletion starts in-app.
+                const DeleteAccountButton(),
                 const SizedBox(height: 30),
                 _buildBrandFooter(l),
               ],
@@ -586,6 +592,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     );
   }
 
+  Widget _buildLegalCard() {
+    return Container(decoration: _cardDecoration(), child: const LegalLinksList());
+  }
+
+  /// Real version from the running bundle rather than a literal that drifts
+  /// from pubspec — App Review compares what the screen says to the build.
+  String _installedVersion() => ref
+      .watch(installedVersionLabelProvider)
+      .maybeWhen(data: (v) => v, orElse: () => '');
+
   Widget _buildSignOut(_L l) {
     final m = context.miftah;
     return SizedBox(
@@ -628,7 +644,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            l.versionFooter,
+            l.versionFooter(_installedVersion()),
             style: _body(
               l.ar,
               size: 10.5,
@@ -675,8 +691,9 @@ class _L {
       : 'Are you sure you want to sign out?';
   String get cancel => ar ? 'إلغاء' : 'Cancel';
   String get managerFallback => ar ? 'مدير العقارات' : 'Manager';
-  String get versionFooter =>
-      ar ? 'مفتاح للإدارة · 1.0.0' : 'MIFTAH ADMIN · V1.0.0';
+  String versionFooter(String v) =>
+      v.isEmpty ? '' : (ar ? 'الإصدار $v' : 'VERSION $v');
+  String get legal => ar ? 'الخصوصية والشروط' : 'Privacy & terms';
   String get profileUpdated => ar ? 'تم تحديث الملف الشخصي' : 'Profile updated';
   String get profileUpdateFailed =>
       ar ? 'فشل تحديث الملف الشخصي' : 'Failed to update profile';

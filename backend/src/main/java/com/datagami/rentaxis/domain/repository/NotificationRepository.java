@@ -31,4 +31,13 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
     Optional<Notification> findByIdAndUserIdUnfiltered(
             @org.springframework.data.repository.query.Param("notificationId") UUID notificationId,
             @org.springframework.data.repository.query.Param("userId") UUID userId);
+
+    /**
+     * Account deletion: notifications are addressed to the user, so they are
+     * personal data. Native + unfiltered for the same reason the reads above
+     * are — the user_id is the ownership key, not the tenant filter.
+     */
+    @org.springframework.data.jpa.repository.Modifying
+    @org.springframework.data.jpa.repository.Query(value = "DELETE FROM notifications WHERE user_id = :userId", nativeQuery = true)
+    void deleteByUserIdUnfiltered(@org.springframework.data.repository.query.Param("userId") UUID userId);
 }

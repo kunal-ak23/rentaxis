@@ -21,6 +21,11 @@ class MoreScreen extends ConsumerWidget {
     // canAccessFinance gating in rbac.ts.
     final isAdmin =
         authState.role == 'TENANT_ADMIN' || authState.role == 'SUPER_ADMIN';
+    // Real version from the bundle: the About dialog said 1.0.0 while the app
+    // shipped 1.2.0, the kind of mismatch App Review flags.
+    final version = ref
+        .watch(installedVersionLabelProvider)
+        .maybeWhen(data: (v) => v, orElse: () => '');
 
     return Scaffold(
       backgroundColor: m.background,
@@ -162,13 +167,27 @@ class MoreScreen extends ConsumerWidget {
                       onTap: () => context.push('/profile'),
                     ),
                     _MenuRow(
+                      icon: Icons.privacy_tip_outlined,
+                      label: l.privacyPolicy,
+                      onTap: () => launchLegalUrl(
+                        miftahLegalUrl(MiftahLegalPage.privacy, arabic: l.ar),
+                      ),
+                    ),
+                    _MenuRow(
+                      icon: Icons.description_outlined,
+                      label: l.termsOfUse,
+                      onTap: () => launchLegalUrl(
+                        miftahLegalUrl(MiftahLegalPage.terms, arabic: l.ar),
+                      ),
+                    ),
+                    _MenuRow(
                       icon: Icons.info_outline,
                       label: l.about,
                       onTap: () {
                         showAboutDialog(
                           context: context,
                           applicationName: 'Miftah Manager',
-                          applicationVersion: '1.0.0',
+                          applicationVersion: version,
                           applicationLegalese: l.aboutLegalese,
                         );
                       },
@@ -180,7 +199,7 @@ class MoreScreen extends ConsumerWidget {
                 const SizedBox(height: 18),
                 Center(
                   child: Text(
-                    l.versionFooter,
+                    l.versionFooter(version),
                     style: l.ar
                         ? GoogleFonts.notoNaskhArabic(
                             fontSize: 11.5,
@@ -659,8 +678,10 @@ class _L {
       : 'Are you sure you want to sign out?';
   String get cancel => ar ? 'إلغاء' : 'Cancel';
   String get managerFallback => ar ? 'مدير العقارات' : 'Manager';
-  String get versionFooter =>
-      ar ? 'مفتاح للإدارة · 1.0.0' : 'MIFTAH ADMIN · V1.0.0';
+  String versionFooter(String v) =>
+      ar ? 'مفتاح للإدارة · $v' : 'MIFTAH ADMIN · V$v';
+  String get privacyPolicy => ar ? 'سياسة الخصوصية' : 'Privacy Policy';
+  String get termsOfUse => ar ? 'شروط الاستخدام' : 'Terms of Use';
 
   String roleLine(String? role, String? email) {
     final r = role?.replaceAll('_', ' ');

@@ -63,6 +63,17 @@ public class User extends BaseTenantEntity {
     @Column(name = "apple_client_id", length = 255)
     private String appleClientId;
 
+    /**
+     * Apple refresh token from exchanging the sign-in authorization code. Held
+     * for one reason: App Store Review Guideline 5.1.1(v) requires apps that
+     * offer Sign in with Apple to REVOKE the user's tokens when they delete
+     * their account. Null when the link predates code exchange or the Apple
+     * key is not configured — sign-in itself never depends on it.
+     */
+    @JsonIgnore
+    @Column(name = "apple_refresh_token", columnDefinition = "text")
+    private String appleRefreshToken;
+
     // Optional override of tenantId from BaseTenantEntity
     // If a user is SUPER_ADMIN, tenantId might be null
 }

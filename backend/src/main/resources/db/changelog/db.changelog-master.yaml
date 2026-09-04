@@ -161,3 +161,5 @@ databaseChangeLog:
       file: db/changelog/changesets/76-booking-parking-date-range.yaml
   - include:
       file: db/changelog/changesets/77-apple-sign-in.yaml
+  - include:
+      file: db/changelog/changesets/78-apple-refresh-token.yaml

@@ -48,6 +48,10 @@ class AuthService {
     String identityToken,
     String rawNonce, {
     String? tenantId,
+    // The credential's one-time code. The backend exchanges it for the
+    // refresh token that account deletion revokes (App Store Guideline
+    // 5.1.1(v)); omitted when the platform did not return one.
+    String? authorizationCode,
   }) async {
     final response = await _dio.post(
       '/auth/apple',
@@ -55,9 +59,18 @@ class AuthService {
         'identityToken': identityToken,
         'nonce': rawNonce,
         'tenantId': ?tenantId,
+        'authorizationCode': ?authorizationCode,
       },
     );
     return AuthResponse.fromJson(response.data);
+  }
+
+  /// Deletes the signed-in user's own account. DELETE /v1/account acts on the
+  /// principal the backend verified — there is nothing to pass. 204 on
+  /// success; 400 with a `message` when the backend refuses (sole
+  /// administrator), 403 for accounts that cannot be deleted from the app.
+  Future<void> deleteAccount() async {
+    await _dio.delete('/v1/account');
   }
 
   Future<Map<String, dynamic>> getProfile() async {

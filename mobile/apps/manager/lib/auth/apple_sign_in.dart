@@ -8,10 +8,16 @@ class AppleSignInResult {
   const AppleSignInResult({
     required this.identityToken,
     required this.rawNonce,
+    this.authorizationCode,
   });
 
   final String identityToken;
   final String rawNonce;
+
+  /// One-time code the backend exchanges for the refresh token that account
+  /// deletion revokes (App Store Guideline 5.1.1(v)). Null only if the
+  /// platform withheld it; sign-in does not depend on it.
+  final String? authorizationCode;
 }
 
 Future<AppleSignInResult> requestAppleSignIn() async {
@@ -28,7 +34,11 @@ Future<AppleSignInResult> requestAppleSignIn() async {
   if (identityToken == null || identityToken.isEmpty) {
     throw StateError('Apple did not return an identity token');
   }
-  return AppleSignInResult(identityToken: identityToken, rawNonce: rawNonce);
+  return AppleSignInResult(
+    identityToken: identityToken,
+    rawNonce: rawNonce,
+    authorizationCode: credential.authorizationCode,
+  );
 }
 
 String _randomNonce([int length = 32]) {

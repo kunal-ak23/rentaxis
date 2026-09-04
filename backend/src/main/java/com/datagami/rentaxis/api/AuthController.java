@@ -279,14 +279,23 @@ public class AuthController {
 
     // --- Native Sign in with Apple for Resident and Manager iOS apps ---
 
-    public record AppleLoginRequest(String identityToken, String nonce, String tenantId) {
+    /**
+     * {@code authorizationCode} is the native credential's one-time code. It
+     * is optional so older app builds keep working; when present and the Apple
+     * key is configured, it is exchanged for the refresh token account deletion
+     * revokes.
+     */
+    public record AppleLoginRequest(String identityToken, String nonce, String tenantId, String authorizationCode) {
+        public AppleLoginRequest(String identityToken, String nonce, String tenantId) {
+            this(identityToken, nonce, tenantId, null);
+        }
     }
 
     @PostMapping("/apple")
     public ResponseEntity<?> appleLogin(@RequestBody AppleLoginRequest request) {
         try {
             User user = appleAuthService.authenticate(
-                    request.identityToken(), request.nonce(), request.tenantId());
+                    request.identityToken(), request.nonce(), request.tenantId(), request.authorizationCode());
             if (user.getWelcomedAt() == null) userService.markWelcomed(user.getId());
             return ResponseEntity.ok(toAuthResponse(user));
         } catch (AppleAuthService.AmbiguousAppleIdentityException ex) {

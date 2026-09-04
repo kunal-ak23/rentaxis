@@ -13,4 +13,7 @@ public interface GuardPropertyAssignmentRepository extends JpaRepository<GuardPr
     List<GuardPropertyAssignment> findByUserId(UUID userId);
 
     void deleteByUserIdAndPropertyId(UUID userId, UUID propertyId);
+
+    /** Account deletion: a guard's postings have no FK to users and would otherwise be orphaned. */
+    void deleteByUserId(UUID userId);
 }

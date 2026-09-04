@@ -242,6 +242,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     String identityToken,
     String rawNonce, {
     String? tenantId,
+    String? authorizationCode,
   }) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
@@ -250,6 +251,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
           identityToken,
           rawNonce,
           tenantId: tenantId,
+          authorizationCode: authorizationCode,
         ),
       );
       return true;
@@ -336,6 +338,24 @@ class AuthNotifier extends StateNotifier<AuthState> {
     state = const AuthState(isAuthenticated: false, isLoading: false);
   }
 
+  /// Deletes the signed-in account on the server, then clears the local
+  /// session. Returns null on success, otherwise a message to show the user.
+  ///
+  /// The session is cleared only AFTER the server confirmed the deletion. A
+  /// failure must leave the user signed in and able to retry — signing them
+  /// out of an account that still exists would look like success.
+  Future<String?> deleteAccount() async {
+    try {
+      await _authService.deleteAccount();
+    } on DioException catch (error) {
+      return _deleteAccountError(error);
+    } catch (_) {
+      return 'Could not delete your account. Please try again.';
+    }
+    await logout();
+    return null;
+  }
+
   Future<void> _clearStorage() async {
     await _storage.delete(key: 'authToken');
     await _storage.delete(key: 'userId');
@@ -366,6 +386,27 @@ String _firebaseLoginError(Object error) {
     return 'No connection. Check your network and try again.';
   }
   return 'Could not complete login. Please try again.';
+}
+
+String _deleteAccountError(DioException error) {
+  final status = error.response?.statusCode;
+  if (status == 403) {
+    return 'This account cannot be deleted from the app. '
+        'Please contact your organisation administrator.';
+  }
+  // 400 carries the backend's refusal (e.g. sole administrator) as `message`.
+  if (status == 400 || status == 409) {
+    final data = error.response?.data;
+    final message = data is Map ? data['message']?.toString() : null;
+    if (message != null && message.isNotEmpty) return message;
+  }
+  if (error.type == DioExceptionType.connectionError ||
+      error.type == DioExceptionType.connectionTimeout ||
+      error.type == DioExceptionType.receiveTimeout ||
+      error.type == DioExceptionType.sendTimeout) {
+    return 'No connection. Check your network and try again.';
+  }
+  return 'Could not delete your account. Please try again.';
 }
 
 String _appleLoginError(DioException error) {

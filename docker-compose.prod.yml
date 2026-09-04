@@ -63,6 +63,11 @@ services:
       # stack behaves exactly as before until the secrets are configured.
       - APP_AUTH_TOKEN_SECRET=${APP_AUTH_TOKEN_SECRET:-}
       - INTERNAL_PROXY_SECRET=${INTERNAL_PROXY_SECRET:-}
+      # Sign in with Apple token revocation on account deletion (Guideline
+      # 5.1.1(v)). Empty default = revocation skipped; sign-in unaffected.
+      - APPLE_SIGNIN_TEAM_ID=${APPLE_SIGNIN_TEAM_ID:-}
+      - APPLE_SIGNIN_KEY_ID=${APPLE_SIGNIN_KEY_ID:-}
+      - APPLE_SIGNIN_PRIVATE_KEY_BASE64=${APPLE_SIGNIN_PRIVATE_KEY_BASE64:-}
     deploy:
       resources:
         limits:

@@ -4,6 +4,7 @@ import com.datagami.rentaxis.domain.entity.User;
 import com.datagami.rentaxis.domain.entity.enums.UserRole;
 import com.datagami.rentaxis.domain.entity.enums.UserStatus;
 import com.datagami.rentaxis.domain.repository.UserRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,14 +19,35 @@ public class AppleAuthService {
     private static final String INVALID = "Invalid credentials";
     private final AppleIdTokenVerifier tokenVerifier;
     private final UserRepository userRepository;
+    /** Null in unit tests that predate token revocation; see {@link #attachRefreshToken}. */
+    private final AppleTokenRevocationService revocation;
 
     public AppleAuthService(AppleIdTokenVerifier tokenVerifier, UserRepository userRepository) {
+        this(tokenVerifier, userRepository, null);
+    }
+
+    @Autowired
+    public AppleAuthService(AppleIdTokenVerifier tokenVerifier, UserRepository userRepository,
+            AppleTokenRevocationService revocation) {
         this.tokenVerifier = tokenVerifier;
         this.userRepository = userRepository;
+        this.revocation = revocation;
     }
 
     @Transactional
     public User authenticate(String identityToken, String rawNonce, String tenantId) {
+        return authenticate(identityToken, rawNonce, tenantId, null);
+    }
+
+    /**
+     * @param authorizationCode the one-time code from the native credential.
+     *        When the Apple key is configured it is exchanged for a refresh
+     *        token that is stored on the user purely so account deletion can
+     *        revoke it. Null (older clients) or an unconfigured key changes
+     *        nothing about whether sign-in succeeds.
+     */
+    @Transactional
+    public User authenticate(String identityToken, String rawNonce, String tenantId, String authorizationCode) {
         AppleIdTokenVerifier.VerifiedAppleIdentity identity =
                 tokenVerifier.verify(identityToken, rawNonce);
 
@@ -34,7 +56,7 @@ public class AppleAuthService {
                 .orElse(null);
         if (alreadyLinked != null) {
             requireEligible(alreadyLinked, identity.clientId());
-            return alreadyLinked;
+            return attachRefreshToken(alreadyLinked, identity.clientId(), authorizationCode);
         }
 
         if (!identity.emailVerified() || identity.email() == null || identity.email().isBlank()) {
@@ -59,7 +81,19 @@ public class AppleAuthService {
 
         user.setAppleSubject(identity.subject());
         user.setAppleClientId(identity.clientId());
-        return userRepository.saveAndFlush(user);
+        return attachRefreshToken(userRepository.saveAndFlush(user), identity.clientId(), authorizationCode);
+    }
+
+    private User attachRefreshToken(User user, String clientId, String authorizationCode) {
+        if (revocation == null || authorizationCode == null || authorizationCode.isBlank() || !revocation.enabled()) {
+            return user;
+        }
+        return revocation.exchangeAuthorizationCode(clientId, authorizationCode)
+                .map(token -> {
+                    user.setAppleRefreshToken(token);
+                    return userRepository.saveAndFlush(user);
+                })
+                .orElse(user);
     }
 
     private static boolean tenantMatches(User user, String tenantId) {

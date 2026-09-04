@@ -94,6 +94,17 @@ app:
     # Phase-2 kill switch. "allow" (default) keeps the legacy header path;
     # "deny" rejects any non-public request lacking a valid bearer token.
     legacy-headers: ${APP_AUTH_LEGACY_HEADERS:allow}
+    apple:
+      # Sign in with Apple server-to-server credentials (Apple Developer ->
+      # Certificates, Identifiers & Profiles -> Keys -> "Sign in with Apple").
+      # Used ONLY to exchange the sign-in authorization code for a refresh
+      # token and to REVOKE it when the user deletes their account, which App
+      # Store Review Guideline 5.1.1(v) requires. Empty => both steps are
+      # skipped (logged); sign-in itself is unaffected.
+      team-id: ${APPLE_SIGNIN_TEAM_ID:}
+      key-id: ${APPLE_SIGNIN_KEY_ID:}
+      # The .p8 file, base64-encoded whole:  base64 < AuthKey_XXXX.p8 | tr -d '\n'
+      private-key-base64: ${APPLE_SIGNIN_PRIVATE_KEY_BASE64:}
   renewal:
     scheduler:
       enabled: ${APP_RENEWAL_SCHEDULER_ENABLED:false}

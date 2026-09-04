@@ -1,0 +1,20 @@
+databaseChangeLog:
+  - changeSet:
+      id: 78-apple-refresh-token
+      author: claude
+      comment: >-
+        Apple refresh token captured at Sign in with Apple, held only so it can
+        be revoked when the user deletes their account (App Store Review
+        Guideline 5.1.1(v)). Nullable: pre-existing links and deployments
+        without the Apple key simply have none.
+      changes:
+        - addColumn:
+            tableName: users
+            columns:
+              - column:
+                  name: apple_refresh_token
+                  type: TEXT
+      rollback:
+        - dropColumn:
+            tableName: users
+            columnName: apple_refresh_token

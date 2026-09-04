@@ -43,7 +43,8 @@ Bundle IDs and SKUs are permanent after the records are created. Verify the team
 - All three apps configured as public, UAE-only releases for iPhone/iPad; Apple silicon Mac and Apple Vision Pro availability disabled.
 - A Datagami iPhone 15 development device is registered; automatic signing and App Store IPA export now succeed for all three apps.
 - Native Sign in with Apple is implemented for Resident and Manager. Both signed archives carry the `com.apple.developer.applesignin` entitlement, and the backend verifies Apple's signature, audience, expiry and nonce before linking an existing active account.
-- Remaining: upload the IPAs, privacy-label confirmation and publication, review credentials/contact, Security APNs/Firebase setup, and final App Review submission.
+- In-app account deletion (Guideline 5.1.1(v)) is implemented in all three apps, backed by `DELETE /api/v1/account`; Sign in with Apple token revocation is wired and activates once the `APPLE_SIGNIN_*` secrets are set. Privacy Policy / Terms / data-deletion links are in every app's settings, and About/footer versions now read the bundle.
+- Remaining: upload the rebuilt IPAs (bump build numbers), privacy-label confirmation and publication, review credentials/contact, Security APNs/Firebase setup plus the Firebase **test phone number** for App Review, the Apple Sign-in key secrets, and final App Review submission with the notes from `app-review-information.md`.
 
 ### Built IPAs
 
@@ -98,13 +99,17 @@ Use the same 6.9-inch screenshot sets as a fallback for Arabic. The final screen
 
 All three apps require an account provisioned by a participating property organisation, so App Review must receive durable access to every major feature.
 
-- Miftah Resident reviewer username: **OWNER ACTION**
-- Miftah Resident reviewer password: **OWNER ACTION**
-- Miftah Manager reviewer username: **OWNER ACTION**
-- Miftah Manager reviewer password: **OWNER ACTION**
-- Miftah Security reviewer test phone number: **OWNER ACTION**
-- Miftah Security reviewer fixed OTP/test flow: **OWNER ACTION**
+- Miftah Resident reviewer username: `ahmed@alashramdemo.com` (Al Ashram Demo Account — demo tenant, all feature switches on)
+- Miftah Resident reviewer password: `<demo password — scripts/seed_demo_tenant.out.json, gitignored>`
+- Miftah Manager reviewer username: `admin@alashramdemo.com` (organisation administrator, sees the whole app)
+- Miftah Manager reviewer password: `<demo password — scripts/seed_demo_tenant.out.json, gitignored>`
+- Miftah Security reviewer test phone number: **OWNER ACTION** — Firebase test number (e.g. `+971 50 000 0001`), see [app-review-information.md](app-review-information.md) §4
+- Miftah Security reviewer fixed OTP/test flow: **OWNER ACTION** — fixed code configured with the test number (e.g. `123456`); a matching active guard must exist on the demo tenant
 - App Review contact name, phone, and email: **OWNER ACTION**
+- Disposable accounts for demonstrating in-app account deletion: **OWNER ACTION** — one extra renter, staff user and guard on the demo tenant
+
+The full seven-point answer to the Guideline 2.1 request, the screen-recording checklists
+and the Guideline 5.6 disclosure are in [app-review-information.md](app-review-information.md).
 
 Recommended review note:
 
