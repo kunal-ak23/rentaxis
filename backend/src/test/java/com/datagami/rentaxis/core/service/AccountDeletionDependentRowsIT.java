@@ -109,13 +109,21 @@ class AccountDeletionDependentRowsIT {
 
     /** One impression row — what opening the app and seeing the offers strip produces. */
     private PromoAdEvent impression(UUID userId) {
+        Instant now = Instant.now();
+
         PromoAdEvent e = new PromoAdEvent();
         e.setTenantId(tenantId);
         e.setAdId(adId);
         e.setRenterUserId(userId);
         e.setEventType(com.datagami.rentaxis.domain.entity.enums.PromoEventType.IMPRESSION);
-        e.setOccurredAt(Instant.now());
-        e.setDay(LocalDate.now());
+        e.setOccurredAt(now);
+        // ck_promo_ad_event_day requires day = (occurred_at AT TIME ZONE
+        // 'Asia/Dubai')::date, so the day has to be derived the way
+        // PromotionFeedService derives it. LocalDate.now() happens to agree on a
+        // machine near UTC+4 and disagrees on a UTC CI runner after 20:00, which
+        // is precisely the drift the constraint exists to catch — and it caught
+        // this test.
+        e.setDay(LocalDate.ofInstant(now, java.time.ZoneId.of("Asia/Dubai")));
         return promoAdEventRepository.save(e);
     }
 
