@@ -56,6 +56,13 @@ export default async function middleware(req: NextRequest) {
             return addSecurityHeaders(new NextResponse('Unauthorized', { status: 401 }));
         }
 
+        // The jwt callback marks a token revoked once the backend reports the
+        // account no longer exists. Refuse it here rather than forwarding the
+        // stale role to the backend, which trusts these headers as presented.
+        if (token.revoked === true) {
+            return addSecurityHeaders(new NextResponse('Session revoked', { status: 401 }));
+        }
+
         const requestHeaders = new Headers(req.headers);
 
         // X-Internal-Auth is a server-to-server secret: only this middleware may
@@ -72,13 +79,51 @@ export default async function middleware(req: NextRequest) {
 
         if (token.id) requestHeaders.set('X-User-Id', token.id as string);
         if (token.role) requestHeaders.set('X-User-Role', token.role as string);
-        if (token.tenantId) requestHeaders.set('X-User-Tenant-Id', token.tenantId as string);
 
-        const activeTenantId = req.cookies.get('active_tenant_id')?.value;
+        // Resolve the active tenant.
+        //
+        // The switcher is enabled for TENANT_ADMIN as well as SUPER_ADMIN
+        // (see rbac.ts canSwitchTenants), and getMyTenants legitimately returns
+        // several tenants for a multi-membership user. But the backend's
+        // legacy-header path authorizes a non-SUPER_ADMIN only when the
+        // requested tenant equals the home tenant, and this proxy always sent
+        // the home tenant as X-User-Tenant-Id — so picking a secondary
+        // organisation 403'd every subsequent request until the user cleared
+        // the cookie. The switch was non-functional for the exact role it was
+        // built for.
+        //
+        // The cookie is client-writable, so it is treated as a *selection*, not
+        // as authorization: it is honoured only when the verified session token
+        // already proves membership of that tenant. The decision is made here,
+        // server-side, against JWT claims a client cannot forge — deliberately
+        // NOT by forwarding the membership list as another trusted header,
+        // which would widen the spoofable X-User-* surface (#133).
+        const homeTenantId = token.tenantId as string | undefined;
+        const memberships = (token.tenantIds as string[] | undefined) ?? [];
+        const requestedTenantId = req.cookies.get('active_tenant_id')?.value;
+        const isSuperAdmin = token.role === 'SUPER_ADMIN';
+
+        // SUPER_ADMIN reaches any tenant by design; everyone else may only
+        // select a tenant they are actually a member of. An unrecognised or
+        // stale cookie falls back to the home tenant rather than being
+        // forwarded to certainly-403.
+        const activeTenantId =
+            requestedTenantId &&
+            (isSuperAdmin || requestedTenantId === homeTenantId || memberships.includes(requestedTenantId))
+                ? requestedTenantId
+                : homeTenantId;
+
         if (activeTenantId) {
             requestHeaders.set('X-Tenant-Id', activeTenantId);
-        } else if (token.tenantId) {
-            requestHeaders.set('X-Tenant-Id', token.tenantId as string);
+        }
+        // For a non-SUPER_ADMIN the backend compares the requested tenant
+        // against X-User-Tenant-Id, so an authorized non-home selection has to
+        // travel as the user's tenant for this request. SUPER_ADMIN keeps its
+        // real home tenant, since the backend authorizes that role outright and
+        // other code reads it.
+        const assertedUserTenantId = isSuperAdmin ? homeTenantId : activeTenantId;
+        if (assertedUserTenantId) {
+            requestHeaders.set('X-User-Tenant-Id', assertedUserTenantId);
         }
 
         return addSecurityHeaders(NextResponse.next({

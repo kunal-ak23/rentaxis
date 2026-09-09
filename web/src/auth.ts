@@ -1,6 +1,60 @@
 import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 
+/** How often an existing session is re-checked against current user state. */
+export const REVALIDATE_INTERVAL_MS = Number(
+    process.env.SESSION_REVALIDATE_INTERVAL_MS ?? 5 * 60 * 1000,
+);
+
+/** Upper bound on how long a session survives without any successful re-check. */
+export const SESSION_MAX_AGE_SECONDS = Number(
+    process.env.SESSION_MAX_AGE_SECONDS ?? 12 * 60 * 60,
+);
+
+export function shouldRevalidate(revalidatedAt: number | undefined, now = Date.now()): boolean {
+    // No stamp means a token issued before this shipped — check it immediately.
+    if (typeof revalidatedAt !== "number") return true;
+    return now - revalidatedAt >= REVALIDATE_INTERVAL_MS;
+}
+
+type CurrentUser =
+    | { status: "ok"; role: string; tenantId?: string }
+    | { status: "revoked" }
+    | { status: "unavailable" };
+
+/**
+ * Reads the user's *current* role and tenant from the backend.
+ *
+ * A 404 means the account is gone, which is the revocation signal. Anything
+ * else — a network failure, a 5xx — is reported as unavailable so the caller
+ * can fail open: a backend blip must not sign every user out.
+ */
+export async function fetchCurrentUser(userId: string | undefined): Promise<CurrentUser> {
+    if (!userId) return { status: "unavailable" };
+
+    const base = process.env.BACKEND_URL || "http://localhost:8080";
+    try {
+        const res = await fetch(`${base}/api/auth/me`, {
+            headers: {
+                "X-User-Id": userId,
+                ...(process.env.INTERNAL_PROXY_SECRET
+                    ? { "X-Internal-Auth": process.env.INTERNAL_PROXY_SECRET }
+                    : {}),
+            },
+            cache: "no-store",
+        });
+
+        if (res.status === 404) return { status: "revoked" };
+        if (!res.ok) return { status: "unavailable" };
+
+        const profile = await res.json();
+        if (!profile?.role) return { status: "unavailable" };
+        return { status: "ok", role: profile.role, tenantId: profile.tenantId ?? undefined };
+    } catch {
+        return { status: "unavailable" };
+    }
+}
+
 export const authOptions: NextAuthOptions = {
     providers: [
         CredentialsProvider({
@@ -75,7 +129,50 @@ export const authOptions: NextAuthOptions = {
                 token.role = user.role;
                 token.id = user.id;
                 token.tenantIds = user.tenantIds || [];
+                token.revalidatedAt = Date.now();
+                return token;
             }
+
+            // Re-validate an existing session against current user state.
+            //
+            // The session is a JWT with no server-side lookup, so changing a
+            // user's role, deactivating them, or removing a membership did not
+            // touch an already-issued browser session: the old role kept
+            // working for the life of the token, and the proxy forwarded it to
+            // the backend verbatim. A demoted PROPERTY_MANAGER or an offboarded
+            // TENANT_ADMIN kept full prior access — financial screens included —
+            // long after an admin believed it was revoked.
+            //
+            // Checked at most once per REVALIDATE_INTERVAL_MS so this costs one
+            // backend call per user per interval, not one per request.
+            if (!shouldRevalidate(token.revalidatedAt as number | undefined)) {
+                return token;
+            }
+
+            const current = await fetchCurrentUser(token.id as string | undefined);
+
+            if (current.status === "revoked") {
+                // The user no longer exists. Mark the token; proxy.ts refuses
+                // every API call carrying a revoked token, and the session
+                // callback surfaces it so the UI can sign out.
+                token.revoked = true;
+                token.revalidatedAt = Date.now();
+                return token;
+            }
+
+            if (current.status === "ok") {
+                token.role = current.role;
+                if (current.tenantId) token.tenantId = current.tenantId;
+                token.revoked = false;
+                token.revalidatedAt = Date.now();
+                return token;
+            }
+
+            // status === "unavailable": a transient backend/network failure.
+            // Leave the token untouched AND leave revalidatedAt alone, so the
+            // next request retries rather than waiting out another full
+            // interval. Deliberately fail-open: a backend blip must not sign
+            // every user out.
             return token;
         },
         async session({ session, token }) {
@@ -84,6 +181,9 @@ export const authOptions: NextAuthOptions = {
                 session.user.role = token.role as string;
                 session.user.id = token.id as string;
                 session.user.tenantIds = (token.tenantIds as string[]) || [];
+                // Surfaced so the client can sign the user out rather than
+                // leaving them on a dashboard whose every request 401s.
+                session.revoked = token.revoked === true;
             }
             return session;
         },
@@ -101,5 +201,9 @@ export const authOptions: NextAuthOptions = {
     },
     session: {
         strategy: "jwt",
+        // NextAuth's default is 30 days. Combined with the revalidation above
+        // this bounds how long a stale session can survive a total backend
+        // outage, which is the only window where revalidation fails open.
+        maxAge: SESSION_MAX_AGE_SECONDS,
     },
 };
