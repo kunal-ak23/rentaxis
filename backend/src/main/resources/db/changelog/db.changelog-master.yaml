@@ -165,3 +165,5 @@ databaseChangeLog:
       file: db/changelog/changesets/78-apple-refresh-token.yaml
   - include:
       file: db/changelog/changesets/79-account-deletion-detach.yaml
+  - include:
+      file: db/changelog/changesets/80-one-active-lease-per-unit.yaml
