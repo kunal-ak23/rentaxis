@@ -50,6 +50,8 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.Comparator;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -78,6 +80,87 @@ public class PaymentScheduleService {
 
     /** Injected Spring-managed ObjectMapper (honours date/time config, custom modules). */
     private final ObjectMapper objectMapper;
+
+    /**
+     * Appends installments covering a lease extension, continuing the cadence
+     * and amount already being billed.
+     *
+     * <p>{@code extendLease} used to move the end date and nothing else, so
+     * every extension silently lost the rent for the extra months: they were
+     * never invoiced, never reached the aging report, and could not be added
+     * afterwards — {@code updatePaymentSchedule} is DRAFT-only and
+     * {@code generateScheduleForLease} short-circuits once any installment
+     * exists. The operator got a 200 and a "Lease extended" event with no
+     * indication the money was gone.
+     *
+     * <p>This deliberately <em>continues the observed pattern</em> rather than
+     * re-running generation for the new window. The generator resolves total
+     * rent, payment terms, per-installment charge folding, inclusive rent VAT
+     * and distribution rounding together; re-deriving a partial window through
+     * it risks producing installments that disagree with what the renter has
+     * already been billed. Reusing the last installment's amount, VAT and
+     * spacing cannot drift from the existing schedule, because it is the
+     * existing schedule.
+     *
+     * <p>Limits, stated rather than hidden: the extension is billed at the
+     * current rate (extendLease takes no new rent — a renegotiated rent belongs
+     * in a renewal lease), and a trailing period shorter than one cadence is
+     * still billed as one installment. A lease with no rent installments at all
+     * gets none added.
+     *
+     * @return the newly created rows, empty if there was nothing to continue
+     */
+    @Transactional
+    public List<PaymentSchedule> extendScheduleForLease(Lease lease, LocalDate previousEndDate, LocalDate newEndDate) {
+        List<PaymentSchedule> rentRows = paymentScheduleRepository.findByLeaseId(lease.getId()).stream()
+                .filter(p -> !p.isBookingDeposit() && !p.isSecurityDeposit() && !p.isCharge())
+                .filter(p -> p.getDueDate() != null)
+                .sorted(Comparator.comparing(PaymentSchedule::getDueDate))
+                .toList();
+        if (rentRows.isEmpty()) {
+            return List.of();
+        }
+
+        PaymentSchedule last = rentRows.get(rentRows.size() - 1);
+
+        // Cadence from the two most recent due dates: monthly for a monthly
+        // schedule, 3 for quarterly cheques, and so on. A single-installment
+        // lease has nothing to measure, so fall back to the lease's own length.
+        int cadenceMonths;
+        if (rentRows.size() >= 2) {
+            LocalDate prev = rentRows.get(rentRows.size() - 2).getDueDate();
+            cadenceMonths = (int) Math.max(1, ChronoUnit.MONTHS.between(prev, last.getDueDate()));
+        } else {
+            cadenceMonths = (int) Math.max(1, DateMath.monthsInclusive(lease.getStartDate(), previousEndDate));
+        }
+
+        int nextNumber = rentRows.stream()
+                .map(PaymentSchedule::getInstallmentNumber)
+                .filter(java.util.Objects::nonNull)
+                .max(Integer::compareTo)
+                .orElse(rentRows.size()) + 1;
+
+        List<PaymentSchedule> created = new ArrayList<>();
+        LocalDate dueDate = last.getDueDate().plusMonths(cadenceMonths);
+        // Bill every cadence period that begins inside the extension window.
+        while (!dueDate.isAfter(newEndDate)) {
+            PaymentSchedule ps = new PaymentSchedule();
+            ps.setLease(lease);
+            ps.setUnit(lease.getUnit());
+            ps.setProperty(lease.getUnit().getProperty());
+            ps.setInstallmentNumber(nextNumber);
+            ps.setDueDate(dueDate);
+            ps.setAmount(last.getAmount());
+            ps.setVatAmount(last.getVatAmount());
+            ps.setStatus(PaymentStatus.PENDING);
+            ps.setPurposeLabel("RENT - " + ordinalOf(nextNumber) + " INSTALLMENT (EXTENSION)");
+            created.add(paymentScheduleRepository.save(ps));
+
+            nextNumber++;
+            dueDate = dueDate.plusMonths(cadenceMonths);
+        }
+        return created;
+    }
 
     @Transactional
     public List<PaymentSchedule> generateScheduleForLease(Lease lease) {

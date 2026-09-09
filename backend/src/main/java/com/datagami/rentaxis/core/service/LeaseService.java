@@ -584,8 +584,18 @@ public class LeaseService {
         LocalDate previousEndDate = lease.getEndDate();
         lease.setEndDate(newEndDate);
         Lease savedLease = leaseRepository.save(lease);
+
+        // Bill the extension. Without this the extra months were never
+        // invoiced, never reached the aging report, and could not be added
+        // afterwards — updatePaymentSchedule is DRAFT-only and schedule
+        // generation short-circuits once installments exist — so the rent was
+        // simply lost, with a 200 and an event to say all was well.
+        int addedInstallments =
+                paymentScheduleService.extendScheduleForLease(savedLease, previousEndDate, newEndDate).size();
+
         recordEvent(savedLease, LeaseStatus.ACTIVE, LeaseStatus.ACTIVE,
-                "Lease extended from " + previousEndDate + " to " + newEndDate);
+                "Lease extended from " + previousEndDate + " to " + newEndDate
+                        + " (" + addedInstallments + " installment(s) added)");
 
         // Update listing availability and notify interested renters
         try {

@@ -30,6 +30,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
+import static org.mockito.Mockito.verify;
+import static org.mockito.ArgumentMatchers.eq;
 
 class LeaseServiceUnitOccupancyTest {
 
@@ -37,6 +39,7 @@ class LeaseServiceUnitOccupancyTest {
     private UnitRepository unitRepository;
     private RenterRepository renterRepository;
     private PaymentScheduleRepository paymentScheduleRepository;
+    private PaymentScheduleService paymentScheduleService;
     private LeaseService service;
 
     @BeforeEach
@@ -45,6 +48,7 @@ class LeaseServiceUnitOccupancyTest {
         unitRepository = mock(UnitRepository.class);
         renterRepository = mock(RenterRepository.class);
         paymentScheduleRepository = mock(PaymentScheduleRepository.class);
+        paymentScheduleService = mock(PaymentScheduleService.class);
         LeaseDocumentRepository leaseDocumentRepository = mock(LeaseDocumentRepository.class);
         LeaseChargeRepository leaseChargeRepository = mock(LeaseChargeRepository.class);
 
@@ -55,7 +59,7 @@ class LeaseServiceUnitOccupancyTest {
                 mock(LeaseEventRepository.class),
                 leaseDocumentRepository,
                 mock(LeaseAttachmentRepository.class),
-                mock(PaymentScheduleService.class),
+                paymentScheduleService,
                 paymentScheduleRepository,
                 leaseChargeRepository,
                 mock(SettlementService.class),
@@ -74,6 +78,7 @@ class LeaseServiceUnitOccupancyTest {
         when(unitRepository.save(any(Unit.class))).thenAnswer(inv -> inv.getArgument(0));
         // No other lease holds any unit unless a test says so.
         when(leaseRepository.findByUnitIdAndStatus(any(), any())).thenReturn(List.of());
+        when(paymentScheduleService.extendScheduleForLease(any(), any(), any())).thenReturn(List.of());
     }
 
     /** Makes findByIdForUpdate resolve to this lease's unit. */
@@ -227,5 +232,28 @@ class LeaseServiceUnitOccupancyTest {
         assertThat(lease.getUnit().getStatus()).isEqualTo(UnitStatus.OCCUPIED);
         assertThat(lease.getUnit().getCurrentTenantName()).isEqualTo("Sitting Renter");
         assertThat(lease.getUnit().getActualRent()).isEqualByComparingTo("72000");
+    }
+
+    // ---- extension bills the months it adds (#198) --------------------------
+
+    @Test
+    void extendLease_billsTheExtensionThroughTheScheduleService() {
+        Lease lease = lease(LeaseStatus.ACTIVE);
+        lease.setStartDate(java.time.LocalDate.of(2026, 1, 1));
+        lease.setEndDate(java.time.LocalDate.of(2026, 12, 31));
+        when(leaseRepository.findById(lease.getId())).thenReturn(Optional.of(lease));
+
+        java.time.LocalDate newEnd = java.time.LocalDate.of(2027, 6, 30);
+        service.extendLease(lease.getId(), newEnd);
+
+        // The wiring is the point: extendLease used to move the end date and
+        // nothing else, so the extra months were never invoiced. Asserting on
+        // the collaborator call is what stops that regressing — a test that only
+        // exercised the schedule service directly would not have caught it.
+        verify(paymentScheduleService).extendScheduleForLease(
+                any(Lease.class),
+                eq(java.time.LocalDate.of(2026, 12, 31)),
+                eq(newEnd));
+        assertThat(lease.getEndDate()).isEqualTo(newEnd);
     }
 }
