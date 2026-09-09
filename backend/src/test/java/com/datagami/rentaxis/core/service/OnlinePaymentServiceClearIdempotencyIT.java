@@ -78,7 +78,10 @@ class OnlinePaymentServiceClearIdempotencyIT {
         this.tenantId = org.getId();
         TenantContextHolder.setTenantId(tenantId);
 
-        seedAccount("A-01-01", "Bank/Cash", AccountType.ASSET);
+        // A-02-02 "Bank Accounts" is what the real chart-of-accounts seeder
+        // creates and what clearPaymentOnline now falls back to. This used to
+        // hand-seed A-01-01, a code seedDefaultAccounts never creates.
+        seedAccount("A-02-02", "Bank Accounts", AccountType.ASSET);
         seedAccount("C-01-01", "Rental Income", AccountType.INCOME);
 
         Property property = new Property();
@@ -160,7 +163,7 @@ class OnlinePaymentServiceClearIdempotencyIT {
         List<FinancialTransaction> txns = financialTransactionRepository.findAll();
         return txns.stream()
                 .filter(t -> tenantId.equals(t.getTenantId()))
-                .filter(t -> ("A-01-01".equals(t.getAccountCode()) && t.getDebit().signum() > 0)
+                .filter(t -> ("A-02-02".equals(t.getAccountCode()) && t.getDebit().signum() > 0)
                         || ("C-01-01".equals(t.getAccountCode()) && t.getCredit().signum() > 0))
                 .count();
     }

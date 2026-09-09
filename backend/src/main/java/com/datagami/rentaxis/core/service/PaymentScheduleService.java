@@ -819,10 +819,22 @@ public class PaymentScheduleService {
             bankAccount = mapping.getDebitAccount();
             rentalIncomeAccount = mapping.getCreditAccount();
         } else {
-            // Fallback to hardcoded defaults
+            // Fallback when the tenant has accounts but no RENT_PAYMENT_CLEARED
+            // mapping — reachable for any tenant onboarded via
+            // POST /finance/accounts/import or by creating accounts one at a
+            // time, because AccountMappingService.seedDefaults() runs only
+            // inside seedDefaultAccounts(), which early-returns once accounts
+            // exist.
+            //
+            // This used to look up "A-01-01", which seedDefaultAccounts has
+            // never created (it seeds A-01, A-02 and A-02-01..A-02-05), so the
+            // fallback always threw and the whole @Transactional rolled back —
+            // the schedule stayed DEPOSITED and rent could never be recorded as
+            // collected. A-02-02 "Bank Accounts" is the seeded bank account and
+            // is already what recordChequeBounce uses for the same role.
             UUID tenantId = TenantContextHolder.getTenantId();
-            bankAccount = accountRepository.findByCodeAndTenantId("A-01-01", tenantId)
-                    .orElseThrow(() -> new RuntimeException("Bank/Cash account (A-01-01) not found. Please configure account mappings."));
+            bankAccount = accountRepository.findByCodeAndTenantId("A-02-02", tenantId)
+                    .orElseThrow(() -> new RuntimeException("Bank account (A-02-02) not found. Please seed the chart of accounts or configure account mappings."));
             rentalIncomeAccount = accountRepository.findByCodeAndTenantId("C-01-01", tenantId)
                     .orElseThrow(() -> new RuntimeException("Rental Income account (C-01-01) not found. Please configure account mappings."));
         }
