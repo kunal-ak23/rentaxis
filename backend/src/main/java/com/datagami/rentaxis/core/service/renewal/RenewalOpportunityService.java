@@ -62,13 +62,23 @@ public class RenewalOpportunityService {
             LeaseStatus s = o.getLease().getStatus();
             if (s == LeaseStatus.ACTIVE) continue;
 
+            // Every case that was not (EXPIRED + no intent) or (EXPIRED +
+            // MOVE_OUT) used to fall into a final else and be written as
+            // MOVED_OUT — including a renter who had answered RENEW, and any
+            // terminated lease. The funnel therefore reported renters as having
+            // moved out when they had asked to stay, and those are exactly the
+            // ones worth chasing.
             RenewalOutcome outcome;
-            if (s == LeaseStatus.EXPIRED && o.getIntent() == null) {
-                outcome = RenewalOutcome.EXPIRED_NO_RESPONSE;
-            } else if (s == LeaseStatus.EXPIRED && o.getIntent() == RenewalIntent.MOVE_OUT) {
+            if (s == LeaseStatus.TERMINATED || s == LeaseStatus.CLOSED) {
+                outcome = RenewalOutcome.LEASE_TERMINATED;
+            } else if (o.getIntent() == RenewalIntent.RENEW || o.getIntent() == RenewalIntent.DISCUSS) {
+                // The renter wanted to stay; the lease lapsed before anyone
+                // created the renewal. A lost renewal, not a departure.
+                outcome = RenewalOutcome.RENEWAL_NOT_ACTIONED;
+            } else if (o.getIntent() == RenewalIntent.MOVE_OUT) {
                 outcome = RenewalOutcome.MOVED_OUT;
             } else {
-                outcome = RenewalOutcome.MOVED_OUT;
+                outcome = RenewalOutcome.EXPIRED_NO_RESPONSE;
             }
             o.setStage(RenewalStage.CLOSED_LOST);
             o.setOutcome(outcome);

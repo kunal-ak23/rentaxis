@@ -75,7 +75,7 @@ class LeaseRenewalSchedulerIntegrationTest {
     }
 
     @Test
-    void terminated_lease_closes_with_MOVED_OUT() {
+    void terminated_lease_closes_as_LEASE_TERMINATED_not_moved_out() {
         LocalDate today = LocalDate.of(2026, 6, 1);
         LandlordOrg org = new LandlordOrg(); org.setName("Org-" + UUID.randomUUID()); org = orgRepo.save(org);
         UUID tenantId = org.getId();
@@ -99,7 +99,42 @@ class LeaseRenewalSchedulerIntegrationTest {
         TenantContextHolder.setTenantId(tenantId);
         var closed = oppRepo.findByTenantIdAndStageIn(tenantId, List.of(RenewalStage.CLOSED_LOST));
         assertThat(closed).hasSize(1);
-        assertThat(closed.get(0).getOutcome()).isEqualTo(RenewalOutcome.MOVED_OUT);
+        // A lease terminated early is not a renter moving out at the end of
+        // their term. This asserted MOVED_OUT before, which is the
+        // misclassification the funnel was reporting.
+        assertThat(closed.get(0).getOutcome()).isEqualTo(RenewalOutcome.LEASE_TERMINATED);
+    }
+
+    @Test
+    void renterWhoAnsweredRenewIsNotRecordedAsHavingMovedOut() {
+        LocalDate today = LocalDate.of(2026, 6, 1);
+        LandlordOrg org = new LandlordOrg(); org.setName("Org-" + UUID.randomUUID()); org = orgRepo.save(org);
+        UUID tenantId = org.getId();
+        tenantFeatureService.setEnabled(tenantId, TenantFeature.LEASE_RENEWALS, true);
+        TenantContextHolder.setTenantId(tenantId);
+        Lease lease = RenewalTestFixtures.createActiveLease(orgRepo, userRepo, renterRepo, propertyRepo, unitRepo, leaseRepo, tenantId, today.minusYears(1), today.plusDays(50));
+        TenantContextHolder.clear();
+
+        scheduler.runNow(today);
+
+        TenantContextHolder.setTenantId(tenantId);
+        // The renter says they want to renew, then the lease lapses before the
+        // PM creates the renewal — the case this issue is about.
+        var opp = oppRepo.findByTenantIdAndStageIn(tenantId, List.of(RenewalStage.OPEN, RenewalStage.INTENT_CAPTURED)).get(0);
+        opp.setIntent(RenewalIntent.RENEW);
+        oppRepo.save(opp);
+        lease.setStatus(LeaseStatus.EXPIRED);
+        leaseRepo.save(lease);
+        TenantContextHolder.clear();
+
+        scheduler.runNow(today.plusDays(1));
+
+        TenantContextHolder.setTenantId(tenantId);
+        var closed = oppRepo.findByTenantIdAndStageIn(tenantId, List.of(RenewalStage.CLOSED_LOST));
+        assertThat(closed).hasSize(1);
+        // Previously MOVED_OUT — the funnel reported a renter who asked to stay
+        // as having left, hiding exactly the ones worth chasing.
+        assertThat(closed.get(0).getOutcome()).isEqualTo(RenewalOutcome.RENEWAL_NOT_ACTIONED);
     }
 
     @Test
