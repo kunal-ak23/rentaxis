@@ -808,9 +808,25 @@ public class PaymentScheduleService {
         payment.setStatusChangedAt(effectiveInstant(dto.getEffectiveDate()));
         paymentScheduleRepository.save(payment);
 
-        // Auto-create financial transactions
-        // Try to resolve from account mappings first, fall back to hardcoded defaults
-        AccountMapping mapping = accountMappingService.resolveMapping(TransactionNature.RENT_PAYMENT_CLEARED);
+        // Auto-create financial transactions.
+        //
+        // A refundable security deposit is a LIABILITY, not income: the landlord
+        // holds the renter's money and owes it back at settlement. This used to
+        // resolve RENT_PAYMENT_CLEARED unconditionally, so every deposit cheque
+        // was credited to Rental Income the moment it cleared — overstating
+        // income by the whole deposit book (typically one month's rent per
+        // active lease) and leaving B-01-02 "Security Deposits" permanently at
+        // zero. The SECURITY_DEPOSIT_RECEIVED mapping was seeded and editable in
+        // the admin UI all along; nothing ever read it.
+        //
+        // The refund side is posted by SettlementService.finalizeSettlement via
+        // SECURITY_DEPOSIT_REFUNDED, so the liability is released when the money
+        // actually goes back.
+        boolean isDeposit = payment.isSecurityDeposit();
+        TransactionNature nature = isDeposit
+                ? TransactionNature.SECURITY_DEPOSIT_RECEIVED
+                : TransactionNature.RENT_PAYMENT_CLEARED;
+        AccountMapping mapping = accountMappingService.resolveMapping(nature);
 
         Account bankAccount;
         Account rentalIncomeAccount;
@@ -818,6 +834,12 @@ public class PaymentScheduleService {
         if (mapping != null) {
             bankAccount = mapping.getDebitAccount();
             rentalIncomeAccount = mapping.getCreditAccount();
+        } else if (isDeposit) {
+            UUID tenantId = TenantContextHolder.getTenantId();
+            bankAccount = accountRepository.findByCodeAndTenantId("A-02-02", tenantId)
+                    .orElseThrow(() -> new RuntimeException("Bank account (A-02-02) not found. Please seed the chart of accounts or configure account mappings."));
+            rentalIncomeAccount = accountRepository.findByCodeAndTenantId("B-01-02", tenantId)
+                    .orElseThrow(() -> new RuntimeException("Security Deposits account (B-01-02) not found. Please seed the chart of accounts or configure account mappings."));
         } else {
             // Fallback when the tenant has accounts but no RENT_PAYMENT_CLEARED
             // mapping — reachable for any tenant onboarded via
@@ -839,9 +861,13 @@ public class PaymentScheduleService {
                     .orElseThrow(() -> new RuntimeException("Rental Income account (C-01-01) not found. Please configure account mappings."));
         }
 
+        String legLabel = isDeposit
+                ? "Security deposit received - Lease " + payment.getInstallmentNumber()
+                : "Lease installment #" + payment.getInstallmentNumber();
+
         FinancialTransaction debitTxn = new FinancialTransaction();
         debitTxn.setDate(effectiveDateOrToday(dto.getEffectiveDate()));
-        debitTxn.setDescription("Cheque cleared - Lease installment #" + payment.getInstallmentNumber());
+        debitTxn.setDescription("Cheque cleared - " + legLabel);
         debitTxn.setAccount(bankAccount);
         debitTxn.setDebit(payment.getAmount());
         debitTxn.setCredit(BigDecimal.ZERO);
@@ -851,7 +877,7 @@ public class PaymentScheduleService {
 
         FinancialTransaction creditTxn = new FinancialTransaction();
         creditTxn.setDate(effectiveDateOrToday(dto.getEffectiveDate()));
-        creditTxn.setDescription("Rental income - Lease installment #" + payment.getInstallmentNumber());
+        creditTxn.setDescription((isDeposit ? "Security deposit held - " : "Rental income - ") + legLabel);
         creditTxn.setAccount(rentalIncomeAccount);
         creditTxn.setDebit(BigDecimal.ZERO);
         creditTxn.setCredit(payment.getAmount());

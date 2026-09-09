@@ -8,11 +8,16 @@ import com.datagami.rentaxis.api.exception.NotFoundException;
 import com.datagami.rentaxis.domain.entity.enums.AdditionCategory;
 import com.datagami.rentaxis.domain.entity.enums.LineItemType;
 import com.datagami.rentaxis.domain.entity.enums.SettlementStatus;
+import com.datagami.rentaxis.domain.entity.Account;
+import com.datagami.rentaxis.domain.entity.AccountMapping;
+import com.datagami.rentaxis.domain.entity.FinancialTransaction;
 import com.datagami.rentaxis.domain.entity.Lease;
 import com.datagami.rentaxis.domain.entity.LeaseSettlement;
 import com.datagami.rentaxis.domain.entity.LeaseSettlementDeduction;
 import com.datagami.rentaxis.domain.entity.PaymentSchedule;
 import com.datagami.rentaxis.domain.entity.enums.PaymentStatus;
+import com.datagami.rentaxis.domain.entity.enums.TransactionNature;
+import com.datagami.rentaxis.domain.repository.AccountRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
 import com.datagami.rentaxis.domain.repository.LeaseSettlementDeductionRepository;
 import com.datagami.rentaxis.domain.repository.LeaseSettlementRepository;
@@ -23,6 +28,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.List;
@@ -42,6 +48,9 @@ public class SettlementService {
     private final PaymentScheduleRepository paymentScheduleRepository;
     private final PenaltyService penaltyService;
     private final DeductionAttachmentService deductionAttachmentService;
+    private final AccountMappingService accountMappingService;
+    private final AccountRepository accountRepository;
+    private final FinancialTransactionService financialTransactionService;
 
     @Transactional(readOnly = true)
     public SettlementPreviewDTO getSettlementPreview(UUID leaseId) {
@@ -109,6 +118,12 @@ public class SettlementService {
                 leaseSettlementDeductionRepository.save(deduction);
             }
         }
+
+        // This legacy path finalizes in one step rather than going through
+        // finalizeSettlement, so it has to release the deposit liability itself
+        // — otherwise settling via terminate-with-settlement would leave the
+        // B-01-02 balance standing while settling via the draft flow cleared it.
+        postDepositReleaseEntries(savedSettlement);
 
         return savedSettlement;
     }
@@ -234,7 +249,101 @@ public class SettlementService {
         settlement.setSettledBy(settledBy);
         settlement.setSettledAt(LocalDateTime.now());
 
-        return leaseSettlementRepository.save(settlement);
+        LeaseSettlement finalized = leaseSettlementRepository.save(settlement);
+        postDepositReleaseEntries(finalized);
+        return finalized;
+    }
+
+    /**
+     * Releases the security-deposit liability when a settlement is finalized.
+     *
+     * <p>Deposits are credited to B-01-02 "Security Deposits" when the deposit
+     * cheque clears (see {@code PaymentScheduleService.clearPayment}). Until
+     * this existed, settlement posted nothing at all, so the liability was never
+     * released and the books carried every deposit ever taken, forever.
+     *
+     * <p>The entry set is:
+     * <ul>
+     *   <li>debit B-01-02 for the full deposit — the liability is discharged</li>
+     *   <li>credit the bank for the refund actually paid back</li>
+     *   <li>the remainder (deductions net of additions) is retained by the
+     *       landlord and becomes other income; if additions exceeded the
+     *       deposit the landlord paid out more than it held, so that excess is
+     *       debited instead</li>
+     * </ul>
+     * which balances in both directions, since
+     * {@code refund = deposit - deductions + additions}.
+     *
+     * <p>Deliberately not itemised per deduction category: the categories on
+     * LeaseSettlementDeduction do not map onto seeded expense accounts, and
+     * inventing that mapping would put guesses in the ledger. The retained total
+     * lands in one Other Income line that reconciles to the settlement record.
+     */
+    private void postDepositReleaseEntries(LeaseSettlement settlement) {
+        BigDecimal deposit = nz(settlement.getDepositAmount());
+        BigDecimal refund = nz(settlement.getRefundAmount());
+        if (deposit.signum() == 0 && refund.signum() == 0) {
+            return;
+        }
+
+        AccountMapping mapping = accountMappingService.resolveMapping(TransactionNature.SECURITY_DEPOSIT_REFUNDED);
+        Account depositLiability;
+        Account bank;
+        if (mapping != null) {
+            depositLiability = mapping.getDebitAccount();
+            bank = mapping.getCreditAccount();
+        } else {
+            UUID tenantId = TenantContextHolder.getTenantId();
+            depositLiability = accountRepository.findByCodeAndTenantId("B-01-02", tenantId).orElse(null);
+            bank = accountRepository.findByCodeAndTenantId("A-02-02", tenantId).orElse(null);
+        }
+        // A tenant with no chart of accounts should still be able to settle a
+        // lease; the settlement record itself is the source of truth. Skip the
+        // ledger entries rather than failing the settlement.
+        if (depositLiability == null || bank == null) {
+            return;
+        }
+
+        UUID leaseId = settlement.getLeaseId();
+        LocalDate today = LocalDate.now();
+
+        if (deposit.signum() > 0) {
+            post(depositLiability, deposit, BigDecimal.ZERO, today,
+                    "Security deposit released - settlement for lease " + leaseId);
+        }
+        if (refund.signum() > 0) {
+            post(bank, BigDecimal.ZERO, refund, today,
+                    "Security deposit refunded - settlement for lease " + leaseId);
+        }
+
+        BigDecimal retained = deposit.subtract(refund);
+        if (retained.signum() != 0) {
+            Account otherIncome = accountRepository
+                    .findByCodeAndTenantId("C-01-02", TenantContextHolder.getTenantId()).orElse(null);
+            if (otherIncome != null) {
+                if (retained.signum() > 0) {
+                    post(otherIncome, BigDecimal.ZERO, retained, today,
+                            "Settlement deductions retained - lease " + leaseId);
+                } else {
+                    post(otherIncome, retained.negate(), BigDecimal.ZERO, today,
+                            "Settlement additions paid beyond deposit - lease " + leaseId);
+                }
+            }
+        }
+    }
+
+    private void post(Account account, BigDecimal debit, BigDecimal credit, LocalDate date, String description) {
+        FinancialTransaction txn = new FinancialTransaction();
+        txn.setDate(date);
+        txn.setDescription(description);
+        txn.setAccount(account);
+        txn.setDebit(debit);
+        txn.setCredit(credit);
+        financialTransactionService.createTransaction(txn);
+    }
+
+    private static BigDecimal nz(BigDecimal v) {
+        return v != null ? v : BigDecimal.ZERO;
     }
 
     @Transactional(readOnly = true)
