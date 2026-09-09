@@ -36,4 +36,17 @@ public interface LeaseInteractionRepository extends JpaRepository<LeaseInteracti
     @Modifying
     @Query("UPDATE LeaseInteraction i SET i.createdBy = NULL WHERE i.createdBy = :userId")
     void detachCreatedBy(@Param("userId") UUID userId);
+
+
+    /**
+     * Hard-deletes every interaction on a lease, including soft-deleted rows.
+     *
+     * <p>lease_interactions.lease_id is NOT NULL with no ON DELETE clause, and
+     * softDelete only stamps deletedAt — the row stays and keeps holding the
+     * foreign key. So a DRAFT lease with a single note could not be deleted
+     * through the API at all.
+     */
+    @Modifying
+    @Query("DELETE FROM LeaseInteraction i WHERE i.lease.id = :leaseId")
+    void deleteByLeaseId(@Param("leaseId") UUID leaseId);
 }

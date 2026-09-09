@@ -64,7 +64,10 @@ class LeaseRenewalSchedulerIntegrationTest {
         var oppsA = oppRepo.findByTenantIdAndStageIn(orgA.getId(), List.of(RenewalStage.OPEN));
         assertThat(oppsA).hasSize(1);
         var remindersA = reminderRepo.findByOpportunityId(oppsA.get(0).getId());
-        assertThat(remindersA.stream().filter(r -> r.getStatus() == ReminderStatus.SENT).count()).isEqualTo(2);
+        // In-app only: EMAIL_NOTIFICATIONS defaults off, and EmailDispatcher
+        // drops every event while it is, so marking the email SENT would be a
+        // lie. This expected 2 before and was asserting that lie.
+        assertThat(remindersA.stream().filter(r -> r.getStatus() == ReminderStatus.SENT).count()).isEqualTo(1);
 
         TenantContextHolder.setTenantId(orgB.getId());
         var oppsB = oppRepo.findByTenantIdAndStageIn(orgB.getId(), List.of(RenewalStage.OPEN));

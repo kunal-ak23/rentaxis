@@ -50,6 +50,7 @@ public class LeaseService {
     private final PaymentScheduleService paymentScheduleService;
     private final PaymentScheduleRepository paymentScheduleRepository;
     private final LeaseChargeRepository leaseChargeRepository;
+    private final LeaseInteractionRepository leaseInteractionRepository;
     private final SettlementService settlementService;
     private final UnitListingService unitListingService;
     private final ApplicationEventPublisher events;
@@ -63,6 +64,7 @@ public class LeaseService {
                         PaymentScheduleService paymentScheduleService,
                         PaymentScheduleRepository paymentScheduleRepository,
                         LeaseChargeRepository leaseChargeRepository,
+                        LeaseInteractionRepository leaseInteractionRepository,
                         SettlementService settlementService,
                         @Lazy UnitListingService unitListingService,
                         ApplicationEventPublisher events) {
@@ -75,6 +77,7 @@ public class LeaseService {
         this.paymentScheduleService = paymentScheduleService;
         this.paymentScheduleRepository = paymentScheduleRepository;
         this.leaseChargeRepository = leaseChargeRepository;
+        this.leaseInteractionRepository = leaseInteractionRepository;
         this.settlementService = settlementService;
         this.unitListingService = unitListingService;
         this.events = events;
@@ -498,6 +501,12 @@ public class LeaseService {
         // lease's charges before deleting the lease or the FK constraint blocks it.
         leaseChargeRepository.deleteAll(leaseChargeRepository.findByLeaseId(leaseId));
         leaseEventRepository.deleteAll(leaseEventRepository.findByLeaseIdOrderByCreatedAtDesc(leaseId));
+        // lease_interactions.lease_id is NOT NULL with no ON DELETE clause, and
+        // LeaseInteractionService.softDelete only stamps deletedAt — the row
+        // stays and keeps holding the FK. Nothing stops a note being attached to
+        // a DRAFT lease, so a single note made the draft permanently
+        // undeletable behind an opaque 500.
+        leaseInteractionRepository.deleteByLeaseId(leaseId);
         leaseRepository.delete(lease);
     }
 

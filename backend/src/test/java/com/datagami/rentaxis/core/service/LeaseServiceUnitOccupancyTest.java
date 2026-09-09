@@ -8,6 +8,7 @@ import com.datagami.rentaxis.domain.entity.enums.LeaseStatus;
 import com.datagami.rentaxis.domain.entity.enums.UnitStatus;
 import com.datagami.rentaxis.domain.repository.LeaseAttachmentRepository;
 import com.datagami.rentaxis.domain.repository.LeaseChargeRepository;
+import com.datagami.rentaxis.domain.repository.LeaseInteractionRepository;
 import com.datagami.rentaxis.domain.repository.LeaseDocumentRepository;
 import com.datagami.rentaxis.domain.repository.LeaseEventRepository;
 import com.datagami.rentaxis.domain.repository.LeaseRepository;
@@ -40,6 +41,7 @@ class LeaseServiceUnitOccupancyTest {
     private RenterRepository renterRepository;
     private PaymentScheduleRepository paymentScheduleRepository;
     private PaymentScheduleService paymentScheduleService;
+    private LeaseInteractionRepository leaseInteractionRepository;
     private LeaseService service;
 
     @BeforeEach
@@ -49,6 +51,7 @@ class LeaseServiceUnitOccupancyTest {
         renterRepository = mock(RenterRepository.class);
         paymentScheduleRepository = mock(PaymentScheduleRepository.class);
         paymentScheduleService = mock(PaymentScheduleService.class);
+        leaseInteractionRepository = mock(LeaseInteractionRepository.class);
         LeaseDocumentRepository leaseDocumentRepository = mock(LeaseDocumentRepository.class);
         LeaseChargeRepository leaseChargeRepository = mock(LeaseChargeRepository.class);
 
@@ -62,6 +65,7 @@ class LeaseServiceUnitOccupancyTest {
                 paymentScheduleService,
                 paymentScheduleRepository,
                 leaseChargeRepository,
+                leaseInteractionRepository,
                 mock(SettlementService.class),
                 mock(UnitListingService.class),
                 mock(ApplicationEventPublisher.class));
@@ -255,5 +259,22 @@ class LeaseServiceUnitOccupancyTest {
                 eq(java.time.LocalDate.of(2026, 12, 31)),
                 eq(newEnd));
         assertThat(lease.getEndDate()).isEqualTo(newEnd);
+    }
+
+    // ---- draft deletion releases lease_interactions (#200) ------------------
+
+    @Test
+    void deleteDraftLease_alsoRemovesLeaseInteractions() {
+        Lease lease = lease(LeaseStatus.DRAFT);
+        when(leaseRepository.findById(lease.getId())).thenReturn(Optional.of(lease));
+
+        service.deleteDraftLease(lease.getId());
+
+        // lease_interactions.lease_id is NOT NULL with no ON DELETE clause, and
+        // softDelete only stamps deletedAt — the row keeps holding the FK. A
+        // single note therefore made the draft permanently undeletable behind an
+        // opaque 500, so this delete has to happen before the lease goes.
+        verify(leaseInteractionRepository).deleteByLeaseId(lease.getId());
+        verify(leaseRepository).delete(lease);
     }
 }
