@@ -126,6 +126,70 @@ public class LeaseService {
         return mapToDTO(lease);
     }
 
+    /**
+     * Marks the lease's unit occupied, refusing if another lease already holds
+     * it.
+     *
+     * <p>Activation used to set the unit OCCUPIED unconditionally. Nothing
+     * re-read the unit after {@code createDraftLease}'s vacancy check, and that
+     * check does not reserve anything — the unit stays VACANT while a draft
+     * exists — so two drafts on one unit could both activate. Both leases then
+     * generated schedules and invoiced their renters, and the unit's
+     * {@code currentTenantName} and {@code actualRent} reflected whichever
+     * activated last. Changesets 68 and 70 exist to repair exactly this drift in
+     * production, and 68's {@code SELECT DISTINCT ON (unit_id)} already had to
+     * pick one of several ACTIVE leases per unit in live data.
+     *
+     * <p>The unit row is locked FOR UPDATE first so the check and the flip
+     * cannot interleave with a concurrent activation. A service-layer check
+     * without the lock still races; see also changeset 80, which adds the
+     * database constraint that closes the window for good.
+     */
+    private void claimUnitForLease(Lease lease) {
+        Unit unit = unitRepository.findByIdForUpdate(lease.getUnit().getId())
+                .orElseThrow(() -> new NotFoundException("Unit not found"));
+
+        boolean heldByAnother = leaseRepository.findByUnitIdAndStatus(unit.getId(), LeaseStatus.ACTIVE).stream()
+                .anyMatch(other -> !other.getId().equals(lease.getId()));
+        if (heldByAnother) {
+            throw new BusinessRuleViolationException(
+                    "This unit already has an active lease. Terminate it before activating another.");
+        }
+
+        unit.setStatus(UnitStatus.OCCUPIED);
+        unit.setCurrentTenantName(lease.getRenter().getNameEn());
+        unit.setActualRent(lease.getRentAmount() != null ? lease.getRentAmount() : BigDecimal.ZERO);
+        unitRepository.save(unit);
+    }
+
+    /**
+     * Vacates the unit only when no other ACTIVE lease still holds it.
+     *
+     * <p>Termination used to vacate unconditionally, so ending the older of two
+     * overlapping leases wiped the occupancy of the one still running — the unit
+     * showed VACANT and became lettable a third time while a renter was living
+     * in it. Overlaps should no longer be creatable, but production already
+     * contains some, and this must not make those worse.
+     */
+    private void releaseUnitIfNoOtherActiveLease(Lease lease) {
+        Unit unit = unitRepository.findByIdForUpdate(lease.getUnit().getId())
+                .orElse(lease.getUnit());
+
+        List<Lease> stillActive = leaseRepository.findByUnitIdAndStatus(unit.getId(), LeaseStatus.ACTIVE).stream()
+                .filter(other -> !other.getId().equals(lease.getId()))
+                .toList();
+        if (!stillActive.isEmpty()) {
+            // Leave the unit as it is: another lease is live on it. Its own
+            // termination will vacate the unit.
+            return;
+        }
+
+        unit.setStatus(UnitStatus.VACANT);
+        unit.setCurrentTenantName(null);
+        unit.setActualRent(BigDecimal.ZERO);
+        unitRepository.save(unit);
+    }
+
     private Lease findLeaseWithTenantCheck(UUID id) {
         Lease lease = leaseRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Lease not found"));
@@ -448,11 +512,7 @@ public class LeaseService {
         LeaseStatus previousStatus = lease.getStatus();
         lease.setStatus(LeaseStatus.ACTIVE);
 
-        Unit unit = lease.getUnit();
-        unit.setStatus(UnitStatus.OCCUPIED);
-        unit.setCurrentTenantName(lease.getRenter().getNameEn());
-        unit.setActualRent(lease.getRentAmount() != null ? lease.getRentAmount() : BigDecimal.ZERO);
-        unitRepository.save(unit);
+        claimUnitForLease(lease);
 
         Lease savedLease = leaseRepository.save(lease);
         recordEvent(savedLease, previousStatus, LeaseStatus.ACTIVE, "Lease activated");
@@ -479,11 +539,7 @@ public class LeaseService {
         LeaseStatus previousStatus = lease.getStatus();
         lease.setStatus(LeaseStatus.TERMINATED);
 
-        Unit unit = lease.getUnit();
-        unit.setStatus(UnitStatus.VACANT);
-        unit.setCurrentTenantName(null);
-        unit.setActualRent(BigDecimal.ZERO);
-        unitRepository.save(unit);
+        releaseUnitIfNoOtherActiveLease(lease);
 
         // Cancel pending payment schedules
         List<PaymentSchedule> pendingPayments = paymentScheduleRepository.findByLeaseId(leaseId);
@@ -506,7 +562,7 @@ public class LeaseService {
 
         // Clear listing availability and notify interested renters
         try {
-            unitListingService.syncAvailableFrom(unit.getId(), null);
+            unitListingService.syncAvailableFrom(savedLease.getUnit().getId(), null);
         } catch (Exception e) {
             // Non-critical: listing sync failure should not block termination
         }
@@ -578,11 +634,7 @@ public class LeaseService {
         LeaseStatus previousStatus = lease.getStatus();
         lease.setStatus(LeaseStatus.ACTIVE);
 
-        Unit unit = lease.getUnit();
-        unit.setStatus(UnitStatus.OCCUPIED);
-        unit.setCurrentTenantName(lease.getRenter().getNameEn());
-        unit.setActualRent(lease.getRentAmount() != null ? lease.getRentAmount() : BigDecimal.ZERO);
-        unitRepository.save(unit);
+        claimUnitForLease(lease);
 
         Lease savedLease = leaseRepository.save(lease);
         recordEvent(savedLease, previousStatus, LeaseStatus.ACTIVE, "Lease accepted by renter");

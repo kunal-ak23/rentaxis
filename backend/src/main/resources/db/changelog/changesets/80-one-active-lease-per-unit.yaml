@@ -1,0 +1,53 @@
+databaseChangeLog:
+  # One unit, one active lease.
+  #
+  # LeaseService.claimUnitForLease now locks the unit row and refuses a second
+  # activation, but a service check alone still leaves a window: two requests can
+  # pass the check before either commits. This index closes it in the database,
+  # where the guarantee belongs.
+  #
+  # WHY THE PRECONDITION: Liquibase runs in-process at application boot, and this
+  # deployment has no rollback (see the deploy workflow). A CREATE UNIQUE INDEX
+  # that fails takes the whole application down with it. Changesets 68 and 70 are
+  # production repairs for exactly this occupancy drift, and 68 uses
+  # SELECT DISTINCT ON (unit_id) precisely because live data already had more
+  # than one ACTIVE lease per unit — so assuming the data is clean here would be
+  # gambling an outage on it.
+  #
+  # onFail: CONTINUE, not MARK_RAN: if a tenant still holds duplicates the index
+  # is skipped and startup proceeds, and the changeset is retried on the next
+  # deploy rather than being permanently marked as applied. Clean the duplicates
+  # and the constraint installs itself. Meanwhile the service-layer guard stops
+  # any new overlap from being created.
+  #
+  # Detect duplicates with:
+  #   SELECT unit_id, count(*) FROM leases WHERE status = 'ACTIVE'
+  #   GROUP BY unit_id HAVING count(*) > 1;
+  - changeSet:
+      id: 80-one-active-lease-per-unit
+      author: claude
+      comment: Partial unique index enforcing one ACTIVE lease per unit, skipped if legacy duplicates exist
+      preConditions:
+        - onFail: CONTINUE
+        - onFailMessage: >-
+            Skipped 80-one-active-lease-per-unit: this database still has units
+            with more than one ACTIVE lease. Startup continues and the service
+            layer prevents new overlaps. Resolve the existing duplicates and the
+            index will be created on the next deploy.
+        - sqlCheck:
+            expectedResult: 0
+            sql: >-
+              SELECT count(*) FROM (
+                SELECT unit_id FROM leases
+                WHERE status = 'ACTIVE' AND unit_id IS NOT NULL
+                GROUP BY unit_id HAVING count(*) > 1
+              ) AS overlapping_units
+      changes:
+        - sql:
+            comment: Partial unique index — only ACTIVE leases are constrained, so history is unaffected
+            sql: >-
+              CREATE UNIQUE INDEX IF NOT EXISTS ux_leases_one_active_per_unit
+              ON leases (unit_id) WHERE status = 'ACTIVE'
+      rollback:
+        - sql:
+            sql: DROP INDEX IF EXISTS ux_leases_one_active_per_unit

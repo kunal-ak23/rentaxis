@@ -28,6 +28,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 
 class LeaseServiceUnitOccupancyTest {
 
@@ -64,12 +66,27 @@ class LeaseServiceUnitOccupancyTest {
         when(leaseDocumentRepository.findByLeaseId(any())).thenReturn(List.of());
         when(leaseChargeRepository.findByLeaseId(any())).thenReturn(List.of());
         when(paymentScheduleRepository.findByLeaseId(any())).thenReturn(List.of());
+        // Activation and termination now take the unit row FOR UPDATE so the
+        // occupancy check and the status flip cannot interleave with a
+        // concurrent activation; hand the same instance back.
+        when(unitRepository.findByIdForUpdate(any()))
+                .thenAnswer(inv -> Optional.empty());
+        when(unitRepository.save(any(Unit.class))).thenAnswer(inv -> inv.getArgument(0));
+        // No other lease holds any unit unless a test says so.
+        when(leaseRepository.findByUnitIdAndStatus(any(), any())).thenReturn(List.of());
+    }
+
+    /** Makes findByIdForUpdate resolve to this lease's unit. */
+    private void lockableUnit(Lease lease) {
+        when(unitRepository.findByIdForUpdate(lease.getUnit().getId()))
+                .thenReturn(Optional.of(lease.getUnit()));
     }
 
     @Test
     void activateLease_updatesUnitRevenueAndTenantName() {
         Lease lease = lease(LeaseStatus.DRAFT);
         when(leaseRepository.findById(lease.getId())).thenReturn(Optional.of(lease));
+        lockableUnit(lease);
 
         service.activateLease(lease.getId());
 
@@ -85,6 +102,7 @@ class LeaseServiceUnitOccupancyTest {
         lease.getRenter().setUserId(userId);
         when(leaseRepository.findById(lease.getId())).thenReturn(Optional.of(lease));
         when(renterRepository.findByUserId(userId)).thenReturn(Optional.of(lease.getRenter()));
+        lockableUnit(lease);
 
         service.acceptLease(lease.getId(), userId);
 
@@ -100,6 +118,7 @@ class LeaseServiceUnitOccupancyTest {
         lease.getUnit().setActualRent(new BigDecimal("72000"));
         lease.getUnit().setCurrentTenantName("Test Renter");
         when(leaseRepository.findById(lease.getId())).thenReturn(Optional.of(lease));
+        lockableUnit(lease);
 
         service.terminateLease(lease.getId(), "Move out complete");
 
@@ -132,5 +151,81 @@ class LeaseServiceUnitOccupancyTest {
         lease.setEndDate(LocalDate.of(2026, 12, 31));
         lease.setRentAmount(new BigDecimal("72000"));
         return lease;
+    }
+
+    // ---- one active lease per unit (#197) ----------------------------------
+
+    /** A different lease already ACTIVE on the same unit. */
+    private Lease otherActiveLeaseOn(Lease lease) {
+        Lease other = new Lease();
+        other.setId(UUID.randomUUID());
+        other.setStatus(LeaseStatus.ACTIVE);
+        other.setUnit(lease.getUnit());
+        return other;
+    }
+
+    @Test
+    void activateLease_refusesWhenAnotherLeaseAlreadyHoldsTheUnit() {
+        Lease lease = lease(LeaseStatus.DRAFT);
+        when(leaseRepository.findById(lease.getId())).thenReturn(Optional.of(lease));
+        lockableUnit(lease);
+        when(leaseRepository.findByUnitIdAndStatus(lease.getUnit().getId(), LeaseStatus.ACTIVE))
+                .thenReturn(List.of(otherActiveLeaseOn(lease)));
+
+        // Before the fix both leases activated and both renters were invoiced
+        // for the same unit.
+        assertThatThrownBy(() -> service.activateLease(lease.getId()))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("already has an active lease");
+    }
+
+    @Test
+    void renterAcceptance_refusesWhenAnotherLeaseAlreadyHoldsTheUnit() {
+        Lease lease = lease(LeaseStatus.PENDING_SIGNATURE);
+        UUID userId = UUID.randomUUID();
+        lease.getRenter().setUserId(userId);
+        when(leaseRepository.findById(lease.getId())).thenReturn(Optional.of(lease));
+        when(renterRepository.findByUserId(userId)).thenReturn(Optional.of(lease.getRenter()));
+        lockableUnit(lease);
+        when(leaseRepository.findByUnitIdAndStatus(lease.getUnit().getId(), LeaseStatus.ACTIVE))
+                .thenReturn(List.of(otherActiveLeaseOn(lease)));
+
+        // The renter self-service path repeated the same unguarded activation.
+        assertThatThrownBy(() -> service.acceptLease(lease.getId(), userId))
+                .isInstanceOf(BusinessRuleViolationException.class);
+    }
+
+    @Test
+    void activateLease_isNotBlockedByItsOwnAlreadyActiveRow() {
+        Lease lease = lease(LeaseStatus.DRAFT);
+        when(leaseRepository.findById(lease.getId())).thenReturn(Optional.of(lease));
+        lockableUnit(lease);
+        // The lease being activated must not count as "another" holder.
+        when(leaseRepository.findByUnitIdAndStatus(lease.getUnit().getId(), LeaseStatus.ACTIVE))
+                .thenReturn(List.of(lease));
+
+        service.activateLease(lease.getId());
+
+        assertThat(lease.getUnit().getStatus()).isEqualTo(UnitStatus.OCCUPIED);
+    }
+
+    @Test
+    void termination_leavesTheUnitOccupiedWhenAnotherLeaseIsStillActive() {
+        Lease lease = lease(LeaseStatus.ACTIVE);
+        lease.getUnit().setStatus(UnitStatus.OCCUPIED);
+        lease.getUnit().setActualRent(new BigDecimal("72000"));
+        lease.getUnit().setCurrentTenantName("Sitting Renter");
+        when(leaseRepository.findById(lease.getId())).thenReturn(Optional.of(lease));
+        lockableUnit(lease);
+        when(leaseRepository.findByUnitIdAndStatus(lease.getUnit().getId(), LeaseStatus.ACTIVE))
+                .thenReturn(List.of(lease, otherActiveLeaseOn(lease)));
+
+        service.terminateLease(lease.getId(), "Move out complete");
+
+        // Terminating the older of two overlapping leases used to wipe the
+        // occupancy of the one still running, freeing a unit someone lives in.
+        assertThat(lease.getUnit().getStatus()).isEqualTo(UnitStatus.OCCUPIED);
+        assertThat(lease.getUnit().getCurrentTenantName()).isEqualTo("Sitting Renter");
+        assertThat(lease.getUnit().getActualRent()).isEqualByComparingTo("72000");
     }
 }
