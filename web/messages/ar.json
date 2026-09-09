@@ -1353,5 +1353,14 @@
     "leaseFallback": "عقد إيجار",
     "cheque": "شيك {number}",
     "installment": "قسط {number}"
+  },
+  "ErrorBoundary": {
+    "title": "حدث خطأ ما",
+    "description": "تعذر تحميل هذه الصفحة. تم تسجيل المشكلة.",
+    "retry": "حاول مرة أخرى",
+    "backToDashboard": "العودة إلى لوحة التحكم",
+    "notFoundTitle": "الصفحة غير موجودة",
+    "notFoundDescription": "الصفحة التي تبحث عنها غير موجودة أو تم نقلها.",
+    "goHome": "الذهاب إلى لوحة التحكم"
   }
 }
