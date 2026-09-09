@@ -91,6 +91,20 @@ public class FinancialTransaction extends BaseTenantEntity {
     private List<FinancialTransaction> splitChildren;
 
     /**
+     * The schema has carried created_at/updated_at since 06-chart-of-accounts,
+     * but the entity never mapped them, so Hibernate never wrote either and
+     * updated_at stayed frozen at the row's insert default. That left an edited
+     * ledger row indistinguishable from an original posting. Mapped here so the
+     * books carry at least a timestamp trail; see also the id guard in
+     * FinancialTransactionService.createTransaction.
+     */
+    @Column(name = "created_at")
+    private java.time.Instant createdAt;
+
+    @Column(name = "updated_at")
+    private java.time.Instant updatedAt;
+
+    /**
      * Auto-populate denormalized fields from the linked Account entity,
      * and auto-resolve property from unit if not explicitly set.
      */
@@ -104,5 +118,10 @@ public class FinancialTransaction extends BaseTenantEntity {
         if (unit != null && property == null) {
             this.property = unit.getProperty();
         }
+        java.time.Instant now = java.time.Instant.now();
+        if (this.createdAt == null) {
+            this.createdAt = now;
+        }
+        this.updatedAt = now;
     }
 }
