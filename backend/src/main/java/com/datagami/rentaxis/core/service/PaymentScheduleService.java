@@ -510,11 +510,7 @@ public class PaymentScheduleService {
 
             // Overdue: PENDING/COLLECTED past due, or already flagged OVERDUE
             // by the penalty batch job — same definition as findOverdueFiltered.
-            if ((ps.getStatus() == PaymentStatus.PENDING
-                    || ps.getStatus() == PaymentStatus.COLLECTED
-                    || ps.getStatus() == PaymentStatus.OVERDUE)
-                    && ps.getDueDate() != null
-                    && ps.getDueDate().isBefore(today)) {
+            if (isUnpaidPastDue(ps, today)) {
                 overdueCount++;
                 overdueAmount = overdueAmount.add(ps.getAmount());
             }
@@ -1024,6 +1020,18 @@ public class PaymentScheduleService {
         newPayment.setProperty(oldPayment.getProperty());
         newPayment.setAmount(oldPayment.getAmount());
         newPayment.setInstallmentNumber(oldPayment.getInstallmentNumber());
+        // Carry the classification of the row being replaced. Dropping these
+        // silently turned a replaced commercial-lease cheque into a VAT-free
+        // ordinary installment (clearPayment only stamps VAT when vatAmount is
+        // positive), and dropping the deposit/charge flags broke the
+        // idempotency checks in LeaseService.createOneTimeChargeAndDepositRows,
+        // which then billed the renter a second time for a deposit already
+        // collected. Anything that classifies the money belongs here.
+        newPayment.setVatAmount(oldPayment.getVatAmount());
+        newPayment.setPurposeLabel(oldPayment.getPurposeLabel());
+        newPayment.setSecurityDeposit(oldPayment.isSecurityDeposit());
+        newPayment.setCharge(oldPayment.isCharge());
+        newPayment.setBookingDeposit(oldPayment.isBookingDeposit());
         newPayment.setStatus(PaymentStatus.PENDING);
         newPayment.setDueDate(LocalDate.now().plusDays(30));
         newPayment.setChequeNumber(dto.getChequeNumber());
@@ -1045,6 +1053,23 @@ public class PaymentScheduleService {
         return mapToDTO(savedNewPayment);
     }
 
+    /**
+     * The one definition of "this installment is still owed and its due date has
+     * passed". PENDING and COLLECTED are unpaid-but-not-yet-flagged; OVERDUE is
+     * what {@code PenaltyProcessingService.processLeaseOverduePayments} rewrites
+     * a past-due PENDING row to at 02:00 every night. Omitting OVERDUE makes a
+     * report show only the arrears that appeared in the last 24 hours, which is
+     * how the aging report and the per-lease badges silently emptied as real
+     * arrears grew. Keep every arrears view on this predicate.
+     */
+    private static boolean isUnpaidPastDue(PaymentSchedule ps, LocalDate today) {
+        PaymentStatus status = ps.getStatus();
+        return (status == PaymentStatus.PENDING
+                || status == PaymentStatus.COLLECTED
+                || status == PaymentStatus.OVERDUE)
+                && ps.getDueDate() != null
+                && ps.getDueDate().isBefore(today);
+    }
 
     @Transactional(readOnly = true)
     public List<LeasePaymentStatsDTO> getPaymentStatsByLeaseIds(List<UUID> leaseIds) {
@@ -1071,12 +1096,14 @@ public class PaymentScheduleService {
                 if (ps.getStatus() == PaymentStatus.CLEARED) {
                     clearedCount++;
                     clearedAmount = clearedAmount.add(ps.getAmount());
-                } else if (ps.getStatus() == PaymentStatus.PENDING) {
+                } else if (ps.getStatus() == PaymentStatus.PENDING
+                        || ps.getStatus() == PaymentStatus.OVERDUE) {
+                    // OVERDUE rows are still pending collection — the nightly
+                    // penalty job only relabels them, it does not settle them.
                     pendingCount++;
                 }
 
-                if ((ps.getStatus() == PaymentStatus.PENDING || ps.getStatus() == PaymentStatus.COLLECTED)
-                        && ps.getDueDate().isBefore(today)) {
+                if (isUnpaidPastDue(ps, today)) {
                     overdueCount++;
                     overdueAmount = overdueAmount.add(ps.getAmount());
                 }
@@ -1106,8 +1133,7 @@ public class PaymentScheduleService {
 
         LocalDate today = LocalDate.now();
         List<PaymentSchedule> overdue = schedules.stream()
-                .filter(ps -> ps.getStatus() == PaymentStatus.PENDING
-                        && ps.getDueDate().isBefore(today))
+                .filter(ps -> isUnpaidPastDue(ps, today))
                 .toList();
 
         // Define buckets

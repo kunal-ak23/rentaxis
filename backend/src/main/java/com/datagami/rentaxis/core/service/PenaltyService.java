@@ -28,17 +28,20 @@ public class PenaltyService {
     private static final Logger log = LoggerFactory.getLogger(PenaltyService.class);
 
     private final PaymentPenaltyRepository paymentPenaltyRepository;
+    private final PenaltyPaymentService penaltyPaymentService;
     private final LeaseRepository leaseRepository;
     private final PenaltyProcessingService penaltyProcessingService;
     private final NotificationService notificationService;
     private final Clock clock;
 
     public PenaltyService(PaymentPenaltyRepository paymentPenaltyRepository,
+                          PenaltyPaymentService penaltyPaymentService,
                           LeaseRepository leaseRepository,
                           PenaltyProcessingService penaltyProcessingService,
                           NotificationService notificationService,
                           Clock clock) {
         this.paymentPenaltyRepository = paymentPenaltyRepository;
+        this.penaltyPaymentService = penaltyPaymentService;
         this.leaseRepository = leaseRepository;
         this.penaltyProcessingService = penaltyProcessingService;
         this.notificationService = notificationService;
@@ -132,11 +135,25 @@ public class PenaltyService {
         return paymentPenaltyRepository.findByLeaseIdOrderByCreatedAtAsc(leaseId);
     }
 
+    /**
+     * Total still owed across a lease's penalties — the number settlement
+     * deducts from the deposit refund.
+     *
+     * <p>Delegates to {@link PenaltyPaymentService#outstanding(PaymentPenalty)}
+     * so there is exactly one definition of "amount still owed on a penalty".
+     * Summing {@code penaltyAmount} over {@code findByLeaseIdAndWaivedFalse}
+     * (the previous implementation) was wrong three ways: a penalty settled in
+     * cash has {@code clearedAt} set but {@code waived} false, so it was still
+     * deducted — charging the renter twice in the one flow where money actually
+     * leaves the landlord; partial receipts were ignored, so partly-paid
+     * penalties were deducted at face value; and the per-day accrual in
+     * {@code currentTotal} was dropped, undercounting long-running fines.
+     */
     @Transactional(readOnly = true)
     public BigDecimal getTotalUnwaivedPenalties(UUID leaseId) {
         List<PaymentPenalty> penalties = paymentPenaltyRepository.findByLeaseIdAndWaivedFalse(leaseId);
         return penalties.stream()
-                .map(PaymentPenalty::getPenaltyAmount)
+                .map(penaltyPaymentService::outstanding)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
