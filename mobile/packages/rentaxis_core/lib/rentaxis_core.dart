@@ -83,3 +83,4 @@ export 'widgets/distance_chip.dart';
 export 'widgets/price_label.dart';
 export 'widgets/amenity_chip.dart';
 export 'widgets/gold_button.dart';
+export 'widgets/account_legal.dart';

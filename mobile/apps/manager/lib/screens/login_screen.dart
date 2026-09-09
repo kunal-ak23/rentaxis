@@ -80,7 +80,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       final apple = await requestAppleSignIn();
       final success = await ref
           .read(authProvider.notifier)
-          .loginWithApple(apple.identityToken, apple.rawNonce);
+          .loginWithApple(
+            apple.identityToken,
+            apple.rawNonce,
+            authorizationCode: apple.authorizationCode,
+          );
       if (!mounted) return;
       if (success) context.go('/');
     } on SignInWithAppleAuthorizationException catch (error) {

@@ -127,3 +127,24 @@ after the encrypted secret was verified.
 
 Never paste a real Firebase ID token, SMS code, service-account JSON or decoded
 credential into tickets or chat.
+
+## 7. App Review test phone number
+
+Apple's reviewers cannot receive an SMS on a UAE number, so Miftah Security is
+unreviewable without a Firebase **test phone number** — this is what the
+Guideline 2.1 "Information Needed" rejection is really asking for.
+
+1. Firebase console → `rent-axis-493307` → **Authentication → Sign-in method →
+   Phone → Phone numbers for testing** → add a fictional number in an allowed
+   region (e.g. `+971500000001`) with a six-digit code (e.g. `123456`). Firebase
+   sends no SMS and skips app verification for test numbers, so this works in
+   the App Store build with no defines.
+2. Create one **active** `SECURITY_GUARD` with exactly that E.164 phone on the
+   Al Ashram Demo Account tenant and assign it to the demo property (web:
+   Security guards → Add; or `POST /api/v1/gatepass/guards` as the demo admin).
+3. Put the number and code in App Store Connect → App Review Information →
+   Notes. Keep them configured permanently — every update is re-reviewed.
+4. For the account-deletion demo, add a **second** test number and guard that
+   can be deleted on camera without breaking the reviewer's own login.
+
+Test numbers are limited to ten per project and must never be real numbers.

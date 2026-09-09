@@ -167,7 +167,7 @@ class AuthControllerTokenTest {
         UUID tenant = UUID.randomUUID();
         User renter = user(renterId, tenant, UserRole.RENTER);
 
-        when(appleAuthService.authenticate("apple-id-token", "raw-nonce", null))
+        when(appleAuthService.authenticate("apple-id-token", "raw-nonce", null, null))
                 .thenReturn(renter);
         when(userService.getUserTenantIds(renterId)).thenReturn(List.of(tenant));
 

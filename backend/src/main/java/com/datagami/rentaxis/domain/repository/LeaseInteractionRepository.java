@@ -11,6 +11,8 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
+import org.springframework.data.jpa.repository.Modifying;
+
 public interface LeaseInteractionRepository extends JpaRepository<LeaseInteraction, UUID> {
 
     @Query("""
@@ -30,4 +32,8 @@ public interface LeaseInteractionRepository extends JpaRepository<LeaseInteracti
         ORDER BY i.followUpDate ASC
     """)
     List<LeaseInteraction> findPendingFollowUps(@Param("tenantId") UUID tenantId, @Param("date") LocalDate date);
+
+    @Modifying
+    @Query("UPDATE LeaseInteraction i SET i.createdBy = NULL WHERE i.createdBy = :userId")
+    void detachCreatedBy(@Param("userId") UUID userId);
 }

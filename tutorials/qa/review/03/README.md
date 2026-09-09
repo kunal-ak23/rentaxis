@@ -8,16 +8,20 @@
 
 ## Review result
 
-Capture and audio rendering completed, but the tutorial is not approved for
-publication yet. The branded opening card now covers the production startup
-delay, and representative frames at 3s, 80s, and 160s show loaded screens with
-the expected role callouts. The super-admin organisation switcher still
-visibly contains older synthetic/test tenants.
+Capture and audio rendering completed and the tutorial is approved for
+publication. The branded opening card covers the production startup delay,
+representative frames at 3s, 80s, and 160s show loaded screens with the expected
+role callouts, and the organization search keeps the switcher focused on the
+fresh recording tenant.
 
 The deployed tenant-label fix is confirmed in the property-manager and renter
 scenes: the footer shows the active tutorial tenant name (truncated to fit) with
 the `Organization` subtitle. The earlier generic-footer observation is retained
 in `tutorials/ui-bug-log.md` as the pre-deployment reproduction.
+
+Review decision: **Approved** after the post-deployment recapture. The filtered
+super-admin switcher contains only `Global System View` and the fresh tutorial
+tenant; legacy synthetic entries are not shown in the final recording.
 
 The candidate MP4 and its raw scene clips remain available for review. Do not
 delete any production tenant based on this note without explicit confirmation of

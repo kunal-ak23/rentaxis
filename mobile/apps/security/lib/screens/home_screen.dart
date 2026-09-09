@@ -45,12 +45,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
   }
 
+  /// After the backend deleted the account and core cleared the session, the
+  /// Firebase phone session is the one thing left to end.
+  Future<void> _afterAccountDeleted() =>
+      ref.read(phoneAuthServiceProvider).signOut();
+
   void _openSettings() {
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (_) => _SettingsSheet(onSignOut: _signOut),
+      builder: (_) => _SettingsSheet(
+        onSignOut: _signOut,
+        onAccountDeleted: _afterAccountDeleted,
+      ),
     );
   }
 
@@ -447,9 +455,10 @@ class _GateNavBar extends StatelessWidget {
 /// Appearance + language + sign-out, in a sheet reachable from the header's
 /// settings icon — same pattern as the manager app's More screen.
 class _SettingsSheet extends ConsumerWidget {
-  const _SettingsSheet({required this.onSignOut});
+  const _SettingsSheet({required this.onSignOut, required this.onAccountDeleted});
 
   final Future<void> Function() onSignOut;
+  final Future<void> Function() onAccountDeleted;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -503,7 +512,11 @@ class _SettingsSheet extends ConsumerWidget {
               _AppearanceRow(l: l),
               const SizedBox(height: 12),
               _LanguageRow(l: l),
-              const SizedBox(height: 18),
+              const SizedBox(height: 14),
+              // Privacy / Terms / Data deletion — the public pages every app
+              // must link to.
+              const LegalLinksList(dense: true),
+              const SizedBox(height: 14),
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
@@ -535,6 +548,9 @@ class _SettingsSheet extends ConsumerWidget {
                   ),
                 ),
               ),
+              const SizedBox(height: 6),
+              // App Store Review Guideline 5.1.1(v): deletion starts in-app.
+              DeleteAccountButton(onDeleted: onAccountDeleted),
             ],
           ),
         ),

@@ -101,3 +101,11 @@ final appGateProvider =
     return AppGateDecision.ok;
   }
 });
+
+/// "1.3.0 (6)" for the running build. The About rows and footers read this so
+/// the version on screen is the one App Review sees — not a string literal
+/// that drifts from pubspec (Resident showed 1.1.0 while shipping 1.3.0).
+final installedVersionLabelProvider = FutureProvider<String>((ref) async {
+  final info = await PackageInfo.fromPlatform();
+  return '${info.version} (${info.buildNumber})';
+});

@@ -10,6 +10,7 @@ import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.data.jpa.repository.Modifying;
 
 @Repository
 public interface PromoAdEventRepository extends JpaRepository<PromoAdEvent, UUID> {
@@ -76,4 +77,8 @@ public interface PromoAdEventRepository extends JpaRepository<PromoAdEvent, UUID
                                          @Param("adIds") Collection<UUID> adIds,
                                          @Param("renterUserId") UUID renterUserId,
                                          @Param("day") LocalDate day);
+
+    @Modifying
+    @Query("DELETE FROM PromoAdEvent e WHERE e.renterUserId = :userId")
+    void deleteByRenterUserId(@Param("userId") UUID userId);
 }

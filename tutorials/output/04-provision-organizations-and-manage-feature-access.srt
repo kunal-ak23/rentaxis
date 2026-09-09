@@ -1,0 +1,203 @@
+1
+00:00:00,000 --> 00:00:04,790
+In this tutorial, a super administrator
+creates a synthetic organization
+
+2
+00:00:04,790 --> 00:00:09,100
+and enables the services required for the
+tutorial tenant.
+
+3
+00:00:09,100 --> 00:00:12,932
+Sign in as Super Admin and open
+Organizations.
+
+4
+00:00:12,932 --> 00:00:17,242
+Before creating anything, search for the
+planned Tutorial Demo
+
+5
+00:00:17,242 --> 00:00:21,074
+name so you do not create a duplicate.
+
+6
+00:00:21,074 --> 00:00:25,863
+Select Create Organization and enter the
+approved synthetic legal name.
+
+7
+00:00:25,863 --> 00:00:29,216
+Complete the address, phone number, email,
+and
+
+8
+00:00:29,216 --> 00:00:32,569
+tax registration fields with demo data
+only.
+
+9
+00:00:32,569 --> 00:00:37,837
+These values can appear on documents and
+communications, so production customer
+
+10
+00:00:37,837 --> 00:00:42,627
+details must be verified before a real
+tenant is saved.
+
+11
+00:00:42,627 --> 00:00:46,937
+Review the selected status and submit the
+form once.
+
+12
+00:00:46,937 --> 00:00:50,290
+Wait for the success confirmation and open
+
+13
+00:00:50,290 --> 00:00:53,164
+the new organization from the list.
+
+14
+00:00:53,164 --> 00:00:58,911
+Confirm that its identifier, legal
+details, and active state match the form.
+
+15
+00:00:58,911 --> 00:01:04,180
+Next, use the organization switcher to
+enter the new tenant context.
+
+16
+00:01:04,180 --> 00:01:08,490
+Verify the organization name in the header
+before continuing.
+
+17
+00:01:08,490 --> 00:01:13,759
+Return to the Super Admin organization
+settings and open feature access.
+
+18
+00:01:13,759 --> 00:01:16,154
+RentAxis keeps optional capabilities
+disabled
+
+19
+00:01:16,154 --> 00:01:18,548
+until they are deliberately assigned.
+
+20
+00:01:18,548 --> 00:01:21,422
+Listings enables publication and
+marketplace discovery.
+
+21
+00:01:21,422 --> 00:01:25,254
+Meetings enables scheduling between
+property teams and renters.
+
+22
+00:01:25,254 --> 00:01:28,127
+Email Notifications enables supported
+outbound delivery.
+
+23
+00:01:28,127 --> 00:01:31,959
+Lease Renewals enables renewal
+opportunities, reminders, and renter
+
+24
+00:01:31,959 --> 00:01:32,438
+intent.
+
+25
+00:01:32,438 --> 00:01:36,749
+Gate Pass enables resident visitor
+credentials and security operations.
+
+26
+00:01:36,749 --> 00:01:40,101
+Turn on only the five features required
+
+27
+00:01:40,101 --> 00:01:42,975
+for this isolated Tutorial Demo tenant.
+
+28
+00:01:42,975 --> 00:01:47,765
+Save, wait for the confirmation, and
+refresh the feature view.
+
+29
+00:01:47,765 --> 00:01:52,075
+Each selected toggle should remain enabled
+after the reload.
+
+30
+00:01:52,075 --> 00:01:56,386
+Switch into the organization again and
+verify that the
+
+31
+00:01:56,386 --> 00:02:00,217
+corresponding navigation appears for an
+authorized tenant administrator.
+
+32
+00:02:00,217 --> 00:02:04,049
+If a menu is still absent, check both
+
+33
+00:02:04,049 --> 00:02:07,881
+the feature toggle and the signed-in
+user’s role.
+
+34
+00:02:07,881 --> 00:02:12,191
+Do not enable a capability on a real
+customer
+
+35
+00:02:12,191 --> 00:02:16,023
+tenant simply to make a tutorial screen
+visible.
+
+36
+00:02:16,023 --> 00:02:18,897
+Feature access should match the contracted
+
+37
+00:02:18,897 --> 00:02:21,770
+plan and the customer’s operational
+readiness.
+
+38
+00:02:21,770 --> 00:02:27,039
+To finish, return to the organization
+record and show where legal
+
+39
+00:02:27,039 --> 00:02:32,307
+details can be corrected and where an
+organization can be deactivated.
+
+40
+00:02:32,307 --> 00:02:35,181
+Do not deactivate the tutorial tenant
+
+41
+00:02:35,181 --> 00:02:38,055
+while dependent recording fixtures still
+exist.
+
+42
+00:02:38,055 --> 00:02:41,407
+The organization is now ready for users,
+
+43
+00:02:41,407 --> 00:02:44,760
+portfolio data, and the remaining tutorial
+workflows.

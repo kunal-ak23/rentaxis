@@ -26,7 +26,8 @@ public class GatePassScan extends BaseTenantEntity {
     @Column(nullable = false, length = 8)
     private ScanDirection direction;
 
-    @Column(name = "scanned_by_user_id", nullable = false)
+    // Nullable since 79-account-deletion-detach — see GatePass.createdByUserId.
+    @Column(name = "scanned_by_user_id")
     private UUID scannedByUserId;
 
     @Column(name = "scanned_at", nullable = false)
