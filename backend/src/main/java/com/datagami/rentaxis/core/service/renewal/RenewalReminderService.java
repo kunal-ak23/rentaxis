@@ -7,6 +7,7 @@ import com.datagami.rentaxis.core.service.NotificationService;
 import com.datagami.rentaxis.domain.entity.LeaseReminder;
 import com.datagami.rentaxis.domain.entity.RenewalOpportunity;
 import com.datagami.rentaxis.domain.entity.enums.RenewalIntent;
+import com.datagami.rentaxis.domain.entity.enums.TenantFeature;
 import com.datagami.rentaxis.domain.entity.enums.ReminderChannel;
 import com.datagami.rentaxis.domain.entity.enums.ReminderStatus;
 import com.datagami.rentaxis.domain.repository.LeaseReminderRepository;
@@ -38,6 +39,7 @@ public class RenewalReminderService {
     private final ApplicationEventPublisher events;
     private final NotificationService notificationService;
     private final RenewalTokenService tokenService;
+    private final com.datagami.rentaxis.core.service.TenantFeatureService tenantFeatureService;
 
     @Value("${app.renewal.portal-base-url:https://app.rentaxis.ae}")
     private String portalBaseUrl;
@@ -98,6 +100,31 @@ public class RenewalReminderService {
             return;
         }
         if (daysRemaining > upperInclusive) {
+            return;
+        }
+
+        // Do not claim a reminder was sent that the dispatcher is going to drop.
+        //
+        // publishEvent hands off to EmailDispatcher, which is an AFTER_COMMIT
+        // listener in a REQUIRES_NEW transaction — it cannot report anything
+        // back, so the SENT below is written unconditionally. Its first act is
+        // to return early when the tenant's EMAIL_NOTIFICATIONS flag is off, and
+        // that flag defaults to false independently of LEASE_RENEWALS. A tenant
+        // with renewals enabled and email not yet enabled — the default state
+        // after turning renewals on — therefore had all three reminders
+        // (90/60/30) recorded as SENT with a timestamp and never delivered.
+        //
+        // Because the row left PENDING, the daily scheduler never retried it and
+        // the reminder was permanently lost, while the renter portal and the PM
+        // both displayed "SENT" with a date. Leaving the row PENDING here means
+        // the next daily run picks it up, so enabling email later delivers the
+        // reminders that are still inside their window instead of stranding them.
+        if (ch == ReminderChannel.EMAIL
+                && !tenantFeatureService.isEnabled(o.getTenantId(), TenantFeature.EMAIL_NOTIFICATIONS)) {
+            r.setLastError("Email notifications are disabled for this organisation; reminder not sent.");
+            reminderRepository.save(r);
+            log.info("renewal.reminder.deferred reason=email_feature_disabled tenant_id={} opp={} slot={}",
+                    o.getTenantId(), o.getId(), slot);
             return;
         }
 

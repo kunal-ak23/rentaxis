@@ -28,6 +28,7 @@ class RenewalReminderServiceTest {
     static PostgreSQLContainer<?> pg = new PostgreSQLContainer<>("postgres:16");
 
     @Autowired RenewalReminderService service;
+    @Autowired com.datagami.rentaxis.core.service.TenantFeatureService tenantFeatureService;
     @Autowired RenewalOpportunityRepository oppRepo;
     @Autowired LeaseReminderRepository reminderRepo;
     @Autowired NotificationRepository notificationRepo;
@@ -65,11 +66,37 @@ class RenewalReminderServiceTest {
 
     @Test
     void fires_90_day_reminder_when_in_window() {
+        // EMAIL_NOTIFICATIONS defaults off, and EmailDispatcher drops every
+        // event while it is. Only the in-app reminder is genuinely delivered, so
+        // only it may be marked SENT — this assertion previously expected 2 and
+        // was encoding the bug: an email recorded as sent that never left.
         RenewalOpportunity o = openOppForLeaseDaysOut(85);
         service.fireRemindersForOpportunity(o.getId(), LocalDate.of(2026, 6, 1));
 
         List<LeaseReminder> reminders = reminderRepo.findByOpportunityId(o.getId());
         long sent90 = reminders.stream().filter(r -> r.getSlot() == 90 && r.getStatus() == ReminderStatus.SENT).count();
+        assertThat(sent90).isEqualTo(1);
+
+        LeaseReminder email90 = reminders.stream()
+                .filter(r -> r.getSlot() == 90 && r.getChannel() == ReminderChannel.EMAIL)
+                .findFirst().orElseThrow();
+        // Left PENDING so the daily run retries it: enabling email later
+        // delivers reminders still inside their window rather than stranding them.
+        assertThat(email90.getStatus()).isEqualTo(ReminderStatus.PENDING);
+        assertThat(email90.getLastError()).contains("disabled");
+    }
+
+    @Test
+    void emailReminderIsSentOnceTheTenantHasEmailEnabled() {
+        tenantFeatureService.setEnabled(tenantId,
+                com.datagami.rentaxis.domain.entity.enums.TenantFeature.EMAIL_NOTIFICATIONS, true);
+
+        RenewalOpportunity o = openOppForLeaseDaysOut(85);
+        service.fireRemindersForOpportunity(o.getId(), LocalDate.of(2026, 6, 1));
+
+        List<LeaseReminder> reminders = reminderRepo.findByOpportunityId(o.getId());
+        long sent90 = reminders.stream().filter(r -> r.getSlot() == 90 && r.getStatus() == ReminderStatus.SENT).count();
+        // Both channels now, because the dispatcher will actually deliver.
         assertThat(sent90).isEqualTo(2);
     }
 
@@ -81,8 +108,9 @@ class RenewalReminderServiceTest {
         List<LeaseReminder> reminders = reminderRepo.findByOpportunityId(o.getId());
         long skipped90 = reminders.stream().filter(r -> r.getSlot() == 90 && r.getStatus() == ReminderStatus.SKIPPED).count();
         assertThat(skipped90).isEqualTo(2);
+        // Only the in-app channel is delivered while EMAIL_NOTIFICATIONS is off.
         long sent60 = reminders.stream().filter(r -> r.getSlot() == 60 && r.getStatus() == ReminderStatus.SENT).count();
-        assertThat(sent60).isEqualTo(2);
+        assertThat(sent60).isEqualTo(1);
     }
 
     @Test
@@ -138,7 +166,8 @@ class RenewalReminderServiceTest {
         oppRepo.save(o);
         service.fireRemindersForOpportunity(o.getId(), LocalDate.of(2026, 7, 1));
 
+        // In-app only: EMAIL_NOTIFICATIONS is off for this tenant.
         long sent60 = reminderRepo.findByOpportunityId(o.getId()).stream().filter(r -> r.getSlot() == 60 && r.getStatus() == ReminderStatus.SENT).count();
-        assertThat(sent60).isEqualTo(2);
+        assertThat(sent60).isEqualTo(1);
     }
 }
