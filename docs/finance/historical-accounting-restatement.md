@@ -68,8 +68,10 @@ decisions.
 
 ## 2. VAT return reports VAT-inclusive gross as taxable sales (#188)
 
-**Not yet fixed at the time of writing.** Recorded here so the two are assessed
-together, since both affect figures that may already have been filed.
+**Fix written and reviewed but deliberately NOT merged** — see the open PR. It
+changes a filing document, so it waits on an explicit decision rather than
+shipping automatically with the rest. Recorded here so both mis-statements are
+assessed together.
 
 `getVatReturn` sets `taxableAmount` to `credit - debit`. For rent, VAT is
 *inclusive*, so the credit leg is the gross — meaning taxable sales are reported
@@ -82,8 +84,17 @@ figures reports a taxable base that does not reconcile to the output VAT beside
 it.
 
 The stored `net_amount` on the credit leg already holds the correct figure for
-rows posted after VAT support landed, which is what the fix should use. Rows
-predating it have no `net_amount` and would need recomputation from `vat_amount`.
+rows posted after VAT support landed, and the fix uses it wherever present. Rows
+predating it have no `net_amount`; for those the fix derives the base by
+subtracting the recorded `vat_amount` from the signed amount, which reproduces
+the inclusive convention those rows were written under. A row with no
+`net_amount` and no VAT is left untouched, and a row where subtracting VAT would
+go negative (an additive split that already stored the net) is left untouched
+too.
+
+**Effect on the numbers:** taxable sales fall by the VAT already included in
+them; output VAT is unchanged. After the fix the return reconciles — output VAT
+is 5% of the reported base — which it did not before.
 
 ### Before filing again
 
