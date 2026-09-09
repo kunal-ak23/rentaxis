@@ -54,10 +54,13 @@ class AppleTokenRevocationServiceTest {
         return Base64.getEncoder().encodeToString(pem.getBytes());
     }
 
+    /** The instant every fixed-clock assertion in this class is anchored to. */
+    private static final Instant SIGNING_INSTANT = Instant.parse("2026-09-05T10:00:00Z");
+
     private static AppleTokenRevocationService configured(KeyPair kp, RecordingPoster poster) {
         return new AppleTokenRevocationService("TEAM123456", "KEYID12345",
                 AppleTokenRevocationService.parsePrivateKey(p8Base64(kp)), poster, new ObjectMapper(),
-                Clock.fixed(Instant.parse("2026-09-05T10:00:00Z"), ZoneOffset.UTC));
+                Clock.fixed(SIGNING_INSTANT, ZoneOffset.UTC));
     }
 
     @Test
@@ -79,7 +82,15 @@ class AppleTokenRevocationServiceTest {
 
         String secret = service.clientSecret("com.rentaxis.manager");
 
-        Jws<Claims> jws = Jwts.parser().verifyWith(kp.getPublic()).build().parseSignedClaims(secret);
+        // Parse on the same fixed clock the service signed with. Jwts.parser()
+        // defaults to the system clock, so this assertion started failing the
+        // moment real time passed the token's 10:05 expiry — the test was green
+        // only in the days around when it was written.
+        Jws<Claims> jws = Jwts.parser()
+                .clock(() -> java.util.Date.from(SIGNING_INSTANT))
+                .verifyWith(kp.getPublic())
+                .build()
+                .parseSignedClaims(secret);
         assertThat(jws.getHeader().getKeyId()).isEqualTo("KEYID12345");
         assertThat(jws.getHeader().getAlgorithm()).isEqualTo("ES256");
         Claims c = jws.getPayload();
