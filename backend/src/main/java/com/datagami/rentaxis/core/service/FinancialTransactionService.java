@@ -440,6 +440,43 @@ public class FinancialTransactionService {
         return dto;
     }
 
+    /**
+     * The VAT-exclusive base a line should report as taxable sales or purchases.
+     *
+     * <p>Rent VAT in this system is <b>inclusive</b>: {@code clearPayment} posts
+     * the credit leg at the gross face value and records the VAT separately as
+     * {@code vatAmount}, with {@code netAmount = gross - vat}. Reporting
+     * credit-minus-debit as the taxable amount therefore reported the gross —
+     * a 5,250 installment showed as 5,250 taxable with 250 VAT instead of 5,000
+     * with 250, so the output VAT did not reconcile to the base beside it.
+     *
+     * <p>Manual split transactions use the opposite (additive) convention, where
+     * credit-minus-debit already is the net, so a single return mixed both bases
+     * and the discrepancy was hard to spot.
+     *
+     * <p>{@code netAmount} is the value stamped at posting time and is
+     * authoritative wherever it is present. Rows posted before VAT support
+     * landed have no {@code netAmount}; for those the base is derived by
+     * subtracting the recorded VAT from the signed amount, which reproduces the
+     * inclusive convention those rows were written under. A row whose
+     * {@code netAmount} is absent and whose VAT is zero is unchanged.
+     */
+    private static BigDecimal taxableBase(FinancialTransaction t, BigDecimal signedAmount) {
+        BigDecimal net = t.getNetAmount();
+        if (net != null && net.signum() > 0) {
+            return net;
+        }
+        BigDecimal vat = t.getVatAmount();
+        if (vat == null || vat.signum() == 0) {
+            return signedAmount;
+        }
+        BigDecimal derived = signedAmount.subtract(vat);
+        // Guard against a legacy additive row that already stored the net: if
+        // subtracting VAT would push the base negative, the amount was never
+        // gross to begin with.
+        return derived.signum() < 0 ? signedAmount : derived;
+    }
+
     @Transactional(readOnly = true)
     public VatReturnDTO getVatReturn(LocalDate startDate, LocalDate endDate) {
         List<FinancialTransaction> transactions;
@@ -465,12 +502,12 @@ public class FinancialTransactionService {
             line.setVatAmount(t.getVatAmount());
 
             if (t.getAccountType() == AccountType.INCOME) {
-                line.setTaxableAmount(t.getCredit().subtract(t.getDebit()));
+                line.setTaxableAmount(taxableBase(t, t.getCredit().subtract(t.getDebit())));
                 salesLines.add(line);
                 dto.setTotalOutputVat(dto.getTotalOutputVat().add(t.getVatAmount()));
                 dto.setTotalTaxableSales(dto.getTotalTaxableSales().add(line.getTaxableAmount()));
             } else if (t.getAccountType() == AccountType.EXPENSE) {
-                line.setTaxableAmount(t.getDebit().subtract(t.getCredit()));
+                line.setTaxableAmount(taxableBase(t, t.getDebit().subtract(t.getCredit())));
                 purchaseLines.add(line);
                 dto.setTotalInputVat(dto.getTotalInputVat().add(t.getVatAmount()));
                 dto.setTotalTaxablePurchases(dto.getTotalTaxablePurchases().add(line.getTaxableAmount()));
