@@ -22,6 +22,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.atMost;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -45,7 +46,7 @@ class PenaltyServiceChequeFailureAccrualTest {
 
     private void setToday(LocalDate today) {
         fixedClock = Clock.fixed(today.atStartOfDay(ZoneId.of("UTC")).toInstant(), ZoneId.of("UTC"));
-        service = new PenaltyService(paymentPenaltyRepository, leaseRepository, penaltyProcessingService, notificationService, fixedClock);
+        service = new PenaltyService(paymentPenaltyRepository, mock(PenaltyPaymentService.class), leaseRepository, penaltyProcessingService, notificationService, fixedClock);
     }
 
     @Test

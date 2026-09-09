@@ -16,6 +16,7 @@ import com.datagami.rentaxis.domain.entity.Property;
 import com.datagami.rentaxis.domain.entity.Staff;
 import com.datagami.rentaxis.domain.entity.Unit;
 import com.datagami.rentaxis.domain.entity.Vendor;
+import com.datagami.rentaxis.api.exception.BusinessRuleViolationException;
 import com.datagami.rentaxis.domain.entity.enums.AccountType;
 import com.datagami.rentaxis.domain.entity.enums.TransactionNature;
 import com.datagami.rentaxis.domain.repository.AccountMappingRepository;
@@ -203,6 +204,20 @@ public class FinancialTransactionService {
 
     @Transactional
     public FinancialTransaction createTransaction(FinancialTransaction txn) {
+        // The ledger is append-only by design: the controller exposes no PUT
+        // and no DELETE. But the create endpoint binds the entity directly, and
+        // repository.save() with a non-null id is a merge, not an insert — so
+        // POSTing a body carrying an existing id silently rewrote that row's
+        // date, amounts and account, including legs auto-posted when a cheque
+        // cleared or bounced. Corrections belong in a reversing entry, not an
+        // in-place edit, so refuse the id outright rather than ignoring it: a
+        // client echoing back a fetched transaction should get an error, not a
+        // silently corrupted ledger.
+        if (txn.getId() != null) {
+            throw new BusinessRuleViolationException(
+                    "A transaction id cannot be supplied when posting to the ledger. "
+                            + "Post a reversing entry to correct an existing transaction.");
+        }
         // Fetch full entities to avoid detached entity version errors
         if (txn.getUnit() != null && txn.getUnit().getId() != null) {
             Unit fullUnit = unitRepository.findById(txn.getUnit().getId())
