@@ -17,6 +17,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.jpa.repository.Modifying;
 
 @Repository
 public interface GatePassRepository extends JpaRepository<GatePass, UUID> {
@@ -109,4 +110,8 @@ public interface GatePassRepository extends JpaRepository<GatePass, UUID> {
     List<GatePass> findByTenantIdAndStatusOrderByCreatedAtDesc(UUID tenantId, GatePassStatus status);
 
     boolean existsByTenantIdAndNumericCodeAndStatusIn(UUID tenantId, String numericCode, Collection<GatePassStatus> statuses);
+
+    @Modifying
+    @Query("UPDATE GatePass g SET g.createdByUserId = NULL WHERE g.createdByUserId = :userId")
+    void detachCreatedBy(@Param("userId") UUID userId);
 }

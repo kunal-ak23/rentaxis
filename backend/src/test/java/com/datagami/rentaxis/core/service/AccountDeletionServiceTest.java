@@ -11,6 +11,11 @@ import com.datagami.rentaxis.domain.entity.enums.UserStatus;
 import com.datagami.rentaxis.domain.repository.DeviceTokenRepository;
 import com.datagami.rentaxis.domain.repository.GuardPropertyAssignmentRepository;
 import com.datagami.rentaxis.domain.repository.NotificationRepository;
+import com.datagami.rentaxis.domain.repository.BookingRequestRepository;
+import com.datagami.rentaxis.domain.repository.GatePassRepository;
+import com.datagami.rentaxis.domain.repository.GatePassScanRepository;
+import com.datagami.rentaxis.domain.repository.LeaseInteractionRepository;
+import com.datagami.rentaxis.domain.repository.PromoAdEventRepository;
 import com.datagami.rentaxis.domain.repository.RenterRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -41,6 +46,11 @@ class AccountDeletionServiceTest {
 
     private UserRepository userRepository;
     private RenterRepository renterRepository;
+    private PromoAdEventRepository promoAdEventRepository;
+    private BookingRequestRepository bookingRequestRepository;
+    private GatePassRepository gatePassRepository;
+    private GatePassScanRepository gatePassScanRepository;
+    private LeaseInteractionRepository leaseInteractionRepository;
     private DeviceTokenRepository deviceTokenRepository;
     private NotificationRepository notificationRepository;
     private GuardPropertyAssignmentRepository guardPropertyAssignmentRepository;
@@ -59,7 +69,14 @@ class AccountDeletionServiceTest {
         guardPropertyAssignmentRepository = mock(GuardPropertyAssignmentRepository.class);
         userService = mock(UserService.class);
         appleTokenRevocation = mock(AppleTokenRevocationService.class);
-        service = new AccountDeletionService(userRepository, renterRepository, deviceTokenRepository,
+        promoAdEventRepository = mock(PromoAdEventRepository.class);
+        bookingRequestRepository = mock(BookingRequestRepository.class);
+        gatePassRepository = mock(GatePassRepository.class);
+        gatePassScanRepository = mock(GatePassScanRepository.class);
+        leaseInteractionRepository = mock(LeaseInteractionRepository.class);
+        service = new AccountDeletionService(userRepository, renterRepository,
+                promoAdEventRepository, bookingRequestRepository, gatePassRepository,
+                gatePassScanRepository, leaseInteractionRepository, deviceTokenRepository,
                 notificationRepository, guardPropertyAssignmentRepository, userService, appleTokenRevocation);
         when(renterRepository.findByUserId(any())).thenReturn(Optional.empty());
     }

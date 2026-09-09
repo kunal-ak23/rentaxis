@@ -1,0 +1,53 @@
+databaseChangeLog:
+  # In-app account deletion (Apple Guideline 5.1.1(v)) has to be able to remove
+  # the login row. Five tables reference users(id) with NOT NULL + NO ACTION, so
+  # the delete violated a foreign key and surfaced as a bare 500 for any renter
+  # who had ever opened the app.
+  #
+  # The two kinds of row are treated differently, and that split is the point:
+  #
+  #   * personal activity — promo_ad_events, booking_requests — is the user's own
+  #     data and is deleted with the account.
+  #   * records the business must keep — gate passes, gate-pass scans, lease
+  #     interactions — survive, with the personal link severed. 65-gate-pass.yaml
+  #     already states this policy ("a renter/user with pass history must be
+  #     deactivated (status change), not hard-deleted"); making these columns
+  #     nullable is what lets the record outlive the account instead of blocking
+  #     its deletion.
+  #
+  # Only the NOT NULL constraint is dropped. The foreign keys stay exactly as
+  # they are, so a non-null value is still guaranteed to reference a real user.
+  - changeSet:
+      id: 79-account-deletion-detach
+      author: claude
+      comment: Allow audit rows to outlive a deleted account by making their user links nullable
+      changes:
+        - dropNotNullConstraint:
+            tableName: gate_passes
+            columnName: created_by_user_id
+            columnDataType: uuid
+        - dropNotNullConstraint:
+            tableName: gate_pass_scans
+            columnName: scanned_by_user_id
+            columnDataType: uuid
+        - dropNotNullConstraint:
+            tableName: lease_interactions
+            columnName: created_by
+            columnDataType: uuid
+      rollback:
+        # Reinstating NOT NULL is only safe while no row has been detached yet.
+        # If any account has been deleted since this ran, those rows must be
+        # resolved first — that is a data decision, not something a rollback
+        # should guess at.
+        - addNotNullConstraint:
+            tableName: gate_passes
+            columnName: created_by_user_id
+            columnDataType: uuid
+        - addNotNullConstraint:
+            tableName: gate_pass_scans
+            columnName: scanned_by_user_id
+            columnDataType: uuid
+        - addNotNullConstraint:
+            tableName: lease_interactions
+            columnName: created_by
+            columnDataType: uuid

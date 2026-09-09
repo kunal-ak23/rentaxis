@@ -10,6 +10,11 @@ import com.datagami.rentaxis.domain.entity.enums.UserStatus;
 import com.datagami.rentaxis.domain.repository.DeviceTokenRepository;
 import com.datagami.rentaxis.domain.repository.GuardPropertyAssignmentRepository;
 import com.datagami.rentaxis.domain.repository.NotificationRepository;
+import com.datagami.rentaxis.domain.repository.BookingRequestRepository;
+import com.datagami.rentaxis.domain.repository.GatePassRepository;
+import com.datagami.rentaxis.domain.repository.GatePassScanRepository;
+import com.datagami.rentaxis.domain.repository.LeaseInteractionRepository;
+import com.datagami.rentaxis.domain.repository.PromoAdEventRepository;
 import com.datagami.rentaxis.domain.repository.RenterRepository;
 import com.datagami.rentaxis.domain.repository.UserRepository;
 import org.slf4j.Logger;
@@ -46,6 +51,11 @@ public class AccountDeletionService {
 
     private final UserRepository userRepository;
     private final RenterRepository renterRepository;
+    private final PromoAdEventRepository promoAdEventRepository;
+    private final BookingRequestRepository bookingRequestRepository;
+    private final GatePassRepository gatePassRepository;
+    private final GatePassScanRepository gatePassScanRepository;
+    private final LeaseInteractionRepository leaseInteractionRepository;
     private final DeviceTokenRepository deviceTokenRepository;
     private final NotificationRepository notificationRepository;
     private final GuardPropertyAssignmentRepository guardPropertyAssignmentRepository;
@@ -53,11 +63,19 @@ public class AccountDeletionService {
     private final AppleTokenRevocationService appleTokenRevocation;
 
     public AccountDeletionService(UserRepository userRepository, RenterRepository renterRepository,
+            PromoAdEventRepository promoAdEventRepository, BookingRequestRepository bookingRequestRepository,
+            GatePassRepository gatePassRepository, GatePassScanRepository gatePassScanRepository,
+            LeaseInteractionRepository leaseInteractionRepository,
             DeviceTokenRepository deviceTokenRepository, NotificationRepository notificationRepository,
             GuardPropertyAssignmentRepository guardPropertyAssignmentRepository, UserService userService,
             AppleTokenRevocationService appleTokenRevocation) {
         this.userRepository = userRepository;
         this.renterRepository = renterRepository;
+        this.promoAdEventRepository = promoAdEventRepository;
+        this.bookingRequestRepository = bookingRequestRepository;
+        this.gatePassRepository = gatePassRepository;
+        this.gatePassScanRepository = gatePassScanRepository;
+        this.leaseInteractionRepository = leaseInteractionRepository;
         this.deviceTokenRepository = deviceTokenRepository;
         this.notificationRepository = notificationRepository;
         this.guardPropertyAssignmentRepository = guardPropertyAssignmentRepository;
@@ -113,6 +131,31 @@ public class AccountDeletionService {
         deviceTokenRepository.deleteByUserId(userId);
         notificationRepository.deleteByUserIdUnfiltered(userId);
         guardPropertyAssignmentRepository.deleteByUserId(userId);
+
+        // Five tables reference users(id) as NOT NULL with no ON DELETE clause,
+        // so without this the delete below violated a foreign key and the caller
+        // got a bare 500 — for any renter who had ever opened the app, since
+        // PromotionFeedService writes an impression row per ad per renter per
+        // day. That is the exact flow Apple's reviewer exercises for Guideline
+        // 5.1.1(v), so it had to work, not just be present.
+        //
+        // The two kinds of row are treated differently:
+        //
+        //   personal activity is deleted with the account …
+        promoAdEventRepository.deleteByRenterUserId(userId);
+        bookingRequestRepository.deleteByRenterUserId(userId);
+
+        //   … while records the business must keep survive with the personal
+        //   link severed. 65-gate-pass.yaml states this policy outright ("a
+        //   renter/user with pass history must be deactivated, not
+        //   hard-deleted"); 79-account-deletion-detach made these columns
+        //   nullable so the record can outlive the account rather than block
+        //   its deletion. The building's access log stays intact; it just stops
+        //   naming someone who no longer exists.
+        gatePassRepository.detachCreatedBy(userId);
+        gatePassScanRepository.detachScannedBy(userId);
+        leaseInteractionRepository.detachCreatedBy(userId);
+
         userService.deleteUser(userId);
         log.info("Account deleted by its owner: user {} role {}", userId, user.getRole());
     }

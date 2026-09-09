@@ -8,6 +8,7 @@ import com.datagami.rentaxis.core.service.BulkAttachValidationException;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -261,6 +262,38 @@ public class GlobalExceptionHandler {
      * which log at WARN — a malformed request is ordinary traffic, an unhandled
      * exception is not.
      */
+    /**
+     * A foreign-key or unique violation is a conflict with data that already
+     * exists, not an internal fault — 409, and name the constraint.
+     *
+     * <p>Without this these fell through to {@link #handleRuntime} as a bare
+     * 500 "An internal error occurred", which is how account deletion failing on
+     * {@code fk_pae_user} looked from the outside: no indication of which
+     * relationship blocked it, or that the caller could do anything about it.
+     * The constraint name is safe to return — it is schema shape, not data — and
+     * it is the one detail that makes these diagnosable from a bug report.
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<Map<String, Object>> handleDataIntegrityViolation(DataIntegrityViolationException ex) {
+        String constraint = null;
+        Throwable cause = ex.getCause();
+        if (cause instanceof org.hibernate.exception.ConstraintViolationException hce) {
+            constraint = hce.getConstraintName();
+        }
+        log.warn("Data integrity violation{}", constraint != null ? " on " + constraint : "", ex);
+
+        Map<String, Object> body = new java.util.HashMap<>();
+        body.put("error", true);
+        body.put("status", 409);
+        body.put("message", constraint != null
+                ? "This action conflicts with existing related records (" + constraint + ")."
+                : "This action conflicts with existing related records.");
+        if (constraint != null) {
+            body.put("constraint", constraint);
+        }
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    }
+
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<Map<String, Object>> handleRuntime(RuntimeException ex) {
         log.error("Unhandled exception", ex);

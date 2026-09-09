@@ -27,7 +27,9 @@ public class GatePass extends BaseTenantEntity {
     @Column(name = "unit_id", nullable = false)
     private UUID unitId;
 
-    @Column(name = "created_by_user_id", nullable = false)
+    // Nullable since 79-account-deletion-detach: the pass outlives the account
+    // that created it, with the personal link severed rather than the record lost.
+    @Column(name = "created_by_user_id")
     private UUID createdByUserId;
 
     @Enumerated(EnumType.STRING)

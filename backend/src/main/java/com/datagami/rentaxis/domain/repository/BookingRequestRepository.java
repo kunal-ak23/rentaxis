@@ -18,6 +18,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.jpa.repository.Modifying;
 
 @Repository
 public interface BookingRequestRepository extends JpaRepository<BookingRequest, UUID> {
@@ -105,4 +106,8 @@ public interface BookingRequestRepository extends JpaRepository<BookingRequest, 
     List<Object[]> countByParkingSpotIdIn(@Param("tenantId") UUID tenantId,
                                           @Param("spotIds") Collection<UUID> spotIds,
                                           @Param("status") BookingRequestStatus status);
+
+    @Modifying
+    @Query("DELETE FROM BookingRequest b WHERE b.renterUserId = :userId")
+    void deleteByRenterUserId(@Param("userId") UUID userId);
 }

@@ -49,7 +49,8 @@ public class LeaseInteraction extends BaseTenantEntity {
     @Column(name = "follow_up_date")
     private LocalDate followUpDate;
 
-    @Column(name = "created_by", nullable = false)
+    // Nullable since 79-account-deletion-detach — see GatePass.createdByUserId.
+    @Column(name = "created_by")
     private UUID createdBy;
 
     @Column(name = "deleted_at")
