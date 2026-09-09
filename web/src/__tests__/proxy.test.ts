@@ -157,3 +157,87 @@ describe("proxy middleware — /api/proxy auth gate", () => {
     });
   });
 });
+
+describe("proxy middleware — active tenant selection", () => {
+  // The active_tenant_id cookie is client-writable, so it is a *selection*,
+  // not authorization: the proxy honours it only when the verified session
+  // token proves membership. The backend's legacy-header path authorizes a
+  // non-SUPER_ADMIN only when the requested tenant equals X-User-Tenant-Id, so
+  // an authorized non-home selection has to travel as the user's tenant.
+  function makeRequestWithCookie(path: string, cookie?: string) {
+    const headers: Record<string, string> = {};
+    if (cookie) headers.cookie = `active_tenant_id=${cookie}`;
+    return new NextRequest(`http://localhost:3000${path}`, { method: "POST", headers });
+  }
+
+  const activeTenant = (res: Response) => res.headers.get("x-middleware-request-x-tenant-id");
+  const userTenant = (res: Response) => res.headers.get("x-middleware-request-x-user-tenant-id");
+
+  it("lets a multi-membership TENANT_ADMIN switch to a tenant they belong to", async () => {
+    getTokenMock.mockResolvedValue({
+      id: "u1", role: "TENANT_ADMIN", tenantId: "home", tenantIds: ["home", "second"],
+    });
+
+    const res = await middleware(makeRequestWithCookie("/api/proxy/v1/leases", "second"));
+
+    // Before the fix X-User-Tenant-Id stayed "home", so the backend 403'd every
+    // request after the switch and the feature was unusable.
+    expect(activeTenant(res)).toBe("second");
+    expect(userTenant(res)).toBe("second");
+  });
+
+  it("ignores a tenant the session does not prove membership of", async () => {
+    getTokenMock.mockResolvedValue({
+      id: "u1", role: "TENANT_ADMIN", tenantId: "home", tenantIds: ["home"],
+    });
+
+    const res = await middleware(makeRequestWithCookie("/api/proxy/v1/leases", "someone-elses-tenant"));
+
+    // A forged cookie must not become a cross-tenant reach; fall back to home.
+    expect(activeTenant(res)).toBe("home");
+    expect(userTenant(res)).toBe("home");
+  });
+
+  it("falls back to the home tenant for a stale cookie rather than sending a certain 403", async () => {
+    getTokenMock.mockResolvedValue({
+      id: "u1", role: "TENANT_ADMIN", tenantId: "home", tenantIds: ["home", "old"],
+    });
+
+    const res = await middleware(makeRequestWithCookie("/api/proxy/v1/leases", "revoked"));
+
+    expect(activeTenant(res)).toBe("home");
+  });
+
+  it("still lets SUPER_ADMIN reach any tenant", async () => {
+    getTokenMock.mockResolvedValue({
+      id: "root", role: "SUPER_ADMIN", tenantId: "home", tenantIds: [],
+    });
+
+    const res = await middleware(makeRequestWithCookie("/api/proxy/v1/leases", "any-tenant"));
+
+    expect(activeTenant(res)).toBe("any-tenant");
+    // SUPER_ADMIN keeps its real home tenant: the backend authorizes the role
+    // outright, and other code reads this value.
+    expect(userTenant(res)).toBe("home");
+  });
+
+  it("uses the home tenant when no cookie is set", async () => {
+    getTokenMock.mockResolvedValue({
+      id: "u1", role: "TENANT_ADMIN", tenantId: "home", tenantIds: ["home", "second"],
+    });
+
+    const res = await middleware(makeRequestWithCookie("/api/proxy/v1/leases"));
+
+    expect(activeTenant(res)).toBe("home");
+    expect(userTenant(res)).toBe("home");
+  });
+
+  it("handles a session with no membership list at all", async () => {
+    getTokenMock.mockResolvedValue({ id: "u1", role: "PROPERTY_MANAGER", tenantId: "home" });
+
+    const res = await middleware(makeRequestWithCookie("/api/proxy/v1/leases", "second"));
+
+    expect(activeTenant(res)).toBe("home");
+    expect(userTenant(res)).toBe("home");
+  });
+});
