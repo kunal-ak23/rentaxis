@@ -206,10 +206,11 @@ class ChequeFailurePenaltyIT {
      */
     @Test
     void clearAndMarkFailed_concurrentRace_onlyOneTransitionPersistsTransactions() throws Exception {
-        // clearPayment's fallback account lookup needs A-01-01 (bank/cash) in
-        // addition to the C-01-01 / A-02-02 pair seeded in setUp() for the
-        // bounce reversal.
-        seedAccount("A-01-01", "Bank/Cash", AccountType.ASSET);
+        // clearPayment's fallback resolves the bank leg to A-02-02, already
+        // seeded in setUp() alongside C-01-01 for the bounce reversal. It used
+        // to look up A-01-01, a code the real seeder never creates, so this
+        // test had to hand-seed it — which is precisely what hid the production
+        // failure this assertion now covers.
 
         UUID scheduleId = depositedSchedule.getId();
 
@@ -249,7 +250,7 @@ class ChequeFailurePenaltyIT {
             List<FinancialTransaction> txns = financialTransactionRepository.findAll();
             long clearedLegCount = txns.stream()
                     .filter(t -> tenantId.equals(t.getTenantId()))
-                    .filter(t -> ("A-01-01".equals(t.getAccountCode()) && t.getDebit().signum() > 0)
+                    .filter(t -> ("A-02-02".equals(t.getAccountCode()) && t.getDebit().signum() > 0)
                             || ("C-01-01".equals(t.getAccountCode()) && t.getCredit().signum() > 0))
                     .count();
             long bouncedLegCount = txns.stream()
