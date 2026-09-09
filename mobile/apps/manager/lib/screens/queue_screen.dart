@@ -41,16 +41,42 @@ final _queueLeasesProvider = FutureProvider.autoDispose<List<dynamic>>((
 /// The badge count the shell shows. Kept separate so the bar can render it
 /// without building the screen.
 final managerQueueCountProvider = FutureProvider.autoDispose<int>((ref) async {
-  final passes = await ref.watch(approvalsProvider.future);
-  final bookings = await ref.watch(
-    bookingsProvider((propertyId: null, status: 'PENDING')).future,
+  // Count each source independently.
+  //
+  // Awaiting all three in sequence meant one failing request — a flaky gate
+  // pass fetch, a 403, a dropped connection — made the whole provider error.
+  // The shell reads it as `.valueOrNull ?? 0`, so the badge silently showed
+  // NOTHING WAITING while approvals were in fact queued, and the manager had no
+  // signal to go and look. Hiding work is worse than showing a low number.
+  //
+  // QueueScreen itself already degrades this way: it renders the sources that
+  // did load and a banner naming the one that did not. The badge now matches
+  // that, rather than being the one place a single failure blanks everything.
+  Future<int> countOf(Future<int> Function() read) async {
+    try {
+      return await read();
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  final passes = await countOf(
+    () async => (await ref.watch(approvalsProvider.future)).length,
   );
-  final leases = await ref.watch(_queueLeasesProvider.future);
-  final pendingLeases = leases
-      .whereType<Map<String, dynamic>>()
-      .where((l) => l['status'] == 'PENDING_SIGNATURE')
-      .length;
-  return passes.length + bookings.rows.length + pendingLeases;
+  final bookings = await countOf(
+    () async => (await ref.watch(
+      bookingsProvider((propertyId: null, status: 'PENDING')).future,
+    )).rows.length,
+  );
+  final leases = await countOf(() async {
+    final rows = await ref.watch(_queueLeasesProvider.future);
+    return rows
+        .whereType<Map<String, dynamic>>()
+        .where((l) => l['status'] == 'PENDING_SIGNATURE')
+        .length;
+  });
+
+  return passes + bookings + leases;
 });
 
 class QueueScreen extends ConsumerWidget {
