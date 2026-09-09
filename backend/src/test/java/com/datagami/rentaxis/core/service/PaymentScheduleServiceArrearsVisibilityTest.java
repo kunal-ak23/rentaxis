@@ -169,4 +169,45 @@ class PaymentScheduleServiceArrearsVisibilityTest {
         assertThat(report.getTotalOutstanding()).isEqualByComparingTo(summary.getOverdueAmount());
         assertThat(summary.getOverdueCount()).isEqualTo(3);
     }
+
+    private PaymentSchedule pastDueOnLease(LeaseStatus leaseStatus, String amount, int daysAgo) {
+        Lease lease = new Lease();
+        lease.setStatus(leaseStatus);
+
+        PaymentSchedule ps = new PaymentSchedule();
+        ps.setLease(lease);
+        ps.setStatus(PaymentStatus.OVERDUE);
+        ps.setAmount(new BigDecimal(amount));
+        ps.setDueDate(LocalDate.now().minusDays(daysAgo));
+        return ps;
+    }
+
+    @Test
+    void agingReport_excludesUnsignedLeasesJustLikeTheSummaryDoes() {
+        when(paymentScheduleRepository.findAll()).thenReturn(List.of(
+                pastDueOnLease(LeaseStatus.ACTIVE, "5000", 40),
+                pastDueOnLease(LeaseStatus.DRAFT, "9000", 40),
+                pastDueOnLease(LeaseStatus.PENDING_SIGNATURE, "7000", 40)));
+
+        AgingReportDTO report = service.getAgingReport(null);
+
+        // An unsigned lease has a generated payment plan but no obligation, so
+        // it must not appear as a debtor. Found on production, where summary
+        // reported 67,250 outstanding and the aging report reported 111,000.
+        assertThat(report.getTotalOutstanding()).isEqualByComparingTo("5000");
+    }
+
+    @Test
+    void summaryAndAgingAgreeOnceUnsignedLeasesAreExcludedFromBoth() {
+        when(paymentScheduleRepository.findAll()).thenReturn(List.of(
+                pastDueOnLease(LeaseStatus.ACTIVE, "5000", 40),
+                pastDueOnLease(LeaseStatus.DRAFT, "9000", 40),
+                pastDueOnLease(LeaseStatus.ACTIVE, "1200", 3)));
+
+        PaymentSummaryDTO summary = service.getSummary(null);
+        AgingReportDTO report = service.getAgingReport(null);
+
+        assertThat(report.getTotalOutstanding()).isEqualByComparingTo(summary.getOverdueAmount());
+        assertThat(report.getTotalOutstanding()).isEqualByComparingTo("6200");
+    }
 }

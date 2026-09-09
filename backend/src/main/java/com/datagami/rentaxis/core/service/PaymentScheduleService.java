@@ -476,9 +476,9 @@ public class PaymentScheduleService {
 
         for (PaymentSchedule ps : payments) {
             // Unsigned leases owe nothing yet — keep their schedules out of the
-            // summary cards, matching the dashboard and the overdue list filter.
-            LeaseStatus leaseStatus = ps.getLease() != null ? ps.getLease().getStatus() : null;
-            if (leaseStatus == LeaseStatus.DRAFT || leaseStatus == LeaseStatus.PENDING_SIGNATURE) {
+            // summary cards, matching the dashboard, the overdue list filter and
+            // (since this was fixed) the aging report.
+            if (!leaseOwesMoney(ps)) {
                 continue;
             }
             countedPayments++;
@@ -1071,6 +1071,22 @@ public class PaymentScheduleService {
                 && ps.getDueDate().isBefore(today);
     }
 
+    /**
+     * Whether a schedule row's lease owes anything yet. An unsigned lease
+     * (DRAFT or PENDING_SIGNATURE) has a generated payment plan but no
+     * obligation, so its installments must not be chased as arrears.
+     *
+     * <p>{@code getSummary} has always applied this rule; {@code getAgingReport}
+     * never did, so the accounts-receivable report listed unsigned leases as
+     * debtors and its total disagreed with the summary cards on the same screen.
+     * Observed on production: summary reported 67,250 outstanding while the
+     * aging report reported 111,000 over the same data.
+     */
+    private static boolean leaseOwesMoney(PaymentSchedule ps) {
+        LeaseStatus leaseStatus = ps.getLease() != null ? ps.getLease().getStatus() : null;
+        return leaseStatus != LeaseStatus.DRAFT && leaseStatus != LeaseStatus.PENDING_SIGNATURE;
+    }
+
     @Transactional(readOnly = true)
     public List<LeasePaymentStatsDTO> getPaymentStatsByLeaseIds(List<UUID> leaseIds) {
         List<LeasePaymentStatsDTO> result = new ArrayList<>();
@@ -1133,6 +1149,7 @@ public class PaymentScheduleService {
 
         LocalDate today = LocalDate.now();
         List<PaymentSchedule> overdue = schedules.stream()
+                .filter(PaymentScheduleService::leaseOwesMoney)
                 .filter(ps -> isUnpaidPastDue(ps, today))
                 .toList();
 
