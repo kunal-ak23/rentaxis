@@ -11,6 +11,8 @@ declare module "next-auth" {
             tenantId: string;
             tenantIds: string[];
         };
+        /** True once the backend reports the account no longer exists. */
+        revoked?: boolean;
     }
 
     interface User {
@@ -27,5 +29,9 @@ declare module "next-auth/jwt" {
         role: string;
         tenantId: string;
         tenantIds: string[];
+        /** Epoch millis of the last successful re-check against the backend. */
+        revalidatedAt?: number;
+        /** True once the backend reports the account no longer exists. */
+        revoked?: boolean;
     }
 }

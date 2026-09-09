@@ -56,6 +56,13 @@ export default async function middleware(req: NextRequest) {
             return addSecurityHeaders(new NextResponse('Unauthorized', { status: 401 }));
         }
 
+        // The jwt callback marks a token revoked once the backend reports the
+        // account no longer exists. Refuse it here rather than forwarding the
+        // stale role to the backend, which trusts these headers as presented.
+        if (token.revoked === true) {
+            return addSecurityHeaders(new NextResponse('Session revoked', { status: 401 }));
+        }
+
         const requestHeaders = new Headers(req.headers);
 
         // X-Internal-Auth is a server-to-server secret: only this middleware may
