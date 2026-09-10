@@ -40,6 +40,11 @@ export default defineConfig({
   reporter: [['list']],
   outputDir: path.join(__dirname, 'raw'),
   use: {
+    // Spread first so the explicit settings below win. With the spread last,
+    // devices['Desktop Chrome'] silently overwrote `viewport` — same values, so
+    // no behaviour change, but tsc rejects the duplicate key and it fails the
+    // production web build, which type-checks this directory too.
+    ...devices['Desktop Chrome'],
     baseURL,
     // A correct run of this flow takes the machine about three seconds, which
     // is a proof but not something a person can watch. slowMo paces the actions
@@ -49,7 +54,6 @@ export default defineConfig({
     viewport: { width: 1280, height: 720 },
     trace: 'retain-on-failure',
     ignoreHTTPSErrors: false,
-    ...devices['Desktop Chrome'],
   },
   projects: [
     // Points at the ORIGINAL e2e-prod global-setup rather than a copy, so the
