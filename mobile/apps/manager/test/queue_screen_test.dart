@@ -79,7 +79,10 @@ List<Override> _overrides({Object? gatePassError}) => [
         {
           'id': 'booking-1',
           'status': 'PENDING',
-          'amenityName': 'Community Hall',
+          // The API field is resourceName (BookingRequestDTO); this fixture
+          // used amenityName, a field the backend never sends, so the queue
+          // rendered the generic fallback label and both assertions failed.
+          'resourceName': 'Community Hall',
           'renterName': 'Aisha Resident',
           'slotStart': '2026-08-27T15:00:00Z',
           'createdAt': '2026-08-02T08:00:00Z',
@@ -145,5 +148,17 @@ void main() {
     addTearDown(container.dispose);
 
     expect(await container.read(managerQueueCountProvider.future), 3);
+  });
+
+  test('queue badge still counts the working sources when one fails', () async {
+    final container = ProviderContainer(
+      overrides: _overrides(gatePassError: Exception('offline')),
+    );
+    addTearDown(container.dispose);
+
+    // Gate passes are down; the lease and the booking are still waiting. The
+    // badge previously errored and the shell rendered `.valueOrNull ?? 0`, so
+    // the manager saw an empty queue while work sat in it.
+    expect(await container.read(managerQueueCountProvider.future), 2);
   });
 }
