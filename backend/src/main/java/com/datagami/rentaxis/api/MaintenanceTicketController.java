@@ -32,8 +32,9 @@ public class MaintenanceTicketController {
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<MaintenanceTicketDTO>> listTickets(
             @RequestHeader("X-User-Id") UUID userId,
-            @RequestHeader("X-User-Role") String role) {
-        return ResponseEntity.ok(ticketService.getTickets(userId, role));
+            @RequestHeader("X-User-Role") String role,
+            @RequestParam(required = false) UUID unitId) {
+        return ResponseEntity.ok(ticketService.getTickets(userId, role, unitId));
     }
 
     @GetMapping("/{id}")
