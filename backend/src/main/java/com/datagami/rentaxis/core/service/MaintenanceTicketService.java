@@ -134,11 +134,27 @@ public class MaintenanceTicketService {
 
     @Transactional(readOnly = true)
     public List<MaintenanceTicketDTO> getTickets(UUID userId, String role) {
+        return getTickets(userId, role, null);
+    }
+
+    /**
+     * @param unitId optional. When given, the query is narrowed to that unit in
+     *        the database rather than by the caller after the fact — the lease
+     *        detail page wants one unit's tickets, and used to pull the tenant's
+     *        entire maintenance history to filter client-side.
+     *
+     *        <p>It narrows the role scope, it does not bypass it: a renter
+     *        passing someone else's unitId still sees only tickets they
+     *        reported.</p>
+     */
+    public List<MaintenanceTicketDTO> getTickets(UUID userId, String role, UUID unitId) {
         List<MaintenanceTicket> tickets;
 
         if ("RENTER".equals(role) || "TENANT_USER".equals(role)) {
             // Renters/tenant users see only tickets they reported
-            tickets = ticketRepository.findByReportedBy(userId);
+            tickets = unitId != null
+                    ? ticketRepository.findByReportedByAndUnitId(userId, unitId)
+                    : ticketRepository.findByReportedBy(userId);
         } else if ("PROPERTY_MANAGER".equals(role)) {
             // Property managers see tickets for their assigned properties
             List<UserPropertyAssignment> assignments = propertyAssignmentRepository.findByUserId(userId);
@@ -148,11 +164,15 @@ public class MaintenanceTicketService {
             if (propertyIds.isEmpty()) {
                 tickets = List.of();
             } else {
-                tickets = ticketRepository.findByPropertyIdIn(propertyIds);
+                tickets = unitId != null
+                        ? ticketRepository.findByPropertyIdInAndUnitId(propertyIds, unitId)
+                        : ticketRepository.findByPropertyIdIn(propertyIds);
             }
         } else {
             // TENANT_ADMIN and SUPER_ADMIN see all tickets for the tenant
-            tickets = ticketRepository.findAll();
+            tickets = unitId != null
+                    ? ticketRepository.findByUnitId(unitId)
+                    : ticketRepository.findAll();
         }
 
         return tickets.stream()

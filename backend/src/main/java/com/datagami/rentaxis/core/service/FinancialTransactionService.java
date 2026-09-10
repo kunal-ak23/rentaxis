@@ -272,6 +272,26 @@ public class FinancialTransactionService {
             AccountType accountType,
             LocalDate startDate, LocalDate endDate) {
         Specification<FinancialTransaction> spec = (root, query, cb) -> {
+            // Load the five EAGER @ManyToOne associations in the base query.
+            //
+            // For a Criteria query Hibernate does not fold EAGER associations
+            // into the select — it issues one secondary SELECT per association
+            // per row, so listing N transactions cost roughly 1 + 5N round
+            // trips. On a tenant with a few thousand rows of ordinary financial
+            // history, one unfiltered GET was tens of thousands of queries
+            // against a 20-connection pool.
+            //
+            // These are all to-one, so the joins add no rows and no distinct is
+            // needed. Guarded on the result type because Spring Data reuses the
+            // same Specification for its count query, where a fetch is illegal.
+            if (query != null && !Long.class.equals(query.getResultType())) {
+                root.fetch("account", jakarta.persistence.criteria.JoinType.LEFT);
+                root.fetch("property", jakarta.persistence.criteria.JoinType.LEFT);
+                root.fetch("unit", jakarta.persistence.criteria.JoinType.LEFT);
+                root.fetch("vendor", jakarta.persistence.criteria.JoinType.LEFT);
+                root.fetch("staff", jakarta.persistence.criteria.JoinType.LEFT);
+            }
+
             List<Predicate> predicates = new ArrayList<>();
             if (unitId != null) {
                 predicates.add(cb.equal(root.get("unit").get("id"), unitId));

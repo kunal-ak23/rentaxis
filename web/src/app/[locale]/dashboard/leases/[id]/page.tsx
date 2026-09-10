@@ -322,12 +322,16 @@ export default function LeaseDetailPage() {
 
 
     const fetchTickets = useCallback(async () => {
+        const unitId = lease?.unitId;
+        if (!unitId) return;
         try {
-            const res = await fetch("/api/proxy/v1/tickets");
+            // Filter server-side. This used to GET the whole tenant's ticket
+            // list — every property, every unit, all time — and keep the rows
+            // matching one unitId, so opening a lease transferred the landlord's
+            // entire maintenance history on every page view.
+            const res = await fetch(`/api/proxy/v1/tickets?unitId=${encodeURIComponent(unitId)}`);
             if (res.ok) {
-                const all = await res.json();
-                // Filter tickets for this lease's unit
-                setTickets(all.filter((t: Ticket & { unitId?: string }) => t.unitId === lease?.unitId));
+                setTickets(await res.json());
             }
         } catch {}
     }, [lease?.unitId]);
