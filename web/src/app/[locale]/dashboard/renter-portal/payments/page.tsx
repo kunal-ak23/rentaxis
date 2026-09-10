@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatCurrencyCompact } from "@/lib/format";
+import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 
 type Payment = {
     id: string;
@@ -95,9 +96,11 @@ function NextChequeHero({ payments, t, locale }: { payments: Payment[]; t: (k: s
 
 export default function RenterPaymentsPage() {
     const t = useTranslations("OnlinePayments");
+    const tCommon = useTranslations("Common");
     const locale = useLocale();
     const [payments, setPayments] = useState<Payment[]>([]);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState<string | null>(null);
 
     const fetchPayments = useCallback(async () => {
         try {
@@ -107,6 +110,10 @@ export default function RenterPaymentsPage() {
                 // Always sort by due date (installment order)
                 data.sort((a: Payment, b: Payment) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
                 setPayments(data);
+            } else {
+                // A non-2xx used to leave the state at its initial empty
+                // value, so a failed request rendered as "nothing here".
+                setLoadError(tCommon("loadFailedPayments"));
             }
         } catch (err) {
             console.error(err);
@@ -158,8 +165,14 @@ export default function RenterPaymentsPage() {
         );
     }
 
+    const reload = () => {
+        setLoadError(null);
+        fetchPayments();
+    };
+
     return (
         <div className="p-8 max-w-5xl mx-auto">
+            {loadError && <LoadErrorBanner message={loadError} onRetry={reload} />}
             {/* Header */}
             <div className="mb-10">
                 <h1 className="text-xl font-bold text-foreground tracking-tight mb-1">
@@ -344,6 +357,10 @@ export default function RenterPaymentsPage() {
                                                         a.click();
                                                         document.body.removeChild(a);
                                                         URL.revokeObjectURL(url);
+                                                    } else {
+                                                        // A non-2xx used to leave the state at its initial empty
+                                                        // value, so a failed request rendered as "nothing here".
+                                                        setLoadError(tCommon("loadFailedPayments"));
                                                     }
                                                 }}
                                                 className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 text-primary rounded-lg text-[10px] font-semibold hover:bg-primary/20 transition-colors cursor-pointer"

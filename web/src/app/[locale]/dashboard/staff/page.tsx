@@ -6,6 +6,7 @@ import { UserCog, Plus, Pencil, Trash2, X, Loader2, Users, Banknote, Search } fr
 import { formatCurrency, formatCurrencyCompact } from "@/lib/format";
 import { Pagination } from "@/components/ui/Pagination";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 
 type Property = {
     id: string;
@@ -59,11 +60,13 @@ const emptyForm = {
 
 export default function StaffPage() {
     const t = useTranslations("Staff");
+    const tCommon = useTranslations("Common");
     const locale = useLocale();
     const [staff, setStaff] = useState<Staff[]>([]);
     const [properties, setProperties] = useState<PropertyStats[]>([]);
     const [accounts, setAccounts] = useState<Account[]>([]);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState<string | null>(null);
     const [showModal, setShowModal] = useState(false);
     const [editingStaff, setEditingStaff] = useState<Staff | null>(null);
     const [submitting, setSubmitting] = useState(false);
@@ -93,9 +96,15 @@ export default function StaffPage() {
                 const data = await res.json();
                 data.sort((a: any, b: any) => (a.id || '').localeCompare(b.id || ''));
                 setStaff(data);
+                setLoadError(null);
+            } else {
+                // Without this, a 401/403/500 left `staff` at its initial [] and
+                // the page rendered exactly like "no staff records".
+                setLoadError(tCommon("loadFailedStaff"));
             }
         } catch (err) {
             console.error(err);
+            setLoadError(tCommon("loadFailedStaff"));
         } finally {
             setLoading(false);
         }
@@ -245,8 +254,17 @@ export default function StaffPage() {
 
     const paginatedStaff = filteredStaff.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
+    const reload = () => {
+        setLoadError(null);
+        setLoading(true);
+        fetchStaff();
+        fetchProperties();
+        fetchAccounts();
+    };
+
     return (
         <div>
+            {loadError && <LoadErrorBanner message={loadError} onRetry={reload} />}
             {/* Header */}
             <div className="flex items-center justify-between mb-8">
                 <div>

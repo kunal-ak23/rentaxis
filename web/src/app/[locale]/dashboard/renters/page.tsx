@@ -8,6 +8,7 @@ import { hasPermission, type UserRole } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
 import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
 import { Pagination } from "@/components/ui/Pagination";
+import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 
 type Renter = {
     id: string;
@@ -20,9 +21,11 @@ type Renter = {
 
 export default function RentersPage() {
     const t = useTranslations("MasterData");
+    const tCommon = useTranslations("Common");
     const locale = useLocale();
     const [renters, setRenters] = useState<Renter[]>([]);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState<string | null>(null);
     const [showForm, setShowForm] = useState(false);
     const { data: session } = useSession();
 
@@ -57,6 +60,10 @@ export default function RentersPage() {
             if (res.ok) {
                 const data = await res.json();
                 setRenters(data);
+            } else {
+                // A non-2xx used to leave the state at its initial empty
+                // value, so a failed request rendered as "nothing here".
+                setLoadError(tCommon("loadFailedRenters"));
             }
         } catch (err) {
             console.error(err);
@@ -159,8 +166,14 @@ export default function RentersPage() {
         );
     }
 
+    const reload = () => {
+        setLoadError(null);
+        fetchRenters();
+    };
+
     return (
         <div>
+            {loadError && <LoadErrorBanner message={loadError} onRetry={reload} />}
             <div className="flex flex-col gap-4 mb-10">
                 <div>
                     <h1 className="text-xl font-bold text-foreground tracking-tight mb-1">

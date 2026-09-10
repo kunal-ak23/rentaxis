@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { useSession } from "next-auth/react";
 import { useTranslations } from "next-intl";
 import { hasPermission, hasRole, type UserRole } from "@/lib/rbac";
+import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
 import {
     ArrowLeft, Loader2, Calendar, Clock, User, Building2, Home,
@@ -74,10 +75,13 @@ export default function MeetingDetailPage() {
     const meetingId = params.id as string;
     const { data: session } = useSession();
     const t = useTranslations("Meetings");
+    const tCommon = useTranslations("Common");
     const userRole = session?.user?.role as UserRole | undefined;
     const userId = session?.user?.id as string | undefined;
 
     const [meeting, setMeeting] = useState<Meeting | null>(null);
+
+    const [loadError, setLoadError] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [actionLoading, setActionLoading] = useState<string | null>(null);
     const [actionError, setActionError] = useState<string | null>(null);
@@ -87,9 +91,19 @@ export default function MeetingDetailPage() {
     const fetchMeeting = useCallback(async () => {
         try {
             const res = await fetch(`/api/proxy/v1/meetings/${meetingId}`);
-            if (res.ok) setMeeting(await res.json());
-        } catch { /* ignore */ }
-    }, [meetingId]);
+            if (res.ok) {
+                setMeeting(await res.json());
+                setLoadError(null);
+            } else if (res.status !== 404) {
+                // Only a 404 means the meeting is genuinely gone. Anything else
+                // used to fall through to the same "Meeting not found." screen,
+                // so a 500 or an expired session read as a deleted meeting.
+                setLoadError(tCommon("loadFailedMeetings"));
+            }
+        } catch {
+            setLoadError(tCommon("loadFailedMeetings"));
+        }
+    }, [meetingId, tCommon]);
 
     useEffect(() => {
         fetchMeeting().finally(() => setLoading(false));
@@ -129,7 +143,9 @@ export default function MeetingDetailPage() {
     if (!meeting) {
         return (
             <div className="text-center py-24">
-                <p className="text-sm text-muted">Meeting not found.</p>
+                {loadError
+                    ? <LoadErrorBanner message={loadError} onRetry={() => { setLoadError(null); fetchMeeting(); }} />
+                    : <p className="text-sm text-muted">{t("notFound")}</p>}
                 <Link href="/dashboard/meetings" className="text-xs text-primary font-semibold mt-2 inline-block">
                     {t("backToMeetings")}
                 </Link>
