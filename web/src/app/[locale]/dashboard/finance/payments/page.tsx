@@ -27,6 +27,7 @@ type Payment = {
     dueDate: string;
     amount: number;
     status: string;
+    paymentMethod: string | null;
     chequeNumber: string | null;
     bankName: string | null;
     payerName: string | null;
@@ -388,7 +389,20 @@ export default function PaymentsPage() {
         };
         return map[status] || status;
     };
-    const getMethodLabel = (payment: Payment): string => (payment.chequeNumber ? "Cheque" : "—");
+    // Read the recorded method rather than inferring it from the cheque number.
+    // A CHEQUE row is allowed to have no cheque details yet ("cheque expected,
+    // not yet received"), so inferring from chequeNumber labelled those rows
+    // "—" and made a chequed plan look like it had no payment method at all.
+    const getMethodLabel = (payment: Payment): string => {
+        const map: Record<string, string> = {
+            CHEQUE: "Cheque",
+            BANK_TRANSFER: "Bank transfer",
+            CASH: "Cash",
+            ONLINE: "Online",
+        };
+        if (payment.paymentMethod) return map[payment.paymentMethod.toUpperCase()] ?? payment.paymentMethod;
+        return payment.chequeNumber ? "Cheque" : "—";
+    };
 
     const summaryCells = summary
         ? [

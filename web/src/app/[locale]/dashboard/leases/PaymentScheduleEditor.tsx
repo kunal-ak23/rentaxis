@@ -77,8 +77,20 @@ function clientValidate(rows: ScheduleRow[]): { ok: boolean; firstError?: string
         if (!r.dueDate) return { ok: false, firstError: `${label}: due date is required` };
         if (r.amount == null || Number.isNaN(r.amount) || r.amount < 0)
             return { ok: false, firstError: `${label}: amount must be a non-negative number` };
-        if (m === "CHEQUE" && (!r.chequeNumber || !r.chequeDate || !r.bankName))
-            return { ok: false, firstError: `${label}: cheque rows need cheque #, cheque date and bank` };
+        // CHEQUE rows deliberately require nothing beyond due date and amount.
+        //
+        // A payment plan is drawn up when the lease is signed, but the renter
+        // hands over cheques on their own schedule — often a couple up front
+        // and the rest later. Requiring cheque #, date and bank on every CHEQUE
+        // row meant a plan could not be saved at all until every cheque was
+        // physically in hand, and since CHEQUE is the default method the only
+        // way out was to mislabel the outstanding rows as CASH. That recorded
+        // the wrong payment method to work around a validation rule.
+        //
+        // A CHEQUE row with blank details now means "cheque expected, not yet
+        // received", which is a real state the business has. Details are filled
+        // in as cheques arrive. Completeness is enforced where it actually
+        // matters — clearing a cheque still requires its details.
         if ((m === "BANK_TRANSFER" || m === "ONLINE") && (!r.bankName || !r.chequeDate))
             return { ok: false, firstError: `${label}: ${m === "ONLINE" ? "online" : "transfer"} rows need bank and date` };
     }
@@ -249,8 +261,10 @@ export default function PaymentScheduleEditor({ leaseId, leaseStatus, canManage,
                     <tbody>
                         {rows.map((r) => {
                             const m = normalizeMethod(r.paymentMethod);
-                            const chequeRequired = m === "CHEQUE";
-                            const bankRequired = m === "CHEQUE" || m === "BANK_TRANSFER" || m === "ONLINE";
+                            // Whether the bank column applies at all — it is disabled for
+                            // CASH. Not a validation flag: cheque details are optional, so
+                            // an applicable-but-empty bank field is a legitimate state.
+                            const bankApplies = m === "CHEQUE" || m === "BANK_TRANSFER" || m === "ONLINE";
                             const paymentDateRequired = m !== "CASH";
                             const paymentDateLabel = m === "CHEQUE" ? "Cheque date"
                                 : m === "BANK_TRANSFER" ? "Transfer date"
@@ -353,7 +367,7 @@ export default function PaymentScheduleEditor({ leaseId, leaseStatus, canManage,
                                                     {markExtracted("chequeNumber") && (
                                                         <div className="text-[10px] text-emerald-600 mt-0.5">✨ Extracted</div>
                                                     )}
-                                                    <div className="text-[10px] text-muted mt-0.5">{subLabel}{chequeRequired ? " *" : ""}</div>
+                                                    <div className="text-[10px] text-muted mt-0.5">{subLabel}</div>
                                                     <div className="mt-1">
                                                         <ChequeScanner onExtracted={onExtracted} disabled={rowDisabled} />
                                                     </div>
@@ -366,8 +380,8 @@ export default function PaymentScheduleEditor({ leaseId, leaseStatus, canManage,
                                             type="text"
                                             value={r.bankName || ""}
                                             onChange={(e) => updateRow(r.id, { bankName: e.target.value })}
-                                            disabled={rowDisabled || !bankRequired}
-                                            placeholder={bankRequired ? "—" : "n/a"}
+                                            disabled={rowDisabled || !bankApplies}
+                                            placeholder={bankApplies ? "—" : "n/a"}
                                             className="border border-border rounded px-2 py-1 text-xs bg-surface w-32 disabled:bg-input/40 disabled:cursor-not-allowed"
                                         />
                                         {markExtracted("bankName") && (
