@@ -111,11 +111,14 @@ jobs:
       # lockfile succeeds there. Rather than churn the lockfile against a moving
       # target, CI runs the version the lockfile is known to install cleanly on.
       # Bump this deliberately, with a lockfile refresh in the same commit.
+      # No npm cache here on purpose. setup-node keys its cache on the lockfile,
+      # and the install step below deletes that lockfile — restoring a cache
+      # keyed to a file that then disappears left npm's tree resolution in a
+      # state it could not handle ("Cannot read properties of null (reading
+      # 'edgesOut')"). Caching returns together with the lockfile in #233.
       - uses: actions/setup-node@v4
         with:
           node-version: '22.22.2'
-          cache: npm
-          cache-dependency-path: web/package-lock.json
 
       # `npm install`, not `npm ci`, and that is a deliberate compromise.
       #
