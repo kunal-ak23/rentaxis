@@ -38,6 +38,24 @@ public class PayloadVarsExtractor {
                 } catch (Exception ignored) {}
             }
         }
+        // A schedule row may carry payment method CHEQUE before the cheque has
+        // physically been handed over, so chequeNumber is legitimately null by
+        // the time these emails are sent. Both cheque_received.html and
+        // cheque_deposited.html interpolate it into their body via
+        // #{...body(${chequeNumber}, ...)}, and MessageFormat renders a null
+        // argument as the literal text "null" — which put "Cheque null for
+        // AED 6,000 has been collected" in front of renters.
+        //
+        // Substituted here rather than in ChequePayload so the payload keeps
+        // saying what is true; this is a display concern. Must run before
+        // subjectArgsFor below, which reads the same key.
+        // containsKey, not get()==null: only payloads that actually carry a
+        // chequeNumber component should gain the placeholder. A bare null check
+        // would inject the key into every unrelated email's model too.
+        if (vars.containsKey("chequeNumber") && vars.get("chequeNumber") == null) {
+            vars.put("chequeNumber", "—");
+        }
+
         vars.put("ctaUrl", computeCtaUrl(type, vars, portalBaseUrl, localeLang));
         Object[] subjectArgs = subjectArgsFor(type, vars);
         vars.put("__subjectArgs", subjectArgs);

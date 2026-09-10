@@ -429,10 +429,30 @@ public class LeaseService {
             String methodRaw = row.getPaymentMethod() == null ? "" : row.getPaymentMethod().trim().toUpperCase();
             switch (methodRaw) {
                 case "CHEQUE" -> {
-                    if (isBlank(row.getChequeNumber()) || row.getChequeDate() == null || isBlank(row.getBankName())) {
-                        throw new BusinessRuleViolationException(
-                                "CHEQUE rows require chequeNumber, chequeDate and bankName");
-                    }
+                    // Cheque details are optional on a schedule row.
+                    //
+                    // The payment plan is agreed when the lease is signed, but
+                    // the renter hands cheques over on their own schedule —
+                    // commonly the first one or two up front and the rest
+                    // later. Requiring chequeNumber, chequeDate and bankName
+                    // here meant the plan could not be saved at all until every
+                    // cheque was physically in hand. Since CHEQUE is also the
+                    // default method, the only way to save a partially-collected
+                    // plan was to relabel the outstanding rows as CASH, which
+                    // recorded a payment method that was simply untrue.
+                    //
+                    // A CHEQUE row with blank details now means "cheque
+                    // expected, not yet received" — a state the business
+                    // genuinely has. Details are filled in as cheques arrive.
+                    //
+                    // Note that nothing downstream enforces completeness
+                    // either: the PENDING -> COLLECTED -> DEPOSITED -> CLEARED
+                    // transitions in PaymentScheduleService all gate on the
+                    // current status alone. So a cheque can be carried all the
+                    // way to CLEARED without a cheque number ever being
+                    // recorded. If that needs to be prevented, the check
+                    // belongs at collection time, not here — blocking the plan
+                    // from being saved was never the right place for it.
                 }
                 case "BANK_TRANSFER", "ONLINE" -> {
                     if (isBlank(row.getBankName()) || row.getChequeDate() == null) {

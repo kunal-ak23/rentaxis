@@ -53,3 +53,9 @@ tutorials/.env.local
 !tutorials/.env.local.example
 tutorials/audio-generated/*
 !tutorials/audio-generated/README.md
+
+# Walkthrough capture output. Raw takes are large binaries and this repo already
+# carries ~1GB of committed media (#143); keep recordings out of git history.
+web/walkthrough/raw/
+web/walkthrough/run-manifest*.json
+web/walkthrough/takes/
