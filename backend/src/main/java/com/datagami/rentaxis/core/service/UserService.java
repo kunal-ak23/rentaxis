@@ -35,18 +35,21 @@ public class UserService {
     private final UserTenantMembershipRepository tenantMembershipRepository;
     private final PropertyRepository propertyRepository;
     private final ApplicationEventPublisher events;
+    private final UserReferenceReleaser referenceReleaser;
 
     public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder,
             UserPropertyAssignmentRepository propertyAssignmentRepository,
             UserTenantMembershipRepository tenantMembershipRepository,
             PropertyRepository propertyRepository,
-            ApplicationEventPublisher events) {
+            ApplicationEventPublisher events,
+            UserReferenceReleaser referenceReleaser) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.propertyAssignmentRepository = propertyAssignmentRepository;
         this.tenantMembershipRepository = tenantMembershipRepository;
         this.propertyRepository = propertyRepository;
         this.events = events;
+        this.referenceReleaser = referenceReleaser;
     }
 
     /**
@@ -472,8 +475,21 @@ public class UserService {
         return saved;
     }
 
+    /**
+     * Deletes a user and everything that pointed at them.
+     *
+     * <p>This used to be three statements ending in {@code deleteById}, which
+     * returned a bare 500 for any renter with history — a lease, a gate pass, a
+     * booking, or a single promo-ad impression, meaning anyone who had opened
+     * the app. The in-app "delete my account" flow worked only because
+     * {@link AccountDeletionService} did the reference clearing inline before
+     * calling this; the admin endpoint called it directly and got the foreign
+     * key violation. The clearing now lives in {@link UserReferenceReleaser} so
+     * both callers get it.</p>
+     */
     @Transactional
     public void deleteUser(UUID id) {
+        referenceReleaser.release(id);
         tenantMembershipRepository.deleteByUserId(id);
         propertyAssignmentRepository.deleteByUserId(id);
         userRepository.deleteById(id);

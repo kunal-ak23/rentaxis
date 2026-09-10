@@ -289,7 +289,8 @@ class UserServicePhoneNormalizationIT {
         when(racing.saveAndFlush(any())).thenThrow(real);
         UserService racingService = new UserService(racing, passwordEncoder,
                 mock(UserPropertyAssignmentRepository.class), mock(UserTenantMembershipRepository.class),
-                mock(PropertyRepository.class), mock(ApplicationEventPublisher.class));
+                mock(PropertyRepository.class), mock(ApplicationEventPublisher.class),
+                mock(UserReferenceReleaser.class));
 
         assertThatThrownBy(() -> racingService.createUser("racer+" + UUID.randomUUID() + "@test",
                 "TempPass@123", "Racer", UserRole.SECURITY_GUARD, org.getId().toString(), phone, "admin"))
@@ -348,7 +349,8 @@ class UserServicePhoneNormalizationIT {
                 "duplicate key value violates unique constraint \"uq_users_tenant_email\""));
         UserService racingService = new UserService(racing, passwordEncoder,
                 mock(UserPropertyAssignmentRepository.class), mock(UserTenantMembershipRepository.class),
-                mock(PropertyRepository.class), mock(ApplicationEventPublisher.class));
+                mock(PropertyRepository.class), mock(ApplicationEventPublisher.class),
+                mock(UserReferenceReleaser.class));
 
         assertThatThrownBy(() -> racingService.createUser("racer+" + UUID.randomUUID() + "@test",
                 "TempPass@123", "Racer", UserRole.TENANT_USER, UUID.randomUUID().toString(), null, "admin"))

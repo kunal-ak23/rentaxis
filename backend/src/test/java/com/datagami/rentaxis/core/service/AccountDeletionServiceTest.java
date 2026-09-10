@@ -38,22 +38,18 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Self-service account deletion. The refusals and the detach-before-delete
- * ordering are the parts that matter: the wrong order silently cascades the
- * renter's tenancy record away with their login.
+ * Self-service account deletion: the refusals, the Apple token revocation, and
+ * the fact that it delegates to deleteUser.
+ *
+ * <p>Clearing the rows that reference the user moved to
+ * {@link UserReferenceReleaser}, so it is covered by
+ * {@code UserReferenceReleaserTest} and by the two dependent-row ITs rather
+ * than here. It had to move: living inline in this service is why the admin
+ * delete path skipped it entirely.</p>
  */
 class AccountDeletionServiceTest {
 
     private UserRepository userRepository;
-    private RenterRepository renterRepository;
-    private PromoAdEventRepository promoAdEventRepository;
-    private BookingRequestRepository bookingRequestRepository;
-    private GatePassRepository gatePassRepository;
-    private GatePassScanRepository gatePassScanRepository;
-    private LeaseInteractionRepository leaseInteractionRepository;
-    private DeviceTokenRepository deviceTokenRepository;
-    private NotificationRepository notificationRepository;
-    private GuardPropertyAssignmentRepository guardPropertyAssignmentRepository;
     private UserService userService;
     private AppleTokenRevocationService appleTokenRevocation;
     private AccountDeletionService service;
@@ -63,22 +59,9 @@ class AccountDeletionServiceTest {
     @BeforeEach
     void setUp() {
         userRepository = mock(UserRepository.class);
-        renterRepository = mock(RenterRepository.class);
-        deviceTokenRepository = mock(DeviceTokenRepository.class);
-        notificationRepository = mock(NotificationRepository.class);
-        guardPropertyAssignmentRepository = mock(GuardPropertyAssignmentRepository.class);
         userService = mock(UserService.class);
         appleTokenRevocation = mock(AppleTokenRevocationService.class);
-        promoAdEventRepository = mock(PromoAdEventRepository.class);
-        bookingRequestRepository = mock(BookingRequestRepository.class);
-        gatePassRepository = mock(GatePassRepository.class);
-        gatePassScanRepository = mock(GatePassScanRepository.class);
-        leaseInteractionRepository = mock(LeaseInteractionRepository.class);
-        service = new AccountDeletionService(userRepository, renterRepository,
-                promoAdEventRepository, bookingRequestRepository, gatePassRepository,
-                gatePassScanRepository, leaseInteractionRepository, deviceTokenRepository,
-                notificationRepository, guardPropertyAssignmentRepository, userService, appleTokenRevocation);
-        when(renterRepository.findByUserId(any())).thenReturn(Optional.empty());
+        service = new AccountDeletionService(userRepository, userService, appleTokenRevocation);
     }
 
     private User user(UserRole role, UserStatus status) {
@@ -109,9 +92,9 @@ class AccountDeletionServiceTest {
         assertThatThrownBy(() -> service.deleteOwnAccount(admin.getId()))
                 .isInstanceOf(AccessDeniedException.class);
 
+        // Every reference-clearing step now runs inside deleteUser, so "nothing
+        // was touched" is exactly "deleteUser was never called".
         verify(userService, never()).deleteUser(any());
-        verify(renterRepository, never()).save(any());
-        verify(deviceTokenRepository, never()).deleteByUserId(any());
     }
 
     @Test
@@ -139,40 +122,7 @@ class AccountDeletionServiceTest {
         verify(userService).deleteUser(admin.getId());
     }
 
-    @Test
-    void renterLoginIsDetachedFromTheTenancyRecordBeforeTheLoginRowIsDeleted() {
-        User renterUser = user(UserRole.RENTER, UserStatus.ACTIVE);
-        Renter renter = new Renter();
-        renter.setId(UUID.randomUUID());
-        renter.setUserId(renterUser.getId());
-        when(renterRepository.findByUserId(renterUser.getId())).thenReturn(Optional.of(renter));
 
-        service.deleteOwnAccount(renterUser.getId());
-
-        ArgumentCaptor<Renter> saved = ArgumentCaptor.forClass(Renter.class);
-        verify(renterRepository).save(saved.capture());
-        // The renter row survives (it is the party on every lease); only the
-        // pointer to the login is cleared.
-        assertThat(saved.getValue()).isSameAs(renter);
-        assertThat(saved.getValue().getUserId()).isNull();
-
-        // Ordering is the whole point: renters.user_id is ON DELETE CASCADE.
-        InOrder order = inOrder(renterRepository, userService);
-        order.verify(renterRepository).save(any(Renter.class));
-        order.verify(userService).deleteUser(renterUser.getId());
-    }
-
-    @Test
-    void guardPostingsPushTokensAndNotificationsAreCleared() {
-        User guard = user(UserRole.SECURITY_GUARD, UserStatus.ACTIVE);
-
-        service.deleteOwnAccount(guard.getId());
-
-        verify(guardPropertyAssignmentRepository).deleteByUserId(guard.getId());
-        verify(deviceTokenRepository).deleteByUserId(guard.getId());
-        verify(notificationRepository).deleteByUserIdUnfiltered(guard.getId());
-        verify(userService).deleteUser(guard.getId());
-    }
 
     @Test
     void storedAppleTokenIsRevokedWithTheLinkedClientId() {
