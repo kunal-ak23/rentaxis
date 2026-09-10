@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
 import { Loader2, Save, RefreshCw, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/format";
@@ -47,11 +48,12 @@ type Props = {
     refreshKey?: number;
 };
 
-const METHOD_OPTIONS: { value: PaymentMethod; label: string }[] = [
-    { value: "CHEQUE", label: "Cheque" },
-    { value: "BANK_TRANSFER", label: "Bank Transfer" },
-    { value: "ONLINE", label: "Online" },
-    { value: "CASH", label: "Cash" },
+// Value stays the wire enum; only the visible label is translated.
+const METHOD_OPTIONS: { value: PaymentMethod; labelKey: string }[] = [
+    { value: "CHEQUE", labelKey: "methodCheque" },
+    { value: "BANK_TRANSFER", labelKey: "methodBankTransfer" },
+    { value: "ONLINE", labelKey: "methodOnline" },
+    { value: "CASH", labelKey: "methodCash" },
 ];
 
 const EDITABLE_STATUSES = new Set(["DRAFT", "PENDING_SIGNATURE"]);
@@ -62,21 +64,22 @@ function normalizeMethod(m: string | null | undefined): PaymentMethod {
     return "CHEQUE";
 }
 
-function rowLabel(r: ScheduleRow): string {
+function rowLabel(r: ScheduleRow, t: (key: string, values?: Record<string, string | number | Date>) => string): string {
+    // purposeLabel comes from the backend already worded for display.
     if (r.purposeLabel) return r.purposeLabel;
-    if (r.isSecurityDeposit) return "Security Deposit";
-    if (r.isBookingDeposit) return "Booking Deposit";
-    if (r.isCharge) return "Charge";
-    return `Installment ${r.installmentNumber}`;
+    if (r.isSecurityDeposit) return t("labelSecurityDeposit");
+    if (r.isBookingDeposit) return t("labelBookingDeposit");
+    if (r.isCharge) return t("labelCharge");
+    return t("labelInstallment", { n: r.installmentNumber });
 }
 
-function clientValidate(rows: ScheduleRow[]): { ok: boolean; firstError?: string } {
+function clientValidate(rows: ScheduleRow[], t: (key: string, values?: Record<string, string | number | Date>) => string): { ok: boolean; firstError?: string } {
     for (const r of rows) {
         const m = normalizeMethod(r.paymentMethod);
-        const label = rowLabel(r);
-        if (!r.dueDate) return { ok: false, firstError: `${label}: due date is required` };
+        const label = rowLabel(r, t);
+        if (!r.dueDate) return { ok: false, firstError: t("errDueDateRequired", { label }) };
         if (r.amount == null || Number.isNaN(r.amount) || r.amount < 0)
-            return { ok: false, firstError: `${label}: amount must be a non-negative number` };
+            return { ok: false, firstError: t("errAmountNonNegative", { label }) };
         // CHEQUE rows deliberately require nothing beyond due date and amount.
         //
         // A payment plan is drawn up when the lease is signed, but the renter
@@ -92,12 +95,13 @@ function clientValidate(rows: ScheduleRow[]): { ok: boolean; firstError?: string
         // in as cheques arrive. Completeness is enforced where it actually
         // matters — clearing a cheque still requires its details.
         if ((m === "BANK_TRANSFER" || m === "ONLINE") && (!r.bankName || !r.chequeDate))
-            return { ok: false, firstError: `${label}: ${m === "ONLINE" ? "online" : "transfer"} rows need bank and date` };
+            return { ok: false, firstError: t(m === "ONLINE" ? "errOnlineNeedsBankDate" : "errTransferNeedsBankDate", { label }) };
     }
     return { ok: true };
 }
 
 export default function PaymentScheduleEditor({ leaseId, leaseStatus, canManage, onSaved, className, refreshKey }: Props) {
+    const t = useTranslations("PaymentSchedule");
     const [rows, setRows] = useState<ScheduleRow[]>([]);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -135,11 +139,11 @@ export default function PaymentScheduleEditor({ leaseId, leaseStatus, canManage,
                 setDirty(false);
                 setExtractedFields(new Set());
             } else {
-                setError("Failed to load payment schedule");
+                setError(t("failedToLoad"));
             }
         } catch (e) {
             console.error(e);
-            setError("Network error loading payment schedule");
+            setError(t("networkErrorLoading"));
         } finally {
             setLoading(false);
         }
@@ -166,9 +170,9 @@ export default function PaymentScheduleEditor({ leaseId, leaseStatus, canManage,
     };
 
     const handleSave = async () => {
-        const v = clientValidate(rows);
+        const v = clientValidate(rows, t);
         if (!v.ok) {
-            setError(v.firstError ?? "Validation failed");
+            setError(v.firstError ?? t("validationFailed"));
             return;
         }
         setSaving(true);
@@ -213,7 +217,7 @@ export default function PaymentScheduleEditor({ leaseId, leaseStatus, canManage,
             }
         } catch (e) {
             console.error(e);
-            setError("Network error while saving payment schedule");
+            setError(t("networkErrorSaving"));
         } finally {
             setSaving(false);
         }
@@ -222,7 +226,7 @@ export default function PaymentScheduleEditor({ leaseId, leaseStatus, canManage,
     if (loading) {
         return (
             <div className={cn("flex items-center gap-2 text-xs text-muted py-4", className)}>
-                <Loader2 size={14} className="animate-spin" /> Loading payment schedule…
+                <Loader2 size={14} className="animate-spin" /> {t("loading")}
             </div>
         );
     }
@@ -230,7 +234,7 @@ export default function PaymentScheduleEditor({ leaseId, leaseStatus, canManage,
     if (rows.length === 0) {
         return (
             <div className={cn("text-xs text-muted py-4", className)}>
-                No payment schedule rows yet.
+                {t("noRows")}
             </div>
         );
     }
@@ -239,7 +243,7 @@ export default function PaymentScheduleEditor({ leaseId, leaseStatus, canManage,
         <div className={cn("flex flex-col gap-3", className)}>
             {!editable && (
                 <p className="text-[11px] text-muted italic">
-                    Schedule is locked — lease status is <strong>{leaseStatus}</strong>.
+                    {t("lockedPrefix")} <strong>{leaseStatus}</strong>.
                 </p>
             )}
 
@@ -248,14 +252,14 @@ export default function PaymentScheduleEditor({ leaseId, leaseStatus, canManage,
                     <thead className="bg-input/40 text-muted">
                         <tr className="text-left">
                             <th className="px-3 py-2 font-semibold">#</th>
-                            <th className="px-3 py-2 font-semibold">Purpose</th>
-                            <th className="px-3 py-2 font-semibold">Due Date</th>
-                            <th className="px-3 py-2 font-semibold">Cheque / Payment Date</th>
-                            <th className="px-3 py-2 font-semibold">Method</th>
-                            <th className="px-3 py-2 font-semibold">Unique ID</th>
-                            <th className="px-3 py-2 font-semibold">Bank</th>
-                            <th className="px-3 py-2 font-semibold text-right">Amount</th>
-                            <th className="px-3 py-2 font-semibold">Status</th>
+                            <th className="px-3 py-2 font-semibold">{t("colPurpose")}</th>
+                            <th className="px-3 py-2 font-semibold">{t("colDueDate")}</th>
+                            <th className="px-3 py-2 font-semibold">{t("colChequePaymentDate")}</th>
+                            <th className="px-3 py-2 font-semibold">{t("colMethod")}</th>
+                            <th className="px-3 py-2 font-semibold">{t("colUniqueId")}</th>
+                            <th className="px-3 py-2 font-semibold">{t("colBank")}</th>
+                            <th className="px-3 py-2 font-semibold text-right">{t("colAmount")}</th>
+                            <th className="px-3 py-2 font-semibold">{t("colStatus")}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -308,7 +312,7 @@ export default function PaymentScheduleEditor({ leaseId, leaseStatus, canManage,
                                             value={r.dueDate?.substring(0, 10) || ""}
                                             onChange={(e) => updateRow(r.id, { dueDate: e.target.value })}
                                             disabled={rowDisabled}
-                                            title="Due date — when this installment is owed by the tenant"
+                                            title={t("dueDateHint")}
                                             className="border border-border rounded px-2 py-1 text-xs bg-surface disabled:bg-input/40 disabled:cursor-not-allowed"
                                         />
                                     </td>
@@ -326,7 +330,7 @@ export default function PaymentScheduleEditor({ leaseId, leaseStatus, canManage,
                                         />
                                         {paymentDateRequired
                                             ? <div className="text-[10px] text-muted mt-0.5">{paymentDateLabel.replace(" date", "")}</div>
-                                            : <div className="text-[10px] text-muted mt-0.5 italic">optional for cash</div>}
+                                            : <div className="text-[10px] text-muted mt-0.5 italic">{t("optionalForCash")}</div>}
                                     </td>
                                     <td className="px-3 py-2">
                                         <select
@@ -336,7 +340,7 @@ export default function PaymentScheduleEditor({ leaseId, leaseStatus, canManage,
                                             className="border border-border rounded px-2 py-1 text-xs bg-surface disabled:bg-input/40 disabled:cursor-not-allowed"
                                         >
                                             {METHOD_OPTIONS.map((o) => (
-                                                <option key={o.value} value={o.value}>{o.label}</option>
+                                                <option key={o.value} value={o.value}>{t(o.labelKey)}</option>
                                             ))}
                                         </select>
                                     </td>
@@ -347,10 +351,10 @@ export default function PaymentScheduleEditor({ leaseId, leaseStatus, canManage,
                                                 : m === "BANK_TRANSFER" ? "Transfer reference"
                                                 : m === "ONLINE" ? "Payment reference"
                                                 : "Notes (e.g., handed to ___ on ___)";
-                                            const subLabel = m === "CHEQUE" ? "cheque #"
-                                                : m === "BANK_TRANSFER" ? "ref no"
-                                                : m === "ONLINE" ? "ref no"
-                                                : "notes";
+                                            const subLabel = m === "CHEQUE" ? t("subLabelCheque")
+                                                : m === "BANK_TRANSFER" ? t("subLabelRef")
+                                                : m === "ONLINE" ? t("subLabelRef")
+                                                : t("subLabelNotes");
                                             return (
                                                 <>
                                                     <input
@@ -381,7 +385,7 @@ export default function PaymentScheduleEditor({ leaseId, leaseStatus, canManage,
                                             value={r.bankName || ""}
                                             onChange={(e) => updateRow(r.id, { bankName: e.target.value })}
                                             disabled={rowDisabled || !bankApplies}
-                                            placeholder={bankApplies ? "—" : "n/a"}
+                                            placeholder={bankApplies ? "—" : t("notApplicable")}
                                             className="border border-border rounded px-2 py-1 text-xs bg-surface w-32 disabled:bg-input/40 disabled:cursor-not-allowed"
                                         />
                                         {markExtracted("bankName") && (
@@ -421,14 +425,14 @@ export default function PaymentScheduleEditor({ leaseId, leaseStatus, canManage,
                         className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors cursor-pointer"
                     >
                         {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
-                        Save schedule
+                        {t("saveSchedule")}
                     </button>
                     <button
                         onClick={fetchRows}
                         disabled={saving}
                         className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold border border-border text-foreground hover:bg-input/40 transition-colors cursor-pointer"
                     >
-                        <RefreshCw size={12} /> Reset
+                        <RefreshCw size={12} /> {t("reset")}
                     </button>
                     {error && (
                         <span className="inline-flex items-center gap-1 text-[11px] text-error">
@@ -437,7 +441,7 @@ export default function PaymentScheduleEditor({ leaseId, leaseStatus, canManage,
                     )}
                     {saved && !dirty && !error && (
                         <span className="inline-flex items-center gap-1 text-[11px] text-success">
-                            <CheckCircle2 size={12} /> Saved
+                            <CheckCircle2 size={12} /> {t("saved")}
                         </span>
                     )}
                 </div>
