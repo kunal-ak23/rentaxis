@@ -8,6 +8,7 @@ import CardFlip from "@/components/ui/card-flip";
 import { Link } from "@/i18n/routing";
 import { formatCurrency, formatCurrencyCompact } from "@/lib/format";
 import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
+import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 
 type Unit = {
     id: string;
@@ -23,8 +24,10 @@ type Unit = {
 export default function UnitsPage({ params }: { params: Promise<{ id: string }> }) {
     const { id: propertyId } = use(params);
     const t = useTranslations("MasterData");
+    const tCommon = useTranslations("Common");
     const [units, setUnits] = useState<Unit[]>([]);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState<string | null>(null);
     const [showForm, setShowForm] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [formError, setFormError] = useState<string | null>(null);
@@ -49,6 +52,10 @@ export default function UnitsPage({ params }: { params: Promise<{ id: string }> 
             if (res.ok) {
                 const data = await res.json();
                 setUnits(data);
+            } else {
+                // A non-2xx used to leave the state at its initial empty
+                // value, so a failed request rendered as "nothing here".
+                setLoadError(tCommon("loadFailedUnits"));
             }
         } catch (err) {
             console.error(err);
@@ -88,8 +95,14 @@ export default function UnitsPage({ params }: { params: Promise<{ id: string }> 
         }
     };
 
+    const reload = () => {
+        setLoadError(null);
+        fetchUnits();
+    };
+
     return (
         <div className="p-8 max-w-7xl mx-auto">
+            {loadError && <LoadErrorBanner message={loadError} onRetry={reload} />}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10">
                 <div>
                     <Link href="/dashboard/properties" className="flex items-center gap-1.5 text-[10px] font-bold text-primary uppercase tracking-widest mb-4 hover:-translate-x-1 transition-transform cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none rounded">

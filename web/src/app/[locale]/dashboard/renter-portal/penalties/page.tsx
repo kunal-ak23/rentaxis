@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/format";
+import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -326,10 +327,12 @@ function PenaltySkeleton() {
 
 export default function RenterPenaltiesPage() {
     const t = useTranslations("RenterPenalties");
+    const tCommon = useTranslations("Common");
 
     const [activeTab, setActiveTab] = useState<TabKey>("open");
     const [penalties, setPenalties] = useState<PenaltyDTO[]>([]);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState<string | null>(null);
     const [paymentInstructions, setPaymentInstructions] = useState<string | null>(null);
 
     useEffect(() => {
@@ -354,6 +357,10 @@ export default function RenterPenaltiesPage() {
                     ? page
                     : page.content ?? [];
                 setPenalties(items);
+            } else {
+                // A non-2xx used to leave the state at its initial empty
+                // value, so a failed request rendered as "nothing here".
+                setLoadError(tCommon("loadFailedPenalties"));
             }
         } catch (err) {
             console.error(err);
@@ -375,8 +382,14 @@ export default function RenterPenaltiesPage() {
     const openCount = penalties.filter(p => derivePenaltyStatus(p) === "OPEN").length;
     const isEmpty = !loading && penalties.length === 0;
 
+    const reload = () => {
+        setLoadError(null);
+        fetchPenalties(activeTab);
+    };
+
     return (
         <div className="p-8 max-w-5xl mx-auto">
+            {loadError && <LoadErrorBanner message={loadError} onRetry={reload} />}
             {/* ── Page header ──────────────────────────────────────────── */}
             <div className="mb-8">
                 <h1 className="text-xl font-bold text-foreground tracking-tight mb-1">

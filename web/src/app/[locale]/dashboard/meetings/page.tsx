@@ -14,6 +14,7 @@ import { hasPermission, type UserRole } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
 import { Plus, Loader2, Eye, CalendarDays, List } from "lucide-react";
 import CreateMeetingModal from "./CreateMeetingModal";
+import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 
 // Dynamic import to avoid SSR issues with FullCalendar
 const FullCalendar = dynamic(() => import("@fullcalendar/react"), { ssr: false });
@@ -59,6 +60,7 @@ const CALENDAR_COLORS: Record<string, string> = {
 export default function MeetingsPage() {
     const { data: session } = useSession();
     const t = useTranslations("Meetings");
+    const tCommon = useTranslations("Common");
     const router = useRouter();
     const userRole = session?.user?.role as UserRole | undefined;
     const isRenter = userRole === "RENTER";
@@ -67,6 +69,7 @@ export default function MeetingsPage() {
     const [meetings, setMeetings] = useState<Meeting[]>([]);
     const [totalItems, setTotalItems] = useState(0);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState<string | null>(null);
 
     // View toggle
     const [view, setView] = useState<"calendar" | "list">("calendar");
@@ -105,6 +108,10 @@ export default function MeetingsPage() {
                     setMeetings(data.content);
                     setTotalItems(data.totalElements ?? data.content.length);
                 }
+            } else {
+                // A non-2xx used to leave the state at its initial empty
+                // value, so a failed request rendered as "nothing here".
+                setLoadError(tCommon("loadFailedMeetings"));
             }
         } catch { /* ignore */ }
     }, [isRenter, currentPage, itemsPerPage]);
@@ -147,8 +154,14 @@ export default function MeetingsPage() {
 
     // ── Render ──────────────────────────────────────────────────────────
 
+    const reload = () => {
+        setLoadError(null);
+        fetchMeetings();
+    };
+
     return (
         <div>
+            {loadError && <LoadErrorBanner message={loadError} onRetry={reload} />}
             {/* Header */}
             <div className="flex items-center justify-between mb-6">
                 <div>

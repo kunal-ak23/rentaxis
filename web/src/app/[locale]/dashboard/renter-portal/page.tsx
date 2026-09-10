@@ -10,6 +10,7 @@ import { Link } from "@/i18n/routing";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import CreateMeetingModal from "@/app/[locale]/dashboard/meetings/CreateMeetingModal";
 import RenewalBanner from "@/components/renewals/RenewalBanner";
+import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 
 type Lease = {
     id: string;
@@ -53,10 +54,12 @@ const MEETINGS_PER_PAGE = 5;
 
 export default function RenterPortalPage() {
     const t = useTranslations("MasterData");
+    const tCommon = useTranslations("Common");
     const tPayments = useTranslations("OnlinePayments");
     const tFacilities = useTranslations("Facilities");
     const [leases, setLeases] = useState<Lease[]>([]);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState<string | null>(null);
     const [nextPayment, setNextPayment] = useState<{ dueDate: string; amount: number; daysUntilDue: number; isOverdue: boolean } | null>(null);
     const [paymentsByLease, setPaymentsByLease] = useState<Record<string, Array<{ id: string; installmentNumber: number; dueDate: string; amount: number; status: string; paymentMethod: string }>>>({});
     const [expandedPlanLeaseId, setExpandedPlanLeaseId] = useState<string | null>(null);
@@ -94,6 +97,10 @@ export default function RenterPortalPage() {
                     setMeetings(data.content);
                     setMeetingsTotalPages(data.totalPages ?? 1);
                 }
+            } else {
+                // A non-2xx used to leave the state at its initial empty
+                // value, so a failed request rendered as "nothing here".
+                setLoadError(tCommon("loadFailed"));
             }
         } catch (err) {
             console.error(err);
@@ -153,6 +160,10 @@ export default function RenterPortalPage() {
                         isOverdue: diffDays < 0,
                     });
                 }
+            } else {
+                // A non-2xx used to leave the state at its initial empty
+                // value, so a failed request rendered as "nothing here".
+                setLoadError(tCommon("loadFailed"));
             }
         } catch (err) {
             console.error(err);
@@ -214,6 +225,10 @@ export default function RenterPortalPage() {
                         URL.revokeObjectURL(url);
                     }
                 }
+            } else {
+                // A non-2xx used to leave the state at its initial empty
+                // value, so a failed request rendered as "nothing here".
+                setLoadError(tCommon("loadFailed"));
             }
         } catch (err) {
             console.error(err);
@@ -275,8 +290,16 @@ export default function RenterPortalPage() {
         );
     }
 
+    const reload = () => {
+        setLoadError(null);
+        fetchMyMeetings();
+        fetchMyLeases();
+        fetchPendingPayments();
+    };
+
     return (
         <div className="p-8 max-w-5xl mx-auto">
+            {loadError && <LoadErrorBanner message={loadError} onRetry={reload} />}
             <div className="mb-10">
                 <h1 className="text-xl font-bold text-foreground tracking-tight mb-1">
                     {t("welcomeRenter")}, {userName}

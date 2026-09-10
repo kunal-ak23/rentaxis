@@ -7,6 +7,7 @@ import { Pagination } from "@/components/ui/Pagination";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import VendorPaymentDialog from "@/components/vendors/VendorPaymentDialog";
 import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
+import { LoadErrorBanner } from "@/components/ui/LoadErrorBanner";
 
 type Account = {
     id: string;
@@ -52,10 +53,12 @@ const emptyForm = {
 
 export default function VendorsPage() {
     const t = useTranslations("Vendors");
+    const tCommon = useTranslations("Common");
     const locale = useLocale();
     const [vendors, setVendors] = useState<Vendor[]>([]);
     const [accounts, setAccounts] = useState<Account[]>([]);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState<string | null>(null);
     const [showModal, setShowModal] = useState(false);
     const [editingVendor, setEditingVendor] = useState<Vendor | null>(null);
     const [submitting, setSubmitting] = useState(false);
@@ -87,6 +90,10 @@ export default function VendorsPage() {
                 const data = await res.json();
                 data.sort((a: any, b: any) => (a.id || '').localeCompare(b.id || ''));
                 setVendors(data);
+            } else {
+                // A non-2xx used to leave the state at its initial empty
+                // value, so a failed request rendered as "nothing here".
+                setLoadError(tCommon("loadFailedVendors"));
             }
         } catch (err) {
             console.error(err);
@@ -101,6 +108,10 @@ export default function VendorsPage() {
             if (res.ok) {
                 const data: Account[] = await res.json();
                 setAccounts(data.filter((a) => a.accountType === "LIABILITY"));
+            } else {
+                // A non-2xx used to leave the state at its initial empty
+                // value, so a failed request rendered as "nothing here".
+                setLoadError(tCommon("loadFailedVendors"));
             }
         } catch (err) {
             console.error(err);
@@ -230,8 +241,15 @@ export default function VendorsPage() {
 
     const paginatedVendors = filteredVendors.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
+    const reload = () => {
+        setLoadError(null);
+        fetchVendors();
+        fetchAccounts();
+    };
+
     return (
         <div>
+            {loadError && <LoadErrorBanner message={loadError} onRetry={reload} />}
             {/* Header */}
             <div className="flex items-center justify-between mb-8">
                 <div>
