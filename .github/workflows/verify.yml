@@ -1,0 +1,113 @@
+name: Verify
+
+# Runs the tests that already exist, on every pull request and on main.
+#
+# Until this existed, deploy.yml was the only workflow: it triggers on push to
+# main and goes straight to building images and shipping them to the production
+# VM. No step ran gradlew test, npm test, tsc or flutter test, so nothing stood
+# between a commit and production.
+#
+# That is not theoretical. Four defects found in the September review had been
+# sitting in a green suite because the tests themselves encoded the bug:
+# renewal reminders asserted as SENT while the dispatcher dropped them, a
+# terminated lease asserted as MOVED_OUT, three integration tests hand-seeding an
+# account code the seeder never creates (production 500'd on every cheque clear),
+# and account deletion mocked so it never met a foreign key. A gate does not fix
+# tests that assert the wrong thing — but it does mean the ones that assert the
+# right thing have to pass before a merge, which is the floor this repo did not
+# have.
+#
+# NOTE: adding this file does not make the checks required. Someone with admin
+# rights has to turn on branch protection for main and mark these jobs required,
+# otherwise a PR can still be merged red.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# A newer push supersedes an in-flight run for the same ref. Not applied to main
+# pushes, where every commit's result is worth keeping.
+concurrency:
+  group: verify-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  backend:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    # The suite is Testcontainers-backed and takes ~10 minutes locally; the
+    # ceiling is generous so a slow container pull is not reported as a failure.
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # Testcontainers needs a working Docker daemon. ubuntu-latest ships one,
+      # so this is a fail-fast assertion rather than a setup step: without it a
+      # missing daemon surfaces as a confusing per-test timeout.
+      - name: Verify Docker is available
+        run: docker info > /dev/null && echo "docker ok"
+
+      - name: Run tests
+        working-directory: backend
+        run: ./gradlew test --console=plain
+
+      # The JUnit XML is the authoritative count. Printing it here means a run's
+      # summary states how many tests actually ran, so a suite that silently
+      # stops running tests is visible rather than passing quietly.
+      - name: Summarise results
+        if: always()
+        working-directory: backend
+        run: |
+          python3 - <<'PY'
+          import glob, re, os
+          files = glob.glob('build/test-results/test/*.xml')
+          t = f = e = s = 0
+          for p in files:
+              h = open(p, encoding='utf-8', errors='ignore').read(900)
+              for key in ('tests', 'skipped', 'failures', 'errors'):
+                  m = re.search(key + r'="(\d+)"', h)
+                  if not m:
+                      continue
+                  v = int(m.group(1))
+                  if key == 'tests': t += v
+                  elif key == 'skipped': s += v
+                  elif key == 'failures': f += v
+                  else: e += v
+          line = f"Backend: {t} tests in {len(files)} classes — {f} failures, {e} errors, {s} skipped"
+          print(line)
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as fh:
+              fh.write(line + "\n")
+          PY
+
+      - name: Upload test report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-results
+          path: backend/build/reports/tests/test
+          retention-days: 7
+
+  # The web job is deliberately NOT here yet — see issue #233.
+  #
+  # It cannot install on a Linux runner. The committed lockfile is generated on
+  # macOS and does not describe the tree npm resolves on Linux, so `npm ci`
+  # refuses it; installing without it then trips an npm resolution bug
+  # ("Cannot read properties of null (reading 'edgesOut')"), and installing WITH
+  # it leaves vitest's bundler without its native binding (npm/cli#4828).
+  #
+  # Six runs went into establishing that, and none of it is a defect in the
+  # application code — `tsc --noEmit` and the 243 vitest tests both pass locally.
+  # A job that is permanently red is worse than no job: it teaches people to
+  # ignore the check. So the gate ships with the half that genuinely works, and
+  # #233 carries the diagnosis plus the one command needed to finish it.
