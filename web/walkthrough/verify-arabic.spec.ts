@@ -62,3 +62,34 @@ test('Arabic dashboard shell and properties page are localized on production', a
 
   console.log('  Arabic shell + properties verified on production');
 });
+
+test('Arabic lease wizard is localized on production', async ({ page }) => {
+  test.setTimeout(180_000);
+  await signIn(page);
+  await page.evaluate(() => {
+    try {
+      window.localStorage.setItem('rentaxis_tours_completed', JSON.stringify(['admin-onboarding']));
+    } catch { /* ignore */ }
+  });
+
+  await page.goto(`${BASE}/ar/dashboard/leases`);
+  await page.waitForLoadState('networkidle');
+  await page.getByRole('button', { name: new RegExp(ar.MasterData.draftLease, 'i') }).first().click();
+
+  // The wizard is a bare fixed overlay, not a role=dialog (#176), so anchor on
+  // its aria-labelled close button.
+  const wizard = page.locator('div.fixed.inset-0')
+    .filter({ has: page.getByRole('button', { name: ar.LeaseWizard.closeWizard }) }).first();
+  await expect(wizard).toBeVisible({ timeout: 30_000 });
+
+  const text = await wizard.innerText();
+  for (const key of ['titlePrefix', 'stepParties', 'stepTerms', 'stepPaymentPlan', 'unitRequired', 'renterRequired', 'next'] as const) {
+    expect(text, `wizard should show ar.LeaseWizard.${key}`).toContain(ar.LeaseWizard[key]);
+  }
+  for (const literal of ['Parties', 'Terms', 'Payment plan', 'New Lease', 'Unit *', 'Renter *']) {
+    expect(text, `"${literal}" should not appear in the Arabic wizard`).not.toContain(literal);
+  }
+
+  await page.screenshot({ path: path.join(__dirname, 'takes', 'ar-lease-wizard.png') });
+  console.log('  Arabic lease wizard verified on production');
+});
