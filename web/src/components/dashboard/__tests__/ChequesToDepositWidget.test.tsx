@@ -1,5 +1,8 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { NextIntlClientProvider } from "next-intl";
+
+import en from "../../../../messages/en.json";
 
 vi.mock("@/i18n/routing", () => ({
   Link: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => (
@@ -31,7 +34,11 @@ describe("ChequesToDepositWidget", () => {
       totalElements: 1,
     });
 
-    render(<ChequesToDepositWidget />);
+    render(
+            <NextIntlClientProvider locale="en" messages={en}>
+                <ChequesToDepositWidget />
+            </NextIntlClientProvider>,
+        );
 
     await waitFor(() => expect(screen.getByText(/Omar R/)).toBeTruthy());
     expect(screen.getByText(/Cheques to deposit \(1\)/)).toBeTruthy();
@@ -41,7 +48,11 @@ describe("ChequesToDepositWidget", () => {
 
   it("shows an empty state when nothing is due for deposit", async () => {
     mockFetch({ content: [], totalElements: 0 });
-    render(<ChequesToDepositWidget />);
+    render(
+            <NextIntlClientProvider locale="en" messages={en}>
+                <ChequesToDepositWidget />
+            </NextIntlClientProvider>,
+        );
     await waitFor(() => expect(screen.getByText(/no cheques due for deposit/i)).toBeTruthy());
   });
 });

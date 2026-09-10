@@ -1,5 +1,8 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { NextIntlClientProvider } from "next-intl";
+
+import en from "../../../../messages/en.json";
 
 vi.mock("@/i18n/routing", () => ({
   Link: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => (
@@ -27,7 +30,11 @@ describe("OverduePaymentsWidget", () => {
       totalElements: 3,
     });
 
-    render(<OverduePaymentsWidget />);
+    render(
+            <NextIntlClientProvider locale="en" messages={en}>
+                <OverduePaymentsWidget />
+            </NextIntlClientProvider>,
+        );
 
     await waitFor(() => expect(screen.getByText(/Jane Tenant/)).toBeTruthy());
     // header shows the total count, not just the rendered page size
@@ -42,7 +49,11 @@ describe("OverduePaymentsWidget", () => {
 
   it("shows an empty state when there are no overdue payments", async () => {
     mockFetch({ content: [], totalElements: 0 });
-    render(<OverduePaymentsWidget />);
+    render(
+            <NextIntlClientProvider locale="en" messages={en}>
+                <OverduePaymentsWidget />
+            </NextIntlClientProvider>,
+        );
     await waitFor(() => expect(screen.getByText(/no overdue payments/i)).toBeTruthy());
     expect(screen.queryByRole("link", { name: /view all/i })).toBeNull();
   });

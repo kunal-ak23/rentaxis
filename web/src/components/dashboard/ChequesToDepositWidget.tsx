@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/routing";
 import { formatCurrencyCompact } from "@/lib/format";
 
@@ -14,6 +15,7 @@ type Payment = {
 };
 
 export default function ChequesToDepositWidget() {
+  const t = useTranslations("Dashboard");
   const [items, setItems] = useState<Payment[]>([]);
   const [count, setCount] = useState(0);
 
@@ -32,19 +34,19 @@ export default function ChequesToDepositWidget() {
     <div className="bg-surface rounded-[var(--radius-lg)] border border-border p-4">
       <div className="flex items-center justify-between mb-2">
         <h3 className="text-xs font-semibold text-muted uppercase tracking-wider">
-          Cheques to deposit {count > 0 && `(${count})`}
+          {t("chequesToDepositTitle")} {count > 0 && `(${count})`}
         </h3>
         {count > 0 && (
           <Link
             href="/dashboard/finance/payments?status=TO_DEPOSIT"
             className="text-[11px] font-medium text-primary hover:underline"
           >
-            View all
+            {t("viewAll")}
           </Link>
         )}
       </div>
       {items.length === 0 ? (
-        <p className="text-xs text-muted">No cheques due for deposit today</p>
+        <p className="text-xs text-muted">{t("noChequesDueToday")}</p>
       ) : (
         <ul className="space-y-2">
           {items.map((p) => (

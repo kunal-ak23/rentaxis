@@ -16,8 +16,6 @@ vi.mock("@/i18n/routing", () => ({
     ),
 }));
 vi.mock("@/components/dashboard/FollowUpsWidget", () => ({ default: () => null }));
-vi.mock("@/components/dashboard/OverduePaymentsWidget", () => ({ default: () => null }));
-vi.mock("@/components/dashboard/ChequesToDepositWidget", () => ({ default: () => null }));
 
 import DashboardPage from "../page";
 
@@ -93,6 +91,9 @@ describe("dashboard home localization", () => {
             "Collected this month", "Pending this month", "Portfolio snapshot",
             "Current totals", "Draft leases", "Vacant units", "New lease", "Export",
             "Recent activity", "Requires follow-up",
+            // The two summary widgets, previously stubbed out of this test and
+            // therefore the last English text left on the Arabic dashboard.
+            "Overdue payments", "Cheques to deposit", "View all",
         ]) {
             expect(text, `"${literal}" should not appear on the Arabic dashboard`).not.toContain(literal);
         }
