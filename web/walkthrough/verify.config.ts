@@ -25,7 +25,6 @@ import fs from 'node:fs';
  */
 export default defineConfig({
   testDir: __dirname,
-  testMatch: /verify-arabic\.spec\.ts/,
   fullyParallel: false,
   workers: 1,
   retries: 0,
@@ -40,4 +39,19 @@ export default defineConfig({
     ignoreHTTPSErrors: false,
     trace: 'retain-on-failure',
   },
+  projects: [
+    // verify-arabic signs in as a tenant admin itself; verify-admin-delete needs
+    // the SUPER_ADMIN storageState, so refresh it rather than relying on tokens
+    // left behind by an earlier run.
+    {
+      name: 'auth-setup',
+      testDir: path.join(__dirname, '..', 'e2e-prod'),
+      testMatch: /global-setup\.ts/,
+    },
+    {
+      name: 'verify',
+      testMatch: /verify-(arabic|admin-delete)\.spec\.ts/,
+      dependencies: ['auth-setup'],
+    },
+  ],
 });
