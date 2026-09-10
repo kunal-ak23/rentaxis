@@ -6,6 +6,30 @@ class AuthInterceptor extends Interceptor {
 
   AuthInterceptor(this._storage);
 
+  /// Called once when the server rejects a request the app believed was
+  /// authenticated. Apps wire this to logout; their router already redirects
+  /// to /login when auth state flips, so no navigation happens in here.
+  ///
+  /// There is no token-refresh call anywhere in the codebase, so an expired or
+  /// server-revoked JWT used to leave every screen showing its own generic
+  /// "load failed" with a retry that re-sent the same stale token and failed
+  /// identically. The only way back was finding Profile > Logout by hand.
+  static void Function()? onUnauthorized;
+
+  /// A burst of parallel requests all 401 at once. Fire the callback for the
+  /// first and stay quiet until something succeeds again, so the app logs out
+  /// once rather than once per in-flight request.
+  static bool _signalled = false;
+
+  /// Test seam: lets a test start from a known state.
+  static void resetUnauthorizedSignal() => _signalled = false;
+
+  /// A 401 from a sign-in attempt means wrong credentials, not an expired
+  /// session — logging out over it would be nonsense, and would clear the
+  /// login screen's own error handling out from under it.
+  static bool _isSignInAttempt(String path) =>
+      path.endsWith('/auth/login') || path.endsWith('/auth/apple');
+
   @override
   Future<void> onRequest(
       RequestOptions options, RequestInterceptorHandler handler) async {
@@ -34,7 +58,21 @@ class AuthInterceptor extends Interceptor {
   }
 
   @override
+  void onResponse(Response response, ResponseInterceptorHandler handler) {
+    _signalled = false;
+    handler.next(response);
+  }
+
+  @override
   void onError(DioException err, ErrorInterceptorHandler handler) {
+    if (err.response?.statusCode == 401 &&
+        !_isSignInAttempt(err.requestOptions.path) &&
+        !_signalled) {
+      _signalled = true;
+      onUnauthorized?.call();
+    }
+    // Always pass the error through: screens keep their own handling, and the
+    // logout is an addition to it rather than a replacement.
     handler.next(err);
   }
 }

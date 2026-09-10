@@ -4,11 +4,35 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:rentaxis_core/rentaxis_core.dart';
 import 'router.dart';
 
-class SecurityApp extends ConsumerWidget {
+class SecurityApp extends ConsumerStatefulWidget {
   const SecurityApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SecurityApp> createState() => _SecurityAppState();
+}
+
+class _SecurityAppState extends ConsumerState<SecurityApp> {
+  @override
+  void initState() {
+    super.initState();
+    // A 401 on a session the app believed was valid means the token expired or
+    // was revoked server-side; there is no refresh call to fall back on.
+    // Logging out is enough — the router redirects to /login the moment auth
+    // state flips, so this deliberately does no navigation of its own.
+    AuthInterceptor.onUnauthorized = () {
+      if (!mounted) return;
+      ref.read(authProvider.notifier).logout();
+    };
+  }
+
+  @override
+  void dispose() {
+    AuthInterceptor.onUnauthorized = null;
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final router = ref.watch(routerProvider);
     final themeMode = ref.watch(themeModeProvider);
     final language = ref.watch(appLanguageProvider);

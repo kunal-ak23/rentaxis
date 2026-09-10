@@ -134,6 +134,15 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
     final l = _L(context.isAr);
     final accentColor = m.isDark ? AppColors.accent : AppColors.primary;
     if (notifications.isEmpty) {
+      // "You're all caught up!" on a failed fetch is a false success message.
+      // NotificationState.hasError exists precisely to tell the two apart —
+      // its own doc comment says so — but nothing on this screen read it, so a
+      // 401 on an expired session, a 500, or a dropped connection all rendered
+      // as an empty inbox. A manager had no way to know pending gate-pass,
+      // ticket or payment alerts had failed to load, and nothing to tap.
+      if (ref.watch(notificationProvider).hasError) {
+        return ErrorState(message: l.loadFailed, onRetry: _refresh);
+      }
       return EmptyState(
         icon: Icons.notifications_none,
         title: l.noNotifications,
@@ -287,4 +296,7 @@ class _L {
   String get allCaughtUp =>
       ar ? 'أنت على اطلاع بكل شيء!' : 'You\'re all caught up!';
   String get notification => ar ? 'إشعار' : 'Notification';
+  String get loadFailed => ar
+      ? 'تعذّر تحميل الإشعارات. اسحب للتحديث أو أعد المحاولة.'
+      : 'Couldn\'t load notifications. Pull to refresh or try again.';
 }
