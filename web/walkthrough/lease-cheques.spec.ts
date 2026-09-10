@@ -238,14 +238,21 @@ async function saveDraft(page: Page, wizard: ReturnType<Page['getByRole']>) {
  * already carries the tenant admin's session and tenant scope, and a separately
  * created context was being torn down before it could be used.
  */
-async function chequeCountFor(page: Page, leaseId: string): Promise<{ total: number; withCheque: number }> {
+async function chequeCountFor(page: Page, leaseId: string):
+    Promise<{ total: number; withCheque: number; onChequeMethod: number }> {
   // Path convention: backend /api/<x> -> proxy /api/proxy/<x>.
   const res = await page.request.get(`/api/proxy/v1/payments/lease/${leaseId}`);
   expect(res.ok(), 'payment schedule must be readable').toBeTruthy();
-  const rows: { chequeNumber?: string | null }[] = await res.json();
+  const rows: { chequeNumber?: string | null; paymentMethod?: string | null }[] = await res.json();
   return {
     total: rows.length,
     withCheque: rows.filter((r) => !!r.chequeNumber && String(r.chequeNumber).trim() !== '').length,
+    // Counted separately from withCheque on purpose. Counting only cheque
+    // numbers cannot tell "row kept method CHEQUE with details still blank"
+    // apart from "row was quietly coerced to CASH" — and that coercion was
+    // exactly the workaround this change exists to remove, so a test that
+    // could not see the difference would pass either way.
+    onChequeMethod: rows.filter((r) => String(r.paymentMethod ?? '').toUpperCase() === 'CHEQUE').length,
   };
 }
 
@@ -272,10 +279,6 @@ async function fillChequeRow(row: ReturnType<Page['locator']>, chequeNo: string)
   await row.locator('input[placeholder="—"]').first().fill('Emirates NBD');
 }
 
-/** Switches a row away from CHEQUE so it is not subject to the cheque-completeness rule. */
-async function setRowMethod(row: ReturnType<Page['locator']>, method: string) {
-  await row.locator('select').first().selectOption(method);
-}
 
 /**
  * Clicks Save schedule and waits for the write to actually land.
@@ -396,18 +399,23 @@ test('scenario C — some installments have cheques', async ({ browser }) => {
     const filled = Math.min(2, n);
     for (let i = 0; i < filled; i++) await fillChequeRow(rows.nth(i), `${100300 + i}`);
 
-    // The remaining rows must move off CHEQUE before this will save.
-    // clientValidate rejects the whole schedule if ANY row is method=CHEQUE
-    // without number + date + bank, and CHEQUE is the default — so "some
-    // cheques" is only expressible by marking the rest as another method.
-    // Worth knowing before demoing this live.
-    for (let i = filled; i < n; i++) await setRowMethod(rows.nth(i), 'CASH');
+    // The remaining rows stay on CHEQUE with their details blank — "cheque
+    // expected, not yet received". This is the actual business case, and it is
+    // what the run proves: before the fix the editor refused to save while any
+    // CHEQUE row was incomplete, so "some cheques" could only be expressed by
+    // relabelling the outstanding rows as CASH, recording a payment method
+    // that was not true.
     await saveSchedule(page, wizard);
     record('lease', leaseId, `Scenario C — some cheques (unit ${fx.units[2].unitNumber})`);
 
-    const { total, withCheque } = await chequeCountFor(page, leaseId);
-    console.log(`  scenario C: ${withCheque}/${total} installments carry a cheque (filled ${filled} field(s))`);
+    const { total, withCheque, onChequeMethod } = await chequeCountFor(page, leaseId);
+    console.log(`  scenario C: ${withCheque}/${total} installments carry a cheque `
+      + `(filled ${filled} field(s)); ${onChequeMethod}/${total} rows still on method CHEQUE`);
     expect(total).toBeGreaterThan(0);
+
+    // The point of the fix: the rows without a cheque yet are still CHEQUE
+    // rows. Before it, saving required relabelling them CASH.
+    expect(onChequeMethod, 'every row should still be on method CHEQUE').toBe(total);
     // The point of this scenario: a partially-chequed plan is accepted, and the
     // rows without cheques are still real installments rather than being dropped.
     expect(withCheque, 'some but not all installments carry a cheque').toBeGreaterThan(0);
