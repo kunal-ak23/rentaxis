@@ -136,9 +136,33 @@ jobs:
       # this installs non-strictly. It costs reproducibility, not correctness:
       # the versions still come from package.json, and the tests below are real.
       # Restore `npm ci` once a Linux-generated lockfile is committed.
+      # The lockfile is removed before installing. That is not laziness, and it
+      # is not permanent — see issue #233.
+      #
+      # The committed lockfile is generated on macOS, so it does not carry the
+      # Linux entries for platform-native optional dependencies. vitest 4's
+      # bundler (rolldown) then fails at startup with "Cannot find native
+      # binding", and npm's own error points at the long-standing optional
+      # dependency bug (npm/cli#4828), whose documented workaround is exactly
+      # this: remove the lockfile and node_modules, then install.
+      #
+      # Ruled out first, in order: pinning the node version (never the cause),
+      # regenerating the lockfile on macOS (fixed a real @swc/helpers peer-range
+      # contradiction — kept — but a darwin install cannot record the Linux
+      # tree), and `npm install` while keeping the lockfile (the lockfile still
+      # constrains optional deps, so the native binding is still absent).
+      #
+      # The cost is real and worth naming: CI installs whatever package.json's
+      # ranges resolve to today, so a transitive release can change what is
+      # tested with no commit. That is the reproducibility gap #194 describes.
+      # It buys a working type-check and test gate in the meantime, which the
+      # repo did not have at all. Restore the lockfile and `npm ci` as soon as a
+      # Linux-generated one is committed.
       - name: Install
         working-directory: web
-        run: npm install --no-audit --no-fund
+        run: |
+          rm -f package-lock.json
+          npm install --no-audit --no-fund
 
       - name: Type-check
         working-directory: web
