@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useTranslations } from "next-intl";
 import { useSession } from "next-auth/react";
 import { User, Phone, Mail, Shield, Loader2, Check, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { getRoleLabel, type UserRole } from "@/lib/rbac";
+import { getRoleLabel, getRoleLabelKey, type UserRole } from "@/lib/rbac";
 
 type Profile = {
     id: string;
@@ -15,6 +16,11 @@ type Profile = {
 };
 
 export default function ProfilePage() {
+    const tRoles = useTranslations("Roles");
+    // t.has guards a role the catalogue does not know; getRoleLabel is the
+    // English fallback rather than letting next-intl throw.
+    const roleLabel = (role: string) =>
+        tRoles.has(getRoleLabelKey(role)) ? tRoles(getRoleLabelKey(role)) : getRoleLabel(role);
     const { data: session } = useSession();
     const [profile, setProfile] = useState<Profile | null>(null);
     const [loading, setLoading] = useState(true);
@@ -149,7 +155,7 @@ export default function ProfilePage() {
                         <div className="flex items-center gap-2 mt-0.5">
                             <span className="text-xs text-muted">{profile.email}</span>
                             <span className="text-[10px] font-semibold text-primary bg-primary/10 px-2 py-0.5 rounded-md border border-primary/20">
-                                {getRoleLabel(profile.role as UserRole)}
+                                {roleLabel(profile.role as UserRole)}
                             </span>
                         </div>
                     </div>

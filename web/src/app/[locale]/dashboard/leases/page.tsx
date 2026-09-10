@@ -72,10 +72,10 @@ type PaymentStats = {
 };
 
 const BOARD_COLUMNS = [
-    { key: "draft", label: "Draft", statuses: ["DRAFT"], color: "bg-muted" },
-    { key: "pending", label: "Pending Signature", statuses: ["PENDING_SIGNATURE"], color: "bg-warning" },
-    { key: "active", label: "Active", statuses: ["ACTIVE", "NOTICE_GIVEN"], color: "bg-success" },
-    { key: "closed", label: "Closed", statuses: ["TERMINATED", "EXPIRED", "CLOSED"], color: "bg-error" },
+    { key: "draft", labelKey: "draft", statuses: ["DRAFT"], color: "bg-muted" },
+    { key: "pending", labelKey: "pendingSignature", statuses: ["PENDING_SIGNATURE"], color: "bg-warning" },
+    { key: "active", labelKey: "active", statuses: ["ACTIVE", "NOTICE_GIVEN"], color: "bg-success" },
+    { key: "closed", labelKey: "closed", statuses: ["TERMINATED", "EXPIRED", "CLOSED"], color: "bg-error" },
 ];
 
 export default function LeasesPage() {
@@ -225,9 +225,9 @@ export default function LeasesPage() {
 
     const handleDeleteDraft = (id: string) => {
         setConfirmConfig({
-            title: "Delete draft lease?",
+            title: t("deleteDraftTitle"),
             description: "This will permanently remove the draft lease, its payment schedule, attachments, and history. This action cannot be undone.",
-            confirmText: "Delete",
+            confirmText: t("delete"),
             isDestructive: true,
             onConfirm: async () => {
                 setActionLoading(`delete-${id}`);
@@ -236,14 +236,14 @@ export default function LeasesPage() {
                     if (res.ok) {
                         fetchLeases();
                     } else if (res.status === 403) {
-                        alert("You don't have permission to delete this lease.");
+                        alert(t("noPermissionDeleteLease"));
                     } else {
                         let detail: string | null = null;
                         try {
                             const body = await res.json();
                             detail = body?.message || body?.error || null;
                         } catch {}
-                        alert(detail || "Failed to delete the draft. Please try again.");
+                        alert(detail || t("failedDeleteDraft"));
                     }
                 } catch (err) {
                     console.error(err);
@@ -297,7 +297,7 @@ export default function LeasesPage() {
                     const res = await fetch(`/api/proxy/v1/leases/${id}/terminate`, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ notes: "Quick termination from list view" }),
+                        body: JSON.stringify({ notes: t("quickTerminationNote") }),
                     });
                     if (res.ok) fetchLeases();
                 } catch (err) {
@@ -325,7 +325,7 @@ export default function LeasesPage() {
                     const body = await res.json();
                     detail = body?.message || body?.error || null;
                 } catch {}
-                alert(detail || "Failed to generate contract. Please try again.");
+                alert(detail || t("failedGenerateContract"));
             }
         } catch (err) {
             console.error(err);
@@ -577,7 +577,7 @@ export default function LeasesPage() {
                         <button
                             onClick={() => handleDeleteDraft(lease.id)}
                             disabled={actionLoading === `delete-${lease.id}`}
-                            title="Delete draft"
+                            title={t("deleteDraft")}
                             className="flex items-center justify-center gap-2 bg-error/10 text-error hover:bg-error/20 py-2.5 px-3 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-error/30 focus:outline-none disabled:opacity-50"
                         >
                             {actionLoading === `delete-${lease.id}` ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
@@ -616,7 +616,7 @@ export default function LeasesPage() {
                                 onClick={() => handleGenerateContract(lease.id)}
                                 disabled={actionLoading === `generate-${lease.id}`}
                                 className="flex items-center justify-center gap-1.5 bg-amber-50 text-amber-700 hover:bg-amber-100 py-2.5 px-3 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer focus:ring-2 focus:ring-primary/30 focus:outline-none disabled:opacity-50"
-                                title="Regenerate contract"
+                                title={t("regenerateContract")}
                             >
                                 {actionLoading === `generate-${lease.id}` ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
                             </button>
@@ -643,7 +643,7 @@ export default function LeasesPage() {
                         className="flex-1 flex items-center justify-center gap-2 bg-input text-foreground hover:bg-border py-2.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer"
                     >
                         <FileText size={14} />
-                        Docs
+                        {t("docs")}
                     </button>
                 </div>
             )}
@@ -668,7 +668,7 @@ export default function LeasesPage() {
                         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
                         <input
                             type="text"
-                            placeholder="Search..."
+                            placeholder={t("search")}
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             className="pl-9 pr-4 py-2 bg-surface border border-border rounded-lg text-sm text-foreground placeholder:text-muted/50 focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none w-64 transition-all"
@@ -684,7 +684,7 @@ export default function LeasesPage() {
                             )}
                         >
                             <List size={13} />
-                            Table
+                            {t("table")}
                         </button>
                         <button
                             onClick={() => { setViewMode('cards'); setCurrentPage(1); }}
@@ -694,7 +694,7 @@ export default function LeasesPage() {
                             )}
                         >
                             <LayoutGrid size={13} />
-                            Cards
+                            {t("cards")}
                         </button>
                         <button
                             onClick={() => setViewMode('board')}
@@ -704,7 +704,7 @@ export default function LeasesPage() {
                             )}
                         >
                             <Columns3 size={13} />
-                            Board
+                            {t("board")}
                         </button>
                     </div>
                     {canManageLeases && (
@@ -748,14 +748,14 @@ export default function LeasesPage() {
                             <table className="w-full">
                                 <thead>
                                     <tr className="bg-input/50">
-                                        <th className="text-left px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">Unit</th>
-                                        <th className="text-left px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">Renter</th>
-                                        <th className="text-left px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">Property</th>
-                                        <th className="text-left px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">Start Date</th>
-                                        <th className="text-left px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">End Date</th>
-                                        <th className="text-right px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">Monthly Rent (AED)</th>
-                                        <th className="text-center px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">Status</th>
-                                        <th className="text-center px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">Actions</th>
+                                        <th className="text-left px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">{t("unit")}</th>
+                                        <th className="text-left px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">{t("renter")}</th>
+                                        <th className="text-left px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">{t("property")}</th>
+                                        <th className="text-left px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">{t("startDate")}</th>
+                                        <th className="text-left px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">{t("endDate")}</th>
+                                        <th className="text-right px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">{t("monthlyRentAed")}</th>
+                                        <th className="text-center px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">{t("status")}</th>
+                                        <th className="text-center px-4 py-3 text-[11px] font-semibold text-muted uppercase tracking-wider">{t("actions")}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -785,14 +785,14 @@ export default function LeasesPage() {
                                                                 onClick={() => handleEditDraft(lease)}
                                                                 className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium bg-input text-foreground hover:bg-input/80 transition-colors cursor-pointer"
                                                             >
-                                                                <Pencil size={11} /> Edit
+                                                                <Pencil size={11} /> {t("edit")}
                                                             </button>
                                                         )}
                                                         {lease.status === 'DRAFT' && canManageLeases && (
                                                             <button
                                                                 onClick={() => handleDeleteDraft(lease.id)}
                                                                 disabled={actionLoading === `delete-${lease.id}`}
-                                                                title="Delete draft"
+                                                                title={t("deleteDraft")}
                                                                 className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium bg-error/10 text-error hover:bg-error/20 transition-colors cursor-pointer disabled:opacity-50"
                                                             >
                                                                 {actionLoading === `delete-${lease.id}` ? <Loader2 size={11} className="animate-spin" /> : <Trash2 size={11} />}
@@ -804,7 +804,7 @@ export default function LeasesPage() {
                                                                 disabled={actionLoading === `generate-${lease.id}`}
                                                                 className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors cursor-pointer disabled:opacity-50"
                                                             >
-                                                                {actionLoading === `generate-${lease.id}` ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />} Generate
+                                                                {actionLoading === `generate-${lease.id}` ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />} {t("generate")}
                                                             </button>
                                                         )}
                                                         {(lease.status === 'DRAFT' && lease.hasContract || lease.status === 'PENDING_SIGNATURE') && canManageLeases && (
@@ -812,7 +812,7 @@ export default function LeasesPage() {
                                                                 onClick={() => handleActivate(lease.id)}
                                                                 className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium bg-green-50 text-green-700 hover:bg-green-100 transition-colors cursor-pointer"
                                                             >
-                                                                <CheckCircle size={11} /> Activate
+                                                                <CheckCircle size={11} /> {t("activate")}
                                                             </button>
                                                         )}
                                                         {lease.status === 'PENDING_SIGNATURE' && canManageLeases && (
@@ -829,20 +829,20 @@ export default function LeasesPage() {
                                                                 onClick={() => handleTerminate(lease.id)}
                                                                 className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium bg-red-50 text-red-600 hover:bg-red-100 transition-colors cursor-pointer"
                                                             >
-                                                                <Ban size={11} /> Terminate
+                                                                <Ban size={11} /> {t("terminate")}
                                                             </button>
                                                         )}
                                                         <button
                                                             onClick={() => openDocsModal(lease.id)}
                                                             className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium bg-input text-foreground hover:bg-border transition-colors cursor-pointer"
                                                         >
-                                                            <FileText size={11} /> Docs
+                                                            <FileText size={11} /> {t("docs")}
                                                         </button>
                                                         <Link
                                                             href={`/dashboard/leases/${lease.id}`}
                                                             className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium text-primary hover:bg-primary/10 transition-colors"
                                                         >
-                                                            View
+                                                            {t("view")}
                                                         </Link>
                                                     </div>
                                                 </td>
@@ -891,14 +891,14 @@ export default function LeasesPage() {
                                 <div key={col.key} className="min-w-0">
                                     <div className="flex items-center gap-2 mb-4 px-2">
                                         <div className={cn("w-2.5 h-2.5 rounded-full", col.color)} />
-                                        <h3 className="text-xs font-bold text-foreground uppercase tracking-widest">{col.label}</h3>
+                                        <h3 className="text-xs font-bold text-foreground uppercase tracking-widest">{t(col.labelKey)}</h3>
                                         <span className="ml-auto text-[10px] font-bold text-muted bg-input px-2 py-0.5 rounded-full">{columnLeases.length}</span>
                                     </div>
                                     <div className="space-y-3 min-h-[200px] bg-background rounded-xl p-3 border border-border">
                                         {columnLeases.map(lease => renderLeaseCard(lease, true))}
                                         {columnLeases.length === 0 && (
                                             <div className="text-center py-8 text-[10px] text-muted font-bold uppercase tracking-widest">
-                                                No leases
+                                                {t("noLeases")}
                                             </div>
                                         )}
                                     </div>
@@ -938,13 +938,13 @@ export default function LeasesPage() {
                     <div className="bg-surface rounded-xl p-6 max-w-lg w-full shadow-2xl border border-border relative max-h-[80vh] overflow-y-auto">
                         <button
                             onClick={closeDocsModal}
-                            aria-label="Close"
+                            aria-label={t("close")}
                             className="absolute right-4 top-4 p-2 text-muted hover:text-foreground transition-all cursor-pointer rounded-lg"
                         >
                             <X size={18} />
                         </button>
-                        <h2 className="text-lg font-bold text-foreground mb-1">Supporting Documents</h2>
-                        <p className="text-xs text-muted mb-5">Upload and manage documents for this lease.</p>
+                        <h2 className="text-lg font-bold text-foreground mb-1">{t("supportingDocuments")}</h2>
+                        <p className="text-xs text-muted mb-5">{t("supportingDocumentsDesc")}</p>
 
                         {/* Existing attachments */}
                         {attachments.length > 0 && (
@@ -959,8 +959,8 @@ export default function LeasesPage() {
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-2 shrink-0">
-                                            <button onClick={() => handleDocDownload(doc.id, doc.name)} className="text-[10px] font-semibold text-primary hover:text-primary/80 cursor-pointer">Download</button>
-                                            <button onClick={() => handleDocDelete(doc.id, docsLeaseId)} className="text-[10px] font-semibold text-error hover:text-error/80 cursor-pointer">Delete</button>
+                                            <button onClick={() => handleDocDownload(doc.id, doc.name)} className="text-[10px] font-semibold text-primary hover:text-primary/80 cursor-pointer">{t("download")}</button>
+                                            <button onClick={() => handleDocDelete(doc.id, docsLeaseId)} className="text-[10px] font-semibold text-error hover:text-error/80 cursor-pointer">{t("delete")}</button>
                                         </div>
                                     </div>
                                 ))}
@@ -970,19 +970,19 @@ export default function LeasesPage() {
                         {attachments.length === 0 && (
                             <div className="text-center py-6 text-muted mb-4">
                                 <FileText size={24} className="mx-auto mb-2 opacity-40" />
-                                <p className="text-xs">No documents attached yet.</p>
+                                <p className="text-xs">{t("noDocumentsYet")}</p>
                             </div>
                         )}
 
                         {/* Upload new */}
                         <div className="pt-3 border-t border-border">
-                            <p className="text-[10px] text-muted mb-2">Enter a document name, then click Attach to upload a file.</p>
+                            <p className="text-[10px] text-muted mb-2">{t("documentsHint")}</p>
                             <div className="flex items-center gap-2">
                                 <input
                                     type="text"
                                     value={docName}
                                     onChange={(e) => setDocName(e.target.value)}
-                                    placeholder="e.g. Emirates ID, Trade License, Agreement"
+                                    placeholder={t("documentNamePlaceholder")}
                                     className="flex-1 border border-border rounded-lg bg-surface px-3 py-2 text-xs text-foreground placeholder:text-muted/50 focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none"
                                 />
                                 <label className={cn(

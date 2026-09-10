@@ -7,7 +7,7 @@ import { Plus, X, Users, Search, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Pagination } from "@/components/ui/Pagination";
-import { assignableRoles, getRoleLabel, type UserRole } from "@/lib/rbac";
+import { assignableRoles, getRoleLabel, getRoleLabelKey, type UserRole } from "@/lib/rbac";
 import { ApiError, throwIfNotOk } from "@/lib/api/facilities";
 
 const ALL_ROLE_OPTIONS: { value: UserRole; label: string }[] = [
@@ -21,6 +21,11 @@ const ALL_ROLE_OPTIONS: { value: UserRole; label: string }[] = [
 type User = { id: string; name: string; email: string; role: string; tenantId: string };
 
 export default function SuperAdminUsersPage() {
+    const tRoles = useTranslations("Roles");
+    // t.has guards a role the catalogue does not know; getRoleLabel is the
+    // English fallback rather than letting next-intl throw.
+    const roleLabel = (role: string) =>
+        tRoles.has(getRoleLabelKey(role)) ? tRoles(getRoleLabelKey(role)) : getRoleLabel(role);
     const t = useTranslations("Index"); // Or custom namespace
     const { data: session } = useSession();
     const currentRole = session?.user?.role as UserRole | undefined;
@@ -60,7 +65,7 @@ export default function SuperAdminUsersPage() {
     const roleOptions = (() => {
         const allowed = ALL_ROLE_OPTIONS.filter((o) => assignableRoles(currentRole).includes(o.value));
         if (role && !allowed.some((o) => o.value === role)) {
-            return [...allowed, { value: role as UserRole, label: getRoleLabel(role) }];
+            return [...allowed, { value: role as UserRole, label: roleLabel(role) }];
         }
         return allowed;
     })();

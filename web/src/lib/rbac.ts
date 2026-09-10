@@ -83,7 +83,20 @@ export function hasRole(role: UserRole | undefined, allowedRoles: UserRole[]): b
 }
 
 /**
- * Get human-readable role label
+ * Translation key for a role, for use as t(getRoleLabelKey(role)) with the
+ * "Roles" namespace.
+ *
+ * getRoleLabel below is kept for non-React callers, but it returns English
+ * unconditionally — the role sits under the user's name in the top bar on
+ * every page, so in Arabic it was the last English text on the shell.
+ */
+export function getRoleLabelKey(role: UserRole | string): string {
+    return String(role);
+}
+
+/**
+ * Get human-readable role label. English only — prefer getRoleLabelKey with a
+ * translator anywhere the string is rendered to a user.
  */
 export function getRoleLabel(role: UserRole | string): string {
     const labels: Record<string, string> = {
