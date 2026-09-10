@@ -1,5 +1,8 @@
 import { cleanup, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { NextIntlClientProvider } from "next-intl";
+
+import en from "../../../../../../messages/en.json";
 
 // The scanner pulls in camera/upload machinery that is irrelevant here.
 vi.mock("@/components/cheques/ChequeScanner", () => ({ default: () => null }));
@@ -57,7 +60,9 @@ function mockFetch(rows: unknown[]) {
 
 async function renderEditor(rows: unknown[]) {
     render(
-        <PaymentScheduleEditor leaseId={LEASE_ID} leaseStatus="DRAFT" canManage={true} />,
+        <NextIntlClientProvider locale="en" messages={en}>
+            <PaymentScheduleEditor leaseId={LEASE_ID} leaseStatus="DRAFT" canManage={true} />
+        </NextIntlClientProvider>,
     );
     await waitFor(() => expect(screen.queryByText(/loading payment schedule/i)).toBeNull());
 }

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useRouter } from "@/i18n/routing";
+import { useTranslations } from "next-intl";
 import { ArrowLeft, ArrowRight, X, Check, Loader2, Sparkles, AlertTriangle, Building2, User, Calendar, DollarSign, CreditCard, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatCurrency, formatDate } from "@/lib/format";
@@ -88,11 +89,11 @@ const initialData: WizardData = {
 };
 
 const STEPS = [
-    { key: "parties", label: "Parties", icon: User },
-    { key: "terms", label: "Terms", icon: Calendar },
-    { key: "charges", label: "Charges & VAT", icon: DollarSign },
-    { key: "plan", label: "Payment plan", icon: CreditCard },
-    { key: "finalize", label: "Schedule & finalize", icon: FileText },
+    { key: "parties", labelKey: "stepParties", icon: User },
+    { key: "terms", labelKey: "stepTerms", icon: Calendar },
+    { key: "charges", labelKey: "stepCharges", icon: DollarSign },
+    { key: "plan", labelKey: "stepPaymentPlan", icon: CreditCard },
+    { key: "finalize", labelKey: "stepSchedule", icon: FileText },
 ] as const;
 
 type StepKey = typeof STEPS[number]["key"];
@@ -106,6 +107,7 @@ type Props = {
 };
 
 export default function LeaseWizard({ open, units, renters, onClose, onCreated }: Props) {
+    const t = useTranslations("LeaseWizard");
     const router = useRouter();
     const [stepIdx, setStepIdx] = useState(0);
     const [data, setData] = useState<WizardData>(initialData);
@@ -204,7 +206,7 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
             } catch {
                 if (previewReqRef.current !== reqId) return;
                 setPreviewLines(null);
-                setPreviewError("Network error fetching preview");
+                setPreviewError(t("errPreviewNetwork"));
             } finally {
                 if (previewReqRef.current === reqId) setPreviewLoading(false);
             }
@@ -247,26 +249,26 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
     const stepError = (idx: number): string | null => {
         switch (STEPS[idx].key) {
             case "parties":
-                if (!data.unitId) return "Select a unit";
-                if (!data.renterId) return "Select a renter";
+                if (!data.unitId) return t("errSelectUnit");
+                if (!data.renterId) return t("errSelectRenter");
                 return null;
             case "terms":
-                if (!data.startDate || !data.endDate) return "Lease start and end date are required";
-                if (new Date(data.endDate) <= new Date(data.startDate)) return "End date must be after start date";
-                if (!data.rentAmount || data.rentAmount <= 0) return "Monthly rent must be greater than 0";
-                if (data.depositAmount < 0) return "Deposit cannot be negative";
+                if (!data.startDate || !data.endDate) return t("errDatesRequired");
+                if (new Date(data.endDate) <= new Date(data.startDate)) return t("errEndAfterStart");
+                if (!data.rentAmount || data.rentAmount <= 0) return t("errRentPositive");
+                if (data.depositAmount < 0) return t("errDepositNonNegative");
                 return null;
             case "charges": {
                 for (const c of data.charges) {
-                    if (!c.name.trim()) return "Each charge must have a name";
-                    if (c.amount < 0) return "Charge amounts cannot be negative";
+                    if (!c.name.trim()) return t("errChargeName");
+                    if (c.amount < 0) return t("errChargeNonNegative");
                 }
                 return null;
             }
             case "plan":
-                if (!data.paymentTerms || data.paymentTerms < 1) return "Number of cheques must be at least 1";
+                if (!data.paymentTerms || data.paymentTerms < 1) return t("errChequesAtLeastOne");
                 if (data.bookingDepositOpen) {
-                    if (data.bookingDeposit.amount <= 0) return "Booking deposit amount must be greater than 0 (or close the section)";
+                    if (data.bookingDeposit.amount <= 0) return t("errBookingDepositPositive");
                 }
                 return null;
             default:
@@ -347,7 +349,7 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
             return null;
         } catch (e) {
             console.error(e);
-            setError("Network error while saving the draft");
+            setError(t("errSaveNetwork"));
             return null;
         } finally {
             setSubmitting(false);
@@ -366,11 +368,11 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                 <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
                     <div>
                         <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                            <Sparkles size={14} className="text-primary" /> New Lease — {currentStep.label}
+                            <Sparkles size={14} className="text-primary" /> {t("titlePrefix")} — {t(currentStep.labelKey)}
                         </h2>
-                        <p className="text-[11px] text-muted mt-0.5">Step {stepIdx + 1} of {STEPS.length}</p>
+                        <p className="text-[11px] text-muted mt-0.5">{t("stepCounter", { current: stepIdx + 1, total: STEPS.length })}</p>
                     </div>
-                    <button onClick={onClose} className="p-2 rounded-lg text-muted hover:bg-input hover:text-foreground" aria-label="Close wizard">
+                    <button onClick={onClose} className="p-2 rounded-lg text-muted hover:bg-input hover:text-foreground" aria-label={t("closeWizard")}>
                         <X size={16} />
                     </button>
                 </div>
@@ -390,7 +392,7 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                                         "bg-input text-muted",
                                     )}>
                                         {done ? <Check size={11} /> : <Icon size={11} />}
-                                        <span className="whitespace-nowrap">{i + 1}. {s.label}</span>
+                                        <span className="whitespace-nowrap">{i + 1}. {t(s.labelKey)}</span>
                                     </div>
                                     {i < STEPS.length - 1 && <span className="text-muted/50">›</span>}
                                 </div>
@@ -403,13 +405,13 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                 <div className="flex-1 overflow-y-auto px-6 py-5">
                     {currentStep.key === "parties" && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <Field label="Unit *">
+                            <Field label={t("unitRequired")}>
                                 <SearchableSelect
                                     options={unitOptions}
                                     value={data.unitId}
                                     onChange={onPickUnit}
-                                    placeholder="— Select a unit —"
-                                    searchPlaceholder="Search property or unit..."
+                                    placeholder={t("selectUnitPlaceholder")}
+                                    searchPlaceholder={t("searchPropertyOrUnit")}
                                 />
                                 {selectedUnit && (
                                     <p className="text-[11px] text-muted mt-1.5 flex items-center gap-1">
@@ -417,16 +419,16 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                                     </p>
                                 )}
                             </Field>
-                            <Field label="Renter *">
+                            <Field label={t("renterRequired")}>
                                 <SearchableSelect
                                     options={renterOptions}
                                     value={data.renterId}
                                     onChange={(renterId) => update({ renterId })}
-                                    placeholder="— Select a renter —"
-                                    searchPlaceholder="Search name or email..."
+                                    placeholder={t("selectRenterPlaceholder")}
+                                    searchPlaceholder={t("searchNameOrEmail")}
                                 />
                             </Field>
-                            <Field label="Agreement date" hint="Defaults to today on contract generation">
+                            <Field label={t("agreementDate")} hint={t("agreementDateHint")}>
                                 <input
                                     type="date"
                                     value={data.agreementDate}
@@ -439,29 +441,29 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
 
                     {currentStep.key === "terms" && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <Field label="Start date *">
+                            <Field label={t("startDateRequired")}>
                                 <input type="date" value={data.startDate} onChange={(e) => update({ startDate: e.target.value })}
                                     className="w-full bg-input border border-border p-3 rounded-xl text-xs" />
                             </Field>
-                            <Field label="End date *">
+                            <Field label={t("endDateRequired")}>
                                 <input type="date" value={data.endDate} onChange={(e) => update({ endDate: e.target.value })}
                                     className="w-full bg-input border border-border p-3 rounded-xl text-xs" />
                             </Field>
-                            <Field label="Monthly rent (AED) *">
+                            <Field label={t("monthlyRentRequired")}>
                                 <input type="number" min={0} step={0.01} value={data.rentAmount}
                                     onChange={(e) => update({ rentAmount: Number(e.target.value) })}
                                     className="w-full bg-input border border-border p-3 rounded-xl text-xs" />
                             </Field>
-                            <Field label="Security deposit (AED)">
+                            <Field label={t("securityDepositAed")}>
                                 <input type="number" min={0} step={0.01} value={data.depositAmount}
                                     onChange={(e) => update({ depositAmount: Number(e.target.value) })}
                                     className="w-full bg-input border border-border p-3 rounded-xl text-xs" />
                             </Field>
-                            <Field label="Ejari #">
+                            <Field label={t("ejariNumber")}>
                                 <input type="text" value={data.ejariNumber} onChange={(e) => update({ ejariNumber: e.target.value })}
                                     className="w-full bg-input border border-border p-3 rounded-xl text-xs" />
                             </Field>
-                            <Field label="Payment reference #">
+                            <Field label={t("paymentReference")}>
                                 <input type="text" value={data.paymentReferenceNumber} onChange={(e) => update({ paymentReferenceNumber: e.target.value })}
                                     className="w-full bg-input border border-border p-3 rounded-xl text-xs" />
                             </Field>
@@ -471,70 +473,70 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                     {currentStep.key === "charges" && (
                         <div className="space-y-5">
                             <div className="flex items-center justify-between">
-                                <h3 className="text-xs font-semibold">Other charges</h3>
+                                <h3 className="text-xs font-semibold">{t("otherCharges")}</h3>
                                 <button type="button"
                                     onClick={() => setData((prev) => ({ ...prev, charges: [...prev.charges, { name: "", amount: 0, vatApplicable: isCommercial, frequency: "ONE_TIME" as ChargeFrequency }] }))}
                                     className="rounded border border-border px-2 py-1 text-xs">+ Add charge</button>
                             </div>
-                            {data.charges.length === 0 && <p className="text-[11px] text-muted">No extra charges. Add admin fee, parking, maintenance, etc.</p>}
+                            {data.charges.length === 0 && <p className="text-[11px] text-muted">{t("noExtraCharges")}</p>}
                             {data.charges.map((c, i) => (
                                 <div key={i} className="grid grid-cols-1 md:grid-cols-[1fr_120px_120px_110px_32px] gap-2 items-end">
-                                    <Field label="Name"><input type="text" value={c.name}
+                                    <Field label={t("chargeName")}><input type="text" value={c.name}
                                         onChange={(e) => updateCharge(i, { name: e.target.value })}
                                         className="w-full bg-input border border-border p-2 rounded-lg text-xs" /></Field>
-                                    <Field label="Amount (AED)"><input type="number" min={0} step={0.01} value={c.amount}
+                                    <Field label={t("amountAed")}><input type="number" min={0} step={0.01} value={c.amount}
                                         onChange={(e) => updateCharge(i, { amount: Number(e.target.value) })}
                                         className="w-full bg-input border border-border p-2 rounded-lg text-xs" /></Field>
-                                    <Field label="Frequency">
+                                    <Field label={t("frequency")}>
                                         <select value={c.frequency} onChange={(e) => updateCharge(i, { frequency: e.target.value as ChargeFrequency })}
                                             className="w-full bg-input border border-border p-2 rounded-lg text-xs">
-                                            <option value="ONE_TIME">One-time</option>
-                                            <option value="PER_INSTALLMENT">Per installment</option>
+                                            <option value="ONE_TIME">{t("oneTime")}</option>
+                                            <option value="PER_INSTALLMENT">{t("perInstallment")}</option>
                                         </select>
                                     </Field>
-                                    <VatToggle label="VAT" value={c.vatApplicable} onChange={(v) => updateCharge(i, { vatApplicable: v })} />
+                                    <VatToggle label={t("vat")} value={c.vatApplicable} onChange={(v) => updateCharge(i, { vatApplicable: v })} />
                                     <button type="button" onClick={() => setData((prev) => ({ ...prev, charges: prev.charges.filter((_, j) => j !== i) }))}
                                         className="rounded border border-border p-2 text-xs">✕</button>
                                 </div>
                             ))}
-                            <VatToggle label="Rent VAT" value={data.rentVatApplicable} onChange={(v) => update({ rentVatApplicable: v })} />
+                            <VatToggle label={t("rentVat")} value={data.rentVatApplicable} onChange={(v) => update({ rentVatApplicable: v })} />
                         </div>
                     )}
 
                     {currentStep.key === "plan" && (
                         <div className="space-y-5">
                             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-                                <Field label="Number of installments *" hint="Rent will be split equally across this many payments">
+                                <Field label={t("installmentsRequired")} hint={t("installmentsHint")}>
                                     <input type="number" min={1} max={36} value={data.paymentTerms}
                                         onChange={(e) => update({ paymentTerms: Number(e.target.value) })}
                                         className="w-full bg-input border border-border p-3 rounded-xl text-xs" />
                                 </Field>
-                                <Field label="Remainder distribution" hint="Where the rounding remainder goes">
+                                <Field label={t("remainderDistribution")} hint={t("remainderHint")}>
                                     <select value={data.installmentDistribution}
                                         onChange={(e) => update({ installmentDistribution: e.target.value as InstallmentDistribution })}
                                         className="w-full bg-input border border-border p-3 rounded-xl text-xs">
-                                        <option value="UNIFORM">Uniform</option>
-                                        <option value="FIRST_LARGER">First larger</option>
-                                        <option value="LAST_LARGER">Last larger</option>
-                                        <option value="FIRST_AND_LAST_LARGER">Both larger</option>
+                                        <option value="UNIFORM">{t("uniform")}</option>
+                                        <option value="FIRST_LARGER">{t("firstLarger")}</option>
+                                        <option value="LAST_LARGER">{t("lastLarger")}</option>
+                                        <option value="FIRST_AND_LAST_LARGER">{t("bothLarger")}</option>
                                     </select>
                                 </Field>
-                                <Field label="Default payment method">
+                                <Field label={t("defaultPaymentMethod")}>
                                     <select value={data.paymentMethod} onChange={(e) => update({ paymentMethod: e.target.value })}
                                         className="w-full bg-input border border-border p-3 rounded-xl text-xs">
-                                        <option value="CHEQUE">Cheque</option>
-                                        <option value="BANK_TRANSFER">Bank Transfer</option>
-                                        <option value="ONLINE">Online</option>
-                                        <option value="CASH">Cash</option>
+                                        <option value="CHEQUE">{t("methodCheque")}</option>
+                                        <option value="BANK_TRANSFER">{t("methodBankTransfer")}</option>
+                                        <option value="ONLINE">{t("methodOnline")}</option>
+                                        <option value="CASH">{t("methodCash")}</option>
                                     </select>
                                 </Field>
-                                <Field label="Deposit payment method">
+                                <Field label={t("depositPaymentMethod")}>
                                     <select value={data.depositPaymentMethod} onChange={(e) => update({ depositPaymentMethod: e.target.value })}
                                         className="w-full bg-input border border-border p-3 rounded-xl text-xs">
-                                        <option value="CHEQUE">Cheque</option>
-                                        <option value="BANK_TRANSFER">Bank Transfer</option>
-                                        <option value="ONLINE">Online</option>
-                                        <option value="CASH">Cash</option>
+                                        <option value="CHEQUE">{t("methodCheque")}</option>
+                                        <option value="BANK_TRANSFER">{t("methodBankTransfer")}</option>
+                                        <option value="ONLINE">{t("methodOnline")}</option>
+                                        <option value="CASH">{t("methodCash")}</option>
                                     </select>
                                 </Field>
                             </div>
@@ -546,7 +548,7 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                                         checked={data.bookingDepositOpen}
                                         onChange={(e) => update({ bookingDepositOpen: e.target.checked })}
                                     />
-                                    Include a booking deposit (received before lease start)
+                                    {t("includeBookingDeposit")}
                                 </label>
                                 {data.bookingDepositOpen && (
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
@@ -565,7 +567,7 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                                                 }
                                             />
                                         </div>
-                                        <Field label="Amount (AED) *">
+                                        <Field label={t("amountAedRequired")}>
                                             <input type="number" min={0} step={0.01} value={data.bookingDeposit.amount}
                                                 onChange={(e) => update({ bookingDeposit: { ...data.bookingDeposit, amount: Number(e.target.value) } })}
                                                 className="w-full bg-surface border border-border p-3 rounded-xl text-xs" />
@@ -577,17 +579,17 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                                                 </button>
                                             )}
                                         </Field>
-                                        <Field label="Cheque number">
+                                        <Field label={t("chequeNumber")}>
                                             <input type="text" value={data.bookingDeposit.chequeNumber}
                                                 onChange={(e) => update({ bookingDeposit: { ...data.bookingDeposit, chequeNumber: e.target.value } })}
                                                 className="w-full bg-surface border border-border p-3 rounded-xl text-xs" />
                                         </Field>
-                                        <Field label="Cheque date">
+                                        <Field label={t("chequeDate")}>
                                             <input type="date" value={data.bookingDeposit.chequeDate}
                                                 onChange={(e) => update({ bookingDeposit: { ...data.bookingDeposit, chequeDate: e.target.value } })}
                                                 className="w-full bg-surface border border-border p-3 rounded-xl text-xs" />
                                         </Field>
-                                        <Field label="Bank">
+                                        <Field label={t("bank")}>
                                             <input type="text" value={data.bookingDeposit.bankName}
                                                 onChange={(e) => update({ bookingDeposit: { ...data.bookingDeposit, bankName: e.target.value } })}
                                                 className="w-full bg-surface border border-border p-3 rounded-xl text-xs" />
@@ -598,7 +600,7 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
 
                             {/* Live installment preview */}
                             <div className="border border-border rounded-xl p-4 bg-input/30">
-                                <h3 className="text-xs font-semibold text-foreground mb-3">Installment preview</h3>
+                                <h3 className="text-xs font-semibold text-foreground mb-3">{t("installmentPreview")}</h3>
                                 {previewLoading && (
                                     <div className="flex items-center gap-2 text-[11px] text-muted py-2">
                                         <Loader2 size={12} className="animate-spin" /> Calculating…
@@ -619,8 +621,8 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                                             <thead>
                                                 <tr className="text-muted border-b border-border">
                                                     <th className="text-left py-1 pr-3 font-semibold">#</th>
-                                                    <th className="text-left py-1 pr-3 font-semibold">Due date</th>
-                                                    <th className="text-right py-1 font-semibold">Amount</th>
+                                                    <th className="text-left py-1 pr-3 font-semibold">{t("dueDate")}</th>
+                                                    <th className="text-right py-1 font-semibold">{t("amount")}</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -633,13 +635,13 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                                                 ))}
                                                 {data.charges.filter((c) => c.frequency === "ONE_TIME").map((c, i) => (
                                                     <tr key={`ot-${i}`} className="border-b border-border/50 text-muted">
-                                                        <td className="py-1 pr-3" colSpan={2}>{c.name || "One-time charge"}</td>
+                                                        <td className="py-1 pr-3" colSpan={2}>{c.name || t("oneTimeCharge")}</td>
                                                         <td className="py-1 text-right">{formatCurrency(c.amount * (c.vatApplicable ? 1.05 : 1))}</td>
                                                     </tr>
                                                 ))}
                                                 {data.depositAmount > 0 && (
                                                     <tr className="text-muted">
-                                                        <td className="py-1 pr-3" colSpan={2}>Security deposit</td>
+                                                        <td className="py-1 pr-3" colSpan={2}>{t("securityDeposit")}</td>
                                                         <td className="py-1 text-right">{formatCurrency(data.depositAmount)}</td>
                                                     </tr>
                                                 )}
@@ -656,29 +658,34 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                             {!savedLeaseId ? (
                                 <>
                                     <div className="rounded-xl border border-border bg-input/30 p-4">
-                                        <h3 className="text-xs font-semibold text-foreground mb-3">Review draft</h3>
+                                        <h3 className="text-xs font-semibold text-foreground mb-3">{t("reviewDraft")}</h3>
                                         <dl className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 text-[11px]">
-                                            <Summary label="Unit" value={selectedUnit ? `${selectedUnit.unitNumber} • ${selectedUnit.property?.nameEn}` : "—"} />
-                                            <Summary label="Renter" value={selectedRenter?.nameEn || "—"} />
-                                            <Summary label="Period" value={`${data.startDate || "—"} → ${data.endDate || "—"}`} />
-                                            <Summary label="Monthly rent" value={formatCurrency(data.rentAmount)} />
-                                            <Summary label="Deposit" value={formatCurrency(data.depositAmount)} />
-                                            <Summary label="Other charges" value={data.charges.length > 0 ? data.charges.map((c) => `${c.name} (${c.frequency === "ONE_TIME" ? "one-time" : "per installment"})`).join(", ") : "None"} />
-                                            <Summary label="Installments" value={`${data.paymentTerms} × ${data.paymentMethod}`} />
-                                            <Summary label="Rent VAT" value={data.rentVatApplicable ? "VAT 5%" : "Exempt"} />
+                                            <Summary label={t("unit")} value={selectedUnit ? `${selectedUnit.unitNumber} • ${selectedUnit.property?.nameEn}` : "—"} />
+                                            <Summary label={t("renter")} value={selectedRenter?.nameEn || "—"} />
+                                            <Summary label={t("period")} value={`${data.startDate || "—"} → ${data.endDate || "—"}`} />
+                                            <Summary label={t("monthlyRent")} value={formatCurrency(data.rentAmount)} />
+                                            <Summary label={t("deposit")} value={formatCurrency(data.depositAmount)} />
+                                            <Summary label={t("otherCharges")} value={data.charges.length > 0 ? data.charges.map((c) => `${c.name} (${c.frequency === "ONE_TIME" ? t("oneTime") : t("perInstallment")})`).join(", ") : t("none")} />
+                                            <Summary label={t("installments")} value={`${data.paymentTerms} × ${data.paymentMethod}`} />
+                                            <Summary label={t("rentVat")} value={data.rentVatApplicable ? t("vatFivePercent") : t("exempt")} />
                                             {data.bookingDepositOpen && (
-                                                <Summary label="Booking deposit" value={`${formatCurrency(data.bookingDeposit.amount)} • ${data.bookingDeposit.bankName || "—"}`} />
+                                                <Summary label={t("bookingDeposit")} value={`${formatCurrency(data.bookingDeposit.amount)} • ${data.bookingDeposit.bankName || "—"}`} />
                                             )}
                                         </dl>
                                     </div>
                                     <div className="text-[11px] text-muted">
-                                        Saving will create the draft lease and auto-generate the installment schedule. You can then adjust per-row dates, cheque numbers, banks, and methods before generating the contract.
+                                        {t("saveHint")}
                                     </div>
                                 </>
                             ) : (
                                 <>
                                     <div className="rounded-xl bg-success/10 border border-success/30 p-3 text-[11px] text-success">
-                                        Draft lease created. Adjust the schedule below — change dates, cheque numbers, banks, or per-row methods. Click <strong>Save schedule</strong> to persist edits.
+                                        {/* t.rich keeps the sentence whole for translators rather than
+                                            splitting it around the bold run, which does not reorder
+                                            cleanly into Arabic. */}
+                                        {t.rich("draftCreatedBanner", {
+                                            b: (chunks) => <strong>{chunks}</strong>,
+                                        })}
                                     </div>
                                     <div className="flex items-center justify-end">
                                         <button
@@ -686,7 +693,7 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                                             onClick={async () => { await loadWizardSchedules(savedLeaseId); setBulkOpen(true); }}
                                             className="rounded border border-border px-3 py-1 text-xs"
                                         >
-                                            Bulk upload cheques
+                                            {t("bulkUploadCheques")}
                                         </button>
                                     </div>
                                     {bulkOpen && savedLeaseId && (
@@ -730,11 +737,11 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                             <>
                                 <button onClick={goBack} disabled={stepIdx === 0}
                                     className="px-4 py-2 rounded-lg text-xs font-semibold border border-border text-foreground hover:bg-input/40 disabled:opacity-40 cursor-pointer">
-                                    <span className="inline-flex items-center gap-1.5"><ArrowLeft size={12} /> Back</span>
+                                    <span className="inline-flex items-center gap-1.5"><ArrowLeft size={12} /> {t("back")}</span>
                                 </button>
                                 <button onClick={goNext}
                                     className="px-4 py-2 rounded-lg text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer">
-                                    <span className="inline-flex items-center gap-1.5">Next <ArrowRight size={12} /></span>
+                                    <span className="inline-flex items-center gap-1.5">{t("next")} <ArrowRight size={12} /></span>
                                 </button>
                             </>
                         )}
@@ -742,7 +749,7 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                             <>
                                 <button onClick={goBack}
                                     className="px-4 py-2 rounded-lg text-xs font-semibold border border-border text-foreground hover:bg-input/40 cursor-pointer">
-                                    <span className="inline-flex items-center gap-1.5"><ArrowLeft size={12} /> Back</span>
+                                    <span className="inline-flex items-center gap-1.5"><ArrowLeft size={12} /> {t("back")}</span>
                                 </button>
                                 <button onClick={handleSaveDraft} disabled={submitting}
                                     className="px-4 py-2 rounded-lg text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 cursor-pointer">
@@ -758,19 +765,19 @@ export default function LeaseWizard({ open, units, renters, onClose, onCreated }
                                     onClick={() => { router.push(`/dashboard/leases/${savedLeaseId}`); onClose(); }}
                                     className="px-4 py-2 rounded-lg text-xs font-semibold border border-border text-foreground hover:bg-input/40 cursor-pointer"
                                 >
-                                    Open lease detail
+                                    {t("openLeaseDetail")}
                                 </button>
                                 <button
                                     onClick={() => { router.push(`/dashboard/leases/${savedLeaseId}?action=generate-contract`); onClose(); }}
                                     className="px-4 py-2 rounded-lg text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer"
                                 >
                                     <span className="inline-flex items-center gap-1.5">
-                                        <Sparkles size={12} /> Generate contract
+                                        <Sparkles size={12} /> {t("generateContract")}
                                     </span>
                                 </button>
                                 <button onClick={onClose}
                                     className="px-4 py-2 rounded-lg text-xs font-semibold border border-border text-muted hover:bg-input/40 cursor-pointer">
-                                    Done
+                                    {t("done")}
                                 </button>
                             </>
                         )}
